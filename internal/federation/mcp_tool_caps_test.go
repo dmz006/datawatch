@@ -6,19 +6,21 @@ import (
 	"go/token"
 	"os"
 	"regexp"
+	"sort"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
-// TestMCPToolCap_EveryRegisteredToolHasAnEntry is Design A3's structural
-// regression test (mirrors internal/server's A2 audit test): parses every
-// mcpSrv.AddTool(s.toolX(), ...) registration in internal/mcp/server.go,
-// resolves each toolX() function to its registered tool name, and fails if
-// that name has no entry in federation.MCPToolCap — a future MCP tool
-// landing with no capability assigned (defaulting to "nobody but admin can
-// call it" until someone notices) is a safety failure, not silence.
-func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
+// registeredMCPToolNames is the shared enumeration source for the coverage
+// tests in this file: it parses internal/mcp, finds each tool function
+// (func (s *Server) toolX()) returning a NewTool("name", ...) or
+// NewToolWithRawSchema("name", ...) literal, and resolves the names
+// registered by the mcpSrv.AddTool(s.toolX(), ...) calls in server.go. It
+// returns the deduplicated registered tool names and the number of AddTool
+// registrations found.
+func registeredMCPToolNames(t *testing.T) (names []string, addToolCount int) {
+	t.Helper()
 	const mcpDir = "../mcp"
 	entries, err := os.ReadDir(mcpDir)
 	if err != nil {
@@ -87,11 +89,7 @@ func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
 		t.Fatalf("read server.go: %v", err)
 	}
 	matches := addToolRe.FindAllStringSubmatch(string(src), -1)
-	if len(matches) < 300 {
-		t.Fatalf("expected at least 300 AddTool registrations, found %d — regex may be stale", len(matches))
-	}
 
-	var missing []string
 	seen := map[string]bool{}
 	for _, m := range matches {
 		name, ok := toolFuncToName[m[1]]
@@ -99,6 +97,28 @@ func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
 			continue
 		}
 		seen[name] = true
+		names = append(names, name)
+	}
+	return names, len(matches)
+}
+
+// TestMCPToolCap_EveryRegisteredToolHasAnEntry is Design A3's structural
+// regression test (mirrors internal/server's A2 audit test): parses every
+// mcpSrv.AddTool(s.toolX(), ...) registration in internal/mcp/server.go,
+// resolves each toolX() function to its registered tool name, and fails if
+// that name has no entry in federation.MCPToolCap — a future MCP tool
+// landing with no capability assigned (defaulting to "nobody but admin can
+// call it" until someone notices) is a safety failure, not silence.
+func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
+	names, addToolCount := registeredMCPToolNames(t)
+	if addToolCount < 300 {
+		t.Fatalf("expected at least 300 AddTool registrations, found %d — regex may be stale", addToolCount)
+	}
+	if len(names) < 300 {
+		t.Fatalf("only resolved %d tool names from %d AddTool registrations — tool-name extraction may be broken", len(names), addToolCount)
+	}
+	var missing []string
+	for _, name := range names {
 		if _, ok := federation.RequiredCapForMCPTool(name); !ok {
 			missing = append(missing, name)
 		}
@@ -107,8 +127,182 @@ func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
 		t.Errorf("Design A3 regression: %d registered MCP tool(s) have no entry in federation.MCPToolCap "+
 			"(they will be treated as admin-only until classified): %v", len(missing), missing)
 	}
-	if len(seen) < 300 {
-		t.Fatalf("only resolved %d tool names from %d AddTool registrations — tool-name extraction may be broken", len(seen), len(matches))
+}
+
+// TestIsConfigWriteTool_Classification pins both sides of the BL412
+// self-config classification (option C,
+// docs/plans/2026-10-29-bl412-self-config-gate-proposal.md): the daemon
+// settings writers and the component-registry writers classify as config
+// writes, while the excluded surfaces (secrets, identity, daemon control,
+// session/autonomous state) are explicitly classified non-config-write —
+// never left on neither side.
+func TestIsConfigWriteTool_Classification(t *testing.T) {
+	configWrite := []string{
+		"config_set",
+		"detection_config_set", "dns_channel_config_set", "proxy_config_set",
+		"channel_routing_config_set", "council_config_set", "council_personas_set",
+		"orchestrator_config_set", "autonomous_config_set", "autonomous_scan_config_set",
+		"observer_config_set", "smoke_forward_config_set", "burn_guard_config_set",
+		"compute_pin_settings",
+		"usage_backoff_set", "usage_extra_credit_set", "usage_remaining_work_set",
+		"llm_add", "llm_update", "llm_delete", "llm_disable", "llm_enable",
+		"llm_add_model", "llm_remove_model", "llm_refresh_models",
+		"compute_node_add", "compute_node_update", "compute_node_delete",
+		"compute_node_attach_observer", "compute_node_detach_observer",
+		"compute_node_pull_model", "compute_node_remove_model",
+		"observer_peer_register", "observer_peer_delete",
+		"server_add", "server_delete", "server_update",
+		"websearch_provider_add", "websearch_provider_update",
+		"websearch_provider_delete", "websearch_provider_disable",
+	}
+	for _, name := range configWrite {
+		if !federation.IsConfigWriteTool(name) {
+			t.Errorf("IsConfigWriteTool(%q) = false, want true", name)
+		}
+		if federation.IsNonConfigWriteTool(name) {
+			t.Errorf("%q must sit in exactly one of the two lists", name)
+		}
+	}
+
+	// Explicit non-config side: readers of the same surfaces, the excluded
+	// surfaces, and autonomous state.
+	nonConfigWrite := []string{
+		"llm_list", "llm_get",
+		"get_config",
+		"observer_config_get",
+		"compute_node_get",
+		"secrets_vault_status", "secret_list", "secret_exists",
+		"agent_spawn", "autonomous_prd_create",
+	}
+	for _, name := range nonConfigWrite {
+		if federation.IsConfigWriteTool(name) {
+			t.Errorf("IsConfigWriteTool(%q) = true, want false (excluded surface)", name)
+		}
+		if !federation.IsNonConfigWriteTool(name) {
+			t.Errorf("IsNonConfigWriteTool(%q) = false — must be explicitly listed non-config-write", name)
+		}
+	}
+
+	// Sensitive class: in exactly one class, never config or non-config.
+	for _, name := range []string{
+		"secret_set", "secret_delete", "secret_get",
+		"set_identity", "update_identity", "configure_identity",
+		"restore_identity", "reset_identity", "restart_daemon", "reload",
+		"plugin_install", "plugin_run_subcommand", "send_input", "start_session",
+		"tailscale_acl_push", "tailscale_auth_key", "acme_renew",
+	} {
+		if !federation.IsSensitiveWriteTool(name) {
+			t.Errorf("IsSensitiveWriteTool(%q) = false, want true", name)
+		}
+		if federation.IsConfigWriteTool(name) || federation.IsNonConfigWriteTool(name) {
+			t.Errorf("%q is in more than one class", name)
+		}
+	}
+
+	// Unknown tool names never classify as config writes.
+	for _, name := range []string{"", "not_a_registered_tool", "LLM_ADD"} {
+		if federation.IsConfigWriteTool(name) {
+			t.Errorf("IsConfigWriteTool(%q) = true, want false for unknown tool names", name)
+		}
+	}
+}
+
+// TestIsConfigWriteTool_EveryRegisteredToolIsClassified fails the build
+// when a registered MCP tool lands in neither configWriteTools nor
+// nonConfigWriteTools, so a new registration can't be forgotten on both
+// sides of the self-config classification (BL412 option C). It reuses the
+// same enumeration source as TestMCPToolCap_EveryRegisteredToolHasAnEntry.
+func TestIsConfigWriteTool_EveryRegisteredToolIsClassified(t *testing.T) {
+	names, addToolCount := registeredMCPToolNames(t)
+	if addToolCount < 300 {
+		t.Fatalf("expected at least 300 AddTool registrations, found %d — regex may be stale", addToolCount)
+	}
+	var unclassified, multi []string
+	for _, name := range names {
+		n := 0
+		for _, in := range []bool{federation.IsConfigWriteTool(name), federation.IsNonConfigWriteTool(name), federation.IsSensitiveWriteTool(name)} {
+			if in {
+				n++
+			}
+		}
+		switch {
+		case n == 0:
+			unclassified = append(unclassified, name)
+		case n > 1:
+			multi = append(multi, name)
+		}
+	}
+	if len(multi) > 0 {
+		sort.Strings(multi)
+		t.Fatalf("tools in more than one classification list: %v", multi)
+	}
+	if len(unclassified) > 0 {
+		sort.Strings(unclassified)
+		t.Fatalf("every registered MCP tool must be classified as a config write or explicitly listed non-config-write; %d unclassified: %v\n"+
+			"Add each new tool to exactly one of the lists under IsConfigWriteTool in mcp_tool_caps.go.",
+			len(unclassified), unclassified)
+	}
+}
+
+// TestIsSensitiveWriteTool_Classification pins which tools are sensitive.
+func TestIsSensitiveWriteTool_Classification(t *testing.T) {
+	for _, name := range []string{"secret_set", "secret_get", "set_identity", "restart_daemon", "plugin_install",
+		"send_input", "start_session", "tailscale_acl_push", "tailscale_auth_key", "acme_renew"} {
+		if !federation.IsSensitiveWriteTool(name) {
+			t.Errorf("IsSensitiveWriteTool(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"secret_list", "secret_exists", "llm_list"} {
+		if federation.IsSensitiveWriteTool(name) {
+			t.Errorf("IsSensitiveWriteTool(%q) = true, want false", name)
+		}
+	}
+}
+
+// TestMCPToolCaps pins the GH#204 result-panel MCP tool → capability
+// mapping, which the per-tool coverage tests only check structurally
+// ("has an entry") but not semantically ("the RIGHT entry"):
+//   - post_result          → sessions:result_write — deliberately NOT in any
+//     built-in group (it is minted explicitly into per-session tokens only,
+//     the same way every other write-class capability is least-privilege
+//     by default).
+//   - schedule_results_list→ autonomous:read — granted to the read-only and
+//     session-default groups, so peers that could read schedules before can
+//     read the panel with no new grant.
+func TestMCPToolCaps_ResultPanelTools(t *testing.T) {
+	cap, ok := federation.RequiredCapForMCPTool("post_result")
+	if !ok {
+		t.Fatal("MCPToolCap[\"post_result\"] missing")
+	}
+	if cap != federation.CapSessionsResultWrite {
+		t.Errorf("post_result mapped to %q, want %q", cap, federation.CapSessionsResultWrite)
+	}
+	for _, gname := range []string{"full-control", "session-default", "read-only", "monitor", "session-operator", "autonomous-operator"} {
+		g, ok := federation.BuiltinGroups[gname]
+		if !ok {
+			continue
+		}
+		if federation.Check(federation.Resolve(g.Caps, nil), federation.CapSessionsResultWrite) {
+			t.Errorf("federation.CapSessionsResultWrite must not be in built-in group %q (mint it per-session explicitly)", gname)
+		}
+	}
+
+	cap, ok = federation.RequiredCapForMCPTool("schedule_results_list")
+	if !ok {
+		t.Fatal("MCPToolCap[\"schedule_results_list\"] missing")
+	}
+	if cap != federation.CapAutonomousRead {
+		t.Errorf("schedule_results_list mapped to %q, want %q", cap, federation.CapAutonomousRead)
+	}
+	// Read-only peers (read-only / session-default) must be able to read the panel.
+	for _, gname := range []string{"read-only", "session-default"} {
+		g, ok := federation.BuiltinGroups[gname]
+		if !ok {
+			continue
+		}
+		if !federation.Check(federation.Resolve(g.Caps, nil), federation.CapAutonomousRead) {
+			t.Errorf("%q should be able to call schedule_results_list but lacks federation.CapAutonomousRead", gname)
+		}
 	}
 }
 

@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Live smoke driver (scratch, not part of the repo). Run: env -u TMUX -u TMUX_TMPDIR bash smoke.sh
+set -uo pipefail
+ROOT=/home/<user>/.datawatch/prd-worktrees/3ebd0001
+SC=/tmp/claude-1000/-home-dmz--datawatch-prd-worktrees-3ebd0001/ffb0487e-297b-5ce8-84b7-b29af71cd754/scratchpad/smoke
+S="$SC/run"; rm -rf "$S"; mkdir -p "$S/bin" "$S/launcher" "$S/data" "$S/projects" "$S/ev"
+export TD_STATE_DIR="$S/tdstate"
+source "$ROOT/scripts/test-daemon-lib.sh"
+SOCKDIR=$(mktemp -d /tmp/dwsm.XXXXXX); SOCK=$SOCKDIR/t.sock
+extra(){ tmux -S "$SOCK" kill-server >/dev/null 2>&1; rm -rf "$SOCKDIR"; }
+TD_EXTRA_CLEANUP=extra
+td_install_traps "$@"
+free_port(){ python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()'; }
+PORT=$(free_port); TLS=$(free_port); MCP=$(free_port); DNS=$(free_port); HOOK=$(free_port); NTFY=$(free_port); PLAN=$(free_port)
+TOKEN=dw-test-token-12345; BASE=https://127.0.0.1:$TLS
+BIN="$SC/datawatch"; CFG="$S/config.yaml"; LOG="$S/daemon.log"; REPO="$S/projects/throwaway"
+api(){ local m=$1 p=$2 b=${3:-}; if [[ -n $b ]]; then curl -sk -m 30 -X $m -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$b" "$BASE$p"; else curl -sk -m 30 -X $m -H "Authorization: Bearer $TOKEN" "$BASE$p"; fi; }
+pre(){ [[ -n "${AID:-}" ]] && api POST /api/autonomous/prds/$AID/cancel '{}' >/dev/null 2>&1
+  for sid in $(api GET /api/sessions | jq -r '(if type=="array" then . else .sessions end)[]? | (.full_id // .id)' 2>/dev/null); do api POST /api/sessions/kill "{\"id\":\"$sid\"}" >/dev/null 2>&1; api POST /api/sessions/delete "{\"id\":\"$sid\"}" >/dev/null 2>&1; done; }
+TD_PRE_STOP_CLEANUP=pre
+echo "[$(date +%T)] build"; (cd "$ROOT" && env -u TMUX -u TMUX_TMPDIR go build -o "$BIN" ./cmd/datawatch/) || exit 1
+git -C "$REPO" init -q -b main 2>/dev/null || { mkdir -p "$REPO"; git -C "$REPO" init -q -b main; }
+git -C "$REPO" config user.email smoke@example.invalid; git -C "$REPO" config user.name smoke
+echo base > "$REPO/README.md"; printf "%s\n" .decompose-output-*.json CHECKPOINT.md .aider.conf.yml .aider.chat.history.md ".aider.tags.cache.v*/" .mcp.json .datawatch/ ".verify-output-*.json" .goose/ .gemini/ .opencode/ opencode.json > "$REPO/.gitignore"; git -C "$REPO" add README.md .gitignore; git -C "$REPO" commit -q -m init
+REAL_TMUX=$(command -v tmux)
+cat > "$S/bin/tmux" <<SH
+#!/bin/sh
+exec "$REAL_TMUX" -S "$SOCK" "\$@"
+SH
+cat > "$S/bin/aider" <<SH
+#!/bin/sh
+case "\$1" in --version) echo "aider smoke-stand-in"; exit 0;; esac
+path=\$(printf '%s' "\$*" | sed -n 's/.*cat \\([^)]*\\)).*/\\1/p')
+task=\$(cat "\$path" 2>/dev/null)
+name=\$(printf '%s' "\$task" | sed -n 's/.*SMOKE name=\\([A-Za-z0-9]*\\).*/\\1/p' | head -1)
+sl=\$(printf '%s' "\$task" | sed -n 's/.*sleep=\\([0-9]*\\).*/\\1/p' | head -1)
+wr=\$(printf '%s' "\$task" | sed -n 's/.*write=\\([A-Za-z0-9_.]*\\).*/\\1/p' | head -1)
+vf=\$(printf '%s' "\$task" | grep -o '/[^ "]*\.verify-output-[0-9a-f]*\.json' | head -1)
+if [ -n "\$vf" ]; then printf '{"ok":true,"severity":"info","summary":"stand-in verifier pass","issues":[]}' > "\$vf"; echo "\$(date +%s.%N) verifier ok" >> "$S/ev/events.log"; exit 0; fi
+echo "\$(date +%s.%N) \$name start cwd=\$(pwd) branch=\$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" >> "$S/ev/events.log"
+sleep "\${sl:-1}"
+if [ -n "\$wr" ]; then echo "\$name" > "\$wr"; git add "\$wr"; git commit -q -m "\$name writes \$wr"; fi
+echo "\$(date +%s.%N) \$name end" >> "$S/ev/events.log"
+exit 0
+SH
+chmod +x "$S/bin/tmux" "$S/bin/aider"
+cat > "$S/planner.py" <<'PY'
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+PLAN={"title":"smoke","stories":[{"title":"Placeholder","description":"x","files":[],"depends_on":[],"verification_script":"","files_generated":[],"tasks":[{"title":"Placeholder","spec":"placeholder","files":[],"depends_on":[],"verification_script":"","files_generated":[]}]}]}
+class H(BaseHTTPRequestHandler):
+    def log_message(self,*a): pass
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length","0") or 0))
+        b=json.dumps({"model":"stand-in","response":json.dumps(PLAN),"done":True}).encode()
+        self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_GET(self):
+        b=b'{"models":[]}'
+        self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b)
+HTTPServer(("127.0.0.1",int(sys.argv[1])),H).serve_forever()
+PY
+sed -e "s|data_dir: /data|data_dir: $S/data|g" -e "s|default_project_dir: /data/projects|default_project_dir: $S/projects|g" \
+ -e "s|port: 8080|port: $PORT|g" -e "s|tls_port: 8443|tls_port: $TLS|g" -e "s|sse_port: 9090|sse_port: $MCP|g" -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
+ -e "s|token: \"\"|token: \"$TOKEN\"|g" -e "s|token: \"WEBHOOK_NOAUTH\"|token: \"\"|g" -e "s|listen: \"127\.0\.0\.1:19053\".*|listen: \"127.0.0.1:$DNS\"|g" \
+ -e "s|addr: 127\.0\.0\.1:19080|addr: 127.0.0.1:$HOOK|g" -e "s|server_url: http://127\.0\.0\.1:19180|server_url: http://127.0.0.1:$NTFY|g" \
+ -e "s|http://local-node:11434|http://127.0.0.1:$PLAN|g" -e "s|http://localhost:11434|http://127.0.0.1:$PLAN|g" "$ROOT/testdata/datawatch.yaml" > "$CFG"
+sed -i -e "s|^server:\$|server:\n  allowed_project_roots: [\"$S/projects\"]|" -e "s|^autonomous:\$|autonomous:\n  worktree_base_repo: $REPO\n  worktree_dir: $S/wt\n  max_concurrent_tasks: 2\n  capacity_enabled: false\n  questions:\n    enabled: true|" "$CFG"
+printf '\naider:\n  enabled: true\n  binary: %s/bin/aider\n' "$S" >> "$CFG"
+python3 -I "$S/planner.py" $PLAN >/dev/null 2>&1 & PP=$!; td_track_pid $PP "$S/planner.py"
+export PATH="$S/bin:$PATH" TMPDIR="$S"
+td_start "$BIN" "$CFG" "$LOG" || { tail -5 "$LOG"; exit 1; }
+td_set_api "$TD_LAST_PID" "$BASE" "$TOKEN"
+for i in $(seq 1 90); do curl -sk -m 3 -f -o /dev/null $BASE/api/health && break; sleep 1; done
+echo "[$(date +%T)] daemon pid $TD_LAST_PID version $(api GET /api/health | jq -r .version)"
+echo "cfg max_concurrent=$(api GET /api/config | jq -c '.autonomous|{max_concurrent_tasks,capacity_enabled,parallel}')"
+
+run_case(){ # run_case <label>
+  local label=$1 r sid
+  : > "$S/ev/events.log"
+  AID=$(api POST /api/autonomous/prds "$(jq -nc --arg d "$REPO" --arg t "smoke-$label" '{spec:("parallel smoke "+$t),title:$t,backend:"aider"}')" | jq -r .id)
+  api POST /api/autonomous/prds/$AID/decompose '{}' >/dev/null
+  for i in $(seq 1 90); do [[ $(api GET /api/autonomous/prds/$AID | jq -r .status) == needs_review ]] && break; sleep 1; done
+  r=$(api POST /api/autonomous/prds/$AID/add_story '{"title":"smoke","description":"smoke"}')
+  sid=$(echo "$r" | jq -r '.stories[-1].id'); for o in $(echo "$r" | jq -r '.stories[:-1][].id'); do api POST /api/autonomous/prds/$AID/remove_story "{\"story_id\":\"$o\"}" >/dev/null; done
+  addt(){ api POST /api/autonomous/prds/$AID/add_task "$(jq -nc --arg s "$sid" --arg t "$1" --arg sp "$2" --argjson d "$3" --argjson ro "$4" '{story_id:$s,title:$t,spec:$sp,depends_on:$d,read_only:$ro}')" | jq -r '.stories[]|select(.id=="'$sid'")|.tasks[-1].id'; }
+  R1=$(addt R1 "READ-ONLY: SMOKE name=R1 sleep=10 write=notes_r1.txt . Inspect only." '[]' true)
+  R2=$(addt R2 "READ-ONLY: SMOKE name=R2 sleep=13 write=notes_r2.txt . Inspect only." '[]' true)
+  W1=$(addt W1 "SMOKE name=W1 sleep=3 write=w1.txt . Create w1.txt." "[\"$R1\",\"$R2\"]" false)
+  W2=$(addt W2 "SMOKE name=W2 sleep=3 write=w2.txt . Create w2.txt." "[\"$W1\"]" false)
+  echo "tasks R1=$R1 R2=$R2 W1=$W1 W2=$W2"
+  api POST /api/autonomous/prds/$AID/plan_coverage/acknowledge '{"actor":"operator","note":"smoke"}' >/dev/null
+  api POST /api/autonomous/prds/$AID/approve '{"actor":"operator","note":"smoke"}' >/dev/null
+  echo "status after approve: $(api GET /api/autonomous/prds/$AID | jq -r .status)"
+  echo "run: $(api POST /api/autonomous/prds/$AID/run '{}' | head -c 200)"
+  local t0=$SECONDS
+  ( while :; do echo "$(date +%s.%N) $(git -C "$REPO" worktree list | sed "s|$S/||" | tr "\n" ";")" >> "$S/ev/wt-$label.log"; sleep 1; done ) & WS=$!
+  while (( SECONDS - t0 < ${WAIT:-240} )); do
+    st=$(api GET /api/autonomous/prds/$AID | jq -r .status)
+    case $st in completed|failed|needs_review|blocked|cancelled) [[ $st != needs_review || $SECONDS-$t0 -gt 20 ]] && break;; esac
+    sleep 3
+  done
+  kill $WS 2>/dev/null; cp "$S/ev/wt-$label.log" "$SC/wt-$label.log"
+  echo "final status: $st after $((SECONDS-t0))s"
+  api GET /api/autonomous/prds/$AID > "$SC/prd-$label.json"
+  jq -c '[.stories[].tasks[]|{title,id,status,read_only,worktree_path,worktree_branch,merge_state,merge_commit,started_at,completed_at,error}]' "$SC/prd-$label.json" | tee "$SC/tasks-$label.json"
+  jq -c '{total_tasks,read_only_tasks,concurrent_tasks,wall_clock_seconds,serial_seconds,speedup}' "$SC/prd-$label.json"
+  echo "--- events"; cat "$S/ev/events.log"; cp "$S/ev/events.log" "$SC/events-$label.log"
+  echo "--- trunk log"; git -C "$REPO" log --oneline --all --graph --decorate | head -30; git -C "$REPO" branch -a
+  git -C "$REPO" worktree list
+  echo "--- task history tail"; jq -c '[.stories[].tasks[]|{t:.title,h:(.history//[])[-3:]}]' "$SC/prd-$label.json" | head -c 1500
+}
+echo "===== CASE per_task=on"
+run_case on
+cp "$LOG" "$SC/daemon-on.log"
+echo "===== CASE per_task=off"
+echo "put: $(api PUT /api/config '{"autonomous.parallel.worktree_per_task":false}' | head -c 100)"
+echo "parallel cfg: $(api GET /api/config | jq -c .autonomous.parallel)"
+run_case off
+cp "$LOG" "$SC/daemon-off.log"
+echo "[$(date +%T)] finished"

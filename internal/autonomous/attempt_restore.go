@@ -27,7 +27,9 @@ func RestoreAttemptWork(ctx context.Context, dir, ref string) error {
 	if err != nil {
 		return fmt.Errorf("create restore temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	// Best-effort cleanup: a failed removal of the temp index dir must
+	// not turn a successful restore into an error.
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	env := append(os.Environ(), "GIT_INDEX_FILE="+filepath.Join(tmpDir, "index"))
 

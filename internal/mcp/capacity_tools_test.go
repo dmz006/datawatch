@@ -49,6 +49,26 @@ func TestCapacityStatus_ProxiesGET(t *testing.T) {
 	}
 }
 
+func TestCapacityStatus_PassesNodeUsageObjectThrough(t *testing.T) {
+	body := `{"pools":[
+{"name":"node:a","limit":1,"held":1,
+ "usage":{"state":"ok","checked_at":"2026-10-22T16:59:00Z","models_supported":true,
+ "models":[{"name":"qwen3:8b","size_bytes":5368709120,"size_vram_bytes":5162643968,"expires_at":"2026-10-22T17:29:00Z","no_expiry":false}],
+ "gpu":[{"name":"NVIDIA A100","util_pct":12.5,"mem_used_bytes":10737418240,"mem_total_bytes":42949672960}]}},
+{"name":"host","limit":9}],"leases":[],"waiting":[]}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	res, err := s.handleCapacityStatus(context.Background(), callReq(nil))
+	if err != nil || res == nil {
+		t.Fatalf("err=%v res=%v", err, res)
+	}
+	text := res.Content[0].(mcpsdk.TextContent).Text
+	if text != body {
+		t.Fatalf("capacity_status must pass the usage object through unchanged\ngot:\n%s\nwant:\n%s", text, body)
+	}
+}
+
 func TestSetPriority_ProxiesPOSTWithBody(t *testing.T) {
 	var path string
 	var got map[string]int
@@ -89,6 +109,31 @@ func TestAutonomousConfigSet_CapacityFields(t *testing.T) {
 	}
 	if got["capacity_enabled"] != false || got["capacity_wait_timeout_seconds"] != float64(600) {
 		t.Fatalf("body=%v", got)
+	}
+}
+
+func TestAutonomousConfigSet_CapacityFallthrough(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = nil
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	for _, want := range []bool{true, false} {
+		if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"capacity_fallthrough": want})); err != nil {
+			t.Fatal(err)
+		}
+		if v, ok := got["capacity_fallthrough"]; !ok || v != want {
+			t.Fatalf("want capacity_fallthrough=%v forwarded, body=%v", want, got)
+		}
+	}
+	// Absent -> not sent, so an unrelated write cannot reset it.
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"capacity_enabled": true})); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["capacity_fallthrough"]; ok {
+		t.Fatalf("capacity_fallthrough sent when not given: %v", got)
 	}
 }
 
@@ -237,5 +282,39 @@ func TestAutonomousConfigSet_MaxParallelTasksDeprecatedNoteReturned(t *testing.T
 	desc, _ := json.Marshal(s.toolAutonomousConfigSet().InputSchema.Properties["max_parallel_tasks"])
 	if !strings.Contains(string(desc), "DEPRECATED") {
 		t.Fatalf("max_parallel_tasks description must say DEPRECATED: %s", desc)
+	}
+}
+
+func TestAutonomousConfigSet_WorkerIdleNudgeFields(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"worker_idle_nudge_seconds":       120,
+		"worker_idle_nudge_stall_seconds": 300,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if got["worker_idle_nudge_seconds"] != float64(120) || got["worker_idle_nudge_stall_seconds"] != float64(300) {
+		t.Fatalf("nudge fields not forwarded: %v", got)
+	}
+}
+
+// capacity_status returns the REST body untouched, so the current wait reason
+// the daemon publishes reaches MCP callers exactly as REST callers see it.
+func TestCapacityStatus_PassesCurrentWaitReasonThrough(t *testing.T) {
+	const node = "waiting for node alpha: 1/1 engines in use, held by owner"
+	body := `{"pools":[],"leases":[],"waiting":[{"holder":"t1","reason":"` + node + `"}],"tasks":{"waiting":[{"task_id":"t1","reason":"` + node + `","readable_reason":"` + node + `"}],"running":[]}}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+	res, err := s.handleCapacityStatus(context.Background(), callReq(nil))
+	if err != nil || res == nil {
+		t.Fatalf("err=%v res=%v", err, res)
+	}
+	text := res.Content[0].(mcpsdk.TextContent).Text
+	if text != body || strings.Contains(text, "adopted") {
+		t.Fatalf("capacity_status altered the wait reason:\n%s", text)
 	}
 }

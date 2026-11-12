@@ -627,3 +627,26 @@ func TestTreeLockFileDoesNotDirtyGitStatus(t *testing.T) {
 		t.Fatalf("git status dirty after release:\n%s", s)
 	}
 }
+
+// A waiter that judged a lock stale from an earlier read must not delete
+// the fresh lock a faster waiter has since claimed.
+func TestRemoveStaleLock_RefusesSuccessorsLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tree.lock")
+	stale := LockRecord{HolderTaskID: "old", AcquiredAt: 100, PID: 1}
+	fresh := LockRecord{HolderTaskID: "new", AcquiredAt: 200, PID: 1}
+	if err := writeLockRecord(path, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeStaleLock(path, stale, true); err == nil {
+		t.Fatal("removeStaleLock deleted a lock that changed hands")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("fresh lock was removed: %v", err)
+	}
+	if err := removeStaleLock(path, fresh, true); err != nil {
+		t.Fatalf("matching record should be removable: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("lock still present: %v", err)
+	}
+}

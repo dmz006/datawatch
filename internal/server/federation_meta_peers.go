@@ -41,6 +41,9 @@ type metaObserverEntry struct {
 	Shape      string `json:"shape,omitempty"`
 	LastPushAt string `json:"last_push_at,omitempty"`
 	Version    string `json:"version,omitempty"`
+	// Source distinguishes a pushed peer ("push") from one the daemon
+	// pulls ("pull"). Additive — pre-existing fields unchanged.
+	Source string `json:"source,omitempty"`
 }
 
 type metaNodeBucket struct {
@@ -86,6 +89,40 @@ func (s *Server) handleFederationMetaPeers(w http.ResponseWriter, r *http.Reques
 		unbound = append(unbound, observerFromPeerEntry(selfName, p))
 	}
 
+	// Pull pass — peers the daemon pulls (federated, observer_pull on)
+	// that never registered for push land in the buckets as pull rows,
+	// grouped by bound ComputeNode exactly like push peers. A peer
+	// present in both paths is already counted once in the push pass and
+	// is skipped here (one row per observable peer). Shadow rows —
+	// federated peers with observer_pull off — have no pull state and
+	// stay out of the buckets.
+	pushSeen := map[string]bool{selfName: true}
+	if s.peerRegistry != nil {
+		for _, p := range s.peerRegistry.List() {
+			pushSeen[p.Name] = true
+		}
+	}
+	for _, name := range s.pulledPeerNames() {
+		if pushSeen[name] {
+			continue
+		}
+		entry := metaObserverEntry{Primary: selfName, Peer: name, Source: "pull"}
+		if st, ok := s.pullStateFor(name); ok && !st.LastSuccessAt.IsZero() {
+			entry.LastPushAt = st.LastSuccessAt.Format("2006-01-02T15:04:05Z07:00")
+		}
+		node := s.peerToNodeName(name)
+		if node == "" {
+			unbound = append(unbound, entry)
+			continue
+		}
+		bucket := byNode[node]
+		if bucket == nil {
+			bucket = &metaNodeBucket{}
+			byNode[node] = bucket
+		}
+		bucket.Observers = append(bucket.Observers, entry)
+	}
+
 	// Cross-instance pass — alpha.24b will walk
 	// cfg.Observer.Federation.MetaPrimaries here. Endpoint structure
 	// is stable so consumers (PWA, mobile, MCP) don't need to change.
@@ -114,5 +151,6 @@ func observerFromPeerEntry(primary string, p observer.PeerEntry) metaObserverEnt
 		Shape:      p.Shape,
 		LastPushAt: p.LastPushAt.Format("2006-01-02T15:04:05Z07:00"),
 		Version:    p.Version,
+		Source:     "push",
 	}
 }

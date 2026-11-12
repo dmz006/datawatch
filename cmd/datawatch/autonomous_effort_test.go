@@ -89,11 +89,26 @@ func TestBuildAutonomousSessionBody(t *testing.T) {
 	if body["claude_effort"] != "low" {
 		t.Errorf("claude_effort = %v, want low", body["claude_effort"])
 	}
-	if body["task"] != "spec" || body["name"] != "autonomous:t" || body["one_shot"] != true {
+	if body["task"] != "spec" || body["name"] != "autonomous:task:t" || body["one_shot"] != true {
 		t.Errorf("unexpected base keys: %v", body)
 	}
 	if _, ok := body["auto_git_commit"]; ok {
 		t.Errorf("auto_git_commit should not be set: %v", body["auto_git_commit"])
+	}
+
+	// No git settings → no git key (existing flow unchanged).
+	if _, ok := body["git"]; ok {
+		t.Errorf("git key must be absent when the PRD has no git settings: %v", body["git"])
+	}
+
+	// Git settings present on the PRD → git:true forwarded so the session
+	// manager opts into git activity (pre-session snapshot + completion
+	// commit), because PRDs are development work.
+	reqWithGit := req
+	reqWithGit.Git = true
+	bodyWithGit := buildAutonomousSessionBody(reqWithGit, "spec", "")
+	if bodyWithGit["git"] != true {
+		t.Errorf("git key = %v, want true when SpawnRequest.Git is set", bodyWithGit["git"])
 	}
 
 	req.Backend = "opencode"
@@ -172,5 +187,70 @@ func TestHarnessBlockCommitInstructions(t *testing.T) {
 			strings.Contains(lower, "commit your work") {
 			t.Errorf("%s block still instructs the worker to run git commands, got: %s", name, block)
 		}
+	}
+}
+
+func TestAutonomousSessionBodyCarriesTaskTitle(t *testing.T) {
+	req := autonomouspkg.SpawnRequest{Title: "Add retry to fetcher"}
+	body := buildAutonomousSessionBody(req, "spec", "")
+	if got := body["task_title"]; got != "Add retry to fetcher" {
+		t.Errorf("task_title = %v, want %q", got, "Add retry to fetcher")
+	}
+	if body["name"] != "autonomous:task:Add retry to fetcher" {
+		t.Errorf("name = %v, want the autonomous:task: prefixed title", body["name"])
+	}
+
+	req.Title = ""
+	body = buildAutonomousSessionBody(req, "spec", "")
+	if _, ok := body["task_title"]; ok {
+		t.Errorf("task_title should be absent when Title is empty, got %v", body["task_title"])
+	}
+}
+
+func TestBuildAutonomousSessionBodyCarriesWriteScope(t *testing.T) {
+	req := autonomouspkg.SpawnRequest{WriteScope: []string{"/a", "/b"}}
+	body := buildAutonomousSessionBody(req, "spec", "")
+	got, ok := body["write_scope"].([]string)
+	if !ok {
+		t.Fatalf("write_scope = %T, want []string", body["write_scope"])
+	}
+	if len(got) != 2 || got[0] != "/a" || got[1] != "/b" {
+		t.Errorf("write_scope = %v, want [/a /b] in order", got)
+	}
+
+	reqEmpty := autonomouspkg.SpawnRequest{}
+	bodyEmpty := buildAutonomousSessionBody(reqEmpty, "spec", "")
+	if _, ok := bodyEmpty["write_scope"]; ok {
+		t.Errorf("write_scope should be absent when WriteScope is empty, got %v", bodyEmpty["write_scope"])
+	}
+}
+
+func TestBuildAutonomousSessionBodyCarriesComputeNode(t *testing.T) {
+	for _, backend := range []string{"pi-prompt", "pi", "claude-code", ""} {
+		req := autonomouspkg.SpawnRequest{Backend: backend, Model: "ollama/qwen3.8:27b", ComputeNode: "gpu-a"}
+		body := buildAutonomousSessionBody(req, "spec", "")
+		if got := body["compute_node"]; got != "gpu-a" {
+			t.Errorf("backend %q: compute_node = %v, want gpu-a", backend, got)
+		}
+		if body["one_shot"] != true {
+			t.Errorf("backend %q: one_shot = %v, want true", backend, body["one_shot"])
+		}
+	}
+
+	body := buildAutonomousSessionBody(autonomouspkg.SpawnRequest{Backend: "pi-prompt"}, "spec", "")
+	if _, ok := body["compute_node"]; ok {
+		t.Errorf("compute_node should be absent when no node was named, got %v", body["compute_node"])
+	}
+}
+
+func TestAutonomousTaskSessionName(t *testing.T) {
+	if got := autonomousTaskSessionName("t"); got != "autonomous:task:t" {
+		t.Errorf("autonomousTaskSessionName(\"t\") = %q, want %q", got, "autonomous:task:t")
+	}
+	if got := autonomousTaskSessionName(""); got != "autonomous:task:" {
+		t.Errorf("autonomousTaskSessionName(\"\") = %q, want %q", got, "autonomous:task:")
+	}
+	if autonomousTaskSessionPrefix != "autonomous:task:" {
+		t.Errorf("autonomousTaskSessionPrefix = %q, want %q", autonomousTaskSessionPrefix, "autonomous:task:")
 	}
 }

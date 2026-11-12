@@ -3,15 +3,14 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
+// dashLayoutPath returns the dashboard layout file path under this server's
+// configured data directory (see Server.statePath).
 func (s *Server) dashLayoutPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".datawatch", "dashboard-layout.json")
+	return s.statePath("dashboard-layout.json")
 }
 
 func (s *Server) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +34,9 @@ func (s *Server) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
-		// Merge system cards back in so a bulk PUT can never wipe them.
+		// Dedupe incoming cards by id (first occurrence and its cs/rs win),
+		// then merge system cards back in so a bulk PUT can never wipe them.
+		incoming.Cards = dedupeDashCards(incoming.Cards)
 		incoming.Cards = mergeSystemCards(incoming.Cards)
 		if err := s.writeDashLayout(incoming); err != nil {
 			http.Error(w, "write failed", http.StatusInternalServerError)

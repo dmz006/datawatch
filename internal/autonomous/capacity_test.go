@@ -75,7 +75,9 @@ func TestCapacity_WaitingTaskShowsStatusAndNeverFails(t *testing.T) {
 	}
 	// SetExecutors kicks an async boot-resume scan; let it finish before the PRD exists.
 	api.SetExecutors(spawn, verify)
-	time.Sleep(100 * time.Millisecond)
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	prd := newPRDWithTasks(t, m, 1)
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDApproved
@@ -84,16 +86,15 @@ func TestCapacity_WaitingTaskShowsStatusAndNeverFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var reason string
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		cur, _ := m.Store().GetPRD(prd.ID)
+	pollUntil(t, 3*time.Second, "task waiting_capacity", func() bool {
+		cur, _ := m.Store().SnapshotPRD(prd.ID)
 		tk := cur.Story[0].Tasks[0]
 		if tk.Status == TaskWaitingCapacity {
 			reason = tk.WaitReason
-			break
+			return true
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return false
+	})
 	if reason == "" || atomic.LoadInt32(&spawned) != 0 {
 		t.Fatalf("task should be waiting_capacity with a reason and no spawn (reason=%q spawned=%d)", reason, spawned)
 	}
@@ -106,16 +107,9 @@ func TestCapacity_WaitingTaskShowsStatusAndNeverFails(t *testing.T) {
 
 func runWait(t *testing.T, m *Manager, id string) *PRD {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(id)
-		if got.Status == PRDCompleted || got.Status == PRDFailed {
-			return got
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("PRD did not finish")
-	return nil
+	pollPRDTerminal(t, m, id, 5*time.Second)
+	got, _ := m.Store().SnapshotPRD(id)
+	return got
 }
 
 func TestCapacity_SessionCapErrorIsWaitNotFailure(t *testing.T) {
@@ -230,7 +224,9 @@ func TestCapacity_CancelWhileWaitingRemovesFromQueueAndKeepsCancelled(t *testing
 		return VerificationResult{OK: true}, nil
 	}
 	api.SetExecutors(spawn, verify)
-	time.Sleep(100 * time.Millisecond)
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	prd := newPRDWithTasks(t, m, 1)
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDApproved
@@ -239,27 +235,19 @@ func TestCapacity_CancelWhileWaitingRemovesFromQueueAndKeepsCancelled(t *testing
 		t.Fatal(err)
 	}
 	var taskID string
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && taskID == "" {
-		cur, _ := m.Store().GetPRD(prd.ID)
+	pollUntil(t, 3*time.Second, "task waiting_capacity", func() bool {
+		cur, _ := m.Store().SnapshotPRD(prd.ID)
 		if tk := cur.Story[0].Tasks[0]; tk.Status == TaskWaitingCapacity {
 			taskID = tk.ID
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if taskID == "" {
-		t.Fatal("task never reached waiting_capacity")
-	}
+		return taskID != ""
+	})
 	if _, err := m.CancelTask(prd.ID, taskID, "operator", "test"); err != nil {
 		t.Fatal(err)
 	}
-	deadline = time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && len(led.Snapshot().Waiting) > 0 {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if len(led.Snapshot().Waiting) != 0 {
-		t.Fatal("cancelled task still in the wait queue")
-	}
+	pollUntil(t, 3*time.Second, "cancelled task leaving the wait queue", func() bool {
+		return len(led.Snapshot().Waiting) == 0
+	})
 	cur, _ := m.Store().GetPRD(prd.ID)
 	if cur.Story[0].Tasks[0].Status != TaskCancelled {
 		t.Fatalf("cancelled task must stay cancelled, got %s", cur.Story[0].Tasks[0].Status)
@@ -306,10 +294,6 @@ func TestExecutor_WorkerStallRespectsRetryBudget(t *testing.T) {
 		}
 		return VerificationResult{OK: true}, nil
 	}
-	api.SetExecutors(spawn, verify)
-	if err := api.Run(prd.ID); err != nil {
-		t.Fatal(err)
-	}
 	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
 	if got.Status != PRDCompleted {
 		t.Fatalf("a stalled-then-recovered task must complete, got %s", got.Status)
@@ -324,7 +308,10 @@ func TestExecutor_WorkerStallRespectsRetryBudget(t *testing.T) {
 
 func TestExecutor_WorkerStallExhaustsRetriesLikeNormalFailure(t *testing.T) {
 	m, api, _, _ := apiFixture(t)
-	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	// B165 — a real project dir: a fake one lets a concurrent boot-resume
+	// scan park this PRD (dir-missing) and clobber the PRDFailed state the
+	// test asserts.
+	prd, _ := m.CreatePRD("s", t.TempDir(), "opencode", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "write docs/x.md"}}}})
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDApproved
@@ -336,9 +323,9 @@ func TestExecutor_WorkerStallExhaustsRetriesLikeNormalFailure(t *testing.T) {
 	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
 		return VerificationResult{}, fmt.Errorf("stall: %w", ErrWorkerStalled)
 	}
-	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
-	if got.Status != PRDFailed {
-		t.Fatalf("repeated stalls must still fail once retries are exhausted, got %s", got.Status)
+	got := runToTerminalOrBlocked(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDBlocked || got.Story[0].Tasks[0].Status != TaskReviewNeeded {
+		t.Fatalf("repeated stalls must hold the task once retries are exhausted, got PRD %s task %s", got.Status, got.Story[0].Tasks[0].Status)
 	}
 }
 
@@ -446,7 +433,9 @@ func TestCapacity_LocalEngineTaskWaitsOnNodePool(t *testing.T) {
 		return VerificationResult{OK: true}, nil
 	}
 	api.SetExecutors(spawn, verify)
-	time.Sleep(100 * time.Millisecond)
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	prd := newPRDOnBackend(t, m, "pi", "ollama/qwen3.8:27b")
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDApproved
@@ -455,15 +444,15 @@ func TestCapacity_LocalEngineTaskWaitsOnNodePool(t *testing.T) {
 		t.Fatal(err)
 	}
 	var reason string
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		cur, _ := m.Store().GetPRD(prd.ID)
-		if tk := cur.Story[0].Tasks[0]; tk.Status == TaskWaitingCapacity {
+	pollUntil(t, 3*time.Second, "task waiting_capacity", func() bool {
+		cur, _ := m.Store().SnapshotPRD(prd.ID)
+		tk := cur.Story[0].Tasks[0]
+		if tk.Status == TaskWaitingCapacity {
 			reason = tk.WaitReason
-			break
+			return true
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return false
+	})
 	if reason == "" || atomic.LoadInt32(&spawned) != 0 {
 		t.Fatalf("local-engine task should wait on node:alpha with no spawn (reason=%q spawned=%d)", reason, spawned)
 	}
@@ -530,13 +519,7 @@ func capFixtureFakeClock(t *testing.T, limit int) (*Manager, *API, *capacity.Led
 // capWaitUntil polls until cond holds, failing the test after two seconds.
 func capWaitUntil(t *testing.T, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition not reached")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	pollUntil(t, 2*time.Second, "condition", cond)
 }
 
 // capNodeReq is a request for one task on the node:n1 pool.
@@ -636,7 +619,7 @@ func TestCapacity_StalledWorkerLeaseReleasedBeforeRetry(t *testing.T) {
 	_ = m.Store().SavePRD(p)
 
 	var heldAtKill []bool
-	m.SetSessionKillerFn(func(string) error {
+	m.SetSessionKillerFn(func(string, string, string) error {
 		heldAtKill = append(heldAtKill, len(led.Snapshot().Leases) > 0)
 		return nil
 	})
@@ -681,5 +664,53 @@ func TestCapacity_CancelTaskReleasesLease(t *testing.T) {
 	}
 	if led.Held(task.ID) {
 		t.Fatal("cancelled task still holds its capacity lease")
+	}
+}
+
+func TestCapacity_AdoptRecordsNodeOfSurvivingSession(t *testing.T) {
+	m, _, led := capFixture(t, 1)
+	m.SetCapacity(led, func(backend, model string) ([]string, string) { return []string{"host"}, "" })
+	m.SetEntryNodes(func(backend, model string) int { return 1 }) // a node-taking backend
+	m.SetSessionNode(func(id string) string {
+		if id == "live-sess" {
+			return "gpu-b"
+		}
+		return ""
+	})
+	prd := newPRDWithTasks(t, m, 1)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	live := &cur.Story[0].Tasks[0]
+	live.SessionID = "live-sess"
+
+	m.adoptCapacity(cur, live)
+	m.adoptCapacity(cur, live)
+
+	ls := led.LeaseOf(live.ID)
+	if ls == nil || ls.Node != "gpu-b" {
+		t.Fatalf("adopted lease should record the session's node, got %+v", ls)
+	}
+	found := false
+	for _, p := range ls.Pools {
+		found = found || p == "node:gpu-b"
+	}
+	if !found {
+		t.Fatalf("adopted lease pools should include node:gpu-b, got %v", ls.Pools)
+	}
+	if n := len(led.Snapshot().Leases); n != 1 {
+		t.Fatalf("want one lease, got %d", n)
+	}
+}
+
+func TestCapacity_AdoptWithUnknownSessionNodeKeepsResolvedNode(t *testing.T) {
+	m, _, led := capFixture(t, 1)
+	m.SetSessionNode(func(string) string { return "" })
+	prd := newPRDWithTasks(t, m, 1)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	live := &cur.Story[0].Tasks[0]
+	live.SessionID = "live-sess"
+
+	m.adoptCapacity(cur, live)
+	if ls := led.LeaseOf(live.ID); ls == nil || ls.Node != "n1" {
+		t.Fatalf("resolver node should be kept when the session names none, got %+v", ls)
 	}
 }

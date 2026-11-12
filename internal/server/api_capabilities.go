@@ -37,6 +37,12 @@ const (
 	// session_state / session_removed frames instead of the full list.
 	capWSSessionListDelta = "ws.session_list_delta"
 
+	// capWSSessionListWindow: hello accepts session_list=window — one
+	// `sessions` frame of summary rows for the default-view sessions after
+	// hello, then only per-session session_state frames (see
+	// ws_session_stream.go and ws_session_window.go).
+	capWSSessionListWindow = "ws.session_list_window"
+
 	// capWSSessionViewSummary: hello accepts session_view=summary —
 	// compact session_state records.
 	capWSSessionViewSummary = "ws.session_view_summary"
@@ -53,7 +59,7 @@ const (
 
 // wsCapabilities lists the WS protocol features, also echoed in hello_ack.
 func wsCapabilities() []string {
-	return []string{capWSHello, capWSSessionListDelta, capWSSessionViewSummary, capWSOutputScoped, capWSUnsubscribe}
+	return []string{capWSHello, capWSSessionListDelta, capWSSessionListWindow, capWSSessionViewSummary, capWSOutputScoped, capWSUnsubscribe}
 }
 
 // apiCapabilities returns the optional API features this daemon supports.

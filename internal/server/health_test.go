@@ -73,6 +73,17 @@ func newTestServer(t *testing.T, mem MemoryAPI, mcpFn func() interface{}) *Serve
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	mgr.WithFakeTmux()
+	// Close the store first so its background flush writer stops before the
+	// TempDir is removed (otherwise a delayed flush writes into the dir
+	// mid-cleanup and RemoveAll reports "directory not empty"). Close
+	// keeps saves working, in write-through mode. LIFO: this runs before
+	// WaitBackground below.
+	t.Cleanup(func() { _ = mgr.Close() })
+	t.Cleanup(mgr.WaitBackground)
 	s := &Server{
 		manager:     mgr,
 		hostname:    "testhost",

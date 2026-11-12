@@ -12,6 +12,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -22,7 +23,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/inference"
 )
 
 // MarketplaceCatalogEntry — one model in the embedded curated catalog.
@@ -190,6 +195,59 @@ func (s *Server) handleMarketplaceTask(w http.ResponseWriter, r *http.Request) {
 	writeJSONOK(w, t)
 }
 
+// modelPullGate — the model-pull consent gate. It decides from the
+// operator's consent (autonomous.model_pull_consent) whether a pull of
+// model may proceed, and writes the decision — allow or refusal, with the
+// reason spoken plainly — to the audit log. Both existing pull paths
+// (the compute-node model pull and the marketplace pull task it launches)
+// pass through it before anything is pulled.
+func (s *Server) modelPullGate(model, origin, actor string) autonomous.ModelPullDecision {
+	var consent config.ModelPullConsent
+	if s.cfg != nil {
+		consent = s.cfg.Autonomous.ModelPullConsent
+	}
+	dec := autonomous.ModelPullConsentCheck(consent, model)
+	httpDetails := map[string]any{"model": dec.Model, "origin": origin}
+	if dec.Publisher != "" {
+		httpDetails["publisher"] = dec.Publisher
+	}
+	if dec.Via != "" {
+		httpDetails["via"] = dec.Via
+	}
+	if dec.Reason != "" {
+		httpDetails["reason"] = dec.Reason
+	}
+	// Every pull attempt and decision is written to the audit log (allowed
+	// or refused, with the model, the pull path, and the refusal reason).
+	action := audit.ActionModelPullDenied
+	if dec.Allowed {
+		action = audit.ActionModelPullAllowed
+	}
+	s.auditAs(actor, action, "model_pull", dec.Model, httpDetails)
+	return dec
+}
+
+// modelPullConsentForDisplay renders autonomous.model_pull_consent for
+// GET /api/config: the lists are always present (empty, not null) so an
+// unset consent visibly allows nothing — the fail-closed default — and the
+// entries are the operator's own values verbatim (names, publisher hints,
+// allow flags, notes).
+func modelPullConsentForDisplay(c config.ModelPullConsent) map[string]any {
+	models := make([]map[string]any, 0, len(c.Models))
+	for i := range c.Models {
+		e := c.Models[i]
+		models = append(models, map[string]any{
+			"name":      e.Name,
+			"publisher": e.Publisher,
+			"allowed":   e.Allowed,
+			"note":      e.Note,
+		})
+	}
+	publishers := make([]string, 0, len(c.Publishers))
+	publishers = append(publishers, c.Publishers...)
+	return map[string]any{"models": models, "publishers": publishers}
+}
+
 // handleComputeNodeModelPull — POST /api/compute/nodes/<n>/models/pull
 // Body: {"model": "llama3.1:8b"}
 // Starts a background pull goroutine; returns the task descriptor.
@@ -222,6 +280,14 @@ func (s *Server) handleComputeNodeModelPull(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "node has no address", http.StatusBadRequest)
 		return
 	}
+	// Model-pull consent gate: nothing is pulled without an explicit allow
+	// (a model listed with allowed:true, or its publisher allow-listed).
+	// The decision (allow or refusal) is written to the audit log by the
+	// gate itself; a refused pull returns the refusal, spoken plainly.
+	if dec := s.modelPullGate(body.Model, "compute_node_model_pull", "operator"); !dec.Allowed {
+		http.Error(w, dec.Reason, http.StatusForbidden)
+		return
+	}
 	tok := make([]byte, 8)
 	for i := range tok {
 		tok[i] = byte(time.Now().UnixNano() >> uint(i*8))
@@ -236,7 +302,7 @@ func (s *Server) handleComputeNodeModelPull(w http.ResponseWriter, r *http.Reque
 		UpdatedAt: time.Now().UTC(),
 	}
 	globalPullTasks.add(task)
-	go runOllamaPull(taskID, n.Address, body.Model)
+	go s.runOllamaPull(taskID, n.Address, body.Model)
 	writeJSONOK(w, task)
 }
 
@@ -279,74 +345,50 @@ func (s *Server) handleComputeNodeModelDelete(w http.ResponseWriter, r *http.Req
 	writeJSONOK(w, map[string]any{"name": name, "model": model, "ok": true})
 }
 
-// runOllamaPull — background pull worker. Streams Ollama's /api/pull
-// (which returns line-delimited JSON progress) and updates the task.
-func runOllamaPull(taskID, addr, model string) {
-	globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "in_progress" })
-	body, _ := json.Marshal(map[string]any{"name": model, "stream": true})
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(addr, "/")+"/api/pull", strings.NewReader(string(body)))
-	if err != nil {
-		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = err.Error() })
+// runOllamaPull — background pull worker. Delegates the stream loop to
+// inference.PullModel (the one implementation of the Ollama /api/pull
+// contract) and translates its progress reports into PullTask state, which
+// keeps the same status values: pending | in_progress | done | failed.
+// It is a *Server method so it re-checks the model-pull consent gate
+// before touching the network: a pull started before the last consent
+// write still honors the consent in force when it actually runs. The
+// allow decision was already audited where the pull was requested, so
+// only a refusal here (a drift case) is recorded.
+func (s *Server) runOllamaPull(taskID, addr, model string) {
+	var consent config.ModelPullConsent
+	if s.cfg != nil {
+		consent = s.cfg.Autonomous.ModelPullConsent
+	}
+	if dec := autonomous.ModelPullConsentCheck(consent, model); !dec.Allowed {
+		s.auditAs("operator", audit.ActionModelPullDenied, "model_pull", dec.Model,
+			map[string]any{"model": dec.Model, "origin": "pull_task:" + taskID, "via": dec.Via, "reason": dec.Reason})
+		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = dec.Reason })
 		return
 	}
-	req.Header.Set("Content-Type", "application/json")
+	globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "in_progress" })
 	client := &http.Client{
 		Timeout:   0,                                                                       // pulls can be very long
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, // #nosec G402
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = err.Error() })
-		return
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
+	err := inference.PullModel(context.Background(), client, addr, model, func(p inference.PullProgress) {
 		globalPullTasks.update(taskID, func(t *PullTask) {
-			t.Status = "failed"
-			t.Error = fmt.Sprintf("ollama returned %d: %s", resp.StatusCode, string(b))
-		})
-		return
-	}
-	dec := json.NewDecoder(resp.Body)
-	for {
-		var msg struct {
-			Status    string `json:"status"`
-			Digest    string `json:"digest,omitempty"`
-			Total     int64  `json:"total,omitempty"`
-			Completed int64  `json:"completed,omitempty"`
-			Error     string `json:"error,omitempty"`
-		}
-		if err := dec.Decode(&msg); err != nil {
-			if err == io.EOF {
-				break
+			if p.BytesTotal > 0 {
+				t.BytesTotal = p.BytesTotal
+				t.BytesDone = p.BytesDone
+				t.Progress = p.Percent
 			}
-			globalPullTasks.update(taskID, func(t *PullTask) {
-				t.Status = "failed"
-				t.Error = "decode error: " + err.Error()
-			})
-			return
-		}
-		if msg.Error != "" {
-			globalPullTasks.update(taskID, func(t *PullTask) {
-				t.Status = "failed"
-				t.Error = msg.Error
-			})
-			return
-		}
-		globalPullTasks.update(taskID, func(t *PullTask) {
-			if msg.Total > 0 {
-				t.BytesTotal = msg.Total
-				t.BytesDone = msg.Completed
-				t.Progress = float64(msg.Completed) / float64(msg.Total)
-			}
-			if strings.Contains(strings.ToLower(msg.Status), "success") || msg.Status == "success" {
+			if p.Success {
 				t.Status = "done"
 				t.Progress = 1.0
 			}
 		})
+	})
+	if err != nil {
+		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = err.Error() })
+		return
 	}
-	// If we exited the loop without an explicit success, mark done if no error.
+	// If we finished without an explicit success line, the pull ran to its
+	// end: mark it done.
 	globalPullTasks.update(taskID, func(t *PullTask) {
 		if t.Status == "in_progress" && t.Error == "" {
 			t.Status = "done"

@@ -101,6 +101,60 @@ This multi-sprint roadmap is tracked separately and scoped for a future minor ve
 
 ---
 
+## 3. Eval grids outside the story cookbooks
+
+### Open-model matrix (pi workers only)
+
+A roles × task-types grid over the open (pi-prompt/Ollama) models, run through
+the daemon as a scratch Automaton — separate from the per-version story cookbooks.
+Definition and task fixtures: `testdata/eval/open-model-matrix/` (reuses the
+`testdata/eval/model-tiering` fixtures). Driver: `scripts/eval-open-model-matrix.sh`
+(wraps `scripts/eval_open_model_matrix.py`, stdlib only).
+
+**Scope.** Tracked shape is 5 roles × 4 task types (analysis, scripting, docs,
+review) = 20 cells; the `base` role (`qwen3.8:27b`) also holds the
+decompose/validate/guardrail duties, the other roles are execution-only
+candidates. Every role runs through the pi backend with its own
+`thinking_level` (executors pin `minimal`; null leaves pi's own default). There
+is no opencode lane in this grid anymore — the retired backend is out of scope.
+
+**Pre-conditions.** A local matrix replacing the placeholder registry/node names
+(`.datawatch/eval/open-model-matrix/matrix.local.json` or
+`DATAWATCH_EVAL_OPEN_MATRIX`), each role's model reachable on its node at a 64k
+context, and the daemon up (`DW_BASE`, `DW_BASE_TOKEN`).
+
+**Run order.** `preflight` (one real pi one-shot per role; the session's reported
+model must equal the role's expected model exactly) → `setup` → `create-prd`
+→ `run` → `collect` → `report` → `cleanup`. `create-prd` and `run` refuse unless
+preflight passed. Collect as soon as the run is terminal so session records are
+still present at identity-check time. `self-test` runs offline and covers the
+verdict classification and result redaction.
+
+**Per-cell verdicts (never collapsed).** `model_identity` (cell ran on the
+expected model/node), `verification_integrity` (verifier ran on the isolated
+cell dir with trustworthy fixtures), and `model_result` (verifier pass/fail —
+counted only when the first two are ok). A cell failing identity or integrity is
+discarded data to re-run, never scored as a model failure.
+
+**Latest run — pi-r1 (2026-10-29),** results in
+`docs/testing/runs/2026-10-29-open-model-matrix/results.{json,md}` (automaton
+`f1f20022`; the Swift role was not in the local matrix for this run, so 4 roles
+× 4 = 16 cells):
+
+| Outcome | Cells |
+|---|---|
+| Preflight passed | all 4 roles present locally (base, qwen3-coder, qwen3-coder-next, qwen3.5), thinking `minimal` every cell |
+| Invalid (infrastructure, not a model result) | 12 — the workers for the three candidate roles were placed on nodes that do not host their model (one shared registry entry, no per-task node pin), died at start with a model-not-found 404 and were held for review after 3 attempts per cell |
+| Untrusted (ran, not scored) | 4 base cells — completed to the verifier, but worker/verifier session records were already evicted at collect time, so `model_identity` is unknown (self-reports are not evidence) and `verification_integrity` is suspect |
+| Scored model results | none yet |
+
+Known fixes owed before a valid score (recorded in
+`docs/plans/2026-10-15-bl449-open-model-matrix.md`): declare which node hosts
+which model for the shared registry entry (or allow a per-task node pin), reset
+the held tasks and re-run, and collect while session records are still present.
+
+---
+
 ## 4. Tag Taxonomy
 
 ### Surface tags

@@ -21,6 +21,8 @@ func newTypingTestManager(t *testing.T) *Manager {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(func() { _ = m.Close() })
+	allowTestTemp(m)
 	return m
 }
 

@@ -16,11 +16,14 @@ import (
 	"unicode/utf8"
 )
 
-// SinkConfig — wired once at daemon startup. Empty Kinds = nothing is
-// subscribed at all (the default: zero behavior change until the
-// operator enables kinds via autonomous.notify.default_events).
+// SinkConfig — wired once at daemon startup. The sinks subscribe to
+// every notify event kind (ValidNotifyEventKinds); which of those
+// actually deliver is gated per event by the resolver
+// (NotifyEventAllowed, see notify_events_resolve.go): the resolved set
+// is applied first (Automaton > profile > global default, the global
+// tier being autonomous.notify.default_events), and the built-in sinks
+// can only deliver what an Automaton's resolved set allows.
 type SinkConfig struct {
-	Kinds []string
 	// RecordAlert is called per matched event. level is one of
 	// "info" / "warn" / "error" (the daemon maps these onto the
 	// alerts package levels, so this package does not import it).
@@ -67,19 +70,75 @@ func lifecycleSinkMessage(ev LifecycleEvent) string {
 	if msg == "" {
 		return ""
 	}
-	msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\n", " "), "\r", " ")
-	msg = strings.TrimSpace(msg)
-	if utf8.RuneCountInString(msg) > lifecycleSinkMsgLimit {
-		msg = string([]rune(msg)[:lifecycleSinkMsgLimit]) + lifecycleSinkMsgSuffix
+	return flattenSinkText(msg)
+}
+
+// flattenSinkText collapses s to a single trimmed line and truncates it
+// to lifecycleSinkMsgLimit runes (plus lifecycleSinkMsgSuffix).
+func flattenSinkText(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\r", " ")
+	s = strings.TrimSpace(s)
+	if utf8.RuneCountInString(s) > lifecycleSinkMsgLimit {
+		s = string([]rune(s)[:lifecycleSinkMsgLimit]) + lifecycleSinkMsgSuffix
 	}
-	return msg
+	return s
+}
+
+// describeWarningEvent renders the opt-in warning kinds, which carry no
+// status transition:
+//
+//	Automaton <id> (task <id>): scope warning - files: a, b
+//	Automaton <id> (task <id>): guardrail <name> warn - <verdict summary>
+//
+// The link target is appended when set. Operator-facing text says
+// Automaton, never PRD.
+func describeWarningEvent(ev LifecycleEvent) string {
+	var b strings.Builder
+	switch {
+	case ev.PRDID != "":
+		fmt.Fprintf(&b, "Automaton %s", ev.PRDID)
+		if ev.TaskID != "" {
+			fmt.Fprintf(&b, " (task %s)", ev.TaskID)
+		}
+	case ev.TaskID != "":
+		fmt.Fprintf(&b, "task %s", ev.TaskID)
+	default:
+		b.WriteString(ev.Kind)
+	}
+	b.WriteString(": ")
+	detail := ""
+	if ev.Kind == KindScopeWarning {
+		b.WriteString("scope warning")
+		if len(ev.Files) > 0 {
+			detail = "files: " + flattenSinkText(strings.Join(ev.Files, ", "))
+		}
+	} else {
+		if ev.Guardrail != "" {
+			fmt.Fprintf(&b, "guardrail %s warn", ev.Guardrail)
+		} else {
+			b.WriteString("guardrail warn")
+		}
+		detail = lifecycleSinkMessage(ev)
+	}
+	if detail != "" {
+		b.WriteString(" - " + detail)
+	}
+	if ev.Link != "" {
+		fmt.Fprintf(&b, " (link %s)", ev.Link)
+	}
+	return b.String()
 }
 
 // DescribeLifecycleEvent renders one human-readable line:
 // "PRD <id>: <old> -> <new>" plus " (task <id>)" and
 // " (msg …)" when those fields are non-empty (truncate msg to ~160
-// chars). PRDID empty -> "task <TaskID>: <old> -> <new>".
+// chars). PRDID empty -> "task <TaskID>: <old> -> <new>". The opt-in
+// warning kinds (scope_warning, guardrail_warn) have no status
+// transition and render through describeWarningEvent instead.
 func DescribeLifecycleEvent(ev LifecycleEvent) string {
+	if ev.Kind == KindScopeWarning || ev.Kind == KindGuardrailWarn {
+		return describeWarningEvent(ev)
+	}
 	var b strings.Builder
 	if ev.PRDID != "" {
 		fmt.Fprintf(&b, "PRD %s: %s -> %s", ev.PRDID, ev.OldStatus, ev.NewStatus)
@@ -95,6 +154,10 @@ func DescribeLifecycleEvent(ev LifecycleEvent) string {
 	}
 	if msg := lifecycleSinkMessage(ev); msg != "" {
 		fmt.Fprintf(&b, " (msg %s)", msg)
+	}
+	if ev.Forward != nil {
+		// A peer-forwarded event names the daemon it originated on.
+		fmt.Fprintf(&b, " (forwarded from %s)", ev.Forward.OriginHost)
 	}
 	return b.String()
 }
@@ -113,13 +176,13 @@ func sinkLevel(ev LifecycleEvent) string {
 	}
 }
 
-// InstallLifecycleSinks subscribes the built-in sinks to exactly
-// sc.Kinds and returns a cancel func that unsubscribes them.
-// Empty/nil Kinds -> returns a no-op cancel and subscribes NOTHING
-// (the dispatcher treats an empty filter as "everything", so this
-// check must happen here, not in the filter). A sink config with
-// kinds but no callbacks is equally a no-op: there is nothing to
-// deliver to.
+// InstallLifecycleSinks subscribes the built-in sinks to every notify
+// event kind and returns a cancel func that unsubscribes them.
+// Delivery is then gated per event by the resolver: the first thing
+// the handler does is NotifyEventAllowed, so a sink only sees events
+// whose kind is in the Automaton's resolved set (or test events, which
+// are never gated). A sink config with no callbacks is a no-op:
+// there is nothing to deliver to.
 //
 // Panics inside RecordAlert/PublishTopics do not take the daemon
 // down: lifecycleSub.deliver (lifecycle_event.go) already wraps
@@ -127,7 +190,7 @@ func sinkLevel(ev LifecycleEvent) string {
 // dispatcher's isolation rather than layering a second recover here.
 func InstallLifecycleSinks(m *Manager, sc SinkConfig) (cancel func()) {
 	cancel = func() {}
-	if m == nil || len(sc.Kinds) == 0 || (sc.RecordAlert == nil && sc.PublishTopics == nil && sc.CommSink == nil) {
+	if m == nil || (sc.RecordAlert == nil && sc.PublishTopics == nil && sc.CommSink == nil) {
 		return cancel
 	}
 	// One shared sink for the subscription's lifetime: coalescing only
@@ -137,7 +200,13 @@ func InstallLifecycleSinks(m *Manager, sc SinkConfig) (cancel func()) {
 	if sc.CommSink != nil {
 		comm = NewCommFanoutSink(sc.CommSink, sc.CommWindow)
 	}
-	subCancel := m.Subscribe(LifecycleFilter{Kinds: sc.Kinds}, func(ev LifecycleEvent) {
+	subCancel := m.Subscribe(LifecycleFilter{Kinds: ValidNotifyEventKinds()}, func(ev LifecycleEvent) {
+		// Gate first: the resolved set (see NotifyEventAllowed) applies
+		// before this sink's own filter — a kind outside the Automaton's
+		// resolved set is never delivered, no matter what the filter says.
+		if !m.NotifyEventAllowed(ev) {
+			return
+		}
 		// Comm fan-out active: this event COALESCES instead of sending
 		// immediately — it joins its Automaton's bucket and rides along
 		// in the next quiet-window flush.

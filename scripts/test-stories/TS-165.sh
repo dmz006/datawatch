@@ -37,16 +37,30 @@ MEMYAML
   fi
   ok "memory saved before restart: id=$mem_id"
 
-  # Stop the docker container
-  kill "$DOCKER_SIM_PID" 2>/dev/null
-  wait "$DOCKER_SIM_PID" 2>/dev/null || true
+  # Stop the docker-sim before restarting it. DOCKER_SIM_PID holds the
+  # container id TS-160 recorded (12-hex; a 64-hex id or the container name
+  # are accepted too), so it is stopped with docker by that id — a signal to
+  # an id would do nothing — and checked to really have stopped. After a
+  # restart it holds a host pid instead, ended through the shared library
+  # (marker-checked). The restart below must not run over the ports a
+  # surviving container still holds, so the story stops when it cannot be
+  # ended.
+  if ! dw_terminate_pid "$DOCKER_SIM_PID" "$DOCKER_SIM_DATA/config.yaml"; then
+    echo "could not end docker-sim ($DOCKER_SIM_PID) before restart"
+    ko "docker-sim could not be ended before restart; its ports would stay in use"
+    return
+  fi
   DOCKER_SIM_PID=""
   sleep 1
 
-  # Restart — use DOCKER_SIM_HTTP and DOCKER_SIM_TLS variables (no hardcoded ports)
-  "$TEST_BINARY" start --foreground --config "$DOCKER_SIM_DATA/config.yaml" --port "${DOCKER_SIM_HTTP}" \
-    >> "$DOCKER_SIM_DATA/daemon.log" 2>&1 &
-  DOCKER_SIM_PID=$!
+  # Restart — use DOCKER_SIM_HTTP and DOCKER_SIM_TLS variables (no hardcoded
+  # ports). The new PID is recorded too, so the shared EXIT/INT/TERM/HUP
+  # traps (the runner's under the e2e harness, this script's own when run
+  # standalone) end it on every exit path.
+  story_daemon_lifecycle
+  td_start "$TEST_BINARY" "$DOCKER_SIM_DATA/config.yaml" "$DOCKER_SIM_DATA/daemon.log" --port "${DOCKER_SIM_HTTP}"
+  DOCKER_SIM_PID="${TD_LAST_PID:-}"
+  td_set_api "$DOCKER_SIM_PID" "https://127.0.0.1:${DOCKER_SIM_TLS}" "$TEST_TOKEN"
   local attempts=0
   while [[ $attempts -lt 15 ]]; do
     if curl -sk --max-time 3 "https://127.0.0.1:${DOCKER_SIM_TLS}/api/health" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="ok"' 2>/dev/null; then

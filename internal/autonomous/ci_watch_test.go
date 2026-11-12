@@ -15,6 +15,7 @@ package autonomous
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -226,7 +227,8 @@ func TestCIWatch_AllGreenPasses(t *testing.T) {
 }
 
 func TestCIWatch_FailingPolicyBlocks(t *testing.T) {
-	cfg := DefaultConfig() // ContentAutoFixEnabled defaults to true
+	cfg := DefaultConfig()                       // ContentAutoFixEnabled defaults to true
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	wireCIWatch(t, m, true, func(context.Context) []CIWatchRun { return ciRun("completed", "failure") }, nil)
 	var mu sync.Mutex
@@ -291,7 +293,9 @@ func TestCIWatch_FailingPolicyBlocks(t *testing.T) {
 }
 
 func TestCIWatch_FailingContentSynthesizesOnce(t *testing.T) {
-	m, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	cfg := DefaultConfig()
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
+	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	var judged atomic.Int32
 	// CI is red for the original commit; once the judge has asked for a
 	// fix (and the corrective task has run) it reads green.
@@ -391,26 +395,35 @@ func TestCIWatch_TimeoutPending(t *testing.T) {
 	// The store hands out shared *PRD pointers and the follow-up mutates
 	// one in place before SavePRD, so polling m.Store() would race with
 	// it. Poll what SavePRD persisted instead (a fresh Store loaded from
-	// disk); a torn read just means "not yet" and is retried.
+	// disk). This is safe: the follow-up persists with an atomic
+	// temp-file rename, and Store.loadRecords only removes temp files
+	// older than staleTempFileAge, so opening a second Store on the
+	// directory cannot destroy the in-flight write. A read that fails or
+	// finds the PRD missing therefore really does mean "not yet", and is
+	// retried below. (readBack runs on the test goroutine, so t.Logf is
+	// safe.)
+	var lastStoreErr error
 	readBack := func() *PRD {
 		st, err := NewStore(dataDir)
 		if err != nil {
+			if err.Error() != fmt.Sprint(lastStoreErr) {
+				lastStoreErr = err
+				t.Logf("read-back NewStore(%s) failed: %v (a persistent failure here would look like a silent timeout; it is not an assertion)", dataDir, err)
+			}
 			return nil
 		}
+		lastStoreErr = nil
 		p, _ := st.GetPRD(prd.ID)
 		return p
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if p := readBack(); p != nil && p.CIWatch != nil && p.CIWatch.Status == "pass" {
+	pollUntil(t, 30*time.Second, "follow-up recording a pass", func() bool {
+		p := readBack()
+		if p != nil && p.CIWatch != nil && p.CIWatch.Status == "pass" {
 			prd = p
-			break
+			return true
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("follow-up never recorded a pass within 5s")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return false
+	})
 	if prd.Status != PRDCompleted {
 		t.Fatalf("follow-up changed status to %s; it must only record", prd.Status)
 	}

@@ -66,7 +66,7 @@ For KeePass / 1Password, edit `~/.datawatch/datawatch.yaml`:
 ```yaml
 secrets:
   backend: keepass        # or onepassword
-  keepass_db: /home/dmz/.config/keepassxc/secrets.kdbx
+  keepass_db: /home/<user>/.config/keepassxc/secrets.kdbx
   keepass_password: ${env:DATAWATCH_KEEPASS_PASSWORD}
   keepass_group: datawatch
 ```
@@ -110,7 +110,7 @@ vault:
   token: ${secret:vault-token}
 ```
 
-**Limitations in v6.15:** Vault is the single active backend for all secrets —
+**Limitations:** Vault is the single active backend for all secrets —
 per-agent Vault isolation is a future enhancement. KV v1 and Vault
 AppRole/Kubernetes auth are also deferred.
 
@@ -263,7 +263,67 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 secrets vault status
 ```
 
-The Settings nav button shows a red `!` badge when Vault is the active backend but unreachable.
+The Settings nav button no longer shows a badge for an unreachable Vault. Check the status row in
+Settings → Secrets Store instead: it shows **Vault** reachable or unreachable, the mount and path
+layout, **Last success** (or `never`) and **Last error** (or `none`), each in your chosen language.
+
+### Vault-unreachable alert
+
+Instead of a nav badge, datawatch raises a real alert when the Vault stays unreachable.
+
+- **Trigger.** Only when `secrets.backend` is `vault`. datawatch checks the Vault every 15 seconds.
+  Once the Vault has been unreachable continuously for `secrets.vault.unreachable_alert_after_seconds`
+  (whole seconds, default 120), one **Vault unreachable** error alert is raised. It is raised once per
+  outage, not repeated.
+- **What the alert contains.** The Vault address and the last error only. Secret values are scrubbed.
+- **Where it shows.** It is a system alert: it appears in Alerts in the PWA and goes to your messaging
+  channels like other system alerts.
+- **Recovery.** When the Vault answers again, datawatch raises a separate **Vault recovered** info
+  alert. The original error alert stays; mark it read as usual.
+- **Threshold.** `0` turns the alert off; a negative value is rejected.
+
+Set the threshold any of these ways (the examples use 300 seconds):
+
+```yaml
+# YAML: ~/.datawatch/datawatch.yaml
+secrets:
+  vault:
+    unreachable_alert_after_seconds: 300
+```
+
+```sh
+# REST
+curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"secrets.vault.unreachable_alert_after_seconds": 300}' $BASE/api/config
+
+# CLI
+datawatch config set secrets.vault.unreachable_alert_after_seconds 300
+```
+
+```json
+// MCP
+{ "tool": "config_set", "args": { "key": "secrets.vault.unreachable_alert_after_seconds", "value": "300" } }
+```
+
+```text
+# Comm channel
+configure secrets.vault.unreachable_alert_after_seconds=300
+```
+
+In the PWA: Settings → General → the **Secrets Vault** section → **Vault unreachable alert after
+(seconds)** (`0` = off). The field is translated in en, de, es, fr and ja.
+
+**Checking the Settings nav button.** The sandbox story
+`scripts/test-stories/pwa/vault-nav-label-clear.mjs` forces the Vault unreachable at a 390 px
+viewport and confirms that nothing sits over the Settings nav label and that no Vault badge element
+exists. Run it against the sandbox daemon, never the production port.
+
+**For the operator to review.**
+
+- The companion mobile clients may still show a Vault-unreachable badge and lack the last-error and
+  last-success lines and the alert delay field. Parity issues are drafted under
+  `docs/plans/parity-issues/`; confirm where the new lines and field sit on the app before they are filed.
+- The default delay of 120 seconds is a supervisor choice. Change it if it does not suit your Vault.
 
 ### 5c. MCP
 
@@ -302,6 +362,59 @@ the child process env, never touches the log file.
 
 Default-fallback syntax: `${secret:name:fallback-value}` resolves to
 `fallback-value` if the secret is missing. Useful for optional creds.
+
+## Keeping LLM API keys out of configuration
+
+LLM registry entries for cloud inference kinds (Anthropic, Gemini, and
+similar) take an `api_key_ref` field. Do not paste the key into config
+files, registry JSON, or shell profiles — once a literal key lives in a
+config it ends up in backups, dotfiles, and commit history. Store it in
+the secrets store and reference it by name instead:
+
+```sh
+# 1. Store the key in the secrets store (placeholder below — put your
+#    real key here in a private terminal, never in a config file).
+datawatch secrets set ANTHROPIC_API_KEY '<your-api-key>'
+
+# 2. Point the LLM entry at that secret.
+datawatch llm add claude-api \
+  --kind claude \
+  --model claude-sonnet-5 \
+  --api-key-ref '${secret:ANTHROPIC_API_KEY}'
+```
+
+In registry JSON the field is `"api_key_ref"`: `"${secret:ANTHROPIC_API_KEY}"`
+— same reference, same store, same rules. This covers every consumer of the
+entry: plain sessions, `/api/ask` and Council calls, and Automata running on
+that LLM.
+
+What the reference form gives you:
+
+- **Rotation without a restart.** The reference is resolved on every LLM
+call, not once at startup. To rotate, store a new value under the same
+name — `datawatch secrets set ANTHROPIC_API_KEY '<new-api-key>'` — and
+the next call uses the new value. Nothing to restart, no config file to
+touch.
+- **A missing secret fails loudly and safely.** If the secret does not
+exist (wrong name, deleted, backend unreachable), the LLM call fails
+with an error that names the secret and the LLM entry so you can fix
+either. The error never prints a secret value.
+- **The reference is the whole value.** `api_key_ref` must be exactly
+`${secret:name}` — no surrounding text, no template interpolation, no
+concatenation. A value that contains a `${secret:` token but is not exactly
+one reference (e.g. text around it, or two references) is refused outright
+with an error naming the LLM entry, so no broken key is ever sent.
+- **Every resolution is audit-logged.** Each time the reference is
+resolved you get an audit entry with the LLM entry name, the secret name,
+and the outcome (`ok`, `missing`, or `refused`). The secret value
+itself is never written to the audit log.
+
+A literal key in `api_key_ref` still works and is what older setups use,
+but the reference form is preferred wherever a secrets backend is
+available (see the backends above).
+See [howto/llm-registry](llm-registry.md) for the full LLM entry
+reference and [howto/compute-routing](compute-routing.md) for a worked
+cloud-LLM setup.
 
 ## Diagram
 

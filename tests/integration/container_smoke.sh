@@ -16,19 +16,24 @@ IMAGE="${1:-localhost:5000/datawatch/agent-base:v2.4.5}"
 NAME="datawatch-smoke-$$"
 HOST_PORT="${HOST_PORT:-18080}"
 
-cleanup() {
-    local rc=$?
-    echo "→ cleanup (rc=$rc)"
-    docker rm -f "$NAME" >/dev/null 2>&1 || true
-    exit $rc
-}
-trap cleanup EXIT
+# Teardown — every exit path (normal end, failure, interrupt) ends the
+# container started below. scripts/test-daemon-lib.sh records it by its
+# resolved id (docker stop, then rm — by id first, the recorded name as
+# fallback; no name searches) and routes EXIT/INT/TERM/HUP through that
+# same cleanup, exactly once.
+TD_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../scripts" && pwd)/test-daemon-lib.sh"
+[[ -f "$TD_LIB" ]] || { echo "FAIL missing shared daemon lifecycle helper: $TD_LIB" >&2; exit 77; }
+# shellcheck source=/dev/null
+. "$TD_LIB"
+td_install_traps "$@" # EXIT / INT / TERM / HUP — all four end the container
 
 echo "→ starting $IMAGE as $NAME on host port $HOST_PORT"
 docker run -d \
     --name "$NAME" \
     -p "$HOST_PORT:8080" \
-    "$IMAGE" >/dev/null
+    "$IMAGE"
+# Record it so the trap handler can end it by id on every exit path.
+td_track_container "$NAME"
 
 echo "→ waiting up to 30s for /healthz"
 for i in $(seq 1 30); do

@@ -237,6 +237,12 @@ A fully-populated entry:
 | `permissions.allowed_consumers` | []string | all | Which consumers may route here (`council`, `ask`, `agent_spawn`, `session_spawn`, `*`) |
 | `permissions.denied_consumers` | []string | none | Explicitly blocked consumers (overrides allowed) |
 | `cost_per_hour` | float | 0 | USD/hour cost for scheduler accounting |
+| `verifier_slots` | int or unset | unset (1 on a node that hosts a local engine, otherwise 0) | Verifier worker slots for this node — how many verifiers may run here at once. Unset = 1 when the node hosts a local engine, 0 when it does not; an explicit `0` takes no verifier runs at all. Verifiers take these slots, not your `session_slots`, so verification can run alongside your workers. See [Verifier slots](#verifier-slots) |
+| `verifier_min_free_mem_mb` | int or unset | unset (1024) | Free GPU memory in MB the node should keep free before a new verifier starts here. Unset = 1024 MB; an explicit `0` turns the check off. See [Verifier slots](#verifier-slots) |
+| `verifier_context_mb` | int | 0 | The context memory in MB one verifier slot holds here, used only to produce the advice figure the node reports — how many verifier slots the node's free GPU memory would hold right now. 0 (unset) means "unknown", so no figure is shown. See [Verifier slots](#verifier-slots) |
+| `tls_ca_file` | string | — | Path, on the daemon's machine, to a PEM CA bundle trusted in addition to the system roots when the daemon connects to an `https://` node. See [Certificates for self-signed and private-CA nodes](#certificates-for-self-signed-and-private-ca-nodes) |
+| `tls_cert_fingerprint` | string | — | SHA-256 fingerprint of the node's certificate, 64 hex digits (colons and spaces accepted, case ignored; stored as 64 lowercase digits). Pins the node: the presented certificate must match. Same section |
+| `tls_insecure_skip_verify` | bool | false | Turns certificate checking off for this node. Audited, shown as a red badge in the PWA, and refused together with `tls_ca_file` or `tls_cert_fingerprint`. Same section |
 | `disabled` | bool | false | When true, dispatcher skips this node entirely |
 | `maintenance_windows` | []object | — | Operator-declared blackout periods |
 
@@ -680,7 +686,7 @@ Leaked auto-created nodes (where the backing observer peer was deleted) are swep
 
 ## Per-node model assignment
 
-After adding a Compute Node, go to **Settings → Compute → LLMs** to create or edit an LLM registry entry. The `compute_nodes` field on each LLM entry is an ordered list of Compute Node names. The dispatcher tries them in order and fails over to the next when a node is unreachable, disabled, or in maintenance.
+After adding a Compute Node, go to **Settings → Compute → LLMs** to create or edit an LLM registry entry. The `compute_nodes` field on each LLM entry is a list of Compute Node names. It decides which nodes a local-model worker, verifier and judge may run on: each listed node that is known and serves the model is a candidate, and the request goes to the least loaded candidate, with `scheduling_priority` only breaking a tie and then list order. A node that does not serve the model, is unreachable, disabled, or in maintenance is skipped. One engine per node still applies, and a one-entry list behaves as before.
 
 ```json
 {
@@ -697,9 +703,11 @@ See [`v7-compute-migration.md`](v7-compute-migration.md) for the full migration 
 
 ## Scheduling priority and permissions
 
-`scheduling_priority` (0–100, default 50) is a tiebreaker hint for the dispatcher. When multiple nodes are eligible for the same workload, the highest priority wins. Use higher values for nodes with faster GPUs or lower latency.
+`scheduling_priority` (0–100, default 50) is a tiebreaker for the dispatcher. When a pi-family worker can run on several nodes, the least-loaded healthy node wins, and priority only decides between nodes that are equally loaded (see [How a pi-family worker picks its node](#how-a-pi-family-worker-picks-its-node)). Use higher values for nodes with faster GPUs or lower latency.
 
 `permissions.allowed_consumers` restricts which callers may route to this node. Valid consumer names are `council`, `ask`, `agent_spawn`, `session_spawn`, and `*` (wildcard). An empty `allowed_consumers` list means all consumers are allowed. `denied_consumers` always wins over `allowed_consumers`.
+
+The same check is applied when the daemon places pi-family work, not only when a caller routes directly to a node. The node gate asks each candidate whether it may take new work for the work's consumer; a node that denies the consumer — via `denied_consumers`, or via an `allowed_consumers` list that does not include it — is skipped as if it were full, so the work goes to another eligible node when one exists. That is where `denied_consumers` steers placement: `gpu-box-1` still takes the work while `local-vm` denies the consumer, and work whose candidates all deny or drain waits with a reason that names each refusal (`consumer <name> denied`, `drained`).
 
 Example — a high-priority inference-only node that Automata may not use:
 
@@ -710,6 +718,99 @@ datawatch compute node add inference-only-1 \
   --priority 95 \
   --allowed-consumers "council,ask" \
   --denied-consumers "agent_spawn"
+```
+
+---
+
+## Verifier slots
+
+Automata verification (the model that judges a worker's output) can run on the same node as the workers it checks. Verifiers take their own slots on the node — not the executor worker slots (`session_slots`) — so verification can run while every executor slot on the node is taken. Without verifier slots, a verifier shared the node's executor pool and could queue behind your workers.
+
+Three keys control this on the node:
+
+| Key | Meaning |
+|-----|---------|
+| `verifier_slots` | How many verifiers may run on this node at once. Leave it out and the node takes 1 slot when it hosts a local engine, 0 when it does not. Set it to a positive number to allow more concurrent verifiers. Set it to `0` explicitly to stop verifier runs from landing here at all. |
+| `verifier_min_free_mem_mb` | The free GPU memory, in MB, the node should still have before a new verifier starts. Leave it out for the default of 1024 MB. Set it to `0` to turn the check off. When the node's free GPU memory is below this minimum, a new verifier waits for another node (or for memory to free up) instead of crowding the resident model. A node whose GPU figures cannot be read is not gated. |
+| `verifier_context_mb` | The context memory, in MB, one verifier slot holds while running. The node uses it to report an advice figure in its detail — free GPU memory divided by this value, whole slots — so you can see how many verifiers the node's current free memory would hold. `0` (the default) means "unknown", so no figure is shown. The figure is advice only; nothing applies it automatically. |
+
+All three are per-node values. Set them on any surface that sets the node:
+
+```sh
+datawatch compute node add gpu-1 --kind ollama --address http://gpu-1:11434 \
+  --verifier-slots 2 --verifier-min-free-mem-mb 2048 --verifier-context-mb 4096
+datawatch compute node update gpu-1 --verifier-slots 3
+```
+
+| Surface | How |
+|---------|-----|
+| CLI | `--verifier-slots N --verifier-min-free-mem-mb N --verifier-context-mb N` on `datawatch compute node add` or `update` (`-1` leaves a field unset) |
+| REST | Send the keys in the node body to `POST /api/compute/nodes` or `PUT /api/compute/nodes/{name}`; `null` leaves a field unset. `GET .../detail` reports the settings plus the verifier slots in force (`verifier_slots_effective`), the effective minimum, the last headroom verdict (`headroom_ok`, `headroom_reason`) and, when set, the advice figure (`suggested_verifier_slots`) |
+| MCP | `verifier_slots`, `verifier_min_free_mem_mb`, `verifier_context_mb` parameters on `compute_node_add` and `compute_node_update`; `compute_node_detail` reports the same fields |
+| Comm channel | `compute node add gpu-1 kind=ollama address=http://gpu-1:11434 verifier_slots=2 verifier_min_free_mem_mb=2048 verifier_context_mb=4096` (and the same kv pairs on `update`; leave a key out to leave the field unset) |
+| PWA | The node form on Settings → Compute; the card shows the advice figure beside the limits when the observer reports GPU data |
+
+**Choosing a value.** Start with the default (one verifier slot on any node that hosts a local engine) and watch the verifier counters — queue wait and run time in the capacity report. Raise `verifier_slots` only when verifiers spend much of their time waiting and the node's free GPU memory is enough for the extra slot; the advice figure, once you set `verifier_context_mb`, tells you how many the node's current free memory would hold. If the node should never host verifiers — a shared node, or one whose GPU is reserved for other work — set `verifier_slots: 0`.
+
+**What the slots do not do.** The verifier pool never raises the executor cap: `session_slots` and `max_concurrent_sessions` bound the workers exactly as before, and the advice figure is never applied automatically. A negative value on any of the three keys is refused when the daemon loads the config or saves the node.
+
+**How long one slot may be held.** The slots bound how many verifiers run at once; how long a single run may take is bounded by `autonomous.verifier_max_run_seconds` (default 2700, forty-five minutes), a total wall-clock limit on one verifier session. An explicit `0` means no cap and is kept as `0`; a negative value is refused when the daemon loads the config, and a negative or non-whole value is refused on every settings surface. The cap is enforced: a verifier that keeps producing output is still ended once its run time (not counting time waiting for a slot) reaches the cap, its slot is freed at once, and the verification is retried once on the next backend in the verifier policy order. The no-progress watchdog and `autonomous.verification_timeout_seconds` still apply alongside it. It is never set on the node. See [operations.md — Verifier throughput](../operations.md#verifier-throughput) and [the verifier run cap howto](automaton-verifier-run-cap.md).
+
+---
+
+## How a pi-family worker picks its node
+
+A worker on the `pi` or `pi-prompt` backend runs on one of the compute nodes listed by its LLM entry (`compute_nodes`); the same list decides where that entry's verifier and judge run. A listed node that does not serve the model is skipped. The capacity ledger chooses the node when the worker is admitted, and the worker is then launched on that node. The choice follows these rules.
+
+**Least-loaded healthy node wins.** Each candidate node has a pool with a session limit (the node's `session_slots`). A node's load is the sessions it holds, counting sessions another part of the system already runs on it, divided by that limit. The worker goes to the node with the lowest load. A node with no limit counts as unloaded. Only when two nodes are equally loaded does `scheduling_priority` decide: the higher value goes first, and equal priorities keep the order of the entry's `compute_nodes` list.
+
+**Where the candidates come from.** The candidates are the nodes in the backend's own LLM entry `compute_nodes`. The provider-kind lookup (nodes matched by the model's provider) is used only for a backend that has no node list of its own. To see where waiting requests are bound, run `scripts/check-waiter-nodes.sh`: each line shows holder, backend, model, bound node and candidates, and `node=-` means the daemon has not yet chosen among several candidates. Exit status `2` means all waiters of a multi-node backend sit on one node while another candidate is free.
+
+For example, with `gpu-box-1` (priority 80, 1 of 2 sessions in use) and `gpu-box-2` (priority 50, 0 of 2 in use), the next worker goes to `gpu-box-2`. Once both hold one session, the load is equal and `gpu-box-1` wins on priority.
+
+**A full node is passed over.** A node whose limit is reached cannot take the worker, so the ledger tries the next node in load order. If every candidate is full, the worker waits and is placed on the first node that frees a slot.
+
+**What counts as unhealthy.** A node is skipped, as if it were full, when any of these holds:
+
+- the node is not in the compute registry (it was deleted, or the entry names it wrongly),
+- the node is [drained](#draining-a-node-for-maintenance), open-ended or with an end time that has not yet passed,
+- the node's permissions deny the consumer the work runs under (see [Scheduling priority and permissions](#scheduling-priority-and-permissions)), or
+- a [maintenance window](#maintenance-windows) covers the current time, including an open-ended window with no `to`.
+
+A maintenance window opening or closing takes effect at once. A node added to or removed from the registry is noticed on the next capacity sync, which runs every 10 seconds.
+
+**A leased node is always used.** Once a worker holds a lease that names a node, the worker is launched against that node's address, including when the LLM entry lists only one node. A one-node entry that names no node keeps using pi's own provider table, as before.
+
+**No lease on a node, no launch.** If a worker holds capacity but no node was leased, and its LLM entry lists compute nodes, the daemon does not launch it. Starting it would send the work to pi's default endpoint instead of a node of the entry. The task is marked failed with an error of this form:
+
+```
+task <task-id> not spawned: pi-prompt worker on model <model> holds capacity but no compute node was leased, and its LLM entry lists compute nodes
+```
+
+An entry that lists no nodes is not affected.
+
+**Bare model names.** A model written without a provider (for example `qwen3.8:27b`) is given the provider of the backend's configured model (for example `ollama/qwen3.8:27b` when `pi_prompt.model` is set to that) before admission, so the node is chosen for the provider the launch uses. A model that already names a provider is left as written.
+
+### What you see while a worker waits
+
+The waiting reason is shown on the task and in the `waiting` list of `GET /api/capacity`. With two or more candidate nodes it names every candidate in load order and what blocks it:
+
+```
+waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: drained; gpu-box-2: 2/2 engines in use, held by <task-id>, <task-id>
+```
+
+- `<node>: drained` — the node is [drained](#draining-a-node-for-maintenance).
+- `<node>: in maintenance` — a [maintenance window](#maintenance-windows) covers the current time.
+- `<node>: consumer session_spawn denied` — the node's permissions deny the consumer the work runs under.
+- `<node>: node not in the compute registry` — the node is not in the registry at all.
+- `<node>: N/M engines in use, held by ...` — the node is full; the holders are the sessions using its slots.
+- `no eligible node among gpu-box-1, gpu-box-2: all excluded` — every candidate was already tried and dropped for this attempt (for example the node refused to load the model), so the worker has nowhere left to go.
+
+A single-node pool shows the shorter form `waiting for node gpu-box-1: 2/2 engines in use, held by ...`. To read the reasons:
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
+# → {"pools":[...],"waiting":[{"holder":"...","reason":"waiting for nodes gpu-box-1, gpu-box-2: ...","nodes":["gpu-box-1","gpu-box-2"]}], ...}
 ```
 
 ---
@@ -740,6 +841,77 @@ curl -sk -X PUT \
 
 An open-ended window (no `to`) means "from now until manually removed." The health endpoint reports `in_maintenance: true` during active windows.
 
+## Draining a node for maintenance
+
+Draining is the short-lived, date-free way to take a node out of new-work placement without touching anything else about it. The node stays in the registry, its `disabled` toggle is left exactly where it is, and the drain can be open-ended or given an end time. Use it for maintenance you will finish by hand — a driver update, a package upgrade, a reboot — or when you want a now-stops, now-resumes pause rather than a dated [maintenance window](#maintenance-windows).
+
+What a drain does:
+
+- **New work is skipped.** The node gate refuses new work for a drained node, so work that would have landed there — worker, verifier or judge — takes another eligible node instead.
+- **In-flight work is allowed to finish.** Tasks already running on the node keep their leases and run to completion; the drain does not interrupt them. The `node:<name>` pool in the capacity view (`GET /api/capacity`) still reports those tasks — `held`, `holders`, `hold_names` — alongside the `drained` flag and `drain_until`, and the PWA node card shows a live “N tasks still finishing” line while they land.
+- **Work waiting only on drained or consumer-denied nodes shows that reason.** When every candidate is refused by the gate, the wait reason says so up front and then names each refusal, e.g. `waiting for nodes gpu-box-1, gpu-box-2: all candidate nodes drained or denied: gpu-box-1: drained; gpu-box-2: consumer session_spawn denied`.
+- **An optional end time ends the drain on its own.** A drain with an `until` reads as inactive once the end time has passed and the node takes work again without anything to do; an open-ended drain (no end time) stays until an explicit undrain. Either way the stored drain state stays on the node until an undrain clears it — for a timed drain whose end time has passed, the node still reports `drained: true` with `drain_active: false`.
+
+Where the state lives: on the node in the node registry (`~/.datawatch/compute/nodes.json`) as the `drained`, `drain_until` and `drain_reason` fields. There is no drain key in `config.yaml` — draining is a registry operation, not a daemon setting.
+
+A drain whose end time is in the past is refused by the daemon with a 400 (`until must be after now`), an unknown node is a 404, and undrain is idempotent — it succeeds even when the node was not drained. Both operations are audit-logged (`compute_node_drain` / `compute_node_undrain`) with the node name.
+
+### CLI
+
+```sh
+datawatch compute node drain gpu-box-1 --until 2026-11-04T06:00:00Z --reason 'Ollama upgrade'
+# -> node health JSON: "drained":true, "drain_active":true,
+#    "drain_until":"2026-11-04T06:00:00Z", "drain_reason":"Ollama upgrade"
+# omit --until for an open-ended drain
+datawatch compute node undrain gpu-box-1
+# -> "drained":false, "drain_active":false, "drain_reason":""
+#    (drain_until is the zero time once cleared)
+```
+
+### REST
+
+```sh
+# Drain with an end time and a reason (auth required).
+curl -sk -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"until":"2026-11-04T06:00:00Z","reason":"Ollama upgrade"}' \
+  $BASE/api/compute/nodes/gpu-box-1/drain
+# -> node health JSON with "drained":true and the fields set
+
+# Open-ended drain: omit the body entirely.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/compute/nodes/gpu-box-1/drain
+
+# Clear the drain (idempotent — succeeds when the node was not drained).
+curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/compute/nodes/gpu-box-1/drain
+```
+
+### MCP
+
+```
+compute_node_drain   name=gpu-box-1 until=2026-11-04T06:00:00Z reason=Ollama upgrade
+# until and reason are both optional; omit both for an open-ended drain
+compute_node_undrain name=gpu-box-1
+```
+
+### Comm channel
+
+```{command}
+compute node drain gpu-box-1 until=2026-11-04T06:00:00Z reason=ollama-upgrade
+# -> "drained gpu-box-1 until 2026-11-04T06:00:00Z"
+# omit until= for an open-ended drain -> "drained gpu-box-1 with no end time"
+compute node undrain gpu-box-1
+# -> "undrained gpu-box-1"
+```
+
+On the comm channel `reason=` is a single token (the message is split on whitespace); use the CLI, REST or MCP when the reason has spaces.
+
+### PWA
+
+The node card in **Settings → Compute** carries a **Drain** button next to each node. Clicking it opens a small inline form with an optional end time and a reason; saving drains the node. While the node is drained the card shows a “Drained until <time>” line (or the no-end-time wording), a live “N tasks still finishing” line, and an **Undrain** button that clears the drain.
+
 ---
 
 ## Diagram
@@ -769,6 +941,120 @@ An open-ended window (no `to`) means "from now until manually removed." The heal
 ```
 
 ---
+
+## Certificates for self-signed and private-CA nodes
+
+When a node's address starts with `https://`, the daemon checks the node's certificate. By default that check uses the system roots, so a node with a certificate from a public authority needs nothing. A node whose certificate is self-signed, or signed by your own private CA, fails that check until you tell the daemon how to trust it. There are three ways, and a node uses one of them:
+
+| You have | Set on the node | What the daemon then checks |
+|---|---|---|
+| A certificate from a public CA | nothing | Chain and host name, against the system roots |
+| Your own CA that signed the node's certificate | `tls_ca_file` | Chain and host name, against the system roots plus that CA file |
+| One self-signed certificate | `tls_cert_fingerprint` | The certificate the node presents must match the pinned SHA-256 fingerprint; chain and host name are not checked |
+| A CA file and also a pin | both | The chain and host name must verify against the roots plus the CA file, and the certificate must match the pin |
+| Neither, and you accept the risk | `tls_insecure_skip_verify` | Nothing. Audited. Not recommended |
+
+The skip setting cannot be combined with the other two. The system roots honour the `SSL_CERT_FILE` and `SSL_CERT_DIR` environment variables of the daemon process; there is no daemon-wide CA setting. The full rules are in [Compute node TLS verification](../datawatch-definitions.md#compute-node-tls-verification).
+
+The supervisor watch is where a missing setting shows up. Its host probe reads the models a node has resident over `https://`, and it verifies the certificate. A self-signed node with none of the three settings fails that probe, the watch treats the node as unknown and raises no finding for it, and the probe error names the fix. Saving the node still works, because the connectivity probe made at save time does not check certificates.
+
+### Pin a self-signed node (CLI)
+
+1. On the node, or from any machine that can reach it, read the certificate fingerprint:
+
+   ```sh
+   openssl x509 -in /etc/ssl/gpu-box-2.pem -noout -fingerprint -sha256
+   # or from the live server:
+   openssl s_client -connect gpu-box-2:11434 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256
+   #  → sha256 Fingerprint=3A:9F:...:C4   (32 pairs of hex digits)
+   ```
+
+2. Add the node with the part after the `=`:
+
+   ```sh
+   datawatch compute node add gpu-box-2 \
+     --kind ollama \
+     --address https://gpu-box-2:11434 \
+     --tls-cert-fingerprint 3A:9F:...:C4
+   #  → {"name": "gpu-box-2", "ok": true}
+   ```
+
+   For a private CA, give the CA bundle instead: `--tls-ca-file /etc/ssl/private-ca.pem`.
+
+3. Check how the node is set:
+
+   ```sh
+   datawatch compute node get gpu-box-2
+   #  → {... "tls_cert_fingerprint": "3a9f...c4" ...}
+   ```
+
+`compute node update` replaces the whole node, so repeat `--tls-ca-file` or `--tls-cert-fingerprint` on every update, or the setting is cleared. The same keys work on the MCP tools `compute_node_add` and `compute_node_update` and as `tls_ca_file=<path>`, `tls_cert_fingerprint=<hex>` and `tls_insecure_skip_verify=true` pairs on the chat command `compute node add <name> kind=ollama address=https://...`.
+
+### Set it with REST
+
+```sh
+# Pin a self-signed node.
+curl -sk -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "gpu-box-2",
+    "kind": "ollama",
+    "address": "https://gpu-box-2:11434",
+    "tls_cert_fingerprint": "3A:9F:...:C4"
+  }' \
+  $BASE/api/compute/nodes
+# → {"name":"gpu-box-2","ok":true}
+
+# Trust a private CA instead (PUT replaces the node, so send every field you want to keep).
+curl -sk -X PUT \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"gpu-box-2","kind":"ollama","address":"https://gpu-box-2:11434","tls_ca_file":"/etc/ssl/private-ca.pem"}' \
+  $BASE/api/compute/nodes/gpu-box-2
+
+# Read the setting back.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/compute/nodes/gpu-box-2
+# → {... "tls_ca_file":"/etc/ssl/private-ca.pem" ...}
+```
+
+A bad combination is refused with a 400 and a plain-text message:
+
+```text
+compute node: tls_cert_fingerprint must be 64 hex chars (SHA-256), got 12
+compute node: tls_insecure_skip_verify cannot be combined with tls_ca_file or tls_cert_fingerprint (choose one: verify, pin or skip)
+```
+
+### Set it in the PWA
+
+1. Open **Settings** → **Compute** and click **+ Add ComputeNode**, or the pencil icon on an existing row.
+2. Enter an `https://` address. Under it the **Certificate verification** group has three fields: **CA file (PEM, for a private CA)**, **Certificate fingerprint (SHA-256)** and **Skip certificate verification (not recommended)**. Each has a help link to the definitions page.
+3. Fill in the CA file, the fingerprint or both. Once either has a value, the skip box is disabled; ticking the skip box disables the other two fields and shows a red warning that anyone on the network path can impersonate the node.
+4. Save. The row shows a quiet *pinned* or *CA file* badge when one of those is set, and a red **TLS verification OFF** badge when the skip box is ticked. Hover the red badge for the explanation.
+
+### Turning verification off
+
+Prefer a CA file or a pin. If you must skip verification, set `tls_insecure_skip_verify: true` (REST, YAML, MCP, CLI `--tls-insecure-skip-verify`, chat `tls_insecure_skip_verify=true`, or the PWA checkbox). The daemon then writes an audit entry with the action `compute_node_tls_verification_off`, and writes it again the first time the supervisor watch probes the node. List them with:
+
+```sh
+datawatch audit --action compute_node_tls_verification_off
+```
+
+A supervisor watch finding raised for such a node ends with `; certificate verification is turned off for this node`, so a report you read tells you its basis was unverified.
+
+### Troubleshooting certificates
+
+**`x509: certificate signed by unknown authority`, or the probe error `certificate not trusted`.** The node's certificate is not covered by the system roots. The full probe error reads `node <name> certificate not trusted: ...: set tls_ca_file or tls_cert_fingerprint on the node, or tls_insecure_skip_verify to turn verification off for it`. Add the CA that signed it as `tls_ca_file`, or pin the certificate with `tls_cert_fingerprint`. Until you do, the supervisor watch stays silent about that node.
+
+**Fingerprint mismatch (`node cert fingerprint mismatch: got ... want ...`).** The certificate the node presents is not the one you pinned, usually because it was renewed or the address now points at another host. Compare the `got` value with `openssl x509 -noout -fingerprint -sha256` run on the node, and if the new certificate is the right one, update the node with the new fingerprint.
+
+**`tls_cert_fingerprint must be 64 hex chars`.** You pasted something other than the SHA-256 value, such as an MD5 or SHA-1 fingerprint, or left out part of it. A SHA-256 fingerprint is 32 pairs of hex digits.
+
+**Unreadable CA file (`read tls_ca_file ... no such file or directory`, or `contains no valid PEM certs`).** The path is read on the machine that runs the daemon, by the user the daemon runs as. Check the path and permissions, and that the file holds PEM text (`-----BEGIN CERTIFICATE-----`). The error appears when the node is next probed, not when it is saved. After you replace the file contents under the same path, save the node again or restart the daemon so the new CA is read.
+
+**A CA file together with a pin still fails.** With both set the chain and host name must verify too, so the address host name must appear in the certificate. If it does not, use the pin alone.
+
+**`tls_insecure_skip_verify cannot be combined ...`.** Clear the skip box, or clear the CA file and fingerprint. On a CLI or MCP update, remember that omitted keys are cleared.
 
 ## Troubleshooting
 
@@ -889,6 +1175,7 @@ datawatch-stats --print-once --debug-connections
 
 ## See also
 
+- [`automata-capacity.md`](automata-capacity.md) — the *Compute node usage* section: the loaded model, memory size and expiry plus GPU utilization and memory shown per node on the capacity card
 - [`v7-compute-migration.md`](v7-compute-migration.md) — migrating v6 backend config blocks to the v7 LLM registry
 - [`federated-observer.md`](federated-observer.md) — multi-host stats + observer peer federation
 - [`council-mode.md`](council-mode.md) — how Council Mode selects Compute Nodes via the LLM registry

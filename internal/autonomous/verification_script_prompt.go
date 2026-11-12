@@ -26,22 +26,43 @@ package autonomous
 // Expand existing scripts/rules commands, then write per-task or
 // per-story verification scripts under .datawatch/verify/ and record
 // each path in both verification_script and files_generated. Falls
-// back to ecosystem-convention detection when neither the rules file
-// nor the context file exists (Decision 7). Empty when ProjectDir is
+// back to ecosystem-convention detection when the listed rules/context
+// files are missing (Decision 7). Empty when ProjectDir is
 // unset — see this file's own top comment for why.
 func (m *Manager) verificationScriptSuffix(prd *PRD) string {
+	return m.verificationScriptSuffixFor(prd, "", true)
+}
+
+// verificationScriptSuffixFor is verificationScriptSuffix for the backend
+// that runs the prompt. The text already names every configured rules and
+// context file (the pointer, static whatever the repo holds). The digest
+// block is appended only when withDigest is set and the resolved digest
+// rule is due for backend; a planning prompt that already carries the
+// digest through rulesContextSuffixFor passes false so it is not doubled.
+func (m *Manager) verificationScriptSuffixFor(prd *PRD, backend string, withDigest bool) string {
 	if prd.ProjectDir == "" {
 		return ""
 	}
-	rulesFile, contextFile := m.rulesContextFilenames()
+	p := m.resolvedRulesContext(prd)
+	list := joinRulesContextNames(append([]string{p.RulesFile}, p.ContextFiles...))
+	base := m.verificationScriptText(list)
+	if withDigest && rulesDigestDue(p, backend) {
+		if d := m.rulesDigestBlock(prd.ProjectDir, p); d != "" {
+			return base + "\n\n" + rulesDigestHeader + "\n" + d
+		}
+	}
+	return base
+}
+
+func (m *Manager) verificationScriptText(list string) string {
 	return "\n\n--- Verification scripts ---\n" +
 		"Before finalizing your JSON plan, give each task (or story, when a" +
 		" story-level check fits that unit of work better) whose verification" +
 		" this project's rules require a real verification script:\n" +
 		"1. Reuse first. Run a real `ls scripts/` and `head`/`grep` the" +
 		" candidates — do not trust a hand-copied list of scripts, it drifts;" +
-		" check what's already there. Also check " + rulesFile + " and " +
-		contextFile + " for commands that already cover what the unit needs" +
+		" check what's already there. Also check " + list +
+		" for commands that already cover what the unit needs" +
 		" to verify, before writing anything new.\n" +
 		"2. Write an executable script at `.datawatch/verify/<name>.sh`" +
 		" (relative to your working directory) running whatever this repo's" +
@@ -53,7 +74,13 @@ func (m *Manager) verificationScriptSuffix(prd *PRD) string {
 		"3. In the JSON, set that unit's `verification_script` to the" +
 		" relative path and also list the same path in its" +
 		" `files_generated` array.\n" +
-		"4. If neither " + rulesFile + " nor " + contextFile + " exists, do" +
+		"4. A script must check only the files its task changes — for" +
+		" example by listing them from `git diff --name-only` plus the" +
+		" untracked files, or by naming them explicitly — and must never" +
+		" run gofmt or a similar formatter over a whole package or" +
+		" directory, because unrelated files that were already" +
+		" unformatted would fail the task.\n" +
+		"5. If the listed rules/context files (" + list + ") are missing, do" +
 		" not skip verification: detect the ecosystem conventions actually" +
 		" present (Makefile lint/test targets, package.json scripts," +
 		" pyproject.toml, go.mod + standard go tooling, etc.) and script" +

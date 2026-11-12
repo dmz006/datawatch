@@ -51,8 +51,8 @@
 //     rule content (the operator decision recorded at the top of
 //     rules_review.go). A failed run is not auto-classified by job name
 //     or by a fixed list of finding types: ciWatchSuffix points the
-//     configured judge at the configured rules/context file
-//     (m.rulesContextFilenames) and at the real failure logs, and the
+//     configured judge at the configured rules/context file(s) from
+//     the resolved rules/context policy and at the real failure logs, and the
 //     judge decides — including whether a project rule says an operator
 //     must decide ("category":"policy") rather than auto-fix.
 //
@@ -257,14 +257,61 @@ func prdLastPostVerifySHA(prd *PRD) string {
 	return sha
 }
 
+// CIRef names what to list CI runs for: a commit SHA, or a tag.
+type CIRef struct {
+	Commit string // commit SHA; lists runs with gh's commit filter
+	Tag    string // tag name; tag-triggered runs carry the tag as their head branch
+}
+
+func (r CIRef) String() string {
+	if r.Tag != "" {
+		return "tag " + r.Tag
+	}
+	return "commit " + r.Commit
+}
+
+// ghRunListArgs builds the gh argument slice that lists runs for ref.
+func ghRunListArgs(ownerRepo string, ref CIRef) []string {
+	args := []string{"run", "list", "--repo", ownerRepo}
+	if ref.Tag != "" {
+		args = append(args, "--branch", ref.Tag)
+	} else {
+		args = append(args, "--commit", ref.Commit)
+	}
+	return append(args, "--json", "databaseId,name,status,conclusion,url", "--limit", "50")
+}
+
+// filterCIRunsByWorkflow keeps only runs whose workflow name matches one of
+// workflows (case-insensitive); an empty filter keeps every run.
+func filterCIRunsByWorkflow(runs []CIWatchRun, workflows []string) []CIWatchRun {
+	if len(workflows) == 0 {
+		return runs
+	}
+	out := make([]CIWatchRun, 0, len(runs))
+	for _, r := range runs {
+		for _, w := range workflows {
+			if strings.EqualFold(strings.TrimSpace(w), r.Name) {
+				out = append(out, r)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // defaultCIRuns lists the GitHub Actions runs for sha via the gh CLI.
 func defaultCIRuns(ctx context.Context, ownerRepo, sha string) ([]CIWatchRun, error) {
+	return defaultCIRunsForRef(ctx, ownerRepo, CIRef{Commit: sha})
+}
+
+// defaultCIRunsForRef lists the GitHub Actions runs for a commit or tag via
+// the gh CLI.
+func defaultCIRunsForRef(ctx context.Context, ownerRepo string, ref CIRef) ([]CIWatchRun, error) {
 	ghBin, err := exec.LookPath("gh")
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, ghBin, "run", "list", "--commit", sha, "--repo", ownerRepo, // #nosec G204 -- fixed gh subcommand; sha/ownerRepo come from git's own output
-		"--json", "databaseId,name,status,conclusion,url", "--limit", "50")
+	cmd := exec.CommandContext(ctx, ghBin, ghRunListArgs(ownerRepo, ref)...) // #nosec G204 -- fixed gh subcommand; ref/ownerRepo come from git's own output
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh run list: %w", err)
@@ -418,9 +465,8 @@ func ciFailureIssue(fr FailureReason) string {
 
 // recordCIWatch stamps res onto prd.CIWatch and appends the matching
 // ci_watch Decision. Every ci-watch outcome goes through here.
-func recordCIWatch(prd *PRD, res CIWatchResult, outcome, category string) {
+func (m *Manager) recordCIWatch(prd *PRD, res CIWatchResult, outcome, category string) {
 	res.CheckedAt = time.Now()
-	prd.CIWatch = &res
 	note := fmt.Sprintf("status=%s", res.Status)
 	if res.SHA != "" {
 		note += " sha=" + res.SHA
@@ -437,9 +483,12 @@ func recordCIWatch(prd *PRD, res CIWatchResult, outcome, category string) {
 	if res.Summary != "" {
 		note += " — " + res.Summary
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: res.CheckedAt, Kind: "ci_watch", Actor: "autonomous",
-		VerdictOutcome: outcome, FailureCategory: category, Note: note,
+	m.store.WithLock(func() {
+		prd.CIWatch = &res
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: res.CheckedAt, Kind: "ci_watch", Actor: "autonomous",
+			VerdictOutcome: outcome, FailureCategory: category, Note: note,
+		})
 	})
 }
 
@@ -483,7 +532,7 @@ func (m *Manager) runPRDCompletionCIWatch(ctx context.Context, prd *PRD) (blocke
 	}
 	skip := func(res CIWatchResult) (bool, *GuardrailVerdict, error) {
 		res.Status = "skipped"
-		recordCIWatch(prd, res, "n/a", "")
+		m.recordCIWatch(prd, res, "n/a", "")
 		return false, nil, nil
 	}
 	if prd.ProjectDir == "" {
@@ -542,7 +591,7 @@ func (m *Manager) runPRDCompletionCIWatch(ctx context.Context, prd *PRD) (blocke
 		if len(infra) == 0 {
 			base.Status = "pass"
 			base.Summary = fmt.Sprintf("all %d CI run(s) passed", len(runs))
-			recordCIWatch(prd, base, "pass", "")
+			m.recordCIWatch(prd, base, "pass", "")
 			return false, nil, nil
 		}
 		// Only CI-machinery failures: re-run them while infra budget lasts.
@@ -551,7 +600,7 @@ func (m *Manager) runPRDCompletionCIWatch(ctx context.Context, prd *PRD) (blocke
 			base.Category = "infra"
 			base.Summary = "CI run(s) did not complete (cancelled/timed out/failed to start) and the infra retry budget is exhausted"
 			base.Issues = []string{ciFailureIssue(FailureReason{Category: "infra", Source: "ci-watch", Detail: strings.TrimSpace(ciRunList(infra))})}
-			recordCIWatch(prd, base, "block", "infra")
+			m.recordCIWatch(prd, base, "block", "infra")
 			m.recordFailureLearning(prd, prd.ID, "infra", "ci-watch: "+base.Summary+"\n"+ciRunList(infra))
 			return true, nil, nil
 		}
@@ -581,7 +630,7 @@ func (m *Manager) ciWatchPending(prd *PRD, res CIWatchResult, d ciWatchDeps) {
 	res.Category = "infra"
 	res.Summary = detail
 	res.Issues = []string{ciFailureIssue(FailureReason{Category: "infra", Source: "ci-watch", Retryable: false, Detail: detail})}
-	recordCIWatch(prd, res, "n/a", "infra")
+	m.recordCIWatch(prd, res, "n/a", "infra")
 
 	prdID, sha, ownerRepo := prd.ID, res.SHA, res.Repo
 	go func() { // #nosec G118 -- single follow-up CI check after PRD completion; request context already done
@@ -634,7 +683,7 @@ func (m *Manager) ciWatchFollowUp(prdID, sha, ownerRepo string) {
 			res.Summary = fmt.Sprintf("follow-up check: all %d CI run(s) passed", len(runs))
 		}
 	}
-	recordCIWatch(p, res, outcome, category)
+	m.recordCIWatch(p, res, outcome, category)
 	if strings.HasPrefix(res.Status, "failed_") {
 		m.recordFailureLearning(p, prdID, category, "ci-watch: "+res.Summary+"\n"+ciRunList(runs))
 		log.Printf("[autonomous] ci-watch: prd=%s %s", prdID, res.Summary)
@@ -650,14 +699,13 @@ func (m *Manager) ciWatchFollowUp(prdID, sha, ownerRepo string) {
 func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult, failed []CIWatchRun) (bool, *GuardrailVerdict, error) {
 	m.mu.Lock()
 	fn := m.guardrail
-	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
 	if fn == nil {
 		// Same as rules-review with no judge wired: nothing to judge with.
 		res.Status = "error"
 		res.Summary = "CI run(s) failed but no guardrail judge is configured; not blocking"
 		res.Issues = []string{strings.TrimSpace(ciRunList(failed))}
-		recordCIWatch(prd, res, "n/a", "")
+		m.recordCIWatch(prd, res, "n/a", "")
 		return false, nil, nil
 	}
 	inv := GuardrailInvocation{
@@ -670,9 +718,24 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 		ProjectDir: prd.ProjectDir,
 		OwnerPeer:  prd.OwnerPeer,
 	}
-	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
+	// v9.10.18 — paired judge-model resolution, no backend-default
+	// fallback; see rules-review's identical handling.
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
+	}
 
-	v, ferr := m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+	var v GuardrailVerdict
+	var ferr error
+	if resErr != nil {
+		// Loud, non-retried infra block — retrying cannot configure a
+		// model that is not configured.
+		v = NoGuardrailModelVerdict("ci-watch", resErr)
+	} else {
+		v, ferr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+		v = m.classifyGate(ctx, inv, v)
+	}
 	if ferr != nil {
 		return false, nil, fmt.Errorf("ci watch for prd %s: %w", prd.ID, ferr)
 	}
@@ -680,7 +743,10 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 		v.VerdictAt = time.Now()
 	}
 	v.Guardrail = "ci-watch"
-	prd.Verdicts = append(prd.Verdicts, v)
+	m.store.WithLock(func() { prd.Verdicts = append(prd.Verdicts, v) })
+	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
+		return false, nil, err
+	}
 	res.Summary = v.Summary
 	res.Issues = v.Issues
 	res.Category = v.Category
@@ -688,14 +754,14 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 	if v.Outcome != "block" {
 		// A CI failure the judge found acceptable is recorded, not blocking.
 		res.Status = v.Outcome
-		recordCIWatch(prd, res, v.Outcome, v.Category)
+		m.recordCIWatch(prd, res, v.Outcome, v.Category)
 		return false, nil, nil
 	}
 	// Identical auto-fix condition to rules-review: a "policy" (operator
 	// sign-off required) or "infra" block never qualifies.
 	if v.Category == "" && m.resolveContentAutoFixEnabled(prd) && m.retryBudgetRemaining(prd, "content") {
 		res.Status = "failed_content"
-		recordCIWatch(prd, res, v.Outcome, v.Category)
+		m.recordCIWatch(prd, res, v.Outcome, v.Category)
 		_ = m.consumeRetryBudget(prd, "content")
 		vCopy := v
 		m.recordAutoRetryDecision(prd, prd.ID, "content", prd.RetryCountsByCategory["content"], false)
@@ -709,7 +775,67 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 	default:
 		res.Status = "failed_content"
 	}
-	recordCIWatch(prd, res, v.Outcome, v.Category)
+	m.recordCIWatch(prd, res, v.Outcome, v.Category)
 	m.recordFailureLearning(prd, prd.ID, v.Category, contentFixHint(v))
 	return true, nil, nil
+}
+
+// repoCIJudgeCall (repo CI watch pass, repo_ci_watch_poll.go) is the
+// extracted judge invocation for a failed run in an UNOWNED (non-PRD)
+// repository: it takes a repo path and a label describing the failed
+// run instead of a PRD, because there is no PRD here to hold the verdict
+// or an infra retry budget — the judge runs exactly once and its verdict
+// lands on the run's repo CI watch record (recorded by the poll pass),
+// where verdict.Category "policy" means the failure is a policy/rules
+// violation and anything else is a code/test defect. The inv shape and
+// judge-model resolution mirror ciWatchJudge (the PRD wrapper, whose
+// behavior is unchanged): the judge model still resolves from the same
+// global tiers, and an unresolvable judge model yields
+// NoGuardrailModelVerdict (loud, infra, non-retried) rather than a
+// launch. fn is resolved under mu exactly like ciWatchJudge.
+func (m *Manager) repoCIJudgeCall(ctx context.Context, repoPath, label string) (GuardrailVerdict, error) {
+	m.mu.Lock()
+	fn := m.guardrail
+	m.mu.Unlock()
+	if fn == nil {
+		return GuardrailVerdict{}, fmt.Errorf("repo ci watch for %s: no guardrail judge is configured", repoPath)
+	}
+	inv := GuardrailInvocation{
+		PRDID:     "repo-ci-watch/" + repoPath,
+		Level:     "repo",
+		UnitID:    repoPath,
+		UnitTitle: label,
+		UnitSpec: label + " — the subject is ONE failed CI run in a repository that has no PRD. " +
+			"Judge why it failed: if the failure looks like a policy or rules " +
+			"violation, use category \"policy\"; if it is a code or test defect, use " +
+			"category \"content\". Respond with the same JSON as any other guardrail: " +
+			"outcome (pass|warn|block), severity, summary, issues, category.",
+		Guardrail:  "repo-ci-watch",
+		ProjectDir: repoPath,
+	}
+	// Same paired judge-model resolution as ciWatchJudge, at the global
+	// tier (no task/PRD override exists for an unowned repo).
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(nil, nil)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
+	}
+	if resErr != nil {
+		// Loud, non-retried infra block — retrying cannot configure a
+		// model that is not configured (same rule as ciWatchJudge).
+		v := NoGuardrailModelVerdict("repo-ci-watch", resErr)
+		if v.VerdictAt.IsZero() {
+			v.VerdictAt = time.Now()
+		}
+		return v, nil
+	}
+	v, ferr := fn(ctx, inv)
+	if ferr != nil {
+		return GuardrailVerdict{}, fmt.Errorf("repo ci watch for %s: %w", repoPath, ferr)
+	}
+	if v.VerdictAt.IsZero() {
+		v.VerdictAt = time.Now()
+	}
+	v.Guardrail = "repo-ci-watch"
+	return v, nil
 }

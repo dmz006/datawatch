@@ -35,14 +35,16 @@ import (
 // Participant list storage
 // ---------------------------------------------------------------------------
 
-// discussionParticipantsPath returns the participants.json path for a discussion.
-// Creates the discussion directory on demand.
-func discussionParticipantsPath(id string) (string, error) {
-	base, err := discussionsBaseDir()
+// discussionParticipantsPath returns the participants.json path for a discussion
+// under the server's data directory. Creates the discussion directory on demand.
+func (s *Server) discussionParticipantsPath(id string) (string, error) {
+	if err := validateDiscussionID(id); err != nil {
+		return "", err
+	}
+	dir, err := s.discussionFolderForID(id)
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(base, id)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir discussion dir: %w", err)
 	}
@@ -52,8 +54,8 @@ func discussionParticipantsPath(id string) (string, error) {
 // discussionReadParticipants reads the participant list for a discussion.
 // Returns an empty slice when no file exists. When encKey is non-nil the
 // file is decrypted transparently (BL334 T43c).
-func discussionReadParticipants(id string, encKey []byte) ([]string, error) {
-	p, err := discussionParticipantsPath(id)
+func (s *Server) discussionReadParticipants(id string, encKey []byte) ([]string, error) {
+	p, err := s.discussionParticipantsPath(id)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +80,8 @@ func discussionReadParticipants(id string, encKey []byte) ([]string, error) {
 
 // discussionWriteParticipants atomically replaces the participant list.
 // When encKey is non-nil the file is encrypted (BL334 T43c).
-func discussionWriteParticipants(id string, peers []string, encKey []byte) error {
-	p, err := discussionParticipantsPath(id)
+func (s *Server) discussionWriteParticipants(id string, peers []string, encKey []byte) error {
+	p, err := s.discussionParticipantsPath(id)
 	if err != nil {
 		return err
 	}
@@ -93,9 +95,13 @@ func discussionWriteParticipants(id string, peers []string, encKey []byte) error
 // handleDiscussionParticipants handles GET and PUT for
 // /api/memory/discussion/{id}/participants.
 func (s *Server) handleDiscussionParticipants(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
-		peers, err := discussionReadParticipants(id, s.encKey)
+		peers, err := s.discussionReadParticipants(id, s.encKey)
 		if err != nil {
 			http.Error(w, "read participants: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -113,7 +119,7 @@ func (s *Server) handleDiscussionParticipants(w http.ResponseWriter, r *http.Req
 		if body.Peers == nil {
 			body.Peers = []string{}
 		}
-		if err := discussionWriteParticipants(id, body.Peers, s.encKey); err != nil {
+		if err := s.discussionWriteParticipants(id, body.Peers, s.encKey); err != nil {
 			http.Error(w, "write participants: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -268,7 +274,7 @@ type syncWritePayload struct {
 // discussionSyncToParticipants fans out an entry to all participant peers
 // asynchronously. Errors are logged (not returned to the caller).
 func (s *Server) discussionSyncToParticipants(id string, entry discussionWALEntry) {
-	peers, err := discussionReadParticipants(id, s.encKey)
+	peers, err := s.discussionReadParticipants(id, s.encKey)
 	if err != nil || len(peers) == 0 {
 		return
 	}
@@ -338,8 +344,8 @@ type conflictGroup struct {
 }
 
 // discussionDetectConflicts scans the WAL and returns groups of conflicting entries.
-func discussionDetectConflicts(id string, encKey []byte) ([]conflictGroup, error) {
-	entries, err := discussionReadWAL(id, 100000, encKey)
+func (s *Server) discussionDetectConflicts(id string, encKey []byte) ([]conflictGroup, error) {
+	entries, err := s.discussionReadWAL(id, 100000, encKey)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []conflictGroup{}, nil
@@ -409,11 +415,15 @@ func discussionDetectConflicts(id string, encKey []byte) ([]conflictGroup, error
 
 // handleDiscussionConflicts handles GET /api/memory/discussion/{id}/conflicts.
 func (s *Server) handleDiscussionConflicts(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	conflicts, err := discussionDetectConflicts(id, s.encKey)
+	conflicts, err := s.discussionDetectConflicts(id, s.encKey)
 	if err != nil {
 		http.Error(w, "detect conflicts: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -426,6 +436,10 @@ func (s *Server) handleDiscussionConflicts(w http.ResponseWriter, r *http.Reques
 
 // handleDiscussionConflictResolve handles POST /api/memory/discussion/{id}/conflicts/resolve.
 func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -439,7 +453,7 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 	}
 
 	// Find all entries for the same content hash as the winning seq.
-	entries, err := discussionReadWAL(id, 100000, s.encKey)
+	entries, err := s.discussionReadWAL(id, 100000, s.encKey)
 	if err != nil {
 		http.Error(w, "read wal: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -481,7 +495,7 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 			continue
 		}
 		markerContent := fmt.Sprintf("conflict-resolved: seq=%d losing, winner=%d", e.Seq, body.Seq)
-		_, _ = discussionAppendWALEntry(id, markerContent, "conflict-resolved", "", s.encKey)
+		_, _ = s.discussionAppendWALEntry(id, markerContent, "conflict-resolved", "", s.encKey)
 		resolved++
 	}
 
@@ -502,6 +516,10 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 // This handler appends the entry to the local WAL and does NOT fan-out further
 // (loop prevention: the original sender already broadcast to all participants).
 func (s *Server) handleDiscussionReceive(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -521,6 +539,6 @@ func (s *Server) handleDiscussionReceive(w http.ResponseWriter, r *http.Request,
 	mu.Lock()
 	defer mu.Unlock()
 
-	_, _ = discussionAppendWALEntry(id, entry.Content, entry.Role, entry.OriginPeer, s.encKey)
+	_, _ = s.discussionAppendWALEntry(id, entry.Content, entry.Role, entry.OriginPeer, s.encKey)
 	writeJSONOK(w, map[string]any{"discussion_id": id, "ok": true})
 }

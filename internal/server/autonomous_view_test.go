@@ -36,7 +36,7 @@ func newResetTaskTestServer(t *testing.T) (*Server, string) {
 	if err := mgr.Store().SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
-	return &Server{autonomousMgr: autonomous.NewAPI(mgr)}, prd.ID
+	return &Server{autonomousMgr: newTestAPI(mgr)}, prd.ID
 }
 
 func TestResetTaskCompactReply(t *testing.T) {
@@ -111,7 +111,7 @@ func newWriteCasesTestServer(t *testing.T, status autonomous.PRDStatus) (*Server
 	if err := mgr.Store().SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
-	return &Server{autonomousMgr: autonomous.NewAPI(mgr)}, prd.ID
+	return &Server{autonomousMgr: newTestAPI(mgr)}, prd.ID
 }
 
 // TestWriteCasesCompactTaskLevel checks that each task- or story-scoped write
@@ -347,7 +347,7 @@ func newPRDDetailTestServer(t *testing.T) (*Server, string) {
 	if err := mgr.Store().SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
-	return &Server{autonomousMgr: autonomous.NewAPI(mgr)}, prd.ID
+	return &Server{autonomousMgr: newTestAPI(mgr)}, prd.ID
 }
 
 // TestGetPRDDetailLevels checks the detail query parameter on the PRD GET route.
@@ -460,10 +460,150 @@ func decodeAnyMap(t *testing.T, b []byte) map[string]any {
 	return m
 }
 
+// TestWriteAutonomousResultOverrideFullShape pins the full-view reply of a
+// queued-mode (override non-nil) story/task LLM write: the PRD's own top-level
+// fields must be present, the override must ride along as a top-level sibling,
+// and there must be NO "prd" wrapper key.
+func TestWriteAutonomousResultOverrideFullShape(t *testing.T) {
+	prd := &autonomous.PRD{
+		ID:     "abcd1234",
+		Status: autonomous.PRDDraft,
+		Rev:    7,
+	}
+	ovr := map[string]any{"changed": []string{"t1"}, "left_alone": []map[string]string{{"id": "t2", "reason": "running"}}}
+
+	for _, query := range []string{"", "?view=full"} {
+		t.Run("query="+query, func(t *testing.T) {
+			s := &Server{}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/autonomous/prds/abcd1234/tasks/t1"+query, nil)
+			s.writeAutonomousResultOverride(rec, req, prd, ovr, "t1", "", "")
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode reply: %v", err)
+			}
+			if _, ok := body["prd"]; ok {
+				t.Errorf("full reply must not wrap in a prd key; body %s", rec.Body.String())
+			}
+			for _, k := range []string{"id", "status", "rev"} {
+				if _, ok := body[k]; !ok {
+					t.Errorf("reply missing PRD top-level key %q; body %s", k, rec.Body.String())
+				}
+			}
+			overrideRaw, ok := body["override"]
+			if !ok {
+				t.Fatalf("reply missing top-level override key; body %s", rec.Body.String())
+			}
+			var ovrJSON map[string]json.RawMessage
+			if err := json.Unmarshal(overrideRaw, &ovrJSON); err != nil {
+				t.Fatalf("decode override: %v", err)
+			}
+			if _, ok := ovrJSON["changed"]; !ok {
+				t.Errorf("override missing changed key; body %s", rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestWriteAutonomousPlanningResultFullShape pins the full-view reply of a
+// PRD-level set_llm that carried a planning field: the planning outcome rides
+// along as a top-level sibling of the PRD's own fields, with NO "prd" wrapper.
+func TestWriteAutonomousPlanningResultFullShape(t *testing.T) {
+	prd := &autonomous.PRD{ID: "abcd1234", Status: autonomous.PRDDraft, Rev: 3}
+	planning := map[string]any{"outcome": autonomous.PlanningRequeued, "old_pool": "pool-a", "new_pool": "pool-b", "reason": "profile changed"}
+
+	for _, query := range []string{"", "?view=full"} {
+		t.Run("query="+query, func(t *testing.T) {
+			s := &Server{}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/autonomous/prds/abcd1234/set_llm"+query, nil)
+			s.writeAutonomousPlanningResult(rec, req, prd, planning, "", "", "")
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode reply: %v", err)
+			}
+			if _, ok := body["prd"]; ok {
+				t.Errorf("full reply must not wrap in a prd key; body %s", rec.Body.String())
+			}
+			for _, k := range []string{"id", "status", "rev"} {
+				if _, ok := body[k]; !ok {
+					t.Errorf("reply missing PRD top-level key %q; body %s", k, rec.Body.String())
+				}
+			}
+			planned, ok := body["planning"]
+			if !ok {
+				t.Fatalf("reply missing top-level planning key; body %s", rec.Body.String())
+			}
+			var pJSON map[string]any
+			if err := json.Unmarshal(planned, &pJSON); err != nil {
+				t.Fatalf("decode planning: %v", err)
+			}
+			if pJSON["outcome"] != string(autonomous.PlanningRequeued) {
+				t.Errorf("planning.outcome = %v, want requeued; body %s", pJSON["outcome"], rec.Body.String())
+			}
+		})
+	}
+}
+
 // TestPRDRESTDefaultUnchanged is a regression guard: with no view or detail
 // query, the PRD GET route and the reset_task POST route must return the PRD
 // exactly as the manager holds it. It also checks that the spec text reaches
 // the default GET body.
+//
+// The one allowed divergence from the stored PRD is notify_events_effective —
+// the computed read-time field that is filled on the API response copy and
+// must never be persisted. The subtests strip it (and assert it is present
+// and well-formed) before comparing the rest of the body.
+func stripNotifyEffective(t *testing.T, got map[string]any) {
+	t.Helper()
+	eff, present := got["notify_events_effective"]
+	if !present {
+		t.Fatalf("body is missing notify_events_effective: %v", got)
+	}
+	m, ok := eff.(map[string]any)
+	if !ok {
+		t.Fatalf("notify_events_effective is not an object: %v", eff)
+	}
+	src, _ := m["source"].(string)
+	ev, ok := m["events"].([]any)
+	if !ok || src == "" || len(ev) == 0 {
+		t.Fatalf("notify_events_effective is not well-formed: %v", eff)
+	}
+	delete(got, "notify_events_effective")
+}
+
+func stripReviewState(t *testing.T, m map[string]any) {
+	t.Helper()
+	delete(m, "review_state")
+}
+
+// stripBranchRefreshState removes the branch refresh state the default GET
+// adds (branch_refresh_api.go): branch_refresh and branch_refresh_override
+// are always present (null when unset) and branch_refresh_enabled is derived.
+func stripBranchRefreshState(t *testing.T, m map[string]any) {
+	t.Helper()
+	if v, ok := m["branch_refresh_enabled"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			t.Fatalf("branch_refresh_enabled is not a boolean: %v", v)
+		}
+	}
+	delete(m, "branch_refresh_enabled")
+	if v, ok := m["branch_refresh"]; ok && v == nil {
+		delete(m, "branch_refresh")
+	}
+	if v, ok := m["branch_refresh_override"]; ok && v == nil {
+		delete(m, "branch_refresh_override")
+	}
+}
+
 func TestPRDRESTDefaultUnchanged(t *testing.T) {
 	const specText = "task spec text"
 
@@ -484,8 +624,16 @@ func TestPRDRESTDefaultUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal stored PRD: %v", err)
 		}
-		if got := decodeAnyMap(t, rec.Body.Bytes()); !reflect.DeepEqual(got, decodeAnyMap(t, want)) {
-			t.Errorf("default GET body differs from stored PRD\n got: %s\nwant: %s", rec.Body.String(), want)
+		got := decodeAnyMap(t, rec.Body.Bytes())
+		wantMap := decodeAnyMap(t, want)
+		stripNotifyEffective(t, got)
+		stripNotifyEffective(t, wantMap)
+		stripReviewState(t, got)
+		stripReviewState(t, wantMap)
+		stripBranchRefreshState(t, got)
+		stripBranchRefreshState(t, wantMap)
+		if !reflect.DeepEqual(got, wantMap) {
+			t.Errorf("default GET body differs from stored PRD (notify_events_effective, review_state and branch refresh state aside)\n got: %s\nwant: %s", rec.Body.String(), want)
 		}
 		if !strings.Contains(rec.Body.String(), specText) {
 			t.Errorf("default GET body does not contain task spec text %q; body %s", specText, rec.Body.String())
@@ -509,8 +657,18 @@ func TestPRDRESTDefaultUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal stored PRD: %v", err)
 		}
-		if got := decodeAnyMap(t, rec.Body.Bytes()); !reflect.DeepEqual(got, decodeAnyMap(t, want)) {
-			t.Errorf("default reset_task body differs from stored PRD\n got: %s\nwant: %s", rec.Body.String(), want)
+		got := decodeAnyMap(t, rec.Body.Bytes())
+		wantMap := decodeAnyMap(t, want)
+		// The reset_task write path returns the stored (unfilled) PRD, so the
+		// body is the stored PRD verbatim; only the API-copied side carries
+		// the computed field, which is stripped from the comparison.
+		if _, ok := got["notify_events_effective"]; ok {
+			t.Fatalf("reset_task body must not carry notify_events_effective (never-persisted field): %v", got["notify_events_effective"])
+		}
+		stripNotifyEffective(t, wantMap)
+		stripReviewState(t, wantMap)
+		if !reflect.DeepEqual(got, wantMap) {
+			t.Errorf("default reset_task body differs from stored PRD (notify_events_effective and review_state aside)\n got: %s\nwant: %s", rec.Body.String(), want)
 		}
 	})
 }

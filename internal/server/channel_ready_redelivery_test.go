@@ -33,6 +33,9 @@ func channelReadyServer(t *testing.T, dir string) (*Server, *session.FakeTmux) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
+	t.Cleanup(mgr.WaitBackground)
 	fake := mgr.WithFakeTmux()
 	s := &Server{
 		manager:  mgr,
@@ -50,8 +53,7 @@ func channelReadyServer(t *testing.T, dir string) (*Server, *session.FakeTmux) {
 // taskSends counts send-keys calls that carried the task text.
 func taskSends(f *session.FakeTmux) int {
 	n := 0
-	for i := range f.Calls {
-		c := f.Calls[i]
+	for _, c := range f.CallsSnapshot() {
 		if !strings.HasPrefix(c.Op, "send-keys") {
 			continue
 		}
@@ -97,7 +99,11 @@ func setWaiting(t *testing.T, s *Server, sessID string) {
 	if !ok {
 		t.Fatal("session vanished")
 	}
-	sess.State = session.StateWaitingInput
+	// Mutate under the store lock: the background flusher marshals live
+	// *Session pointers, and an unlocked field write races with it
+	// (string writes are not atomic, so this is a data race, not just
+	// torn reads).
+	s.manager.Store().Mutate(func() { sess.State = session.StateWaitingInput })
 	if err := s.manager.SaveSession(sess); err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,22 @@
+# scripts/leak-check.exclude
+#
+# Glob list of relative paths (relative to the scanned root) that the
+# leak check must skip. One glob per line; comments and blank lines are
+# ignored.
+#
+# Keep this minimal. Prefer writing self-clean patterns (see the note in
+# scripts/leak-check.patterns) and cleaning the offending value, and only
+# exclude a path when it genuinely cannot be made clean — with a comment
+# below saying why.
+
+# (none)
+
+# Generated kernel BTF headers (btfgen output): the 16-bit device/vendor
+# constants inside them belong to the kernel image, not to this machine,
+# and the header must be regenerated, not hand-edited. These paths
+# genuinely cannot be made clean, so they are excluded.
+internal/observer/ebpf/vmlinux_amd64/vmlinux.h
+internal/observer/ebpf/vmlinux_arm64/vmlinux.h
+
+# The allowed-address list names the public cloud metadata constants it allows.
+scripts/leak-check.allowed-addresses

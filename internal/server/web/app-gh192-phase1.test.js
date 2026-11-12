@@ -113,9 +113,9 @@ test('renderStatsData shows hostname in the Daemon card and daemon_version in th
   callStatsRender(sandbox, el, {
     timestamp: Date.now(), cpu_load_avg_1: 0.1, cpu_cores: 4, mem_used: 1, mem_total: 2,
     disk_used: 1, disk_total: 2, daemon_rss_bytes: 1, goroutines: 1, open_fds: 1, uptime_seconds: 1,
-    hostname: 'johnnyjohnny', daemon_version: '8.70.0',
+    hostname: 'local-node', daemon_version: '8.70.0',
   });
-  assert.ok(el.innerHTML.includes('johnnyjohnny'), 'expected hostname to appear');
+  assert.ok(el.innerHTML.includes('local-node'), 'expected hostname to appear');
   assert.ok(el.innerHTML.includes('8.70.0'), 'expected daemon version to appear');
 });
 

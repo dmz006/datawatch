@@ -7,12 +7,19 @@
 package autonomous
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // branchNameFor derives the deterministic branch name a PRD's
@@ -37,14 +44,10 @@ func slugify(s string) string {
 	return strings.Trim(slugNonAlnum.ReplaceAllString(strings.ToLower(s), "-"), "-")
 }
 
-// defaultWorktreeDir is used when Config.WorktreeDir is empty.
-func defaultWorktreeDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".datawatch", "prd-worktrees")
-	}
-	return filepath.Join(home, ".datawatch", "prd-worktrees")
-}
+// defaultWorktreeDir is used when Config.WorktreeDir is empty. dataDir is
+// the configured data directory (may be empty when the caller has none);
+// the fallback then resolves under the user's home as before.
+func defaultWorktreeDir(dataDir string) string { return config.DefaultPRDWorktreeDirFor(dataDir) }
 
 // defaultBranchOf resolves repoDir's current default branch (e.g.
 // "main"). Falls back to "main" on any error — same default
@@ -73,7 +76,7 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 		return "", "", fmt.Errorf("worktree: base repo not configured")
 	}
 	if worktreeDir = strings.TrimSpace(worktreeDir); worktreeDir == "" {
-		worktreeDir = defaultWorktreeDir()
+		worktreeDir = defaultWorktreeDir("")
 	}
 	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
 		return "", "", fmt.Errorf("worktree: mkdir %s: %w", worktreeDir, err)
@@ -81,8 +84,16 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 	path = filepath.Join(worktreeDir, prd.ID)
 
 	if prd.Git.Branch != "" {
-		if st, serr := os.Stat(filepath.Join(path, ".git")); serr == nil {
-			_ = st
+		if _, serr := os.Stat(filepath.Join(path, ".git")); serr == nil {
+			// A .git entry is not proof of a worktree: a standalone
+			// repository initialised in the same path also has one.
+			if cerr := CheckProjectWorktree(path, baseRepo); cerr != nil {
+				return "", "", fmt.Errorf("worktree reuse refused: %w", cerr)
+			}
+			// Reused worktree: still make sure the go:embed placeholder
+			// exists (a daemon restart doesn't conjure it back into
+			// life if the worktree was pruned and re-added by hand).
+			prepareWorktreeBestEffort(path)
 			return path, prd.Git.Branch, nil
 		}
 	}
@@ -96,16 +107,59 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 		base = defaultBranchOf(baseRepo)
 	}
 
+	// A plain folder (no .git) at the worktree path would make git
+	// worktree add fail; move it aside into the saved-scripts folder.
+	savedDir := savedVerifyScriptsDir(worktreeDir, prd.ID)
+	srcDirs := []string{savedDir}
+	if _, lerr := os.Lstat(path); lerr == nil {
+		if _, gerr := os.Lstat(filepath.Join(path, ".git")); os.IsNotExist(gerr) {
+			if merr := os.MkdirAll(savedDir, 0o755); merr != nil { // #nosec G301
+				return "", "", fmt.Errorf("worktree: mkdir %s: %w", savedDir, merr)
+			}
+			moved := filepath.Join(savedDir, "stray-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+			if rerr := os.Rename(path, moved); rerr != nil {
+				return "", "", fmt.Errorf("worktree: move stray folder %s aside: %w", path, rerr)
+			}
+			log.Printf("[autonomous] worktree: moved stray folder %s aside to %s: not a git worktree", path, moved)
+			srcDirs = append(srcDirs, filepath.Join(moved, ".datawatch", "verify"))
+		}
+	}
+
 	if out, werr := runGitIn(baseRepo, "worktree", "add", "-b", branch, path, base); werr != nil {
 		// The branch may already exist from a prior attempt that got
 		// this far and then crashed before SavePRD persisted
 		// Git.Branch (e.g. daemon killed mid-Run). Retry checking out
 		// the existing branch instead of creating a new one.
 		if out2, werr2 := runGitIn(baseRepo, "worktree", "add", path, branch); werr2 != nil {
-			return "", "", fmt.Errorf("worktree add (%s): %s / retry on existing branch: %s: %w", branch, out, out2, werr2)
+			msg := fmt.Sprintf("worktree add (%s): %s / retry on existing branch: %s", branch, out, out2)
+			if cerr := CheckProjectWorktree(path, baseRepo); cerr != nil {
+				var ierr *WorktreeIntegrityError
+				if errors.As(cerr, &ierr) {
+					msg += " / existing directory: " + ierr.Reason
+				}
+			}
+			return "", "", fmt.Errorf("%s: %w", msg, werr2)
 		}
 	}
+	if n, rerr := restoreVerifyScripts(srcDirs, path, nil); rerr != nil {
+		log.Printf("[autonomous] worktree: restore verification scripts into %s failed (non-fatal): %v", path, rerr)
+	} else if n > 0 {
+		log.Printf("[autonomous] worktree: restored %d verification script(s) into %s", n, path)
+	}
+	// Fresh worktree: drop the git-ignored go:embed placeholder in so
+	// the first build doesn't fail on internal/docsindex.
+	prepareWorktreeBestEffort(path)
 	return path, branch, nil
+}
+
+// prepareWorktreeBestEffort runs prepareWorktree on a created/reused
+// worktree and logs any failure instead of propagating it: a broken
+// placeholder or exclude setup is worth seeing in the daemon log, but
+// must not roll back a worktree that was otherwise created fine.
+func prepareWorktreeBestEffort(path string) {
+	if perr := prepareWorktree(path); perr != nil {
+		log.Printf("[autonomous] worktree prepare at %s (non-fatal): %v", path, perr)
+	}
 }
 
 // ensureWorktreeIfConfigured is the shared gate Run() (BL407 Phase 1)
@@ -135,18 +189,38 @@ func (m *Manager) ensureWorktreeIfConfigured(prd *PRD) (created bool, err error)
 	if baseRepo == "" {
 		return false, nil
 	}
+	if strings.TrimSpace(worktreeDir) == "" {
+		worktreeDir = defaultWorktreeDir(m.dataDir)
+	}
 	path, branch, werr := EnsureWorktree(prd, baseRepo, worktreeDir)
 	if werr != nil {
 		return false, fmt.Errorf("worktree setup: %w", werr)
 	}
-	prd.ProjectDir = path
-	prd.Git.Branch = branch
+	m.store.WithLock(func() {
+		prd.ProjectDir = path
+		prd.Git.Branch = branch
+	})
 	return true, nil
 }
 
 func runGitIn(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...) // #nosec G204 -- fixed git subcommands; dir/branch/path come from operator-controlled config and PRD fields, same trust model as every other git shell-out in this codebase (e.g. session.ProjectGit)
+	return runGitInCtx(context.Background(), dir, args...)
+}
+
+// mergeGitWaitDelay bounds how long Wait lingers for git's output pipes once
+// ctx has killed the process, so a grandchild holding a pipe open cannot keep
+// a cancelled call from returning.
+const mergeGitWaitDelay = 2 * time.Second
+
+// runGitInCtx is runGitIn with a context: when ctx ends, the git process is
+// killed and the call returns.
+func runGitInCtx(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed git subcommands; dir/branch/path come from operator-controlled config and PRD fields, same trust model as every other git shell-out in this codebase (e.g. session.ProjectGit)
 	cmd.Dir = dir
+	cmd.WaitDelay = mergeGitWaitDelay
 	out, err := cmd.CombinedOutput()
+	if cerr := ctx.Err(); cerr != nil && err != nil {
+		return string(out), fmt.Errorf("git %s: %w", args[0], cerr)
+	}
 	return string(out), err
 }

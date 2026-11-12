@@ -1,0 +1,29 @@
+# Generic words that must never become leak patterns: each one appears as a
+# normal English / product / protocol token throughout the codebase, so a
+# whole-tree replacement keyed on it would corrupt the source. One word per
+# line; blanks and '#' lines are ignored. Names are matched whole
+# (case-insensitive) by scripts/seed-leak-patterns.sh, which refuses to seed
+# a name found here.
+datawatch
+localhost
+claude
+ollama
+opencode
+openai
+goose
+aider
+gemini
+shell
+local
+remote
+node
+peer
+host
+server
+cluster
+default
+verdict
+pi
+test
+example
+gpu

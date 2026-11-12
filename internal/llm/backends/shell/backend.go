@@ -1,6 +1,9 @@
 // Package shell implements a configurable shell script LLM backend.
 // When script_path is empty, it opens an interactive shell session in tmux.
 // When script_path is set, the script receives the task as $1 and project dir as $2.
+// If the inline script-form command would exceed llm.MaxSendKeysCommand, the task
+// is written to a file in the project's .datawatch folder and the script receives
+// that file path as $1 instead. The command removes the file after the script exits.
 package shell
 
 import (
@@ -22,7 +25,7 @@ func New(scriptPath string) llm.Backend {
 	return &Backend{scriptPath: scriptPath}
 }
 
-func (b *Backend) Name() string                  { return "shell" }
+func (b *Backend) Name() string                   { return "shell" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
 func (b *Backend) HasToolAccess() bool            { return true }
 func (b *Backend) Version() string {
@@ -61,13 +64,25 @@ func isShellBinary(path string) bool {
 
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	var cmd string
+	var cmd, taskFile string
 	// If script_path is set to a shell binary (e.g. /usr/bin/bash), treat as interactive
 	isScript := b.scriptPath != "" && !isShellBinary(b.scriptPath)
 	if isScript && task != "" {
 		escapedTask := strings.ReplaceAll(task, "'", `'\''`)
+		escapedScript := strings.ReplaceAll(b.scriptPath, "'", `'\''`)
 		cmd = fmt.Sprintf("'%s' '%s' '%s'; echo 'DATAWATCH_COMPLETE: shell done'",
-			strings.ReplaceAll(b.scriptPath, "'", `'\''`), escapedTask, escapedDir)
+			escapedScript, escapedTask, escapedDir)
+		if len(cmd) > llm.MaxSendKeysCommand {
+			// Oversize task: hand the script a file path instead of inline text.
+			path, err := writeTaskFile(projectDir, tmuxSession, task)
+			if err != nil {
+				return fmt.Errorf("shell launch: write oversize task file: %w", err)
+			}
+			taskFile = path
+			escapedFile := strings.ReplaceAll(taskFile, "'", `'\''`)
+			cmd = fmt.Sprintf("'%s' '%s' '%s'; rm -f '%s'; echo 'DATAWATCH_COMPLETE: shell done'",
+				escapedScript, escapedFile, escapedDir, escapedFile)
+		}
 	} else {
 		// Interactive shell: cd to project dir and start bash with a known prompt.
 		// Use --rcfile with a custom init that sets PS1 so prompt detection works.
@@ -86,5 +101,9 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	// explicit length check for this branch's intentionally inline forms
 	// (the interactive echo-of-task and the script argv) — oversize
 	// commands are rejected up front, so nothing is ever sent to tmux.
-	return llm.SendKeys(ctx, tmuxSession, cmd)
+	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
+		return err
+	}
+	emitRecord(CommandRecord{Session: tmuxSession, Command: cmd, Start: recordNow(), TaskFile: taskFile})
+	return nil
 }

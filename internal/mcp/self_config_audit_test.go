@@ -1,72 +1,64 @@
-// BL110 — self-modify audit sink test.
+// BL412 — self_config_audit: the MCP read view.
 
 package mcp
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
-	"github.com/dmz006/datawatch/internal/config"
+	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
-func TestAuditSelfConfig_WritesFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "audit", "config-self-modify.jsonl")
-	s := &Server{cfg: &config.MCPConfig{
-		AllowSelfConfig:     true,
-		SelfConfigAuditPath: path,
-	}}
-
-	s.auditSelfConfig("foo.bar", "42")
-	s.auditSelfConfig("foo.baz", `"hello"`)
-
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
+func TestSelfConfigAudit_MCPProxy(t *testing.T) {
+	// The tool is a limit-only read: the description documents the
+	// surfaces, the allowed+denied scope and the newest-first order.
+	tool := (&Server{}).toolSelfConfigAudit()
+	if tool.Name != "self_config_audit" {
+		t.Fatalf("tool name = %q", tool.Name)
 	}
-	if len(raw) == 0 {
-		t.Fatal("audit file empty")
+	if _, ok := tool.InputSchema.Properties["limit"]; !ok {
+		t.Errorf("tool lacks the limit argument")
 	}
-	// Quick sanity: each line should be parseable JSON and the keys
-	// should match what we wrote.
-	lines := []string{}
-	cur := ""
-	for _, b := range raw {
-		if b == '\n' {
-			if cur != "" {
-				lines = append(lines, cur)
-			}
-			cur = ""
-			continue
+	text := tool.Description
+	for _, need := range []string{"newest-first", "allowed", "denied", "comm"} {
+		if !strings.Contains(text, need) {
+			t.Errorf("description lacks %q: %s", need, text)
 		}
-		cur += string(b)
 	}
-	if cur != "" {
-		lines = append(lines, cur)
-	}
-	if len(lines) != 2 {
-		t.Fatalf("got %d audit lines, want 2", len(lines))
-	}
-	var ev SelfConfigAudit
-	if err := json.Unmarshal([]byte(lines[0]), &ev); err != nil {
-		t.Fatalf("parse audit: %v", err)
-	}
-	if ev.Key != "foo.bar" || ev.Value != "42" {
-		t.Errorf("event mismatch: %+v", ev)
-	}
-}
 
-func TestAuditSelfConfig_NilCfg_NoCrash(t *testing.T) {
-	// When cfg is nil the function still writes to stderr; the test
-	// just asserts it doesn't panic.
-	s := &Server{}
-	s.auditSelfConfig("x", "y")
-}
+	var gotPath, gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"count":0,"entries":[],"path":"/x.jsonl"}`))
+	}))
+	defer srv.Close()
+	s := &Server{webPort: bl427Port(t, srv)}
 
-func TestAuditSelfConfig_NoFilePath_StderrOnly(t *testing.T) {
-	s := &Server{cfg: &config.MCPConfig{AllowSelfConfig: true}}
-	// SelfConfigAuditPath empty — must not panic, must not error.
-	s.auditSelfConfig("x", "y")
+	req := mcpsdk.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"limit": float64(5)}
+	res, err := s.handleSelfConfigAudit(t.Context(), req)
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if gotPath != "/api/audit/self-config" {
+		t.Errorf("path = %q", gotPath)
+	}
+	q, _ := url.ParseQuery(gotQuery)
+	if q.Get("limit") != "5" {
+		t.Errorf("forwarded limit = %q, want 5", q.Get("limit"))
+	}
+
+	// No limit → no query string (the daemon applies its default).
+	gotQuery = "unset"
+	empty := mcpsdk.CallToolRequest{}
+	empty.Params.Arguments = map[string]any{}
+	if res, err := s.handleSelfConfigAudit(t.Context(), empty); err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if gotQuery != "" {
+		t.Errorf("empty call forwarded query %q, want none", gotQuery)
+	}
 }

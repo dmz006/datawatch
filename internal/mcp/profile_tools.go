@@ -113,14 +113,14 @@ func profilePathForKind(kind string) (string, error) {
 func (s *Server) handleProfileList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	kind, err := profilePathForKind(req.GetString("kind", ""))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_list", err), nil
 	}
 	resp, body, err := s.profileCall("GET", kind, "", nil)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_list", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("list: HTTP %d: %s", resp.StatusCode, body)), nil
+		return toolHTTPError("list", resp, []byte(body)), nil
 	}
 	return mcpsdk.NewToolResultText(body), nil
 }
@@ -128,18 +128,18 @@ func (s *Server) handleProfileList(_ context.Context, req mcpsdk.CallToolRequest
 func (s *Server) handleProfileGet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	kind, err := profilePathForKind(req.GetString("kind", ""))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_get", err), nil
 	}
 	name := req.GetString("name", "")
 	if name == "" {
-		return mcpsdk.NewToolResultError("name is required"), nil
+		return toolErrorf("profile_get", "name is required"), nil
 	}
 	resp, body, err := s.profileCall("GET", kind, name, nil)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_get", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("get: HTTP %d: %s", resp.StatusCode, body)), nil
+		return toolHTTPError("get", resp, []byte(body)), nil
 	}
 	return mcpsdk.NewToolResultText(body), nil
 }
@@ -147,22 +147,22 @@ func (s *Server) handleProfileGet(_ context.Context, req mcpsdk.CallToolRequest)
 func (s *Server) handleProfileCreate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	kind, err := profilePathForKind(req.GetString("kind", ""))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_create", err), nil
 	}
 	body := req.GetString("body", "")
 	if body == "" {
-		return mcpsdk.NewToolResultError("body is required"), nil
+		return toolErrorf("profile_create", "body is required"), nil
 	}
 	// Validate JSON client-side so we get a clear error path
 	if err := json.Unmarshal([]byte(body), &map[string]interface{}{}); err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("body is not valid JSON: %v", err)), nil
+		return toolErrorf("profile_create", "body is not valid JSON: %v", err), nil
 	}
 	resp, respBody, err := s.profileCall("POST", kind, "", strings.NewReader(body))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_create", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("create: HTTP %d: %s", resp.StatusCode, respBody)), nil
+		return toolHTTPError("create", resp, []byte(respBody)), nil
 	}
 	return mcpsdk.NewToolResultText(respBody), nil
 }
@@ -170,22 +170,22 @@ func (s *Server) handleProfileCreate(_ context.Context, req mcpsdk.CallToolReque
 func (s *Server) handleProfileUpdate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	kind, err := profilePathForKind(req.GetString("kind", ""))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_update", err), nil
 	}
 	name := req.GetString("name", "")
 	body := req.GetString("body", "")
 	if name == "" || body == "" {
-		return mcpsdk.NewToolResultError("name and body are required"), nil
+		return toolErrorf("profile_update", "name and body are required"), nil
 	}
 	if err := json.Unmarshal([]byte(body), &map[string]interface{}{}); err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("body is not valid JSON: %v", err)), nil
+		return toolErrorf("profile_update", "body is not valid JSON: %v", err), nil
 	}
 	resp, respBody, err := s.profileCall("PUT", kind, name, strings.NewReader(body))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_update", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("update: HTTP %d: %s", resp.StatusCode, respBody)), nil
+		return toolHTTPError("update", resp, []byte(respBody)), nil
 	}
 	return mcpsdk.NewToolResultText(respBody), nil
 }
@@ -193,18 +193,18 @@ func (s *Server) handleProfileUpdate(_ context.Context, req mcpsdk.CallToolReque
 func (s *Server) handleProfileDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	kind, err := profilePathForKind(req.GetString("kind", ""))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_delete", err), nil
 	}
 	name := req.GetString("name", "")
 	if name == "" {
-		return mcpsdk.NewToolResultError("name is required"), nil
+		return toolErrorf("profile_delete", "name is required"), nil
 	}
 	resp, respBody, err := s.profileCall("DELETE", kind, name, nil)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_delete", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("delete: HTTP %d: %s", resp.StatusCode, respBody)), nil
+		return toolHTTPError("delete", resp, []byte(respBody)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Deleted %s profile %q", req.GetString("kind", ""), name)), nil
 }
@@ -212,23 +212,23 @@ func (s *Server) handleProfileDelete(_ context.Context, req mcpsdk.CallToolReque
 func (s *Server) handleProfileSmoke(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	kind, err := profilePathForKind(req.GetString("kind", ""))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_smoke", err), nil
 	}
 	name := req.GetString("name", "")
 	if name == "" {
-		return mcpsdk.NewToolResultError("name is required"), nil
+		return toolErrorf("profile_smoke", "name is required"), nil
 	}
 	// 422 (validation failed but profile exists) is a VALID result for
 	// the caller — forward the body so they can see the errors.
 	resp, respBody, err := s.profileCall("POST", kind, name+"/smoke", nil)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_smoke", err), nil
 	}
 	if resp.StatusCode == 404 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("profile not found: %s", name)), nil
+		return toolErrorf("profile_smoke", "profile not found: %s", name), nil
 	}
 	if resp.StatusCode >= 500 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("smoke: HTTP %d: %s", resp.StatusCode, respBody)), nil
+		return toolHTTPError("smoke", resp, []byte(respBody)), nil
 	}
 	// 200 or 422 both return the smoke result body
 	return mcpsdk.NewToolResultText(respBody), nil
@@ -250,7 +250,7 @@ func (s *Server) toolProfileSetAgentSettings() mcpsdk.Tool {
 func (s *Server) handleProfileSetAgentSettings(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	name := req.GetString("name", "")
 	if name == "" {
-		return mcpsdk.NewToolResultError("name is required"), nil
+		return toolErrorf("profile_set_agent_settings", "name is required"), nil
 	}
 	body := map[string]any{
 		"claude_auth_key_secret": req.GetString("claude_auth_key_secret", ""),
@@ -269,10 +269,10 @@ func (s *Server) handleProfileSetAgentSettings(_ context.Context, req mcpsdk.Cal
 	payload, _ := json.Marshal(body)
 	resp, respBody, err := s.profileCall("PATCH", "projects", name+"/agent-settings", bytes.NewReader(payload))
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("profile_set_agent_settings", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("HTTP %d: %s", resp.StatusCode, respBody)), nil
+		return toolHTTPError("profile_set_agent_settings", resp, []byte(respBody)), nil
 	}
 	return mcpsdk.NewToolResultText(respBody), nil
 }

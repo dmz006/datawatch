@@ -1,6 +1,9 @@
 package router
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,12 +23,12 @@ func TestParse_New(t *testing.T) {
 }
 
 func TestParse_NewWithProjectDir(t *testing.T) {
-	cmd := Parse("new: /home/user/myproject: add a login page")
+	cmd := Parse("new: /home/<user>/myproject: add a login page")
 	if cmd.Type != CmdNew {
 		t.Errorf("Type = %q, want %q", cmd.Type, CmdNew)
 	}
-	if cmd.ProjectDir != "/home/user/myproject" {
-		t.Errorf("ProjectDir = %q, want /home/user/myproject", cmd.ProjectDir)
+	if cmd.ProjectDir != "/home/<user>/myproject" {
+		t.Errorf("ProjectDir = %q, want /home/<user>/myproject", cmd.ProjectDir)
 	}
 	if cmd.Text != "add a login page" {
 		t.Errorf("Text = %q, want %q", cmd.Text, "add a login page")
@@ -395,9 +398,9 @@ func TestParseScheduleSpawnParams(t *testing.T) {
 			wantOneShot: true, // default
 		},
 		{
-			input:        "task=check logs dir=/home/user backend=openai llm-ref=gpt4o model=gpt-4o effort=thorough cron=0 * * * * name=hourly session-name=audit-sess",
+			input:        "task=check logs dir=/home/<user> backend=openai llm-ref=gpt4o model=gpt-4o effort=thorough cron=0 * * * * name=hourly session-name=audit-sess",
 			wantTask:     "check logs",
-			wantDir:      "/home/user",
+			wantDir:      "/home/<user>",
 			wantBackend:  "openai",
 			wantLLMRef:   "gpt4o",
 			wantModel:    "gpt-4o",
@@ -457,15 +460,15 @@ func TestParseScheduleSpawnParams(t *testing.T) {
 }
 
 func TestParse_ScheduleSpawn(t *testing.T) {
-	cmd := Parse("schedule spawn task=audit logs dir=/home/dmz cron=0 * * * *")
+	cmd := Parse("schedule spawn task=audit logs dir=/home/<user> cron=0 * * * *")
 	if cmd.Type != CmdScheduleSpawn {
 		t.Errorf("Type = %q, want %q", cmd.Type, CmdScheduleSpawn)
 	}
 	if cmd.SpawnTask != "audit logs" {
 		t.Errorf("SpawnTask = %q, want %q", cmd.SpawnTask, "audit logs")
 	}
-	if cmd.SpawnDir != "/home/dmz" {
-		t.Errorf("SpawnDir = %q, want %q", cmd.SpawnDir, "/home/dmz")
+	if cmd.SpawnDir != "/home/<user>" {
+		t.Errorf("SpawnDir = %q, want %q", cmd.SpawnDir, "/home/<user>")
 	}
 	if cmd.CronExpr != "0 * * * *" {
 		t.Errorf("CronExpr = %q, want %q", cmd.CronExpr, "0 * * * *")
@@ -517,5 +520,36 @@ func TestHandleCapacity_UsesCapacityFn(t *testing.T) {
 	mu.Unlock()
 	if !strings.Contains(joined, "not available") || !strings.Contains(joined, "host: 1/2") {
 		t.Fatalf("sent=%q", joined)
+	}
+}
+
+func TestParse_CapacityAdmission(t *testing.T) {
+	cmd := Parse("capacity admission x n1 m1")
+	if cmd.Type != CmdCapacityAdmission || cmd.Text != "x n1 m1" {
+		t.Fatalf("Parse = %+v", cmd)
+	}
+	if !strings.Contains(HelpText("h"), "capacity admission <backend> [node] [model]") {
+		t.Fatal("help text must list capacity admission")
+	}
+}
+
+func TestCapacityAdmission_CommUsageAndReply(t *testing.T) {
+	r := NewRouter("h", "g", nil, nil, 0, nil)
+	if got := r.HandleTestMessage("capacity admission"); len(got) != 1 || !strings.Contains(got[0], "Usage: capacity admission") {
+		t.Fatalf("usage reply %q", got)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		if q.URL.Path != "/api/capacity/admission" || q.URL.Query().Get("backend") != "x" || q.URL.Query().Get("node") != "n1" || q.URL.Query().Get("model") != "m1" {
+			http.Error(w, "bad "+q.URL.String(), 400)
+			return
+		}
+		_, _ = w.Write([]byte(`{"kind":"queued","queue_position":2,"reason":"pool full"}`))
+	}))
+	defer srv.Close()
+	port, _ := strconv.Atoi(srv.URL[strings.LastIndexByte(srv.URL, ':')+1:])
+	r.SetWebPort(port)
+	got := r.HandleTestMessage("capacity admission x n1 m1")
+	if len(got) != 1 || !strings.Contains(got[0], "would be queued at position 2: pool full") {
+		t.Fatalf("reply %q", got)
 	}
 }

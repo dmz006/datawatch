@@ -163,12 +163,12 @@ func (k NodeKind) IsDeprecated() bool {
 // Node can run. Real-time capacity comes from the monitoring stub's
 // latest snapshot (live polling lands in S1 too).
 type DeclaredCapacity struct {
-	GPUs                 int    `yaml:"gpus,omitempty" json:"gpus,omitempty"`
-	GPUMemGB             int    `yaml:"gpu_mem_gb,omitempty" json:"gpu_mem_gb,omitempty"`
-	RAMGB                int    `yaml:"ram_gb,omitempty" json:"ram_gb,omitempty"`
-	MaxConcurrentModels  int    `yaml:"max_concurrent_models,omitempty" json:"max_concurrent_models,omitempty"`
-	GPUVendor            string `yaml:"gpu_vendor,omitempty" json:"gpu_vendor,omitempty"`             // "nvidia" / "amd" / "intel" / ""
-	GPUModel             string `yaml:"gpu_model,omitempty" json:"gpu_model,omitempty"`
+	GPUs                int    `yaml:"gpus,omitempty" json:"gpus,omitempty"`
+	GPUMemGB            int    `yaml:"gpu_mem_gb,omitempty" json:"gpu_mem_gb,omitempty"`
+	RAMGB               int    `yaml:"ram_gb,omitempty" json:"ram_gb,omitempty"`
+	MaxConcurrentModels int    `yaml:"max_concurrent_models,omitempty" json:"max_concurrent_models,omitempty"`
+	GPUVendor           string `yaml:"gpu_vendor,omitempty" json:"gpu_vendor,omitempty"` // "nvidia" / "amd" / "intel" / ""
+	GPUModel            string `yaml:"gpu_model,omitempty" json:"gpu_model,omitempty"`
 }
 
 // MaintenanceWindow is one operator-declared blackout. Scheduler
@@ -223,6 +223,34 @@ type Node struct {
 	// RBAC.
 	Permissions Permissions `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 
+	// NodePinnedModel keeps this node on one model. Requests without an
+	// explicit model run on it; an explicit request for another model is
+	// refused unless AllowModelSwap is set. Empty = no pin.
+	NodePinnedModel string `yaml:"node_pinned_model,omitempty" json:"node_pinned_model,omitempty"`
+	// AllowModelSwap lets an explicit request replace the pinned model.
+	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
+
+	// TLSInsecureSkipVerify turns off certificate verification when the
+	// daemon probes this node's HTTPS endpoints for usage (loaded models,
+	// GPU stats). Default false = verify. Set it only for a node whose
+	// certificate is self-signed.
+	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
+
+	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the
+	// system roots when the daemon probes this node's HTTPS endpoints. Use it
+	// for a node whose certificate is signed by a private CA. Default empty =
+	// system roots only (which already honour SSL_CERT_FILE and SSL_CERT_DIR).
+	// Cannot be combined with tls_insecure_skip_verify.
+	TLSCAFile string `yaml:"tls_ca_file,omitempty" json:"tls_ca_file,omitempty"`
+
+	// TLSCertFingerprint pins the SHA-256 of this node's leaf certificate
+	// (hex, case-insensitive, colons optional; stored as 64 lowercase hex
+	// chars). Without tls_ca_file the node is trusted only when its leaf
+	// matches and the hostname is not checked; with tls_ca_file the chain must
+	// also verify. Default empty = no pin. Cannot be combined with
+	// tls_insecure_skip_verify.
+	TLSCertFingerprint string `yaml:"tls_cert_fingerprint,omitempty" json:"tls_cert_fingerprint,omitempty"`
+
 	// Scheduler hint: 0..100, higher = preferred when multiple
 	// Nodes are eligible for the same workload. Default 50.
 	SchedulingPriority int `yaml:"scheduling_priority,omitempty" json:"scheduling_priority,omitempty"`
@@ -230,6 +258,26 @@ type Node struct {
 	// MaxConcurrentSessions caps autonomous sessions in flight on this node
 	// (0 = unlimited). Enforced by the capacity ledger.
 	MaxConcurrentSessions int `yaml:"max_concurrent_sessions,omitempty" json:"max_concurrent_sessions,omitempty"`
+
+	// SessionSlots is the operator's worker count for this node (0 = derive
+	// from observer GPU data; see NodeSlots). The effective count is still
+	// capped by MaxConcurrentSessions when that is set.
+	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
+
+	// VerifierSlots is the operator's verifier worker count for this node.
+	// Nil (unset) = resolved by default in a later task; explicit 0 =
+	// verifier disabled on this node. Must not be negative.
+	VerifierSlots *int `yaml:"verifier_slots,omitempty" json:"verifier_slots,omitempty"`
+
+	// VerifierMinFreeMemMB is the free GPU memory in MB a new verifier
+	// needs on this node. Nil (unset) = default (resolved in a later
+	// task); explicit 0 turns the headroom check off. Must not be negative.
+	VerifierMinFreeMemMB *int `yaml:"verifier_min_free_mem_mb,omitempty" json:"verifier_min_free_mem_mb,omitempty"`
+
+	// VerifierContextMB is the extra context memory in MB one parallel
+	// verifier request needs on this node. 0 = unknown, so no suggestion
+	// is shown. Must not be negative.
+	VerifierContextMB int `yaml:"verifier_context_mb,omitempty" json:"verifier_context_mb,omitempty"`
 
 	// Operator-declared blackouts.
 	MaintenanceWindows []MaintenanceWindow `yaml:"maintenance_windows,omitempty" json:"maintenance_windows,omitempty"`
@@ -264,8 +312,8 @@ type Node struct {
 
 	// v8.0 BL318 — routing mode + per-mode config.
 	// When empty / "direct", dispatch goes to Address directly (legacy behaviour).
-	Routing              RoutingMode                  `yaml:"routing,omitempty" json:"routing,omitempty"`
-	RoutingDockerNetwork *RoutingDockerNetworkConfig  `yaml:"routing_docker_network,omitempty" json:"routing_docker_network,omitempty"`
+	Routing               RoutingMode                  `yaml:"routing,omitempty" json:"routing,omitempty"`
+	RoutingDockerNetwork  *RoutingDockerNetworkConfig  `yaml:"routing_docker_network,omitempty" json:"routing_docker_network,omitempty"`
 	RoutingDatawatchProxy *RoutingDatawatchProxyConfig `yaml:"routing_datawatch_proxy,omitempty" json:"routing_datawatch_proxy,omitempty"`
 
 	// v7.0.0-alpha.23b — explicit binding to a registered observer peer
@@ -277,10 +325,31 @@ type Node struct {
 	// going offline does NOT clear this (Q4: observer-down ≠ Node-down).
 	ObserverPeer string `yaml:"observer_peer,omitempty" json:"observer_peer,omitempty"`
 
+	// Drain state. Drained marks the operator's intent to stop placing
+	// fresh workloads on this node (maintenance, hardware swap, capacity
+	// reservation). DrainUntil bounds the drain: zero = open-ended (until
+	// manually cleared), non-zero = active only before that instant — an
+	// expired drain reads as not active but the stored fields are kept
+	// (DrainActive never mutates the node; clearing is an explicit
+	// undrain). DrainReason is the operator-supplied why.
+	Drained     bool      `yaml:"drained,omitempty" json:"drained,omitempty"`
+	DrainUntil  time.Time `yaml:"drain_until,omitempty" json:"drain_until,omitempty"`
+	DrainReason string    `yaml:"drain_reason,omitempty" json:"drain_reason,omitempty"`
+
 	// Bookkeeping.
 	CreatedAt   time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 	UpdatedAt   time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
 	AutoCreated bool      `yaml:"auto_created,omitempty" json:"auto_created,omitempty"`
+
+	// Backend version capture (save-time version probe, see
+	// version_probe.go). BackendVersion is the normalized semver core
+	// the backend reported ("0.5.14" for Ollama, "27.1.1" for Docker);
+	// when the backend reports a non-semver string the verbatim value
+	// is kept instead. VersionProbedAt is when the observation was
+	// made. Empty = never probed (e.g. kind with no version source).
+	VersionBackend  string    `yaml:"version_backend,omitempty" json:"version_backend,omitempty"`
+	BackendVersion  string    `yaml:"backend_version,omitempty" json:"backend_version,omitempty"`
+	VersionProbedAt time.Time `yaml:"version_probed_at,omitempty" json:"version_probed_at,omitempty"`
 }
 
 // HardwareSpec captures auto-detectable + operator-overridable hardware
@@ -313,8 +382,8 @@ type DockerConfig struct {
 // K8sConfig — kind=k8s connection params. Cluster MUST reference an
 // existing Cluster Profile (operator-spec'd Q2: dropdown only).
 type K8sConfig struct {
-	ClusterProfile string `yaml:"cluster_profile" json:"cluster_profile"`             // ClusterProfile name (required)
-	Namespace      string `yaml:"namespace,omitempty" json:"namespace,omitempty"`     // default "default"
+	ClusterProfile string `yaml:"cluster_profile" json:"cluster_profile"`         // ClusterProfile name (required)
+	Namespace      string `yaml:"namespace,omitempty" json:"namespace,omitempty"` // default "default"
 	ServiceAccount string `yaml:"service_account,omitempty" json:"service_account,omitempty"`
 }
 
@@ -366,11 +435,42 @@ func (n *Node) Validate() error {
 			return fmt.Errorf("compute node: kind %q requires address", n.Kind)
 		}
 	}
+	n.TLSCAFile = strings.TrimSpace(n.TLSCAFile)
+	if n.TLSCertFingerprint != "" {
+		fp, err := normalizeCertFingerprint(n.TLSCertFingerprint)
+		if err != nil {
+			return err
+		}
+		n.TLSCertFingerprint = fp
+	}
+	if n.TLSInsecureSkipVerify && (n.TLSCAFile != "" || n.TLSCertFingerprint != "") {
+		return errors.New("compute node: tls_insecure_skip_verify cannot be combined with tls_ca_file or tls_cert_fingerprint (choose one: verify, pin or skip)")
+	}
 	if n.MaxConcurrentSessions < 0 {
 		return fmt.Errorf("compute node: max_concurrent_sessions %d must be >= 0", n.MaxConcurrentSessions)
 	}
+	if n.SessionSlots < 0 {
+		return fmt.Errorf("compute node: session_slots %d must be >= 0", n.SessionSlots)
+	}
+	if n.VerifierSlots != nil && *n.VerifierSlots < 0 {
+		return fmt.Errorf("compute node: verifier_slots %d must be >= 0", *n.VerifierSlots)
+	}
+	if n.VerifierMinFreeMemMB != nil && *n.VerifierMinFreeMemMB < 0 {
+		return fmt.Errorf("compute node: verifier_min_free_mem_mb %d must be >= 0", *n.VerifierMinFreeMemMB)
+	}
+	if n.VerifierContextMB < 0 {
+		return fmt.Errorf("compute node: verifier_context_mb %d must be >= 0", n.VerifierContextMB)
+	}
 	if n.SchedulingPriority < 0 || n.SchedulingPriority > 100 {
 		return fmt.Errorf("compute node: scheduling_priority %d out of range [0,100]", n.SchedulingPriority)
+	}
+	// node_pinned_model, when present, must name a model. Whitespace-only
+	// is rejected rather than silently treated as no pin.
+	if n.NodePinnedModel != "" {
+		n.NodePinnedModel = strings.TrimSpace(n.NodePinnedModel)
+		if n.NodePinnedModel == "" {
+			return errors.New("compute node: node_pinned_model must be a non-empty model name")
+		}
 	}
 	if n.DeclaredCapacity.GPUs < 0 || n.DeclaredCapacity.GPUMemGB < 0 ||
 		n.DeclaredCapacity.RAMGB < 0 || n.DeclaredCapacity.MaxConcurrentModels < 0 {
@@ -424,6 +524,17 @@ func (n *Node) InMaintenance(now time.Time) bool {
 		}
 	}
 	return false
+}
+
+// DrainActive reports whether the node's drain is in effect at now.
+// True when Drained is set and either DrainUntil is zero (open-ended)
+// or now is strictly before DrainUntil. An expired drain reads as not
+// active; this method never clears the stored drain fields.
+func (n *Node) DrainActive(now time.Time) bool {
+	if !n.Drained {
+		return false
+	}
+	return n.DrainUntil.IsZero() || now.Before(n.DrainUntil)
 }
 
 // AllowsConsumer applies the RBAC matrix for the named consumer.

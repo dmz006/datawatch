@@ -1,6 +1,15 @@
 package inference
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
 
 // #179 — GET /api/llms and the llm_list/llm_get MCP tools must never echo
 // a literal api_key_ref in clear text.
@@ -60,5 +69,251 @@ func TestRedactedList(t *testing.T) {
 	// Source slice must be untouched.
 	if in[0].APIKeyRef != "sk-literal" {
 		t.Fatal("RedactedList must not mutate its input")
+	}
+}
+
+func TestLLMBillingGroupRoundTrip(t *testing.T) {
+	l := LLM{Name: "cc", Kind: KindClaudeCode, BillingGroup: "shared-plan-a"}
+
+	t.Run("json", func(t *testing.T) {
+		raw, err := json.Marshal(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"billing_group":"shared-plan-a"`) {
+			t.Fatalf("json missing billing_group: %s", raw)
+		}
+		var got LLM
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.BillingGroup != "shared-plan-a" {
+			t.Fatalf("json round trip = %q, want %q", got.BillingGroup, "shared-plan-a")
+		}
+	})
+
+	t.Run("yaml", func(t *testing.T) {
+		raw, err := yaml.Marshal(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "billing_group: shared-plan-a") {
+			t.Fatalf("yaml missing billing_group: %s", raw)
+		}
+		var got LLM
+		if err := yaml.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.BillingGroup != "shared-plan-a" {
+			t.Fatalf("yaml round trip = %q, want %q", got.BillingGroup, "shared-plan-a")
+		}
+	})
+
+	t.Run("absent stays empty", func(t *testing.T) {
+		none := LLM{Name: "cc", Kind: KindClaudeCode}
+		// Marshalled output must omit the field entirely (omitempty).
+		raw, _ := json.Marshal(none)
+		if strings.Contains(string(raw), "billing_group") {
+			t.Errorf("json should omit empty billing_group: %s", raw)
+		}
+		raw, _ = yaml.Marshal(none)
+		if strings.Contains(string(raw), "billing_group") {
+			t.Errorf("yaml should omit empty billing_group: %s", raw)
+		}
+		// Unmarshalling a document without the field must leave it empty.
+		var got LLM
+		if err := json.Unmarshal([]byte(`{"name":"cc","kind":"claude-code"}`), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.BillingGroup != "" {
+			t.Fatalf("unmarshal without billing_group = %q, want empty", got.BillingGroup)
+		}
+		if err := got.Validate(); err != nil {
+			t.Errorf("empty billing_group must validate: %v", err)
+		}
+	})
+}
+
+func TestLLMBillingGroupValidate(t *testing.T) {
+	base := func(bg string) *LLM {
+		return &LLM{Name: "cc", Kind: KindClaudeCode, BillingGroup: bg}
+	}
+
+	t.Run("trim on save", func(t *testing.T) {
+		l := base("  shared-plan-a  ")
+		if err := l.Validate(); err != nil {
+			t.Fatalf("valid label failed: %v", err)
+		}
+		if l.BillingGroup != "shared-plan-a" {
+			t.Fatalf("Validate should trim whitespace, got %q", l.BillingGroup)
+		}
+	})
+
+	t.Run("length limit", func(t *testing.T) {
+		if err := base(strings.Repeat("a", 64)).Validate(); err != nil {
+			t.Errorf("64-char label must validate: %v", err)
+		}
+		if err := base(strings.Repeat("a", 65)).Validate(); err == nil {
+			t.Error("65-char label must be rejected")
+		}
+		// Whitespace padding doesn't smuggle a long label past the limit.
+		if err := base(strings.Repeat("a", 60) + "     ").Validate(); err != nil {
+			t.Errorf("trimmed length is what counts: %v", err)
+		}
+	})
+
+	t.Run("control characters", func(t *testing.T) {
+		for _, bg := range []string{"shared\x00plan", "shared\tplan", "shared\nplan"} {
+			if err := base(bg).Validate(); err == nil {
+				t.Errorf("label with control character %q must be rejected", bg)
+			}
+		}
+	})
+
+	t.Run("empty ok", func(t *testing.T) {
+		if err := base("").Validate(); err != nil {
+			t.Errorf("empty billing_group is valid (no group): %v", err)
+		}
+		if err := base("   ").Validate(); err != nil {
+			t.Errorf("all-whitespace trims to empty, which is valid: %v", err)
+		}
+	})
+}
+
+func TestLLMBudgetRoundTrip(t *testing.T) {
+	budget := &BudgetWindow{
+		CeilingUSD:    75.5,
+		Weekday:       "friday",
+		Time:          "08:00",
+		Zone:          "America/New_York",
+		AllocationPct: true,
+		PeerWindow:    []string{"peer-a"},
+	}
+	l := LLM{Name: "cc", Kind: KindClaudeCode, Budget: budget}
+
+	t.Run("json", func(t *testing.T) {
+		raw, err := json.Marshal(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"budget":{"ceiling_usd":75.5`) {
+			t.Fatalf("json missing budget: %s", raw)
+		}
+		var got LLM
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got.Budget, budget) {
+			t.Fatalf("json round trip = %+v, want %+v", got.Budget, budget)
+		}
+	})
+
+	t.Run("yaml", func(t *testing.T) {
+		raw, err := yaml.Marshal(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "budget:") || !strings.Contains(string(raw), "ceiling_usd: 75.5") {
+			t.Fatalf("yaml missing budget: %s", raw)
+		}
+		var got LLM
+		if err := yaml.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got.Budget, budget) {
+			t.Fatalf("yaml round trip = %+v, want %+v", got.Budget, budget)
+		}
+	})
+
+	t.Run("nil budget omitted", func(t *testing.T) {
+		none := LLM{Name: "cc", Kind: KindClaudeCode}
+		raw, _ := json.Marshal(none)
+		if strings.Contains(string(raw), "budget") {
+			t.Errorf("json should omit nil budget: %s", raw)
+		}
+		raw, _ = yaml.Marshal(none)
+		if strings.Contains(string(raw), "budget") {
+			t.Errorf("yaml should omit nil budget: %s", raw)
+		}
+		if err := none.Validate(); err != nil {
+			t.Errorf("nil budget must validate: %v", err)
+		}
+	})
+
+	t.Run("registry add and update", func(t *testing.T) {
+		r := NewRegistry()
+		good := &LLM{Name: "cc", Kind: KindClaudeCode, Budget: &BudgetWindow{CeilingUSD: 10, Hours: 5}}
+		if err := r.Add(good); err != nil {
+			t.Fatalf("add valid budget: %v", err)
+		}
+		got, err := r.Get("cc")
+		if err != nil || got.Budget == nil || got.Budget.CeilingUSD != 10 {
+			t.Fatalf("stored budget = %+v, err %v", got, err)
+		}
+
+		bad := &LLM{Name: "bad", Kind: KindClaudeCode, Budget: &BudgetWindow{CeilingUSD: 10}}
+		err = r.Add(bad)
+		if err == nil || !strings.Contains(err.Error(), "budget") {
+			t.Fatalf("add invalid budget: want budget error, got %v", err)
+		}
+		if r.Exists("bad") {
+			t.Error("rejected LLM must not be stored")
+		}
+
+		upd := &LLM{Name: "cc", Kind: KindClaudeCode, Budget: &BudgetWindow{CeilingUSD: 20, Weekday: "monday"}}
+		if err := r.Update(upd); err != nil {
+			t.Fatalf("update valid budget: %v", err)
+		}
+		badUpd := &LLM{Name: "cc", Kind: KindClaudeCode, Budget: &BudgetWindow{CeilingUSD: 20, Hours: 5, Weekday: "monday"}}
+		if err := r.Update(badUpd); err == nil || !strings.Contains(err.Error(), "budget") {
+			t.Fatalf("update invalid budget: want budget error, got %v", err)
+		}
+		got, _ = r.Get("cc")
+		if got.Budget == nil || got.Budget.Weekday != "monday" || got.Budget.CeilingUSD != 20 {
+			t.Fatalf("failed update must leave stored budget alone, got %+v", got.Budget)
+		}
+	})
+}
+
+func TestLLMVerificationModeAbsentIsGenerate(t *testing.T) {
+	l := &LLM{Name: "judge", Kind: KindOllama}
+	if err := l.Validate(); err != nil {
+		t.Fatalf("absent verification_mode must validate: %v", err)
+	}
+	if got := l.EffectiveVerificationMode(); got != VerificationModeGenerate {
+		t.Fatalf("absent mode = %q, want generate", got)
+	}
+	c := &LLM{Name: "judge", Kind: KindOllama, VerificationMode: VerificationModeClassify}
+	if err := c.Validate(); err != nil || c.EffectiveVerificationMode() != VerificationModeClassify {
+		t.Fatalf("classify must validate and resolve: %v", err)
+	}
+}
+
+func TestLLMVerificationModeInvalidRejected(t *testing.T) {
+	bad := &LLM{Name: "judge", Kind: KindOllama, VerificationMode: "Classify "}
+	if err := bad.Validate(); err == nil {
+		t.Fatal("invalid verification_mode must be rejected by Validate")
+	}
+	r := NewRegistry()
+	if err := r.Add(bad); err == nil {
+		t.Fatal("Add must reject invalid verification_mode")
+	}
+	good := &LLM{Name: "judge", Kind: KindOllama}
+	if err := r.Add(good); err != nil {
+		t.Fatal(err)
+	}
+	upd := &LLM{Name: "judge", Kind: KindOllama, VerificationMode: "bogus"}
+	if err := r.Update(upd); err == nil {
+		t.Fatal("Update must reject invalid verification_mode")
+	}
+}
+
+func TestRegistryLoadRejectsInvalidVerificationMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "llms.json")
+	if err := os.WriteFile(path, []byte(`[{"name":"judge","kind":"ollama","verification_mode":"bogus"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewRegistryFromFile(path); err == nil {
+		t.Fatal("load must reject invalid verification_mode")
 	}
 }

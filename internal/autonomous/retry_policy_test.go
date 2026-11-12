@@ -251,3 +251,36 @@ func TestRetryProfile_CRUD(t *testing.T) {
 		t.Fatal("profile should be gone after delete")
 	}
 }
+
+// Infra escalation drops the failed per-unit override. GuardrailPinned must
+// be cleared with the backend: the retry now runs on the global default, and
+// a stale true would make the retry look like an explicit pin.
+func TestRunGuardrailWithInfraRetry_EscalationClearsGuardrailPinned(t *testing.T) {
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prd := &PRD{ID: "p1", RetryCeilingTotal: 10}
+	var seen []GuardrailInvocation
+	fn := func(ctx context.Context, inv GuardrailInvocation) (GuardrailVerdict, error) {
+		seen = append(seen, inv)
+		return GuardrailVerdict{Outcome: "block", Category: "infra", Summary: "still broken"}, nil
+	}
+	inv := GuardrailInvocation{GuardrailBackend: "pinned-backend", GuardrailModel: "pinned-model", GuardrailPinned: true}
+	if _, err := m.runGuardrailWithInfraRetry(context.Background(), prd, inv, fn); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 5 {
+		t.Fatalf("want 5 calls (3 original + 2 escalated), got %d", len(seen))
+	}
+	for i, got := range seen[:3] {
+		if got.GuardrailBackend != "pinned-backend" || !got.GuardrailPinned {
+			t.Errorf("call %d = backend %q pinned %v, want the original pinned override", i+1, got.GuardrailBackend, got.GuardrailPinned)
+		}
+	}
+	for i, got := range seen[3:] {
+		if got.GuardrailBackend != "" || got.GuardrailModel != "" || got.GuardrailPinned {
+			t.Errorf("escalated call %d = backend %q model %q pinned %v, want all cleared", i+4, got.GuardrailBackend, got.GuardrailModel, got.GuardrailPinned)
+		}
+	}
+}

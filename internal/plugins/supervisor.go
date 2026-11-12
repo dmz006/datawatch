@@ -17,6 +17,7 @@ package plugins
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -86,6 +87,9 @@ type ServiceStatus struct {
 	LastExit            int          `json:"last_exit"` // exit code; -1 = killed by signal / unknown
 	StartedAt           time.Time    `json:"started_at,omitempty"`
 	HealthyAt           time.Time    `json:"healthy_at,omitempty"`
+	Version             string       `json:"version,omitempty"`            // from the health response when it carries one
+	LastHealthCheck     time.Time    `json:"last_health_check,omitempty"`  // zero until the first probe
+	LastHealthStatus    string       `json:"last_health_status,omitempty"` // "up" or "down" of the last probe
 }
 
 // ServiceSupervisor runs and supervises one managed service-kind plugin.
@@ -125,6 +129,11 @@ type ServiceSupervisor struct {
 	// while the supervisor's mutex is held, but it is called from the
 	// supervision goroutine, so it must not block for long.
 	OnEvent func(ev ServiceEvent)
+	// OnProbe, when set, is invoked once per completed health probe with
+	// its outcome (true = up). It is not called while the supervisor's
+	// mutex is held. It is set once before the supervisor starts and may
+	// be nil. Used to feed the service event recorder.
+	OnProbe func(healthy bool)
 
 	name          string
 	entry         string
@@ -150,6 +159,10 @@ type ServiceSupervisor struct {
 	lastExit   int
 	startedAt  time.Time
 	healthyAt  time.Time
+
+	lastProbeAt time.Time // last health probe; zero until the first
+	lastProbeOK bool
+	version     string // last version field seen in a health response
 }
 
 // NewServiceSupervisor builds a supervisor for p. p must be kind: service
@@ -215,7 +228,7 @@ func NewServiceSupervisor(p *Plugin, store secrets.Store) (*ServiceSupervisor, e
 	}
 	if c := p.Connection; c != nil {
 		if c.HealthPath != "" {
-			s.healthURL = strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(c.HealthPath, "/")
+			s.healthURL = connectionHealthURL(c)
 		}
 		h, err := resolveConnectionAuthHeader(p, store)
 		if err != nil {
@@ -224,6 +237,13 @@ func NewServiceSupervisor(p *Plugin, store secrets.Store) (*ServiceSupervisor, e
 		s.authHeader = h
 	}
 	return s, nil
+}
+
+// connectionHealthURL joins a connection's base URL and health path into
+// the absolute URL a health probe GETs. Shared by the service supervisor
+// and the attach-only health probe; callers check HealthPath != "" first.
+func connectionHealthURL(c *PluginConnection) string {
+	return strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(c.HealthPath, "/")
 }
 
 // resolveConnectionAuthHeader returns the Authorization header value for
@@ -256,7 +276,7 @@ func (s *ServiceSupervisor) State() ServiceState {
 func (s *ServiceSupervisor) Status() ServiceStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return ServiceStatus{
+	st := ServiceStatus{
 		Plugin:              s.name,
 		State:               s.state,
 		PID:                 s.pid,
@@ -266,7 +286,17 @@ func (s *ServiceSupervisor) Status() ServiceStatus {
 		LastExit:            s.lastExit,
 		StartedAt:           s.startedAt,
 		HealthyAt:           s.healthyAt,
+		Version:             s.version,
+		LastHealthCheck:     s.lastProbeAt,
 	}
+	if !s.lastProbeAt.IsZero() {
+		if s.lastProbeOK {
+			st.LastHealthStatus = "up"
+		} else {
+			st.LastHealthStatus = "down"
+		}
+	}
+	return st
 }
 
 // active reports whether the supervision loop is running (started and not
@@ -582,7 +612,8 @@ func (s *ServiceSupervisor) watch(cmd *exec.Cmd, exitCh <-chan error) attemptRes
 			if s.healthURL == "" {
 				continue
 			}
-			err := s.probe(ctx)
+			version, err := s.probe(ctx)
+			s.recordProbe(err == nil, version)
 			if err == nil {
 				if !healthy || probeFails > 0 {
 					if !healthy {
@@ -615,25 +646,54 @@ func (s *ServiceSupervisor) watch(cmd *exec.Cmd, exitCh <-chan error) attemptRes
 	}
 }
 
-// probe performs one health check; nil means a 2xx response.
-func (s *ServiceSupervisor) probe(ctx context.Context) error {
+// probe performs one health check; a nil error means a 2xx response and
+// version is the "version" field of the JSON health response ("" when the
+// response is not JSON or carries no such field).
+func (s *ServiceSupervisor) probe(ctx context.Context) (version string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.healthURL, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if s.authHeader != "" {
 		req.Header.Set("Authorization", s.authHeader)
 	}
 	resp, err := s.HTTPClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("health endpoint returned %s", resp.Status)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		body = nil
 	}
-	return nil
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", fmt.Errorf("health endpoint returned %s", resp.Status)
+	}
+	var doc map[string]json.RawMessage
+	if json.Unmarshal(body, &doc) == nil {
+		if raw, ok := doc["version"]; ok {
+			var v string
+			if json.Unmarshal(raw, &v) == nil {
+				version = v
+			}
+		}
+	}
+	return version, nil
+}
+
+// recordProbe stores the latest health probe outcome for status reporting
+// and, when OnProbe is set, reports the outcome to it (outside s.mu).
+func (s *ServiceSupervisor) recordProbe(ok bool, version string) {
+	s.mu.Lock()
+	s.lastProbeAt = time.Now()
+	s.lastProbeOK = ok
+	if ok && version != "" {
+		s.version = version
+	}
+	s.mu.Unlock()
+	if fn := s.OnProbe; fn != nil {
+		fn(ok)
+	}
 }
 
 // terminate stops the child gracefully, then forcefully, and waits for

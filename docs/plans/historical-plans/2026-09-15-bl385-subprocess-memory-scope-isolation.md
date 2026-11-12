@@ -239,8 +239,8 @@ Authorization: Bearer <token>
 
 {
   "scope":      "session-local",        // required; one of the 6 scope names
-  "project":    "/home/user/datawatch", // required (except persona-global)
-  "session_id": "johnnyjohnny-12cf",    // required for session-local
+  "project":    "/home/<user>/datawatch", // required (except persona-global)
+  "session_id": "local-node-12cf",    // required for session-local
   "prd_id":     "0fb4e302",             // required for prd-shared
   "story_id":   "9b90b7a5",             // required for story-shared
   "persona":    "",                     // required for persona-* scopes
@@ -362,19 +362,19 @@ etc.) using the existing `memory` command family:
 
 ```
 # Write to a specific scope
-memory scope save  scope=prd-shared  project=/home/user/proj  prd_id=0fb4e302  text="found that X approach causes OOM"
+memory scope save  scope=prd-shared  project=/home/<user>/proj  prd_id=0fb4e302  text="found that X approach causes OOM"
 
 # Write to story scope
-memory scope save  scope=story-shared  project=/home/user/proj  story_id=9b90b7a5  text="pattern Z works here"  role=learning
+memory scope save  scope=story-shared  project=/home/<user>/proj  story_id=9b90b7a5  text="pattern Z works here"  role=learning
 
 # Delete an entire scope (e.g. cleanup after PRD deleted)
-memory scope delete  scope=prd-shared  project=/home/user/proj  prd_id=0fb4e302
+memory scope delete  scope=prd-shared  project=/home/<user>/proj  prd_id=0fb4e302
 
 # Recall across hierarchy for a session in a PRD context
-memory scope recall  project=/home/user/proj  session_id=johnnyjohnny-12cf  prd_id=0fb4e302  story_id=9b90b7a5  query="approach for X"
+memory scope recall  project=/home/<user>/proj  session_id=local-node-12cf  prd_id=0fb4e302  story_id=9b90b7a5  query="approach for X"
 
 # List all scopes with data
-memory scope inventory  project=/home/user/proj
+memory scope inventory  project=/home/<user>/proj
 ```
 
 These comm commands proxy to the same REST endpoints as the MCP tools.
@@ -422,21 +422,21 @@ surface useful memories from the session up to story or PRD scope:
 # Promote one session-local memory to story-shared
 memory_scope_promote
   memory_id=42
-  from_scope=session-local from_session=12cf from_project=/home/user/datawatch
-  to_scope=story-shared    to_project=/home/user/datawatch
+  from_scope=session-local from_session=12cf from_project=/home/<user>/datawatch
+  to_scope=story-shared    to_project=/home/<user>/datawatch
   → stores as (project, "story/9b90b7a5", "")
 
 # Promote to PRD-shared (visible to all stories in the PRD)
 memory_scope_promote
   memory_id=42
-  from_scope=session-local from_session=12cf from_project=/home/user/datawatch
-  to_scope=prd-shared      to_project=/home/user/datawatch
+  from_scope=session-local from_session=12cf from_project=/home/<user>/datawatch
+  to_scope=prd-shared      to_project=/home/<user>/datawatch
   → stores as (project, "prd/0fb4e302", "")
 
 # Bulk seed all story-local memories from one task into story-shared
 memory_scope_seed
-  from_scope=session-local from_session=12cf from_project=/home/user/datawatch
-  to_scope=story-shared    to_project=/home/user/datawatch
+  from_scope=session-local from_session=12cf from_project=/home/<user>/datawatch
+  to_scope=story-shared    to_project=/home/<user>/datawatch
   [story_id auto-derived from the from_session if executor injects it]
 ```
 

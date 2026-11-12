@@ -11,7 +11,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -36,24 +35,24 @@ func (s *Server) toolResultPut() mcpsdk.Tool {
 
 func (s *Server) handleResultPut(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.resultStore == nil {
-		return mcpsdk.NewToolResultText("Result store not available. Start the daemon first."), nil
+		return toolErrorf("result_put", "Result store not available. Start the daemon first."), nil
 	}
 	name := req.GetString("name", "")
 	if name == "" {
-		return mcpsdk.NewToolResultText("Error: name is required"), nil
+		return toolErrorf("result_put", "name is required"), nil
 	}
 	payloadStr := req.GetString("payload", "")
 	if payloadStr == "" {
-		return mcpsdk.NewToolResultText("Error: payload is required"), nil
+		return toolErrorf("result_put", "payload is required"), nil
 	}
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: invalid payload JSON: %v", err)), nil
+		return toolErrorf("result_put", "invalid payload JSON: %v", err), nil
 	}
 	ttlSeconds := int(req.GetFloat("ttl_seconds", 0))
 	entry, err := s.resultStore.Put(name, payload, ttlSeconds)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: put failed: %v", err)), nil
+		return toolErrorf("result_put", "put failed: %v", err), nil
 	}
 	b, _ := json.MarshalIndent(entry, "", "  ")
 	return mcpsdk.NewToolResultText(string(b)), nil
@@ -72,11 +71,11 @@ func (s *Server) toolResultGet() mcpsdk.Tool {
 
 func (s *Server) handleResultGet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.resultStore == nil {
-		return mcpsdk.NewToolResultText("Result store not available. Start the daemon first."), nil
+		return toolErrorf("result_get", "Result store not available. Start the daemon first."), nil
 	}
 	name := req.GetString("name", "")
 	if name == "" {
-		return mcpsdk.NewToolResultText("Error: name is required"), nil
+		return toolErrorf("result_get", "name is required"), nil
 	}
 	entry, ok := s.resultStore.Get(name)
 	if !ok {
@@ -98,7 +97,7 @@ func (s *Server) toolResultList() mcpsdk.Tool {
 
 func (s *Server) handleResultList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.resultStore == nil {
-		return mcpsdk.NewToolResultText("Result store not available. Start the daemon first."), nil
+		return toolErrorf("result_list", "Result store not available. Start the daemon first."), nil
 	}
 	prefix := req.GetString("prefix", "")
 	entries := s.resultStore.List(prefix)
@@ -122,14 +121,14 @@ func (s *Server) toolResultDelete() mcpsdk.Tool {
 
 func (s *Server) handleResultDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.resultStore == nil {
-		return mcpsdk.NewToolResultText("Result store not available. Start the daemon first."), nil
+		return toolErrorf("result_delete", "Result store not available. Start the daemon first."), nil
 	}
 	name := req.GetString("name", "")
 	if name == "" {
-		return mcpsdk.NewToolResultText("Error: name is required"), nil
+		return toolErrorf("result_delete", "name is required"), nil
 	}
 	if err := s.resultStore.Delete(name); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("result_delete", err), nil
 	}
 	return mcpsdk.NewToolResultText("Deleted: " + name), nil
 }

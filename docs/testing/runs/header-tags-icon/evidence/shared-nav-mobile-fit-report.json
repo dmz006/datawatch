@@ -1,0 +1,97 @@
+{
+  "story": "shared-nav-mobile-fit",
+  "mode": "gate",
+  "substitute_for": "scripts/test-stories/pwa/shared-nav-mobile-fit.mjs (absent from this branch)",
+  "daemon_version": "datawatch v9.32.0",
+  "gate": "pass",
+  "checks": {
+    "clipped-text": "nav label text extends past the visible nav bar, so it is cut off by the nav scroller",
+    "tap-target": "nav button under 44x44 CSS px",
+    "overlap": "nav label text or nav button box intersects another nav item"
+  },
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "total_findings": 0,
+  "viewports": {
+    "light/320x568": {
+      "theme": "light",
+      "navBox": {
+        "x": 0,
+        "y": 508,
+        "w": 320,
+        "h": 60
+      },
+      "navScrollWidth": 320,
+      "navClientWidth": 320,
+      "navItems": 6,
+      "findings": []
+    },
+    "light/360x740": {
+      "theme": "light",
+      "navBox": {
+        "x": 0,
+        "y": 680,
+        "w": 360,
+        "h": 60
+      },
+      "navScrollWidth": 360,
+      "navClientWidth": 360,
+      "navItems": 6,
+      "findings": []
+    },
+    "light/390x844": {
+      "theme": "light",
+      "navBox": {
+        "x": 0,
+        "y": 784,
+        "w": 390,
+        "h": 60
+      },
+      "navScrollWidth": 390,
+      "navClientWidth": 390,
+      "navItems": 6,
+      "findings": []
+    },
+    "dark/320x568": {
+      "theme": "dark",
+      "navBox": {
+        "x": 0,
+        "y": 508,
+        "w": 320,
+        "h": 60
+      },
+      "navScrollWidth": 320,
+      "navClientWidth": 320,
+      "navItems": 6,
+      "findings": []
+    },
+    "dark/360x740": {
+      "theme": "dark",
+      "navBox": {
+        "x": 0,
+        "y": 680,
+        "w": 360,
+        "h": 60
+      },
+      "navScrollWidth": 360,
+      "navClientWidth": 360,
+      "navItems": 6,
+      "findings": []
+    },
+    "dark/390x844": {
+      "theme": "dark",
+      "navBox": {
+        "x": 0,
+        "y": 784,
+        "w": 390,
+        "h": 60
+      },
+      "navScrollWidth": 390,
+      "navClientWidth": 390,
+      "navItems": 6,
+      "findings": []
+    }
+  }
+}

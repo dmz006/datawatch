@@ -7,9 +7,13 @@
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
+# Inherited non-root user name (see agent-base); home under /home/${DW_USER}.
+ARG DW_USER=datawatch
 ARG AIDER_VERSION=0.86.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG AIDER_VERSION
 
 USER root
@@ -24,6 +28,8 @@ RUN install_packages \
     # Use python -m pip (not the pip symlink) — Debian venvs omit the bare pip binary.
     /opt/pipx/venvs/aider-chat/bin/python -m pip install --quiet --no-cache-dir \
         "gitpython>=3.1.50" \
+        # certifi floor clears GHSA-6q48-6c7w-9gw2
+        "certifi>=2026.10.19" \
         "litellm>=1.83.7" \
         "urllib3>=2.8.0" \
         "pyasn1>=0.6.3" \
@@ -48,7 +54,7 @@ RUN install_packages \
     # its own venv at /opt/pipx/venvs/aider-chat, entrypoint-linked into
     # PIPX_BIN_DIR). Confirmed `aider --version` still works with it removed.
     # Deleting it removes a stale CVE surface entirely rather than patching it.
-    rm -rf /root/.cache/pip /opt/pipx/.cache /opt/pipx/shared /home/datawatch/.cache \
+    rm -rf /root/.cache/pip /opt/pipx/.cache /opt/pipx/shared /home/${DW_USER}/.cache \
            /var/cache/apt/* \
            /usr/share/doc /usr/share/man /usr/include \
            /tmp/* /root/.npm

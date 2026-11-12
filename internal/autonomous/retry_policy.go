@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -33,6 +34,12 @@ func (m *Manager) resolveRetryPolicy(prd *PRD, category string) int {
 				return v
 			}
 		}
+	}
+	// Project/ Automaton tier: a category named in the higher tier's retry
+	// policy applies before the daemon's global map (a category absent from
+	// either keeps falling through).
+	if v, ok := m.effectiveRetryPolicyEntry(prd, category); ok {
+		return v
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -58,6 +65,11 @@ func (m *Manager) resolveRetryCeiling(prd *PRD) int {
 			return p.CeilingTotal
 		}
 	}
+	// Project/ Automaton tier (a set value, including -1 = unlimited, wins
+	// before the daemon's).
+	if pol, ok := m.effectivePolicyOf(prd); ok && policyProjectTier(pol.RetryCeilingTotal.Source) && pol.RetryCeilingTotal.Value != 0 {
+		return pol.RetryCeilingTotal.Value
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cfg.RetryCeilingTotal > 0 {
@@ -78,6 +90,11 @@ func (m *Manager) resolveInfraEscalateAfter(prd *PRD) int {
 		if p, ok := m.store.GetRetryProfile(prd.RetryProfile); ok && p.InfraRetryEscalateAfter > 0 {
 			return p.InfraRetryEscalateAfter
 		}
+	}
+	// Project/ Automaton tier (above the daemon's, below the Automaton's
+	// own profile).
+	if pol, ok := m.effectivePolicyOf(prd); ok && policyProjectTier(pol.InfraRetryEscalateAfter.Source) && pol.InfraRetryEscalateAfter.Value > 0 {
+		return pol.InfraRetryEscalateAfter.Value
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -145,10 +162,12 @@ func (m *Manager) retryBudgetRemaining(prd *PRD, category string) bool {
 // for the given category, persisting the PRD so the consumption
 // survives a daemon restart.
 func (m *Manager) consumeRetryBudget(prd *PRD, category string) error {
-	if prd.RetryCountsByCategory == nil {
-		prd.RetryCountsByCategory = map[string]int{}
-	}
-	prd.RetryCountsByCategory[category]++
+	m.store.WithLock(func() {
+		if prd.RetryCountsByCategory == nil {
+			prd.RetryCountsByCategory = map[string]int{}
+		}
+		prd.RetryCountsByCategory[category]++
+	})
 	return m.savePRDOwn(prd)
 }
 
@@ -164,9 +183,11 @@ func (m *Manager) recordAutoRetryDecision(prd *PRD, unitID, category string, att
 	if escalated {
 		note += " escalated-to-global-default"
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "auto_retry", Actor: "autonomous",
-		Note: note, FailureCategory: category,
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "auto_retry", Actor: "autonomous",
+			Note: note, FailureCategory: category,
+		})
 	})
 }
 
@@ -220,13 +241,13 @@ func (m *Manager) retryDecomposeFailure(prd *PRD, category, source, detail strin
 	if m.retryBudgetRemaining(prd, category) {
 		_ = m.consumeRetryBudget(prd, category)
 		reason.Retryable = true
-		prd.LastDecomposeFailure = reason
+		m.store.WithLock(func() { prd.LastDecomposeFailure = reason })
 		m.recordAutoRetryDecision(prd, prd.ID, category, prd.RetryCountsByCategory[category], false)
 		_ = m.store.SavePRD(prd)
 		return true
 	}
 	reason.Retryable = false
-	prd.LastDecomposeFailure = reason
+	m.store.WithLock(func() { prd.LastDecomposeFailure = reason })
 	m.recordFailureLearning(prd, prd.ID, category, detail)
 	return false
 }
@@ -248,25 +269,39 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 	// that would otherwise leave LastDecomposeFailure nil. Record the
 	// parse reason so an operator sees WHY (the same intent manager.go's
 	// decom-parse comment states), without touching an existing record.
-	if prd.LastDecomposeFailure == nil {
+	var hasFailure bool
+	m.store.WithLock(func() { hasFailure = prd.LastDecomposeFailure != nil })
+	if !hasFailure {
 		category := "content"
-		if source == "decompose-parse" {
+		retryable := false
+		switch source {
+		case "decompose-parse":
 			category = "invalid-response"
+		case "decompose-persist":
+			category = "infra"
+			retryable = true // a store persistence failure is operator-retryable, not a content judgement
 		}
-		prd.LastDecomposeFailure = &FailureReason{
-			Category:   category,
-			Detail:     cause.Error(),
-			Source:     source,
-			Retryable:  false,
-			OccurredAt: time.Now(),
-		}
+		m.store.WithLock(func() {
+			prd.LastDecomposeFailure = &FailureReason{
+				Category:   category,
+				Detail:     cause.Error(),
+				Source:     source,
+				Retryable:  retryable,
+				OccurredAt: time.Now(),
+			}
+		})
 	}
-	old := prd.Status
-	prd.Status = PRDDraft
-	prd.UpdatedAt = time.Now()
-	if m.store.SavePRD(prd) == nil {
-		m.emitPRDStatus(prd, old, nil, nil)
+	var old PRDStatus
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDDraft
+		prd.UpdatedAt = time.Now()
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] prd=%s: give-up rollback save failed: %v", prd.ID, err)
+		return
 	}
+	m.emitPRDStatus(prd, old, nil, nil)
 }
 
 // checkPersistedDecompose re-reads the PRD and its stories from the store
@@ -297,36 +332,45 @@ const decomposeSessionStopThreshold = 2
 // threshold it parks the PRD in PRDFailed and returns true: the caller
 // must return the error and must not invoke the decompose fn again.
 func (m *Manager) noteDecomposeSessionFailure(prd *PRD, backend, model string, derr error) bool {
-	prd.DecomposeSessionFailures++
+	var failures int
+	m.store.WithLock(func() {
+		prd.DecomposeSessionFailures++
+		failures = prd.DecomposeSessionFailures
+	})
 	now := time.Now()
 	modelLabel := model
 	if modelLabel == "" {
 		modelLabel = "default"
 	}
-	if prd.DecomposeSessionFailures < decomposeSessionStopThreshold {
-		prd.LastDecomposeFailure = &FailureReason{
-			Category:   "infra",
-			Source:     "decompose-session",
-			Retryable:  true,
-			Detail:     fmt.Sprintf("the decompose session ended without writing the plan file (%s, %s model); retrying with a fresh session", backend, modelLabel),
-			OccurredAt: now,
-		}
+	if failures < decomposeSessionStopThreshold {
+		m.store.WithLock(func() {
+			prd.LastDecomposeFailure = &FailureReason{
+				Category:   "infra",
+				Source:     "decompose-session",
+				Retryable:  true,
+				Detail:     fmt.Sprintf("the decompose session ended without writing the plan file (%s, %s model); retrying with a fresh session", backend, modelLabel),
+				OccurredAt: now,
+			}
+		})
 		_ = m.store.SavePRD(prd)
 		return false
 	}
-	detail := fmt.Sprintf("%d decompose sessions ended without writing a plan (%s, %s model); stopped — reset to draft to retry", prd.DecomposeSessionFailures, backend, modelLabel)
-	prd.LastDecomposeFailure = &FailureReason{
-		Category:   "infra",
-		Source:     "decompose-session",
-		Retryable:  false,
-		Detail:     detail,
-		OccurredAt: now,
-	}
-	old := prd.Status
-	prd.Status = PRDFailed
-	prd.UpdatedAt = now
+	detail := fmt.Sprintf("%d decompose sessions ended without writing a plan (%s, %s model); stopped — reset to draft to retry", failures, backend, modelLabel)
+	var old PRDStatus
+	m.store.WithLock(func() {
+		prd.LastDecomposeFailure = &FailureReason{
+			Category:   "infra",
+			Source:     "decompose-session",
+			Retryable:  false,
+			Detail:     detail,
+			OccurredAt: now,
+		}
+		old = prd.Status
+		prd.Status = PRDFailed
+		prd.UpdatedAt = now
+	})
 	log.Printf("[autonomous] prd=%s decompose stopped after %d no-output sessions (backend=%s, model=%s): %v",
-		prd.ID, prd.DecomposeSessionFailures, backend, modelLabel, derr)
+		prd.ID, failures, backend, modelLabel, derr)
 	m.recordFailureLearning(prd, prd.ID, "infra", detail)
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, old, nil, nil)
@@ -361,7 +405,57 @@ func orContentCategory(category string) string {
 // the caller to treat exactly as it does today (TaskBlocked/story
 // block/PRDBlocked — Phase 1 does not change that terminal behavior,
 // only how many chances a purely mechanical failure gets first).
+//
+// Per-commit verdict cache (judge_verdict_cache.go): before the judge
+// runs, a completed pass/block verdict already recorded for exactly this
+// (commit sha, judge policy, rules) triple is replayed instead; after the
+// judge completes, a successful verdict is stored under that triple. A
+// timed-out or otherwise unfinished judge is never cached, and with the
+// cache disabled the behavior is byte-for-byte the pre-cache loop. It
+// discards the reuse flag; callers that need it call runGuardrailReusing.
 func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
+	v, _, err := m.runGuardrailReusing(ctx, prd, inv, fn)
+	return v, err
+}
+
+// runGuardrailReusing holds the body of runGuardrailWithInfraRetry and
+// additionally reports whether the returned verdict is a stored one that
+// was replayed (reused true, fn never called) or one the judge produced
+// just now (reused false, including every error and every bypassed or
+// disabled-cache run). Unless the context bypasses the lookup, a hit from
+// the verdict cache is returned as-is; otherwise the infra-retry loop runs
+// and its result is recorded in the cache.
+//
+// Judge resume at boot (judge_resume.go): if this same judgment was in
+// flight when the daemon restarted, it is not judged again. A surviving
+// guardrail-judge session is re-attached to — the daemon's background
+// waiter collects its verdict (ConsumeJudgeResult) and it is returned —
+// or a surviving, still-unrecorded result file is consumed as the
+// verdict, recorded by the caller exactly as a fresh one. Only when
+// neither survives does the judge below run once, as usual. The resume
+// sits ahead of the cache lookup: a pending judgment's surviving verdict
+// precedes any replay, and a resumed verdict is not cached (a resume is
+// not a fresh judgment). A resumed verdict is not a replayed stored one,
+// so it reports reused false.
+func (m *Manager) runGuardrailReusing(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (v GuardrailVerdict, reused bool, err error) {
+	// Judge resume at boot (judge_resume.go): if a verdict for this unit's
+	// in-flight judgment can resume, it is the answer — no judge spawns.
+	if rv, resumed := m.judgeResume(ctx, prd, inv); resumed {
+		return *rv, false, nil
+	}
+	if !judgeVerdictCacheLookupBypassed(ctx) {
+		if hit, ok := m.judgeVerdictCacheHit(prd, inv); ok {
+			return hit, true, nil
+		}
+	}
+	v, err = m.runGuardrailInfraRetry(ctx, prd, inv, fn)
+	m.judgeVerdictCacheRecord(prd, inv, v, err)
+	return v, false, err
+}
+
+// runGuardrailInfraRetry is the retry loop itself; the public entry
+// runGuardrailWithInfraRetry adds the verdict cache around it.
+func (m *Manager) runGuardrailInfraRetry(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
 	attempt := 0
 	for {
 		v, err := fn(ctx, inv)
@@ -382,6 +476,7 @@ func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv 
 			// attempt, now applied to a RETRY.
 			inv.GuardrailBackend = ""
 			inv.GuardrailModel = ""
+			inv.GuardrailPinned = false // the retry now runs on the global default
 		}
 		m.recordAutoRetryDecision(prd, inv.UnitID, "infra", attempt, escalated)
 		_ = m.savePRDOwn(prd)
@@ -403,8 +498,14 @@ func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv 
 // check once it completes. The PRD-level caller passes "" (no single
 // story owns a PRD-wide finding), creating a standalone new story.
 func (m *Manager) synthesizeCorrectiveWork(prd *PRD, verdict GuardrailVerdict, targetStoryID string) (*Story, *Task, error) {
-	attempt := prd.RetryCountsByCategory["content"]
-	title := fmt.Sprintf("Auto-fix: %s findings (attempt %d)", verdict.Guardrail, attempt)
+	return m.synthesizeCorrectiveWorkAttempt(prd, verdict, targetStoryID, prd.RetryCountsByCategory["content"])
+}
+
+// synthesizeCorrectiveWorkAttempt is synthesizeCorrectiveWork with the
+// attempt number named by the caller, for callers that create the work
+// before consuming the retry budget.
+func (m *Manager) synthesizeCorrectiveWorkAttempt(prd *PRD, verdict GuardrailVerdict, targetStoryID string, attempt int) (*Story, *Task, error) {
+	title := autoFixTaskTitlePrefix + fmt.Sprintf("%s findings (attempt %d)", verdict.Guardrail, attempt)
 	spec := contentFixHint(verdict)
 
 	var storyID string
@@ -433,15 +534,19 @@ func (m *Manager) synthesizeCorrectiveWork(prd *PRD, verdict GuardrailVerdict, t
 	if targetStoryID == "" && !m.resolveAutoFixSkipApproval(prd) && perStoryApproval {
 		fresh, ok := m.store.GetPRD(prd.ID)
 		if ok {
-			for i := range fresh.Story {
-				if fresh.Story[i].ID == storyID {
-					fresh.Story[i].Status = StoryAwaitingApproval
+			m.store.WithLock(func() {
+				for i := range fresh.Story {
+					if fresh.Story[i].ID == storyID {
+						fresh.Story[i].Status = StoryAwaitingApproval
+					}
 				}
-			}
+			})
 			if err := m.store.SavePRD(fresh); err != nil {
 				return nil, nil, err
 			}
-			*prd = *fresh
+			if prd != fresh {
+				m.store.WithLock(func() { *prd = *fresh })
+			}
 		}
 	}
 	story, _ := m.store.GetPRD(prd.ID)
@@ -454,4 +559,81 @@ func (m *Manager) synthesizeCorrectiveWork(prd *PRD, verdict GuardrailVerdict, t
 		}
 	}
 	return createdStory, task, nil
+}
+
+// ceilingRetryParagraph returns the fixed paragraph added to the next worker
+// prompt when the previous attempt was stopped for using more memory than its
+// limit. It returns "" when t has no attempts or the last attempt was not a
+// ceiling kill. The limit, process name and peak come from the attempt record;
+// an empty process name reads as "unknown". The caller must hold the store
+// lock when t is shared.
+func ceilingRetryParagraph(t *Task) string {
+	if t == nil || len(t.Attempts) == 0 {
+		return ""
+	}
+	a := t.Attempts[len(t.Attempts)-1]
+	if !a.MemoryKilled {
+		return ""
+	}
+	name := a.KilledProcess
+	if name == "" {
+		name = "unknown"
+	}
+	return fmt.Sprintf("The previous run was stopped because the process used more memory than the limit of %d MB (process %s, peak %d MB). "+
+		"Bound your program: avoid unbounded recursion, stream instead of holding data, cap collection sizes, and test with a small input first.",
+		a.CeilingMB, name, a.PeakMemoryMB)
+}
+
+// ceilingReviewThreshold is how many consecutive attempts of one task may be
+// stopped for using more memory than the limit before the task is no longer
+// retried. The first is retried as usual with the reason in the prompt; the
+// second moves the task to review.
+const ceilingReviewThreshold = 2
+
+// ceilingReviewSource is the FailureReason.Source of a task held because of
+// consecutive ceiling failures.
+const ceilingReviewSource = "ceiling-hold"
+
+// consecutiveCeilingFailures counts the attempts at the end of t's attempt
+// list that were stopped for using more memory than the limit. An attempt that
+// failed for another reason ends the run, so the count starts again after it.
+// The caller must hold the store lock when t is shared.
+func consecutiveCeilingFailures(t *Task) int {
+	n := 0
+	for i := len(t.Attempts) - 1; i >= 0 && t.Attempts[i].MemoryKilled; i-- {
+		n++
+	}
+	return n
+}
+
+// holdAfterCeilingFailures is the ceiling step of the retry policy. When the
+// task's last ceilingReviewThreshold attempts were all ceiling failures it
+// moves the task to the review state with AttemptMemoryKillReason recorded as
+// the failure reason, and reports held true so the caller does not retry. With
+// fewer, it does nothing and the caller retries as usual. The error is from
+// saving the task.
+func (m *Manager) holdAfterCeilingFailures(prd *PRD, t *Task) (held bool, err error) {
+	var count int
+	m.store.WithLock(func() { count = consecutiveCeilingFailures(t) })
+	if count < ceilingReviewThreshold {
+		return false, nil
+	}
+	last, err := m.parkTaskForReview(prd, t, reviewParking{
+		reason: FailureReason{Category: "infra", Detail: AttemptMemoryKillReason, Source: ceilingReviewSource},
+		describe: func(t *Task) (string, string) {
+			return AttemptMemoryKillReason,
+				fmt.Sprintf("task %s moved to review: %s, %d attempts in a row", t.ID, AttemptMemoryKillReason, count)
+		},
+		report: func(t *Task, now time.Time) *ReviewSummary {
+			var b strings.Builder
+			fmt.Fprintf(&b, "Task %s (%s) is held for operator review: %s, in %d attempts in a row.\n\n",
+				t.ID, t.Title, AttemptMemoryKillReason, count)
+			return finishReviewSummary(&b, t, now)
+		},
+	})
+	if err != nil {
+		return true, err
+	}
+	m.raiseReviewAlert(prd, t, count, last)
+	return true, nil
 }

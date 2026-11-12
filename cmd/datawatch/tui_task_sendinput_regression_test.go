@@ -80,7 +80,9 @@ func TestPromptModeSessionNeverReceivesSendInput(t *testing.T) {
 			fresh := &recordingSendInput{}
 			// Mirrors the main.go call site: gate false ⇒ SendInput never called.
 			if needsTUITaskDelivery(sess) {
-				fresh.SendInput(sess.FullID, sess.Task, "tui-task-delivery")
+				if err := fresh.SendInput(sess.FullID, sess.Task, "tui-task-delivery"); err != nil {
+					t.Errorf("family %q: SendInput(%q) error = %v, want nil", sc.family, sess.Task, err)
+				}
 			}
 
 			if len(fresh.calls) != sc.wantCalls {

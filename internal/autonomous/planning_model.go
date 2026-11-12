@@ -13,7 +13,15 @@ import "strings"
 //     carry a "<prefix>/<model>" prefix that backend cannot serve.
 //  3. prdModel — only when the PRD's own backend equals backend, so the model
 //     belongs to that backend.
-//  4. "" — let the backend pick its default.
+//  4. globalVerificationModel — v9.10.19 last-resort tier; paired with
+//     validateModelForBackend, so it also refuses a bare claude-* alias on a
+//     pi-family backend (the BL418 class) and a provider-qualified name on
+//     claude-code. Lets a pi-family decompose session still get a model when
+//     only autonomous.verification_model is configured.
+//  5. "" — let the backend pick its default. Callers resolving for a
+//     pi-family backend must then fail loudly (pinned_model.go /
+//     RequirePinnedModel) — pi and pi-prompt never run on a built-in
+//     default since v9.10.19.
 //
 // The pairing rule is decided by the backend the PRD or config names: the
 // model must be one that backend can serve. pi-family backends serve
@@ -21,7 +29,7 @@ import "strings"
 // prefix is fine for them; for other backends (e.g. an Ollama tag handed to
 // claude-code) it stalls the session on an "unknown model" prompt, which is
 // why each tier is checked against backend.
-func resolvePlannedModel(backend, prdDecompositionModel, prdBackend, prdModel, globalPlanningBackend, globalPlanningModel string) string {
+func resolvePlannedModel(backend, prdDecompositionModel, prdBackend, prdModel, globalPlanningBackend, globalPlanningModel, globalVerificationModel string) string {
 	if prdDecompositionModel != "" {
 		return prdDecompositionModel
 	}
@@ -30,6 +38,9 @@ func resolvePlannedModel(backend, prdDecompositionModel, prdBackend, prdModel, g
 	}
 	if prdModel != "" && prdBackend == backend {
 		return prdModel
+	}
+	if globalVerificationModel != "" && validateModelForBackend(backend, globalVerificationModel) == nil {
+		return globalVerificationModel
 	}
 	return ""
 }

@@ -9,9 +9,21 @@ import (
 	"testing"
 )
 
+// newRulesReviewManager returns a Manager backed by a real store. A bare
+// &Manager{} is enough for the suffix tests, but runPRDCompletionRulesReview
+// now persists every verdict it records, so its tests need a store to save to.
+func newRulesReviewManager(t *testing.T, cfg Config) *Manager {
+	t.Helper()
+	st, err := NewStore(filepath.Join(t.TempDir(), "prds.json"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	return &Manager{cfg: cfg, store: st}
+}
+
 func TestRulesReviewSuffix_EmptyProjectDir(t *testing.T) {
 	m := &Manager{cfg: Config{}}
-	if got := m.rulesReviewSuffix(&PRD{}); got != "" {
+	if got := m.rulesReviewSuffix(context.Background(), &PRD{}); got != "" {
 		t.Errorf("want empty suffix for an empty ProjectDir, got %q", got)
 	}
 }
@@ -19,7 +31,7 @@ func TestRulesReviewSuffix_EmptyProjectDir(t *testing.T) {
 func TestRulesReviewSuffix_NoRulesOrContextFilePresent(t *testing.T) {
 	m := &Manager{cfg: Config{}}
 	dir := t.TempDir() // no AGENT.md, no CONTEXT.md
-	if got := m.rulesReviewSuffix(&PRD{ProjectDir: dir}); got != "" {
+	if got := m.rulesReviewSuffix(context.Background(), &PRD{ProjectDir: dir}); got != "" {
 		t.Errorf("want empty suffix when neither configured file exists, got %q", got)
 	}
 }
@@ -30,7 +42,7 @@ func TestRulesReviewSuffix_PointsAtWhicheverFilesExist(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := m.rulesReviewSuffix(&PRD{ProjectDir: dir})
+	got := m.rulesReviewSuffix(context.Background(), &PRD{ProjectDir: dir})
 	if got == "" {
 		t.Fatal("want a non-empty suffix when AGENT.md exists")
 	}
@@ -54,7 +66,7 @@ func TestRulesReviewSuffix_CustomFilenames(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "CTX.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := m.rulesReviewSuffix(&PRD{ProjectDir: dir})
+	got := m.rulesReviewSuffix(context.Background(), &PRD{ProjectDir: dir})
 	if !containsStr(got, "RULES.md") || !containsStr(got, "CTX.md") {
 		t.Errorf("suffix doesn't honor configured filenames: %q", got)
 	}
@@ -124,7 +136,7 @@ func TestRunPRDCompletionRulesReview_PassDoesNotBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	var captured GuardrailInvocation
-	m := &Manager{cfg: Config{}}
+	m := newRulesReviewManager(t, Config{VerificationModel: "ollama/qwen3.8:27b"})
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		captured = req
 		return GuardrailVerdict{Outcome: "pass", Summary: "looks fine"}, nil
@@ -153,7 +165,7 @@ func TestRunPRDCompletionRulesReview_BlockOutcomeBlocks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := &Manager{cfg: Config{}}
+	m := newRulesReviewManager(t, Config{VerificationModel: "ollama/qwen3.8:27b"})
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		return GuardrailVerdict{Outcome: "block", Severity: "high", Summary: "version collides with a shipped release"}, nil
 	})
@@ -175,7 +187,7 @@ func TestRunPRDCompletionRulesReview_FnErrorPropagates(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := &Manager{cfg: Config{}}
+	m := newRulesReviewManager(t, Config{VerificationModel: "ollama/qwen3.8:27b"})
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		return GuardrailVerdict{}, errFakeGuardrail
 	})
@@ -192,7 +204,7 @@ func TestRunPRDCompletionRulesReview_ResolvesBackendFromPRDThenGlobal(t *testing
 		t.Fatal(err)
 	}
 	var captured GuardrailInvocation
-	m := &Manager{cfg: Config{VerificationBackend: "global-backend", VerificationModel: "global-model"}}
+	m := newRulesReviewManager(t, Config{VerificationBackend: "global-backend", VerificationModel: "global-model"})
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		captured = req
 		return GuardrailVerdict{Outcome: "pass"}, nil
@@ -221,8 +233,20 @@ func TestRunPRDCompletionRulesReview_ResolvesBackendFromPRDThenGlobal(t *testing
 	if captured.GuardrailBackend != "global-backend" {
 		t.Errorf("want the global backend default, got backend=%q", captured.GuardrailBackend)
 	}
-	if captured.GuardrailModel != "" {
-		t.Errorf("want empty model (must not leak the global ask-only model into a session-routed call), got %q", captured.GuardrailModel)
+	// v9.10.18 — the old contract here asserted an EMPTY model: the
+	// 2026-10-12 (BL418-era) live hang taught us never to trust a flat
+	// ask-only global model as a per-unit override and send it to a
+	// session-routed call. v9.10.18 refines that lesson rather than
+	// reversing it: the global model is now the *documented tier-4
+	// fallback* of ResolveGuardrailModel — explicitly the operator's
+	// configured judge model (never the backend's built-in default),
+	// pairing-checked against the resolved backend before it is used.
+	// The B124/BL418 hazard (an unreviewed flat ask-only string
+	// masquerading as an override) is covered by tier-pairing: a model
+	// that the resolved backend cannot serve is skipped, and empty
+	// every-tiers is a loud typed failure — never a silent default.
+	if captured.GuardrailModel != "global-model" {
+		t.Errorf("want tier-4 global-model fallback, got %q", captured.GuardrailModel)
 	}
 }
 

@@ -36,11 +36,11 @@ func TestRunGuardrailWithInfraRetry_WrittenInvalidResponseVerdict_ConsumedOnce_N
 	prd := &PRD{ID: "p1"}
 	calls := 0
 	want := GuardrailVerdict{
-		Outcome:   "block",
-		Severity:  "medium",
-		Category:  "invalid-response",
-		Summary:   "guardrail judge returned 42 bytes — its response could not be parsed as a verdict: parse error",
-		Issues:    []string{"raw judge output (42 bytes): <not json>"},
+		Outcome:  "block",
+		Severity: "medium",
+		Category: "invalid-response",
+		Summary:  "guardrail judge returned 42 bytes — its response could not be parsed as a verdict: parse error",
+		Issues:   []string{"raw judge output (42 bytes): <not json>"},
 	}
 	fn := func(ctx context.Context, inv GuardrailInvocation) (GuardrailVerdict, error) {
 		calls++

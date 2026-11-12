@@ -21,6 +21,9 @@ func ResolveTaskProjectDir(prd *PRD, task *Task) string {
 	if task != nil && task.ProjectDir != "" {
 		return filepath.Clean(task.ProjectDir)
 	}
+	if task != nil && task.WorktreePath != "" {
+		return filepath.Clean(task.WorktreePath)
+	}
 	if prd == nil {
 		return ""
 	}
@@ -65,12 +68,14 @@ func (m *Manager) SetTaskProjectDir(prdID, taskID, dir, actor string) (*PRD, err
 	if task == nil {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	task.ProjectDir = dir
-	task.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_task_project_dir", Actor: actor,
-		Note: fmt.Sprintf("task=%s project_dir=%s", taskID, dir),
+	m.store.WithLock(func() {
+		task.ProjectDir = dir
+		task.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_task_project_dir", Actor: actor,
+			Note: fmt.Sprintf("task=%s project_dir=%s", taskID, dir),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -80,7 +85,8 @@ func (m *Manager) SetTaskProjectDir(prdID, taskID, dir, actor string) (*PRD, err
 }
 
 // runQualityGateTests is pipeline.RunTests; a var so tests can observe the
-// directory each quality-gate run happens in.
+// directory each quality-gate run happens in. The last argument is the
+// allowed project roots the run's directory is checked against.
 var runQualityGateTests = pipeline.RunTests
 
 // qualityGateBaselines caches BL367 quality-gate baselines per directory
@@ -89,20 +95,64 @@ var runQualityGateTests = pipeline.RunTests
 // dir gets its own baseline captured lazily on first use. A nil receiver
 // (gates off) reports no baseline.
 type qualityGateBaselines struct {
-	mu      sync.Mutex
-	cfg     pipeline.QualityGateConfig
-	prdDir  string
-	byDir   map[string]pipeline.TestResult
-	enabled bool
+	mu     sync.Mutex
+	cfg    pipeline.QualityGateConfig
+	prdDir string
+	byDir  map[string]pipeline.TestResult
+	// vetByDir caches the dir's vet baseline: the packages failing at
+	// baseline time. vetBadDir marks dirs where vet itself could not
+	// run (unusable = warn-only, never a regression).
+	vetByDir  map[string][]string
+	vetBadDir map[string]bool
+	// onInvalid is invoked when a lazily captured per-dir baseline
+	// classifies as unusable; the executor wires it to the PRD-level invalid
+	// marking and warning. nil is a no-op.
+	onInvalid func(dir, reason string)
+	enabled   bool
+	// roots are the allowed project roots a lazily captured baseline's
+	// directory is checked against.
+	roots []string
 }
 
-func newQualityGateBaselines(cfg pipeline.QualityGateConfig, prdDir string, prdBaseline *pipeline.TestResult) *qualityGateBaselines {
+func newQualityGateBaselines(cfg pipeline.QualityGateConfig, prdDir string, prdBaseline *pipeline.TestResult, roots []string) *qualityGateBaselines {
 	b := &qualityGateBaselines{cfg: cfg, prdDir: prdDir, byDir: map[string]pipeline.TestResult{},
-		enabled: cfg.Enabled && cfg.TestCommand != ""}
+		vetByDir: map[string][]string{}, vetBadDir: map[string]bool{},
+		enabled: cfg.Enabled && cfg.TestCommand != "", roots: roots}
 	if prdBaseline != nil {
 		b.byDir[prdDir] = *prdBaseline
 	}
 	return b
+}
+
+// vetForDir returns the set of packages failing `go vet` at baseline time
+// in dir (captured once per dir, through the same runQualityGateTests seam
+// as the test baselines, and cached for the rest of the Run). ok is false
+// when vet itself could not execute in that dir: callers log a warning and
+// skip the vet comparison, and never count an unusable vet as a regression.
+func (b *qualityGateBaselines) vetForDir(dir string) (failing []string, ok bool) {
+	if b == nil || !b.enabled || dir == "" {
+		return nil, false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if pkgs, cached := b.vetByDir[dir]; cached {
+		return pkgs, true
+	}
+	if b.vetBadDir[dir] {
+		return nil, false
+	}
+	r := runQualityGateTests("go vet ./...", dir, b.cfg.EffectiveTimeout(), b.roots)
+	if r.ExitCode == -1 {
+		b.vetBadDir[dir] = true
+		log.Printf("[autonomous] WARNING: quality-gate vet baseline unusable in %s (vet could not run) - vet comparison for this dir warns only", dir)
+		return nil, false
+	}
+	pkgs := pipeline.VetFailuresFromOutput(r.Output)
+	b.vetByDir[dir] = pkgs
+	if len(pkgs) > 0 {
+		log.Printf("[autonomous] quality-gate vet baseline for dir %s: %d failing package(s): %s", dir, len(pkgs), strings.Join(pkgs, ", "))
+	}
+	return pkgs, true
 }
 
 // forDir returns the baseline comparable with a test run in dir. For
@@ -121,9 +171,12 @@ func (b *qualityGateBaselines) forDir(dir string) (pipeline.TestResult, bool) {
 	if dir == b.prdDir {
 		return pipeline.TestResult{}, false
 	}
-	r := runQualityGateTests(b.cfg.TestCommand, dir, b.cfg.Timeout)
+	r := runQualityGateTests(b.cfg.TestCommand, dir, b.cfg.EffectiveTimeout(), b.roots)
 	log.Printf("[autonomous] quality-gate baseline for task dir %s: %d pass / %d fail", dir, r.PassCount, r.FailCount)
 	b.byDir[dir] = r
+	if valid, reason := pipeline.ClassifyBaseline(r); !valid && b.onInvalid != nil {
+		b.onInvalid(dir, reason)
+	}
 	return r, true
 }
 

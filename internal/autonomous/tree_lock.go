@@ -144,7 +144,9 @@ func ResolveTreeKey(prd *PRD, task *Task) (string, string, error) {
 
 	// BL407 worktree-mode PRDs own their worktree — each worktree is
 	// an independent tree, so no base canonicalization here.
-	if prd != nil && prd.Git.Branch != "" {
+	// A task with its own worktree is keyed on that path alone, so
+	// sibling writers in separate worktrees do not contend.
+	if prd != nil && (prd.Git.Branch != "" || (task != nil && task.WorktreePath != "")) {
 		return treeKeyPrefix + treeRoot, treeRoot, nil
 	}
 
@@ -156,6 +158,10 @@ func ResolveTreeKey(prd *PRD, task *Task) (string, string, error) {
 	// Not a git repo (or git unavailable) — key per directory.
 	return treeKeyPrefix + treeRoot, treeRoot, nil
 }
+
+// treeLockRelPath is the advisory lock file's slash path inside its tree, as
+// git reports it.
+const treeLockRelPath = ".datawatch/tree.lock"
 
 // treeLockPath returns the advisory lock-file location for a resolved
 // tree key:
@@ -172,7 +178,7 @@ func treeLockPath(key, treeRoot string) string {
 	if dir == key || !filepath.IsAbs(dir) {
 		dir = absClean(treeRoot)
 	}
-	return filepath.Join(dir, ".datawatch", "tree.lock")
+	return filepath.Join(dir, filepath.FromSlash(treeLockRelPath))
 }
 
 // ── Advisory acquisition machinery (BL428 decision 3a, operator (i)) ──
@@ -291,6 +297,38 @@ func treeLockStale(path string, rec *LockRecord, readErr error, taskStatus func(
 	return isTerminalTaskStatus(st)
 }
 
+// reclaimMu serializes stale-lock removal within this process. A waiter
+// decides "stale" from a record it read earlier; without re-verifying
+// under a lock, its delayed os.Remove can delete the FRESH lock a
+// faster waiter has since claimed (read stale → other waiter reclaims
+// and claims → our Remove deletes their live lock → two holders).
+var reclaimMu sync.Mutex
+
+// removeStaleLock deletes the lock at path only if it still carries the
+// stale record the caller observed (seen=true) — a changed holder means
+// a successor already reclaimed and claimed it, and that live lock must
+// survive; the caller then just loops and waits on it. With seen=false
+// (unreadable/empty record) the file is removed as before. Because new
+// claims are O_EXCL, nothing can replace the file between the re-read
+// and the Remove except another remover, and removers are serialized.
+func removeStaleLock(path string, observed LockRecord, seen bool) error {
+	reclaimMu.Lock()
+	defer reclaimMu.Unlock()
+	if seen {
+		cur, err := readLockRecord(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if cur.HolderTaskID != observed.HolderTaskID || cur.AcquiredAt != observed.AcquiredAt || cur.PID != observed.PID {
+			return fmt.Errorf("tree lock %s: lock changed hands (now task %q); not removing", path, cur.HolderTaskID)
+		}
+	}
+	return os.Remove(path)
+}
+
 // interruptibleSleep sleeps d, returning false as soon as ctx cancels or
 // isCancelled() reports true. Checked in fine chunks so cancellation
 // during a long Manager-controlled poll is honored promptly.
@@ -372,13 +410,9 @@ func newTreeLockRelease(path, holder string) func() {
 // blocked on a live holder.
 func treeWaitReason(key string, rec *LockRecord, readErr error) string {
 	if readErr != nil || rec == nil {
-		return fmt.Sprintf("tree lock: %s held by unknown holder (record unreadable)", key)
+		return TreeLockWaitText(key, "", "", 0)
 	}
-	since := "unknown time"
-	if rec.AcquiredAt > 0 {
-		since = time.Unix(rec.AcquiredAt, 0).UTC().Format(time.RFC3339)
-	}
-	return fmt.Sprintf("tree lock: %s held by task %s (PRD %s) since %s", key, rec.HolderTaskID, rec.HolderPRDID, since)
+	return TreeLockWaitText(key, rec.HolderTaskID, rec.HolderPRDID, rec.AcquiredAt)
 }
 
 // AcquireTreeLock acquires the advisory project-tree write lock for key
@@ -506,7 +540,7 @@ func AcquireTreeLock(
 			} else {
 				log.Printf("tree lock: reclaiming stale lock %s — record unreadable or empty (grace expired)", path)
 			}
-			derr := os.Remove(path) // best effort per spec
+			derr := removeStaleLock(path, existing, rerr == nil) // best effort per spec
 			if derr == nil || os.IsNotExist(derr) {
 				if reclaimCount < maxStaleReclaimAttempts {
 					reclaimCount++
@@ -559,9 +593,11 @@ func (m *Manager) resolveRefuseDirtyTree(prd *PRD) bool {
 // dirtyTreeRefused implements admitTree's dirty-tree check: when the
 // gate is on and the task's canonical tree has uncommitted changes
 // (git status --porcelain non-empty), it returns an error hard-blocking
-// the task. A tree where git can't report status (not a repo, git
-// missing) is passed through — the gate only reasons about dirt it can
-// observe.
+// the task. A tracked file whose only difference from HEAD is the
+// daemon's own marked blocks (daemonSectionsOnlyChange) is the daemon's
+// work, not dirt — it never refuses. A tree where git can't report
+// status (not a repo, git missing) is passed through — the gate only
+// reasons about dirt it can observe.
 func (m *Manager) dirtyTreeRefused(ctx context.Context, prd *PRD, task *Task) error {
 	if !m.resolveRefuseDirtyTree(prd) {
 		return nil
@@ -570,11 +606,15 @@ func (m *Manager) dirtyTreeRefused(ctx context.Context, prd *PRD, task *Task) er
 	if err != nil {
 		return nil // no resolvable tree — nothing to refuse on
 	}
-	out, err := gitProbe(ctx, treeRoot, "status", "--porcelain")
+	// runGitInCtx, not gitProbe: porcelain XY columns are significant and
+	// trimming output would mangle the first line's status column.
+	out, err := runGitInCtx(ctx, treeRoot, "status", "--porcelain")
 	if err != nil {
 		return nil
 	}
-	dirt := strings.TrimSpace(out)
+	// A tracked file changed only by the daemon's own marked blocks is
+	// not an operator's uncommitted work.
+	dirt := strings.TrimSpace(filterDaemonOnlyPorcelain(ctx, treeRoot, out, runGitInCtx))
 	if dirt == "" {
 		return nil
 	}
@@ -626,11 +666,15 @@ func (m *Manager) acquireTreeWritersLock(ctx context.Context, prd *PRD, task *Ta
 	waited := false
 	release, err := AcquireTreeLock(waitCtx, key, treeRoot, task.ID, task.PRDID,
 		func(holderID string) (TaskStatus, bool) {
-			cur, ok := m.store.GetTask(holderID)
+			// TaskSnapshot (value copy under the store lock), not GetTask's shared
+			// pointer + out-of-lock .Status read: that read raced a concurrent
+			// store-locked Status write (executeOne advancing a holder to
+			// TaskVerifying) and failed -race in concurrent same-tree runs.
+			snap, ok := m.store.TaskSnapshot(holderID)
 			if !ok {
 				return "", false
 			}
-			return cur.Status, true
+			return snap.Status, true
 		},
 		func(reason string) {
 			waited = true

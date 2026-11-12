@@ -27,7 +27,7 @@ gap closure (v8.14.0). This plan documents what needs live validation before the
 - `mcp.Server.SetCallerSessionID()`: stored for tool-level routing
 
 ### T4 (v8.13.39) — agent-goose container
-- `Dockerfile.agent-goose`: `ENV GOOSE_CLI_THEME=plain`, `/home/datawatch/.config/goose/` pre-created
+- `Dockerfile.agent-goose`: `ENV GOOSE_CLI_THEME=plain`, `/home/<user>/.config/goose/` pre-created
 
 ### Testing gap closure (v8.14.0)
 - 22 unit tests (up from 11)

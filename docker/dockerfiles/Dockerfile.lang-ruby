@@ -11,6 +11,8 @@
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
+# Inherited non-root user name (see agent-base); home under /home/${DW_USER}.
+ARG DW_USER=datawatch
 # bookworm ships ruby 3.1 in the main repo. For newer ruby (3.3+/4.0)
 # we'd need ruby-build / rbenv or backports. 3.1 covers most current
 # Rails apps; bump if infosecquote needs newer.
@@ -22,6 +24,8 @@ ARG BRAKEMAN_VERSION=7.0.1
 ARG BUNDLER_AUDIT_VERSION=0.9.2
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG RUBY_PKG_VERSION
 ARG RUBOCOP_VERSION
 ARG RUBY_LSP_VERSION
@@ -59,8 +63,8 @@ RUN gem install --no-document \
 # Ensure datawatch user has a writable gem dir for project-local installs
 # via `bundle install --path vendor/bundle` or similar.
 USER datawatch
-ENV GEM_HOME=/home/datawatch/.gem \
-    PATH="/home/datawatch/.gem/bin:${PATH}"
+ENV GEM_HOME=/home/${DW_USER}/.gem \
+    PATH="/home/${DW_USER}/.gem/bin:${PATH}"
 RUN mkdir -p $GEM_HOME
 
 LABEL datawatch.variant="lang-ruby" \

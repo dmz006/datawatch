@@ -1,0 +1,21 @@
+shared-nav-mobile-fit: gate run (substitute probe, not the named checker)
+========================================================================
+Result: FAIL, 4 nav findings at 320x568, 360x740, 390x844
+Daemon version: 9.11.0
+Substitute for: scripts/test-stories/pwa/shared-nav-mobile-fit.mjs (absent from this branch)
+
+Checks:
+  clipped-text: nav label text extends past the visible nav bar, so it is cut off by the nav scroller
+  tap-target: nav button under 44x44 CSS px
+  overlap: nav label text or nav button box intersects another nav item
+
+Viewport 320x568: 2 findings, 6 nav items, nav bar 320x60, scrollWidth 440, clientWidth 320
+  [clipped-text] button#navBtnDashboard.nav-btn[data-view=dashboard] "Dashboard" clipped 0px left, 37.8px right
+  [clipped-text] button.nav-btn[data-view=settings] "Settings" clipped 0px left, 106.3px right
+
+Viewport 360x740: 1 findings, 6 nav items, nav bar 360x60, scrollWidth 440, clientWidth 360
+  [clipped-text] button.nav-btn[data-view=settings] "Settings" clipped 0px left, 66.3px right
+
+Viewport 390x844: 1 findings, 6 nav items, nav bar 390x60, scrollWidth 440, clientWidth 390
+  [clipped-text] button.nav-btn[data-view=settings] "Settings" clipped 0px left, 36.3px right
+

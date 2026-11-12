@@ -50,6 +50,13 @@ func (f *fakeProvider) RevokeToken(_ context.Context, tok string) error {
 func (f *fakeProvider) OpenPR(_ context.Context, _ git.PROptions) (string, error) {
 	return "", nil
 }
+func (f *fakeProvider) OpenPullRequest(_ context.Context, _, _, _, _, _ string) (string, error) {
+	return "", nil
+}
+func (f *fakeProvider) PullRequestChecks(_ context.Context, _, _ string) (string, error) {
+	return "success", nil
+}
+func (f *fakeProvider) MergePullRequest(_ context.Context, _, _ string) error { return nil }
 func (f *fakeProvider) CreateIssue(_ context.Context, _ git.IssueOptions) (string, error) {
 	return "", nil
 }

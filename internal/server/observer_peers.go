@@ -16,6 +16,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,14 +55,14 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 	// v7.0.0-alpha.23b — list peers NOT bound to any ComputeNode.
 	// "Free" = no Node references this peer via Name match OR explicit
 	// ObserverPeer field. Used by PWA's free-observer picker on the
-	// Compute Node Add/Edit form (Q5).
+	// Compute Node Add/Edit form (Q5). Merged rows include pulled peers
+	// and shadow rows (see mergedObserverPeers).
 	if rest == "free" && r.Method == http.MethodGet {
 		bound := s.peersBoundToNodes()
-		all := s.peerRegistry.List()
-		free := make([]observer.PeerEntry, 0, len(all))
-		for _, p := range all {
-			if !bound[p.Name] {
-				free = append(free, p)
+		free := []map[string]any{}
+		for _, row := range s.mergedObserverPeers() {
+			if name, _ := row["name"].(string); !s.peerRowBound(bound, name, row) {
+				free = append(free, row)
 			}
 		}
 		writeJSONOK(w, map[string]any{"peers": free})
@@ -73,9 +74,19 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 	// Peers card and by /api/federation/meta-peers for the merged
 	// cross-instance view. Per #231: every observer/peer record
 	// associates with a ComputeNode so the snapshot maps process →
-	// ComputeNode → datawatch instance.
+	// ComputeNode → datawatch instance. Rows are the merged push+pull
+	// set (see mergedObserverPeers), so pulled peers group here too.
 	if rest == "by-node" && r.Method == http.MethodGet {
-		byNode, unbound := s.peersGroupedByNode()
+		byNode := map[string][]map[string]any{}
+		unbound := []map[string]any{}
+		for _, row := range s.mergedObserverPeers() {
+			node, _ := row["compute_node"].(string)
+			if node == "" {
+				unbound = append(unbound, row)
+				continue
+			}
+			byNode[node] = append(byNode[node], row)
+		}
 		writeJSONOK(w, map[string]any{"by_node": byNode, "unbound": unbound})
 		return
 	}
@@ -90,26 +101,21 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 			// distinct badge. Per operator's intuition: the local
 			// host IS observing itself with the same observer
 			// machinery as remote peers; visual consistency wins.
-			peers := s.peerRegistry.List()
-			out := make([]any, 0, len(peers)+1)
+			out := []map[string]any{}
 			if selfEntry := s.synthesizeSelfPeer(); selfEntry != nil {
+				if name, _ := selfEntry["name"].(string); name != "" {
+					selfEntry["source"] = "push"
+					selfEntry["shadow"] = false
+					selfEntry["pull"] = s.pullInfoFor(name)
+				}
 				out = append(out, selfEntry)
 			}
 			// alpha.24 #231 — enrich every peer with its bound
 			// compute_node so consumers don't have to second-fetch
-			// /api/compute/nodes to discover the binding.
-			for _, p := range peers {
-				m := map[string]any{
-					"name":          p.Name,
-					"shape":         p.Shape,
-					"version":       p.Version,
-					"host_info":     p.HostInfo,
-					"registered_at": p.RegisteredAt,
-					"last_push_at":  p.LastPushAt,
-					"compute_node":  s.peerToNodeName(p.Name),
-				}
-				out = append(out, m)
-			}
+			// /api/compute/nodes to discover the binding. The merged set
+			// also carries pulled peers (source="pull") and shadow rows
+			// (federated, pull off) — see mergedObserverPeers.
+			out = append(out, s.mergedObserverPeers()...)
 			writeJSONOK(w, map[string]any{"peers": out})
 		case http.MethodPost:
 			if !s.fedCap(w, r, federation.CapObserversWrite) {
@@ -138,7 +144,10 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "not found", http.StatusNotFound)
 				return
 			}
-			writeJSONOK(w, entry)
+			// Pull-merge — the single-peer read carries source + the
+			// pull object exactly like the list view; pre-existing
+			// fields are unchanged.
+			writeJSONOK(w, s.observerPeerRow(entry))
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapObserversWrite) {
 				return
@@ -346,6 +355,57 @@ func (s *Server) peersBoundToNodes() map[string]bool {
 	return bound
 }
 
+// peerRowBound reports whether a merged peer row counts as bound to a
+// ComputeNode for the /free view. Shadow rows (federated, observer_pull
+// off, never pushed) never auto-bind by name match — they carry no data
+// to bind and attaching them is rejected (409) — so only an explicit
+// ObserverPeer reference on a Node binds them.
+func (s *Server) peerRowBound(bound map[string]bool, peerName string, row map[string]any) bool {
+	if shadow, _ := row["shadow"].(bool); shadow {
+		return s.peerToNodeNameExplicit(peerName) != ""
+	}
+	return bound[peerName]
+}
+
+// peerToNodeNameExplicit is like peerToNodeName but WITHOUT the implicit
+// name-match fallback: it returns the Node that explicitly references
+// peerName in ObserverPeer, or "" if none.
+func (s *Server) peerToNodeNameExplicit(peerName string) string {
+	if s.computeReg == nil {
+		return ""
+	}
+	for _, n := range s.computeReg.List() {
+		if n.ObserverPeer == peerName {
+			return n.Name
+		}
+	}
+	return ""
+}
+
+// observerPeerAttachCheck classifies name for ComputeNode binding.
+// bindable: a registered push peer, or a federated peer opted into
+// observer pull (observer_pull on, enabled, URL set).
+// conflict: a shadow peer — present in the federated peer store but
+// not registered for push and not opted into pull (observer_pull off,
+// no data). Shadow peers are rejected with HTTP 409 so the operator
+// learns the peer carries no data to bind.
+func (s *Server) observerPeerAttachCheck(name string) (bindable, conflict bool) {
+	if s.peerRegistry != nil {
+		if _, ok := s.peerRegistry.Get(name); ok {
+			return true, false
+		}
+	}
+	if s.serverStore != nil {
+		if e, ok := s.serverStore.Get(name); ok && e != nil {
+			if s.pullConfigured(name) {
+				return true, false
+			}
+			return false, true // shadow: in the store but not bindable
+		}
+	}
+	return false, false
+}
+
 // peerToNodeName returns the ComputeNode name that observes peerName,
 // or "" if no Node is bound (peer is free). Explicit ObserverPeer
 // references take priority over implicit name match.
@@ -381,4 +441,221 @@ func (s *Server) peersGroupedByNode() (map[string][]observer.PeerEntry, []observ
 		byNode[nodeName] = append(byNode[nodeName], p)
 	}
 	return byNode, unbound
+}
+
+// --- Pull-merge: pulled peers in the observer peer views --------------
+//
+// Every observable peer (pushed via the PeerRegistry or pulled by the
+// observer.PullCollector) shows up exactly once in the observer peer
+// endpoints. Each row carries a stable source field ("push" | "pull")
+// plus a pull object with the pull protocol's opt-in state and the
+// collector's last observed state, so the UI can distinguish a
+// push-registered peer that is ALSO pulled from a pull-only peer and
+// from a shadow peer (federated, pull off). Pre-existing row fields are
+// unchanged; source/shadow/pull are additions.
+
+// peerPullInfo is the pull object attached to every observer peer row.
+// LastSuccessAt / LastAttemptAt are null while the collector has no
+// record of a fetch yet.
+type peerPullInfo struct {
+	Enabled       bool       `json:"enabled"`
+	Stale         bool       `json:"stale"`
+	StaleReason   string     `json:"stale_reason"`
+	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
+	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"`
+	IntervalS     int        `json:"interval_s"`
+}
+
+// pullConfigured reports whether the federation peer store has name opted
+// in to the observer pull protocol — the same gate as the collector's
+// target set: enabled, federated, observer_pull, URL present.
+func (s *Server) pullConfigured(name string) bool {
+	if s == nil || s.serverStore == nil {
+		return false
+	}
+	e, ok := s.serverStore.Get(name)
+	if !ok || e == nil {
+		return false
+	}
+	return e.Enabled && e.Federated && e.ObserverPull && e.URL != ""
+}
+
+// pullIntervalS resolves name's effective pull interval in seconds: the
+// entry's value when set, else the observer.pull global default.
+func (s *Server) pullIntervalS(name string) int {
+	if s != nil && s.serverStore != nil {
+		if e, ok := s.serverStore.Get(name); ok && e != nil && e.ObserverPullIntervalS > 0 {
+			return e.ObserverPullIntervalS
+		}
+	}
+	return observerPullDefaults(s).DefaultIntervalS
+}
+
+// pullStateFor returns the pull collector's last recorded state for name.
+func (s *Server) pullStateFor(name string) (observer.PullState, bool) {
+	if s == nil || s.observerPull == nil || s.observerPull.col == nil {
+		return observer.PullState{}, false
+	}
+	return s.observerPull.col.Last(name)
+}
+
+// pullCollectorDown reports whether name is opted in for pull while the
+// collector is nil or stopped, so its stats are never refreshed.
+func (s *Server) pullCollectorDown(name string) bool {
+	if !s.pullConfigured(name) {
+		return false
+	}
+	return s.observerPull == nil || s.observerPull.col == nil || !s.observerPull.col.Running()
+}
+
+// pullSnapshotFor returns the last successfully pulled snapshot for name,
+// or nil when the pull collector has none.
+func (s *Server) pullSnapshotFor(name string) *observer.StatsResponse {
+	st, ok := s.pullStateFor(name)
+	if !ok || st.LastSnapshot == nil {
+		return nil
+	}
+	return st.LastSnapshot
+}
+
+// pulledPeerNames returns every peer the daemon pulls — configured for
+// pull in the peer store, or already holding pull-collector state —
+// sorted by name for deterministic views.
+func (s *Server) pulledPeerNames() []string {
+	set := map[string]bool{}
+	if s != nil && s.observerPull != nil && s.observerPull.col != nil {
+		for _, st := range s.observerPull.col.Snapshot() {
+			set[st.Name] = true
+		}
+	}
+	if s != nil && s.serverStore != nil {
+		for _, e := range s.serverStore.ListFederated() {
+			if e == nil || e.Name == "" {
+				continue
+			}
+			if e.Enabled && e.Federated && e.ObserverPull && e.URL != "" {
+				set[e.Name] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for name := range set {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// pullInfoFor builds the row's pull object for one peer. StaleReason is
+// "none" when there is no failure to report.
+func (s *Server) pullInfoFor(name string) peerPullInfo {
+	info := peerPullInfo{StaleReason: observer.ReasonNone}
+	if s.pullConfigured(name) {
+		info.Enabled = true
+		info.IntervalS = s.pullIntervalS(name)
+	}
+	if s.pullCollectorDown(name) {
+		info.Stale = true
+		info.StaleReason = observer.ReasonCollectorNotRunning
+	}
+	if st, ok := s.pullStateFor(name); ok {
+		if !s.pullCollectorDown(name) {
+			info.Stale = st.Stale
+			if st.StaleReason != "" {
+				info.StaleReason = st.StaleReason
+			}
+		}
+		if !st.LastSuccessAt.IsZero() {
+			t := st.LastSuccessAt
+			info.LastSuccessAt = &t
+		}
+		if !st.LastAttemptAt.IsZero() {
+			t := st.LastAttemptAt
+			info.LastAttemptAt = &t
+		}
+	}
+	return info
+}
+
+// observerPeerRow is one push-peer row in the merged observer peer list:
+// every pre-existing field plus source, shadow and pull.
+func (s *Server) observerPeerRow(p observer.PeerEntry) map[string]any {
+	return map[string]any{
+		"name":          p.Name,
+		"shape":         p.Shape,
+		"version":       p.Version,
+		"host_info":     p.HostInfo,
+		"registered_at": p.RegisteredAt,
+		"last_push_at":  p.LastPushAt,
+		"compute_node":  s.peerToNodeName(p.Name),
+		"source":        "push",
+		"shadow":        false,
+		"pull":          s.pullInfoFor(p.Name),
+	}
+}
+
+// mergedObserverPeers returns every observable peer exactly once as a row
+// map, sorted by name. Push peers (PeerRegistry) keep every pre-existing
+// field and gain source="push" plus their pull object; a pulled peer that
+// never pushed appears once as a source="pull" row; a federated peer that
+// neither pushes nor pulls (observer_pull off) surfaces once as a shadow
+// row (shadow=true, source="pull", pull.enabled=false, no envelope data).
+func (s *Server) mergedObserverPeers() []map[string]any {
+	pushNames := map[string]bool{}
+	rows := []map[string]any{}
+	if s.peerRegistry != nil {
+		for _, p := range s.peerRegistry.List() {
+			pushNames[p.Name] = true
+			rows = append(rows, s.observerPeerRow(p))
+		}
+	}
+	// Pull pass — pulled peers that have no push registration.
+	pulled := s.pulledPeerNames()
+	pulledSet := map[string]bool{}
+	for _, name := range pulled {
+		pulledSet[name] = true
+		if pushNames[name] {
+			continue // the push row already carries this peer's pull object
+		}
+		row := map[string]any{
+			"name":         name,
+			"source":       "pull",
+			"shadow":       false,
+			"compute_node": s.peerToNodeName(name),
+			"pull":         s.pullInfoFor(name),
+		}
+		if st, ok := s.pullStateFor(name); ok && !st.LastSuccessAt.IsZero() {
+			row["last_push_at"] = st.LastSuccessAt
+		}
+		rows = append(rows, row)
+	}
+	// Shadow pass — federated peers with pull disabled that never pushed.
+	// Listed for visibility; excluded from the all-peers envelope view
+	// and the meta-peers buckets (no envelope data exists for them).
+	if s.serverStore != nil {
+		for _, e := range s.serverStore.ListFederated() {
+			if e == nil || e.Name == "" || e.ObserverPull {
+				continue
+			}
+			if pushNames[e.Name] || pulledSet[e.Name] {
+				continue
+			}
+			rows = append(rows, map[string]any{
+				"name":         e.Name,
+				"source":       "pull",
+				"shadow":       true,
+				// Shadow rows never auto-bind by name match — they carry
+				// no pushed data — so only an explicit ObserverPeer
+				// reference counts here.
+				"compute_node": s.peerToNodeNameExplicit(e.Name),
+				"pull":         s.pullInfoFor(e.Name),
+			})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		a, _ := rows[i]["name"].(string)
+		b, _ := rows[j]["name"].(string)
+		return a < b
+	})
+	return rows
 }

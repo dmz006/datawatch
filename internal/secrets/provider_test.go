@@ -124,13 +124,13 @@ func TestFileProvider_RefusesPathTraversal(t *testing.T) {
 	}
 }
 
-// FileProvider with empty BaseDir defaults to ~/.datawatch/secrets/.
-func TestFileProvider_DefaultBaseDir(t *testing.T) {
+// NewFileProvider performs no home-directory lookup: an empty
+// baseDir yields a provider rooted at "" — callers must pass the
+// folder (see DefaultFileProviderDir).
+func TestFileProvider_EmptyBaseDirNoHomeLookup(t *testing.T) {
 	p := NewFileProvider("")
-	home, _ := os.UserHomeDir()
-	want := filepath.Join(home, ".datawatch", "secrets")
-	if p.BaseDir != want {
-		t.Errorf("BaseDir=%q want %q", p.BaseDir, want)
+	if p.BaseDir != "" {
+		t.Errorf("BaseDir=%q want empty (no default location)", p.BaseDir)
 	}
 }
 

@@ -17,11 +17,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/dmz006/datawatch/internal/audit"
 )
 
 // httpProxy is the shared HTTP client for in-process REST calls.
@@ -65,7 +68,7 @@ func (s *Server) proxyGetWithHeaders(path string, q url.Values) ([]byte, http.He
 	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return nil, resp.Header, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, resp.Header, fmt.Errorf("HTTP %d: %s", resp.StatusCode, boundedErrorBody(body))
 	}
 	return body, resp.Header, nil
 }
@@ -88,6 +91,17 @@ func withCompactView(path string) string {
 		return path + "&view=compact"
 	}
 	return path + "?view=compact"
+}
+
+// boundedErrorBody trims and caps an upstream error body so a verbose
+// 5xx dump can't flood the agent's context; successful bodies are
+// returned by the callers as-is and are never passed through here.
+func boundedErrorBody(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if len(s) <= maxToolErrorBody {
+		return s
+	}
+	return s[:maxToolErrorBody] + "…"
 }
 
 // proxyJSON sends method+body to the loopback and returns the body.
@@ -125,7 +139,7 @@ func (s *Server) proxyJSON(method, path string, body any) ([]byte, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, boundedErrorBody(respBody))
 	}
 	return respBody, nil
 }
@@ -154,7 +168,7 @@ func (s *Server) handleAsk(_ context.Context, req mcpsdk.CallToolRequest) (*mcps
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/ask", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("ask", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -171,7 +185,7 @@ func (s *Server) handleProjectSummary(_ context.Context, req mcpsdk.CallToolRequ
 	q := url.Values{"dir": []string{req.GetString("dir", "")}}
 	out, err := s.proxyGet("/api/project/summary", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("project_summary", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -184,7 +198,7 @@ func (s *Server) toolTemplateList() mcpsdk.Tool {
 func (s *Server) handleTemplateList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/templates", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("template_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -209,7 +223,7 @@ func (s *Server) handleTemplateUpsert(_ context.Context, req mcpsdk.CallToolRequ
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/templates", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("template_upsert", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -223,7 +237,7 @@ func (s *Server) toolTemplateDelete() mcpsdk.Tool {
 func (s *Server) handleTemplateDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodDelete, "/api/templates/"+req.GetString("name", ""), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("template_delete", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -236,19 +250,35 @@ func (s *Server) toolProjectList() mcpsdk.Tool {
 func (s *Server) handleProjectList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/projects", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("project_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
 
 func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_upsert",
-		mcpsdk.WithDescription("Register or update a project alias (BL27)."),
+		mcpsdk.WithDescription(
+			"Register or update a project alias (BL27), and optionally its per-project policy tier — the layer between the daemon-wide defaults and the Automaton's own overrides. Unset policy keys keep the daemon tier; the daemon re-validates the block and refuses it, naming the offending field, if a key holds a value that key does not know."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Project alias")),
 		mcpsdk.WithString("dir", mcpsdk.Required(), mcpsdk.Description("Absolute directory")),
 		mcpsdk.WithString("default_backend", mcpsdk.Description("Default LLM backend")),
 		mcpsdk.WithString("description", mcpsdk.Description("Description")),
-	)
+		mcpsdk.WithObject("policy",
+			mcpsdk.Description(
+				"Optional per-project policy block (e.g. {\"plan_review_mode\":\"block\",\"max_concurrent_tasks\":2,\"retry_policy\":{\"infra\":3}}). Unset keys keep the daemon tier.")),
+		mcpsdk.WithString("owner", mcpsdk.Description("Optional project record: who owns the project. Omit to keep the stored value; an empty string clears it.")),
+		mcpsdk.WithString("repository", mcpsdk.Description("Optional project record: repository (e.g. owner/name or URL). Omit to keep; empty clears.")),
+		mcpsdk.WithString("default_branch", mcpsdk.Description("Optional project record: default git branch. Omit to keep; empty clears.")),
+		mcpsdk.WithArray("arcs",
+			mcpsdk.Description("Optional ordered arc list, replacing the stored one: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned|active|done\"}]. Array position is the arc order. Omit to keep; [] clears."),
+			mcpsdk.Items(map[string]any{"type": "object"})),
+		mcpsdk.WithObject("target",
+			mcpsdk.Description("Optional outcome the project works toward: {\"name\":\"...\",\"definition_of_done\":\"...\"}. Omit to keep the stored value.")),
+		mcpsdk.WithObject("lane_defaults",
+			mcpsdk.Description("Optional lane defaults for new work: {\"lane\":\"...\",\"backend\":\"...\",\"model\":\"...\"}. Omit to keep the stored value.")),
+		mcpsdk.WithNumber("weekly_share", mcpsdk.Description("Optional weekly share (percent of the weekly budget). Omit to keep the stored value.")),
+		mcpsdk.WithNumber("branch_retention_days", mcpsdk.Description("Optional number of days to keep merged task branches. Omit to keep the stored value.")),
+		mcpsdk.WithString("major_trigger", mcpsdk.Description("Optional major-release trigger. Omit to keep; empty clears.")))
 }
 func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{
@@ -257,9 +287,32 @@ func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolReque
 		"default_backend": req.GetString("default_backend", ""),
 		"description":     req.GetString("description", ""),
 	}
+	if raw, ok := req.GetArguments()["policy"]; ok && raw != nil {
+		var obj map[string]any
+		switch v := raw.(type) {
+		case map[string]any:
+			obj = v
+		case string:
+			if err := json.Unmarshal([]byte(v), &obj); err != nil {
+				return toolErrorf("project_upsert", "policy must be an object (or a JSON string encoding one): %v", err), nil
+			}
+		default:
+			return toolErrorf("project_upsert", "policy must be an object (or a JSON string encoding one)"), nil
+		}
+		b, err := json.Marshal(obj)
+		if err != nil {
+			return toolErrorf("project_upsert", "policy: %v", err), nil
+		}
+		// json.RawMessage keeps the block an object on the wire; a plain
+		// []byte would marshal as a base64 string.
+		body["policy"] = json.RawMessage(b)
+	}
+	if err := applyProjectRecordArgs(req.GetArguments(), body); err != nil {
+		return toolErrorf("project_upsert", "%v", err), nil
+	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/projects", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("project_upsert", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -273,7 +326,232 @@ func (s *Server) toolProjectAliasDelete() mcpsdk.Tool {
 func (s *Server) handleProjectAliasDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodDelete, "/api/projects/"+req.GetString("name", ""), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("project_alias_delete", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// toolProjectPolicyEffective exposes GET /api/projects/{name}/policy/effective:
+// every policy setting for the project, with the value in force and the tier
+// (automaton, project, or daemon) that supplied it.
+func (s *Server) toolProjectPolicyEffective() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_policy_effective",
+		mcpsdk.WithDescription(
+			"Effective policy for one project: every setting with the value in force and the tier (automaton, project, daemon) that supplied it. Optional automaton parameter resolves with that Automaton's own policy fields as the top tier. Read-only."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithString("automaton", mcpsdk.Description("Optional Automaton ID whose own policy fields act as the top tier.")),
+	)
+}
+func (s *Server) handleProjectPolicyEffective(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_policy_effective", "name is required"), nil
+	}
+	q := url.Values{}
+	if auto := req.GetString("automaton", ""); auto != "" {
+		q.Set("automaton", auto)
+	}
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name)+"/policy/effective", q)
+	if err != nil {
+		return toolError("project_policy_effective", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// projectRecordStringKeys are the optional project record fields that hold a
+// plain string. A key the caller omits keeps the stored value; a key sent as
+// an empty string clears it.
+var projectRecordStringKeys = []string{"owner", "repository", "default_branch", "major_trigger"}
+
+// projectRecordIntKeys are the optional project record fields that hold a
+// whole number.
+var projectRecordIntKeys = []string{"weekly_share", "branch_retention_days"}
+
+// projectRecordObjectKeys are the optional project record fields that hold a
+// JSON object.
+var projectRecordObjectKeys = []string{"target", "lane_defaults"}
+
+// jsonValueArg accepts a tool argument that is either already decoded JSON or
+// a string holding JSON, and returns the decoded value.
+func jsonValueArg(name string, raw any) (any, error) {
+	if s, ok := raw.(string); ok {
+		var out any
+		if err := json.Unmarshal([]byte(s), &out); err != nil {
+			return nil, fmt.Errorf("%s must be JSON (or a JSON string encoding it): %v", name, err)
+		}
+		return out, nil
+	}
+	return raw, nil
+}
+
+// applyProjectRecordArgs copies the optional project record fields from the
+// project_upsert arguments into the upsert body. Only keys the caller sent are
+// copied, so the daemon keeps every other stored value.
+func applyProjectRecordArgs(args map[string]any, body map[string]any) error {
+	for _, k := range projectRecordStringKeys {
+		v, ok := args[k]
+		if !ok || v == nil {
+			continue
+		}
+		str, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("%s must be a string", k)
+		}
+		body[k] = str
+	}
+	for _, k := range projectRecordIntKeys {
+		v, ok := args[k]
+		if !ok || v == nil {
+			continue
+		}
+		f, isNum := v.(float64)
+		if !isNum || f != float64(int(f)) {
+			return fmt.Errorf("%s must be a whole number", k)
+		}
+		body[k] = int(f)
+	}
+	for _, k := range projectRecordObjectKeys {
+		v, ok := args[k]
+		if !ok || v == nil {
+			continue
+		}
+		decoded, err := jsonValueArg(k, v)
+		if err != nil {
+			return err
+		}
+		if _, isObj := decoded.(map[string]any); !isObj {
+			return fmt.Errorf("%s must be an object", k)
+		}
+		body[k] = decoded
+	}
+	if v, ok := args["arcs"]; ok && v != nil {
+		decoded, err := jsonValueArg("arcs", v)
+		if err != nil {
+			return err
+		}
+		arcs, err := arcsArg(decoded)
+		if err != nil {
+			return err
+		}
+		body["arcs"] = arcs
+	}
+	return nil
+}
+
+// arcsArg checks that a decoded arcs argument is an array of arc objects and
+// returns it. Each arc is {automation_id, priority?, state?}; the daemon
+// validates the values themselves.
+func arcsArg(decoded any) ([]any, error) {
+	arr, ok := decoded.([]any)
+	if !ok {
+		return nil, fmt.Errorf("arcs must be an array of arc objects")
+	}
+	for i, item := range arr {
+		if _, isObj := item.(map[string]any); !isObj {
+			return nil, fmt.Errorf("arcs[%d] must be an object", i)
+		}
+	}
+	return arr, nil
+}
+
+// toolProjectRollup exposes GET /api/projects/{name}/rollup: the project's arcs
+// with per-arc progress, cost in points, and throughput over a window.
+func (s *Server) toolProjectRollup() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_rollup",
+		mcpsdk.WithDescription(
+			"Project roll-up: arcs in order with their Automata, task progress, cost in points and throughput over a window of days. Read-only."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithNumber("window", mcpsdk.Description("Throughput window in days (1–365, default 7).")),
+	)
+}
+func (s *Server) handleProjectRollup(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_rollup", "name is required"), nil
+	}
+	q := url.Values{}
+	if v, ok := req.GetArguments()["window"]; ok && v != nil {
+		f, isNum := v.(float64)
+		if !isNum || f != float64(int(f)) {
+			return toolErrorf("project_rollup", "window must be a whole number of days"), nil
+		}
+		q.Set("window", fmt.Sprintf("%d", int(f)))
+	}
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name)+"/rollup", q)
+	if err != nil {
+		return toolError("project_rollup", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// toolProjectHistory exposes GET /api/projects/{name}/history: finished and
+// archived Automata, daily progress and Gantt rows, one page at a time.
+func (s *Server) toolProjectHistory() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_history",
+		mcpsdk.WithDescription(
+			"Project history: finished and archived Automata, daily progress and Gantt rows. Paged with limit and the cursor from the previous page. Read-only."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Maximum rows per page (the daemon's default applies when omitted).")),
+		mcpsdk.WithString("cursor", mcpsdk.Description("Opaque cursor from the previous page's next_cursor. Omit for the first page.")),
+	)
+}
+func (s *Server) handleProjectHistory(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_history", "name is required"), nil
+	}
+	q := url.Values{}
+	if v, ok := req.GetArguments()["limit"]; ok && v != nil {
+		f, isNum := v.(float64)
+		if !isNum || f != float64(int(f)) {
+			return toolErrorf("project_history", "limit must be a whole number"), nil
+		}
+		q.Set("limit", fmt.Sprintf("%d", int(f)))
+	}
+	if c := req.GetString("cursor", ""); c != "" {
+		q.Set("cursor", c)
+	}
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name)+"/history", q)
+	if err != nil {
+		return toolError("project_history", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// toolProjectSetArcs exposes PUT /api/projects/{name}/arcs: it replaces the
+// project's ordered arc list and returns the project record.
+func (s *Server) toolProjectSetArcs() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_set_arcs",
+		mcpsdk.WithDescription(
+			"Replace a project's ordered arc list. The array order is the arc order. Each arc is {automation_id, priority?, state? (planned|active|done)}. Sending [] clears the list. Returns the project record."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithArray("arcs",
+			mcpsdk.Required(),
+			mcpsdk.Description("Ordered arcs: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned\"}]."),
+			mcpsdk.Items(map[string]any{"type": "object"})),
+	)
+}
+func (s *Server) handleProjectSetArcs(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_set_arcs", "name is required"), nil
+	}
+	raw, ok := req.GetArguments()["arcs"]
+	if !ok || raw == nil {
+		return toolErrorf("project_set_arcs", "arcs is required (an array; [] clears the list)"), nil
+	}
+	decoded, err := jsonValueArg("arcs", raw)
+	if err != nil {
+		return toolErrorf("project_set_arcs", "%v", err), nil
+	}
+	arcs, err := arcsArg(decoded)
+	if err != nil {
+		return toolErrorf("project_set_arcs", "%v", err), nil
+	}
+	body := map[string]any{"arcs": arcs}
+	out, err := s.proxyJSON(http.MethodPut, "/api/projects/"+url.PathEscape(name)+"/arcs", body)
+	if err != nil {
+		return toolError("project_set_arcs", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -291,7 +569,7 @@ func (s *Server) handleSessionRollback(_ context.Context, req mcpsdk.CallToolReq
 	body := map[string]any{"force": req.GetBool("force", false)}
 	out, err := s.proxyJSON(http.MethodPost, "/api/sessions/"+req.GetString("id", "")+"/rollback", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("session_rollback", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -306,7 +584,7 @@ func (s *Server) toolCooldownStatus() mcpsdk.Tool {
 func (s *Server) handleCooldownStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/cooldown", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cooldown_status", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -325,7 +603,7 @@ func (s *Server) handleCooldownSet(_ context.Context, req mcpsdk.CallToolRequest
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/cooldown", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cooldown_set", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -338,7 +616,7 @@ func (s *Server) toolCooldownClear() mcpsdk.Tool {
 func (s *Server) handleCooldownClear(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodDelete, "/api/cooldown", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cooldown_clear", err), nil
 	}
 	if len(out) == 0 {
 		out = []byte(`{"status":"cleared"}`)
@@ -361,7 +639,7 @@ func (s *Server) handleSessionsStale(_ context.Context, req mcpsdk.CallToolReque
 	}
 	out, err := s.proxyGet("/api/sessions/stale", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("sessions_stale", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -381,7 +659,7 @@ func (s *Server) handleCostSummary(_ context.Context, req mcpsdk.CallToolRequest
 	}
 	out, err := s.proxyGet("/api/cost", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cost_summary", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -406,7 +684,7 @@ func (s *Server) handleCostUsage(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/cost/usage", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cost_usage", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -419,7 +697,7 @@ func (s *Server) toolCostRates() mcpsdk.Tool {
 func (s *Server) handleCostRates(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/cost/rates", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cost_rates", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -428,28 +706,55 @@ func (s *Server) handleCostRates(_ context.Context, _ mcpsdk.CallToolRequest) (*
 
 func (s *Server) toolAuditQuery() mcpsdk.Tool {
 	return mcpsdk.NewTool("audit_query",
-		mcpsdk.WithDescription("Query the operator audit log (BL9). Newest-first."),
+		mcpsdk.WithDescription("Query the operator audit log (BL9). Newest-first. "+
+			"The action filter is an exact match by default and a prefix match when it ends in '*', "+
+			"so action=autonomous_budget_* or action=autonomous_* lists a whole family. "+
+			"The subject filter is an exact match on what the event is about (a task id, backend or LLM name). "+
+			"Capacity events: "+strings.Join(audit.CapacityActions, ", ")+". "+
+			"since/until must be RFC3339 or the call is rejected."),
 		mcpsdk.WithString("actor", mcpsdk.Description("Filter by actor (e.g. 'operator', 'channel:signal', 'mcp')")),
-		mcpsdk.WithString("action", mcpsdk.Description("Filter by action (start, kill, send_input, configure, ...)")),
+		mcpsdk.WithString("action", mcpsdk.Description(audit.QueryActionHelp())),
+		mcpsdk.WithString("subject", mcpsdk.Description("Filter by subject, exact match (task id, backend or LLM name)")),
 		mcpsdk.WithString("session_id", mcpsdk.Description("Filter by session_id")),
 		mcpsdk.WithString("since", mcpsdk.Description("RFC3339 lower bound")),
 		mcpsdk.WithString("until", mcpsdk.Description("RFC3339 upper bound")),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("Max entries (default 100)")),
 	)
 }
+
+// AuditQueryToolArgs returns the argument names the audit_query tool declares.
+func AuditQueryToolArgs() []string {
+	props := (&Server{}).toolAuditQuery().InputSchema.Properties
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (s *Server) handleAuditQuery(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	get := func(name string) string {
+		if name == "limit" {
+			if n := int(req.GetFloat("limit", 0)); n > 0 {
+				return strconv.Itoa(n)
+			}
+			return ""
+		}
+		return req.GetString(name, "")
+	}
+	if _, err := audit.ParseQuery(get); err != nil {
+		return toolError("audit_query", err), nil
+	}
 	q := url.Values{}
-	for _, k := range []string{"actor", "action", "session_id", "since", "until"} {
-		if v := req.GetString(k, ""); v != "" {
+	for _, k := range audit.QueryParamNames {
+		if v := get(k); v != "" {
 			q.Set(k, v)
 		}
 	}
-	if n := int(req.GetFloat("limit", 0)); n > 0 {
-		q.Set("limit", strconv.Itoa(n))
-	}
 	out, err := s.proxyGet("/api/audit", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("audit_query", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -479,7 +784,7 @@ func (s *Server) handleAuditAccessQuery(_ context.Context, req mcpsdk.CallToolRe
 	}
 	out, err := s.proxyGet("/api/audit/access", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("audit_access_query", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -494,7 +799,7 @@ func (s *Server) toolDiagnose() mcpsdk.Tool {
 func (s *Server) handleDiagnose(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/diagnose", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("diagnose", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -514,7 +819,7 @@ func (s *Server) handleReload(_ context.Context, req mcpsdk.CallToolRequest) (*m
 	}
 	out, err := s.proxyJSON(http.MethodPost, path, nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("reload", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -532,7 +837,7 @@ func (s *Server) handleAssist(_ context.Context, req mcpsdk.CallToolRequest) (*m
 	body := map[string]any{"question": req.GetString("question", "")}
 	out, err := s.proxyJSON(http.MethodPost, "/api/assist", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("assist", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -546,7 +851,7 @@ func (s *Server) toolDeviceAliasList() mcpsdk.Tool {
 func (s *Server) handleDeviceAliasList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/device-aliases", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_alias_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -565,7 +870,7 @@ func (s *Server) handleDeviceAliasUpsert(_ context.Context, req mcpsdk.CallToolR
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/device-aliases", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_alias_upsert", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -579,7 +884,7 @@ func (s *Server) toolDeviceAliasDelete() mcpsdk.Tool {
 func (s *Server) handleDeviceAliasDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodDelete, "/api/device-aliases/"+req.GetString("alias", ""), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_alias_delete", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -593,7 +898,7 @@ func (s *Server) toolSplashInfo() mcpsdk.Tool {
 func (s *Server) handleSplashInfo(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/splash/info", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("splash_info", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -607,7 +912,7 @@ func (s *Server) toolRoutingRulesList() mcpsdk.Tool {
 func (s *Server) handleRoutingRulesList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/routing-rules", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("routing_rules_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -622,7 +927,7 @@ func (s *Server) handleRoutingRulesTest(_ context.Context, req mcpsdk.CallToolRe
 	out, err := s.proxyJSON(http.MethodPost, "/api/routing-rules/test",
 		map[string]any{"task": req.GetString("task", "")})
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("routing_rules_test", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -642,7 +947,7 @@ func (s *Server) handleAnalytics(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	out, err := s.proxyGet("/api/analytics", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("analytics", err), nil
 	}
 	return textOK(string(out)), nil
 }

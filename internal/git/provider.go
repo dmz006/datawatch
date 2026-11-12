@@ -87,6 +87,17 @@ type Provider interface {
 	// CreateIssue files an issue in opts.Repo. Returns the public URL
 	// of the resulting issue.
 	CreateIssue(ctx context.Context, opts IssueOptions) (string, error)
+
+	// OpenPullRequest opens a pull request from head into base, run
+	// from the checkout at dir. Returns the pull request id.
+	OpenPullRequest(ctx context.Context, dir, base, head, title, body string) (string, error)
+
+	// PullRequestChecks reports the aggregate CI state of pull request
+	// id: "pending", "success" or "failure".
+	PullRequestChecks(ctx context.Context, dir, id string) (string, error)
+
+	// MergePullRequest merges pull request id, run from the checkout at dir.
+	MergePullRequest(ctx context.Context, dir, id string) error
 }
 
 // Resolve returns the Provider implementation matching kind. Unknown
@@ -118,4 +129,13 @@ func (s *stubProvider) OpenPR(_ context.Context, _ PROptions) (string, error) {
 }
 func (s *stubProvider) CreateIssue(_ context.Context, _ IssueOptions) (string, error) {
 	return "", ErrNotImplemented
+}
+func (s *stubProvider) OpenPullRequest(_ context.Context, _, _, _, _, _ string) (string, error) {
+	return "", ErrNotImplemented
+}
+func (s *stubProvider) PullRequestChecks(_ context.Context, _, _ string) (string, error) {
+	return "", ErrNotImplemented
+}
+func (s *stubProvider) MergePullRequest(_ context.Context, _, _ string) error {
+	return ErrNotImplemented
 }

@@ -25,26 +25,98 @@ import (
 // (two different PRs, ~15.0-15.1s each time, 0.07s locally every time) —
 // a real contention-driven slowdown under `go test ./...` running every
 // package in parallel, not flakiness. Bumped to 30s for more headroom.
+//
+// 2026-10-18 — shares its sequence with runToTerminal via settlePRD below:
+// drain the boot-resume scan before Run, then wait for the executor
+// goroutine to exit (a real condition, not a status poll).
 func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
+	final := settlePRD(t, m, api, id, spawn, verify)
+	s := final.Status
+	if s != PRDCompleted && s != PRDFailed && s != PRDBlocked {
+		t.Fatalf("executor exited with non-terminal PRD status %q", s)
+	}
+	return final
+}
+
+// settlePRD is the shared approve/drain/Run/wait-exit sequence for
+// runToTerminal and runToTerminalOrBlocked (both thin wrappers that
+// accept a different terminal-status set). The key properties, each of
+// which fixes a real race:
+//
+//  1. The PRD is flipped to PRDApproved before SetExecutors, so the
+//     boot-resume scan it launches is a guaranteed no-op for this PRD —
+//     even against a fake (nonexistent) project dir it can neither park
+//     nor resurrect the PRD.
+//  2. api.WaitIdle drains that scan BEFORE api.Run. Without this the scan
+//     can run after a fast executor has already finished: against a fake
+//     (missing) project dir it parks the finished PRD as PRDBlocked, and
+//     for PRDFailed tasks with empty sessions it "recovers" them back to
+//     Running — clobbering the terminal state the test asserts (and
+//     tripping the 30s bound below while the resurrected run re-fails).
+//  3. We wait for the executor goroutine itself to exit (the api.execWG
+//     WaitGroup) rather than polling the PRD status. The terminal status
+//     is written inside the run; the goroutine's deferred cleanup
+//     (releaseRun + final EmitPRDUpdate) runs after it, so a status poll
+//     can observe the write while the goroutine is still live.
+//
+// The 30s bound is a hang detector only — every scenario this package
+// exercises settles in well under a second, so the bound is never
+// load-bearing (its original 5s/15s forms were the CI timeouts this
+// helper family kept hitting).
+func settlePRD(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
+	t.Helper()
 	prd, _ := m.Store().GetPRD(id)
-	prd.Status = PRDApproved
+	m.mu.Lock()
+	m.Store().WithLock(func() { prd.Status = PRDApproved })
+	m.mu.Unlock()
 	_ = m.Store().SavePRD(prd)
 	api.SetExecutors(spawn, verify)
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	if err := api.Run(id); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(id)
-		if got.Status == PRDCompleted || got.Status == PRDFailed || got.Status == PRDBlocked {
-			time.Sleep(50 * time.Millisecond)
-			return got
-		}
-		time.Sleep(20 * time.Millisecond)
+	// Wait for the executor goroutine itself to exit (a real condition,
+	// not a status poll) with a generous hang-detector bound, then report
+	// the actual status if the caller doesn't accept it.
+	idleCh := make(chan struct{})
+	go func() {
+		api.execWG.Wait()
+		close(idleCh)
+	}()
+	select {
+	case <-idleCh:
+	case <-time.After(30 * time.Second):
+		final, _ := m.Store().SnapshotPRD(id)
+		t.Fatalf("PRD %s executor did not exit within 30s (hang detected); last status %q", id, final.Status)
 	}
-	t.Fatal("PRD did not reach a terminal state")
-	return nil
+	final, _ := m.Store().SnapshotPRD(id)
+	return final
+}
+
+// waitForPRDStatus polls the store until the PRD reaches one of want or the
+// timeout elapses, failing with the last observed status.
+func waitForPRDStatus(t *testing.T, m *Manager, id string, timeout time.Duration, want ...PRDStatus) *PRD {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var last PRDStatus
+	for {
+		if p, ok := m.Store().SnapshotPRD(id); ok {
+			last = p.Status
+			for _, w := range want {
+				if last == w {
+					return p
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("PRD %s did not reach %v within %s; last status %q", id, want, timeout, last)
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // TestExecutor_StoryFailureHaltsPRDByDefault verifies the operator's core
@@ -287,14 +359,10 @@ func TestExecutor_DrainedInFlightTaskGetsFinalized(t *testing.T) {
 	// status specifically, not just the PRD-level status, or the
 	// assertion races ahead of the fix's actual finalization work.
 	var got *PRD
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		got, _ = m.Store().GetPRD(prd.ID)
-		if got.Story[1].Tasks[0].Status == TaskFailed {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	pollUntil(t, 2*time.Second, "T2 task failed", func() bool {
+		got, _ = m.Store().SnapshotPRD(prd.ID)
+		return got.Story[1].Tasks[0].Status == TaskFailed
+	})
 	if got.Status != PRDBlocked {
 		t.Fatalf("want PRDBlocked, got %s", got.Status)
 	}

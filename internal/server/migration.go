@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/compute"
@@ -136,20 +135,7 @@ func joinKinds(ks []compute.NodeKind) string {
 }
 
 func (s *Server) handleMigrationStatus(w http.ResponseWriter, r *http.Request) {
-	dataDir := ""
-	if s.cfg != nil {
-		dataDir = s.cfg.DataDir
-	}
-	if dataDir == "" {
-		dataDir = "."
-	}
-	// Expand ~ if present (cfg may carry user-relative path).
-	if strings.HasPrefix(dataDir, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			dataDir = filepath.Join(home, dataDir[2:])
-		}
-	}
-	path := filepath.Join(dataDir, "v7-migration-status.json")
+	path := s.statePath("v7-migration-status.json")
 	switch r.Method {
 	case http.MethodGet:
 		if !s.fedCap(w, r, federation.CapConfigWrite) {

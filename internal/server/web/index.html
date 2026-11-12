@@ -50,7 +50,14 @@
         if (j && j.version && baked && baked.indexOf('%') === -1 && j.version !== baked) {
           if (!sessionStorage.getItem('_dw_reloaded_for_' + j.version)) {
             sessionStorage.setItem('_dw_reloaded_for_' + j.version, '1');
-            location.reload();
+            // bl434 row 7 (eye-only): startup self-heal, not a session connect.
+            // Guarded: this inline script runs before app.js's static load in
+            // slow-load edge cases; fall back to the bare reload there.
+            if (typeof window.performFullPageRefresh === 'function') {
+              window.performFullPageRefresh({ eyeBolt: false });
+            } else {
+              location.reload();
+            }
           }
         }
       } catch (e) { /* offline; ignore */ }
@@ -67,6 +74,9 @@
       <div class="splash-title">datawatch</div>
       <div class="splash-subtitle">AI Orchestration</div>
       <div class="splash-version">%%DW_VERSION%%</div>
+      <!-- Previous version line — hidden by default; app.js fills it in and
+           shows it only when the daemon version changed since last splash. -->
+      <div class="splash-version-prev" id="splashVersionPrev" style="display:none"></div>
       <!-- GH#172 D59 — status line (Android already has this). Default
            text for a fresh page load; app.js updates it to "Connected"
            once the WebSocket opens, same moment the fade-out starts. -->
@@ -112,13 +122,19 @@
            address-bar icon). Not shown on browsers that never fire the event
            (Safari/iOS has its own separate Share-sheet install flow). -->
       <button id="headerInstallBtn" onclick="installPWA()" title="Install app" aria-label="Install app" style="display:none;background:transparent;border:none;color:inherit;font-size:17px;cursor:pointer;padding:4px 6px;opacity:0.85;">&#11015;</button>
+      <!-- Tags menu — one header control for the session tag and watch filters.
+           The glyph is a filled tag icon (Tags glyph) drawn by style.css, not an outline.
+           JavaScript sets the aria-label (with the active count) and the count chip. -->
+      <button id="headerTagsBtn" class="header-tags-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="headerTagsMenu" onclick="toggleTagsMenu()"><svg width="22" height="22" viewBox="0 0 24 24" class="header-tags-icon" aria-hidden="true" focusable="false"><path class="header-tags-icon-body" d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle class="header-tags-icon-hole" cx="7" cy="7" r="2"/><path class="header-tags-icon-shine" d="M4.9 4.6h3.1"/></svg><span id="headerTagsCount" class="header-tags-count"></span></button>
       <span class="status-dot" id="statusDot" title="Long-press to reconnect + check for app update"></span>
     </header>
+
+    <div id="headerTagsMenu" class="header-tags-menu" role="dialog" aria-labelledby="headerTagsBtn" hidden></div>
 
     <main class="view" id="view"></main>
 
     <nav class="nav" id="nav">
-      <button class="nav-btn active" data-view="sessions" onclick="navigate('sessions')">
+      <button class="nav-btn active" data-view="sessions" onclick="navigate('sessions')" data-i18n="nav_sessions" data-i18n-attr="title" title="Sessions">
         <!-- BL303 — terminal icon replaces chat bubble; Sessions is
              an agent terminal surface, not a chat interface. -->
         <span class="nav-icon">&#128421;</span>
@@ -128,11 +144,11 @@
            enabled:true. JS unhides the button on boot when the feature
            is configured. Operator-reported: tabs for disabled
            subsystems shouldn't render at all. -->
-      <button id="navBtnAutonomous" class="nav-btn" data-view="autonomous" onclick="navigate('autonomous')" style="display:none;">
+      <button id="navBtnAutonomous" class="nav-btn" data-view="autonomous" onclick="navigate('autonomous')" data-i18n="nav_automata" data-i18n-attr="title" title="Automata" style="display:none;">
         <span class="nav-icon">&#129302;</span>
         <span class="nav-label" data-i18n="nav_automata">Automata</span>
       </button>
-      <button class="nav-btn" data-view="alerts" onclick="navigate('alerts')">
+      <button class="nav-btn" data-view="alerts" onclick="navigate('alerts')" data-i18n="nav_alerts" data-i18n-attr="title" title="Alerts">
         <span class="nav-icon" style="position:relative;">
           &#9888;
           <span id="alertBadge" style="display:none;position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;"></span>
@@ -142,31 +158,27 @@
       <!-- BL247-followup v6.7.3 — Observer is a real top-level nav item.
            Hosts the (former) Settings → Monitor cards + Federated Peers
            at the bottom. -->
-      <button class="nav-btn" data-view="observer" onclick="navigate('observer')">
+      <button class="nav-btn" data-view="observer" onclick="navigate('observer')" data-i18n="nav_observer" data-i18n-attr="title" title="Observer">
         <span class="nav-icon">&#128225;</span>
         <span class="nav-label" data-i18n="nav_observer">Observer</span>
       </button>
       <!-- BL238 — Plugins, Routing, Orchestrator moved to Settings sub-tabs. Nav buttons removed. -->
       <!-- BL303 S4 — /dashboard Mission Control -->
-      <button id="navBtnDashboard" class="nav-btn" data-view="dashboard" onclick="navigate('dashboard')" style="display:none;">
+      <button id="navBtnDashboard" class="nav-btn" data-view="dashboard" onclick="navigate('dashboard')" data-i18n="nav_dashboard" data-i18n-attr="title" title="Dashboard" style="display:none;">
         <span class="nav-icon">&#9783;</span>
         <span class="nav-label" data-i18n="nav_dashboard">Dashboard</span>
       </button>
-      <button class="nav-btn" data-view="settings" onclick="navigate('settings')">
-        <span class="nav-icon" style="position:relative;">
-          &#9881;
-          <!-- BL172 + v6.12.0 — count of stale (>60s push age) federated peers,
-               hidden when 0. Click navigates to Observer → Federated Peers and
-               flashes the stale card so the operator can find it without
-               hunting (operator 2026-05-05 Option A). -->
-          <span id="peerStaleBadge" style="display:none;position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;cursor:pointer;" title="Federated peers stale — click to view" onclick="event.stopPropagation();navigateToStalePeer();">0</span>
-        </span>
+      <button class="nav-btn" data-view="settings" onclick="navigate('settings')" data-i18n="nav_settings" data-i18n-attr="title" title="Settings">
+        <span class="nav-icon">&#9881;</span>
         <span class="nav-label" data-i18n="nav_settings">Settings</span>
       </button>
     </nav>
     <button id="newSessionFab" class="new-session-fab" onclick="openNewSessionModal()" title="Start a new session" aria-label="New session">+</button>
   </div>
   <script src="/splash-art.js?v=%%DW_VERSION%%"></script>
+  <script src="/app-merge-shadow-card.js?v=%%DW_VERSION%%"></script>
+  <script src="/branch_refresh_ui.js?v=%%DW_VERSION%%"></script>
+  <script src="/automata-triage-model.js?v=%%DW_VERSION%%"></script>
   <script src="/app.js?v=%%DW_VERSION%%"></script>
 </body>
 </html>

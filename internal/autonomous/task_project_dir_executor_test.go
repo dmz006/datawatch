@@ -20,7 +20,11 @@ import (
 // carries taskDir as its override when non-empty.
 func tpdSetup(t *testing.T, prdDir, taskDir string) (*Manager, *PRD) {
 	t.Helper()
-	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	cfg := DefaultConfig()
+	// v9.10.18 — the guardrail judge (fake fn) stands in for a real
+	// model; the resolver refuses to launch it with none configured.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
+	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -281,7 +285,7 @@ func stubQualityGates(t *testing.T) (*[]string, *sync.Mutex) {
 	var dirs []string
 	var mu sync.Mutex
 	orig := runQualityGateTests
-	runQualityGateTests = func(_ string, dir string, _ int) pipeline.TestResult {
+	runQualityGateTests = func(_ string, dir string, _ int, _ []string) pipeline.TestResult {
 		mu.Lock()
 		dirs = append(dirs, dir)
 		mu.Unlock()
@@ -330,7 +334,7 @@ func TestBL447_QualityGateTestDir(t *testing.T) {
 
 func TestBL447_QualityGateBaselineCachedPerDir(t *testing.T) {
 	dirs, _ := stubQualityGates(t)
-	b := newQualityGateBaselines(pipeline.QualityGateConfig{Enabled: true, TestCommand: "x"}, "/p", nil)
+	b := newQualityGateBaselines(pipeline.QualityGateConfig{Enabled: true, TestCommand: "x"}, "/p", nil, nil)
 	if _, ok := b.forDir("/p"); ok {
 		t.Fatal("PRD dir without a captured baseline must report none (pre-BL447 behaviour)")
 	}
@@ -346,14 +350,14 @@ func TestBL447_QualityGateBaselineCachedPerDir(t *testing.T) {
 }
 
 func TestBL447_LintTaskScopeFor(t *testing.T) {
-	prd := &PRD{ProjectDir: "/home/u/proj"}
+	prd := &PRD{ProjectDir: "/home/<user>/proj"}
 	none := &Task{}
-	if got, want := LintTaskScopeFor(prd, none, "t", "", []string{"/home/u/other/x.go"}),
-		LintTaskScope(prd, "t", "", []string{"/home/u/other/x.go"}); strings.Join(got, ";") != strings.Join(want, ";") || len(got) == 0 {
+	if got, want := LintTaskScopeFor(prd, none, "t", "", []string{"/home/<user>/other/x.go"}),
+		LintTaskScope(prd, "t", "", []string{"/home/<user>/other/x.go"}); strings.Join(got, ";") != strings.Join(want, ";") || len(got) == 0 {
 		t.Fatalf("no override must match LintTaskScope: got %v want %v", got, want)
 	}
-	over := &Task{ProjectDir: "/home/u/other"}
-	if got := LintTaskScopeFor(prd, over, "t", "", []string{"/home/u/other/x.go"}); len(got) != 0 {
+	over := &Task{ProjectDir: "/home/<user>/other"}
+	if got := LintTaskScopeFor(prd, over, "t", "", []string{"/home/<user>/other/x.go"}); len(got) != 0 {
 		t.Fatalf("override: file in task dir flagged: %v", got)
 	}
 }
@@ -417,8 +421,21 @@ func TestBL447_IncidentReplay_SeparateRepos(t *testing.T) {
 		t.Fatalf("drift reported from PRD-repo commit: %v", task.ForeignFileDrift)
 	}
 	for _, d := range got.Decisions {
-		if d.Kind == "file_drift_detected" {
-			t.Fatalf("unexpected drift decision: %+v", d)
+		if d.Kind != "file_drift_detected" {
+			continue
+		}
+		// In-run recording (the worker's own task.txt commit) is expected;
+		// what the replay must rule out is a PRE-EXISTING finding from
+		// the foreign PRD-repo commit.
+		note := d.Note
+		if !strings.Contains(note, "in-run edit by the task's own worker") {
+			t.Fatalf("foreign-drift decision from PRD-repo commit (not an in-run note): %+v", d)
+		}
+		if !strings.Contains(note, "task.txt") {
+			t.Fatalf("in-run note should name the task's own file task.txt: %+v", d)
+		}
+		if strings.Contains(note, "foreign.txt") || strings.Contains(note, "base.txt") {
+			t.Fatalf("decision swept in PRD-repo files: %+v", d)
 		}
 	}
 }

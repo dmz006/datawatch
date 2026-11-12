@@ -1,6 +1,8 @@
 package stats
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -40,12 +42,12 @@ func TestCollector_SetSessionCountFunc(t *testing.T) {
 // hostname nor the running daemon version anywhere.
 func TestCollector_SetServerIdentity(t *testing.T) {
 	c := NewCollector(t.TempDir())
-	c.SetServerIdentity("johnnyjohnny", "8.70.0")
+	c.SetServerIdentity("local-node", "8.70.0")
 	var stats SystemStats
 	c.SetOnCollect(func(s SystemStats) { stats = s })
 	c.collect()
-	if stats.Hostname != "johnnyjohnny" {
-		t.Errorf("expected hostname %q, got %q", "johnnyjohnny", stats.Hostname)
+	if stats.Hostname != "local-node" {
+		t.Errorf("expected hostname %q, got %q", "local-node", stats.Hostname)
 	}
 	if stats.DaemonVersion != "8.70.0" {
 		t.Errorf("expected daemon version %q, got %q", "8.70.0", stats.DaemonVersion)
@@ -145,5 +147,30 @@ func TestCollector_SetOrphanDetectFunc(t *testing.T) {
 	c.collect()
 	if len(stats.OrphanedTmux) != 2 {
 		t.Errorf("expected 2 orphans, got %d", len(stats.OrphanedTmux))
+	}
+}
+
+func TestWorkerQuestionCountersReachTheSnapshot(t *testing.T) {
+	s := SystemStats{WorkerQuestionsRaised: 3, WorkerQuestionsDuplicate: 1, WorkerQuestionsRefused: 2, WorkerQuestionsParked: 1, WorkerQuestionsResumed: 1}
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]float64{
+		"worker_questions_raised": 3, "worker_questions_duplicate": 1, "worker_questions_refused": 2,
+		"worker_questions_parked": 1, "worker_questions_resumed": 1,
+	} {
+		if m[k] != want {
+			t.Errorf("%s = %v, want %v", k, m[k], want)
+		}
+	}
+	// All five are left out when zero, like the other optional counters.
+	b, _ = json.Marshal(SystemStats{})
+	if strings.Contains(string(b), "worker_questions_") {
+		t.Errorf("zero counters were serialised: %s", b)
 	}
 }

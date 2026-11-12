@@ -1,0 +1,572 @@
+{
+  "story": "shared-nav-mobile-fit",
+  "mode": "report-only",
+  "substitute_for": "scripts/test-stories/pwa/shared-nav-mobile-fit.mjs (absent from this branch)",
+  "status": "run",
+  "daemon_version": "9.11.0",
+  "checks": {
+    "tap-target": "interactive element under 44x44 CSS px",
+    "horizontal-overflow": "element box extends past the viewport width"
+  },
+  "viewports": [
+    "320x568",
+    "360x740",
+    "375x667",
+    "390x844",
+    "414x896",
+    "768x1024"
+  ],
+  "views_per_viewport": {
+    "320x568": [
+      "sessions",
+      "autonomous",
+      "alerts",
+      "observer",
+      "dashboard",
+      "settings"
+    ],
+    "360x740": [
+      "sessions",
+      "autonomous",
+      "alerts",
+      "observer",
+      "dashboard",
+      "settings"
+    ],
+    "375x667": [
+      "sessions",
+      "autonomous",
+      "alerts",
+      "observer",
+      "dashboard",
+      "settings"
+    ],
+    "390x844": [
+      "sessions",
+      "autonomous",
+      "alerts",
+      "observer",
+      "dashboard",
+      "settings"
+    ],
+    "414x896": [
+      "sessions",
+      "autonomous",
+      "alerts",
+      "observer",
+      "dashboard",
+      "settings"
+    ],
+    "768x1024": [
+      "sessions",
+      "autonomous",
+      "alerts",
+      "observer",
+      "dashboard",
+      "settings"
+    ]
+  },
+  "total_occurrences": 292,
+  "page_horizontal_scroll": [],
+  "findings": [
+    {
+      "check": "tap-target",
+      "selector": "span#headerAlertPill.header-alert-pill",
+      "region": "header",
+      "inNavIcon": false,
+      "count": 36,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "alerts",
+        "autonomous",
+        "dashboard",
+        "observer",
+        "sessions",
+        "settings"
+      ],
+      "sizes": [
+        "34.2x36",
+        "49.9x21"
+      ],
+      "sampleText": "🔔 0"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#headerInstallBtn",
+      "region": "header",
+      "inNavIcon": false,
+      "count": 36,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "alerts",
+        "autonomous",
+        "dashboard",
+        "observer",
+        "sessions",
+        "settings"
+      ],
+      "sizes": [
+        "26.3x29"
+      ],
+      "sampleText": "Install app"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button.toast-error-close",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 36,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "alerts",
+        "autonomous",
+        "dashboard",
+        "observer",
+        "sessions",
+        "settings"
+      ],
+      "sizes": [
+        "28x28"
+      ],
+      "sampleText": "Dismiss this error (acknowledge)"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button.settings-tab-btn.output-tab",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 36,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "settings"
+      ],
+      "sizes": [
+        "68.7x27",
+        "77.3x27",
+        "78.7x27",
+        "78x27",
+        "86x27",
+        "89.3x27"
+      ],
+      "sampleText": "General"
+    },
+    {
+      "check": "tap-target",
+      "selector": "a#headerHelpLink",
+      "region": "header",
+      "inNavIcon": false,
+      "count": 24,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous",
+        "observer",
+        "sessions",
+        "settings"
+      ],
+      "sizes": [
+        "26.8x29"
+      ],
+      "sampleText": "Help"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button.dboard-card-rm",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 20,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "dashboard"
+      ],
+      "sizes": [
+        "12.8x15"
+      ],
+      "sampleText": "×"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#headerSearchBtn.header-search-btn",
+      "region": "header",
+      "inNavIcon": false,
+      "count": 12,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous",
+        "sessions"
+      ],
+      "sizes": [
+        "40x40"
+      ],
+      "sampleText": "Toggle search"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button.output-tab",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 12,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous"
+      ],
+      "sizes": [
+        "73.3x40",
+        "76.5x40",
+        "89.3x27",
+        "92.5x27"
+      ],
+      "sampleText": "Automata"
+    },
+    {
+      "check": "tap-target",
+      "selector": "a",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 12,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "alerts",
+        "dashboard"
+      ],
+      "sizes": [
+        "11.1x16",
+        "13.6x16",
+        "14.3x16",
+        "15.1x16",
+        "16x16"
+      ],
+      "sampleText": "Help"
+    },
+    {
+      "check": "horizontal-overflow",
+      "selector": "button.settings-tab-btn.output-tab",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 11,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896"
+      ],
+      "tabs": [
+        "settings"
+      ],
+      "sizes": [
+        "68.7x27",
+        "86x27",
+        "89.3x27"
+      ],
+      "sampleText": "Compute"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#headerIdentityBtn.header-identity-btn",
+      "region": "header",
+      "inNavIcon": false,
+      "count": 6,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous"
+      ],
+      "sizes": [
+        "38.5x30"
+      ],
+      "sampleText": "Identity wizard"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button.output-tab.active",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 6,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous"
+      ],
+      "sizes": [
+        "100.7x29",
+        "84.7x40"
+      ],
+      "sampleText": "Automation"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#automationFilterBtn.automata-action-btn",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 6,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous"
+      ],
+      "sizes": [
+        "32x28",
+        "40x40"
+      ],
+      "sampleText": "Toggle Automation filters"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#automationHistoryBtn.automata-action-btn",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 6,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous"
+      ],
+      "sizes": [
+        "32x28",
+        "40x40"
+      ],
+      "sampleText": "Show cancelled"
+    },
+    {
+      "check": "tap-target",
+      "selector": "div.settings-section-title.settings-section-toggle",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 6,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "observer"
+      ],
+      "sizes": [
+        "260x40",
+        "300x40",
+        "315x40",
+        "330x40",
+        "354x40",
+        "420x40"
+      ],
+      "sampleText": "▼System Statistics docs"
+    },
+    {
+      "check": "tap-target",
+      "selector": "a.docs-link",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 6,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "observer"
+      ],
+      "sizes": [
+        "38x19"
+      ],
+      "sampleText": "docs"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#dashEditBtn",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 6,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896",
+        "768x1024"
+      ],
+      "tabs": [
+        "dashboard"
+      ],
+      "sizes": [
+        "36.4x28",
+        "41.5x28",
+        "43x28",
+        "44.5x28",
+        "46.4x17"
+      ],
+      "sampleText": "✎ Edit"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#headerFullscreenBtn",
+      "region": "header",
+      "inNavIcon": false,
+      "count": 6,
+      "viewports": [
+        "768x1024"
+      ],
+      "tabs": [
+        "alerts",
+        "autonomous",
+        "dashboard",
+        "observer",
+        "sessions",
+        "settings"
+      ],
+      "sizes": [
+        "23.9x28"
+      ],
+      "sampleText": "Expand window"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#automationNewBtn.btn-primary",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 5,
+      "viewports": [
+        "320x568",
+        "360x740",
+        "375x667",
+        "390x844",
+        "414x896"
+      ],
+      "tabs": [
+        "autonomous"
+      ],
+      "sizes": [
+        "141.1x40"
+      ],
+      "sampleText": "＋ New Automation"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button#automationEmptyCreateBtn.btn-primary",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 3,
+      "viewports": [
+        "360x740",
+        "390x844",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous"
+      ],
+      "sizes": [
+        "153.8x28"
+      ],
+      "sampleText": "＋ Create Automation"
+    },
+    {
+      "check": "tap-target",
+      "selector": "button",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 1,
+      "viewports": [
+        "768x1024"
+      ],
+      "tabs": [
+        "observer"
+      ],
+      "sizes": [
+        "49.1x17"
+      ],
+      "sampleText": "History"
+    }
+  ]
+}

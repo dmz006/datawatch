@@ -1,13 +1,19 @@
 package session
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/gitguard"
 )
 
 // ProjectGit manages git operations on the user's project directory.
@@ -17,11 +23,166 @@ type ProjectGit struct {
 	// whose mtime predates it are not considered part of this run
 	// (see unscopedChangedFiles). Zero means the run start is unknown.
 	runStart time.Time
+	// stagingPolicy bounds what an automatic commit may stage: per-file
+	// size, ignored cache/build directories, model-weight patterns, the
+	// file-count refusal, and the add timeout (see internal/gitguard).
+	// NewProjectGit sets gitguard.Default. A zero-value ProjectGit imposes
+	// no bounds, so construct through NewProjectGit for automatic commits.
+	stagingPolicy gitguard.Policy
+	// commitEnv, when set, is appended to the environment of every git
+	// commit this ProjectGit runs. It carries the commit token that lets
+	// the harness commit through a CommitGuard's hooks; set it only after
+	// validation has passed.
+	commitEnv []string
+	// neverStagePatterns holds the autonomous.snapshot_never_stage path
+	// patterns (e.g. "scratch/", "data/", "*.tmp") that automatic commits
+	// must never `git add`. Nil means no protected patterns; production
+	// call sites pass the configured list (built-in defaults when unset).
+	neverStagePatterns []string
+	// lastSkippedMu guards lastSkipped, the skip list from the most recent
+	// stageChanges call, readable via LastStagingSkipped.
+	lastSkippedMu sync.Mutex
+	lastSkipped   []StagingSkip
 }
 
-// NewProjectGit creates a new ProjectGit for the given directory.
+// setLastSkipped stores the skip list from a stageChanges call for
+// LastStagingSkipped.
+func (g *ProjectGit) setLastSkipped(skipped []StagingSkip) {
+	g.lastSkippedMu.Lock()
+	g.lastSkipped = append([]StagingSkip{}, skipped...)
+	g.lastSkippedMu.Unlock()
+}
+
+// LastStagingSkipped returns a copy of the candidates the most recent
+// staging pass refused to add, with the reason for each (see StagingSkip).
+// Empty when nothing was skipped or no staging has happened yet.
+func (g *ProjectGit) LastStagingSkipped() []StagingSkip {
+	g.lastSkippedMu.Lock()
+	defer g.lastSkippedMu.Unlock()
+	return append([]StagingSkip{}, g.lastSkipped...)
+}
+
+// StagingSkip records one candidate file that an automatic commit did not
+// stage and why. Reason is one of:
+//
+//	"outside-plan"   the path is outside the task's declared plan scope
+//	"never-stage"    the path matches an autonomous.snapshot_never_stage pattern
+//	"ignored"        the path matches .gitignore (git check-ignore)
+//
+// plus the staging guard's own reasons ("size", "ignore-dir", "pattern",
+// "outside-root") from internal/gitguard. Skipping is the safe direction:
+// a wrong skip only leaves a file unstaged; a missed skip is a leak.
+type StagingSkip struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// NewProjectGit creates a new ProjectGit for the given directory, bounded
+// by gitguard.Default.
 func NewProjectGit(dir string) *ProjectGit {
-	return &ProjectGit{dir: dir}
+	return &ProjectGit{dir: dir, stagingPolicy: gitguard.Default}
+}
+
+// SetStagingPolicy replaces the staging policy used by automatic commits.
+// Tests use it to tighten limits; future config wiring can call it too.
+func (g *ProjectGit) SetStagingPolicy(p gitguard.Policy) {
+	g.stagingPolicy = p
+}
+
+// SetCommitEnv makes the commit calls of this ProjectGit run git with env
+// appended (typically CommitGuard.CommitEnv()). Nil clears it.
+func (g *ProjectGit) SetCommitEnv(env []string) {
+	g.commitEnv = env
+}
+
+// SetNeverStagePatterns sets the path patterns this ProjectGit never stages
+// (the autonomous.snapshot_never_stage list, resolved against the built-in
+// defaults upstream). Nil clears the list — nothing is protected.
+func (g *ProjectGit) SetNeverStagePatterns(patterns []string) {
+	cp := make([]string, len(patterns))
+	copy(cp, patterns)
+	g.neverStagePatterns = cp
+}
+
+// matchesNeverStage reports whether the repo-relative slash-form path
+// matches one of g.neverStagePatterns, anchored at the repository root.
+// A trailing "/" names a root directory: it and everything under it
+// ("data/" covers "data/notes" but not "build/data/notes"). A glob is
+// tried against the full relative path and, a second time, against the
+// file name alone — so a slash-free file-name glob like "*.tmp" refuses
+// at any depth, while "secrets/key.*" covers only "secrets/key.<name>"
+// at the root. Anything else matches the exact relative path or a whole
+// leading directory ("secrets/credentials.yaml", or "vendor" for the
+// root vendor directory and its contents). Malformed/blank/absolute
+// patterns never match, so a bad config entry can only fail by
+// protecting nothing — it can never match everything.
+func (g *ProjectGit) matchesNeverStage(rel string) bool {
+	target := filepath.ToSlash(filepath.Clean(rel))
+	if target == "." || target == "" {
+		return false
+	}
+	for _, p := range g.neverStagePatterns {
+		p = strings.TrimSpace(p)
+		if p == "" || strings.ContainsRune(p, 0) || filepath.IsAbs(p) {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(p, "/"):
+			dir := strings.TrimSuffix(filepath.ToSlash(filepath.Clean(p)), "/")
+			if dir == "" || dir == "." {
+				continue // "/" on its own names the root and must never protect
+			}
+			if target == dir || strings.HasPrefix(target, dir+"/") {
+				return true
+			}
+		case strings.ContainsAny(p, "*?["):
+			if ok, err := path.Match(p, target); err == nil && ok {
+				return true
+			}
+			if ok, err := path.Match(p, filepath.Base(target)); err == nil && ok {
+				return true
+			}
+		default:
+			if target == p || strings.HasPrefix(target, p+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ignoredSet asks git which of the given repo-relative candidate paths
+// .gitignore rules ignore (git check-ignore). git exits 0 when at least
+// one path is ignored and 1 when none is; both are valid outcomes here.
+// A failed or missing git response returns an empty set — the candidate
+// still has to pass the scope and never-stage checks before it can be
+// staged, so a check-ignore failure cannot by itself hide a protected path.
+func (g *ProjectGit) ignoredSet(paths []string) map[string]bool {
+	ignored := map[string]bool{}
+	for start := 0; start < len(paths); start += 500 {
+		end := min(start+500, len(paths))
+		cmd := exec.Command("git", append([]string{"check-ignore", "--"}, paths[start:end]...)...)
+		cmd.Dir = g.dir
+		out, _ := cmd.Output() // exit 0 or 1 are both fine
+		for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				ignored[l] = true
+			}
+		}
+	}
+	return ignored
+}
+
+// commit runs git commit with the commit environment, if any. args are fixed
+// flags only; a commit message goes through commitMessage.
+func (g *ProjectGit) commit(args ...string) error {
+	return runGitEnv(g.dir, g.commitEnv, append([]string{"commit"}, args...))
+}
+
+// commitMessage runs git commit with msg on stdin (-F -), so message text,
+// which can derive from a task, never enters git's argument list.
+func (g *ProjectGit) commitMessage(msg string) error {
+	return runGitStdin(g.dir, g.commitEnv, msg, []string{"commit", "-F", "-"})
 }
 
 // IsRepo returns true if dir is inside a git repository.
@@ -54,21 +215,40 @@ func (g *ProjectGit) Init() error {
 // warning so the reduced staging stays visible in the log — the old
 // `git add -A` fallthrough swept pre-existing untracked files into the
 // session's commit (2026-10-19 incident) and must never return.
-func (g *ProjectGit) stageChanges(scope []string) error {
+//
+// Both branches never add a whole directory tree. A scoped commit used
+// to run `git add -- <scope dir>`, which staged everything under a scope
+// of the home directory (2026-10-19 and 2026-10-21 bloat incidents).
+// Candidates are now enumerated file by file and pass through the staging
+// guard (stageCandidates): size cap, ignored cache/build directories, a
+// file-count refusal, and a bounded add. Automatic commits in the user's
+// home directory are flagged with a warning, since the guard is what keeps
+// them from staging the whole home tree.
+func (g *ProjectGit) stageChanges(scope []string) ([]StagingSkip, error) {
+	if err := gitguard.RefuseNonProject(g.dir); err != nil {
+		return nil, err
+	}
+	skipped := []StagingSkip{}
+	var candidates []string
 	if len(scope) > 0 {
+		if home, herr := gitguard.InHome(g.dir, nil); herr == nil && home {
+			// Placeholder, not the path: the warning must not print the home
+			// directory into logs.
+			fmt.Printf("[datawatch] WARNING: automatic commit is running in the user's home directory <home> — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep commits small\n")
+		}
 		absDir, err := filepath.Abs(g.dir)
 		if err != nil {
 			absDir = g.dir
 		}
 		var inside []string
 		for _, d := range scope {
-			dd, aerr := filepath.Abs(d)
-			if aerr != nil {
-				fmt.Printf("[datawatch] warning: bad write scope entry %q, skipping it\n", d)
+			dd, aerr := containedInDir(absDir, d)
+			if errors.Is(aerr, gitguard.ErrPathEscapes) {
+				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", d, g.dir)
 				continue
 			}
-			if dd != absDir && !strings.HasPrefix(dd, absDir+string(filepath.Separator)) {
-				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", dd, g.dir)
+			if aerr != nil {
+				fmt.Printf("[datawatch] warning: bad write scope entry %q, skipping it\n", d)
 				continue
 			}
 			if _, serr := os.Stat(dd); serr != nil {
@@ -82,27 +262,222 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 			// the staged-empty check below skips the commit. Never fall back
 			// to add -A here — that would be the exact leak this function
 			// exists to close.
-			return nil
+			return skipped, nil
 		}
-		args := append([]string{"add", "--"}, inside...)
-		if err := runGit(g.dir, args...); err != nil {
-			return fmt.Errorf("git add %v: %v", inside, err)
+		cand, out, err := g.scopedCandidates(absDir, inside)
+		if err != nil {
+			return nil, err
 		}
-		return nil
+		skipped = append(skipped, out...)
+		candidates = cand
+	} else {
+		files := g.unscopedChangedFiles(g.runStart)
+		if len(files) == 0 {
+			fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staged nothing (no files changed this run detected)\n", g.dir)
+			return skipped, nil
+		}
+		names := files
+		if len(names) > 20 {
+			names = append(append([]string{}, names[:20]...), fmt.Sprintf("…(%d more)", len(files)-20))
+		}
+		fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staging only the %d file(s) this run changed: %s\n",
+			g.dir, len(files), strings.Join(names, ", "))
+		candidates = files
 	}
-	files := g.unscopedChangedFiles(g.runStart)
-	if len(files) == 0 {
-		fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staged nothing (no files changed this run detected)\n", g.dir)
-		return nil
+	// Protection checks applied to every candidate before the staging
+	// guard sees them (see classifyCandidates):
+	//
+	//	autonomous.snapshot_never_stage patterns — reason "never-stage"
+	//	.gitignore rules (git check-ignore)       — reason "ignored"
+	//	paths outside the plan scope              — reason "outside-plan"
+	//
+	// Paths surviving all of those are then run through the staging guard
+	// (per-file size cap, ignore dirs, glob patterns, root containment —
+	// reasons size/ignore-dir/pattern/outside-root) and its file-count
+	// refusal. No candidate can reach `git add` without passing every
+	// check, and there is no whole-tree `git add -A` path anywhere in
+	// this function.
+	kept, sk := g.classifyCandidates(candidates)
+	skipped = append(skipped, sk...)
+	kept, polSkipped := g.stagingPolicy.Keep(g.dir, kept)
+	for _, s := range polSkipped {
+		skipped = append(skipped, StagingSkip{Path: s.File, Reason: s.Reason})
 	}
-	names := files
-	if len(names) > 20 {
-		names = append(append([]string{}, names[:20]...), fmt.Sprintf("…(%d more)", len(files)-20))
+	if reason := g.stagingPolicy.RefuseReason(len(kept)); reason != "" {
+		return skipped, fmt.Errorf("%s: %s", g.dir, reason)
 	}
-	fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staging only the %d file(s) this run changed: %s\n",
-		g.dir, len(files), strings.Join(names, ", "))
-	if err := runGit(g.dir, append([]string{"add", "--"}, files...)...); err != nil {
-		return fmt.Errorf("git add %v: %v", names, err)
+	if len(skipped) > 0 {
+		fmt.Printf("[datawatch] warning: %s: staged %d file(s), skipped %d (%s):\n",
+			g.dir, len(kept), len(skipped), skipSummary(skipped))
+		logged := len(skipped)
+		if logged > 50 {
+			logged = 50
+		}
+		for _, s := range skipped[:logged] {
+			fmt.Printf("  skipped %s (%s)\n", s.Path, s.Reason)
+		}
+		if len(skipped) > logged {
+			fmt.Printf("  …(and %d more skipped)\n", len(skipped)-logged)
+		}
+	}
+	if len(kept) == 0 {
+		return skipped, nil
+	}
+	if err := g.addBounded(kept); err != nil {
+		return skipped, err
+	}
+	return skipped, nil
+}
+
+// scopedCandidates lists the files a scoped commit may stage: tracked
+// modifications, staged changes, and untracked files, filtered to those at
+// or under one of inside (absolute scope directories within absDir). The
+// filter applies to all three sources, not just untracked files: a tracked
+// file outside the scope that was dirtied after the baseline must stay
+// out of the commit (see TestCommitSessionWork_ScopedOutOfScopeDirtyTree).
+// Paths are relative to g.dir, the directory git runs in. Sorted for
+// deterministic logs. A fresh repo with no HEAD yet has no diff output, so
+// that diff failure is not an error; the untracked listing must succeed.
+func (g *ProjectGit) scopedCandidates(absDir string, inside []string) (insideCand []string, outside []StagingSkip, err error) {
+	prefixes := make([]string, 0, len(inside))
+	for _, d := range inside {
+		rel, rerr := filepath.Rel(absDir, d)
+		if rerr != nil {
+			continue
+		}
+		prefixes = append(prefixes, filepath.ToSlash(rel))
+	}
+	seen := make(map[string]struct{})
+	var in []string
+	var out []StagingSkip
+	add := func(o string) {
+		for _, l := range strings.Split(strings.TrimSpace(o), "\n") {
+			if l = strings.TrimSpace(l); l == "" {
+				continue
+			}
+			if _, dup := seen[l]; dup {
+				continue
+			}
+			seen[l] = struct{}{}
+			if underAnyDir(l, prefixes) {
+				in = append(in, l)
+			} else {
+				out = append(out, StagingSkip{Path: l, Reason: "outside-plan"})
+			}
+		}
+	}
+	if o, e := gitOutput(g.dir, "diff", "--name-only", "--relative", "HEAD"); e == nil {
+		add(o)
+	}
+	if o, e := gitOutput(g.dir, "diff", "--cached", "--name-only", "--relative"); e == nil {
+		add(o)
+	}
+	untracked, uerr := gitOutput(g.dir, "ls-files", "--others", "--exclude-standard")
+	if uerr != nil {
+		return nil, nil, fmt.Errorf("list untracked files in %s: %w", g.dir, uerr)
+	}
+	add(untracked)
+	sort.Strings(in)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return in, out, nil
+}
+
+// classifyCandidates runs every candidate through the automatic-commit
+// protection checks that the staging guard does not cover:
+//
+//  1. the autonomous.snapshot_never_stage patterns set on this ProjectGit
+//     by the call site (reason "never-stage");
+//  2. the repository's ignore rules, asked of git itself via check-ignore
+//     (reason "ignored") — check-ignore exempts files already in the
+//     index, which is what we want: a tracked file the task modified is
+//     the task's own work, while a path git reports as ignored must never
+//     be newly added.
+//
+// Skipped candidates come back with their reason so commit callers can
+// report them; kept candidates are plain paths in input order.
+func (g *ProjectGit) classifyCandidates(candidates []string) (kept []string, skipped []StagingSkip) {
+	ignored := g.ignoredSet(candidates)
+	for _, c := range candidates {
+		if g.matchesNeverStage(c) {
+			skipped = append(skipped, StagingSkip{Path: c, Reason: "never-stage"})
+			continue
+		}
+		if ignored[c] {
+			skipped = append(skipped, StagingSkip{Path: c, Reason: "ignored"})
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept, skipped
+}
+
+// underAnyDir reports whether the repo-relative file path is one of dirs or
+// lies under one of them. A "." entry matches every file (scope is the repo
+// root).
+func underAnyDir(file string, dirs []string) bool {
+	for _, d := range dirs {
+		if d == "." || file == d || strings.HasPrefix(file, d+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// skipSummary counts skipped candidates by reason, for example
+// "ignored=1, never-stage=2". Reasons are sorted so the log line is stable.
+func skipSummary(skipped []StagingSkip) string {
+	counts := make(map[string]int)
+	for _, s := range skipped {
+		counts[s.Reason]++
+	}
+	reasons := make([]string, 0, len(counts))
+	for r := range counts {
+		reasons = append(reasons, r)
+	}
+	sort.Strings(reasons)
+	parts := make([]string, 0, len(reasons))
+	for _, r := range reasons {
+		parts = append(parts, fmt.Sprintf("%s=%d", r, counts[r]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// addPathsChunk caps how many paths one git add invocation receives, so a
+// very long candidate list cannot exceed the OS argument limit.
+const addPathsChunk = 1000
+
+// addBounded stages paths with git add, all invocations sharing one deadline
+// of the policy's AddTimeout (zero means no deadline). If the add times out
+// or fails, the interrupted git process may leave temporary pack files behind,
+// so addBounded removes them with gitguard.CleanTempPacks and returns the
+// error. The success path never cleans: committed packs have .idx and .rev
+// siblings, and removing them is only for failure and interruption debris.
+func (g *ProjectGit) addBounded(paths []string) error {
+	ctx := context.Background()
+	if g.stagingPolicy.AddTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, g.stagingPolicy.AddTimeout)
+		defer cancel()
+	}
+	for start := 0; start < len(paths); start += addPathsChunk {
+		end := min(start+addPathsChunk, len(paths))
+		cmd := exec.CommandContext(ctx, "git", append([]string{"add", "--"}, paths[start:end]...)...)
+		cmd.Dir = g.dir
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			continue
+		}
+		cause := err
+		if ctx.Err() != nil {
+			cause = fmt.Errorf("timed out after %s: %w", g.stagingPolicy.AddTimeout, ctx.Err())
+		}
+		removed, cerr := gitguard.CleanTempPacks(g.dir)
+		if cerr != nil {
+			fmt.Printf("[datawatch] warning: cleaning interrupted pack files in %s: %v\n", g.dir, cerr)
+		} else if len(removed) > 0 {
+			fmt.Printf("[datawatch] removed %d interrupted pack file(s) in %s\n", len(removed), g.dir)
+		}
+		return fmt.Errorf("git add in %s: %w\n%s", g.dir, cause, out)
 	}
 	return nil
 }
@@ -156,7 +531,11 @@ func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
 		}
 		// mtime bounds what counts as run output. Files that no longer
 		// exist are skipped — staging a missing path would fail the add.
-		st, err := os.Stat(filepath.Join(g.dir, rel))
+		abs, err := containedInDir(g.dir, filepath.Join(g.dir, rel))
+		if err != nil {
+			continue
+		}
+		st, err := os.Stat(abs)
 		if err != nil {
 			continue
 		}
@@ -172,6 +551,31 @@ func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
 	return out
 }
 
+// containedInDir returns path cleaned and made absolute when it is root or
+// lies under root. gitguard.ContainedPath does the symlink-aware check; the
+// prefix test on the value that is returned is repeated here, behind an early
+// return, so the one path handed to os.Stat and the other file calls is the
+// one that was checked. dir carries a trailing separator while it is tested,
+// which accepts root itself and refuses a sibling that merely shares root's
+// name as a prefix.
+func containedInDir(root, path string) (string, error) {
+	contained, err := gitguard.ContainedPath(root, path)
+	if err != nil {
+		return "", err
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	sep := string(filepath.Separator)
+	rootPrefix := strings.TrimSuffix(rootAbs, sep) + sep
+	dir := strings.TrimSuffix(contained, sep) + sep
+	if !strings.HasPrefix(dir, rootPrefix) {
+		return "", fmt.Errorf("%w: %q is outside %s", gitguard.ErrPathEscapes, path, rootAbs)
+	}
+	return filepath.Clean(dir), nil
+}
+
 // stagedOnly reports whether the index holds any staged changes relative
 // to HEAD (staged additions of previously-untracked files count; pure
 // working-tree dirt that was intentionally NOT staged — i.e. out-of-scope
@@ -183,21 +587,28 @@ func (g *ProjectGit) stagedOnly() bool {
 }
 
 // PreSessionCommit creates a snapshot commit before the session starts.
-// scope are the session's effective write directories. nil/empty
-// preserves baseline behavior — the whole dirty tree is staged, with a
-// warning: the pre-session snapshot is designed to capture pre-existing
-// dirt (the pinned Start() test contract), so the run's later completion
-// commit diffs only against that baseline. Completion auto-commits bound
-// unscoped staging to the run via SetRunStart instead.
-func (g *ProjectGit) PreSessionCommit(sessionID, task string, scope []string) error {
-	if err := g.stageChanges(scope); err != nil {
+// prdID and taskTitle name the snapshot; the subject comes from
+// snapshotSubject, e.g. "snapshot before task <title> (PRD <prdShortID>)",
+// and never contains the worker prompt. scope are the session's effective
+// write directories. nil/empty preserves baseline behavior — the whole
+// dirty tree is staged, with a warning: the pre-session snapshot is
+// designed to capture pre-existing dirt (the pinned Start() test
+// contract), so the run's later completion commit diffs only against that
+// baseline. Completion auto-commits bound unscoped staging to the run via
+// SetRunStart instead. Candidates the automatic-commit checks refuse to
+// add (never-stage, gitignore, and — for a scoped commit — out-of-plan
+// paths) are reported with their reason in the log and kept readable
+// via LastStagingSkipped.
+func (g *ProjectGit) PreSessionCommit(prdID, taskTitle string, scope []string) error {
+	skipped, err := g.stageChanges(scope)
+	if err != nil {
 		return err
 	}
+	g.setLastSkipped(skipped)
 	if !g.stagedOnly() {
 		return nil // nothing to commit
 	}
-	msg := fmt.Sprintf("pre-session[%s]: %s", sessionID, truncateStr(task, 60))
-	return runGit(g.dir, "commit", "-m", msg)
+	return g.commitMessage(snapshotSubject(prdID, taskTitle))
 }
 
 // PostSessionCommit creates a final commit after the session ends.
@@ -205,14 +616,16 @@ func (g *ProjectGit) PreSessionCommit(sessionID, task string, scope []string) er
 // only the files changed since the run start (SetRunStart) with a
 // warning.
 func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scope []string) error {
-	if err := g.stageChanges(scope); err != nil {
+	skipped, err := g.stageChanges(scope)
+	if err != nil {
 		return err
 	}
+	g.setLastSkipped(skipped)
 	if !g.stagedOnly() {
 		return nil
 	}
 	msg := fmt.Sprintf("session[%s](%s): %s", sessionID, state, truncateStr(task, 60))
-	return runGit(g.dir, "commit", "-m", msg)
+	return g.commitMessage(msg)
 }
 
 // CommitSessionWork stages changes (scoped to the session's write
@@ -225,15 +638,76 @@ func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scop
 // empty stages only the files changed since the run start
 // (SetRunStart), with a warning.
 func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []string) (string, error) {
-	if err := g.stageChanges(scope); err != nil {
+	skipped, err := g.stageChanges(scope)
+	if err != nil {
 		return "", err
 	}
+	g.setLastSkipped(skipped)
 	if !g.stagedOnly() {
 		return "", nil
 	}
-	if err := runGit(g.dir, "commit", "-m", buildCommitMessage(summary, task)); err != nil {
+	if err := g.commitMessage(buildCommitMessage(sessionID, summary, task)); err != nil {
 		return "", err
 	}
+	return g.headSHA()
+}
+
+// TaskCommitLabel is the bare task identity an automatic task commit is
+// named after. Prompt is the full worker prompt: it is only ever used to
+// recognise prompt text, never written as a subject.
+type TaskCommitLabel struct {
+	PRDID        string
+	TaskTitle    string
+	Prompt       string
+	Summary      string
+	Verification string
+}
+
+// CommitTaskWork stages changes exactly as CommitSessionWork does and commits
+// them under a subject built from the task title ("task(<prd>): <title>")
+// rather than from the worker prompt. The body lists the staged files and the
+// verification result; a non-empty Summary that is not prompt text is
+// appended as the final line. Returns the new HEAD sha, or ("", nil) when
+// nothing is staged.
+func (g *ProjectGit) CommitTaskWork(sessionID string, label TaskCommitLabel, scope []string) (string, error) {
+	skipped, err := g.stageChanges(scope)
+	if err != nil {
+		return "", err
+	}
+	g.setLastSkipped(skipped)
+	if !g.stagedOnly() {
+		return "", nil
+	}
+	names, err := gitOutput(g.dir, "diff", "--cached", "--name-only")
+	if err != nil {
+		return "", err
+	}
+	files := strings.Split(strings.TrimSpace(names), "\n")
+
+	msg := taskCommitSubject(label.PRDID, label.TaskTitle, label.Prompt) + "\n\n" +
+		commitBody(files, label.Verification)
+	if s := taskCommitSummaryLine(label.Summary, label.Prompt); s != "" {
+		msg += "\n\n" + s
+	}
+
+	if err := g.commitMessage(msg); err != nil {
+		return "", fmt.Errorf("session %s: %w", sessionID, err)
+	}
+	return g.headSHA()
+}
+
+// taskCommitSummaryLine collapses summary to one line for a task commit body.
+// It returns "" when the summary is empty or is prompt text.
+func taskCommitSummaryLine(summary, prompt string) string {
+	line := strings.Join(strings.Fields(summary), " ")
+	if line == "" || isPromptLike(line, prompt) {
+		return ""
+	}
+	return capRunes(line, commitSubjectMaxRunes)
+}
+
+// headSHA returns the sha of HEAD, trimmed.
+func (g *ProjectGit) headSHA() (string, error) {
 	sha, err := gitOutput(g.dir, "rev-parse", "HEAD")
 	if err != nil {
 		return "", err
@@ -241,11 +715,13 @@ func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []
 	return strings.TrimSpace(sha), nil
 }
 
-// buildCommitMessage builds the commit subject for
-// CommitSessionWork: summary trimmed, collapsed to its first line,
-// capped at 200 chars; if that is empty, falls back to
-// "task: <task>" (task truncated to 60 chars). Never empty.
-func buildCommitMessage(summary, task string) string {
+// buildCommitMessage builds the commit subject for CommitSessionWork:
+// summary trimmed, collapsed to its first line, capped at 200 chars. If that
+// is empty it falls back to "session work", with the session ID appended in
+// parentheses when sessionID is non-empty. The task prompt is never used as
+// the subject; the result passes through refusePromptSubject as a safety net.
+// Never empty.
+func buildCommitMessage(sessionID, summary, task string) string {
 	msg := strings.TrimSpace(summary)
 	if i := strings.IndexByte(msg, '\n'); i >= 0 {
 		msg = strings.TrimSpace(msg[:i])
@@ -254,12 +730,12 @@ func buildCommitMessage(summary, task string) string {
 		msg = msg[:200]
 	}
 	if msg == "" {
-		msg = "task: " + truncateStr(task, 60)
+		msg = commitFallbackTitle
+		if sessionID != "" {
+			msg += " (" + sessionID + ")"
+		}
 	}
-	if strings.TrimSpace(msg) == "" {
-		msg = "session work"
-	}
-	return msg
+	return refusePromptSubject(msg, task, commitFallbackTitle)
 }
 
 // TagCheckpoint (BL29) creates an annotated tag at HEAD pointing at
@@ -277,9 +753,13 @@ func (g *ProjectGit) TagCheckpoint(kind, sessionID, task string) error {
 		return fmt.Errorf("invalid checkpoint kind %q (want pre|post)", kind)
 	}
 	tag := fmt.Sprintf("datawatch-%s-%s", kind, sessionID)
+	if err := validateGitRef("tag", tag); err != nil {
+		return err
+	}
 	msg := fmt.Sprintf("datawatch %s-session checkpoint for %s: %s",
 		kind, sessionID, truncateStr(task, 60))
-	return runGit(g.dir, "tag", "-f", "-a", tag, "-m", msg)
+	// The message travels on stdin (-F -) so task text never reaches git's argv.
+	return runGitStdin(g.dir, nil, msg, []string{"tag", "-f", "-a", "-F", "-", "--"}, tag)
 }
 
 // Rollback (BL29) hard-resets the working tree to the pre-session
@@ -291,13 +771,16 @@ func (g *ProjectGit) Rollback(sessionID string, force bool) error {
 		return fmt.Errorf("not a git repo: %s", g.dir)
 	}
 	tag := "datawatch-pre-" + sessionID
-	if _, err := gitOutput(g.dir, "rev-parse", "--verify", tag); err != nil {
+	if err := validateGitRef("tag", tag); err != nil {
+		return err
+	}
+	if _, err := gitOutputOperands(g.dir, []string{"rev-parse", "--verify"}, tag); err != nil {
 		return fmt.Errorf("pre-session tag not found: %s", tag)
 	}
 	if !force && g.HasChanges() {
 		return fmt.Errorf("uncommitted changes present — pass force=true to discard")
 	}
-	return runGit(g.dir, "reset", "--hard", tag)
+	return runGitEnv(g.dir, nil, []string{"reset", "--hard"}, tag)
 }
 
 // HasChanges returns true if there are uncommitted changes in dir.
@@ -495,18 +978,29 @@ func (g *ProjectGit) PushBranch(remoteName, branch, originURL, token string) err
 	if branch == "" {
 		return fmt.Errorf("PushBranch: branch required")
 	}
+	if err := validateGitRemoteName(remoteName); err != nil {
+		return err
+	}
+	if err := validateGitRef("branch", branch); err != nil {
+		return err
+	}
+	if originURL != "" {
+		if err := validateGitURL(originURL); err != nil {
+			return err
+		}
+	}
 	if originURL == "" {
 		// Fall back to the configured origin (no token injection — caller
 		// presumably has ambient creds).
-		return runGit(g.dir, "push", "-u", remoteName, branch)
+		return runGitEnv(g.dir, nil, []string{"push", "-u", "--"}, remoteName, branch)
 	}
 
 	// Snapshot the current origin so we can restore it on exit.
-	prevURL, _ := gitOutput(g.dir, "remote", "get-url", remoteName)
+	prevURL, _ := gitOutputOperands(g.dir, []string{"remote", "get-url", "--"}, remoteName)
 	prevURL = strings.TrimSpace(prevURL)
 
 	authURL := injectTokenIntoHTTPS(originURL, token)
-	if err := runGit(g.dir, "remote", "set-url", remoteName, authURL); err != nil {
+	if err := runGitEnv(g.dir, nil, []string{"remote", "set-url", "--"}, remoteName, authURL); err != nil {
 		return fmt.Errorf("set credential URL: %w", err)
 	}
 	defer func() {
@@ -516,10 +1010,10 @@ func (g *ProjectGit) PushBranch(remoteName, branch, originURL, token string) err
 		if prevURL != "" {
 			restore = prevURL
 		}
-		_ = runGit(g.dir, "remote", "set-url", remoteName, restore)
+		_ = runGitEnv(g.dir, nil, []string{"remote", "set-url", "--"}, remoteName, restore)
 	}()
 
-	return runGit(g.dir, "push", "-u", remoteName, branch)
+	return runGitEnv(g.dir, nil, []string{"push", "-u", "--"}, remoteName, branch)
 }
 
 // injectTokenIntoHTTPS adds an HTTPS basic-auth header to an https://
@@ -550,18 +1044,89 @@ func injectTokenIntoHTTPS(rawURL, token string) string {
 	return prefix + "x-access-token:" + token + "@" + rest
 }
 
-func runGit(dir string, args ...string) error {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git %v in %s: %w\n%s", args, dir, err, out)
+// checkGitOperands refuses any operand (a ref, remote name, URL or path) that
+// is empty, begins with a dash so git would read it as an option, or holds a
+// NUL or other control character. Operands travel apart from the fixed
+// subcommand and flags so that every value from outside this file passes
+// through this check before it reaches git's argv. Where git accepts it the
+// caller places "--" ahead of the operands as well.
+func checkGitOperands(operands []string) error {
+	for _, o := range operands {
+		if strings.ContainsRune(o, 0) {
+			return fmt.Errorf("invalid git operand: NUL byte")
+		}
+		if err := checkGitArg("operand", o); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
+// checkGitFixedArgs refuses a NUL byte in the subcommand and flag arguments.
+func checkGitFixedArgs(args []string) error {
+	for _, a := range args {
+		if strings.ContainsRune(a, 0) {
+			return fmt.Errorf("invalid git argument: NUL byte")
+		}
+	}
+	return nil
+}
+
+// runGit runs git with a fixed argument list (subcommand, flags and literal
+// values only). Values from outside the package go through runGitEnv as
+// operands.
+func runGit(dir string, args ...string) error {
+	return runGitEnv(dir, nil, args)
+}
+
+// runGitEnv is runGit with extra environment entries appended to the process
+// environment, and with operands (refs, remotes, URLs, paths) validated by
+// checkGitOperands and appended after args.
+func runGitEnv(dir string, env []string, args []string, operands ...string) error {
+	return runGitStdin(dir, env, "", args, operands...)
+}
+
+// runGitStdin is runGitEnv with stdin fed to git. Free text such as a tag or
+// commit message goes here (git -F -) rather than into the argument list.
+func runGitStdin(dir string, env []string, stdin string, args []string, operands ...string) error {
+	if err := checkGitFixedArgs(args); err != nil {
+		return err
+	}
+	if err := checkGitOperands(operands); err != nil {
+		return err
+	}
+	argv := append(append([]string{}, args...), operands...)
+	cmd := exec.Command("git", argv...)
+	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git %v in %s: %w\n%s", argv, dir, err, out)
+	}
+	return nil
+}
+
+// gitOutput runs git with a fixed argument list and returns its stdout.
 func gitOutput(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	return gitOutputOperands(dir, args)
+}
+
+// gitOutputOperands is gitOutput with operands validated by checkGitOperands
+// and appended after args.
+func gitOutputOperands(dir string, args []string, operands ...string) (string, error) {
+	if err := checkGitFixedArgs(args); err != nil {
+		return "", err
+	}
+	if err := checkGitOperands(operands); err != nil {
+		return "", err
+	}
+	argv := append(append([]string{}, args...), operands...)
+	cmd := exec.Command("git", argv...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	return string(out), err

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // installFakeTmux puts a PATH-resolvable fake `tmux` in dir that records
@@ -51,6 +53,7 @@ func TestPromptBackendLaunch_LongTaskGoesThroughScratchFile(t *testing.T) {
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	installFakeTmux(t, dir, argvFile)
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 
 	task := "SPEC\n" + strings.Repeat("y", 40*1024)
 	b := NewPrompt("goose")
@@ -89,7 +92,7 @@ func TestPromptBackendLaunch_LongTaskGoesThroughScratchFile(t *testing.T) {
 	// Cleanup must be scheduled before the completion echo.
 	rmIdx := strings.Index(cmd, "rm -f '"+path+"'")
 	echoIdx := strings.Index(cmd, "DATAWATCH_COMPLETE")
-	if !(rmIdx >= 0 && rmIdx < echoIdx) {
+	if rmIdx < 0 || rmIdx >= echoIdx {
 		t.Errorf("rm -f cleanup must come before the DATAWATCH_COMPLETE echo, got: %.400s", cmd)
 	}
 	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: goose done'") {
@@ -105,6 +108,7 @@ func TestPromptBackendLaunch_FallsBackToInlineWhenScratchFileFails(t *testing.T)
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	installFakeTmux(t, dir, argvFile)
+	testhome.PrivateTmp(t) // any scratch file lands in the test's temp dir
 	// Point TMPDIR at a path that doesn't exist so os.CreateTemp fails.
 	t.Setenv("TMPDIR", filepath.Join(dir, "definitely-missing"))
 
@@ -228,9 +232,9 @@ func TestPromptRequired(t *testing.T) {
 
 func TestSetSessionName_SanitizesColons(t *testing.T) {
 	b := New("goose").(*Backend)
-	b.SetSessionName("johnnyjohnny:abc123")
-	if b.sessionName != "johnnyjohnny-abc123" {
-		t.Errorf("SetSessionName colon sanitize: got %q, want \"johnnyjohnny-abc123\"", b.sessionName)
+	b.SetSessionName("local-node:abc123")
+	if b.sessionName != "local-node-abc123" {
+		t.Errorf("SetSessionName colon sanitize: got %q, want \"local-node-abc123\"", b.sessionName)
 	}
 }
 
@@ -345,7 +349,7 @@ func TestGooseEnvPrefix_ChannelRequiresSessionID(t *testing.T) {
 func TestGooseEnvPrefix_ChannelWithSessionID(t *testing.T) {
 	b := New("goose").(*Backend)
 	b.SetChannelEnabled(true)
-	b.SetSessionFullID("johnnyjohnny:abc123")
+	b.SetSessionFullID("local-node:abc123")
 	got := b.gooseEnvPrefix()
 	if !contains(got, "GOOSE_MCP__DATAWATCH__TYPE=stdio") {
 		t.Errorf("missing MCP TYPE env var in %q", got)
@@ -353,7 +357,7 @@ func TestGooseEnvPrefix_ChannelWithSessionID(t *testing.T) {
 	if !contains(got, "GOOSE_MCP__DATAWATCH__CMD=") {
 		t.Errorf("missing MCP CMD env var in %q", got)
 	}
-	if !contains(got, "mcp,--caller-session-id,johnnyjohnny:abc123") {
+	if !contains(got, "mcp,--caller-session-id,local-node:abc123") {
 		t.Errorf("missing session ID in MCP ARGS in %q", got)
 	}
 }

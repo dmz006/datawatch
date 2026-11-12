@@ -5,36 +5,50 @@ import (
 	"log"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // attemptKiller is the slice of the session manager the stall kill needs. It
 // is an interface so the pre-kill ordering can be tested with a fake.
 type attemptKiller interface {
-	Kill(fullID string) error
+	EndSession(fullID string, why session.EndReason) error
 }
 
-// attemptSnapshotStore persists a snapshot ref on the task it was taken from.
+// attemptSnapshotStore persists a snapshot ref and the staging guard's skip
+// list on the task they were taken from.
 type attemptSnapshotStore interface {
 	RecordTaskAttemptSnapshot(prdID, taskID, ref string) error
+	RecordTaskSkippedSnapshotPaths(prdID, taskID string, skipped []autonomouspkg.SnapshotSkippedPath) error
 }
 
 // killStalledWorker preserves a stalled worker's work and then kills its
 // session. The snapshot is taken first, while the work dir still holds the
 // attempt's own state. A snapshot failure is logged and never blocks the kill.
 // When preserve is false (autonomous.preserve_attempt_work off) no snapshot is
-// taken and the kill proceeds as before.
-func killStalledWorker(ctx context.Context, killer attemptKiller, store attemptSnapshotStore, preserve bool, workDir string, task *autonomouspkg.Task, sessionID string) {
+// taken and the kill proceeds as before. why is recorded on the session as its
+// end.
+func killStalledWorker(ctx context.Context, killer attemptKiller, store attemptSnapshotStore, preserve bool, workDir string, task *autonomouspkg.Task, sessionID string, why session.EndReason) {
 	if preserve && workDir != "" {
 		preserveAttemptWork(ctx, store, workDir, task)
 	}
-	_ = killer.Kill(sessionID)
+	_ = killer.EndSession(sessionID, why)
 }
 
 // preserveAttemptWork snapshots workDir under the task's next attempt number
 // and records the ref on the task. Every failure is logged, none is returned.
+// The staging guard's skip list is recorded on the task whenever it is
+// non-empty, including when the snapshot was refused or failed after the
+// staging pass. Failures to record it are logged without path names.
 func preserveAttemptWork(ctx context.Context, store attemptSnapshotStore, workDir string, task *autonomouspkg.Task) {
 	attempt := len(task.AttemptRefs) + 1
-	ref, err := autonomouspkg.SnapshotAttemptWork(ctx, workDir, task.ID, attempt)
+	ref, skipped, err := autonomouspkg.SnapshotAttemptWorkWithSkips(ctx, workDir, task.ID, attempt)
+	if len(skipped) > 0 && store != nil {
+		if rerr := store.RecordTaskSkippedSnapshotPaths(task.PRDID, task.ID,
+			autonomouspkg.TaskSnapshotSkippedFromGuard(skipped)); rerr != nil {
+			log.Printf("[autonomous] task %s/%s: recording %d staging-guard skip(s) on the task failed: %v",
+				task.PRDID, task.ID, len(skipped), rerr)
+		}
+	}
 	if err != nil {
 		log.Printf("[autonomous] task %s/%s: snapshot of attempt %d failed, attempt work could not be preserved: %v",
 			task.PRDID, task.ID, attempt, err)

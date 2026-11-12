@@ -132,3 +132,64 @@ func TestFilePermissions0600(t *testing.T) {
 		t.Errorf("perm: %o (want 0600)", mode)
 	}
 }
+
+func TestReloadAndCorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identity.yaml")
+	m, err := NewManager(path)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if err := m.Reload(); err != nil {
+		t.Fatalf("Reload with no file: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("role: hand edited\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Reload(); err != nil || m.Get().Role != "hand edited" {
+		t.Fatalf("Reload: %v %+v", err, m.Get())
+	}
+	if err := os.WriteFile(path, []byte("role: [broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Reload(); err == nil {
+		t.Fatal("Reload should report a corrupt file")
+	}
+	if _, err := NewManager(path); err == nil {
+		t.Fatal("NewManager should report a corrupt file")
+	}
+}
+
+func TestPromptTextAllFields(t *testing.T) {
+	m, _ := NewManager(filepath.Join(t.TempDir(), "identity.yaml"))
+	if _, err := m.Set(Identity{
+		Role:            "r",
+		CurrentProjects: []string{"proj"},
+		ContextNotes:    "notes",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pt := m.PromptText()
+	for _, want := range []string{"Current Projects:", "  - proj", "Context Notes: notes"} {
+		if !strings.Contains(pt, want) {
+			t.Errorf("PromptText missing %q in:\n%s", want, pt)
+		}
+	}
+}
+
+func TestSetFieldAllNames(t *testing.T) {
+	m, _ := NewManager(filepath.Join(t.TempDir(), "identity.yaml"))
+	for field, value := range map[string]string{
+		"north-star-goals": "a, b",
+		"projects":         "p",
+		"values":           "v",
+		"focus":            "f",
+		"notes":            "n",
+	} {
+		if _, err := m.SetField(field, value); err != nil {
+			t.Fatalf("SetField(%q): %v", field, err)
+		}
+	}
+	if n := len(nonEmptyFields(m.Get())); n != 5 {
+		t.Fatalf("got %d populated fields, want 5", n)
+	}
+}

@@ -404,7 +404,7 @@ Type 'cancel' at any time to abort.`,
 			{Key: "webhook_addr", Prompt: "Webhook listen address [default: :9003]:", Optional: true},
 			// SEC-005 — required for X-Twilio-Signature verification; see
 			// twilio.New's own warning when left blank.
-			{Key: "webhook_public_url", Prompt: "Public webhook URL (exact URL you'll set in Twilio console, e.g. https://host.ts.net/sms — blank disables signature verification):", Optional: true},
+			{Key: "webhook_public_url", Prompt: "Public webhook URL (exact URL you'll set in Twilio console, e.g. https://host.example.net/sms — blank disables signature verification):", Optional: true},
 		},
 		OnComplete: func(cfgPath string, data map[string]string) error {
 			return loadAndSave(cfgPath, func(cfg *config.Config) {

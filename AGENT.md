@@ -21,6 +21,11 @@ This ensures rules are not forgotten over long sessions as context compresses.
 - **Never stop, kill, or delete running user sessions** unless explicitly asked.
 - When debugging or testing, create new sessions instead of interfering with existing ones.
 - When restarting the daemon, preserve all active tmux sessions (they survive daemon restarts).
+- **PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed** from their environment, so nothing they run can reach the operator's tmux server.
+- **Never run `tmux kill-server` or `tmux kill-session -a`** in a script or test except against an explicit throwaway socket (`tmux -S "$(mktemp -d)/s" ...`) or under `env -u TMUX -u TMUX_TMPDIR`. Setting `TMUX_TMPDIR` alone is not enough.
+- **Every verification script must run with `env -u TMUX -u TMUX_TMPDIR`.**
+- `scripts/check-no-unscoped-tmux.sh` enforces this. It runs in `make lint`, in CI, and when a PRD is decomposed (a spec that asks for an unscoped kill is rejected).
+- **Any job that starts a datawatch test daemon must own its ending.** It ends the daemon — and every session the daemon started — on every exit path (normal exit, failure and interrupt), only by the PID it recorded when it started the daemon and only after that daemon's live `/proc/<pid>/cmdline` still carries the config recorded with it. Never end a daemon by name pattern (`pkill -f`, `killall`, `pgrep -f`), because a name pattern can reach the operator's own daemon, whose config lives in the operator's data directory and is never classified as a test daemon. The `# daemon-cleanup-ok` marker is not a blanket exemption for the line it sits on: it exempts only a banned-pattern definition, a daemon start whose ending is owned elsewhere, and the recorded start/end of the daemon it names — on any other line it never authorizes an end by name (a `pkill`/`killall`, a `pgrep`-found kill, or a `ps`-and-`grep`-fed kill is still reported), and a bare marker on a line that needs no exemption is itself a violation. A test job's daemon start must detect a daemon that dies at startup and fail — the shared helper's start returns the daemon's exit code in that case — so a dead daemon is never read as a started one. Shell jobs source `scripts/test-daemon-lib.sh` for the start/record/stop and trap machinery, the leftover-daemon guard `scripts/check-no-leftover-test-daemons.sh` reports and names (without ever killing) a test daemon left alive, and the static audit `scripts/check-test-daemon-cleanup.sh` — run as `make check-test-daemons` inside `make lint` — enforces all of this on the scripts and tests themselves. The full rules are in [docs/testing.md](docs/testing.md#test-daemon-cleanup-rules).
 
 ## Scope Constraints
 
@@ -140,6 +145,13 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
   commit that covers every branch merged in that run.
 - `scripts/check-merge-version.sh` runs before each branch is merged. It refuses a branch whose
   version change is not the expected next patch, and the refusal names the expected version.
+- Lint precondition: every branch must have passed `make lint` before it is handed to the merge
+  helper — the helper cannot lint branches that have not been merged yet. What the helper does
+  check is the main tree itself: when the repository's Makefile defines a `check-internal-refs`
+  target, the helper runs `make check-internal-refs` on the checked-out main tree after the
+  per-branch version checks and before any merge, and aborts with nothing merged if it fails.
+  Repositories without that target (e.g. the temporary test repositories) run the helper exactly
+  as before.
 - `scripts/set-release-version.sh` is the writer. It sets the version in both version files and
   adds the matching heading to `CHANGELOG.md`. The merge script calls it; do not edit those
   three places by hand for a merge.
@@ -221,8 +233,7 @@ update docs is a blocking issue — do not merge/push without them.
 
 **Corrected 2026-10-07** — this rule's text had drifted out of sync with
 the actual enforced policy for a long time. The real, deliberately-scoped
-rule (encoded in `scripts/check-no-internal-refs.sh`, wired into
-`release-smoke.sh` and now also `ci.yaml`, referencing
+rule (encoded in `scripts/check-no-internal-refs.sh`, referencing
 `memory: feedback_user_facing_docs_no_internals`) is narrower than the
 file list this section used to name: internal tracking IDs (B1, B23, F4,
 F11, F16, BL7, S##, etc.) must **never** appear in a surface an operator
@@ -261,6 +272,20 @@ not drift):
 When writing NEW content for one of the must-not-contain surfaces above,
 use a plain English description instead (e.g. "multi-user access control
 feature" not "BL7"). GitHub release notes follow the same rule.
+
+**Where the check runs** — the canonical invocation is the Makefile target
+`check-internal-refs` (a prerequisite of `lint` alongside `check-tmux`,
+`check-service-scope` and `check-go-pins`), so `make lint` runs it on every
+lint pass. It also runs in `ci.yaml` on every push/PR and in the release
+workflow before anything is released. A branch must have passed `make lint`
+before it is handed to the merge helper, and the helper itself runs
+`make check-internal-refs` on the checked-out main tree before merging —
+so a merge that adds a tracker ID to one of the listed surfaces fails in
+ci.yaml, in the release workflow, or at merge time, i.e. before it can
+ship. This check is datawatch's own development lint and quality gate for
+this repository — it is not a shipped product feature. User projects that
+run datawatch keep their own lint rules and quality gates; nothing here
+imposes a lint configuration on them.
 
 ### General documentation checklist (every change)
 
@@ -473,7 +498,7 @@ go list -m -u all 2>/dev/null | grep '\[' | head -30
 #    - Only upgrade if the new version has been available for >= 72 hours
 #    - This avoids being an early adopter of broken releases
 #    - Exception: if the user explicitly requests an upgrade, do it immediately
-#    - Exception: security patches (CVEs) may be upgraded immediately
+#    - Exception: security patches (CVEs) are upgraded as soon as they are available, with no waiting period (operator, 2026-10-25)
 
 # 3. Upgrade stable dependencies
 go get -u <module>@<version>
@@ -485,7 +510,9 @@ go test ./...
 
 **Rules:**
 - Do NOT upgrade a dependency that was released less than 72 hours ago unless
-  the user specifically asks for it or it fixes a known CVE
+  the user specifically asks for it or it is a security patch (a fix for a known
+  CVE or advisory). Security patches are consumed as soon as they are available,
+  with no waiting period (operator, 2026-10-25, until upstream monitoring exists)
 - Run `go mod tidy` after any upgrade to clean up go.sum
 - If an upgrade breaks tests, revert it and note the incompatibility
 - Document dependency upgrades in the commit message
@@ -584,9 +611,33 @@ voice/TTS strings, store listings, user-facing docs, release notes, error messag
   | fr | automate | automates |
   | ja | オートマトン | オートマタ |
   Never leave the English "Automaton/Automata" inside a translated string, and never
-  use "Automation" (a different word).
+  use "Automation" as a translation of Automaton; that word is reserved for the chain
+  object defined in the addendum below.
 - Before shipping UI copy, grep user-visible strings (string resources, `Text("…")`,
   locale files) for `\bPRDs?\b` and fix any hit.
+
+### Addendum — "Automation" is a different object
+
+- **Automation** is the chain object: a named graph of member Automata with per-outcome
+  edges, fork and join branches, nested Automations, control operations and an optional
+  budget policy (the top-level Automation tab in the PWA and the `/api/automations` REST
+  surface).
+- **Automaton** is one unit of autonomous work, which is internally a PRD.
+- Translations of the Automation word:
+  | locale | singular | plural |
+  |---|---|---|
+  | en | Automation | Automations |
+  | de | Automatisierung | Automatisierungen |
+  | es | automatización | automatizaciones |
+  | fr | automatisation | automatisations |
+  | ja | オートメーション | オートメーション (no plural form) |
+- The two words are never swapped. The Automaton/Automata table above is unchanged and
+  still applies to a single unit of work, including when a string names member Automata
+  inside an Automation.
+- Relabel decision: the floating action button that launches one Automaton (locale key
+  `fab_launch_auto`) reads "Launch Automaton" in every locale, never "Launch Automation".
+- Locale guard: keys named `nav_automation` or starting with `automation_` may use the
+  Automation words; every other key may not (a later task narrows the guard test to match).
 
 ## Localization Rule (BL214, v5.28.0)
 
@@ -898,14 +949,11 @@ The release tag commonly triggers `.github/workflows/containers.yaml` (and simil
 
 **Workflows to check by default:** `containers.yaml`, `ebpf-gen-drift.yaml`, `kind-smoke.yaml`, `security-scan.yaml`, `secret-scan.yaml`, `docs-sync.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, `ghcr-cleanup.yaml`.
 
-**Security-failure exception (added 2026-05-04):** the standard "investigate → fix or document as environmental → delete" path does NOT apply to dependency / CVE failures from `security-scan.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, or `secret-scan.yaml` when **all three** of these are true:
-1. The failure is a security issue against a project dependency (not a transient infra flake).
-2. The CVE / advisory was published **more than 72 hours ago** (i.e., outside the disclosure-grace window — actively known, not breaking news).
-3. The project's test setup is currently **excluding** the issue (allowlist entry, ignore rule, severity filter, etc.) — meaning we're knowingly suppressing it.
-
-In that case: **stop, do NOT auto-document or delete.** Surface to the operator with the dependency name, CVE / advisory ID, publication date, current allowlist entry (if any), and an upgrade-or-keep-suppressed recommendation. Operator decides. The failure stays in the run list until they answer.
-
-The reasoning: a fresh CVE is reasonable to triage and route via the existing release workflow. An old CVE that's been silenced is a deliberate-suppression decision the operator owns; CI shouldn't "fix" it by deleting the failure record.
+**Security-failure rule (replaced 2026-10-25 by the operator; the 72-hour disclosure-grace exception of 2026-05-04 is withdrawn):** the world has changed since the 72-hour window was written to avoid early adoption and malicious package injection; with AI-assisted security the better policy is to consume security patches as soon as they are available. This holds until a better way to monitor upstream exists (a future project: monitor all upstream dependencies, base images and advisories). For a dependency / CVE failure from `security-scan.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, or `secret-scan.yaml`:
+1. **A fixed version is available: upgrade now.** Apply the patch through the normal release path (a PRD, or a direct dependency bump) with the Security-Fix Downstream-Review Rule; there is no waiting period and no operator approval is needed for the upgrade.
+2. **No fixed version is available: keep it suppressed in the registry.** Add or keep the entry in `security/accepted-risks.yml` with a real trace and the real `first_added` date (the generated ignore file is never edited by hand); this is routine and needs no approval. Re-check for a fix on every cycle and consume it the moment one appears.
+3. **Surface to the operator only** when the trace says the vulnerable path is reachable (`impact.reachable` is `yes` on a high or critical finding, the registry's ESCALATE condition), or when a suppression has been renewed past its first expiry window. Give the dependency, advisory ID, publication date, allowlist entry and a recommendation.
+4. The failed runs are deleted after the fix is confirmed green (the standard path above), never before.
 
 ### Cross-compilation on a GH runner (open question, BL255 followup)
 
@@ -1050,12 +1098,64 @@ specific Wi-Fi SSIDs, etc.) must NOT land in tracked files. This applies
 to docs, plan files, config samples, Helm charts, deployment manifests,
 test fixtures, and Go source comments alike.
 
+**The check.** `scripts/check-no-local-leaks.sh` scans the whole
+tree once and fails on any finding. It runs as `make check-leaks`, is
+wired into `make lint`, and is run by `scripts/release-smoke.sh` before a
+release is cut. It covers four classes:
+
+1. **private and tailnet addresses** — private / internal /
+   link-local IPv4, unique-local and tailnet IPv6, and MagicDNS
+   hostnames.
+2. **absolute home paths for any user** — not just yours.
+3. **emails not on the allowed list** — the allow list is itself
+   configuration, `scripts/leak-check.allowed-emails`, kept under
+   `scripts/`.
+4. **every identifier in the gitignored local patterns file**
+   (`.leak-patterns.local`) — machine-specific tokens that are too
+   private to check in.
+
+The generic class patterns live in `scripts/leak-check.patterns`
+(also under `scripts/`, together with the allowed email list) and are
+configuration, not code. Prescribed placeholders when a value is needed:
+
+- **Addresses** — IANA reserved documentation ranges so the example is
+  obviously not someone's real network: `192.0.2.0/24`,
+  `198.51.100.0/24`, `203.0.113.0/24`.
+- **Hosts and email** — `example.com` / `*.example.com` names for hosts,
+  `noreply@example.com` for emails.
+- **Nodes and GPU models** — neutral role names such as *local node*
+  and *remote node*, never a real hostname or a real model.
+- **Home paths** — `/home/<user>`.
+
+**The local patterns file.** `.leak-patterns.local` is created from the
+checked-in template with `make leak-patterns-init`; it lives at the
+repository root, is gitignored and must never be committed. If it is
+absent (or holds only comments and blank lines) the check prints
+`local patterns: skipped` and carries on — the file's absence only
+skips that part of the scan, it is never an error.
+
+**The report is CI-safe.** Each finding is one line of
+`path:line: class` and nothing else — the report never prints the
+matched identifier, so it is safe to let the output into CI logs or a
+commit message. Any manual reproduction must keep that same discipline:
+name the file and the line, never the value.
+
+**What the tree check cannot see.** Commit messages, and issue and
+PR comment text, are not part of the tree and are not scanned by
+`check-leaks` — they must still stay free of identifiers, and the
+last-commit diff grep (A8's old check: hostname, private IP ranges,
+personal email in `git diff HEAD~1`) remains as the complementary
+narrow check for exactly that surface.
+
+**Quoting a real setting.** A document or spec that must quote a real
+setting uses the placeholder in the text and says the real value lives
+in the operator config (`~/.datawatch/config.yaml`, gitignored, or
+another config file the operator names) — never the value itself.
+
 When a value is needed to make a feature work, choose one of:
 
-1. **Documentation example** — use IANA-reserved ranges so the example
-   is obviously not someone's real network: `192.0.2.0/24`,
-   `198.51.100.0/24`, `203.0.113.0/24` for IPs; `example.com` /
-   `*.example.com` for hostnames; `noreply@example.com` for emails.
+1. **Documentation example** — use the reserved documentation ranges
+   and placeholder names above.
 2. **Operator config** — the value lives in `~/.datawatch/config.yaml`
    (gitignored) or a config file the operator names; the repo only
    ships defaults / placeholders.
@@ -1069,9 +1169,7 @@ When a value is needed to make a feature work, choose one of:
    never carries the values.
 
 `.gitignore` must continue to cover `.env`, `.env.build`, `config.yaml`,
-`*.kubeconfig`, and any Secret-bearing file. Before committing, grep
-the diff for personal markers (your hostname, your IP range, your
-email) — finding any means stop, replace, and re-check.
+`.leak-patterns.local`, `*.kubeconfig`, and any Secret-bearing file.
 
 ## Session Management Rules
 
@@ -1091,7 +1189,7 @@ pgrep -u "$USER" bash | grep -v -E "^($$|PPID_OF_INTERACTIVE_SHELLS)$" | xargs k
 Practical steps:
 1. After reading the last background task result, run `pgrep -a -u "$USER" bash` to see what's alive.
 2. Kill every bash process that is a Claude Code `until`-loop watcher (identifiable by the
-   `/home/.../.claude/shell-snapshots/snapshot-bash-` prefix in its command line).
+   `/home/<user>/.claude/shell-snapshots/snapshot-bash-` prefix in its command line).
 3. Keep only interactive login shells (`-bash` or `bash` without a snapshot source line).
 4. Run the cleanup as a single `xargs kill` — do not loop or sleep.
 
@@ -1257,6 +1355,16 @@ When implementing any new feature or bug fix:
    - **MCP**: if MCP tools affected, verify via channel or test client
 4. **Clean up test sessions** — if testing creates sessions, stop and delete them
 5. **Document results** in `docs/plans/README.md` testing section and `docs/testing.md`
+6. **Every commit adds its own tests at every level it touches** (2026-10-20 rule). Unit tests (`_test.go`) cover new and changed code. Smoke tests (`scripts/release-smoke*.sh` or the matching `scripts/test-stories` story) cover the built binary. Any web or PWA change also needs an e2e story (Playwright under `scripts/test-stories/pwa`), run through `scripts/run-tests.sh --stories=...` against the sandbox. A bug fix adds a regression test that fails before the fix and passes after. A feature, fix or refactor is not done, and not validated, until its tests are in the same change and pass. A change without new tests, or with a failing test, is not merged.
+
+### Design-document verification (DIP decision, 2026-10-20)
+
+Design documents in `docs/plans/` are checked mechanically before a PRD that writes one is approved:
+
+1. **Section presence:** the verification script confirms every heading the spec names exists in the document and is non-empty.
+2. **Content:** each named section meets a minimum length and cites at least one file path or PRD ID.
+
+Both checks run in the task's verification script. A design-document task with no script fails plan validation.
 
 ### Bug testing
 
@@ -1309,7 +1417,7 @@ Every release tag must include a smoke-pass note. PRs that add new operator-faci
 | A5 | `README.md` current-release line updated: `**Current release: vX.Y.Z (DATE).**` | `readme: updated` |
 | A6 | `docs/plans/README.md` backlog refactor: close shipped items, clear `## Unclassified` | `backlog: refactored` |
 | A7 | No B/BL/F tracker IDs leaked into user-facing docs — grep: `grep -n "B[0-9]\+\|BL[0-9]\+\|F[0-9]\+" CHANGELOG.md README.md` | `id-check: clean` |
-| A8 | No local-env leaks in diff — grep for hostname, private IP ranges, personal email in `git diff HEAD~1` | `leak-check: clean` |
+| A8 | No local-env leaks — whole-tree check `make check-leaks` (`scripts/check-no-local-leaks.sh`, already run by `make lint` and the release smoke script) clean, plus the complementary last-commit grep for hostname, private IP ranges, personal email in `git diff HEAD~1` | `leak-check: clean` |
 | A9 | `node --check internal/server/web/app.js` passes | `node-check: ok` |
 | A10 | `make build` clean (NOT `go build` — runs `make sync-docs` first so embedded PWA docs match binary) | `make-build: ok` |
 | A11 | CI runner check after push: `gh run list --limit 20` — every failure investigated; security failures escalated to operator rather than deleted | `ci: clean` or `ci: <runID> fixed` |
@@ -1339,7 +1447,7 @@ Write `N/A` for every row whose trigger did not fire.
 | B14 | Security scanner finding patched (ZAP, gosec, govulncheck, CVE) | Security downstream review done: call sites mapped, end-to-end tested | `sec-downstream: reviewed` |
 | B15 | New messaging or LLM backend | Secrets-Store Rule applied: credential fields use `${secret:...}` | `secrets-store: applied` |
 | B16 | New audit-event-emitting code path | JSON-lines round-trip test + CEF format + escape test added | `audit-tests: added` |
-| B17 | New Go module dependency added | Dep noted in CHANGELOG; 72-hour rule verified; `go mod tidy` run | `deps: <module@version>` |
+| B17 | New Go module dependency added | Dep noted in CHANGELOG; dependency age rule verified (security patches exempt); `go mod tidy` run | `deps: <module@version>` |
 | B18 | New `case "..."` block added to `internal/server/autonomous.go` (or new autonomous handler) | Federation-Parity Rule: write/run cases have `fedCap` guard; read cases have `CapAutonomousRead` | `fed-parity: verified` |
 
 ---
@@ -1359,7 +1467,7 @@ Pre-release scans required for every GH release (patch, minor, or major):
 
 | # | Check | Required token |
 |---|---|---|
-| C1 | Pre-release dependency audit: `go list -m -u all 2>/dev/null \| grep '\['` — outdated deps reviewed; no dep upgraded that was released < 72h ago | `dep-audit: clean` or `dep-audit: upgraded <module@ver>` |
+| C1 | Pre-release dependency audit: `go list -m -u all 2>/dev/null \| grep '\['` — outdated deps reviewed; no non-security dep upgraded that was released < 72h ago | `dep-audit: clean` or `dep-audit: upgraded <module@ver>` |
 | C2 | Pre-release gosec scan: `~/go/bin/gosec -exclude="$(grep -v '^#' .gosec-exclude \| tr '\n' ',')' -fmt text -quiet ./...` — HIGH findings reviewed | `gosec: clean` or `gosec: <N> findings reviewed` |
 | C3 | Smoke run (per cadence above) on an isolated sandbox daemon (never production) — record exact Summary line counts | `smoke: <N> sections, <P> passed, <S> skipped, 0 failed` OR `smoke: SMOKE_ONLY=<sections> ok` OR `smoke: skipped (docs-only)` |
 
@@ -1579,6 +1687,12 @@ When adding a new LLM backend:
   must be in `config.DefaultDetection()` (config.go) and editable via Settings → Detection Filters.
 - When adding a new LLM backend or pattern, add it to `DefaultDetection()` defaults, never to
   `manager.go` directly. Users can override patterns in their config.yaml or per-LLM detection config.
+- **Exception: rate-limit (throttle) lines.** These are a built-in per-backend table in
+  `internal/session/rate_limit_lines.go`, not a `DefaultDetection()` list, and
+  `detection.rate_limit_patterns` ships unset (a deliberate decision, see
+  `docs/operations.md`). A new phrase needs a recorded line in `testdata/rate_limit_lines/`
+  and goes in that table for the backend that prints it; an operator list in config still
+  replaces the table with flat-substring matching.
 
 ## Decision Making
 
@@ -1807,8 +1921,8 @@ Tests run against a sandboxed daemon started by `run-tests.sh`. The template con
 
 | Feature | Config field | Required value |
 |---------|-------------|---------------|
-| Session summarizer | `session.summarizer.enabled` + `session.summarizer.llm_ref` | `true` + `ollama-johnnyjohnny` — missing causes TS-721/730 503 |
-| Primary LLM backend | `llm.backends[ollama-johnnyjohnny]` | `http://johnnyjohnny:11434` — primary for decompose/summarize |
+| Session summarizer | `session.summarizer.enabled` + `session.summarizer.llm_ref` | `true` + `ollama-local-node` — missing causes TS-721/730 503 |
+| Primary LLM backend | `llm.backends[ollama-local-node]` | `http://local-node:11434` — primary for decompose/summarize |
 | Secondary LLM backend | `llm.backends[ollama-localhost]` | `http://localhost:11434` — qwen3:1.7b fallback |
 | Vision backend | `vision.backend` + `vision.model` | `ollama`, `moondream:latest` on localhost:11434 |
 | Webhook comms | `comms.webhook.url` | `127.0.0.1:19080` — must use sentinel `WEBHOOK_NOAUTH` for token field (see token sed rule below) |
@@ -1918,8 +2032,8 @@ prior 480s/720s budgets were not enough — model takes 60–120s per story, exe
 more. If TS-695 still times out: check whether both Ollama nodes are alive first
 (`GET /api/backends`), then consider whether the model has changed.
 
-For decomposition: use `qwen3:8b` on `johnnyjohnny` (128GB GPU, faster) not `qwen3:1.7b`
-on localhost. The TS-695 story spec should reference `ollama-johnnyjohnny` for the
+For decomposition: use `qwen3:8b` on `local-node` (128GB GPU, faster) not `qwen3:1.7b`
+on localhost. The TS-695 story spec should reference `ollama-local-node` for the
 decompose backend.
 
 ### TS-723/724/725 sequencing dependency
@@ -1957,15 +2071,55 @@ K8s tests require a `kind` cluster named `testing` with the `datawatch-e2e` imag
 `harbor.dmzs.com` is unreachable even after `kind load`. Set it explicitly in every
 test pod spec.
 
-### Stale plan files (TS-557 / smoke check)
+### Plans folder hygiene: link-aware tidy (TS-557 / smoke check)
 
-`release-smoke.sh --check` fails when stale plan files exist under `docs/plans/` (files
-that were never moved to `historical-plans/`). TS-557 verifies this. If it fails, run:
+`docs/plans/` tidying is **link-aware**, driven by `scripts/tidy-plans.sh`
+(plan-side logic in `scripts/plans_links.py`, registry logic in
+`scripts/plans_registry_hygiene.py`; python3, standard library only; idempotent).
+
+**Link-aware keep rule:** a dated plan (`YYYY-MM-DD-*.md`) stays in `docs/plans/` as
+long as anything still references it — an open (unclosed) registry row in
+`docs/plans/README.md`, any file under `scripts/`, a root rules file (AGENT.md,
+CLAUDE.md, CONTEXT.md, CONTRIBUTING.md, DATAWATCH-CONTEXT.md, README.md,
+SECURITY.md), or any doc under `docs/` outside `docs/plans/`. Only plans that are
+past the age cutoff (`--days`, default 7), carry **no** such references, and have a
+closed registry row move to `docs/plans/historical-plans/`. A row is closed when its
+text carries a completion marker (done / shipped / completed / merged / cancelled /
+landed) not vetoed by a negation ("not done", "not started"); anything else is
+open and keeps its plan in place.
+
+**Link rewriting on move:** when a plan is archived, every relative and absolute
+link pointing at it — markdown link targets and path mentions alike, in the
+registry rows and elsewhere — is rewritten in place to the new location, so
+references never dangle.
+
+**Broken-link check:** `scripts/check-plans-links.sh` scans the same reference
+surfaces (scripts/, root rules files, docs/, excluding test-fixture heredocs)
+and prints only the count of references into `docs/plans/` whose target no
+longer resolves. Exits 0 with a count of 0 when every target resolves;
+non-zero when any target is missing. Broken targets are never listed —
+counts only. `--quiet` keeps it silent when the count is zero.
+
+**Registry hygiene** runs on every tidy (skippable with `--no-hygiene`):
+duplicate sections are removed (first occurrence wins, later bodies folded in),
+all-closed tables merge into one, duplicate rows are deduped (first occurrence
+kept), verbose closed status cells are trimmed to one line, and — with
+`--status-file PATH` (an Automaton list export, read as-is, no daemon, no gh)
+— stale draft/not-started rows are corrected from the export.
+
+**Counts-only output:** every command reports counts (plans kept, plans
+archived, links rewritten, hygiene deltas) — never a list of files.
+
+**Usage / release gate:**
 ```bash
-bash scripts/tidy-plans.sh
+bash scripts/tidy-plans.sh          # do the moves + registry hygiene
+bash scripts/tidy-plans.sh --dry-run   # counts only, change nothing
+bash scripts/tidy-plans.sh --check     # counts only, exit 1 if anything would move
 ```
-This moves completed/obsolete plans to `historical-plans/`. Check after any sprint that
-creates plan files. TS-557 was fixed by tidying BL370/380/382.
+`scripts/release-smoke.sh` runs `tidy-plans.sh --check` first and **aborts the
+release** if the folder needs tidying (TS-557 verifies this); run
+`scripts/tidy-plans.sh` (no flags) to do the moves, then commit before re-running
+smoke. Check after any sprint that creates plan files.
 
 ### Config state isolation between tests
 
@@ -2038,7 +2192,7 @@ unblocks. Test both conditions explicitly.
 
 | Backend name | URL | Primary use |
 |---|---|---|
-| `ollama-johnnyjohnny` | http://johnnyjohnny:11434 | Primary: decompose, summarize, large model (qwen3:8b) |
+| `ollama-local-node` | http://local-node:11434 | Primary: decompose, summarize, large model (qwen3:8b) |
 | `ollama-localhost` | http://localhost:11434 | Secondary: qwen3:1.7b fallback, moondream vision |
 
 Moondream vision runs on `ollama-localhost`. When both are under load, LLM-dependent

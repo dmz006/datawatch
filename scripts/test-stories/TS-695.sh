@@ -114,7 +114,7 @@ _story_ts_695() {
 
   # ---- ensure decompose uses the 'ollama' LLM (ask-compatible, in registry) ----
   # testdata.yaml 'llms:' section is NOT parsed into the inference registry
-  # (Config struct has no LLMs field); 'ollama-johnnyjohnny' is absent from
+  # (Config struct has no LLMs field); 'ollama-local-node' is absent from
   # autonomousInferenceReg. Without this, decomposeFn falls to decomposeFnSession
   # (TUI mode which takes >90s). decomposition_profile overrides the planner;
   # 'ollama' is always present (auto-migrated from legacy cfg.ollama.host).

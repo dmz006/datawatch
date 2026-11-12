@@ -1,0 +1,25 @@
+
+▐▛███▜▌  Claude Code v2.0.14 — testhost
+▝▜█████▛▘  API key authenticated
+────────────────────────────────────────────────────────────────────────────────
+
+Quick safety check: Is this a project you created or one you trust?
+
+❯ 1. No, exit
+  2. Yes, I trust this folder
+
+Enter to confirm · Esc to cancel · ↑↓ to navigate
+
+; --- channels-consent pane ---
+
+▐▛███▜▌  Claude Code v2.0.14 — testhost
+▝▜█████▛▘  API key authenticated
+────────────────────────────────────────────────────────────────────────────────
+
+WARNING: Loading development channels outside local development is unsupported
+and may leak prompts and tool output.
+
+❯ 1. I am using this for local development
+  2. No, exit
+
+Enter to confirm · Esc to cancel

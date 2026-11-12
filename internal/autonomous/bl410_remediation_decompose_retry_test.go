@@ -102,12 +102,17 @@ func TestDecompose_LLMCallFails_ExhaustsBudget_RollsBackToDraft(t *testing.T) {
 	}
 }
 
-func TestDecompose_ScopeValidationFailure_NoRetryByDefault(t *testing.T) {
-	cfg := DefaultConfig() // scope budget = 0 by default — never retried
+func TestDecompose_MissingScriptPlan_RetriedWithinContentBudget_ThenRollsBackToDraft(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.AutoFixRetries = 1 // "content" budget — explicit so the call count below is deterministic
 	calls := 0
+	var retryPrompt string
 	fn := func(req DecomposeRequest) (string, error) {
 		calls++
-		return planRespFilesNoScript, nil // real file changes, no verification script → B124 scope violation
+		if calls > 1 {
+			retryPrompt = req.Spec // the retry attempt's prompt
+		}
+		return planRespFilesNoScript, nil // real file changes, no verification script → coverage gate rejection, every attempt
 	}
 	m, err := NewManager(t.TempDir(), cfg, fn)
 	if err != nil {
@@ -117,17 +122,29 @@ func TestDecompose_ScopeValidationFailure_NoRetryByDefault(t *testing.T) {
 
 	_, err = m.Decompose(prd.ID)
 	if err == nil {
-		t.Fatal("Decompose: want error from validateVerificationScriptCoverage")
+		t.Fatal("Decompose: want error from validateVerificationScriptCoverage once the content budget is exhausted")
 	}
-	if calls != 1 {
-		t.Fatalf("decompose call count = %d, want 1 (scope category defaults to budget=0, no retry)", calls)
+	if calls != 2 {
+		t.Fatalf("decompose call count = %d, want 2 (1 initial + 1 retry, content budget=1)", calls)
+	}
+	// The retry must carry the previous attempt's failure detail (which
+	// names the offending task) — the existing LastDecomposeFailure.
+	// Detail hint in the retry prompt, no second mechanism needed.
+	if !strings.Contains(retryPrompt, "Your previous attempt failed") {
+		t.Fatalf("retry prompt did not include the failure hint: %q", retryPrompt)
+	}
+	if !strings.Contains(retryPrompt, `task "Task 1"`) {
+		t.Errorf("retry prompt did not include the offending task named by the previous failure: %q", retryPrompt)
 	}
 	final, _ := m.Store().GetPRD(prd.ID)
 	if final.Status != PRDDraft {
-		t.Fatalf("status = %s, want draft", final.Status)
+		t.Fatalf("status = %s, want draft (rolled back after exhaustion)", final.Status)
 	}
-	if final.LastDecomposeFailure == nil || final.LastDecomposeFailure.Category != "scope" {
-		t.Fatalf("LastDecomposeFailure = %+v, want category scope", final.LastDecomposeFailure)
+	if final.LastDecomposeFailure == nil || final.LastDecomposeFailure.Category != "content" {
+		t.Fatalf("LastDecomposeFailure = %+v, want category content (the coverage branch retries as a content rejection)", final.LastDecomposeFailure)
+	}
+	if final.LastDecomposeFailure.Source != "verification-script-coverage" {
+		t.Errorf("LastDecomposeFailure.Source = %q, want verification-script-coverage", final.LastDecomposeFailure.Source)
 	}
 }
 

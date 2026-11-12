@@ -45,7 +45,7 @@ Single-binary daemon (`cmd/datawatch/`) that:
 |---|---|---|
 | Pre-Execution Rule | 9 | Every task — re-read relevant sections before coding |
 | Session Safety | 19 | Never stop/kill user sessions without explicit ask |
-| Scope Constraints | 25 | Work only within `/home/dmz/workspace/datawatch/` |
+| Scope Constraints | 25 | Work only within `/home/<user>/workspace/datawatch/` |
 | Code Quality Rules | 31 | Every commit — compile, interface stability, doc.go |
 | Testing Tracker Rules | 40 | Every new interface or changed endpoint contract |
 | Git Discipline | 59 | Every commit — conventional format, no force-push |
@@ -616,7 +616,8 @@ current state over either table.
 
 ## Gotchas to Avoid
 
-- **No version bump without ask** — user must say "release" or "bump the version"
+- **Tests with every commit** — every change adds its own unit tests, smoke tests and, for any web or PWA change, an e2e story; a bug fix adds a regression test that fails before the fix. Changes without tests, or with failing tests, are not validated (AGENT.md Testing Requirements, rules doc sections 4 and 9).
+- **Version bumps** — the supervisor is release manager and bumps patch and minor versions through the automation scripts (2026-10-20 operator decision). Only a major release (10.0) waits for the operator.
 - **Interface stability** — `SignalBackend`, `LLMBackend` are breaking-change boundaries; changes require major bump
 - **Both Version strings must match** — `cmd/datawatch/main.go` AND `internal/server/api.go`; the v8.9.2 incident missed one file
 - **No internal IDs in user-facing docs** — B/BL/F numbers only in `docs/plans/`, not CHANGELOG/README/operations/setup

@@ -34,6 +34,26 @@ func TestExtractCompletionSummary(t *testing.T) {
 			want: "",
 		},
 		{
+			name: "bare template summary is a placeholder",
+			in:   "DATAWATCH_COMPLETE: <summary of this task>\n",
+			want: "",
+		},
+		{
+			name: "task text echoed with its template is not a completion",
+			in:   "> Implement the parser. When finished, print DATAWATCH_COMPLETE: <one-sentence summary>.\n",
+			want: "",
+		},
+		{
+			name: "nudge sentence is not a completion",
+			in:   "If you are finished, print DATAWATCH_COMPLETE followed by a one-line summary; otherwise continue with the task.\n",
+			want: "",
+		},
+		{
+			name: "real summary with angle brackets inside is kept",
+			in:   "DATAWATCH_COMPLETE: fixed the <title> parsing",
+			want: "fixed the <title> parsing",
+		},
+		{
 			name: "two markers last real one wins",
 			in:   "DATAWATCH_COMPLETE: first summary\nDATAWATCH_COMPLETE: <one-sentence summary of what was done>\nDATAWATCH_COMPLETE: second summary",
 			want: "second summary",

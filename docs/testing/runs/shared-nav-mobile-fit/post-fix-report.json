@@ -1,0 +1,69 @@
+{
+  "story": "shared-nav-mobile-fit",
+  "run": "post-fix",
+  "date": "2026-10-25",
+  "tree": {
+    "branch": "automaton/b54f0001",
+    "head": "a7cc30e4",
+    "fix_commits": ["ae73b0ff", "a7cc30e4"],
+    "binary": "bin/datawatch rebuilt from HEAD at 13:32 (datawatch v9.11.0)"
+  },
+  "checker": {
+    "named": "scripts/test-stories/pwa/shared-nav-mobile-fit.mjs",
+    "present": false,
+    "substitute": "scripts/test-stories/pwa/shared-nav-mobile-fit-probe.mjs",
+    "substitute_change": "SHARED_NAV_GATE_THEMES added (default dark, so the default gate is unchanged); this run used light,dark"
+  },
+  "run_method": {
+    "launcher": "scripts/e2e-pwa.sh, local mode, isolated sandbox daemon",
+    "env": "env -u TMUX -u TMUX_TMPDIR; TMPDIR under bin/sandbox/tmp; TEST_BINARY=docs/testing/runs/shared-nav-mobile-fit/sandbox/run-daemon.sh (pins TMUX_TMPDIR for the daemon, sandbox socket, never the production socket)",
+    "npm_ci": "skipped by the sandbox shim, as in the report-only run (probe uses node built-ins only)"
+  },
+  "gate": {
+    "mode": "gate",
+    "themes": ["light", "dark"],
+    "viewports": ["320x568", "360x740", "390x844"],
+    "result": "pass",
+    "total_findings": 0,
+    "checks": ["clipped-text", "tap-target (44 px, the probe threshold)", "overlap"],
+    "nav_scroll": "scrollWidth equals clientWidth at every viewport and theme (pre-fix: scrollWidth 440 against 320, 360 and 390)",
+    "tap_target_minimum_nav": "nav buttons are 59 px tall; no nav button under 44x44 at any gate viewport in either theme",
+    "pre_fix_reference": "docs/testing/runs/shared-nav-mobile-fit/repro-report.txt: 4 findings, dark theme only",
+    "artifacts": ["post-fix/repro-report.json", "post-fix/repro-report.txt"]
+  },
+  "baseline": {
+    "compared_to": "docs/testing/runs/shared-nav-mobile-fit/nav-baseline.json",
+    "viewports": ["768x1024", "1024x768", "1280x800"],
+    "themes": ["light", "dark"],
+    "tolerance": "a value passes when |delta| <= 2 px or |delta| <= 1 percent of the pre-fix value",
+    "boxes_compared": 456,
+    "max_abs_delta_px": 0,
+    "rows_with_delta": 0,
+    "withinTolerance": true,
+    "artifacts": ["post-fix/nav-baseline.json"]
+  },
+  "report_only": {
+    "viewports": ["320x568", "360x740", "375x667", "390x844", "414x896", "768x1024"],
+    "tabs": ["sessions", "autonomous", "observer", "alerts", "dashboard", "settings"],
+    "before": { "occurrences": 336, "groups": 26, "nav_occurrences": 44 },
+    "after": { "occurrences": 292, "groups": 21, "nav_occurrences": 0 },
+    "other_tab_occurrences": { "before": 292, "after": 292 },
+    "row_membership": "no other-tab row added or removed; per-row occurrence counts unchanged",
+    "size_changes": [
+      { "row": "button#headerSearchBtn.header-search-btn", "before": "35.5x26", "after": "40x40", "occurrences": 12, "still_flagged_at_44": true },
+      { "row": "div.settings-section-title.settings-section-toggle", "before": "260x35 to 420x35", "after": "260x40 to 420x40", "occurrences": 6, "still_flagged_at_44": true },
+      { "row": "span#headerAlertPill.header-alert-pill", "before": "34.8x36 (1 occurrence)", "after": "34.2x36 (1 occurrence)", "occurrences": 1, "still_flagged_at_44": true, "note": "width change not explained by either fix commit; not investigated" }
+    ],
+    "other_tab_tap_targets_under_40px_after": 233,
+    "other_tab_tap_target_min_side_after_px": 11.1,
+    "page_horizontal_scroll": [],
+    "remaining_other_tab_horizontal_overflow": "11 occurrences, button.settings-tab-btn.output-tab on settings (deferred to its tab, unchanged)",
+    "artifacts": ["post-fix/report-only/report-only.json", "post-fix/report-only/occurrences.json"]
+  },
+  "not_covered": {
+    "text_zoom": "the matrix's text zoom levels are not defined anywhere in the repo (checked docs/, scripts/, internal/); only the default 100 percent was measured",
+    "named_checker": "absent from the branch and every ref; the substitute probe's findings are not the named checker's findings"
+  },
+  "regressions": [],
+  "verdict": "Nav findings cleared in gate (light and dark, 320/360/390) and in report-only (44 to 0). Desktop and tablet nav geometry is unchanged. No new other-tab finding row. Other-tab rows still open for Phase 2 and Phase 3: header rows remain flagged at 44 px and 233 other-tab tap targets are under 40 px."
+}

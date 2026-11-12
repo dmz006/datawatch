@@ -113,10 +113,9 @@ func TestSelfUpdatePatterns_NotInPromptOrRateLimitLists(t *testing.T) {
 	if matched, _ := m.matchPromptInLines([]string{line}, 10); matched != "" {
 		t.Errorf("update notice classified as a prompt (matched %q)", matched)
 	}
-	lower := strings.ToLower(line)
-	for _, pat := range m.effectiveRateLimitPatterns() {
-		if strings.Contains(lower, strings.ToLower(pat)) {
-			t.Errorf("update notice matches rate-limit pattern %q", pat)
+	for family := range builtinRateLimitPhrases {
+		if matchesBuiltinRateLimitLines(family, line) {
+			t.Errorf("update notice matches the %s rate-limit table", family)
 		}
 	}
 }
@@ -158,7 +157,11 @@ func TestSelfUpdateDialog_ProcessOutputLineSendsNoKeyAndKeepsSessionAlive(t *tes
 			mgr.processOutputLine(context.Background(), sess, nil, l, &lastOutputTime, &pendingLines, &lastPromptMatchTime, func() *Tracker { return nil })
 		}
 	}
-	time.Sleep(500 * time.Millisecond) // let any stray key-sending goroutine fire
+	// processOutputLine is synchronous and the manager exposes no observable
+	// "pending async work" counter, so a bounded settle is the only way to
+	// give a hypothetical stray key-sending goroutine a chance to fire before
+	// asserting that none did. Kept short; a regression would send within ms.
+	time.Sleep(100 * time.Millisecond)
 
 	if keys := sentKeystrokes(fake); len(keys) != 0 {
 		t.Errorf("passive update notice must not be sent any keystroke, got %d: %+v", len(keys), keys)
@@ -212,15 +215,17 @@ func TestSelfUpdateDialog_ScreenCaptureSendsNoKeyAndDoesNotFlipToWaiting(t *test
 
 	ctx, cancel := context.WithCancel(context.Background())
 	mgr.StartScreenCapture(ctx, sess.FullID, 20)
-	// Change the pane between ticks so detection actually runs repeatedly.
-	for i := 0; i < 10; i++ {
-		time.Sleep(40 * time.Millisecond)
-		fake.mu.Lock()
-		fake.Pane[sess.TmuxSession] += "\n"
-		fake.mu.Unlock()
-	}
+	// Change the pane between ticks so detection actually runs repeatedly,
+	// until the notice has been recognised by the scan.
+	pollUntil(t, 10*time.Second, func() bool {
+		mutatePane(fake, sess.TmuxSession)
+		mgr.mu.Lock()
+		defer mgr.mu.Unlock()
+		_, noted := mgr.selfUpdateNotedAt[sess.FullID]
+		return noted
+	}, "update notice was not recognised by the screen-capture scan")
 	cancel()
-	time.Sleep(100 * time.Millisecond)
+	waitCaptureLoopsExit(t, 10*time.Second)
 
 	if keys := sentKeystrokes(fake); len(keys) != 0 {
 		t.Errorf("screen capture sent keystrokes for the update notice: %+v", keys)
@@ -243,6 +248,8 @@ func TestTaskDelivery_ClaimedOnceAndSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 	sess := newSelfUpdateSession(t, mgr, StateWaitingInput)
 
@@ -266,7 +273,9 @@ func TestTaskDelivery_ClaimedOnceAndSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "sessions.json")); err != nil {
+	t.Cleanup(func() { _ = mgr2.Close() })
+	allowTestTemp(mgr2)
+	if _, err := os.Stat(filepath.Join(dir, recordsDirName, recordsLayoutFile)); err != nil {
 		t.Fatalf("store not persisted: %v", err)
 	}
 	if !mgr2.TaskDelivered(sess.FullID) {

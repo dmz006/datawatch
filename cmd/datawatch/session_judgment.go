@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +21,7 @@ import (
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // decomposeSessionName is the sessionName the PRD decompose one-shot
@@ -136,8 +140,9 @@ func sessionJudgmentTask(prompt, projectDir, outputFile string) string {
 // MUST use a name unique to their own call site (e.g.
 // "decompose-output.json", "verify-<taskID>.json") so concurrent
 // sessions for the same PRD never collide on the same relocated file.
-func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
-	return runOneShotJSONSessionWithEffort(cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout)
+func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, launchTags launchTags) (string, error) {
+	content, _, err := runOneShotJSONSessionCaptureID(cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout, launchTags)
+	return content, err
 }
 
 // runOneShotJSONSessionWithEffort is runOneShotJSONSession plus the
@@ -154,85 +159,453 @@ func sessionOneShotTimeoutMessage(sessionName, sessionID, backend, model string,
 	return fmt.Sprintf("%s session %s (backend=%s, model=%s) timed out after %v", sessionName, sessionID, backend, model, timeout)
 }
 
-func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
-	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
-	if scratchErr != nil {
-		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
+// node is the compute node the session starts on ("" leaves placement to the
+// session, as it always has); a judge passes the node its lease holds.
+func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (string, error) {
+	content, _, err := runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, node, launchTags)
+	return content, err
+}
+
+// runOneShotJSONSessionAttr is runOneShotJSONSession with the session's owner
+// stamped at start (the decompose launcher).
+func runOneShotJSONSessionAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, launchTags launchTags) (string, error) {
+	content, _, err := runOneShotJSONSessionWithReaderAttr(attr, cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, "", launchTags)
+	return content, err
+}
+
+// runOneShotJSONSessionWithEffortAttr is runOneShotJSONSessionWithEffort with
+// the session's owner stamped at start (the verification launcher).
+func runOneShotJSONSessionWithEffortAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (string, error) {
+	content, _, err := runOneShotJSONSessionWithReaderAttr(attr, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, node, launchTags)
+	return content, err
+}
+
+// runOneShotJudgeSessionCaptureIDAttr is runOneShotJudgeSessionCaptureID with
+// the session's owner stamped at start (the guardrail, rules-review and
+// plan-review launcher).
+func runOneShotJudgeSessionCaptureIDAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReaderAttr(attr, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput, node, launchTags)
+}
+
+// runOneShotJSONSessionCaptureID is runOneShotJSONSessionWithEffort that also
+// returns the id of the session it spawned. sessionID is set as soon as the
+// start request succeeds and is returned on every later path (success,
+// timeout, failed/killed/cancelled, waiting-input stall and idle error), so a
+// caller can name the session even when the judgment failed. It stays empty
+// only when no session was started.
+func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, "", launchTags)
+}
+
+// runOneShotJudgeSessionCaptureID is runOneShotJSONSessionCaptureID for a
+// guardrail judgment whose output file must outlive the read. It differs only
+// in how the output is read: the project-directory file is peeked (see
+// peekJudgeOutput), so it is never deleted here. The content is still copied
+// to the scratch dir under scratchRelocateName so the durable copy exists. The
+// caller removes the project file with autonomouspkg.RemoveJudgeOutputFile
+// once the verdict is recorded.
+func runOneShotJudgeSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput, node, launchTags)
+}
+
+// launchTags is the optional launch placement tagging a caller wants the
+// one-shot session started with (docs/plans/
+// 2026-11-06-automata-pages-redesign.md, section 12: tag every
+// Automata-launched session — worker, verifier, planner, judge — with its
+// role, kind, Automaton and stage). Each empty field is simply absent from
+// the /api/sessions/start request, so a zero value posts exactly the body
+// callers sent before this feature existed, and the daemon applies no launch
+// tags at all.
+type launchTags struct {
+	Role      string // launch_role:      worker|verifier|planner|judge|supervisor
+	Kind      string // launch_kind:      task|decompose|review|rejudge|auto-fix
+	Automaton string // launch_automaton: the PRD's Automaton id
+	Stage     string // launch_stage:     the Automaton stage the session serves
+	// Profile is the applied worker profile for a verifier or judge launch
+	// (claude-code only; the daemon ignores it for other backends). Nil posts
+	// no worker_profile, so the launch is the plain, non-profile one.
+	Profile *workerprofile.WorkerProfile
+}
+
+// The builders below name the exact launch tags each one-shot site posts —
+// one per call site of the runOneShotJSONSession* family — so the table
+// test in cmd/datawatch/launch_tags_test.go can pin each site's role, kind
+// and Automaton and a future caller cannot silently lose its tags
+// (docs/plans/2026-11-06-automata-pages-redesign.md, section 12: "anything
+// we can tag should be tagged").
+
+// launchTagsForDecompose tags the planner's one-shot decompose session
+// (main.go's decomposeFnSession): role planner, kind decompose, the PRD's
+// Automaton id. No stage — decompose is the Automaton's own planning, not
+// one task inside a story.
+func launchTagsForDecompose(prdID string) launchTags {
+	return launchTags{Role: "planner", Kind: "decompose", Automaton: prdID}
+}
+
+// launchTagsForVerify tags the one-shot verifier session (main.go's
+// verifier closure): role verifier, kind task, with the judged task's story
+// as the stage.
+func launchTagsForVerify(prdID, storyID string) launchTags {
+	return launchTags{Role: "verifier", Kind: "task", Automaton: prdID, Stage: storyID}
+}
+
+// launchTagsForJudge tags the guardrail judge's one-shot session (main.go's
+// autonomousGuardrailAttempt): role judge, kind review for the rules review
+// and the per-unit guardrail judges — kind rejudge when the invocation is a
+// re-judgment of the same rules-review decision
+// (autonomous.RejudgeCompletionGuardrail). Automaton is the PRD's id.
+func launchTagsForJudge(prdID string, rejudge bool) launchTags {
+	kind := "review"
+	if rejudge {
+		kind = "rejudge"
 	}
-	relocate := func() (string, bool) {
-		return autonomouspkg.RelocateProjectFile(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
+	return launchTags{Role: "judge", Kind: kind, Automaton: prdID}
+}
+
+// withSessionProfile resolves the verifier or judge worker profile and, when
+// one is applied, sets it on the launch so the session start carries it, the
+// way the worker's does. A nil manager, or nothing configured, leaves the
+// launch unchanged. prd and task may be nil.
+func withSessionProfile(m *autonomouspkg.Manager, tags launchTags, role string, prd *autonomouspkg.PRD, task *autonomouspkg.Task) launchTags {
+	if m == nil {
+		return tags
 	}
+	if p, ok := m.ResolveSessionProfile(role, prd, task); ok {
+		tags.Profile = &p
+	}
+	return tags
+}
+
+// launchTagsForSupervisorLoop tags the supervisor loop's one-shot session
+// (supervisor_loop_models_wire.go): role supervisor. The supervisor serves
+// the whole autonomous system rather than one Automaton, so it carries no
+// Automaton — section 12's "no Automaton" for the supervisor loop.
+func launchTagsForSupervisorLoop() launchTags {
+	return launchTags{Role: "supervisor"}
+}
+
+// judgeOutputReader reads a one-shot session's output file from projectDir
+// and returns its content and whether it was ready. It may copy the content to
+// scratchDir/destName; it decides whether the project-directory file survives.
+type judgeOutputReader func(projectDir, srcName, scratchDir, destName string) (string, bool)
+
+// peekJudgeOutput is the judgment reader: it reads srcName without removing it
+// and copies the content to scratchDir/destName. Unlike
+// autonomouspkg.RelocateProjectFile, the project copy is left in place. A
+// missing or empty source is "not ready". A failed scratch write is ignored,
+// as RelocateProjectFile ignores it, so the content still reaches the caller.
+func peekJudgeOutput(projectDir, srcName, scratchDir, destName string) (string, bool) {
+	content, ok := autonomouspkg.PeekProjectFile(projectDir, srcName)
+	if !ok {
+		return "", false
+	}
+	if scratchDir != "" && destName != "" {
+		dst := filepath.Join(scratchDir, destName)
+		_ = os.WriteFile(dst, []byte(content), 0o600) // #nosec G304 G703 -- scratchDir/destName are built from internal identifiers (data dir + PRD/task IDs), not external input
+	}
+	return content, true
+}
+
+// judgeAskBody is the /api/ask request a judge sends on the ask path. kind is
+// the backend the judgment is routed to, llm the named LLM entry when it
+// differs from kind, and model the explicit model. node pins the call to the
+// compute node the judge's lease holds ("" leaves the entry's node order alone).
+func judgeAskBody(question, kind, llm, model, node string) map[string]any {
+	body := map[string]any{"question": question, "backend": kind}
+	if llm != "" && llm != kind {
+		body["llm"] = llm
+	}
+	if model != "" {
+		body["model"] = model
+	}
+	if node != "" {
+		body["compute_node"] = node
+	}
+	return body
+}
+
+// verifierWatchdogTripError is the error a tripped verifier no-progress
+// watchdog raises. It is a *autonomous.VerifierIdleError — not just the
+// OneShotNoOutputError text spelling — so the executor's idle retry path
+// (autonomous.IsVerifierIdleError in verifyRetryingIdle) sees the typed
+// error and treats the trip as a verifier incident to retry on a fresh
+// verifier instead of counting a worker failure against Task.Attempts.
+func verifierWatchdogTripError(limit time.Duration) error {
+	return autonomouspkg.NewVerifierIdleError(limit)
+}
+
+// verifierSessionNamePrefix is the sessionName prefix of the PRD task
+// verifier one-shot session ("autonomous:verify:<task id>").
+const verifierSessionNamePrefix = "autonomous:verify"
+
+// oneShotPollInterval is the period at which the one-shot wait loop polls
+// the session. Tests shorten it; production keeps the 3-second cadence.
+var oneShotPollInterval = 3 * time.Second
+
+// oneShotClock is the clock the verifier run cap reads on every poll. Tests
+// inject a fake clock; production reads the wall clock.
+var oneShotClock = time.Now
+
+// sessionPaneMarker returns a fingerprint of the session's captured pane
+// output tail, or "" when it cannot be read. A read failure yields an
+// unchanged marker, which counts as no activity.
+func sessionPaneMarker(cfg *config.Config, id string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, loopbackBaseURL(cfg)+"/api/output?n=50&id="+url.QueryEscape(id), nil)
+	if err != nil {
+		return ""
+	}
+	if cfg.Server.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// judgeLiveSession, when set, returns the id of a guardrail-judge session
+// that is still running and is named exactly sessionName, or "" when none
+// is live (wireCapacity sets it from the session manager's live-session
+// listing). runOneShotJSONSessionWithReader consults it for judge session
+// names before it would POST /api/sessions/start and reuses (adopts) the
+// live session instead of spawning a second one — the daemon-restart
+// double-spawn guard: the capacity ledger is in-memory, so a restart drops
+// the in-flight judge's lease while the judge session itself survives.
+// Tests set a fake; nil means "no adopt, spawn as before".
+var judgeLiveSession func(sessionName string) string
+
+// verifierLiveSession, when set, returns the id of a task-verifier one-shot
+// session ("autonomous:verify:<task id>") that is still running under exactly
+// sessionName, or "" when none is live (wireCapacity sets it from the session
+// manager's live-session listing). runOneShotJSONSessionWithSpawnHook consults
+// it for verifier names before it would POST /api/sessions/start and reuses
+// (adopts) the live session instead of spawning a second one — the same
+// daemon-restart double-spawn guard as judgeLiveSession: the manager's
+// in-memory waiter for the verifier does not survive a restart, while the
+// tmux session does. Tests set a fake; nil means "no adopt, spawn as before".
+var verifierLiveSession func(sessionName string) string
+
+// runOneShotJSONSessionWithReader is the spawn / poll / kill body shared by
+// runOneShotJSONSessionCaptureID and runOneShotJudgeSessionCaptureID. readOutput
+// decides how the output file is read, and whether it is removed from the
+// project directory.
+func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReaderAttr(sessionAttr{}, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, readOutput, node, launchTags)
+}
+
+// runOneShotJSONSessionWithReaderAttr is runOneShotJSONSessionWithReader that
+// stamps attr (Automaton id, task id, spend role) onto the session at start.
+func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithSpawnHookAttr(attr, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, readOutput, node, launchTags, nil)
+}
+
+// runOneShotJSONSessionWithSpawnHook is runOneShotJSONSessionWithReader plus
+// onSpawned, called with the session id as soon as the start request succeeds
+// and before the reader starts waiting on the output. A failed spawn never
+// calls it. A nil onSpawned makes this exactly runOneShotJSONSessionWithReader.
+func runOneShotJSONSessionWithSpawnHook(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags, onSpawned func(sessionID string)) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithSpawnHookAttr(sessionAttr{}, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, readOutput, node, launchTags, onSpawned)
+}
+
+// runOneShotJSONSessionWithSpawnHookAttr is runOneShotJSONSessionWithSpawnHook
+// that also stamps attr onto the session at start.
+func runOneShotJSONSessionWithSpawnHookAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags, onSpawned func(sessionID string)) (content string, sessionID string, err error) {
+	relocate := oneShotOutputReader(cfg, prdID, sessionName, projectDir, outputFile, scratchRelocateName, readOutput)
 	// Restart-recovery: reuse output written by a previous attempt of
 	// the exact same call (same outputFile name, derived by the caller
 	// from its own content hash).
 	if existingContent, ok := relocate(); ok {
 		fmt.Printf("[%s] reusing prior output file %s (%d bytes)\n", sessionName, outputFile, len(existingContent))
-		return existingContent, nil
+		return existingContent, "", nil
 	}
 	_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
 
-	startReq := map[string]any{
-		"task":        sessionTask,
-		"project_dir": projectDir,
-		"backend":     backend,
-		"model":       model,
-		"name":        sessionName,
-		"one_shot":    true,
-		"prd_id":      prdID,
-	}
-	if effort != "" {
-		startReq["effort"] = effort
-	}
-	body, _ := json.Marshal(startReq)
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	// A full session cap is a wait, not a failure: retry until a slot
-	// frees or the timeout expires.
-	var rb []byte
-	for {
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			loopbackBaseURL(cfg)+"/api/sessions/start",
-			bytes.NewReader(body))
-		if err != nil {
-			return "", err
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		if cfg.Server.Token != "" {
-			httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-		}
-		resp, err := http.DefaultClient.Do(httpReq)
-		if err != nil {
-			return "", fmt.Errorf("%s session start: %w", sessionName, err)
-		}
-		rb, _ = io.ReadAll(resp.Body)
-		resp.Body.Close() //nolint:errcheck
-		if resp.StatusCode == http.StatusOK {
-			break
-		}
-		if !strings.Contains(string(rb), "max sessions") {
-			return "", fmt.Errorf("%s session start: %s — %s", sessionName, resp.Status, string(rb))
-		}
-		fmt.Printf("[%s] waiting for a free session slot: %s\n", sessionName, strings.TrimSpace(string(rb)))
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("%s session start: %w while waiting for capacity", sessionName, ctx.Err())
-		case <-time.After(15 * time.Second):
-		}
-	}
+	// Adopt, never double-spawn (daemon restart): a guardrail-judge
+	// session named exactly sessionName may still be running even though
+	// the in-memory capacity lease is gone. Reuse that live session
+	// instead of starting a second judge for the same unit — two judges
+	// would double-bill the session cap and race on the same
+	// content-addressed output file. Only judge session names (parseable
+	// by judgeUnitFromSessionName) consult the hook; every other caller
+	// keeps its spawn behavior. The adopted judge writes the same output
+	// file this call's poll loop reads, and the deferred kill below still
+	// ends the session when the call returns.
 	var startOut struct {
 		ID string `json:"id"`
 	}
-	_ = json.Unmarshal(rb, &startOut)
-	if startOut.ID == "" {
-		return "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
+	adopted := false
+	if judgeLiveSession != nil {
+		if unitID, ok := judgeUnitFromSessionName(sessionName); ok && unitID != "" {
+			if id := judgeLiveSession(sessionName); id != "" {
+				startOut.ID = id
+				adopted = true
+			}
+		}
 	}
-	fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
+	// The verifier's adopt guard: a task-verifier session named exactly
+	// sessionName may still be running after a daemon restart (its waiter
+	// died with the daemon, the tmux session did not). Reuse that live
+	// session instead of starting a second verifier for the same task — a
+	// second verifier would double-spend the session cap and race on the
+	// same content-addressed output file. Only verifier session names
+	// (parseable by verifierTaskFromSessionName) consult this hook; every
+	// other caller keeps its spawn behavior.
+	if !adopted && verifierLiveSession != nil {
+		if taskID, ok := verifierTaskFromSessionName(sessionName); ok && taskID != "" {
+			if id := verifierLiveSession(sessionName); id != "" {
+				startOut.ID = id
+				adopted = true
+			}
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
+	if !adopted {
+		startReq := map[string]any{
+			"task":        sessionTask,
+			"project_dir": projectDir,
+			"backend":     backend,
+			"model":       model,
+			"name":        sessionName,
+			"one_shot":    true,
+			"prd_id":      prdID,
+			// Planning/judgment sessions must never stage or commit the repo.
+			"skip_snapshot": true,
+			// PRD-owned judgment session: keep its tmux commands off the
+			// production server.
+			"scrub_tmux_env": true,
+		}
+		if effort != "" {
+			startReq["effort"] = effort
+		}
+		attr.apply(startReq)
+		// A judge holding a node lease starts on that node, the same way a worker
+		// does. Absent when no node is held, so the session places itself as before.
+		if node != "" {
+			startReq["compute_node"] = node
+		}
+		// Launch placement tags (docs/plans/2026-11-06-automata-pages-redesign.md
+		// section 12): each is optional and posted only when non-empty, so a
+		// caller that passes the zero value posts exactly the body it sent before
+		// this feature — the daemon then applies no launch tags at all.
+		if launchTags.Role != "" {
+			startReq["launch_role"] = launchTags.Role
+		}
+		if launchTags.Kind != "" {
+			startReq["launch_kind"] = launchTags.Kind
+		}
+		if launchTags.Automaton != "" {
+			startReq["launch_automaton"] = launchTags.Automaton
+		}
+		if launchTags.Stage != "" {
+			startReq["launch_stage"] = launchTags.Stage
+		}
+		if launchTags.Profile != nil {
+			startReq["worker_profile"] = launchTags.Profile
+		}
+		body, _ := json.Marshal(startReq)
+
+		// A full session cap is a wait, not a failure: retry until a slot
+		// frees or the timeout expires.
+		var rb []byte
+		for {
+			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+				loopbackBaseURL(cfg)+"/api/sessions/start",
+				bytes.NewReader(body))
+			if err != nil {
+				return "", "", err
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			if cfg.Server.Token != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
+			resp, err := http.DefaultClient.Do(httpReq)
+			if err != nil {
+				return "", "", fmt.Errorf("%s session start: %w", sessionName, err)
+			}
+			rb, _ = io.ReadAll(resp.Body)
+			resp.Body.Close() //nolint:errcheck
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+			if !strings.Contains(string(rb), "max sessions") {
+				return "", "", fmt.Errorf("%s session start: %s — %s", sessionName, resp.Status, string(rb))
+			}
+			fmt.Printf("[%s] waiting for a free session slot: %s\n", sessionName, strings.TrimSpace(string(rb)))
+			select {
+			case <-ctx.Done():
+				return "", "", fmt.Errorf("%s session start: %w while waiting for capacity", sessionName, ctx.Err())
+			case <-time.After(15 * time.Second):
+			}
+		}
+		if err := json.Unmarshal(rb, &startOut); err != nil {
+			return "", "", fmt.Errorf("%s session start: malformed JSON: %w", sessionName, err)
+		}
+		if startOut.ID == "" {
+			return "", "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
+		}
+	}
+	sessionID = startOut.ID
+	if onSpawned != nil {
+		onSpawned(sessionID)
+	}
+	if verifierSessionStarted != nil {
+		verifierSessionStarted(sessionName, sessionID)
+	}
+	if judgeSessionStarted != nil {
+		judgeSessionStarted(sessionName, sessionID)
+	}
+	if adopted {
+		fmt.Printf("[%s] adopting live session %s (a verifier or judge with this name is already running — not spawning a second)\n", sessionName, startOut.ID)
+	} else {
+		fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
+	}
+	// Record the spawn time as soon as the session id is known: while the
+	// daemon is still delivering the task within its delivery budget the
+	// session can sit in waiting_input before the Claude main prompt is
+	// ready, so the waiting_input stall check is exempt during that window
+	// (see decomposeWaitingInputTick).
+	spawnedAt := time.Now()
+
+	return waitOneShotJSONSession(ctx, cfg, prdID, sessionName, backend, model, projectDir, outputFile, timeout, sessionID, spawnedAt, relocate)
+}
+
+// oneShotOutputReader returns the reader that polls a one-shot session's
+// output: readOutput applied to the output file's base name under projectDir,
+// with the scratch copy named scratchRelocateName under the PRD's scratch dir.
+func oneShotOutputReader(cfg *config.Config, prdID, sessionName, projectDir, outputFile, scratchRelocateName string, readOutput judgeOutputReader) func() (string, bool) {
+	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
+	if scratchErr != nil {
+		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
+	}
+	return func() (string, bool) {
+		return readOutput(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
+	}
+}
+
+// waitOneShotJSONSession is the wait half of runOneShotJSONSessionWithSpawnHook,
+// shared with the planning reader that re-attaches to a planner session after a
+// daemon restart (cmd/datawatch/planning_reattach.go). It polls session
+// sessionID until its output file is ready (relocate reports it), the session
+// reaches a terminal state, or ctx ends, and it kills the session on return.
+// The completion rules are the same whichever caller waits. spawnedAt is when
+// the session was known to be running; it anchors the waiting_input grace.
+func waitOneShotJSONSession(ctx context.Context, cfg *config.Config, prdID, sessionName, backend, model, projectDir, outputFile string, timeout time.Duration, sessionID string, spawnedAt time.Time, relocate func() (string, bool)) (string, string, error) {
+	startOut := struct {
+		ID string `json:"id"`
+	}{ID: sessionID}
 	// Best-effort: kill the session when this function returns (handles
 	// TUI sessions that land in waiting_input after writing the output).
-	sessionID := startOut.ID
 	defer func() {
 		killCtx, killCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer killCancel()
@@ -257,7 +630,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 	role := strings.TrimPrefix(sessionName, "autonomous:")
 
 	// Poll for session completion.
-	tick := time.NewTicker(3 * time.Second)
+	tick := time.NewTicker(oneShotPollInterval)
 	defer tick.Stop()
 	waitingInputTicks := 0
 	// Session idle detector (autonomous.session_idle_timeout_seconds):
@@ -265,10 +638,24 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 	// the current unbroken run.
 	idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
 	var idleSince time.Time
+	// Verifier no-progress watchdog (autonomous.verifier_no_progress_timeout_seconds):
+	// verifier sessions only; decompose and worker sessions are untouched.
+	var verifierWatchdog *autonomouspkg.VerifierWatchdog
+	var watchdogLimit time.Duration
+	// Verifier run cap (autonomous.verifier_max_run_seconds): a progress-blind
+	// ceiling on one verifier run's accumulated run time, excluding time spent
+	// waiting for a capacity slot. Verifier sessions only.
+	var verifierRunLimit *autonomouspkg.VerifierRunLimit
+	if strings.HasPrefix(sessionName, verifierSessionNamePrefix) {
+		watchdogLimit = time.Duration(config.NormalizeVerifierNoProgressTimeoutSeconds(cfg.Autonomous.VerifierNoProgressTimeoutSeconds)) * time.Second
+		verifierWatchdog = autonomouspkg.NewVerifierWatchdog(spawnedAt, watchdogLimit)
+		runCapSeconds := config.VerifierRunCapSeconds(cfg.Autonomous.VerifierMaxRunSeconds)
+		verifierRunLimit = autonomouspkg.NewVerifierRunLimit(time.Duration(runCapSeconds) * time.Second)
+	}
 	for {
 		select {
 		case <-ctx.Done():
-			return "", &autonomouspkg.OneShotNoOutputError{Msg: sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout)}
+			return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout), TimedOut: true}
 		case <-tick.C:
 			pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 				loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)
@@ -288,6 +675,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			var s struct {
 				State       string `json:"state"`
 				TmuxSession string `json:"tmux_session"`
+				ProjectDir  string `json:"project_dir"`
 			}
 			if err := json.Unmarshal(pollBody, &s); err != nil {
 				continue
@@ -297,7 +685,69 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			// state — see decomposeFnSession's identical reasoning.
 			if content, ok := relocate(); ok {
 				fmt.Printf("[%s] %s state=%q, output file ready (%d bytes) — treating as complete\n", sessionName, startOut.ID, s.State, len(content))
-				return content, nil
+				return content, sessionID, nil
+			}
+			if verifierWatchdog != nil {
+				marker := sessionPaneMarker(cfg, startOut.ID)
+				// v9.10.0 (BL419 D.1) + phase 1 (BL432): the watchdog now
+				// decides on the full liveness signal set. The runner-side
+				// probes all fail safe: no live runner process → not-alive
+				// (never ends on that alone), unknown probe result or unset
+				// server host → ActiveRequest=false (a probe failure is
+				// "no evidence either way", never a kill or a save), and no
+				// ledger view → SlotNone. When the watchdog ends the session
+				// the log must identify exactly which signals it saw.
+				now := time.Now()
+				requestState := probeModelServerRequest(cfg.Ollama.Host, model)
+				signals := autonomouspkg.ProgressSignals{
+					Marker:        marker,
+					RunnerAlive:   hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
+					ActiveRequest: requestState == modelServerRequestActive,
+				}
+				if taskID, ok := verifierTaskFromSessionName(sessionName); ok {
+					if slotFn := verifierCapacitySlotState; slotFn != nil {
+						signals.Slot = slotFn(autonomouspkg.VerifyHolder(taskID))
+					}
+				}
+				if verifierWatchdog.Decide(now, signals) {
+					runner := "not alive"
+					if signals.RunnerAlive {
+						runner = "alive"
+					}
+					request := "unknown"
+					switch requestState {
+					case modelServerRequestActive:
+						request = "active"
+					case modelServerRequestIdle:
+						request = "idle"
+					}
+					slot := "none"
+					switch signals.Slot {
+					case autonomouspkg.SlotHeld:
+						slot = "held"
+					case autonomouspkg.SlotWaiting:
+						slot = "waiting"
+					}
+					fmt.Printf("[%s] %s no progress for %v — no-progress watchdog ending session (runner: %v; model-server request: %v; capacity slot: %v; no output file, no pane change)\n",
+						sessionName, startOut.ID, watchdogLimit, runner, request, slot)
+					return "", sessionID, verifierWatchdogTripError(watchdogLimit)
+				}
+				// Run cap: decided on every poll with the same slot state the
+				// watchdog saw, so waiting-for-slot time is excluded.
+				runNow := oneShotClock()
+				if verifierRunLimit.Decide(runNow, signals.Slot) {
+					ran := verifierRunLimit.Elapsed(runNow)
+					capSeconds := config.VerifierRunCapSeconds(cfg.Autonomous.VerifierMaxRunSeconds)
+					fmt.Printf("[%s] %s run cap reached — ran %v, cap %ds (autonomous.verifier_max_run_seconds); ending session\n",
+						sessionName, startOut.ID, ran, capSeconds)
+					return "", sessionID, &autonomouspkg.OneShotNoOutputError{
+						Msg: fmt.Sprintf("verifier session %s ended at its run cap: ran %v, cap %ds (autonomous.verifier_max_run_seconds)",
+							startOut.ID, ran.Round(time.Second), capSeconds),
+						RunCap:        true,
+						RunCapElapsed: ran,
+						RunCapSeconds: capSeconds,
+					}
+				}
 			}
 			// waiting_input debounce, mirroring the task executor's
 			// stall check (see waitingInputTick). A one-shot decompose
@@ -309,14 +759,23 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			// that would be misread as waiting_input.
 			var stalled bool
 			if sessionName == decomposeSessionName && backend == "claude-code" {
-				waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, session.State(s.State))
+				// The decompose launch uses the same
+				// session.task_delivery_window_seconds and
+				// session.task_delivery_attempts keys as every other one-shot
+				// session (decomposeDeliveryGrace wraps
+				// cfg.Session.TaskDeliveryBudgetTotal(), nil-safe). The daemon
+				// can still be delivering the task for the whole of that budget,
+				// so waiting_input inside it is normal and must not fire the
+				// stall check; failed/killed/cancelled states below still end the
+				// wait at once.
+				waitingInputTicks, stalled = decomposeWaitingInputTick(waitingInputTicks, session.State(s.State), time.Since(spawnedAt), decomposeDeliveryGrace(cfg))
 			}
 			if stalled {
 				fmt.Printf("[%s] %s state=waiting_input for %d ticks — killing; one-shot session cannot answer\n", sessionName, startOut.ID, waitingInputTicks)
-				return "", &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state waiting_input without producing output (backend=%s, model=%q)", role, startOut.ID, backend, model)}
+				return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state waiting_input without producing output (backend=%s, model=%q)", role, startOut.ID, backend, model)}
 			}
 			// Session idle detector: a one-shot verifier parked in
-			// waiting_input with no live runner child past the budget
+			// waiting_input with no work child of its runner past the budget
 			// will never write its output. Returning here fires the
 			// deferred kill above, and the infra error feeds the retry budget.
 			if s.State != "waiting_input" {
@@ -334,28 +793,29 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 						State:               s.State,
 						IdleFor:             idleFor,
 						OutputAge:           outputAge,
-						HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+						LogLastEventAge:     piLogLastEventAge(backend, piSessionsRoot(), projectDir, spawnedAt, time.Now()),
+						HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 						Limit:               idleLimit,
 					}
 					if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
 						alertspkg.EmitSystem(alertspkg.LevelError, "Verifier session idle without completion",
 							fmt.Sprintf("prd=%s session=%s backend=%s model=%s: %s", prdID, startOut.ID, backend, model, idleReason))
-						return "", autonomouspkg.SessionIdleError(idleObs)
+						return "", sessionID, autonomouspkg.SessionIdleError(idleObs)
 					}
 				}
 			}
 			switch s.State {
 			case "complete":
-				return "", fmt.Errorf("%s session %s completed but output file %s not found (backend=%s, model=%q)", sessionName, startOut.ID, outputFile, backend, model)
+				return "", sessionID, fmt.Errorf("%s session %s completed but output file %s not found (backend=%s, model=%q)", sessionName, startOut.ID, outputFile, backend, model)
 			case "failed", "killed", "cancelled":
 				// Give the output file one last chance: the session may
 				// have written it in the same instant it was killed.
 				time.Sleep(3 * time.Second)
 				if content, ok := relocate(); ok {
 					fmt.Printf("[%s] %s state=%q, output file appeared after kill (%d bytes)\n", sessionName, startOut.ID, s.State, len(content))
-					return content, nil
+					return content, sessionID, nil
 				}
-				return "", &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state %s without producing output (backend=%s, model=%q)", role, startOut.ID, s.State, backend, model)}
+				return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state %s without producing output (backend=%s, model=%q)", role, startOut.ID, s.State, backend, model)}
 			}
 		}
 	}

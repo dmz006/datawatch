@@ -20,11 +20,24 @@ LLM_ONLY=(
     README          # not a howto, just an index
     v7-compute-migration  # narrative migration doc (alpha.15) — explains what auto-migration did, no operator action steps
     dashboard       # PWA-only view; navigation not callable from MCP — reference/conceptual doc
+    automata-cost       # PWA-only cost cards on the Automata view; no MCP-callable steps
+    automata-resources  # PWA-only resource cards on the Automata view; no MCP-callable steps
+    list-tiles-and-grouping  # PWA-only Sessions page layout; no MCP-callable steps
     compute-routing     # reference doc explaining routing modes; configuration is via compute node CRUD (covered by compute-nodes howto)
     federation-cbac     # conceptual reference for CBAC model; federation CRUD steps are in federated-observer howto
     container-image-refresh  # operator/maintainer reference for a CI workflow; no MCP-callable steps
+    ci-code-scanning-upload  # CI maintainer reference with no MCP-callable steps
     discussion-scopes   # conceptual reference for WAL-backed discussion memory model; operator steps via memory_* MCP tools
     testing-against-a-running-daemon  # dev/CI reference for shell-script env vars (DW_BASE, TEST_BASE); no MCP-callable steps
+    automation-tab      # PWA-only view; nothing callable from MCP (like dashboard) — reference/conceptual doc
+    list-endpoints-and-paging  # curl-based API reference + PWA presentation states; running a daemon is in testing-against-a-running-daemon
+    automata-tab-loading  # PWA-only view; nothing callable from MCP (like automation-tab) — reference/conceptual doc
+    navigation-mobile-fit  # test-only page: the phone-width check run by make test-e2e-shared-nav; no MCP-callable steps
+    codeql-local-scan  # shell-script workflow (scripts/codeql-local.sh); no MCP-callable steps
+    automata-events  # conceptual reference for the Events tab; no MCP-callable steps
+    merge-shadow  # conceptual reference for merge shadow mode; no MCP-callable steps
+    restart-with-work-running  # conceptual reference for the planning restart values; the setting is set through config-set / configure, which take the value directly, so no exec_steps are needed
+    worker-session-profiles  # worker session profiles: spec-complete; the settings surfaces (exact key, tool and settings-card names) are still pending, so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when the profile config lands
 )
 
 ERRORS=0

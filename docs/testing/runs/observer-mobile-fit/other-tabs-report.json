@@ -1,0 +1,6273 @@
+{
+  "generated_at": "2026-10-24T17:25:26.019Z",
+  "meta": {
+    "views": [
+      "sessions",
+      "autonomous",
+      "automation",
+      "settings",
+      "alerts"
+    ],
+    "profile": "quick",
+    "scope": [],
+    "report_only": true,
+    "note": "automation tab not measured: the harness VIEWS whitelist rejects it (unknown view, exit 2); recorded here as an open-failed finding so every requested tab appears. Other views measured with the quick profile: default state, dark theme, viewports 320x568, 360x740, 390x844, 768x1024, 740x360 plus 360x740/light and 360x740/z200."
+  },
+  "summary": {
+    "total": 185,
+    "by_check": {
+      "clipped-text": 6,
+      "tap-target": 173,
+      "edge-cross": 5,
+      "open-failed": 1
+    },
+    "scenarios": 29,
+    "scenarios_with_findings": 29,
+    "groups": 19
+  },
+  "groups": [
+    {
+      "id": "G-6502e162",
+      "check": "clipped-text",
+      "selector": "#headerTitle",
+      "count": 6,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "count": 21,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "count": 14,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-f4f80146",
+      "check": "tap-target",
+      "selector": "div.app:nth(*) > div.toast-container:nth(*) > div.toast.toast-error:nth(*) > div.toast-error-row:nth(*) > button.toast-error-close:nth(*)",
+      "count": 4,
+      "scenarios": [
+        "default@320x568/dark/z100"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "count": 28,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "count": 8,
+      "scenarios": [
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100"
+      ],
+      "first_screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "G-4874945e",
+      "check": "edge-cross",
+      "selector": "#headerRefreshSpinner",
+      "count": 2,
+      "scenarios": [
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "G-5b00d250",
+      "check": "edge-cross",
+      "selector": "#statusDot",
+      "count": 2,
+      "scenarios": [
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "G-bd9b90a2",
+      "check": "tap-target",
+      "selector": "#headerIdentityBtn",
+      "count": 7,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-12200f65",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth(*) > div.output-tabs.automata-tabs-bar:nth(*) > button.output-tab.active:nth(*)",
+      "count": 7,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-d4c8a4fd",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth(*) > div.output-tabs.automata-tabs-bar:nth(*) > button.output-tab:nth(*)",
+      "count": 7,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-44afec82",
+      "check": "tap-target",
+      "selector": "#automataSelectBtn",
+      "count": 7,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-245b9237",
+      "check": "tap-target",
+      "selector": "#automataFilterBtn",
+      "count": 7,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-ef2dc788",
+      "check": "tap-target",
+      "selector": "#automataHistoryBtn",
+      "count": 7,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-ea8f5fbd",
+      "check": "tap-target",
+      "selector": "#automataWatchFilterBtn",
+      "count": 7,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-ef8b66d8",
+      "check": "edge-cross",
+      "selector": "#headerAlertPill",
+      "count": 1,
+      "scenarios": [
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth(*) > div.settings-tabs-bar:nth(*) > button.settings-tab-btn.output-tab:nth(*)",
+      "count": 42,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-d206c048",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth(*) > div:nth(*) > a:nth(*)",
+      "count": 7,
+      "scenarios": [
+        "default@320x568/dark/z100",
+        "default@360x740/dark/z100",
+        "default@390x844/dark/z100",
+        "default@768x1024/dark/z100",
+        "default@740x360/dark/z100",
+        "default@360x740/light/z100",
+        "default@360x740/dark/z200"
+      ],
+      "first_screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "G-a4359a64",
+      "check": "open-failed",
+      "selector": "[data-view=\"automation\"]",
+      "count": 1,
+      "scenarios": [
+        "default@390x844/dark/z100"
+      ],
+      "first_screenshot": null
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-0001",
+      "group": "G-6502e162",
+      "check": "clipped-text",
+      "selector": "#headerTitle",
+      "detail": "scrollWidth 84 > clientWidth 70 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0002",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0003",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0004",
+      "group": "G-f4f80146",
+      "check": "tap-target",
+      "selector": "div.app:nth-child(5) > div.toast-container:nth-child(5) > div.toast.toast-error:nth-child(1) > div.toast-error-row:nth-child(1) > button.toast-error-close:nth-child(4)",
+      "detail": "tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0005",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0006",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0007",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0008",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0009",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0010",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0011",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0012",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0013",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0014",
+      "group": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0015",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0016",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0017",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0018",
+      "group": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0019",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0020",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0021",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0022",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0023",
+      "group": "G-4874945e",
+      "check": "edge-cross",
+      "selector": "#headerRefreshSpinner",
+      "detail": "element crosses viewport edge: right 185 > viewport 180",
+      "scenario": "default@360x740/dark/z200",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0024",
+      "group": "G-5b00d250",
+      "check": "edge-cross",
+      "selector": "#statusDot",
+      "detail": "element crosses viewport edge: right 211 > viewport 180",
+      "scenario": "default@360x740/dark/z200",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0025",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0026",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0027",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 34x37 below minimum 40px (width 34 < 40, height 37 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0028",
+      "group": "G-6502e162",
+      "check": "clipped-text",
+      "selector": "#headerTitle",
+      "detail": "scrollWidth 75 > clientWidth 19 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0029",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0030",
+      "group": "G-bd9b90a2",
+      "check": "tap-target",
+      "selector": "#headerIdentityBtn",
+      "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0031",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0032",
+      "group": "G-12200f65",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+      "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0033",
+      "group": "G-d4c8a4fd",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+      "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0034",
+      "group": "G-44afec82",
+      "check": "tap-target",
+      "selector": "#automataSelectBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0035",
+      "group": "G-245b9237",
+      "check": "tap-target",
+      "selector": "#automataFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0036",
+      "group": "G-ef2dc788",
+      "check": "tap-target",
+      "selector": "#automataHistoryBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0037",
+      "group": "G-ea8f5fbd",
+      "check": "tap-target",
+      "selector": "#automataWatchFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0038",
+      "group": "G-f4f80146",
+      "check": "tap-target",
+      "selector": "div.app:nth-child(5) > div.toast-container:nth-child(5) > div.toast.toast-error:nth-child(1) > div.toast-error-row:nth-child(1) > button.toast-error-close:nth-child(4)",
+      "detail": "tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0039",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0040",
+      "group": "G-6502e162",
+      "check": "clipped-text",
+      "selector": "#headerTitle",
+      "detail": "scrollWidth 75 > clientWidth 59 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0041",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0042",
+      "group": "G-bd9b90a2",
+      "check": "tap-target",
+      "selector": "#headerIdentityBtn",
+      "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0043",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0044",
+      "group": "G-12200f65",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+      "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0045",
+      "group": "G-d4c8a4fd",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+      "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0046",
+      "group": "G-44afec82",
+      "check": "tap-target",
+      "selector": "#automataSelectBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0047",
+      "group": "G-245b9237",
+      "check": "tap-target",
+      "selector": "#automataFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0048",
+      "group": "G-ef2dc788",
+      "check": "tap-target",
+      "selector": "#automataHistoryBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0049",
+      "group": "G-ea8f5fbd",
+      "check": "tap-target",
+      "selector": "#automataWatchFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0050",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0051",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0052",
+      "group": "G-bd9b90a2",
+      "check": "tap-target",
+      "selector": "#headerIdentityBtn",
+      "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0053",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0054",
+      "group": "G-12200f65",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+      "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0055",
+      "group": "G-d4c8a4fd",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+      "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0056",
+      "group": "G-44afec82",
+      "check": "tap-target",
+      "selector": "#automataSelectBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0057",
+      "group": "G-245b9237",
+      "check": "tap-target",
+      "selector": "#automataFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0058",
+      "group": "G-ef2dc788",
+      "check": "tap-target",
+      "selector": "#automataHistoryBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0059",
+      "group": "G-ea8f5fbd",
+      "check": "tap-target",
+      "selector": "#automataWatchFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0060",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0061",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0062",
+      "group": "G-bd9b90a2",
+      "check": "tap-target",
+      "selector": "#headerIdentityBtn",
+      "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0063",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0064",
+      "group": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0065",
+      "group": "G-12200f65",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+      "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0066",
+      "group": "G-d4c8a4fd",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+      "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0067",
+      "group": "G-44afec82",
+      "check": "tap-target",
+      "selector": "#automataSelectBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0068",
+      "group": "G-245b9237",
+      "check": "tap-target",
+      "selector": "#automataFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0069",
+      "group": "G-ef2dc788",
+      "check": "tap-target",
+      "selector": "#automataHistoryBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0070",
+      "group": "G-ea8f5fbd",
+      "check": "tap-target",
+      "selector": "#automataWatchFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0071",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0072",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0073",
+      "group": "G-bd9b90a2",
+      "check": "tap-target",
+      "selector": "#headerIdentityBtn",
+      "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0074",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0075",
+      "group": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0076",
+      "group": "G-12200f65",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+      "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0077",
+      "group": "G-d4c8a4fd",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+      "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0078",
+      "group": "G-44afec82",
+      "check": "tap-target",
+      "selector": "#automataSelectBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0079",
+      "group": "G-245b9237",
+      "check": "tap-target",
+      "selector": "#automataFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0080",
+      "group": "G-ef2dc788",
+      "check": "tap-target",
+      "selector": "#automataHistoryBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0081",
+      "group": "G-ea8f5fbd",
+      "check": "tap-target",
+      "selector": "#automataWatchFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0082",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0083",
+      "group": "G-6502e162",
+      "check": "clipped-text",
+      "selector": "#headerTitle",
+      "detail": "scrollWidth 75 > clientWidth 59 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0084",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0085",
+      "group": "G-bd9b90a2",
+      "check": "tap-target",
+      "selector": "#headerIdentityBtn",
+      "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0086",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0087",
+      "group": "G-12200f65",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+      "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0088",
+      "group": "G-d4c8a4fd",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+      "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0089",
+      "group": "G-44afec82",
+      "check": "tap-target",
+      "selector": "#automataSelectBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0090",
+      "group": "G-245b9237",
+      "check": "tap-target",
+      "selector": "#automataFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0091",
+      "group": "G-ef2dc788",
+      "check": "tap-target",
+      "selector": "#automataHistoryBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0092",
+      "group": "G-ea8f5fbd",
+      "check": "tap-target",
+      "selector": "#automataWatchFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0093",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0094",
+      "group": "G-ef8b66d8",
+      "check": "edge-cross",
+      "selector": "#headerAlertPill",
+      "detail": "element crosses viewport edge: right 211 > viewport 180",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0095",
+      "group": "G-4874945e",
+      "check": "edge-cross",
+      "selector": "#headerRefreshSpinner",
+      "detail": "element crosses viewport edge: right 239 > viewport 180",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0096",
+      "group": "G-5b00d250",
+      "check": "edge-cross",
+      "selector": "#statusDot",
+      "detail": "element crosses viewport edge: right 261 > viewport 180",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0097",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0098",
+      "group": "G-bd9b90a2",
+      "check": "tap-target",
+      "selector": "#headerIdentityBtn",
+      "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0099",
+      "group": "G-6e692494",
+      "check": "tap-target",
+      "selector": "#headerSearchBtn",
+      "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0100",
+      "group": "G-12200f65",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+      "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0101",
+      "group": "G-d4c8a4fd",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+      "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0102",
+      "group": "G-44afec82",
+      "check": "tap-target",
+      "selector": "#automataSelectBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0103",
+      "group": "G-245b9237",
+      "check": "tap-target",
+      "selector": "#automataFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0104",
+      "group": "G-ef2dc788",
+      "check": "tap-target",
+      "selector": "#automataHistoryBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0105",
+      "group": "G-ea8f5fbd",
+      "check": "tap-target",
+      "selector": "#automataWatchFilterBtn",
+      "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0106",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 34x37 below minimum 40px (width 34 < 40, height 37 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0107",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0108",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+      "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0109",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+      "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0110",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+      "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0111",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+      "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0112",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+      "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0113",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+      "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0114",
+      "group": "G-f4f80146",
+      "check": "tap-target",
+      "selector": "div.app:nth-child(5) > div.toast-container:nth-child(5) > div.toast.toast-error:nth-child(1) > div.toast-error-row:nth-child(1) > button.toast-error-close:nth-child(4)",
+      "detail": "tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0115",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0116",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0117",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+      "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0118",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+      "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0119",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+      "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0120",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+      "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0121",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+      "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0122",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+      "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0123",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0124",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0125",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+      "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0126",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+      "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0127",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+      "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0128",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+      "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0129",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+      "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0130",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+      "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0131",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0132",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0133",
+      "group": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0134",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+      "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0135",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+      "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0136",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+      "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0137",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+      "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0138",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+      "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0139",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+      "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0140",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0141",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0142",
+      "group": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0143",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+      "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0144",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+      "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0145",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+      "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0146",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+      "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0147",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+      "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0148",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+      "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0149",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0150",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0151",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+      "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0152",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+      "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0153",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+      "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0154",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+      "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0155",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+      "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0156",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+      "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0157",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0158",
+      "group": "G-6502e162",
+      "check": "clipped-text",
+      "selector": "#headerTitle",
+      "detail": "scrollWidth 75 > clientWidth 17 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0159",
+      "group": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0160",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+      "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0161",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+      "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0162",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+      "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0163",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+      "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0164",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+      "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0165",
+      "group": "G-65d7a747",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+      "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0166",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x22 below minimum 40px (height 22 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0167",
+      "group": "G-d206c048",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+      "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0168",
+      "group": "G-f4f80146",
+      "check": "tap-target",
+      "selector": "div.app:nth-child(5) > div.toast-container:nth-child(5) > div.toast.toast-error:nth-child(1) > div.toast-error-row:nth-child(1) > button.toast-error-close:nth-child(4)",
+      "detail": "tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0169",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@320x568/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "id": "F-0170",
+      "group": "G-d206c048",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+      "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0171",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@360x740/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "id": "F-0172",
+      "group": "G-d206c048",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+      "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0173",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@390x844/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "id": "F-0174",
+      "group": "G-d206c048",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+      "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0175",
+      "group": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0176",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@768x1024/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "id": "F-0177",
+      "group": "G-d206c048",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+      "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0178",
+      "group": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0179",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@740x360/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "id": "F-0180",
+      "group": "G-d206c048",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+      "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0181",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+      "scenario": "default@360x740/light/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "id": "F-0182",
+      "group": "G-6502e162",
+      "check": "clipped-text",
+      "selector": "#headerTitle",
+      "detail": "scrollWidth 56 > clientWidth 24 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0183",
+      "group": "G-d206c048",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+      "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0184",
+      "group": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "detail": "tap target 50x22 below minimum 40px (height 22 < 40)",
+      "scenario": "default@360x740/dark/z200",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "id": "F-0185",
+      "group": "G-a4359a64",
+      "check": "open-failed",
+      "selector": "[data-view=\"automation\"]",
+      "detail": "could not open view automation: unknown view to the mobile-fit harness - add it to the harness VIEWS list (and a provider) so this tab can be measured",
+      "scenario": "default@390x844/dark/z100",
+      "view": "automation",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "screenshot": null
+    }
+  ],
+  "runs": [
+    {
+      "scenario": "default@320x568/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "#headerTitle",
+          "detail": "scrollWidth 84 > clientWidth 70 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+          "rect": {
+            "x": 16,
+            "y": 18,
+            "width": 69.81,
+            "height": 19
+          },
+          "text": "datawatch"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 97.81,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 136.66,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "div.app:nth-child(5) > div.toast-container:nth-child(5) > div.toast.toast-error:nth-child(1) > div.toast-error-row:nth-child(1) > button.toast-error-close:nth-child(4)",
+          "detail": "tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40)",
+          "rect": {
+            "x": 270,
+            "y": 16,
+            "width": 28,
+            "height": 28
+          },
+          "text": "✕"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 196.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "scenario": "default@360x740/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 137.81,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 176.66,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 236.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "scenario": "default@390x844/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 167.81,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 206.66,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 266.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "scenario": "default@768x1024/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 365.91,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 404.75,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerFullscreenBtn",
+          "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+          "rect": {
+            "x": 562.09,
+            "y": 13.5,
+            "width": 23.91,
+            "height": 28
+          },
+          "text": "⛶"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 464.22,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "scenario": "default@740x360/dark/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 351.91,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 390.75,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerFullscreenBtn",
+          "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+          "rect": {
+            "x": 548.09,
+            "y": 13.5,
+            "width": 23.91,
+            "height": 28
+          },
+          "text": "⛶"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 450.22,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "scenario": "default@360x740/light/z100",
+      "view": "sessions",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 137.81,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 176.66,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 236.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "scenario": "default@360x740/dark/z200",
+      "view": "sessions",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "edge-cross",
+          "selector": "#headerRefreshSpinner",
+          "detail": "element crosses viewport edge: right 185 > viewport 180",
+          "rect": {
+            "x": 180.55,
+            "y": 21.5,
+            "width": 4,
+            "height": 12
+          }
+        },
+        {
+          "check": "edge-cross",
+          "selector": "#statusDot",
+          "detail": "element crosses viewport edge: right 211 > viewport 180",
+          "rect": {
+            "x": 200.55,
+            "y": 22.5,
+            "width": 10,
+            "height": 10
+          }
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 28,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 66.84,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 34x37 below minimum 40px (width 34 < 40, height 37 < 40)",
+          "rect": {
+            "x": 126.31,
+            "y": 9,
+            "width": 34.23,
+            "height": 37
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "scenario": "default@320x568/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "#headerTitle",
+          "detail": "scrollWidth 75 > clientWidth 19 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+          "rect": {
+            "x": 16,
+            "y": 18,
+            "width": 19.34,
+            "height": 19
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 97.81,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerIdentityBtn",
+          "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+          "rect": {
+            "x": 47.34,
+            "y": 12.5,
+            "width": 38.47,
+            "height": 30
+          },
+          "text": "🤖"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 136.66,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+          "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 62,
+            "width": 89.34,
+            "height": 29
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+          "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 111.34,
+            "y": 62.5,
+            "width": 92.47,
+            "height": 27
+          },
+          "text": "Templates"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataSelectBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 205.81,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "☑"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 237.81,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⊞"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataHistoryBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 269.81,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⏱"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataWatchFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 301.81,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "👁"
+        },
+        {
+          "check": "tap-target",
+          "selector": "div.app:nth-child(5) > div.toast-container:nth-child(5) > div.toast.toast-error:nth-child(1) > div.toast-error-row:nth-child(1) > button.toast-error-close:nth-child(4)",
+          "detail": "tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40)",
+          "rect": {
+            "x": 270,
+            "y": 16,
+            "width": 28,
+            "height": 28
+          },
+          "text": "✕"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 196.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "scenario": "default@360x740/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "#headerTitle",
+          "detail": "scrollWidth 75 > clientWidth 59 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+          "rect": {
+            "x": 16,
+            "y": 18,
+            "width": 59.34,
+            "height": 19
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 137.81,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerIdentityBtn",
+          "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+          "rect": {
+            "x": 87.34,
+            "y": 12.5,
+            "width": 38.47,
+            "height": 30
+          },
+          "text": "🤖"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 176.66,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+          "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 62,
+            "width": 89.34,
+            "height": 29
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+          "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 111.34,
+            "y": 62.5,
+            "width": 92.47,
+            "height": 27
+          },
+          "text": "Templates"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataSelectBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 212,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "☑"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 244,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⊞"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataHistoryBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 276,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⏱"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataWatchFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 308,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "👁"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 236.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "scenario": "default@390x844/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 167.81,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerIdentityBtn",
+          "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+          "rect": {
+            "x": 117.34,
+            "y": 12.5,
+            "width": 38.47,
+            "height": 30
+          },
+          "text": "🤖"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 206.66,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+          "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 62,
+            "width": 89.34,
+            "height": 29
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+          "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 111.34,
+            "y": 62.5,
+            "width": 92.47,
+            "height": 27
+          },
+          "text": "Templates"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataSelectBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 242,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "☑"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 274,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⊞"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataHistoryBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 306,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⏱"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataWatchFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 338,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "👁"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 266.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "scenario": "default@768x1024/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 365.91,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerIdentityBtn",
+          "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+          "rect": {
+            "x": 315.44,
+            "y": 12.5,
+            "width": 38.47,
+            "height": 30
+          },
+          "text": "🤖"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 404.75,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerFullscreenBtn",
+          "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+          "rect": {
+            "x": 562.09,
+            "y": 13.5,
+            "width": 23.91,
+            "height": 28
+          },
+          "text": "⛶"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+          "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+          "rect": {
+            "x": 164,
+            "y": 62,
+            "width": 89.34,
+            "height": 29
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+          "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 255.34,
+            "y": 62.5,
+            "width": 92.47,
+            "height": 27
+          },
+          "text": "Templates"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataSelectBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 476,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "☑"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 508,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⊞"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataHistoryBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 540,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⏱"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataWatchFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 572,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "👁"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 464.22,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "scenario": "default@740x360/dark/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 351.91,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerIdentityBtn",
+          "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+          "rect": {
+            "x": 301.44,
+            "y": 12.5,
+            "width": 38.47,
+            "height": 30
+          },
+          "text": "🤖"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 390.75,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerFullscreenBtn",
+          "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+          "rect": {
+            "x": 548.09,
+            "y": 13.5,
+            "width": 23.91,
+            "height": 28
+          },
+          "text": "⛶"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+          "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+          "rect": {
+            "x": 150,
+            "y": 62,
+            "width": 89.34,
+            "height": 29
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+          "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 241.34,
+            "y": 62.5,
+            "width": 92.47,
+            "height": 27
+          },
+          "text": "Templates"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataSelectBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 462,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "☑"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 494,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⊞"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataHistoryBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 526,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⏱"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataWatchFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 558,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "👁"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 450.22,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "scenario": "default@360x740/light/z100",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "#headerTitle",
+          "detail": "scrollWidth 75 > clientWidth 59 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+          "rect": {
+            "x": 16,
+            "y": 18,
+            "width": 59.34,
+            "height": 19
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 137.81,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerIdentityBtn",
+          "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+          "rect": {
+            "x": 87.34,
+            "y": 12.5,
+            "width": 38.47,
+            "height": 30
+          },
+          "text": "🤖"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 176.66,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+          "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 62,
+            "width": 89.34,
+            "height": 29
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+          "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 111.34,
+            "y": 62.5,
+            "width": 92.47,
+            "height": 27
+          },
+          "text": "Templates"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataSelectBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 212,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "☑"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 244,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⊞"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataHistoryBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 276,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⏱"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataWatchFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 308,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "👁"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 236.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "scenario": "default@360x740/dark/z200",
+      "view": "autonomous",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "edge-cross",
+          "selector": "#headerAlertPill",
+          "detail": "element crosses viewport edge: right 211 > viewport 180",
+          "rect": {
+            "x": 176.78,
+            "y": 9,
+            "width": 34.23,
+            "height": 37
+          }
+        },
+        {
+          "check": "edge-cross",
+          "selector": "#headerRefreshSpinner",
+          "detail": "element crosses viewport edge: right 239 > viewport 180",
+          "rect": {
+            "x": 226.7,
+            "y": 24.01,
+            "width": 12.63,
+            "height": 6.97
+          }
+        },
+        {
+          "check": "edge-cross",
+          "selector": "#statusDot",
+          "detail": "element crosses viewport edge: right 261 > viewport 180",
+          "rect": {
+            "x": 251.02,
+            "y": 22.5,
+            "width": 10,
+            "height": 10
+          }
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 78.47,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerIdentityBtn",
+          "detail": "tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40)",
+          "rect": {
+            "x": 28,
+            "y": 12.5,
+            "width": 38.47,
+            "height": 30
+          },
+          "text": "🤖"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerSearchBtn",
+          "detail": "tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40)",
+          "rect": {
+            "x": 117.31,
+            "y": 14.5,
+            "width": 35.47,
+            "height": 26
+          },
+          "text": "🔍"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab.active:nth-child(1)",
+          "detail": "tap target 89x29 below minimum 40px (height 29 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 62,
+            "width": 89.34,
+            "height": 29
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(2) > div.output-tabs.automata-tabs-bar:nth-child(1) > button.output-tab:nth-child(2)",
+          "detail": "tap target 92x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 111.34,
+            "y": 62.5,
+            "width": 92.47,
+            "height": 27
+          },
+          "text": "Templates"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataSelectBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 205.81,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "☑"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 237.81,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⊞"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataHistoryBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 269.81,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "⏱"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#automataWatchFilterBtn",
+          "detail": "tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40)",
+          "rect": {
+            "x": 301.81,
+            "y": 62,
+            "width": 32,
+            "height": 28
+          },
+          "text": "👁"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 34x37 below minimum 40px (width 34 < 40, height 37 < 40)",
+          "rect": {
+            "x": 176.78,
+            "y": 9,
+            "width": 34.23,
+            "height": 37
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "scenario": "default@320x568/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 185.28,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+          "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 60,
+            "width": 78.7,
+            "height": 27
+          },
+          "text": "General"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+          "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 102.7,
+            "y": 60,
+            "width": 77.34,
+            "height": 27
+          },
+          "text": "Plugins"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+          "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 184.05,
+            "y": 60,
+            "width": 78.02,
+            "height": 27
+          },
+          "text": "Comms"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+          "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 266.06,
+            "y": 60,
+            "width": 86,
+            "height": 27
+          },
+          "text": "Compute"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+          "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 356.06,
+            "y": 60,
+            "width": 89.34,
+            "height": 27
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+          "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 449.41,
+            "y": 60,
+            "width": 68.66,
+            "height": 27
+          },
+          "text": "About"
+        },
+        {
+          "check": "tap-target",
+          "selector": "div.app:nth-child(5) > div.toast-container:nth-child(5) > div.toast.toast-error:nth-child(1) > div.toast-error-row:nth-child(1) > button.toast-error-close:nth-child(4)",
+          "detail": "tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40)",
+          "rect": {
+            "x": 270,
+            "y": 16,
+            "width": 28,
+            "height": 28
+          },
+          "text": "✕"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 228.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "scenario": "default@360x740/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 225.28,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+          "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 60,
+            "width": 78.7,
+            "height": 27
+          },
+          "text": "General"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+          "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 102.7,
+            "y": 60,
+            "width": 77.34,
+            "height": 27
+          },
+          "text": "Plugins"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+          "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 184.05,
+            "y": 60,
+            "width": 78.02,
+            "height": 27
+          },
+          "text": "Comms"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+          "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 266.06,
+            "y": 60,
+            "width": 86,
+            "height": 27
+          },
+          "text": "Compute"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+          "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 356.06,
+            "y": 60,
+            "width": 89.34,
+            "height": 27
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+          "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 449.41,
+            "y": 60,
+            "width": 68.66,
+            "height": 27
+          },
+          "text": "About"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 268.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "scenario": "default@390x844/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 255.28,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+          "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 60,
+            "width": 78.7,
+            "height": 27
+          },
+          "text": "General"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+          "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 102.7,
+            "y": 60,
+            "width": 77.34,
+            "height": 27
+          },
+          "text": "Plugins"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+          "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 184.05,
+            "y": 60,
+            "width": 78.02,
+            "height": 27
+          },
+          "text": "Comms"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+          "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 266.06,
+            "y": 60,
+            "width": 86,
+            "height": 27
+          },
+          "text": "Compute"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+          "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 356.06,
+            "y": 60,
+            "width": 89.34,
+            "height": 27
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+          "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 449.41,
+            "y": 60,
+            "width": 68.66,
+            "height": 27
+          },
+          "text": "About"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 298.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "scenario": "default@768x1024/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 453.38,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerFullscreenBtn",
+          "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+          "rect": {
+            "x": 562.09,
+            "y": 13.5,
+            "width": 23.91,
+            "height": 28
+          },
+          "text": "⛶"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+          "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 164,
+            "y": 60,
+            "width": 78.7,
+            "height": 27
+          },
+          "text": "General"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+          "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 246.7,
+            "y": 60,
+            "width": 77.34,
+            "height": 27
+          },
+          "text": "Plugins"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+          "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 328.05,
+            "y": 60,
+            "width": 78.02,
+            "height": 27
+          },
+          "text": "Comms"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+          "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 410.06,
+            "y": 60,
+            "width": 86,
+            "height": 27
+          },
+          "text": "Compute"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+          "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 500.06,
+            "y": 60,
+            "width": 89.34,
+            "height": 27
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+          "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 593.41,
+            "y": 60,
+            "width": 68.66,
+            "height": 27
+          },
+          "text": "About"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 496.22,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "scenario": "default@740x360/dark/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 439.38,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerFullscreenBtn",
+          "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+          "rect": {
+            "x": 548.09,
+            "y": 13.5,
+            "width": 23.91,
+            "height": 28
+          },
+          "text": "⛶"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+          "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 150,
+            "y": 60,
+            "width": 78.7,
+            "height": 27
+          },
+          "text": "General"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+          "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 232.7,
+            "y": 60,
+            "width": 77.34,
+            "height": 27
+          },
+          "text": "Plugins"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+          "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 314.05,
+            "y": 60,
+            "width": 78.02,
+            "height": 27
+          },
+          "text": "Comms"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+          "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 396.06,
+            "y": 60,
+            "width": 86,
+            "height": 27
+          },
+          "text": "Compute"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+          "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 486.06,
+            "y": 60,
+            "width": 89.34,
+            "height": 27
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+          "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 579.41,
+            "y": 60,
+            "width": 68.66,
+            "height": 27
+          },
+          "text": "About"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 482.22,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "scenario": "default@360x740/light/z100",
+      "view": "settings",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 225.28,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+          "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 60,
+            "width": 78.7,
+            "height": 27
+          },
+          "text": "General"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+          "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 102.7,
+            "y": 60,
+            "width": 77.34,
+            "height": 27
+          },
+          "text": "Plugins"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+          "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 184.05,
+            "y": 60,
+            "width": 78.02,
+            "height": 27
+          },
+          "text": "Comms"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+          "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 266.06,
+            "y": 60,
+            "width": 86,
+            "height": 27
+          },
+          "text": "Compute"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+          "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 356.06,
+            "y": 60,
+            "width": 89.34,
+            "height": 27
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+          "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 449.41,
+            "y": 60,
+            "width": 68.66,
+            "height": 27
+          },
+          "text": "About"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 268.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "scenario": "default@360x740/dark/z200",
+      "view": "settings",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "#headerTitle",
+          "detail": "scrollWidth 75 > clientWidth 17 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+          "rect": {
+            "x": 16,
+            "y": 18,
+            "width": 17.28,
+            "height": 19
+          },
+          "text": "Settings"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerHelpLink",
+          "detail": "tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40)",
+          "rect": {
+            "x": 45.28,
+            "y": 13,
+            "width": 26.84,
+            "height": 29
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(1)",
+          "detail": "tap target 79x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 20,
+            "y": 60,
+            "width": 78.7,
+            "height": 27
+          },
+          "text": "General"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(2)",
+          "detail": "tap target 77x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 102.7,
+            "y": 60,
+            "width": 77.34,
+            "height": 27
+          },
+          "text": "Plugins"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(3)",
+          "detail": "tap target 78x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 184.05,
+            "y": 60,
+            "width": 78.02,
+            "height": 27
+          },
+          "text": "Comms"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(4)",
+          "detail": "tap target 86x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 266.06,
+            "y": 60,
+            "width": 86,
+            "height": 27
+          },
+          "text": "Compute"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(5)",
+          "detail": "tap target 89x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 356.06,
+            "y": 60,
+            "width": 89.34,
+            "height": 27
+          },
+          "text": "Automata"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div.settings-tabs-bar:nth-child(1) > button.settings-tab-btn.output-tab:nth-child(6)",
+          "detail": "tap target 69x27 below minimum 40px (height 27 < 40)",
+          "rect": {
+            "x": 449.41,
+            "y": 60,
+            "width": 68.66,
+            "height": 27
+          },
+          "text": "About"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x22 below minimum 40px (height 22 < 40)",
+          "rect": {
+            "x": 88.13,
+            "y": 16.5,
+            "width": 49.88,
+            "height": 22
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "scenario": "default@320x568/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+          "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+          "rect": {
+            "x": 280,
+            "y": 62,
+            "width": 16,
+            "height": 16
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "div.app:nth-child(5) > div.toast-container:nth-child(5) > div.toast.toast-error:nth-child(1) > div.toast-error-row:nth-child(1) > button.toast-error-close:nth-child(4)",
+          "detail": "tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40)",
+          "rect": {
+            "x": 270,
+            "y": 16,
+            "width": 28,
+            "height": 28
+          },
+          "text": "✕"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 196.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-320x568-dark-z100.png"
+    },
+    {
+      "scenario": "default@360x740/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+          "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+          "rect": {
+            "x": 320,
+            "y": 62,
+            "width": 16,
+            "height": 16
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 236.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-dark-z100.png"
+    },
+    {
+      "scenario": "default@390x844/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+          "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+          "rect": {
+            "x": 350,
+            "y": 62,
+            "width": 16,
+            "height": 16
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 266.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-390x844-dark-z100.png"
+    },
+    {
+      "scenario": "default@768x1024/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+          "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+          "rect": {
+            "x": 584,
+            "y": 62,
+            "width": 16,
+            "height": 16
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerFullscreenBtn",
+          "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+          "rect": {
+            "x": 562.09,
+            "y": 13.5,
+            "width": 23.91,
+            "height": 28
+          },
+          "text": "⛶"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 464.22,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-768x1024-dark-z100.png"
+    },
+    {
+      "scenario": "default@740x360/dark/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+          "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+          "rect": {
+            "x": 570,
+            "y": 62,
+            "width": 16,
+            "height": 16
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerFullscreenBtn",
+          "detail": "tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40)",
+          "rect": {
+            "x": 548.09,
+            "y": 13.5,
+            "width": 23.91,
+            "height": 28
+          },
+          "text": "⛶"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 450.22,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-740x360-dark-z100.png"
+    },
+    {
+      "scenario": "default@360x740/light/z100",
+      "view": "alerts",
+      "state": "default",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+          "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+          "rect": {
+            "x": 320,
+            "y": 62,
+            "width": 16,
+            "height": 16
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x21 below minimum 40px (height 21 < 40)",
+          "rect": {
+            "x": 236.13,
+            "y": 17,
+            "width": 49.88,
+            "height": 21
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-light-z100.png"
+    },
+    {
+      "scenario": "default@360x740/dark/z200",
+      "view": "alerts",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "#headerTitle",
+          "detail": "scrollWidth 56 > clientWidth 24 — missing text-overflow: ellipsis + tooltip (title or aria-label)",
+          "rect": {
+            "x": 16,
+            "y": 18,
+            "width": 24.13,
+            "height": 19
+          },
+          "text": "Alerts"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#view > div.view-content:nth-child(1) > div:nth-child(1) > a:nth-child(1)",
+          "detail": "tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40)",
+          "rect": {
+            "x": 140,
+            "y": 62,
+            "width": 16,
+            "height": 16
+          },
+          "text": "?"
+        },
+        {
+          "check": "tap-target",
+          "selector": "#headerAlertPill",
+          "detail": "tap target 50x22 below minimum 40px (height 22 < 40)",
+          "rect": {
+            "x": 56.13,
+            "y": 16.5,
+            "width": 49.88,
+            "height": 22
+          },
+          "text": "🔔 0"
+        }
+      ],
+      "screenshot": "screenshots/default-360x740-dark-z200.png"
+    },
+    {
+      "scenario": "default@390x844/dark/z100",
+      "view": "automation",
+      "state": "default",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "error": "not measured: the mobile-fit harness rejects view \"automation\" as unknown (it is missing from the VIEWS list in scripts/test-stories/pwa/mobile-fit.mjs; the app itself defines an \"automation\" view at the data-view map)",
+      "findings": [
+        {
+          "check": "open-failed",
+          "selector": "[data-view=\"automation\"]",
+          "detail": "could not open view automation: unknown view to the mobile-fit harness - add it to the harness VIEWS list (and a provider) so this tab can be measured"
+        }
+      ]
+    }
+  ]
+}

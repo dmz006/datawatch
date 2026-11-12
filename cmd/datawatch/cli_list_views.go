@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -33,10 +34,41 @@ func sessionListQuery(cmd *cobra.Command) url.Values {
 			q.Set(f.param, v)
 		}
 	}
+	for _, v := range flagStringArray(cmd, "tag") {
+		if v != "" {
+			q.Add("tag", v)
+		}
+	}
+	if v, _ := cmd.Flags().GetString("tag-match"); v != "" {
+		q.Set("tag_match", v)
+	}
+	// Axis shortcuts: each non-empty flag adds one "<axis>:<value>" tag so
+	// that e.g. --project web --stage task filters by both of those tags
+	// (combined with --tag, under the same --tag-match rule).
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role"} {
+		v, _ := cmd.Flags().GetString(axis)
+		if v = strings.TrimSpace(v); v != "" {
+			q.Add("tag", axis+":"+v)
+		}
+	}
 	if summary, _ := cmd.Flags().GetBool("summary"); summary {
 		q.Set("view", "summary")
 	}
 	return q
+}
+
+// flagStringArray reads a --flag that may have been registered as a repeatable
+// string-array or a comma-separated string, so both registrations work.
+func flagStringArray(cmd *cobra.Command, name string) []string {
+	if cmd.Flags().Changed(name) {
+		if vs, err := cmd.Flags().GetStringArray(name); err == nil {
+			return vs
+		}
+	}
+	if v, _ := cmd.Flags().GetString(name); v != "" {
+		return strings.Split(v, ",")
+	}
+	return nil
 }
 
 // sessionsPath appends q to /api/sessions.

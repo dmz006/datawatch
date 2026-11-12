@@ -1,0 +1,105 @@
+package trace
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
+// Tracing modes (tracing.mode).
+const (
+	ModeOff     = "off"
+	ModeSummary = "summary"
+	ModeFull    = "full"
+)
+
+// Defaults applied when a setting is unset (zero).
+const (
+	DefaultMode          = ModeSummary
+	DefaultArgCapBytes   = 512
+	DefaultRetentionDays = 14
+	// MaxArgCapBytes bounds tracing.arg_cap_bytes.
+	MaxArgCapBytes = 1 << 20
+	// MaxRetentionDays bounds tracing.retention_days.
+	MaxRetentionDays = 3650
+)
+
+// Settings is the tracing configuration (tracing.* keys). Zero values
+// read as the defaults through WithDefaults.
+type Settings struct {
+	// Mode is off, summary or full; empty reads summary.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	// ArgCapBytes caps the stored argument summary; 0 reads the default.
+	ArgCapBytes int `yaml:"arg_cap_bytes,omitempty" json:"arg_cap_bytes,omitempty"`
+	// RetentionDays is how long events are kept; 0 reads the default.
+	RetentionDays int `yaml:"retention_days,omitempty" json:"retention_days,omitempty"`
+	// Backends enables tracing per backend; a backend not listed is on.
+	Backends map[string]bool `yaml:"backends,omitempty" json:"backends,omitempty"`
+}
+
+// Defaults returns the default settings: summary mode, all backends on.
+func Defaults() Settings {
+	return Settings{
+		Mode:          DefaultMode,
+		ArgCapBytes:   DefaultArgCapBytes,
+		RetentionDays: DefaultRetentionDays,
+		Backends:      map[string]bool{},
+	}
+}
+
+// WithDefaults returns a copy with unset fields filled in. The Backends
+// map is copied, never shared.
+func (s Settings) WithDefaults() Settings {
+	out := s
+	if out.Mode == "" {
+		out.Mode = DefaultMode
+	}
+	if out.ArgCapBytes == 0 {
+		out.ArgCapBytes = DefaultArgCapBytes
+	}
+	if out.RetentionDays == 0 {
+		out.RetentionDays = DefaultRetentionDays
+	}
+	out.Backends = make(map[string]bool, len(s.Backends))
+	for k, v := range s.Backends {
+		out.Backends[k] = v
+	}
+	return out
+}
+
+// BackendEnabled reports whether tracing is on for the backend: the mode
+// is not off and the backend is not explicitly disabled.
+func (s Settings) BackendEnabled(backend string) bool {
+	if s.WithDefaults().Mode == ModeOff {
+		return false
+	}
+	on, ok := s.Backends[backend]
+	return !ok || on
+}
+
+// Validate rejects an unknown mode, a negative or oversized cap or
+// retention, and an empty backend name. Zero values are valid (defaults).
+func (s Settings) Validate() error {
+	switch s.Mode {
+	case "", ModeOff, ModeSummary, ModeFull:
+	default:
+		return fmt.Errorf("tracing.mode must be %q, %q or %q, got %q", ModeOff, ModeSummary, ModeFull, s.Mode)
+	}
+	if s.ArgCapBytes < 0 || s.ArgCapBytes > MaxArgCapBytes {
+		return fmt.Errorf("tracing.arg_cap_bytes must be between 0 and %d, got %d", MaxArgCapBytes, s.ArgCapBytes)
+	}
+	if s.RetentionDays < 0 || s.RetentionDays > MaxRetentionDays {
+		return fmt.Errorf("tracing.retention_days must be between 0 and %d, got %d", MaxRetentionDays, s.RetentionDays)
+	}
+	names := make([]string, 0, len(s.Backends))
+	for k := range s.Backends {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		if strings.TrimSpace(k) == "" {
+			return fmt.Errorf("tracing.backends: backend name must not be empty")
+		}
+	}
+	return nil
+}

@@ -98,6 +98,7 @@ type BootstrapResponse struct {
 	Effort         string `json:"effort,omitempty"`
 	Model          string `json:"model,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	ThinkingLevel  string `json:"thinking_level,omitempty"`
 }
 
 // BootstrapGit mirrors server.BootstrapGit (F10 S5.3 — git clone

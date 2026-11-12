@@ -106,3 +106,61 @@ func TestAttemptRestoreKeepsHEAD(t *testing.T) {
 		t.Errorf("HEAD moved from %s to %s", base, head)
 	}
 }
+
+// TestAttemptRestoreCleansUpTempDir: the deferred RemoveAll of the temp
+// index dir is best-effort (never an error of its own), but it must
+// actually run on the success path — a successful restore must leave no
+// attempt-restore-* dir behind in the temp dir.
+func TestAttemptRestoreCleansUpTempDir(t *testing.T) {
+	dir := snapTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := SnapshotAttemptWork(context.Background(), dir, "task-rclean", 1)
+	if err != nil || ref == "" {
+		t.Fatalf("setup snapshot: ref=%q err=%v", ref, err)
+	}
+
+	before := attemptTempEntries(t, "attempt-restore-")
+	if err := RestoreAttemptWork(context.Background(), dir, ref); err != nil {
+		t.Fatalf("RestoreAttemptWork: %v", err)
+	}
+	for name := range attemptTempEntries(t, "attempt-restore-") {
+		if _, existedBefore := before[name]; !existedBefore {
+			t.Errorf("RestoreAttemptWork left temp dir %s behind — best-effort cleanup did not run", name)
+		}
+	}
+}
+
+// TestAttemptRestoreReadonlyTargetSurfacesError: a read-only work tree
+// makes the checkout of the restored files fail — that failure must be
+// returned to the caller, not swallowed by the (best-effort) temp
+// cleanup of the function.
+func TestAttemptRestoreReadonlyTargetSurfacesError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permission bits")
+	}
+	dir := snapTestRepo(t)
+	base := snapTestGit(t, dir, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := SnapshotAttemptWork(context.Background(), dir, "task-rro", 1)
+	if err != nil || ref == "" {
+		t.Fatalf("setup snapshot: ref=%q err=%v", ref, err)
+	}
+	// Simulate the loss, then make the restore target unwritable.
+	snapTestGit(t, dir, "reset", "-q", "--hard", base)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o755); err != nil {
+			t.Errorf("restore work tree perms: %v", err)
+		}
+	})
+
+	if err := RestoreAttemptWork(context.Background(), dir, ref); err == nil {
+		t.Fatal("RestoreAttemptWork into a read-only work tree: want the checkout failure surfaced, got nil")
+	}
+}

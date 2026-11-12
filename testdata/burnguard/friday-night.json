@@ -1,0 +1,2224 @@
+{
+ "description": "Recorded Friday-night series of the week of 2026-10-25: the weekly percentage stood at 70 at Friday 13:28 and the limit was hit about Saturday 05:30. The burn between was about 28.5 points in 16 hours, 1.7 points an hour against 0.6 allowed; two lanes projected 0.55. The 16 readings fit to 0.373 points per million cache-write tokens and 0.0069 per million cache-read tokens. Hourly token buckets are reconstructed from those readings and coefficients (the original transcripts are not kept); times are UTC in the buckets and -04:00 in the readings.",
+ "reset": {
+  "weekday": 0,
+  "clock": "08:00",
+  "zone": "America/New_York"
+ },
+ "recorded": {
+  "reading_percent": 70,
+  "reading_at": "2026-10-30T13:28:00-04:00",
+  "limit_hit_at": "2026-10-31T05:30:00-04:00",
+  "points_in_window": 28.5,
+  "window_hours": 16,
+  "burn_points_per_hour": 1.7,
+  "allowed_points_per_hour": 0.6,
+  "two_lane_points_per_hour": 0.55,
+  "readings_fitted": 16
+ },
+ "coefficients": {
+  "cache_write_per_million": 0.373,
+  "cache_read_per_million": 0.0069
+ },
+ "through": "2026-10-31T09:28:00Z",
+ "readings": [
+  {
+   "id": "fri-01",
+   "at": "2026-10-25T10:00:00-04:00",
+   "percent": 1.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-02",
+   "at": "2026-10-25T22:00:00-04:00",
+   "percent": 4.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-03",
+   "at": "2026-10-26T12:00:00-04:00",
+   "percent": 10.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-04",
+   "at": "2026-10-26T22:00:00-04:00",
+   "percent": 14.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-05",
+   "at": "2026-10-27T12:00:00-04:00",
+   "percent": 21.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-06",
+   "at": "2026-10-27T22:00:00-04:00",
+   "percent": 26.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-07",
+   "at": "2026-10-28T10:00:00-04:00",
+   "percent": 33.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-08",
+   "at": "2026-10-28T22:00:00-04:00",
+   "percent": 38.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-09",
+   "at": "2026-10-29T10:00:00-04:00",
+   "percent": 44.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-10",
+   "at": "2026-10-29T18:00:00-04:00",
+   "percent": 50.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-11",
+   "at": "2026-10-29T22:00:00-04:00",
+   "percent": 53.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-12",
+   "at": "2026-10-30T02:00:00-04:00",
+   "percent": 55.5,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-13",
+   "at": "2026-10-30T05:00:00-04:00",
+   "percent": 58.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-14",
+   "at": "2026-10-30T08:00:00-04:00",
+   "percent": 60.3,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-15",
+   "at": "2026-10-30T13:28:00-04:00",
+   "percent": 70.0,
+   "source": "fixture"
+  },
+  {
+   "id": "fri-16",
+   "at": "2026-10-31T05:28:00-04:00",
+   "percent": 98.5,
+   "source": "fixture"
+  }
+ ],
+ "buckets": [
+  {
+   "hour": "2026-10-25T14:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T15:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T16:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T17:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T18:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T19:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T20:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T21:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T22:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-25T23:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-26T00:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-26T01:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 171538,
+    "cache_write": 190597,
+    "cache_read": 11435832
+   },
+   "other": {
+    "input": 720,
+    "output": 114358,
+    "cache_write": 127065,
+    "cache_read": 7623888
+   }
+  },
+  {
+   "hour": "2026-10-26T02:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T03:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T04:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T05:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T06:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T07:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T08:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T09:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T10:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T11:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T12:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T13:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T14:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T15:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 172837,
+    "cache_write": 192041,
+    "cache_read": 26885735
+   },
+   "other": {
+    "input": 720,
+    "output": 115224,
+    "cache_write": 128027,
+    "cache_read": 17923824
+   }
+  },
+  {
+   "hour": "2026-10-26T16:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-26T17:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-26T18:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-26T19:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-26T20:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-26T21:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-26T22:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-26T23:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-27T00:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-27T01:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 217304,
+    "cache_write": 241448,
+    "cache_read": 21730382
+   },
+   "other": {
+    "input": 720,
+    "output": 144869,
+    "cache_write": 160966,
+    "cache_read": 14486922
+   }
+  },
+  {
+   "hour": "2026-10-27T02:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T03:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T04:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T05:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T06:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T07:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T08:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T09:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T10:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T11:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T12:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T13:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T14:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T15:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 174644,
+    "cache_write": 194049,
+    "cache_read": 32988357
+   },
+   "other": {
+    "input": 720,
+    "output": 116430,
+    "cache_write": 129366,
+    "cache_read": 21992238
+   }
+  },
+  {
+   "hour": "2026-10-27T16:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-27T17:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-27T18:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-27T19:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-27T20:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-27T21:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-27T22:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-27T23:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-28T00:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-28T01:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 376045,
+    "cache_write": 417827,
+    "cache_read": 20891365
+   },
+   "other": {
+    "input": 720,
+    "output": 250696,
+    "cache_write": 278552,
+    "cache_read": 13927577
+   }
+  },
+  {
+   "hour": "2026-10-28T02:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T03:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T04:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T05:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T06:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T07:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T08:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T09:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T10:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T11:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T12:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T13:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 262282,
+    "cache_write": 291424,
+    "cache_read": 34970858
+   },
+   "other": {
+    "input": 720,
+    "output": 174854,
+    "cache_write": 194282,
+    "cache_read": 23313905
+   }
+  },
+  {
+   "hour": "2026-10-28T14:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T15:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T16:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T17:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T18:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T19:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T20:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T21:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T22:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-28T23:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-29T00:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-29T01:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 243243,
+    "cache_write": 270270,
+    "cache_read": 21621622
+   },
+   "other": {
+    "input": 720,
+    "output": 162162,
+    "cache_write": 180180,
+    "cache_read": 14414414
+   }
+  },
+  {
+   "hour": "2026-10-29T02:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T03:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T04:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T05:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T06:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T07:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T08:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T09:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T10:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T11:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T12:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T13:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 182803,
+    "cache_write": 203114,
+    "cache_read": 32498308
+   },
+   "other": {
+    "input": 720,
+    "output": 121869,
+    "cache_write": 135410,
+    "cache_read": 21665538
+   }
+  },
+  {
+   "hour": "2026-10-29T14:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 380997,
+    "cache_write": 423330,
+    "cache_read": 42333020
+   },
+   "other": {
+    "input": 720,
+    "output": 253998,
+    "cache_write": 282220,
+    "cache_read": 28222013
+   }
+  },
+  {
+   "hour": "2026-10-29T15:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 380997,
+    "cache_write": 423330,
+    "cache_read": 42333020
+   },
+   "other": {
+    "input": 720,
+    "output": 253998,
+    "cache_write": 282220,
+    "cache_read": 28222013
+   }
+  },
+  {
+   "hour": "2026-10-29T16:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 380997,
+    "cache_write": 423330,
+    "cache_read": 42333020
+   },
+   "other": {
+    "input": 720,
+    "output": 253998,
+    "cache_write": 282220,
+    "cache_read": 28222013
+   }
+  },
+  {
+   "hour": "2026-10-29T17:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 380997,
+    "cache_write": 423330,
+    "cache_read": 42333020
+   },
+   "other": {
+    "input": 720,
+    "output": 253998,
+    "cache_write": 282220,
+    "cache_read": 28222013
+   }
+  },
+  {
+   "hour": "2026-10-29T18:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 380997,
+    "cache_write": 423330,
+    "cache_read": 42333020
+   },
+   "other": {
+    "input": 720,
+    "output": 253998,
+    "cache_write": 282220,
+    "cache_read": 28222013
+   }
+  },
+  {
+   "hour": "2026-10-29T19:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 380997,
+    "cache_write": 423330,
+    "cache_read": 42333020
+   },
+   "other": {
+    "input": 720,
+    "output": 253998,
+    "cache_write": 282220,
+    "cache_read": 28222013
+   }
+  },
+  {
+   "hour": "2026-10-29T20:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 380997,
+    "cache_write": 423330,
+    "cache_read": 42333020
+   },
+   "other": {
+    "input": 720,
+    "output": 253998,
+    "cache_write": 282220,
+    "cache_read": 28222013
+   }
+  },
+  {
+   "hour": "2026-10-29T21:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 380997,
+    "cache_write": 423330,
+    "cache_read": 42333020
+   },
+   "other": {
+    "input": 720,
+    "output": 253998,
+    "cache_write": 282220,
+    "cache_read": 28222013
+   }
+  },
+  {
+   "hour": "2026-10-29T22:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 538206,
+    "cache_write": 598007,
+    "cache_read": 32890366
+   },
+   "other": {
+    "input": 720,
+    "output": 358804,
+    "cache_write": 398671,
+    "cache_read": 21926910
+   }
+  },
+  {
+   "hour": "2026-10-29T23:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 538206,
+    "cache_write": 598007,
+    "cache_read": 32890366
+   },
+   "other": {
+    "input": 720,
+    "output": 358804,
+    "cache_write": 398671,
+    "cache_read": 21926910
+   }
+  },
+  {
+   "hour": "2026-10-30T00:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 538206,
+    "cache_write": 598007,
+    "cache_read": 32890366
+   },
+   "other": {
+    "input": 720,
+    "output": 358804,
+    "cache_write": 398671,
+    "cache_read": 21926910
+   }
+  },
+  {
+   "hour": "2026-10-30T01:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 538206,
+    "cache_write": 598007,
+    "cache_read": 32890366
+   },
+   "other": {
+    "input": 720,
+    "output": 358804,
+    "cache_write": 398671,
+    "cache_read": 21926910
+   }
+  },
+  {
+   "hour": "2026-10-30T02:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 265748,
+    "cache_write": 295276,
+    "cache_read": 38385827
+   },
+   "other": {
+    "input": 720,
+    "output": 177165,
+    "cache_write": 196850,
+    "cache_read": 25590551
+   }
+  },
+  {
+   "hour": "2026-10-30T03:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 265748,
+    "cache_write": 295276,
+    "cache_read": 38385827
+   },
+   "other": {
+    "input": 720,
+    "output": 177165,
+    "cache_write": 196850,
+    "cache_read": 25590551
+   }
+  },
+  {
+   "hour": "2026-10-30T04:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 265748,
+    "cache_write": 295276,
+    "cache_read": 38385827
+   },
+   "other": {
+    "input": 720,
+    "output": 177165,
+    "cache_write": 196850,
+    "cache_read": 25590551
+   }
+  },
+  {
+   "hour": "2026-10-30T05:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 265748,
+    "cache_write": 295276,
+    "cache_read": 38385827
+   },
+   "other": {
+    "input": 720,
+    "output": 177165,
+    "cache_write": 196850,
+    "cache_read": 25590551
+   }
+  },
+  {
+   "hour": "2026-10-30T06:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 505334,
+    "cache_write": 561482,
+    "cache_read": 42111173
+   },
+   "other": {
+    "input": 720,
+    "output": 336889,
+    "cache_write": 374322,
+    "cache_read": 28074116
+   }
+  },
+  {
+   "hour": "2026-10-30T07:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 505334,
+    "cache_write": 561482,
+    "cache_read": 42111173
+   },
+   "other": {
+    "input": 720,
+    "output": 336889,
+    "cache_write": 374322,
+    "cache_read": 28074116
+   }
+  },
+  {
+   "hour": "2026-10-30T08:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 505334,
+    "cache_write": 561482,
+    "cache_read": 42111173
+   },
+   "other": {
+    "input": 720,
+    "output": 336889,
+    "cache_write": 374322,
+    "cache_read": 28074116
+   }
+  },
+  {
+   "hour": "2026-10-30T09:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 365725,
+    "cache_write": 406360,
+    "cache_read": 44699647
+   },
+   "other": {
+    "input": 720,
+    "output": 243816,
+    "cache_write": 270907,
+    "cache_read": 29799764
+   }
+  },
+  {
+   "hour": "2026-10-30T10:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 365725,
+    "cache_write": 406360,
+    "cache_read": 44699647
+   },
+   "other": {
+    "input": 720,
+    "output": 243816,
+    "cache_write": 270907,
+    "cache_read": 29799764
+   }
+  },
+  {
+   "hour": "2026-10-30T11:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 365725,
+    "cache_write": 406360,
+    "cache_read": 44699647
+   },
+   "other": {
+    "input": 720,
+    "output": 243816,
+    "cache_write": 270907,
+    "cache_read": 29799764
+   }
+  },
+  {
+   "hour": "2026-10-30T12:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 901384,
+    "cache_write": 1001537,
+    "cache_read": 100153730
+   },
+   "other": {
+    "input": 720,
+    "output": 600922,
+    "cache_write": 667692,
+    "cache_read": 66769153
+   }
+  },
+  {
+   "hour": "2026-10-30T13:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 901384,
+    "cache_write": 1001537,
+    "cache_read": 100153730
+   },
+   "other": {
+    "input": 720,
+    "output": 600922,
+    "cache_write": 667692,
+    "cache_read": 66769153
+   }
+  },
+  {
+   "hour": "2026-10-30T14:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 901384,
+    "cache_write": 1001537,
+    "cache_read": 100153730
+   },
+   "other": {
+    "input": 720,
+    "output": 600922,
+    "cache_write": 667692,
+    "cache_read": 66769153
+   }
+  },
+  {
+   "hour": "2026-10-30T15:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 901384,
+    "cache_write": 1001537,
+    "cache_read": 100153730
+   },
+   "other": {
+    "input": 720,
+    "output": 600922,
+    "cache_write": 667692,
+    "cache_read": 66769153
+   }
+  },
+  {
+   "hour": "2026-10-30T16:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 901384,
+    "cache_write": 1001537,
+    "cache_read": 100153730
+   },
+   "other": {
+    "input": 720,
+    "output": 600922,
+    "cache_write": 667692,
+    "cache_read": 66769153
+   }
+  },
+  {
+   "hour": "2026-10-30T17:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 903242,
+    "cache_write": 1003603,
+    "cache_read": 100360232
+   },
+   "other": {
+    "input": 720,
+    "output": 602161,
+    "cache_write": 669068,
+    "cache_read": 66906822
+   }
+  },
+  {
+   "hour": "2026-10-30T18:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-30T19:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-30T20:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-30T21:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-30T22:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-30T23:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T00:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T01:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T02:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T03:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T04:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T05:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T06:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T07:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T08:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 904868,
+    "cache_write": 1005409,
+    "cache_read": 100540922
+   },
+   "other": {
+    "input": 720,
+    "output": 603246,
+    "cache_write": 670273,
+    "cache_read": 67027281
+   }
+  },
+  {
+   "hour": "2026-10-31T09:00:00Z",
+   "worker": {
+    "input": 1080,
+    "output": 422272,
+    "cache_write": 469191,
+    "cache_read": 46919097
+   },
+   "other": {
+    "input": 720,
+    "output": 281514,
+    "cache_write": 312794,
+    "cache_read": 31279398
+   }
+  }
+ ]
+}

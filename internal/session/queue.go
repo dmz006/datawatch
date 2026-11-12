@@ -22,16 +22,16 @@ const (
 // QueueItem is a single work item in the queue.
 type QueueItem struct {
 	ID          string         `json:"id"`
-	Role        string         `json:"role"`                     // role that can claim this item
-	Payload     map[string]any `json:"payload"`                  // arbitrary JSON payload
+	Role        string         `json:"role"`    // role that can claim this item
+	Payload     map[string]any `json:"payload"` // arbitrary JSON payload
 	State       QueueItemState `json:"state"`
-	ClaimedBy   string         `json:"claimed_by,omitempty"`     // session FullID that claimed it
-	LeaseExpiry time.Time      `json:"lease_expiry,omitempty"`   // when the claim expires
+	ClaimedBy   string         `json:"claimed_by,omitempty"`   // session FullID that claimed it
+	LeaseExpiry time.Time      `json:"lease_expiry,omitempty"` // when the claim expires
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	CompletedAt time.Time      `json:"completed_at,omitempty"`
-	Error       string         `json:"error,omitempty"`          // set on fail
-	Result      map[string]any `json:"result,omitempty"`         // set on complete
+	Error       string         `json:"error,omitempty"`  // set on fail
+	Result      map[string]any `json:"result,omitempty"` // set on complete
 }
 
 // QueueStore is a durable work queue backed by a JSON file.

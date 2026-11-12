@@ -5,24 +5,32 @@
 //
 // Wire contract is byte-compatible with channel.js:
 //
-//   daemon → bridge:  HTTP POST 127.0.0.1:$DATAWATCH_CHANNEL_PORT/send
-//                     {text, source, session_id}
-//                     → forwarded as MCP notification to claude-code
+//	daemon → bridge:  HTTP POST 127.0.0.1:$DATAWATCH_CHANNEL_PORT/send
+//	                  {text, source, session_id}
+//	                  → forwarded as MCP notification to claude-code
 //
-//   bridge → daemon:  reply MCP tool ─→ POST $DATAWATCH_API_URL/api/channel/reply
-//                                       {text, session_id}
-//                     /permission     ─→ POST .../api/channel/permission
-//                                       {request_id, behavior}
+//	bridge → daemon:  reply MCP tool ─→ POST $DATAWATCH_API_URL/api/channel/reply
+//	                                    {text, session_id}
+//	                  /permission     ─→ POST .../api/channel/permission
+//	                                    {request_id, behavior}
 //
 // Env vars (all match channel.js for drop-in swap):
-//   DATAWATCH_CHANNEL_PORT  HTTP listen port (default 0 = random; GH#202:
-//                           a fixed default clashed between concurrent
-//                           sessions on the same host — the daemon always
-//                           learns the real bound port via /api/channel/ready)
-//   DATAWATCH_API_URL       parent API base URL (default http://localhost:8080)
-//   DATAWATCH_TOKEN         bearer token for parent API (optional)
-//   CLAUDE_SESSION_ID       session id to tag in notifications (optional)
-//   DATAWATCH_NODE_BIN      ignored — present so old configs do not break
+//
+//	DATAWATCH_CHANNEL_PORT  HTTP listen port (default 0 = random; GH#202:
+//	                        a fixed default clashed between concurrent
+//	                        sessions on the same host — the daemon always
+//	                        learns the real bound port via /api/channel/ready)
+//	DATAWATCH_API_URL       parent API base URL (default http://localhost:8080)
+//	DATAWATCH_TOKEN         bearer token for parent API (optional)
+//	DATAWATCH_CA_CERT       PEM file of the daemon's own TLS certificate, trusted
+//	                        as a root so the loopback HTTPS hop is verified
+//	                        (default <home>/.datawatch/tls/server/cert.pem; the
+//	                        daemon sets it to the cert it actually serves)
+//	DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY
+//	                        operator opt-in (default false): skip TLS
+//	                        verification of the daemon, loopback only
+//	CLAUDE_SESSION_ID       session id to tag in notifications (optional)
+//	DATAWATCH_NODE_BIN      ignored — present so old configs do not break
 //
 // Tracked under BL174.
 package main
@@ -32,6 +40,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +49,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,12 +59,14 @@ import (
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+
+	"github.com/dmz006/datawatch/internal/platformcontext"
 )
 
 const (
 	defaultAPIURL = "http://localhost:8080"
-	bridgeName         = "datawatch"
-	bridgeVersion      = "0.1.0"
+	bridgeName    = "datawatch"
+	bridgeVersion = "0.1.0"
 	// channelReadyHeartbeatInterval — GH#174. Bounds how long "Waiting
 	// for MCP channel…" can stay stuck after a daemon restart forgets
 	// this bridge's port.
@@ -122,11 +134,14 @@ func main() {
 		// BL302 S1 — resource capability (subscribe=false).
 		server.WithResourceCapabilities(false, false),
 		server.WithHooks(mcpHooks),
+		// Keep sampling/createMessage usable for 2026-07-28+ clients (mcp-go v1.x
+		// refuses server-initiated requests by default).
+		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
 		server.WithInstructions(`You are connected to the datawatch monitoring system.
 Events arrive as <channel source="datawatch" ...>. Read and act on them.
 When you have a response, use the reply tool to send it back.
 When you need permission for a tool and permission relay is active,
-the request will be forwarded to the user automatically.`),
+the request will be forwarded to the user automatically.`+"\n\n"+platformcontext.PlatformContext),
 	)
 
 	// BL302 S3 — advertise sampling capability so the daemon can request
@@ -134,6 +149,14 @@ the request will be forwarded to the user automatically.`),
 	// The SDK's StdioServer handles the createMessage request/response
 	// roundtrip automatically once the capability is declared here.
 	mcpSrv.EnableSampling()
+
+	// CRASH-SAFETY (findings: docs/plans/2026-10-20-bl463-mcp-drop-findings.md) —
+	// mcp-go's panic-recovery middleware (WithRecovery) is opt-in and is NOT
+	// enabled here, so a single panicking tool handler previously tore down
+	// the whole bridge process and permanently dropped the session's MCP
+	// connection while the daemon stayed healthy. Recover and convert the
+	// panic into a JSON-RPC error result instead.
+	server.WithToolHandlerMiddleware(stdioToolPanicGuard)(mcpSrv)
 
 	bridge := &bridge{cfg: cfg, srv: mcpSrv}
 	bridgeRef = bridge
@@ -235,7 +258,11 @@ the request will be forwarded to the user automatically.`),
 	// MCP stdio transport — claude-code spawns us and talks over stdin/stdout.
 	go func() {
 		fmt.Fprintln(os.Stderr, "[datawatch-channel] MCP stdio transport starting")
-		if err := server.NewStdioServer(mcpSrv).Listen(ctx, os.Stdin, os.Stdout); err != nil && err != context.Canceled {
+		// stdioListenGuarded (stdio_guard.go) recovers panics escaping the
+		// synchronous dispatch path and logs exactly why the listener
+		// stopped — the transport close-reason evidence this bridge used to
+		// leave behind only as a process-death signature.
+		if err := stdioListenGuarded(server.NewStdioServer(mcpSrv), ctx, "bridge", os.Stdin, os.Stdout); err != nil && err != context.Canceled {
 			fmt.Fprintf(os.Stderr, "[datawatch-channel] MCP stdio: %v\n", err)
 		}
 		stop()
@@ -254,6 +281,11 @@ type config struct {
 	apiURL      string
 	token       string
 	sessionID   string
+	// caCertFile is the daemon's own TLS certificate, trusted as a root.
+	caCertFile string
+	// insecureSkipVerify is the operator opt-in that turns daemon
+	// certificate verification off. Default false.
+	insecureSkipVerify bool
 }
 
 func loadConfig() config {
@@ -267,7 +299,59 @@ func loadConfig() config {
 		apiURL:      envStr("DATAWATCH_API_URL", defaultAPIURL),
 		token:       os.Getenv("DATAWATCH_TOKEN"),
 		sessionID:   os.Getenv("CLAUDE_SESSION_ID"),
+
+		caCertFile:         envStr("DATAWATCH_CA_CERT", defaultCACertPath()),
+		insecureSkipVerify: envBool("DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY"),
 	}
+}
+
+// defaultCACertPath is where the daemon writes its auto-generated
+// certificate (internal/tlsutil ensureSelfSigned: <DataDir>/tls/server/cert.pem)
+// for the default data directory.
+func defaultCACertPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".datawatch", "tls", "server", "cert.pem")
+}
+
+func envBool(key string) bool {
+	b, _ := strconv.ParseBool(os.Getenv(key))
+	return b
+}
+
+// buildTLSConfig returns the TLS settings for calls to the daemon.
+// Verification is on by default: the daemon's own certificate is added to
+// the trusted roots, so its self-signed cert verifies. Skipping
+// verification happens only when the operator sets
+// DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY.
+func buildTLSConfig(cfg config) *tls.Config {
+	tc := &tls.Config{MinVersion: tls.VersionTLS12}
+	if cfg.insecureSkipVerify {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] WARN DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY is set: the daemon's TLS certificate is NOT verified (use only against a loopback daemon)\n")
+		tc.InsecureSkipVerify = true // operator opt-in, default false
+		return tc
+	}
+	if cfg.caCertFile == "" {
+		return tc
+	}
+	pem, err := os.ReadFile(cfg.caCertFile)
+	if err != nil {
+		// No readable daemon cert: plain HTTP or a CA-signed daemon cert
+		// still works through the system roots.
+		return tc
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pem) {
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] WARN no certificate found in %s; using system roots\n", cfg.caCertFile)
+		return tc
+	}
+	tc.RootCAs = pool
+	return tc
 }
 
 func envStr(key, def string) string {
@@ -301,7 +385,7 @@ type bridge struct {
 	actualPort     int
 	notified       atomic.Bool
 	taskMu         sync.Mutex
-	mcpClientReady bool     // protected by taskMu
+	mcpClientReady bool         // protected by taskMu
 	pending        []pendingMsg // buffered until mcpClientReady
 }
 
@@ -360,6 +444,9 @@ func (b *bridge) callParent(ctx context.Context, method, path string, body any) 
 	client := &http.Client{Timeout: 30 * time.Second} // memory ops can be slow (embedding)
 	resp, err := client.Do(req)
 	if err != nil {
+		// Operational visibility — parent timeout (the common mid-session MCP
+		// failure, previously only visible client-side as an opaque error).
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] callParent %s %s failed: %v\n", method, path, err)
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -500,11 +587,9 @@ func (b *bridge) postToParent(ctx context.Context, path string, body any) error 
 	if b.cfg.token != "" {
 		req.Header.Set("Authorization", "Bearer "+b.cfg.token)
 	}
-	client := &http.Client{ // #nosec G402 -- loopback only, self-signed daemon cert
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback only, self-signed daemon cert
-		},
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: buildTLSConfig(b.cfg)},
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -533,13 +618,11 @@ func probeDaemon(cfg config) error {
 	// to the daemon's TLS port (8443) with a self-signed cert; the default
 	// client's transport rejected it as x509: unknown authority, logging a
 	// misleading WARN on every startup even though tool discovery (which
-	// uses the same loopback-only, self-signed-aware client elsewhere in
-	// this file) worked fine.
-	client := &http.Client{ // #nosec G402 -- loopback only, self-signed daemon cert
-		Timeout: 3 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback only, self-signed daemon cert
-		},
+	// uses the same client settings elsewhere in this file) worked fine.
+	// The daemon's own certificate is trusted as a root (buildTLSConfig).
+	client := &http.Client{
+		Timeout:   3 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: buildTLSConfig(cfg)},
 	}
 	req, err := http.NewRequest(http.MethodGet, cfg.apiURL+"/api/health", nil)
 	if err != nil {
@@ -644,4 +727,3 @@ func pidName(pid string) string {
 	}
 	return strings.TrimSpace(string(data))
 }
-

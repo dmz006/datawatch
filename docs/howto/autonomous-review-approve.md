@@ -206,6 +206,13 @@ Don't hand-edit `status` (race-prone); use the API. Operators CAN
 hand-edit story / task content between plan + approve to refine the
 spec — the daemon picks up the changes on next run.
 
+### 5f. Web UI
+
+- **Settings → Automata, Autonomous block**: *Failure escalation enabled*, *Failed attempts before the task is held for review* (default 3, minimum 1), and *Escalation steps* as compact text, for example `ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5`. Each step covers its attempts and the last step covers the rest. A step written as `-` uses the task's normally resolved worker. The same fields are in the General settings list.
+- **Automaton detail, task row**: a held task shows the *Held for review* chip and a flag badge. Expand the row to read the attempts (worker, time spent, outcome, files changed, verifier report) and the review report. Then choose *Retry*, *Edit spec and retry*, *Change worker*, *Narrow scope* or *Cancel task*.
+- **Automaton detail, Overview**: *Failure escalation override* sets the Automaton's own policy. Each task's expanded row has the same editor for that task. An empty field inherits the next level up: the Automaton, then the global setting. *Clear override* removes every field at that level.
+- **Automation view**: a member Automaton with held tasks shows a count badge, and the chain's strip header counts the held tasks across its members.
+
 ## Diagram
 
 ```

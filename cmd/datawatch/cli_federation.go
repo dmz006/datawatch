@@ -36,6 +36,7 @@ func newFederationCmd() *cobra.Command {
 			token, _ := cmd.Flags().GetString("token")
 			capsStr, _ := cmd.Flags().GetString("capabilities")
 			tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
+			fingerprintSync, _ := cmd.Flags().GetBool("fingerprint-sync")
 
 			if name == "" {
 				return fmt.Errorf("--name is required")
@@ -53,6 +54,9 @@ func newFederationCmd() *cobra.Command {
 			}
 			if tlsSkipVerify {
 				body["tls_skip_verify"] = true
+			}
+			if fingerprintSync {
+				body["fingerprint_sync"] = true
 			}
 			if capsStr != "" {
 				var caps []string
@@ -73,6 +77,17 @@ func newFederationCmd() *cobra.Command {
 				}
 				body["channel_identity"] = ci
 			}
+			// Observer pull protocol — opt-in; interval/timeout in seconds,
+			// 0 (unset) = the daemon's global observer.pull default.
+			if observerPull, _ := cmd.Flags().GetBool("observer-pull"); observerPull {
+				body["observer_pull"] = true
+			}
+			if interval, _ := cmd.Flags().GetInt("observer-pull-interval"); interval > 0 {
+				body["observer_pull_interval_s"] = interval
+			}
+			if timeout, _ := cmd.Flags().GetInt("observer-pull-timeout"); timeout > 0 {
+				body["observer_pull_timeout_s"] = timeout
+			}
 			return daemonJSON(http.MethodPost, "/api/federation/peers", body)
 		},
 	}
@@ -82,6 +97,10 @@ func newFederationCmd() *cobra.Command {
 	peerAddCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names (optional)")
 	peerAddCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns (e.g. telegram:group:-123,signal:+1555)")
 	peerAddCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this peer only (self-signed/local-dev peer on a trusted network)")
+	peerAddCmd.Flags().Bool("fingerprint-sync", false, "opt this peer into the resource-fingerprint exchange (opt-in per peer; default false; true = explicit)")
+	peerAddCmd.Flags().Bool("observer-pull", false, "opt this peer into the observer pull protocol (the daemon periodically pulls this peer's observer stats; opt-in, default off)")
+	peerAddCmd.Flags().Int("observer-pull-interval", 0, "observer pull interval in seconds (0 = daemon's global observer.pull default)")
+	peerAddCmd.Flags().Int("observer-pull-timeout", 0, "observer pull per-request timeout in seconds (0 = daemon's global observer.pull default)")
 	peerCmd.AddCommand(peerAddCmd)
 
 	peerCmd.AddCommand(&cobra.Command{
@@ -109,12 +128,16 @@ func newFederationCmd() *cobra.Command {
 			if token != "" {
 				body["token"] = token
 			}
-			// Only include tls_skip_verify if the flag was explicitly set —
-			// otherwise an update that doesn't mention it would silently
-			// reset an existing true value back to false.
+			// Only include tls_skip_verify / fingerprint_sync if the flag was
+			// explicitly set — otherwise an update that doesn't mention it would
+			// silently reset an existing true value back to false.
 			if cmd.Flags().Changed("tls-skip-verify") {
 				tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
 				body["tls_skip_verify"] = tlsSkipVerify
+			}
+			if cmd.Flags().Changed("fingerprint-sync") {
+				fingerprintSync, _ := cmd.Flags().GetBool("fingerprint-sync")
+				body["fingerprint_sync"] = fingerprintSync
 			}
 			if capsStr != "" {
 				var caps []string
@@ -135,6 +158,21 @@ func newFederationCmd() *cobra.Command {
 				}
 				body["channel_identity"] = ci
 			}
+			// Observer pull protocol — partial update: only explicitly-set
+			// flags are sent (the server merges the body onto the existing
+			// entry); 0 resets interval/timeout to the global default.
+			if cmd.Flags().Changed("observer-pull") {
+				observerPull, _ := cmd.Flags().GetBool("observer-pull")
+				body["observer_pull"] = observerPull
+			}
+			if cmd.Flags().Changed("observer-pull-interval") {
+				interval, _ := cmd.Flags().GetInt("observer-pull-interval")
+				body["observer_pull_interval_s"] = interval
+			}
+			if cmd.Flags().Changed("observer-pull-timeout") {
+				timeout, _ := cmd.Flags().GetInt("observer-pull-timeout")
+				body["observer_pull_timeout_s"] = timeout
+			}
 			return daemonJSON(http.MethodPut, "/api/federation/peers/"+args[0], body)
 		},
 	}
@@ -143,6 +181,10 @@ func newFederationCmd() *cobra.Command {
 	peerUpdateCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names")
 	peerUpdateCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns")
 	peerUpdateCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this peer only")
+	peerUpdateCmd.Flags().Bool("fingerprint-sync", false, "opt the peer into the resource-fingerprint exchange (pass true to turn on, --fingerprint-sync=false to turn off; unset = unchanged)")
+	peerUpdateCmd.Flags().Bool("observer-pull", false, "opt the peer into the observer pull protocol (pass true to turn on, --observer-pull=false to turn off; unset = unchanged)")
+	peerUpdateCmd.Flags().Int("observer-pull-interval", 0, "observer pull interval in seconds (0 = daemon's global default; unset = unchanged)")
+	peerUpdateCmd.Flags().Int("observer-pull-timeout", 0, "observer pull per-request timeout in seconds (0 = daemon's global default; unset = unchanged)")
 	peerCmd.AddCommand(peerUpdateCmd)
 
 	peerCmd.AddCommand(&cobra.Command{
@@ -269,6 +311,10 @@ func newFederationCmd() *cobra.Command {
 	})
 
 	cmd.AddCommand(groupCmd)
+
+	// Fingerprint match records — list / confirm / reject the pairs the
+	// daemon detected across peers (operator-decided).
+	cmd.AddCommand(newFingerprintCmd())
 
 	return cmd
 }

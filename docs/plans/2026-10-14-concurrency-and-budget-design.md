@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-14
 **Version:** v9.0.75 at time of writing (`var Version` in `cmd/datawatch/main.go`); implementation target TBD / next minor
-**Status:** Phases 1–2 implemented (dead-knob removal + per-tree write lock, shipped in the v9.4.0/v9.5.0 development builds; live smoke 2026-10-18 in `tests/live-smoke/REPORT.md`); Phases 3–6 Planned (no implementation approved; this doc's design pass otherwise unchanged)
+**Status:** Phases 1–3, 5 and 6 implemented (Phases 1–2 shipped in the v9.4.0/v9.5.0 development builds, live smoke 2026-10-18 in `tests/live-smoke/REPORT.md`; Phase 3 complete 2026-10-22 in the unreleased development build; Phases 5 and 6 implemented 2026-10-22 in the unreleased development build, checklists below §Phases); Phase 4 not recorded as done in this doc (this doc's design pass otherwise unchanged)
 
 Terminology note: operator-facing text says **Automaton/Automata**; the code
 and this plan say **PRD** for the same object (`internal/autonomous`). The
@@ -249,7 +249,7 @@ cap.
 
 **Key:** the canonical project tree.
 `filepath.EvalSymlinks(filepath.Clean(prd.ProjectDir))`, then the
-`git rev-parse --show-toplevel` of that path, so that `/home/dmz/workspace/datawatch`,
+`git rev-parse --show-toplevel` of that path, so that `/home/<user>/workspace/datawatch`,
 a symlink to it, and a subdirectory of it all map to the same key.
 
 **Worktree mode (BL407).** A PRD with `Git.Branch` set runs in its own
@@ -351,6 +351,16 @@ exist:**
     twice against `host`/`llm:`. Decide whether the verify lease should
     *replace* the task lease while the worker is idle (recommended:
     task-lease → verify-lease hand-off) rather than stack on it.
+    **Node-pool half implemented (2026-11-02):** the verifier no longer
+    leases the node's worker pool; it takes a lease on the node's own
+    verifier pool, `node-verify:<name>`, under the per-node keys
+    `verifier_slots`, `verifier_min_free_mem_mb` and
+    `verifier_context_mb` (`internal/compute/verifier_slots.go`,
+    `internal/capacity/verifier_pool.go`, `syncVerifierPools` in
+    `cmd/datawatch/capacity_wiring.go`), so a verification no longer
+    counts against, or queues behind, the worker slots of that node;
+    the pool never raises the executor's cap. The *replace-while-idle*
+    hand-off for the task lease on `host`/`llm:` is still open.
   - IDLE-EXTERNAL-WAIT must release the `llm:`/`node:` leases (section 6.ii).
 
 The backend/model pair is already the ledger's key input
@@ -362,24 +372,24 @@ dimension** for later per-model pools. The ledger request already carries
 
 Real evidence, read live 2026-10-14 from this host's own registries:
 
-- `compute_node_list` returns 4 nodes: `datawatch` (ollama), `datawatch-openai`
-  (openai-compat, 1× B200 GPU), `johnnyjohnny` (ollama, 1× RTX 5090), and
+- `compute_node_list` returns 4 nodes: `datawatch` (ollama), `remote-node`
+  (openai-compat, 1× B200 GPU), `local-node` (ollama, 1× 32 GB GPU), and
   `verdict` (ollama, `127.0.0.1:11435`, `tags: ["docker", "verdict-model",
-  "imap-mcp", "shared-gpu-with-johnnyjohnny"]`).
+  "imap-mcp", "shared-gpu-with-local-node"]`).
 - That last tag is a **free-text string an operator typed by hand.** Nothing
   in the capacity ledger (3b's `node:<name>` pools) reads it. `node:verdict`
-  and `node:johnnyjohnny` are enforced as two fully independent pools
+  and `node:local-node` are enforced as two fully independent pools
   (`capacity_status` tracks each `limit`/`held` separately) even though the
   operator's own tag says they are the same physical GPU. Two tasks each
   admitted "within limit" on their own node can still collide on hardware
   that cannot run both.
-- `federation_peer_list` returns one peer (`ralfthewise`, `capabilities:
+- `federation_peer_list` returns one peer (`peer-b`, `capabilities:
   ["full-control"]`). Peer config has no field for "this peer's compute node
   X is the same hardware as my compute node Y." Each daemon's `ComputeNode`
   registry is local and opaque to every peer.
 
 This is the same gap at two scopes: within one daemon (the `verdict` /
-`johnnyjohnny` case today, worked around by an unread tag) and across
+`local-node` case today, worked around by an unread tag) and across
 federated peers (two daemons' registries pointing at the same box under
 different names/addresses, with neither aware the other exists).
 
@@ -414,8 +424,8 @@ while removing the toil of hand-typing `peer:node` pairs — the operator
 confirms a *discovered* pairing instead of composing one from scratch.
 Confirmed pairs are recorded as a structured field (replacing today's
 free-text tag), e.g. `ComputeNode.SharesHardwareWith []string`, entries being
-bare node names for an intra-daemon pairing (`"johnnyjohnny"`) or
-`peer:<node>` for a cross-federation one (`"ralfthewise:gpu-box-1"`). Once
+bare node names for an intra-daemon pairing (`"local-node"`) or
+`peer:<node>` for a cross-federation one (`"peer-b:gpu-box-1"`). Once
 confirmed, the ledger computes `node:<name>` admission over the merged set,
 not each name independently.
 
@@ -635,7 +645,7 @@ open question 3.
 The subscription-allocation meter in 4a is **account-scoped, not
 daemon-scoped**: a Claude Pro/Max plan or an API key belongs to a person or
 org, not to one `datawatch` process. Two federated daemons (this host and
-`ralfthewise`, per `federation_peer_list`) can be configured with the
+`peer-b`, per `federation_peer_list`) can be configured with the
 **same** `claude-code` credentials — logged into the same account, or
 holding the same API key — in which case each daemon's own `backoff:claude-code`
 flag (4d) and `llm:claude-code` pool (3b) each track only their own half of
@@ -713,6 +723,10 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-18 ~14:3x | 4% weekly | this Claude dev-lane session (BL449 pi-switch + BL472 mockup filing below); session stopped here on operator instruction, handed back to the supervisor |
 | 2026-10-18 ~21:05 | 7% weekly | operator-reported to the supervisor (Sonnet 5.5) after the 20:18 tmux loss and recovery; Claude lane running one PRD (stall detector) |
 | 2026-10-19 ~09:55 | 9% weekly | operator-reported; Claude lane running one PRD (stale-task detector, 10 of 12 tasks) with Haiku workers and a Sonnet verifier |
+| 2026-10-19 ~17:50 | 13% weekly | operator-reported for tracking; two Claude lanes running (BL515 `d4c50001`, BL514 `da660001`), `06ae0001` queued |
+| 2026-10-19 ~20:15 | 14% weekly | operator-reported; operator decision: use both Claude lanes, with Claude decompose run serially (one decompose thread) when a Claude lane is free, to clear backlog for the GPU workers. Provisional: the operator tracks Claude usage for the next 24 hours and adjusts the lane model on 2026-10-20 |
+| 2026-10-20 ~04:31 | 16% weekly | operator-reported for the calculator; operator proposes a third Claude lane (not yet decided; the lane model still has two) |
+| 2026-10-20 ~16:40 | 19% weekly, used since the Sunday 2026-10-18 reset | operator-reported for accounting (calculator). Lanes: two GPU lanes on qwen plus Claude lanes on decompose and Haiku workers |
 | 2026-10-18 ~17:00 | 5% weekly; session meter at 15%, session resets in about 50 minutes | operator-reported. One Claude builder thread plus two qwen GPU threads; operator decided to hold at one Claude thread (decision 2026-10-18 17:02) and revisit after a per-PRD cost is measured |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD
@@ -791,7 +805,7 @@ a simplification.
 **Facts** (from the daemon's own PRD records, read live 2026-10-14):
 
 - BL423 `9f311580` ("ci-watch: completion guardrail…"), project_dir
-  `/home/dmz/workspace/datawatch`, direct mode (`git: {}`).
+  `/home/<user>/workspace/datawatch`, direct mode (`git: {}`).
   - Approved 20:52:31 (all times are local, -04:00, 2026-10-13).
   - Ran its 7 tasks sequentially from 20:53 onward.
   - A `boot_reconcile` decision at 22:53:15 and a `run` at 22:53:17
@@ -828,7 +842,7 @@ a simplification.
    and `llm:claude-code`, whose `max_inflight` is 0 (unlimited). All were
    granted instantly.
 5. No tree lock exists, so nothing considered that the three shared
-   `/home/dmz/workspace/datawatch`.
+   `/home/<user>/workspace/datawatch`.
 
 **Consequences visible in the records:**
 
@@ -998,8 +1012,8 @@ New and changed config keys:
 
 ## Phases
 
-These are the phases of the **follow-up implementation PRD**. Phase 1 and
-Phase 2 are **Done**; the rest are **Planned**, not approved. Every phase
+These are the phases of the **follow-up implementation PRD**. Phase 1, 2,
+3 and 5 are **Done**; the rest are **Planned**, not approved. Every phase
 carries AGENT.md's Phase Completion Checklist, and none is done until that
 checklist is.
 
@@ -1083,16 +1097,361 @@ checklist is.
    - IDLE-EXTERNAL-WAIT lease release with an "await external" task result.
    - `plan_tier`-derived `max_inflight` defaults.
 
-   Status: Planned.
+   Status: **Done (unreleased development build, 2026-10-22)** —
+   `internal/inference/llm.go` (`PlanTier`, kind inflight class,
+   `EffectiveMaxInflight`, `InflightSource`), `internal/config/config.go`
+   (`autonomous.plan_tier_max_inflight`, default `pro: 1, max_5x: 2,
+   max_20x: 4, api: 0`, negative caps and unknown tiers rejected),
+   `internal/autonomous/capacity.go` (planner role + `decomposeAdmitted`
+   admission, `HandoffVerifyLease`), `internal/autonomous/await_external.go`
+   (`DATAWATCH_AWAIT_EXTERNAL:` cycle — park, lease release, tree lock
+   retained while unpushed, re-admit through the bounded wait, boot resume),
+   `cmd/datawatch/main.go` (marker detection, await re-prompt),
+   `cmd/datawatch/capacity_wiring.go` (hand-off wiring). Operator guide:
+   `docs/operations.md` → "Per-LLM concurrency limits and plan tiers" and
+   "Parking a task while waiting on an external condition"; howto:
+   `docs/howto/automata-capacity.md` (per-LLM caps, one slot from spawn
+   through verification, decompose waits, park on external condition);
+   flow: `docs/flow/automata-capacity-flow.md` (verify hand-off, planner
+   admission and await-external sequences). Tests:
+   `docs/testing-tracker.md` → "Inference-cap gap closure — per-LLM
+   `plan_tier` caps, verify lease hand-off, decompose admission,
+   await-external".
+
+   **Phase Completion Checklist (recorded 2026-10-22):**
+   - Functionality per §3b: ✅ the four bullets above, all in the files
+     listed in the status line.
+   - Unit tests: ✅ all new tests green on 2026-10-22 —
+     `internal/inference/plan_tier_test.go` (8), `plan_tier_source_test.go`
+     (1), `internal/config/plan_tier_max_inflight_test.go` (5),
+     `internal/server/plan_tier_api_test.go` (6),
+     `internal/mcp/plan_tier_tools_test.go` (6),
+     `cmd/datawatch/cli_llm_plan_tier_test.go` (5),
+     `internal/autonomous/decompose_admission_test.go` (7),
+     `capacity_handoff_test.go` (6), `await_external_test.go` (8), and the
+     PWA `app-plan-tier-fields.test.js` (8).
+   - Full suites: ✅ `go build ./...` clean; `go test ./internal/inference/...
+     ./internal/config/... ./internal/autonomous/... ./cmd/datawatch/...`
+     all pass (2026-10-22); `node --test internal/server/web/app-plan-tier-fields.test.js`
+     8/8 pass.
+   - Live smoke: No — this is an unreleased development build; the tracker's
+     live rows stay No until a sandbox daemon run (plan-tier table
+     round-trip and capacity-panel read-back, one full await-external
+     cycle, a decompose wait reason on a saturated pool).
+   - 8-item documentation checklist (2026-10-22): `CHANGELOG.md` ✅
+     (Unreleased entries: plan_tier caps + config validation + tests,
+     decompose capacity gating, verify lease hand-off, the await-external
+     cycle); `docs/config-reference.yaml` ✅ (`plan_tier_max_inflight` block,
+     LLM `plan_tier`/`max_inflight` fields, operator-policy caveat);
+     `docs/operations.md` ✅ (two new sections); `README.md` ✅ (one line
+     in Orchestration & autonomy); doc index N/A (no new top-level doc —
+     existing howto and flow sections were grown); `docs/testing-tracker.md`
+     ✅ (dedicated section added 2026-10-22); no leaked tracker IDs ✅
+     (`scripts/check-no-internal-refs.sh` passes — IDs appear only in
+     plans, CHANGELOG and reference docs, all of which are exempt); this
+     plan's Parity-surface section updated ✅.
+   - Conditional docs: ✅ howto and flow updated (above); the §Data-model
+     decision is recorded: await-external is a sub-reason under
+     `TaskWaitingCapacity`, not a new status.
+   - Mobile-Parity: a `datawatch-app` issue is needed — the LLM-edit
+     `plan_tier` / `max_inflight` fields and the new wait reasons
+     (`await_external: …`, `capacity: planner waiting …`) must parse and
+     display on Android/iOS. Not filed yet; tracked here and in
+     `docs/plans/README.md` row 12.
+   - Localization: ✅ the new PWA strings exist in all five locale bundles
+     (en/de/es/fr/ja — asserted by `app-plan-tier-fields.test.js`).
+   - Plans README line: ✅ row 12 status updated 2026-10-22.
+   - Version: in the unreleased development build; not in a public release
+     yet (the first complete release after v9.0.87 is tracked as 9.6.0 in
+     `docs/plans/README.md` row 9a).
 4. **Phase 4 — Reactive usage back-off (4d).** Backend-scoped back-off flag
    set from `StateRateLimited`; `admit` waits on it; `ErrGlobalCooldown` is
    classified as a wait; the pattern-drift guard is (a)+(b). Status: Planned.
+   (Not started — Phase 3 is complete; Phase 4 and later require operator
+   approval.)
 5. **Phase 5 — Dollar-window budget (4b/4c).** `llm.<name>.budget` enforced
-   as a windowed ledger pool, coordinated with BL405 Phase 2. Status:
-   Planned.
+   as a windowed ledger pool, coordinated with BL405 Phase 2.
+
+   Status: **Implemented (unreleased development build, 2026-10-22)** —
+   `internal/inference/budget.go` (`BudgetWindow`: rolling `hours` or weekly
+   `weekday` + `time` + `zone`, validation, window and rollover math) and
+   `llm.go` (`LLM.Budget`); `internal/config/config.go`
+   (`autonomous.plan_tier_allocation_usd`, unknown tiers and negative values
+   rejected); `internal/session/cost.go` + `manager.go` (usage-event hook);
+   `internal/autonomous/budget.go` (persisted spend ledger, `Blocked`
+   with the `budget window full:` reason, `Status`), `budget_format.go` (the
+   text the CLI and comm channel print), `peer_budget.go` (per-peer opt-in
+   spend counting behind `PeerShareConfirmer`), `manager.go` + `models.go`
+   (`budgets` in the autonomous status); `cmd/datawatch/capacity_wiring.go`
+   (budget gate composed with the usage back-off gate on `llm:` pools,
+   autonomous requests only; audit events on each fill and resume);
+   `internal/server/budget.go` (`GET /api/budget`, `GET /api/budget/usage`,
+   the LLM `budget` field), `plan_tier_allocation.go`, `capacity.go`
+   (`budgets` array); `internal/mcp/budget.go` (`budget_status`, the `budget`
+   argument on `llm_add`/`llm_update`, `plan_tier_allocation_usd` on
+   `autonomous_config_set`); `cmd/datawatch/cli_budget.go` (`datawatch budget
+   status`, `--budget-*` flags); `internal/router/` (`budget` comm command);
+   PWA `app.js` and all five locale bundles. Operator guide:
+   `docs/operations.md` → "Per-LLM dollar-window budget"; howto:
+   `docs/howto/automata-capacity.md` → "Per-LLM dollar budget"; config:
+   `docs/config-reference.yaml`; API: `docs/api-mcp-mapping.md`
+   ("Per-LLM dollar budget") and both OpenAPI specs. Tests:
+   `docs/testing-tracker.md` → "BL428 Phase 5 — per-LLM dollar-window
+   budget".
+
+   **Operator decisions recorded for this phase (2026-10-22):**
+   - The ledger is the first slice of the later shared usage work (BL405
+     Phase 2, which builds on it) and owns ceilings and hard stops. The older
+     cost-guardrail item (BL414) is narrowed to reporting and the Decision
+     rollup only.
+   - `allocation_pct` is opt-in per budget, always marked estimated, and never
+     blocks anything; only `ceiling_usd` does. The notional dollar figure per
+     plan tier is operator policy (`autonomous.plan_tier_allocation_usd`).
+   - Peer spend counting is opt-in per peer (`peer_window`), default off. An
+     unreachable peer fails open (the local spend alone decides).
+
+   **Finding (updated 2026-10-22):** the resource fingerprint exchange
+   (§3c/§4e) now exists in code — it was built on this branch (unreleased),
+   see "Resource fingerprint exchange (sections 3c and 4e) — shipped"
+   below the phase list. The Phase 5 ledger interface is unchanged: peer
+   spend still counts only via the operator's explicit `peer_window` list
+   (`PeerWindowConfirmer` remains the default `PeerShareConfirmer`). A
+   *confirmed* fingerprint match does not add a peer to the ledger by
+   itself — it tells the operator which peer to put in `peer_window`
+   (billing-group detection, §4e) and drives the §3c shared-node pool gate
+   directly. The two surfaces stay separate and are connected only at the
+   level of operator judgment.
+
+   **Phase Completion Checklist (recorded 2026-10-22):**
+   - Functionality per §4b/§4c: ✅ the budget model and window math, the
+     persisted ledger fed by the usage-event hook, the admission gate (a full
+     window is a wait with `budget window full: …`, resumed on rollover;
+     interactive starts never gated), the estimated allocation figure, the
+     per-peer opt-in, and the surfaces — all in the files listed in the
+     status line. Known limit: admission cannot know what a task will cost, so
+     work admitted just before the ceiling is crossed can overshoot it.
+   - Unit tests: ✅ the 27 tests named in `docs/testing-tracker.md` plus
+     `TestUsageEventHookNilSafe`, `TestBudgetPeerSpendCountsTowardBlocked`,
+     `TestBudgetTransitionsAuditedOncePerChange`,
+     `TestPeerBudgetConfirmerCanVeto`,
+     `TestPeerBudgetFailureLoggedOncePerEpisode`,
+     `TestPeerBudgetLocalOnlyNoLoop` and the PWA
+     `app-llm-budget.test.js` (14 tests, 14 pass 2026-10-22). The Go budget
+     tests pass across `internal/inference`, `config`, `session`,
+     `autonomous`, `server`, `mcp`, `router` and `cmd/datawatch`
+     (2026-10-22, `-run` filtered).
+   - Full suites: not re-run for this documentation pass; the supervisor runs
+     the full Go and node suites at merge.
+   - Live smoke: No — this is an unreleased development build; the tracker's
+     live rows stay No until a sandbox daemon run (a tiny ceiling on a sandbox
+     LLM filling and resuming, spend surviving a restart, a two-daemon peer
+     opt-in).
+   - 8-item documentation checklist (2026-10-22): `CHANGELOG.md` — left to
+     the supervisor at merge time, by instruction;
+     `docs/config-reference.yaml` ✅ (the `budget` block shape and
+     `plan_tier_allocation_usd`); `docs/operations.md` ✅ (new section);
+     `README.md` — not edited in this pass (the `check-no-internal-refs.sh`
+     audit already reports one earlier README line, not from this phase);
+     doc index N/A (no new top-level doc — existing howto and operations
+     sections were grown); `docs/testing-tracker.md` ✅ (dedicated section);
+     no leaked tracker IDs in operator-facing prose ✅ (IDs appear only in
+     plans, the tracker and reference-doc comments); this plan's
+     Parity-surface section updated ✅.
+   - Conditional docs: ✅ howto updated (`docs/howto/automata-capacity.md`);
+     `docs/api-mcp-mapping.md` rows added, and the OpenAPI specs
+     (`docs/api/openapi.yaml`, `internal/server/web/openapi.yaml`) already
+     carry the two routes; no per-route page exists for the usage back-off
+     routes under `docs/api/`, so none was added for these. The flow diagram
+     `docs/flow/automata-capacity-flow.md` is unchanged: it does not list the
+     back-off gate, so there was no gate list to extend.
+   - Mobile-Parity: a `datawatch-app` issue is needed — the LLM `budget`
+     object, the `budgets` arrays in the capacity API and the autonomous
+     status, and the `budget window full` wait reason must parse and display
+     on Android and iOS. Not filed yet (it cannot be filed from this
+     session); tracked here and in `docs/plans/README.md` row 17.
+   - Localization: ✅ the new PWA strings exist in all five locale bundles
+     (en/de/es/fr/ja — asserted by `app-llm-budget.test.js`).
+   - Plans README line: ✅ row 17 status updated and the cost-guardrail item
+     narrowed (2026-10-22).
+   - Version: in the unreleased development build; not in a public release
+     yet.
 6. **Phase 6 — Visibility, audit and parity close-out.** `autonomous_status`
    shows queued-vs-running with a reason; PWA; `datawatch-app` issue; howto;
-   release-smoke section. Status: Planned.
+   release-smoke section.
+
+   Status: **Implemented (unreleased development build, 2026-10-22)** —
+   `internal/autonomous/wait_reason.go` (the seven wait causes and the plain
+   reason text for each), `task_visibility.go` (`TaskWaitView` and
+   `TaskHoldView`: cause, reason, since, reset time, holder, and a running
+   task's pools, node and session), `capacity_format.go` (the text the CLI and
+   comm channel print), `capacity_audit.go` (audit events with an injectable
+   clock), with small changes to `capacity.go`, `backoff.go`, `budget.go`,
+   `await_external.go`, `tree_lock.go`, `manager.go`, `models.go` and `api.go`
+   in the same package, and `internal/capacity/ledger.go` (the pool lines split out so the capacity text reuses them);
+   `internal/audit/events.go`, `cef.go`, `log.go` and `query.go` (the three new
+   events, their CEF signatures, the entry `subject`, the `subject` filter, the
+   trailing-`*` action prefix and one shared `ParseQuery`); `internal/server/capacity.go` (`tasks`
+   object, `reset_known`), `session_status_automaton.go` (`wait_cause`,
+   `wait_resets_at`, `holds`, `holds_note`), `usage_backoff.go` and `audit.go`
+   (operator back-off events carry the actor and the subject; RFC 3339 bounds
+   are validated); `internal/mcp/sx_parity.go` (`audit_query` filters),
+   `internal/router/router.go` and `sx2_parity.go` (the `capacity` reply and the
+   `audit` words); `cmd/datawatch/cli_capacity.go`, `cli_sx_parity.go`,
+   `capacity_wiring.go` and `usage_backoff_wiring.go`; PWA `app.js` (capacity
+   and budget card, cause chips, Holds line) and all five locale bundles;
+   `scripts/release-smoke.sh` section 77. Operator guide:
+   `docs/operations.md`; howto: `docs/howto/automata-capacity.md`; config:
+   `docs/config-reference.yaml` (comment only, no new keys); API:
+   `docs/api-mcp-mapping.md` and both OpenAPI specs. Tests:
+   `docs/testing-tracker.md` → "Visibility, audit and parity close-out". App
+   note: [`2026-10-22-datawatch-app-capacity-visibility-note.md`](2026-10-22-datawatch-app-capacity-visibility-note.md).
+
+   **Phase Completion Checklist (recorded 2026-10-22):**
+   - Functionality per the phase description: ✅ queued-vs-running with a
+     reason and a cause in the capacity API, the autonomous per-task views and
+     the session status; the CLI and comm text; audit events for admission,
+     back-off and budget; one audit query filter set on REST, MCP, CLI and
+     comm; the PWA card and chips.
+   - Unit tests: ✅ the `TestWaitReason_`, `TestTaskVisibility_`,
+     `TestCapacityVisibility_`, `TestCapacityText_`, `TestCapacityAudit_` and
+     `TestAuditQuery_` families, `TestEmitBackoffAudit_RecordsActorAndSubject`
+     and the two node files `app-capacity-card.test.js` and
+     `app-wait-reason-text.test.js`, all listed by exact name in the tracker.
+   - Live smoke: No — this is an unreleased development build; release-smoke
+     section 77 is written but has not been run against a sandbox daemon, and
+     the tracker's live rows stay No until it is.
+   - Full suites (`go test ./...`, `node --test internal/server/web/*.test.js`):
+     not run for this documentation pass; the supervisor runs them at merge.
+   - 8-item documentation checklist: `CHANGELOG.md` — left to the supervisor
+     at merge time, by instruction; `docs/config-reference.yaml` ✅ (comment
+     listing the audit actions; no new keys); `docs/operations.md` ✅;
+     `README.md` — not edited in this pass; doc index N/A (no new top-level
+     doc — the howto and operations sections were grown);
+     `docs/testing-tracker.md` ✅ (dedicated section); no leaked tracker IDs in
+     operator-facing prose ✅ (IDs appear only in plans and the tracker); this
+     plan's Parity-surface section updated ✅.
+   - Conditional docs: ✅ howto updated (`docs/howto/automata-capacity.md`);
+     `docs/api-mcp-mapping.md` capacity and audit rows updated and both
+     OpenAPI specs carry the new `tasks`, `reset_known` and `subject`/prefix
+     fields; the flow diagram is unchanged (the gate order did not change).
+   - Mobile-Parity: a `datawatch-app` issue is needed and is **not filed** — it
+     cannot be filed from the session that wrote this phase. The issue text is
+     the note linked above; the supervisor or the operator files it. This also
+     covers the Phase 3 and Phase 5 items still open for the apps.
+   - Localization: ✅ the new PWA strings exist in all five locale bundles
+     (asserted by `app-capacity-card.test.js` and `app-wait-reason-text.test.js`).
+   - Plans README line: ✅ row 19 updated.
+   - Version: in the unreleased development build; not in a public release
+     yet, and no version file was changed by this phase.
+
+### Resource fingerprint exchange (sections 3c and 4e) — shipped
+
+**Status: built on this branch, unreleased (2026-10-22).** The §3c
+reconciliation loop and the §4e `billing_group` detection went from design
+to code in the same branch work as Phase 5. Open questions 10–13 below were
+decided in the operator conversation of 2026-10-22 and are implemented as
+documented here. Operator guide: `docs/howto/federation-fingerprint.md`;
+status and test inventory in `docs/testing-tracker.md` (the BL568 section);
+endpoints and MCP tools in `docs/api-mcp-mapping.md`.
+
+**Implementing files:**
+
+- `internal/fingerprint/` — the testable core, no daemon imports:
+  `hash.go` (pair key = HMAC-SHA256 of the shared bearer token over
+  `datawatch-fingerprint-v1`; item hash = HMAC-SHA256 of kind + value under
+  that key, so the same two resources collide for exactly one peer pair),
+  `identity.go` (node identity value: GPU UUID, else instance ID; names and
+  addresses never count), `export.go` (responder's own hash list — one item
+  per resolvable node, one per LLM with a non-empty `billing_group`; the
+  operator's local label is the only plain-text field), `sync.go` (the
+  reconciliation loop: pull each opted-in peer every 15 minutes, a code
+  constant; exact collisions become `pending` matches; a rejection sticks;
+  a peer outage fails soft and logs once per episode; it **never
+  confirms**), `matches.go` (the persisted MatchStore, atomic JSON under
+  `<data_dir>/autonomous/fingerprint/matches.json`, pending/confirmed/
+  rejected transitions are idempotent at the target and 404 on unknown id,
+  `OnDecision` hook), `gate.go` (the admission-time shared-node check,
+  fail-open).
+- `internal/server/federation_fingerprints.go` —
+  `GET /api/federation/fingerprints` (method → `federation:fingerprint`
+  capability → registered peer identity, admin token gets 400 → the peer
+  record's `fingerprint_sync`, off gets 403; the answer is keyed to the
+  caller's bearer token).
+- `internal/server/federation_fingerprint_matches.go` (+ tests) —
+  `GET /api/federation/fingerprint-matches[?state=]`,
+  `POST …/{id}/confirm`, `POST …/{id}/reject`.
+- `internal/federation/capabilities.go` — `federation:fingerprint` is
+  granted only by full-control (`FULL_CONTROL`) control groups
+  (`TestCapFederationFingerprintOnlyInFullControl`).
+- `cmd/datawatch/fingerprint_wiring.go` — daemon wiring: one MatchStore
+  under the data dir, the exporter behind the endpoint, the slow Syncer,
+  the gate, and the `OnDecision` audit hook (the
+  `fingerprint_match_confirmed` / `fingerprint_match_rejected` audit
+  events of `internal/audit/events.go`).
+- `cmd/datawatch/capacity_wiring.go` — `sharedNodeBackpressure()` composes
+  the gate into `node:` pool admission for autonomous work only; never
+  `host`/`llm:`/`external` pools, never interactive session starts; a
+  daemon with no opted-in peers and no confirmed matches is fully idle.
+- Surfaces: `cmd/datawatch/cli_fingerprint.go` (`datawatch fingerprint
+  list|confirm|reject`), `cli_federation.go` (`--fingerprint-sync` on
+  `federation peer add/update`), `cli_llm.go` (`--billing-group` on
+  `llm add/update`), `internal/router/bl316_federation.go` (the
+  `federation peer fingerprint …` / `federation fingerprint …` comm verbs),
+  `internal/mcp/federation_fingerprint.go` (`federation_fingerprint_matches`,
+  `federation_fingerprint_confirm`, `federation_fingerprint_reject`; the
+  `fingerprint_sync` and `billing_group` arguments ride the peer and LLM
+  tools), `internal/config/config.go` (peer entry `fingerprint_sync`),
+  `internal/inference/llm.go` (LLM entry `billing_group`), PWA
+  `internal/server/web/app.js` (+ `app-fingerprint.test.js`): the
+  pending-match panel under Settings → Comms → Federation Peers with
+  per-row confirm/reject, the peer form's `fingerprint_sync` toggle, the
+  LLM form's billing-group field, and seven new keys in all five locale
+  bundles (en/de/es/fr/ja) — the bundles currently carry English
+  placeholders for those, awaiting translation.
+
+**Operator decisions implemented (2026-10-22):**
+
+1. Off by default; opt-in is per peer and must be set on **both** daemons
+   (the caller's peer entry and the responder's record of that peer) —
+   question 10's recommendation, as built.
+2. Key material: the pair's existing federation bearer token, with
+   fingerprint-specific HMAC domain separation — no separately exchanged
+   pairing secret (question 11 resolved in favor of reuse plus
+   domain-separation).
+3. Always confirm, never auto-accept — question 12 as recommended: the
+   loop only ever creates `pending` records and the operator decides on
+   any surface; a rejection sticks across syncs and a rejection after a
+   confirmation un-merges; every decision is audited.
+4. Fail-open in both cases — question 13 as recommended, one shared
+   behavior rather than two settings: an unreachable or malformed peer
+   contributes zero to the shared-node gate and is logged once per failure
+   episode, so a peer outage never stalls local work.
+5. Wire minimality: only keyed hashes plus the operators' own local
+   resource labels cross the wire — never the identity value, a node
+   address, a billing label, or a credential (`TestExportItemsCarryNoRawValues`;
+   the endpoint is keyed per caller — `TestFingerprintEndpointKeyedPerCaller`).
+6. The Phase 5 ledger interface is untouched: `PeerShareConfirmer` still
+   confirms exactly the operator's `peer_window` list; a confirmed
+   billing-group match informs that list, it does not modify it.
+
+**Not delivered (intentional):**
+
+- No peer spend rollup: a peer's spend still enters a Phase 5 ceiling only
+  through the explicit `peer_window` opt-in; the exchange informs that
+  decision, it does not wire it.
+- No enforcement of a billing-group match: the shared-node gate is the
+  one enforcement surface; a billing match is decision context for the
+  operator's windows.
+- The sync interval (15 minutes), the poll timeout (5 s) and the 64 KiB
+  body cap are code constants, not config keys — deliberate for this
+  slice.
+- `datawatch-app` parity and the live two-daemon smoke are the open rows
+  in `docs/testing-tracker.md` (Tested=Yes, Validated=No for this
+  unreleased build).
+- `docs/operations.md` and the budget-facing prose that still say the
+  exchange "does not exist yet" (e.g. the `peer_window` caveat sentence)
+  remain worded for the ledger caveat, which is still true: confirmation
+  never modifies `peer_window`.
 
 ## Follow-up implementation PRD — what to build
 
@@ -1108,7 +1467,8 @@ repeated here; only the dependency is named.
     right commit).
   - `WaitReason` already exists (`setWaiting`, capacity.go ~107). Extend its
     reason vocabulary with `tree_lock`, `usage_backoff`, `budget` and
-    `await_external`.
+    `await_external`. (Phase 3 resolved this: `await_external` is a
+    sub-reason under `TaskWaitingCapacity` — no new task status.)
   - New `TaskAwaitingExternal` status, or a sub-reason under
     `TaskWaitingCapacity` (decide in Phase 3).
 - `autonomous.PRD`: `ProjectWriteSerialization *string` and
@@ -1201,14 +1561,14 @@ thing example (iii) could not see.
 
 | Surface | Include / exclude | What |
 |---|---|---|
-| REST | Include | `GET/PUT /api/config` for every new key. `max_parallel_tasks` accepted-and-ignored with a deprecation note. Lock/back-off/budget state in `GET /api/capacity`, plus queued reasons in autonomous PRD JSON. |
-| MCP | Include | `autonomous_config_get`/`_set` with corrected descriptions (remove the false "Per-PRD worker cap (default 3)"). `capacity_status` gains `tree:`/`backoff:`/`budget:` pools. New read-only `autonomous_tree_locks`. `llm_update` gains `plan_tier`/`budget`. |
-| CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. |
-| comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. |
-| YAML/config | Include | New keys in `config.AutonomousConfig` and in the LLM registry entry, annotated in `docs/config-reference.yaml`. `max_parallel_tasks` deprecation documented. The missing `max_concurrent_tasks` YAML field is added. |
-| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field replaced by `max_concurrent_tasks` in Settings (General list and Autonomous card) in Phase 1 (v9.0.86); the PWA no longer edits `max_parallel_tasks`, while the server still accepts and ignores it until the deferred removal. Android/iOS mirror tracked in datawatch-app#261. Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. |
-| Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. |
-| iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android. No iOS-specific behavior. |
+| REST | Include | `GET/PUT /api/config` for every new key. `max_parallel_tasks` accepted-and-ignored with a deprecation note. Lock/back-off/budget state in `GET /api/capacity`, plus queued reasons in autonomous PRD JSON. **(Phase 3, implemented)** `GET /api/llms` and the `llm:` pools of `GET /api/capacity` carry `plan_tier`, `max_inflight`, `effective_max_inflight` and `inflight_source`; `PUT /api/llms/{name}` and `PUT /api/config` (`autonomous.plan_tier_max_inflight`) accept them. **(Phase 5, implemented)** `GET /api/budget` (and `?llm=`), `GET /api/budget/usage` (own spend only, used by a peer that opted this daemon in), the LLM `budget` object on `PUT /api/llms/{name}`, a `budgets` array in `GET /api/capacity` and `GET /api/autonomous/status`, and `autonomous.plan_tier_allocation_usd` on `PUT /api/config`. **(Phase 6, implemented)** `GET /api/capacity` gains a `tasks` object (`waiting` with `cause`, `reason`, `since`, `resets_at`, `holder`; `running` with `pools`, `node`, `session_id`, `note`; `?prd_id=` narrows it) and `reset_known` on each `backoff` entry; the session status `automaton` block gains `wait_cause`, `wait_resets_at`, `holds`, `holds_note`; `GET /api/audit` gains the `subject` filter, the trailing-`*` prefix form of `action`, and a 400 for a bad `since`/`until`. **(Verifier slots, implemented 2026-11-02)** `POST /api/compute/nodes` and `PUT /api/compute/nodes/{name}` accept the per-node keys `verifier_slots`, `verifier_min_free_mem_mb` and `verifier_context_mb` (negative values rejected); `GET /api/compute/nodes/{name}/detail` reports each key beside its effective value, the advice-only `suggested_verifier_slots` figure and the last admission verdict. |
+| MCP | Include | `autonomous_config_get`/`_set` with corrected descriptions (remove the false "Per-PRD worker cap (default 3)"). `capacity_status` gains `tree:`/`backoff:`/`budget:` pools. New read-only `autonomous_tree_locks`. **(Phase 3, implemented)** `llm_add`/`llm_update` carry `plan_tier` and `max_inflight`, `autonomous_config_set` accepts the tier table (object and pair forms); the `llm_update` `budget` field is still Phase 5. **(Phase 5, implemented)** `budget_status`; `llm_add`/`llm_update` carry the `budget` object; `autonomous_config_set` accepts `plan_tier_allocation_usd`; `capacity_status` includes the budgets. **(Phase 6, implemented)** `capacity_status` carries `tasks` and `reset_known`; `audit_query` gains `subject` and the action prefix form, with the capacity actions named in its description. **(Verifier slots, implemented 2026-11-02)** `compute_node_add` and `compute_node_update` accept the three keys; `compute_node_detail` reports the same fields as the REST detail. |
+| CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. **(Phase 3, implemented)** `datawatch llm add/update --plan-tier` (with `--max-inflight`); invalid tiers rejected before send. **(Phase 5, implemented)** `datawatch budget status [--llm]`; `datawatch llm add/update --budget-*` and `--clear-budget`, invalid combinations rejected before send. **(Phase 6, implemented)** `datawatch capacity` prints queued reasons and holdings; `datawatch audit` gains `--subject` and the action prefix form, and rejects a bad `--since`/`--until` before sending. **(Verifier slots, implemented 2026-11-02)** `datawatch compute node add` and `datawatch compute node update` take `--verifier-slots`, `--verifier-min-free-mem-mb` and `--verifier-context-mb`. |
+| comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. **(Phase 3, implemented)** `configure autonomous.plan_tier_max_inflight=…` through the generic configure path. **(Phase 5, implemented)** `budget [status] [<llm>]` replies with the same text as the CLI; `configure autonomous.plan_tier_allocation_usd=…` through the generic path. **(Phase 6, implemented)** `capacity` replies with the same text as the CLI; `audit` accepts `subject=`, `since=`, `until=` and `action=<prefix>*`. **(Verifier slots, implemented 2026-11-02)** the compute-node kv pairs `verifier_slots=`, `verifier_min_free_mem_mb=` and `verifier_context_mb=` set the same keys. |
+| YAML/config | Include | New keys in `config.AutonomousConfig` and in the LLM registry entry, annotated in `docs/config-reference.yaml`. `max_parallel_tasks` deprecation documented. The missing `max_concurrent_tasks` YAML field is added. **(Phase 6, N/A for new keys)** no key was added; a comment in `docs/config-reference.yaml` lists the audit actions the capacity gate, back-off and budget emit. **(Verifier slots, implemented 2026-11-02)** the three per-node verifier keys are persisted on the compute-node record and annotated in `docs/config-reference.yaml`. |
+| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field replaced by `max_concurrent_tasks` in Settings (General list and Autonomous card) in Phase 1 (v9.0.86); the PWA no longer edits `max_parallel_tasks`, while the server still accepts and ignores it until the deferred removal. **(Phase 3, implemented)** LLM-edit *Plan tier* and *Max in flight* fields plus the autonomous *Plan tier caps* table setter (`app-plan-tier-fields.test.js`), all five locale bundles. Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. **(Phase 5, implemented)** LLM-edit budget group (ceiling, hours, weekday, time, zone, allocation estimate, peers), the Capacity card budget line (spend, window end, rollover, `budget window full`, estimated allocation) and the plan-tier allocation table in Settings (`app-llm-budget.test.js`), all five locale bundles. **(Phase 6, implemented)** Capacity and budget card on the Automata list (pools with holders, back-off flags with a reset time or "reset time unknown", budget spend bars with the estimate label), cause chips, the reset time and a Holds line in the task detail and on the session Status tab (`app-capacity-card.test.js`, `app-wait-reason-text.test.js`), all five locale bundles. **(Verifier slots, implemented 2026-11-02)** the compute-node form gains the three keys. |
+| Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. **(Phase 3, needs a datawatch-app issue — not filed yet)** the LLM-edit `plan_tier`/`max_inflight` fields and the new wait reasons (`await_external: …`, `capacity: planner waiting …`) must parse and display. **(Phase 5, needs a datawatch-app issue — not filed yet)** the LLM `budget` object, the `budgets` arrays in the capacity API and the autonomous status, and the `budget window full` wait reason must parse and display. **(Phase 6, needs a datawatch-app issue — not filed yet, cannot be filed from the writing session)** parse the `tasks` object, `reset_known`, the session status cause fields and the audit `subject`/prefix filters; the issue text is `2026-10-22-datawatch-app-capacity-visibility-note.md`. **(Verifier slots, implemented 2026-11-02)** the three per-node verifier keys must parse and display; a `datawatch-app` issue is needed and will be filed at merge. |
+| iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android, including the Phase 3 items. No iOS-specific behavior. Same Phase 5 items as Android (same issue, not filed yet). **(Phase 6)** Same as Android, same issue, not filed yet. **(Verifier slots, implemented 2026-11-02)** same three keys as Android, same issue to file at merge. |
 
 ## Open questions
 
@@ -1217,21 +1577,29 @@ thing example (iii) could not see.
    BL414 narrows to cost observability and Decision rollup (4c). Does the
    operator confirm this, and should BL414's backlog text be edited to say
    so?
+   **Decided by the operator 2026-10-22: absorb.** BL428 owns ceilings and hard stops; BL414 narrows to cost observability and the Decision rollup, and its backlog text is edited to say so.
 2. **BL405 Phase 2 overlap.** Should the windowed-ceiling ledger dimension be
    built inside this doc's follow-up PRD (Phase 5) as the first slice of
    BL405 Phase 2, or should Phase 5 wait for BL405 Phase 2?
+   **Decided by the operator 2026-10-22: build it inside Phase 5** as the first slice of BL405 Phase 2; BL405 Phase 2 later builds on that ledger.
 3. **Pattern-list drift guard.** Do the screen-scraped pattern lists
    (`rateLimitPatterns`, and by extension `selfUpdatePatterns` and the
    prompt patterns) need a staleness-check mechanism of their own? This doc
    recommends a manual recheck cadence plus a `claude --version`-change
    staleness flag, with a fixture self-test as a stretch (4d). Is that
    enough, or should the self-test be required?
+   **Decided by the operator 2026-10-22: recheck cadence plus a version-change staleness flag.** The fixture self-test stays a stretch item, not required for 10.0.0.
 4. **Tier defaults.** What `max_inflight` value should each `plan_tier` map
    to for `claude-code` (`pro`, `max_5x`, `max_20x`, `api`)? Is `1` the
-   right conservative default for `unset`?
+   right conservative default for `unset`? — **Resolved (Phase 3,
+   2026-10-22):** the table is documented as operator policy, overridable
+   in one place (`autonomous.plan_tier_max_inflight`, default
+   `pro: 1, max_5x: 2, max_20x: 4, api: 0`); `unset` falls back to the kind
+   default, which is 1 for subscription kinds.
 5. **Default for `project_write_serialization`.** Should `per_project_dir`
    be on by default, which changes today's behavior by serializing
    same-tree PRDs, or opt-in for one release?
+   **Confirmed by the operator 2026-10-22: keep `advisory`** (the value shipped in BL428 Phase 1/2).
 6. **Shared lock for worktree PRDs on the main repo key.** Is a
    visible-but-non-blocking shared lock wanted, or should worktree PRDs be
    fully independent of the main checkout?
@@ -1239,6 +1607,7 @@ thing example (iii) could not see.
    claude-code session starts (which effectively turns on BL30's
    `rate_limit_global_pause` automatically), or gate autonomous dispatch
    only?
+   **Decided by the operator 2026-10-22: automatic work only.** Reactive back-off gates autonomous dispatch; interactive claude-code session starts are never blocked by it.
 8. **Sequencing with BL431.** Should this doc's follow-up implementation PRD
    land before BL431's Automation-coordinator implementation PRD? BL431's
    BudgetPolicy and its per-member execution depend on these mechanics
@@ -1253,25 +1622,47 @@ thing example (iii) could not see.
 10. **Federation fingerprint-sync scope (3c/4e).** Should resource-fingerprint
     exchange be on by default for every federated peer, or opt-in per peer
     (this doc recommends opt-in — a peer with only `full-control` capability
-    today, like `ralfthewise`, is not automatically the right trust level for
+    today, like `peer-b`, is not automatically the right trust level for
     resource fingerprinting, which is a separate decision from control
     capability)?
+    **Decided 2026-10-22, as recommended and as built:** opt-in per peer,
+    off by default, on both daemons — the peer entry's `fingerprint_sync`
+    plus the responder's record of that peer; the `federation:fingerprint`
+    capability (full-control only) is a precondition, not the trust decision.
 11. **Hash key material (3c/4e).** Should the per-peer-pair HMAC key reuse
     existing federation auth/TLS material directly, or be a separately
     exchanged pairing secret generated once at opt-in time? The latter is
     more work but avoids coupling resource-fingerprinting security to
     whatever the control-plane auth happens to be.
+    **Decided 2026-10-22, as built:** reuse the pair's existing federation
+    bearer token as key material, with fingerprint-specific HMAC domain
+    separation (the `datawatch-fingerprint-v1` tag) so fingerprint hashing
+    stays distinct from control-plane auth; no separately exchanged pairing
+    secret.
 12. **Auto-accept vs. always-confirm for a fingerprint match.** This doc
     recommends surfacing every match for explicit operator confirmation
     before the ledger treats two resources as one pool. Is there a safe
     auto-accept case (e.g., only when both sides are on `full-control`
     federation already), or should confirmation always be manual?
+    **Decided 2026-10-22, as recommended and as built:** always confirm,
+    never auto-accept — the reconciliation loop only ever creates `pending`
+    records; the operator confirms or rejects on any surface (PWA / CLI /
+    comm / REST / MCP); each decision is a one-way audit event and a
+    rejection sticks across syncs.
 13. **Fail-open vs. fail-closed on an unreachable billing-group/shared-node
     peer at admission time (3c/4e).** This doc recommends fail-open (log and
     admit locally) so a peer outage never stalls local work. An operator
     managing a hard subscription ceiling may prefer fail-closed for the
     billing-group case specifically, even if 3c's hardware case stays
     fail-open. Should this be one shared setting or two independent ones?
+    **Decided 2026-10-22, as recommended and as built:** fail-open, one
+    shared behavior rather than two settings — an unreachable peer
+    contributes zero to the shared-node gate and is logged once per
+    failure episode; there is no fail-closed option in this slice, and the
+    billing-group case enforces nothing at admission at all. See the
+    "Resource fingerprint exchange (sections 3c and 4e) — shipped" section
+    above for the shipped status, and `docs/howto/federation-fingerprint.md`
+    for the operator guide.
 14. **The tree lock (3a) should assess real conflict, not just same-tree
     exclusivity (operator-raised 2026-10-15, live judgment call this doc's
     own 3a doesn't currently cover).** Live example: two PRDs both
@@ -1290,6 +1681,7 @@ thing example (iii) could not see.
     (`onMemberTerminal`/advance logic) must consume faithfully — this
     judgment call should not keep being made ad hoc by whoever is driving
     PRDs by hand.
+    **Decided by the operator 2026-10-22: opt-in per peer.** Resource-fingerprint exchange and shared-budget counting are off for every peer until switched on for that peer.
 
 ### 4d. Verifier split (operator decision 2026-10-18)
 
@@ -1308,3 +1700,304 @@ fragile scripts (a `tee | grep -q` pipe that exits 141) and two real gaps (embed
 drift, a file that is unformatted on main). Open: the rate of wrong verdicts in the other
 direction (a correct task failed) is not measured, and the credit cost of one Sonnet
 verification is not yet measured; BL479's cost is recorded at the next usage reading.
+
+**2026-10-20 rule note (operator):** the weekly ceiling was exhausted on 2026-10-17 and reset on Sunday 2026-10-18 at 08:00. The section 3 "pi only" rule in `docs/plans/2026-10-17-supervisor-rules-and-lessons.md` was written during the exhaustion and is corrected there. Claude lanes are allowed under the lane model; this timeline is the usage record.
+
+**Time and accuracy log (operator request, 2026-10-20).** One row per PRD that runs on a Claude lane or a GPU lane, so Claude and qwen can be compared. Fill `time` from start to verdict and `accuracy` from the verifier result and any rework.
+
+| PRD | lane | worker model | verifier | start | verdict | time | accuracy (pass first try / rework) |
+|---|---|---|---|---|---|---|---|
+| (first entry: the next PRD run on a Claude lane) | | | | | | | |
+
+**Tick 16:58 (2026-10-20):** weekly % not reported since 16:40 (19%). Pace allows about 34% at 2.4 days since the 10-18 08:00 reset, so one Claude-lane run is inside pace. Claude lane 1 runs `148b0001` (Haiku worker, Sonnet verifier). Operator to report the next weekly % reading.
+
+**Tick 17:35 (2026-10-20):** no new weekly % reading since 16:40 (19%); pace allows about 34% at 2.4 days since the reset. Claude lane 1 runs `148b0001` (Haiku worker, Sonnet verifier); Claude lanes 2 and 3 replan `677d0001` and `51670001`. Operator to report the next weekly % reading.
+**Tick 17:50 (2026-10-20):** no new weekly % reading since 16:40 (19%). Pace allows about 35% at 2.42 days since reset. Claude lane 1 runs 148b0001; lanes 2 and 3 replan 677d0001 and 51670001 after second revisions. Operator to report the next weekly % reading.
+**Tick 18:10 (2026-10-20):** no new weekly % since 16:40 (19%); pace allows about 35% at 2.5 days since reset. Claude lanes: 148b0001, 51670001, 677d0001 (all Haiku workers, Sonnet verifier). GPU lanes: cece0001 (P0) and 49ac0001. Operator to report the next weekly % reading.
+**Tick 18:30 (2026-10-20):** weekly % still 19% (16:40); pace about 35%. Finding: the three Claude-lane PRDs (148b0001, 51670001, 677d0001) verify task-by-task on qwen 64k, not Sonnet, because the PRD verifier can only be set before a run; their guardrail judge is Sonnet. Also 49ac0001's guardrail session ran on qwen 27b, not the pinned 64k. Running PRDs are locked for LLM overrides (HTTP 400), so neither can be changed in place.
+**Tick 18:50 (2026-10-20):** weekly % still 19% (16:40); pace about 35%. GPU lane 1 runs 17880001 (main-checkout decompose fix); GPU lane 2 reruns cece0001 (P0) after a verdict-parse failure on its last task. 49ac0001 completed. Claude lanes: 148b0001, 51670001, 677d0001 running. Operator to report the next weekly % reading.
+**Tick 22:35 (2026-10-20):** no new weekly % since 16:40 (19%); pace allows about 38% at 2.6 days since reset. Claude lanes: df790001 (tmux guard, Sonnet), decomposes 215f0001 and 2f1b0001. GPU lanes idle by the BL529 hold. Operator to report the next weekly % reading.
+**Tick 22:57 (2026-10-20):** no new weekly % since 16:40 (19%); pace allows about 38% at 2.6 days since reset. Claude lane 1 runs df790001 (Sonnet); decomposes running for 4cbc0001, 9db60001, 81b70001. GPU lanes idle by the BL529 hold. Operator to report the next weekly % reading.
+**Tick 23:15 (2026-10-20):** no new weekly % since 16:40 (19%); pace allows about 39% at 2.6 days since reset. Claude lanes run df790001 (Sonnet), 9db60001 (Haiku) and 4cbc0001 (Sonnet), each with a Sonnet verifier. GPU lanes idle by the hold. Operator to report the next weekly % reading.
+**Tick 00:00 (2026-10-21):** no new weekly % since 16:40 (19%); pace allows about 40% at 2.7 days since reset. Claude lanes: 4cbc0001, 9db60001, 60270001. GPU lanes: 215f0001 and the verifies of the Claude PRDs. 2f1b0001 paused for the two-engine limit. Operator to report the next weekly % reading.
+**Reading 14:40 (2026-10-21), operator-reported:** weekly 30%. Days since reset (Sun 2026-10-18 08:00): 3.27, so the pace rule allows 46.7%; headroom about 16 points. Supervisor error recorded: from 2026-10-21 about 11:40 the free Claude lanes were held back waiting for a reading, and the GPU lanes were left idle by defaulting new PRDs to Claude workers; both cost throughput while pace had room. Rule: a stale reading is asked for once, then work continues at the last pace-safe rate; free lanes are filled from the roadmap (rows 10, 11, 12 of docs/plans/README.md) and GPU lanes take mechanical PRDs on pi-prompt.
+**Reading 18:30 (2026-10-21), operator-reported:** weekly 33%. Days since reset 3.44, so the pace rule allows 49.2%; headroom about 16 points. The supervisor's earlier projection (about 40% at 18:16) was 7 points high: the +4 per 24 hours and +2 per Claude PRD coefficients overestimate. Calibration so far: 30% at 14:40 to 33% at 18:30 is +3 points over 3.8 hours with three full Claude PRDs, three decomposes and several merges, about +1 per full Claude PRD. Tick projection from this reading: +3 per 24 hours elapsed, +1 per full Claude PRD started, +0.5 per decompose or merge session.
+**Reading 19:40 (2026-10-21), operator-reported:** weekly 34% (reset Sunday 08:00 EST, unchanged), session 34% (the hourly session window; resets 20:10 daily). Weekly pace allows 49.9% at 3.49 days; headroom about 15 points. The session window is the short-term limit: at 34% there is room, and it resets at 20:10. Operator allowed one extra Claude BUILD lane (workers only; no extra decompose or validate lane).
+
+## Inflight caps set to match the lane model (2026-10-22 00:25)
+
+After the Phase 3 capacity admission shipped (9.5.68) and the daemon restarted onto it, the `claude-code` LLM entry fell to the kind default of one inflight task, so a second Claude PRD, and every Claude-backed decompose, waited in `waiting_capacity` ("pool llm:claude-code full (1/1)"). The explicit per-LLM cap wins over the plan-tier table, so the supervisor set `max_inflight` to match the operator's lane model: `claude-code` = 3 (three Claude lanes), `pi-prompt` = 2 (two GPU lanes; the per-node pool still limits each compute node to one engine). The plan-tier table (`pro` 1, `max_5x` 2, `max_20x` 4) is untouched. If the operator wants a fourth build lane, raise `claude-code` to 4.
+
+**Reading 12:36 (2026-10-22), operator-reported:** weekly 45%. Days since the 10-18 08:00 reset: 4.19, so the pace rule allows 59.8%; headroom about 15 points. Compared with the 19:40 reading on 10-21 (34%) this is +11 points in 16.9 hours, about 15.6 points per 24 hours, against the earlier planning figure of +3 per 24 hours. The cause is the 10-21 evening to 10-22 midday run: three to four Claude PRDs at once, twelve merges and many decompose sessions. The allowance itself accrues at 14.3 points per 24 hours, so the recent burn is about equal to the allowance, not above it. Recalibrated projection coefficients (replace the old ones): about +1.5 points per full Claude PRD started, +0.3 per decompose or merge session, +4 per 24 hours of idle baseline. The earlier projections (55 to 58%) were too high because they used the old per-PRD figure and had no reading since yesterday. With 45% and 2.8 days left, a steady three-lane Claude load (about 15 points per day) ends the week near 87%, inside the allowance.
+
+**Reading 20:44 (2026-10-22), operator-reported, saved for the usage calculator (BL472):** weekly 55%. Days since the 10-18 08:00 reset: 4.53, so the pace rule allows 64.7%; headroom about 9.7 points. Since the 12:36 reading (45%) that is +10 points in 8.1 hours, about 29.6 points per 24 hours, roughly double the allowance accrual of 14.3 per 24 hours. Load in that window: two to three Claude PRDs at once, six merges (9.5.95 to 9.5.98), about twenty decompose attempts (most killed at the launch stall and retried, which spent usage for nothing) and many reset-and-retry worker launches. My projection for this time was 61%, so the projection ran 6 points high and the coefficients above overstate the cost of a full PRD run slightly; recalibrate from the next reading. At 29.6 per 24 hours the week would end near 128% against the 100% limit at the 10-25 08:00 reset, so the Claude load has to fall to about 18 points per 24 hours or less: the launch-stall fix (BL569) removes the largest waste.
+
+**Reading 02:40 (2026-10-23), operator-reported:** weekly 58%. Days since the 10-18 08:00 reset: 4.78, so the pace rule allows 68.3%; headroom about 10.3 points. Since the 20:44 reading (55%) that is +3 points in 5.9 hours, about 12.2 points per 24 hours, below the allowance accrual of 14.3 per 24 hours. Load in that window: two to three Claude PRDs running at once (BL393, BL431 Phase 7, the earlier BL570 and BL571), about eight merges and releases, six decompose sessions, and every verifier on the local pi slots rather than Claude. My projection for this time was 68%, so it ran 10 points high: the per-PRD and per-decompose coefficients above overcount, and the 20:44 reading shows the earlier 29.6 per 24 hours was driven by the launch-stall retries that BL569 removed. Recalibrated for planning: about +0.4 points per full Claude PRD started and +0.15 per decompose or merge session, +3 per 24 h baseline, until the next reading. At 12.2 per 24 hours the week would end near 85% at the 10-25 08:00 reset, so no Claude hold is needed.
+
+**Reading 17:09 (2026-10-23), operator-reported:** weekly 67%. Days since the 10-18 08:00 reset: 5.38, so the pace rule allows 76.9%; headroom about 9.9 points. Since the 02:40 reading (58%) that is +9 points in 14.5 hours, about 14.9 points per 24 hours, just above the allowance accrual of 14.3 per 24 hours. Load in that window: Claude PRDs BL580 and BL583 plus Claude workers on two Observer tasks, seven merges and releases (9.5.116 to 9.5.121), a decompose, and the supervisor session itself, which has run a tick every 20 minutes. At 14.9 per 24 hours the week would end near 91% at the 10-25 08:00 reset (1.62 days away), which is inside the cap but with less margin than before. The Claude hold held since 02:40 is lifted: lanes fill from the normal sources again, with Claude kept for hard work and decomposes and the GPU lanes taking mechanical PRDs. Planning coefficients stay at about +0.4 per full Claude PRD, +0.15 per decompose or merge, +3 per 24 h baseline until the next reading.
+
+**Reading 22:08 (2026-10-23), operator-reported:** weekly 72%. Days since the 10-18 08:00 reset: 5.59, so the pace line is 79.9% and the headroom is about 7.9 points. Since the 17:09 reading (67%) that is +5 points in 5.0 hours, about 24 points per 24 hours (the week-to-date average is 12.9 per 24 hours). The reset is at 10-25 08:00, 1.41 days away. Projections to the reset: 106.0% at the recent 24 per 24 hours (the cap would be reached around Sunday 02:02, about six hours before the reset), 90% at the week-to-date average. *Corrected 2026-10-25 (operator decision, "1" on the BL472 calculator question): this entry first said 1.39 days, 105% and a run-out around 05:00; the timestamps give 1.41 days, 106.0% and 02:02, as the usage calculator design's worked example notes.* The supervisor reported this to the operator as over budget at the current burn and let the operator choose the number of Claude lanes.
+
+**Operator decision, 2026-10-23: the usage policy is the operator's choice, never a standing supervisor hold.** The running calculator must offer the policy as an option, because operators differ: run until the allowance is used up; pace the work to last until the end of the week; or run flat out because the work will finish before the allowance does. On every usage reading the supervisor advises whether the current burn is within or over budget for the week and lets the operator choose how many lanes to run (for example one, two or three Claude lanes). The supervisor never stops all Claude lanes on its own projection. The 02:40 to 17:09 hold on 2026-10-23 broke this: it left Claude lanes idle for about 14 hours and was recorded as the wrong call.
+
+**Reading 23:40 (2026-10-23), operator-reported:** weekly 76%. Days since the 10-18 08:00 reset: 5.65, so the pace line is 80.7% and the headroom is about 4.7 points. Since the 22:08 reading (72%) that is +4 points in 1.5 hours, a burst of about 63 points per 24 hours, far above the week-to-date average of 13.4 per 24 hours (the burst was three Claude lanes plus many decomposes and merges). The reset is 10-25 08:00, 1.35 days away. Projections to the reset: about 94% at the week-to-date average, and over 100% if the burst rate continued (the cap would be reached early Saturday morning). Reported to the operator as over budget at the current burn. **Operator decision:** drop to 2 Claude lanes now (`llm update claude-code --max-inflight 2`), so the Saturday morning switch to 2 is already done; the return to 3 at Sunday 08:00 stands.
+
+**Reading about 14:17 (2026-10-24), operator-reported:** weekly 86%. Days since the 10-18 08:00 reset: 6.26, so the pace line is 89.4% and the headroom is about 3.4 points: within the pace line. The 06:45 reading was 79%, so the burn is +7 points in 7.5 hours, about 0.93 points per hour with two Claude lanes. At that burn the weekly allowance reaches 100% at about 05:30 on Sunday 2026-10-25, about 2.5 hours before the 08:00 reset (projected 102.5% at reset): over budget at the current burn. The operator chooses the lane count; a one-lane setting for the last 17 hours would land near 94%. Verifier routing was changed at 14:13 to prefer-free (pi-prompt first, a Claude verifier when no GPU slot is free), which adds Claude sessions; no cap is set on it.
+
+**Reading about 07:25 (2026-10-25), operator-reported:** weekly 87%. Days since the 10-18 08:00 reset: 6.98, so the pace line is 99.7% and the headroom is about 12.7 points: within the pace line and within budget. Since the 14:17 reading (86%) that is +1 point in 17 hours, because the lanes were idle for most of that time (see the lesson of 2026-10-24 in the supervisor rules). The allowance resets at 08:00, 35 minutes from now, so there is no budget reason to hold the 3-lane setting planned for 08:00.
+
+**Reading 08:00 (2026-10-25), operator-reported, new week:** weekly 0% after the reset. Days since the reset: 0.0, so the pace line starts at 0% and rises 14.3 points a day. The previous week used 87% over 6.98 days, an average of 12.5 points a day with two to three Claude lanes, which is under the 14.3 points a day pace line: within budget at the current burn with 3 lanes. The lane count stays the operator's choice; 3 lanes are set.
+
+**Reading about 19:45 (2026-10-25), operator-reported:** weekly 15%. Days since the 08:00 reset: 0.49 (11.7 hours, not 24), so the pace line is 6.9% and the reading is about 8 points over it: **over budget at the current burn**. The burn is about 1.3 points an hour (about 31 a day, against a pace line of 14.3 and last week's 12.5), so the allowance would run out in about 66 hours (Wednesday afternoon). Operator, quoted: "Claude is at 15%, might have to stick with 2 lanes and decompose and validate, we aren't 24 hours in are we?" Applied the same tick as `datawatch llm update claude-code --max-inflight 2` (running tasks finish; new admissions are capped at 2). Claude is kept for decompose, validate and design-heavy work; mechanical execution goes to the GPU lanes once the pi-prompt idle-detector fix (BL614) ships. Lane count stays the operator's call.
+
+**Operator clarification, 2026-10-25 about 19:50:** lanes stay at 2, not 3 ("No, 2 claude lanes"; "Not 3. We were at 3 right, 15% is more than 14 we need to stick to on 24 hr"). The operator reads the budget as about 14 points per 24 hours, so 15% after 11.7 hours is already past the whole first day's allowance (14.3), not only past the prorated pace line (6.9%). At 2 lanes the burn would still be roughly 20 points a day by the 31-a-day, 3-lane rate, so 2 lanes alone does not bring the week back to 14 a day; the next lane-count step is the operator's call. Both supervisor crons were recreated with the 2-lane cap (the old ones removed).
+
+**Operator decision, 2026-10-25 about 20:00 (lane count question 1):** option 2, one Claude lane until 08:00 Monday 2026-10-26, then re-evaluate. Operator, quoted: "Option 2 for now". Applied as `datawatch llm update claude-code --max-inflight 1` (running tasks finish; new admissions capped at 1). Claude covers decompose, validate and the pi-prompt idle-detector fix (BL614); GPU lanes take mechanical execution once BL614 ships.
+
+**Reading about 06:25 (2026-10-26), operator-reported:** weekly 22%. Days since the 2026-10-25 08:00 reset: 0.93, so the pace line is 13.3% and the reading is about 8.7 points over it: **over budget at the current burn**. Since the 19:45 reading (15%) that is +7 points in 10.7 hours, about 0.65 points an hour or 15.7 a day, against the 14.3 a day pace line. At that rate the remaining 78 points last about 120 hours, so the allowance runs out around Saturday 06:30, about 26 hours before the next reset. Operator decision, quoted: "22%, keep one lane". The Claude cap stays at `max-inflight 1` after 08:00. Note: that burn is higher than one worker lane alone would explain; the supervisor session itself (a tick every 30 minutes plus an hourly backstop, each with a long prompt) is a large part of it, and the lane count does not change that.
+
+**Reading about 13:35 (2026-10-26), operator-reported:** weekly 24%. Operator, quoted: "claude at 24%". Days since the 2026-10-25 08:00 reset: 1.23, so the pace line is 17.6% and the reading is about 6.4 points over it, but the burn has fallen sharply: +2 points in 7.2 hours since the 06:25 reading (22%), about 0.28 points an hour or 6.7 a day, against 15.7 a day before it. The change that preceded it is the move to a 20 minute cheap watch plus an hourly full tick (supervisor schedule of 2026-10-26, rules doc section 11a) with the Claude cap at one lane. At 6.7 a day the week would end near 63% at the reset (5.76 days away): **within budget at the current burn**. The remaining allowance is about 13.2 points a day, so there is room for roughly double the current Claude draw. The lane count is the operator's choice; the cap stays at one lane until the operator answers.
+
+**Operator decision, 2026-10-26 about 13:40 (lane count question 2):** two Claude lanes. Operator, quoted: "Lays go with 2 lanes, I'll keep an eye on it". Applied as `datawatch llm update claude-code --max-inflight 2`. The projection at two lanes is roughly 10 to 13 points a day, ending near 85 to 100% at the reset, so the operator watches the usage and the supervisor asks for a reading at each hourly tick. The headroom goes first to the CodeQL alert triage (BL625) and to the live debugging of the GPU node placement (BL624 follow-up).
+
+**Operator correction, 2026-10-26 about 13:45 (lane count question 2):** option 3, not two lanes. Operator, quoted: "Actual 3 2ad a better option" (read as: option 3 is the better option). Option 3 is one Claude lane with the headroom spent on specific items. Reverted to `datawatch llm update claude-code --max-inflight 1`, replacing the two-lane decision recorded a few minutes earlier. The headroom goes to the CodeQL alert triage (BL625, PRD 5a390001) and to the live debugging of the GPU node placement. The 24% reading stands: burn about 6.7 points a day on one lane, projected near 63% at the reset.
+
+**Operator refinement, 2026-10-26 about 13:50:** operator, quoted: "Stay at 1 but use 2nd for special". The standing Claude cap stays at 1 (`max-inflight 1`). The supervisor may raise it to 2 for a special item and returns it to 1 when that item's Claude work is done. Special means: a defect that blocks other work or throughput (for example the GPU node placement), a security finding that needs triage (BL625), or a merge that cannot wait. Every use of the second lane is stated in the next report with its reason and the time it was opened and closed. Ordinary feature work stays on the one lane.
+
+**Incident, 2026-10-26 about 14:00: three pi workers ran on node datawatch at once.** Operator, quoted: "3 gwen on datawatch at once, it was suppose to be 1 pi on each gpu, how did this get broken again". Causes, in order: (1) from the node balancing release (2026-10-25 18:41) a worker's own lease carried no node pool, so nothing held a node's one engine for it (noted that evening as a gap to watch, not fixed); (2) every daemon restart re-adopted the surviving workers with only a pool lease, so the ledger showed the node as free and admitted more work onto it (about eight restarts on 2026-10-26: deploys and re-placement experiments); (3) the supervisor raised the pi pool cap from 2 to 3 and 4 several times to put the idle local GPU to work, but placement always chose datawatch, so each extra session landed there; (4) the root cause: placement resolves the node through the provider-kind (ollama) LLM entries, which are single-node, so the pi-prompt entry's two-node list was never consulted (BL626, PRD fe9c0001). The earlier placement fixes passed their unit tests with fake registries that did not have this live shape. Action: pi cap returned to 2 (the one-pi-per-GPU lane model) so nothing more is admitted until BL626 ships; no further cap raises as a workaround.
+
+**Reading about 19:30 (2026-10-26), operator-reported:** weekly 26%. Operator, quoted: "26% used". Days since the 2026-10-25 08:00 reset: 1.48, so the pace line is 21.1% and the reading is about 4.9 points over it. Since the 13:35 reading (24%) that is +2 points in 5.9 hours, about 8.1 points a day (6.7 before it). That window included the second Claude lane from 13:43 to 15:33 for the GPU placement fix (BL626), the CodeQL triage (BL625) and the BL616 retry. The remaining 5.52 days at 8.1 a day end near 71% at the reset: **within budget at the current burn**. The standing cap stays at one Claude lane; the second lane is opened for special items only.
+
+### Usage reading 2026-10-27 about 04:00
+
+Operator: "Claude is at 27%". The week started at the 2026-10-25 08:00 reset, so 1.83 days have passed and the pace line is 26.2%: the reading is 0.8 points over it, essentially on the line. Since the 26% reading at 19:30 on 10-26 the burn is 1 point in 8.5 hours (about 2.8 a day) because the Claude lane was nearly idle. The remaining 5.17 days end near 41% at that burn and near 69% at the earlier 8.1 a day: within budget either way, with room for a second Claude lane on real work.
+
+### Decisions 2026-10-27 about 05:30 (operator answers, quoted)
+
+- Local-model time limit: operator, quoted: "Local model can continue, it's there any way to tell if it is still running?" Decision: no automatic hand-off on elapsed time; instead the supervisor needs a reliable liveness signal (open item: log growth plus child process CPU and wait state plus GPU use), so a stalled worker is told apart from one still generating.
+- CodeQL alerts: operator, quoted: "2 yes fix the issue". Decision: triage each open alert's location, fix the code or dismiss with a recorded reason; no GitHub setting changes.
+- Second Claude lane: operator, quoted: "4 yes open 2nd lane". Decision: Claude cap raised from 1 to 2 for ordinary work at 05:32 on 10-27 (usage 27%, on the pace line). Supersedes "Stay at 1 but use 2nd for special" (2026-10-26).
+- Design questions: operator, quoted: "5 if there are decisions ask". Decision: the supervisor asks, one at a time, when a design decision is needed.
+- Housekeeping: operator, quoted: "6 housekeeping is build supervisor job". Done: issue #210 closed with a note naming v9.5.84. The duplicate `v9.0.0` CHANGELOG heading is a non-exempt file, so it ships with the next release's version bump. No stable tag is named yet (no soak period has run).
+
+### Usage reading 2026-10-27 about 07:40 and judge routing decision
+
+Operator: "Claude is at 30%". Days since the 2026-10-25 08:00 reset: 1.98, so the pace line is 28.3% and the reading is 1.7 points over it. Since 27% at about 04:00 the burn is 3 points in about 3.7 hours (about 19 points a day) with the second Claude lane open since 05:32 and both slots almost always busy. If both lanes stayed that busy the week would end well over 100%; at the one-lane rate of about 8 a day it ends near 70%. The operator picks the lane count; the supervisor reports this at the next tick and does not close the lane on its own projection.
+
+Final judge routing: operator, quoted: "size aware rooting sound good". Decision: a diff above a size threshold (proposed 400 changed lines; the setting defaults to 400, with 0 meaning off) goes to the Claude backend first instead of spending the judge time limit on the local model; a judge that times out on every backend still holds the PRD for review.
+
+### Usage reading 2026-10-27 about 10:55
+
+Operator: "33% claude". Days since the 2026-10-25 08:00 reset: 2.12, so the pace line is 30.3% and the reading is 2.7 points over it. Since 30% at about 07:40 the burn is 3 points in about 3.25 hours (about 22 points a day) with the second Claude lane open. The remaining 4.88 days end near 72% at the one-lane rate of about 8 a day, and well over 100% if both lanes stay this busy. The lane-count question (keep two until the in-flight PRDs finish, drop to one, or special items only) is still open with the operator. Interim supervisor rule, within the cap of 2: the second lane takes only defects, in-flight PRDs and retries of held tasks, and no new feature PRD is started on Claude until the operator answers or usage is back on the pace line. The supervisor closes the second lane at the next reading if usage is more than 3 points over the line.
+
+**Decision 2026-10-27 about 11:00, operator, quoted: "Keep 2 for now, so see how it goes in 24 hours".** The Claude cap stays at 2 for 24 hours, until about 11:00 on 2026-10-28, with normal lane fill (the interim restriction on new feature PRDs and the automatic close at more than 3 points over the line are withdrawn). The supervisor reports the usage reading and burn against the pace line at every hourly tick and asks for a fresh reading, and the operator reviews the result at about 11:00 on 10-28 (keep two, drop to one, or special items only).
+
+### Operator answers 2026-10-27 about 12:00
+
+- Usage: operator, quoted: "2 still 33%" (still 33% at about 12:00, 5 hours after the 07:40 reading; the transcript-based burn since 10:55 is about 0.3 points).
+- Supervisor tick schedule: operator, quoted: "3 no" (keep the 20-minute watch and the hourly full tick through the 24-hour trial).
+- CodeQL alerts: operator, quoted: "1 option 1" (get a local CodeQL CLI, iterate the fixes against it, push only code that clears the alerts; no dismissals of product alerts and no GitHub setting changes).
+
+### Usage reading 2026-10-27 about 13:55
+
+Operator: "Claude is at 36%". Days since the 2026-10-25 08:00 reset: 2.25, so the pace line is 32.1% and the reading is 3.9 points over it. Since 33% at 10:55 the burn is 3 points in 3 hours (about 24 points a day). Normalized units from the transcripts: 3.52 million units for those 3 points (1.17 million per point, the heaviest window per point so far, with merge helpers and two large Claude PRDs running), and 24.4 million units since the reset for 36 points, a pooled 0.68 million per point (was 0.655 million). At the week-average burn of about 16 points a day the week ends near 112 percent. The two-lane trial the operator asked for runs until about 11:00 on 2026-10-28.
+
+### Usage reading 2026-10-28 about 03:50
+
+Operator: "45 % used". Days since the 2026-10-25 08:00 reset: 2.83, so the pace line is 40.4% and the reading is 4.6 points over it. Since 36% at about 13:55 on 10-27 the burn is 9 points in 13.9 hours (about 15.5 points a day, mostly during the busy evening; the overnight rate is under 2 points an hour). Normalized units: 11.99 million for those 9 points (1.33 million per point); 51.0 million since the reset for 45 points (1.13 million per point, refit; the earlier 0.65 million figure was wrong because the extraction left out the first day). At the week-average rate of about 16 points a day the week ends near 110 percent; at the one-lane rate of about 8 a day it ends near 78 percent. The 24-hour two-lane trial ends at about 11:00 today; the operator reviews it then.
+
+### Usage reading 2026-10-28 about 05:55
+
+Operator: "Claude is at 46%". Days since the 2026-10-25 08:00 reset: 2.91, so the pace line is 41.6% and the reading is 4.4 points over it. Since 45% at about 03:50 the burn is 1 point in about 2 hours, the quiet overnight rate; the token estimate for the same span was about 0.4 points, within the rounding of whole-percent readings. The refit calibration (1.13 million units per point) tracks the readings. The 24-hour two-lane trial ends at about 11:00 today.
+
+### Usage reading 2026-10-28 18:17 (saved by the operator in the usage calculator)
+
+Operator, quoted: "I just saved% claude in calculator in automation, could you set in the data we've been capturing and your can get data i put in and make sure it looks right". The reading: 50% weekly, 6% session, at 18:17 EDT (22:17 UTC), source typed. The supervisor added the ten earlier readings from this file (15% 10-25 19:45 through 46% 10-28 05:55, EDT times converted to UTC) to the calculator series so it has history.
+
+Check of the calculator's output against this file: with history, recent burn is 7.8 points per 24 h (4 points from 05:55 to 18:17, matching the supervisor's own figure) and the week average is 13.9. Two things do not look right. (1) `usage.calculator.reset_zone` is UTC, so the calculator puts the reset at Sunday 08:00 UTC (04:00 EDT) and counts 3.6 days since the reset; the reset the operator has used all week is Sunday 08:00 EDT, 3.43 days elapsed, pace line 49.0%, so the 50% reading is 1.0 point over the line, not 1.4 under, and the week-average projection is about 102% (over budget) instead of 97.4%. (2) The lane advice ("3 lanes end the week at 60.2%") rests on the defaults of 0.1 points per task and 3.0 points idle burn, and its remaining work counts one queued task; neither matches this week's measured burn. Both are for the operator to decide (the zone is a setting; the per-task cost is a calibration).
+
+### Calculator settings applied 2026-10-28 18:25
+
+Operator, quoted: "Yes set reset zone to New York And calibrate and make sure the time zone can be set for other users". Applied through `datawatch config set`: `usage.calculator.reset_zone` = America/New_York; `usage.calculator.baseline_per_24h` = 4.4; `usage.calculator.cost_per_task_points` = 0.05. Zone effect: the calculator then follows the daylight-saving change (the reset is Sunday 08:00 EST on 2026-11-01, so the week is 169 hours), pace line 48.7% at the 18:17 reading, 3.43 days elapsed; the week-average projection became 102.7% (over budget) and the recent-burn projection 78% (within budget).
+
+Calibration data (transcripts since the 2026-10-25 08:00 EDT reset, normalized units over 1.13 million per point): total 50.5 points against the typed 50% (the weights hold); autonomous task sessions 35.3 points over 909 Claude sessions, so 0.039 points per session (workers 0.040, rules-review judges 0.026, verifiers 0.044); the supervisor and operator chat in the datawatch directory 15.1 points, which is 4.4 points per 24 h of non-task burn. Settings chosen: baseline 4.4; per-task cost 0.05 (0.040 for a worker session plus the judge, verifier and retry share, about 1.25 sessions per task). The old defaults were 3.0 and 0.1.
+
+Time zone for other users: `reset_zone` is settable on YAML, REST (a bad name is refused with "not an IANA zone name"), the CLI, the PWA settings card and the comm channel, and `docs/howto/usage-calculator.md` tells users to use a zone name, never an offset. The default stays UTC, which is wrong for most users; whether the default should be the daemon's own time zone is an open question for the operator.
+
+Time zone default for other users, operator 2026-10-28, quoted: "Default to zone server is in". The calculator's reset zone default becomes the zone the daemon runs in (registry row 241); an explicit value, including UTC, always wins.
+
+### Usage reading 2026-10-29 about 03:46
+
+Operator: "Claude is at 53%, pi only is good, what else is needed to get everything done, are automation ask done, how many prd and bugs left to 10.0?" The reading was typed into the usage calculator at 03:46 EDT. The calculator then showed: pace line 54.3 points at 3.82 days elapsed (the reset is Sunday 08:00 EST), so 53% is 1.3 points under the line; recent burn 7.6 points per 24 h, week average 13.9; projected end 77.4% at the recent burn and 97.6% at the week average, both within budget, nothing running out before the reset. The supervisor's own estimate overnight was 51 to 52%. The "pi only is good" part answers the eval matrix question: the matrix runs on pi workers only, the opencode roles are dropped (registry row 243).
+
+## Reading 2026-10-30 05:05 EDT: 67%
+
+Operator, 2026-10-30, quoted: "Claude is at 67%". The calculator records 67% at Fri 05:05 EDT against a pace line of 69.3 (headroom 2.3 points). Recent burn is 19.6 points per 24 h (the 11 points since 56% at 15:35 on 10-29 came mostly from the overnight Claude work: three attempts at the search-before-create final gate, the large security-failure auto-fix, and decomposes), the week average is 13.7. At the recent burn the week ends at 109% and runs out Sat 21:35 EDT; at the week average it ends at 96.7%. The advice for three lanes is 76.5%. The Claude cap stays at one lane and I will not start Claude work that the pi lanes can do.
+
+## Reading 2026-10-30 13:28 EDT: 70%, and the decision on Claude lanes to Sunday
+
+Operator, 2026-10-30, quoted: "Just saved 70%, not sure why it asks how many lanes running, it's that how many i want or how many are running?" The lanes field of a reading is how many Claude lanes were running when it was read (a fact used to work out the burn per lane); the number of lanes to run is a separate choice. The reading was saved with 2 lanes; only one Claude lane was running, so it was corrected to 1 (the reading was deleted and added again at the same time).
+
+With 1 lane running the calculator says: pace line 74.2, headroom 4.2 points, 1 lane ends the week at 85.6 to 94.3%, 2 lanes end at 93.2%, 3 lanes run out about 1.2 hours before the Sunday reset. The choice was put in the question queue (`q-18e35eec6f27ca03cafd`, "Claude lanes to Sunday"; the first version, `q-18e35eeae5ae704ca8d9`, used figures from the wrong lane count and was withdrawn).
+
+Operator answer, 2026-10-30, quoted: "2 lanes, go ahead". Two Claude lanes run until the Sunday 08:00 reset. The second lane takes the slowest feature work (first the worktree and temp cleanup, with a Claude judge for verification, then the automatic held-state questions). Re-read the percentage every few hours and drop back to one lane if the recent burn would run the week out before the reset.
+
+## Reading 2026-11-01 14:04 EST: 0%, two lanes for the next day, 10.0 work only
+
+Operator, 2026-11-01, quoted: "Claude at 0, no matrix or other basic testing, only work on prd and automation for 10.0. 2 claude lanes is ok for the next day to catch up and we will monitor it". The calculator records 0% at Sun 14:04 EST after the 08:00 reset (6.75 days left, pace line 3.6 points, headroom 3.6). The Claude cap goes back to 2 for about a day to catch up on the 26 hours lost to the early limit (the cap had been returned to 1 at 14:00 because the earlier two-lane approval ended at the reset). Claude work is limited to the PRDs and Automations for 10.0; no eval matrix runs and no other basic testing use Claude. Monitoring is the computed burn on every hourly tick (`python3 scripts/claude-burn.py --since <reading time>`), reported first, with the cap back to 1 and new work moved to pi-prompt in the same tick if the projection passes the pace line. Background: the Friday-night analysis in the supervisor rules document.
+
+## Reading 2026-11-01 19:10 EST: 10%, back to one lane and optimise
+
+Operator, 2026-11-01, quoted: "Claude at 10%, let's go to one lane or find ways to optimize claude usage". The calculator records 10% at Sun 19:10 (6.53 days left, pace line 6.7, 3.3 points ahead). Recent burn is 47 points per 24 hours; at that rate the allowance runs out Tue 17:02, 111 hours before the reset. The token tally (`scripts/claude-burn.py`) for the same period estimated 9.5 points, so its fit is within about half a point of the reading.
+
+Done the same minute: the Claude cap is back to 1; two Claude tasks that were already running finish on their own and nothing new is admitted until the lane count is under the cap. The Automations for the shipped status work and the parallel tasks work now run their remaining tasks on pi-prompt (the GPU lanes cost no Claude allowance). The four Claude PRDs blocked since the Saturday limit stay blocked, and no eval or matrix runs use Claude.
+
+The arithmetic for what is left: 90 points over 156 hours is 0.58 points an hour. A Claude worker lane costs about 0.53 points an hour in cache-write tokens and the supervisor session about 0.25, so one lane plus the supervisor is about 0.8 and ends the week near 120%; moving about half of the Claude worker tasks to pi-prompt brings it to about 0.55 and the week to about 100%. The lever is cache-write tokens (new context created per worker turn), not effort or output tokens. Further levers are the burn guard PRD (an automatic ladder for cap, routing and retries) and shorter supervisor reports.
+
+## Reading 2026-11-02 06:49 EST: 16%, stay at one lane
+
+Operator, 2026-11-02, quoted: "Claude at 16%". The calculator records 16% at Mon 06:49 (6.05 days left, pace line 13.6, 2.4 points ahead). The token tally estimated 15.0 for the same moment, so its fit was within one point of the reading. Recent burn is 12.4 points per 24 hours (projected end 90.8%, within budget); the week average is 16.8 points per 24 hours (projected end 117.7%, over budget), and at the week average the allowance would run out Sat 06:41, about 25 hours before the reset. After the reading the burn guard projects 65.9% at the recent rate. No instruction came with the reading, so the cap stays at one Claude lane, the second lane stays closed, and the idle hours are used for the supervisor's own defect Automata at medium effort. Since the 19:10 reading the burn has run at 0.48 points per hour, under the allowed 0.60, but the earlier burn put the total 2.4 points ahead of the line.
+
+## Burn guard decisions answered 2026-11-02
+
+Operator, 2026-11-02 06:50, through the PWA, on both burn guard decisions (the first rung taken when the weekly projection ran over the line, and its release when the projection fell): option "Leave it in place" (keep) on each, with no further words. Effect: the guard stays on and keeps its settings, and the one-lane cap is unchanged.
+
+## Reading 2026-11-02 11:12 EST: 19%, stay at one lane
+
+Operator, 2026-11-02, quoted: "Claude at 19%". The calculator records 19% at Mon 11:12 (5.87 days left, pace line 16.2, 2.8 points ahead). The token tally estimated 18.0 for the same moment, so its fit was about one point low. Recent burn is 16.5 points per 24 hours, which projects 115.7% at the reset (over budget); the week average is 16.8 points per 24 hours (117.3%), and at the recent rate the allowance would run out Sat 09:11, about 23 hours before the reset. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed, and the rest of the work stays on the pi lane where the burn guard already routes it.
+
+## Reading 2026-11-02 14:00 EST: 20%, stay at one lane
+
+Operator, 2026-11-02, quoted: "Claude at 20%". The calculator records 20% at Mon 14:00 (5.75 days left, pace line 17.9, 2.1 points ahead, down from 2.8 at the 11:12 reading). Recent burn is 8.6 points per 24 hours (projected end 69.2%, within budget); the week average is 16 points per 24 hours (112%, over budget). The token tally estimated 20.3 for the same moment, within a third of a point. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed.
+
+## Reading 2026-11-02 18:21 EST: 22%, stay at one lane
+
+Operator, 2026-11-02, quoted: "Claude at 22%". The calculator records 22% at Mon 18:21 (5.57 days left, pace line 20.4, 1.6 points ahead, down from 2.1 at the 14:00 reading). Recent burn is 11.1 points per 24 hours (projected end 83.6%, within budget); the week average is 15.4 points per 24 hours (107.6%, over budget), and at the week average the allowance would run out Sat 20:08, about 12 hours before the reset. The token tally estimated 22.2 for the same moment, within a quarter of a point. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed.
+
+## Shipped: explicit-backend admission and pool fall-through (2026-11-03)
+
+- A retry with an explicit backend and model is admitted against that backend's pool. The admitted pair is stored on the task and reused by re-admission and lease adoption; the wait reason names the requested pool.
+- `autonomous.capacity_fallthrough` (default false) lets a worker task whose requested pool is full take another allowed backend and model that is idle now. Off, a task waits for its own pool. It is exposed on config, REST, MCP, CLI help, chat `configure` and the PWA settings, and a fall-through is recorded in the `autonomous_capacity_admitted` audit entry.
+- The wait timeout counts from the first admissible request.
+- Operator text: `docs/howto/automata-capacity.md`.
+
+## Decision 2026-11-03: verifier slots next to the executor cap
+
+Question (supervisor, quoting the operator's earlier ask): would verifiers that use classification verdicts, being short, be fine running in parallel with their own cap per GPU, based on the hardware and the model? Answer in the design: yes, as a separate verifier cap on each compute node next to the executor cap, never replacing the executor pin; the open risk is memory, because a parallel request on a loaded model multiplies its context memory.
+
+Operator decision, quoted: "yes, default 1 with a measured headroom check".
+
+Consequences:
+1. The default verifier cap is 1 on a node where classification verdicts are enabled, and 0 elsewhere. The executor pin of one session per node is unchanged.
+2. A cap above 1 is accepted only with a measured headroom check: a recent measurement for that node, taken with the resident model loaded, showing that the free memory minus the configured minimum covers the extra slots. Without a fresh measurement the cap stays 1 and the refusal names the node and the shortfall.
+3. The measurement runs on demand on an idle node, never automatically on a node that is running work, and only with a model on the pull-allowed list.
+4. Build: the verifier slots Automaton covers the separate pool and the headroom gate; a follow-up Automaton adds the measurement and the refusal of a cap above 1.
+
+## Reading 2026-11-03 08:27: 30%, over the pace line, operator leaves the lane as is
+
+Reading: 30% at Tue 08:27, reset Sun 08:00, 4.98 days left. Pace line 28.8, so 1.2 points ahead (0.5 ahead at the 07:50 reading of 29%). Projected end 104% at the recent burn and at the week average; runs out about Sunday 01:32, roughly 6.5 hours before the reset. The cloud lane had been planning back to back (seven drafts queued for cloud planning), the burn guard was at rung 1 and had not stepped up.
+
+Options put to the operator: leave it and let the guard decide; finish the queued cloud plans and then plan mechanical drafts on the local pool (recommended); pause new cloud planning.
+
+Operator decision, quoted: "leave it and lets see how things go through the day".
+
+Consequence: no lane or planning change. The supervisor watches the burn guard and the next readings, and brings the choice back at the next reading if the projection stays over budget.
+
+### Decision record, 2026-11-03: second Claude lane opened and closed
+
+The operator opened a second Claude lane at 17:41 for six hours ("Yes open 2nd for next 6 hours"). At 21:21 the weekly reading was 36% against a pace line of 36.5, with a recent burn of 23.4 points per 24h against 14.3 allowed, and the burn guard had spent part of the window in its hold rung. The supervisor recommended closing the lane early, and the operator answered: "Claude can go back down to one lane for the night." The claude-code inflight cap was set back to 1 at 21:25, about 3 hours 45 minutes into the window.
+
+### Reading, 2026-11-05 12:32
+
+The operator's words: "Claude at 59%". Pace line 59.8, headroom 0.8 points, 2.81 days left. The previous reading was 46% at 17:19 on 2026-11-04, so 13 points in 19.2 hours, about 0.68 per hour (16.3 per 24 hours); the transcript burn script reported 0.62 per hour over the same window, so it under-counts by about 9 percent. At the recent burn the weekly projection is 104.7% and the allowance runs out Sunday 01:07, about 6.9 hours before the reset; at the week average it is 98.6%. Policy is run until used up, one Claude lane. The burn guard has been holding Claude for part of each hour since last night (`hold_claude`); no guard setting was changed. The lane count and the guard are the operator's decisions.
+
+### Decision, 2026-11-05 18:00: where the per-node verifier cap control goes
+
+Question (asked in chat, one of two): where should the per-node verifier cap control (`verifier_slots`) go in the web app? Options: A, in the node detail under the supported cap (recommended); B, in the node edit dialog; C, no web control for now.
+
+Operator answer, quoted: "is the node detail in the settings section?> that seems right. go with recommended if so"
+
+Check made before acting: the node detail is in Settings, on the Compute tab under Compute Nodes, and opens as a modal titled with the node name and "live detail". That modal re-renders every second while it is open, so an editable field placed in the polled body would be overwritten while typing. Decision: option A, with the constraint that the control sits in a part the one-second poll does not re-render, or the poll skips the redraw while the field has focus or unsaved input. The control is a "Parallel verifiers" number with Save under the supported cap, goes through the same write gate as every other surface (a cap above 1 is refused without a fresh measurement, with the refusal text shown), and has labels in all five locales. Applies to Automaton `718a0001`.
+
+### Reading, 2026-11-05 18:21
+
+The operator's words: "Claude at 62%". Pace line 63.3, headroom 1.3 points, 2.57 days left. The previous reading was 59% at 12:32, so 3 points in 5.8 hours, about 0.52 per hour against 0.60 allowed. The usage advice (24 hour burn 12.4 points, week average 14) projects 93.8% and 97.9% at the reset, within budget, with no run-out. My estimate of 62.1 before the reading was 0.1 points off. The burn guard still holds Claude at its last rung (`hold_claude`) because its own short-window projection reads 108.1%: the last hour carried heavy merge and migration helper work (about 0.79 points per hour in its fit). The guard re-evaluates hourly; the supervisor does not change its settings.
+
+### Reading, 2026-11-05 23:56
+
+The operator's words: "claude is at 64% and i noticed it resets at 7am sunday not 8am proably EST DST time change". The previous reading was 62% at 18:21, so 2 points in 5.6 hours, about 0.36 per hour against 0.60 allowed. The weekly reset was corrected from Sunday 08:00 to Sunday 07:00 (`usage.calculator.reset_time`, zone America/New_York). The calculator keeps the reset at the same local clock time across a daylight saving change, but the real weekly reset is one fixed moment, so it moved an hour earlier on the local clock when daylight saving time ended on 2026-11-01. With 07:00 the pace line is 67.2 and headroom 3.2 points, with 2.29 days left. The setting must go back to 08:00 when daylight saving time starts again on 2027-03-14 (it would otherwise drift the other way); a lasting fix is to anchor the reset to a fixed instant or to the operator's reading rather than to a local clock time.
+
+### Reading, 2026-11-06 02:02
+
+The operator's words: "Claude is at66%". The previous reading was 64% at 23:56 on 2026-11-05, so 2 points in 2.1 hours, about 0.95 per hour against 0.60 allowed. Pace line 68.5, headroom 2.5 points, 2.21 days left to the Sunday 07:00 reset. The usage advice projects 116.5% on the recent 24-hour burn (22.9 points) and runs out about 17.3 hours before the reset (Saturday 13:41), but 96.4% on the week average. The burn guard holds Claude at `hold_claude` (its own projection 107.7%), which is why the Claude lane has been idle; the supervisor did not change the guard. The operator was going to be away until the morning.
+
+### Reading, 2026-11-06 07:31
+
+The operator's words: "Claude is at 69%, i did not restart anything at 5, i was asleep". The previous reading was 66% at 02:02, so 3 points in 5.5 hours, about 0.55 per hour against 0.60 allowed. The 05:02 daemon stop was therefore not an operator action; cause still unknown (SIGTERM-clean exit, systemd does not restart on a clean exit).
+
+### Reading, 2026-11-06 10:16
+
+The operator's words: "claude at 71%". The previous reading was 69% at 07:31, so 2 points since. See the usage advice
+in the tick report for the pace line and projection.
+
+### Reading, 2026-11-06 11:10
+
+The operator's words: "plan looks good, claude at 72%". The previous reading was 71% at 10:16, so 1 point in about
+1 hour, against 0.60 allowed per hour.
+
+### Reading, 2026-11-06 13:35
+
+The operator's words: "claude is at 73% do we need claude for sandbox test and can we use a lesser model?". The
+previous reading was 72% at 11:10, so 1 point in about 2.3 hours (0.43 per hour against 0.60 allowed). The question
+about the sandbox live-check tasks is answered in the tick report and recorded as the decision on question 11 below
+once the operator picks.
+
+### Reading, 2026-11-06 16:26
+
+The operator's words: "claude is at 76%". The previous reading was 73% at 13:35, so 3 points in about 3 hours
+(about 1.0 per hour against 0.60 allowed). The pace line is about 77, headroom about 1 point. The burn came from the
+two Claude sonnet live-check attempts, verifiers, six helper agents (merges, the security fix, the live-check debug)
+and this supervisor session. New Claude work is held until the burn is back under the line.
+
+### Decision, 2026-11-06 16:35: weekend plan after the 76% reading
+
+Question (asked in chat): A keep the burn guard on and use Claude only for final merge helpers and security fixes, with
+the pi lanes carrying everything else; B pause all new Claude work until Sunday 07:00; C accept going over the line.
+
+Operator answer, quoted: "keep the guard on, we need supervisor working throughout until sunday reset so we can keep
+the pi sessions active all the way through".
+
+Decision: A. The guard stays on. The supervisor keeps running, with the watch every 20 minutes and the hourly tick,
+until the Sunday 07:00 reset, and its job is to keep both pi lanes busy: approved Automata with pi tasks first
+(`16760001`, `55270001`, `ecf30001`, `a4940001`), merges only when an Automaton is ready, repairs of wedged
+Automata as the blockers clear. To protect the allowance the supervisor's own burn is kept small: short reports,
+no new decomposes on Claude, helper agents only for merges and security fixes, and a reading request at each tick.
+
+### Reading, 2026-11-06 17:21
+
+The operator's words: "claude at 76%". The previous reading was 76% at 16:26, so no change in about an hour while the
+guard held Claude (the burn since was 0.3 points, all supervisor session). The weekend plan stands.
+
+### Reading, 2026-11-06 18:13
+
+The operator's words: "claude is at 77%". The previous reading was 76% at 17:21, so 1 point in about 1 hour (the judge
+and merge-helper runs and this supervisor session; the guard held new Claude work). The weekend plan stands.
+
+### Decision, 2026-11-06 18:21: use the room until 6 hours before the reset, then a low-budget finish
+
+Operator, quoted: "we should aim for 99.9 or 99.8 usage, make it through the week and use what we can with slight buffer
+of a hour hours based on our accurate accounting ... maybe 99.5 as top what is 6 hours of points?" and "the goal even if %
+not shared is if we hit 6 hours before refresh we can stop extra claude and go on low budget supervisor finish and don't
+block local gpu that need supervisor, keep things moving but if we have room we should use it".
+
+Numbers at 18:20 (reading 77% at 18:13, reset Sunday 07:00): 36.7 hours left; to land at 99.5 leaves about 22.4 points,
+0.61 points an hour; 6 hours of points is about 3.7 (the weekly pace is 14.3 a day, 0.6 an hour). The measured burn is
+0.5 to 0.6 an hour including this supervisor session (about 0.3 an hour).
+
+Decision: (1) extra Claude work (decomposes, retries, merge helpers, explicit Claude tasks) may use the room until
+Sunday 01:00, six hours before the reset; (2) from 01:00 the supervisor goes to a low-budget finish (low effort, watch and
+repairs only, no extra Claude) so the pi lanes and the local GPU work stay supervised and are never blocked, aiming to land
+at 99.5 or below with an hour of buffer; (3) to make that possible the burn guard ladder was changed from lower in-flight,
+route to pi, hold Claude to lower in-flight and route to pi only (the hold rung removed) and its hold on Claude cleared at
+2026-11-06 18:21; the supervisor now steers the Claude spend by hand and re-adds the hold rung if the projection passes 99.5; the
+supervisor checks the projection at every watch.

@@ -52,7 +52,12 @@ func newRepairErrorServer(t *testing.T, repairErr error) *Server {
 	sm, err := session.NewManager("h", dir, "echo", 30*time.Second)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	}
+	allowTestTemp(sm)
+	trackSessionManager(t, sm)
+	t.Cleanup(sm.WaitBackground)
 	srv := NewServer(NewHub(), sm, "h", "", nil, &config.Config{}, filepath.Join(dir, "config.yaml"))
 	srv.SetAutonomousAPI(&fakeRepairError{repairErr: repairErr})
 	return srv

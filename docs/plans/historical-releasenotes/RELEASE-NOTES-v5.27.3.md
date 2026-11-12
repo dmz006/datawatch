@@ -16,7 +16,7 @@ Caught during the post-v5.27.2 functional test pass; fixed by wiring `SetReloadF
 
 ```
 curl -X POST -d '{"text":"reload filters"}' /api/test/message
-→ {"count":1,"responses":["[ralfthewise] reload filters: filters"]}
+→ {"count":1,"responses":["[peer-e] reload filters: filters"]}
 ```
 
 ### Refactor — `claudeDisclaimerResponse` extracted as pure helper

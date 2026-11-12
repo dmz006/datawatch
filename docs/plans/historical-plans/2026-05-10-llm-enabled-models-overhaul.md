@@ -128,7 +128,7 @@ Replace the single `Model` text input with a structured **per-node table**:
   Filter: [____________]  Page size: [5▾]   1–4 of 4
   ─────────────────────────────────────────────────────
   Sessions
-    🟢 ralfthewise-a95f  smoke-state-engine  running
+    🟢 peer-e-a95f  smoke-state-engine  running
     ⚪ ring-laptop-2bfd  ring dispatch       complete
     🔴 dev-c123          test                killed
   Automata

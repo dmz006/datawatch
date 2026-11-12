@@ -28,7 +28,10 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Kind enumerates supported LLM protocols.
@@ -66,8 +69,8 @@ const (
 	KindShell          Kind = "shell"
 
 	// v8.0 BL321 — new inference adapter kinds.
-	KindGeminiAPI    Kind = "gemini-api"    // Google Generative Language v1beta
-	KindOpenCodeAPI  Kind = "opencode-api"  // opencode HTTP inference API (OpenAI-compat)
+	KindGeminiAPI   Kind = "gemini-api"   // Google Generative Language v1beta
+	KindOpenCodeAPI Kind = "opencode-api" // opencode HTTP inference API (OpenAI-compat)
 )
 
 // AllKinds is the set the operator can pick from + UI dropdowns.
@@ -82,6 +85,56 @@ var AllKinds = []Kind{
 	KindGeminiAPI, KindOpenCodeAPI,
 }
 
+// PlanTier names the operator's subscription/API spend tier for an LLM
+// entry. It drives the capacity ledger's per-LLM inflight cap through
+// EffectiveMaxInflight when MaxInflight is not set explicitly.
+type PlanTier string
+
+const (
+	// PlanTier unset — zero value; kind-based conservative defaults apply.
+	PlanTierUnset PlanTier = ""
+	// PlanTierPro is the Pro subscription tier.
+	PlanTierPro PlanTier = "pro"
+	// PlanTierMax5x is the Max 5× usage tier.
+	PlanTierMax5x PlanTier = "max_5x"
+	// PlanTierMax20x is the Max 20× usage tier.
+	PlanTierMax20x PlanTier = "max_20x"
+	// PlanTierAPI is API billing (dollar budget is a later phase).
+	PlanTierAPI PlanTier = "api"
+)
+
+// ValidPlanTier reports whether t is a known tier (or unset/empty).
+func ValidPlanTier(t PlanTier) bool {
+	switch t {
+	case PlanTierUnset, PlanTierPro, PlanTierMax5x, PlanTierMax20x, PlanTierAPI:
+		return true
+	}
+	return false
+}
+
+// VerificationMode selects how an LLM entry produces a verification
+// verdict when it is used as a judge.
+type VerificationMode string
+
+const (
+	// VerificationModeGenerate generates free text and parses the verdict.
+	// It is the default, so existing setups are unchanged.
+	VerificationModeGenerate VerificationMode = "generate"
+	// VerificationModeClassify scores a closed label set instead of
+	// generating text.
+	VerificationModeClassify VerificationMode = "classify"
+)
+
+// ValidVerificationMode reports whether m is a known mode or empty (unset,
+// which resolves to generate).
+func ValidVerificationMode(m VerificationMode) bool {
+	switch m {
+	case "", VerificationModeGenerate, VerificationModeClassify:
+		return true
+	}
+	return false
+}
+
 // EnabledModel pairs one ComputeNode with one model name.
 // Node is empty for SaaS kinds (claude, gemini).
 type EnabledModel struct {
@@ -91,9 +144,9 @@ type EnabledModel struct {
 
 // LLM is one named LLM definition in the registry.
 type LLM struct {
-	Name    string `yaml:"name" json:"name"`
-	Kind    Kind   `yaml:"kind" json:"kind"`
-	Model   string `yaml:"model,omitempty" json:"model,omitempty"`
+	Name  string `yaml:"name" json:"name"`
+	Kind  Kind   `yaml:"kind" json:"kind"`
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
 	// ComputeNodes is the operator-ordered failover list of
 	// ComputeNode names. Dispatcher walks left-to-right; first
 	// reachable Node wins. Empty list means "default to whatever the
@@ -122,14 +175,34 @@ type LLM struct {
 	APIKeyRefPrefix  string `yaml:"-" json:"api_key_ref_prefix,omitempty"`
 	// TimeoutSeconds overrides the adapter default (300s for ollama
 	// per v5.26.9 cold-model latency observation; 60s for claude).
-	TimeoutSeconds int      `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
 	// MaxInflight caps autonomous sessions in flight on this LLM across all
 	// PRDs (0 = unlimited). Enforced by the capacity ledger.
 	MaxInflight int `yaml:"max_inflight,omitempty" json:"max_inflight,omitempty"`
-	Tags           []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	// PlanTier (unset|pro|max_5x|max_20x|api) is the operator's spend tier
+	// for this LLM entry. When MaxInflight is > 0 it is an explicit
+	// override and wins; otherwise EffectiveMaxInflight derives the
+	// ledger limit from the tier table (autonomous.
+	// plan_tier_max_inflight). Unset falls back to conservative
+	// kind-based defaults (see EffectiveMaxInflight).
+	PlanTier PlanTier `yaml:"plan_tier,omitempty" json:"plan_tier,omitempty"`
+	// Budget is the optional dollar ceiling for this LLM entry over a rolling
+	// or weekly window. Nil means no budget.
+	Budget *BudgetWindow `yaml:"budget,omitempty" json:"budget,omitempty"`
+	// Roles tags the workloads this entry serves (open set of strings,
+	// e.g. "planning", "verification"). Normalised on Validate: trimmed,
+	// lower-cased, de-duplicated, empties rejected.
+	Roles []string `yaml:"roles,omitempty" json:"roles,omitempty"`
+	// BillingGroup is an operator-set label grouping LLM entries that share
+	// one cloud/billing account across federated peers. It is a label only:
+	// the value is hashed with the per-peer-pair key before it leaves the
+	// daemon, and a non-empty value is reconciled with the same operator
+	// confirm step as a shared compute node. Empty means "no group".
+	BillingGroup string   `yaml:"billing_group,omitempty" json:"billing_group,omitempty"`
+	Tags         []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	// AutoTags are daemon-applied internal markers. v7.0.0-alpha.23
 	// (Q7): PWA strips these from the user-visible tag list.
-	AutoTags       []string `yaml:"auto_tags,omitempty" json:"auto_tags,omitempty"`
+	AutoTags []string `yaml:"auto_tags,omitempty" json:"auto_tags,omitempty"`
 	// CostPer1kTokens (USD) — for SaaS cost tracking. Ignored for
 	// local kinds.
 	CostPer1kTokensInput  float64 `yaml:"cost_per_1k_input,omitempty" json:"cost_per_1k_input,omitempty"`
@@ -159,13 +232,13 @@ type LLM struct {
 
 	// Session-backend fields. Only applicable when Kind is a session-backend
 	// (claude-code, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, shell).
-	Binary      string `yaml:"binary,omitempty" json:"binary,omitempty"`
-	ConsoleCols int    `yaml:"console_cols,omitempty" json:"console_cols,omitempty"`
-	ConsoleRows int    `yaml:"console_rows,omitempty" json:"console_rows,omitempty"`
-	OutputMode  string `yaml:"output_mode,omitempty" json:"output_mode,omitempty"`
-	InputMode   string `yaml:"input_mode,omitempty" json:"input_mode,omitempty"`
-	AutoGitInit   bool `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
-	AutoGitCommit bool `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
+	Binary        string `yaml:"binary,omitempty" json:"binary,omitempty"`
+	ConsoleCols   int    `yaml:"console_cols,omitempty" json:"console_cols,omitempty"`
+	ConsoleRows   int    `yaml:"console_rows,omitempty" json:"console_rows,omitempty"`
+	OutputMode    string `yaml:"output_mode,omitempty" json:"output_mode,omitempty"`
+	InputMode     string `yaml:"input_mode,omitempty" json:"input_mode,omitempty"`
+	AutoGitInit   bool   `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
+	AutoGitCommit bool   `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
 
 	// Claude-code-specific settings. Clean move from SessionConfig.
 	// Only meaningful when Kind == KindClaudeCode.
@@ -175,6 +248,20 @@ type LLM struct {
 	PermissionMode       string   `yaml:"permission_mode,omitempty" json:"permission_mode,omitempty"`
 	DefaultEffort        string   `yaml:"default_effort,omitempty" json:"default_effort,omitempty"`
 	FallbackChain        []string `yaml:"fallback_chain,omitempty" json:"fallback_chain,omitempty"`
+
+	// VerificationMode (classify|generate) selects how this entry judges
+	// when used as a verifier. Empty means generate. Validated on Add,
+	// Update and registry load.
+	VerificationMode VerificationMode `yaml:"verification_mode,omitempty" json:"verification_mode,omitempty"`
+}
+
+// EffectiveVerificationMode returns the entry's verification mode, with an
+// absent value resolved to VerificationModeGenerate.
+func (l *LLM) EffectiveVerificationMode() VerificationMode {
+	if l == nil || l.VerificationMode == "" {
+		return VerificationModeGenerate
+	}
+	return l.VerificationMode
 }
 
 // Enabled is the operator-facing accessor — handy for templates and
@@ -197,10 +284,141 @@ func (l *LLM) ApplyModelMigration() {
 	}
 }
 
+// kindInflightClass classifies an LLM kind for conservative default
+// caps when neither MaxInflight nor PlanTier pins a value.
+type kindInflightClass int
+
+const (
+	// localKinds run on operator-computed nodes; they stay uncapped on
+	// the LLM pool (0 = unlimited) and are governed by the node: pools
+	// and the hard two-engines-per-GPU-node limit instead.
+	localKinds kindInflightClass = iota
+	// apiKinds are dollar-metered (Anthropic / Google / OpenAI-compat
+	// APIs). Unlimited here on purpose: the dollar budget is a later
+	// phase; the operator still caps them via MaxInflight per LLM.
+	apiKinds
+	// subscriptionKinds (claude-code and the other non-local, non-API
+	// session backends) are rate-limited by the operator's subscription
+	// plan, so an unset tier gets a conservative cap of 1 in-flight.
+	subscriptionKinds
+)
+
+func (l LLM) kindInflight() kindInflightClass {
+	switch l.Kind {
+	case KindOllama, KindOpenWebUI, KindOpenCode:
+		return localKinds
+	case KindClaude, KindGemini, KindGeminiAPI, KindOpenCodeAPI:
+		return apiKinds
+	default:
+		return subscriptionKinds
+	}
+}
+
+// EffectiveMaxInflight returns the capacity-ledger inflight limit for
+// l:
+//
+//  1. l.MaxInflight when > 0 — an explicit operator override always wins.
+//  2. Otherwise the tier table (map tier -> int, from
+//     autonomous.plan_tier_max_inflight) when l.PlanTier is set and
+//     present in the table.
+//  3. Otherwise a conservative kind default:
+//     - subscription kinds (claude-code and the other non-local,
+//     non-API kinds): 1 in-flight;
+//     - local kinds (Ollama / OpenWebUI / opencode wrapping Ollama):
+//     0 (unlimited) — they stay governed by the node: pools and the
+//     hard two-engines-per-GPU-node limit in capacity_wiring;
+//     - API kinds (dollar-metered): 0 (unlimited) — the dollar budget
+//     is a later phase; MaxInflight per LLM is the operator's tool.
+//
+// The starting table pro=1, max_5x=2, max_20x=4, api=0 is operator
+// policy, not a technical limit: it is overridable through
+// autonomous.plan_tier_max_inflight in internal/config. A nil/missing
+// table, or a tier absent from it, falls back to the kind default
+// above. Pure function: no I/O, no globals — safe to call from tests
+// and the syncPools loop.
+func EffectiveMaxInflight(l LLM, table map[string]int) int {
+	if l.MaxInflight > 0 {
+		return l.MaxInflight
+	}
+	if l.PlanTier != PlanTierUnset {
+		if v, ok := table[string(l.PlanTier)]; ok {
+			return v
+		}
+	}
+	switch l.kindInflight() {
+	case localKinds, apiKinds:
+		return 0
+	}
+	return 1
+}
+
+// InflightSource names the rule EffectiveMaxInflight applies for l, so a
+// surface (REST, MCP, PWA capacity card) can show not just the effective
+// limit but where it comes from. The three cases mirror
+// EffectiveMaxInflight's precedence exactly:
+//
+//   - InflightSourceExplicit: l.MaxInflight > 0 (an explicit operator
+//     override always wins);
+//   - InflightSourcePlanTier: l.PlanTier is set and present in the
+//     autonomous.plan_tier_max_inflight table;
+//   - InflightSourceKind: the conservative kind default (subscription → 1,
+//     local/API → unlimited).
+type InflightSource string
+
+const (
+	InflightSourceExplicit InflightSource = "explicit"
+	InflightSourcePlanTier InflightSource = "plan_tier"
+	InflightSourceKind     InflightSource = "kind"
+)
+
+// InflightSourceOf reports which rule EffectiveMaxInflight applies for l.
+// Always agrees with EffectiveMaxInflight: call both with the same table
+// and the source explains the value.
+func InflightSourceOf(l LLM, table map[string]int) InflightSource {
+	if l.MaxInflight > 0 {
+		return InflightSourceExplicit
+	}
+	if l.PlanTier != PlanTierUnset {
+		if _, ok := table[string(l.PlanTier)]; ok {
+			return InflightSourcePlanTier
+		}
+	}
+	return InflightSourceKind
+}
+
 // Validate returns the first reason this LLM is malformed, or nil.
 func (l *LLM) Validate() error {
 	if l.MaxInflight < 0 {
 		return fmt.Errorf("llm: max_inflight %d must be >= 0", l.MaxInflight)
+	}
+	if !ValidPlanTier(l.PlanTier) {
+		return fmt.Errorf("llm: unknown plan_tier %q (allowed: %s, %s, %s, %s, or empty for unset)",
+			string(l.PlanTier), PlanTierPro, PlanTierMax5x, PlanTierMax20x, PlanTierAPI)
+	}
+	if !ValidVerificationMode(l.VerificationMode) {
+		return fmt.Errorf("llm: unknown verification_mode %q (allowed: %s, %s, or empty for %s)",
+			string(l.VerificationMode), VerificationModeClassify, VerificationModeGenerate, VerificationModeGenerate)
+	}
+	if l.Budget != nil {
+		if err := l.Budget.Validate(); err != nil {
+			return fmt.Errorf("llm: %w", err)
+		}
+	}
+	roles, err := NormalizeRoles(l.Roles)
+	if err != nil {
+		return fmt.Errorf("llm: %w", err)
+	}
+	l.Roles = roles
+	// BillingGroup: trim on save, then check shape. Empty stays valid and
+	// means "no group".
+	l.BillingGroup = strings.TrimSpace(l.BillingGroup)
+	if utf8.RuneCountInString(l.BillingGroup) > 64 {
+		return errors.New("llm: billing_group must be at most 64 characters")
+	}
+	for _, r := range l.BillingGroup {
+		if unicode.IsControl(r) {
+			return errors.New("llm: billing_group must not contain control characters")
+		}
 	}
 	if strings.TrimSpace(l.Name) == "" {
 		return errors.New("llm: name required")
@@ -227,6 +445,10 @@ type Registry struct {
 	// persistFn is called after every mutation; nil = no persistence
 	// (test stores). Real registries set it to a JSON-write closure.
 	persistFn func() error
+	// onChange is called after a successful Add, Update or Delete, with no
+	// registry lock held. It lets a consumer react to an edit at once instead
+	// of waiting for its next poll.
+	onChange atomic.Pointer[func()]
 }
 
 // NewRegistry returns an empty in-memory registry. Wire persistence
@@ -237,6 +459,28 @@ func NewRegistry() *Registry {
 
 // SetPersistFn wires the after-mutate persistence callback.
 func (r *Registry) SetPersistFn(fn func() error) { r.persistFn = fn }
+
+// SetChangeFn registers fn to run after every successful Add, Update or
+// Delete. fn runs on the caller's goroutine after the registry lock is
+// released, so it may read the registry. nil clears it.
+func (r *Registry) SetChangeFn(fn func()) {
+	if fn == nil {
+		r.onChange.Store(nil)
+		return
+	}
+	r.onChange.Store(&fn)
+}
+
+// notifyChange runs the change callback when err is nil. Deferred ahead of the
+// registry lock's Unlock so it runs once the lock is released.
+func (r *Registry) notifyChange(err *error) {
+	if *err != nil {
+		return
+	}
+	if fn := r.onChange.Load(); fn != nil {
+		(*fn)()
+	}
+}
 
 // historicalAutoTags lists tag values the daemon has historically
 // auto-applied to LLM entries. v7.0.0-alpha.23 Q7 — these move from
@@ -372,10 +616,11 @@ func (r *Registry) Exists(name string) bool {
 }
 
 // Add registers a new LLM. Returns ErrConflict if name exists.
-func (r *Registry) Add(l *LLM) error {
+func (r *Registry) Add(l *LLM) (err error) {
 	if err := l.Validate(); err != nil {
 		return err
 	}
+	defer r.notifyChange(&err)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.llms[l.Name]; exists {
@@ -392,10 +637,11 @@ func (r *Registry) Add(l *LLM) error {
 }
 
 // Update replaces the named LLM. Returns ErrNotFound if absent.
-func (r *Registry) Update(l *LLM) error {
+func (r *Registry) Update(l *LLM) (err error) {
 	if err := l.Validate(); err != nil {
 		return err
 	}
+	defer r.notifyChange(&err)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	old, ok := r.llms[l.Name]
@@ -416,7 +662,8 @@ func (r *Registry) Update(l *LLM) error {
 // Auto-created entries are tombstoned (soft-deleted) instead of
 // hard-deleted so that MigrateAllLegacyBackends skips re-creating
 // them on the next daemon restart.
-func (r *Registry) Delete(name string) error {
+func (r *Registry) Delete(name string) (err error) {
+	defer r.notifyChange(&err)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	l, ok := r.llms[name]
@@ -457,6 +704,8 @@ func (r *Registry) snapshotLocked() []*LLM {
 // LoadSnapshot replaces the registry contents wholesale. Used at
 // startup by the JSON loader.
 func (r *Registry) LoadSnapshot(snap []LLM) {
+	var none error
+	defer r.notifyChange(&none)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.llms = make(map[string]*LLM, len(snap))

@@ -16,11 +16,16 @@ channel/node_modules/
 channel/dist/
 internal/stats/bpf/vmlinux.h
 .venv/
+scripts/test-stories/pwa/node_modules/
+scripts/test-stories/pwa/evidence/
 
 # F10: container build env (registry creds + IPs)
 .env.build
 dist/
 /datawatch-stats
+# restart-matrix sandboxes (RM_TMP_BASE) and their run logs
+/.rm/
+/.rm-work/
 
 # Local-environment leak prevention (AGENT.md "No local-environment
 # leaks in git" rule). Operator-specific values stay out of the repo.
@@ -76,3 +81,32 @@ __pycache__/
 *.pyc
 /etc/
 /ts706-upload.txt
+
+# Runtime folders that live checks and the restart harness create; never commit them
+/tmp-sandbox/
+/rmt/
+/.rm-run/
+
+# Build and generated artifacts that tasks have committed by mistake
+/datawatch-channel
+/internal/server/web/assets/docs-bm25-index.json
+.aider*
+
+# sandbox live-check working dirs (daemon state, personas, session data) — never commit
+tmp-held-verify/
+tmp-sandbox/
+
+# Operator's machine-specific leak patterns are never committed (see
+# scripts/leak-patterns.local.template); the checked-in class definitions
+# live in scripts/leak-check.patterns.
+.leak-patterns.local
+
+# Local list of pool names the supervisor watch skips (never committed).
+.supervisor-watch-skip
+
+# Gate run logs (test/lint output captured during final gates; never committed).
+.gate-run/
+
+# Daily plans tidy (scripts/plans-tidy-daily.sh) scratch and reports
+.datawatch/scratch/
+.datawatch/reports/

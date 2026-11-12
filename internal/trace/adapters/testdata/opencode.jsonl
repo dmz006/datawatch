@@ -1,0 +1,6 @@
+data: {"type":"session.status","properties":{"status":{"type":"busy"}}}
+{"type":"message.part.updated","properties":{"part":{"type":"tool","callID":"c1","tool":"bash","state":{"status":"running","input":{"command":"ls"},"time":{"start":1767323045000}}}}}
+{"type":"message.part.updated","properties":{"part":{"type":"tool","callID":"c1","tool":"bash","state":{"status":"completed","input":{"command":"ls"},"time":{"start":1767323045000,"end":1767323046500}}}}}
+{"type":"message.part.updated","properties":{"part":{"type":"tool","callID":"c2","tool":"read","state":{"status":"error","input":{"path":"x"},"time":{"start":1767323047000,"end":1767323047200}}}}}
+not json
+{"type":"message.part.updated","properties":{"part":{"type":"step-finish","time":{"end":1767323048000},"tokens":{"input":100,"output":25,"cache":{"read":10,"write":5}}}}}

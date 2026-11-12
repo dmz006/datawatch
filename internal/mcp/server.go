@@ -44,6 +44,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -51,35 +52,48 @@ import (
 
 	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	dwserver "github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/shutdowncause"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tlsutil"
 )
 
 // Server wraps the MCP server with session manager access.
 type Server struct {
-	hostname string
-	manager  *session.Manager
-	cfg      *config.MCPConfig
+	hostname      string
+	manager       *session.Manager
+	cfg           *config.MCPConfig
+	costReportCfg config.CostReportConfig // cost_report block (internal/costreport) used by the cost_report tool
+	usageCfg      config.UsageConfig      // usage.billing profiles → the cost_report rows' billing_mode / label fields
 	// fallbackToken is cfg.Server.Token (SEC-002) — see Options.FallbackToken.
-	fallbackToken string
-	dataDir       string
-	srv           *server.MCPServer
-	alertStore    *alerts.Store
-	schedStore    *session.ScheduleStore
-	exitHookStore *session.ExitHookStore      // BL356
-	queueStore    *session.QueueStore         // BL357
-	subStore      *session.DiscussionSubStore // BL358
-	resultStore   *session.ResultStore        // BL360
-	cmdLib        *session.CmdLibrary
-	restartFn     func()
-	acmeManager   *acme.Manager // BL397, nil when ACME is disabled
-	version       string
+	fallbackToken       string
+	dataDir             string
+	srv                 *server.MCPServer
+	alertStore          *alerts.Store
+	schedStore          *session.ScheduleStore
+	exitHookStore       *session.ExitHookStore       // BL356
+	queueStore          *session.QueueStore          // BL357
+	subStore            *session.DiscussionSubStore  // BL358
+	resultStore         *session.ResultStore         // BL360
+	scheduleResultStore *session.ScheduleResultStore // scheduled-job result panel (GH#204)
+	resultHistoryLimit  int                          // results.schedule_history_limit
+	// resultSessionLookup is an injectable session resolver used by
+	// post_result (defaults to the session manager; overridable in tests).
+	resultSessionLookup func(string) (*session.Session, bool)
+	cmdLib              *session.CmdLibrary
+	restartFn           func()
+	restartForceFn      func(force bool) // force-aware restart (the guard); preferred over restartFn
+	acmeManager         *acme.Manager    // BL397, nil when ACME is disabled
+	version             string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
 	latestVersion func() (string, error)
+	// sseListenerState tracks the MCP SSE bind state (see SSEListenerState).
+	// 0=disabled (default), 1=retrying, 2=listening, 3=failed.
+	sseListenerState atomic.Int32
 	// chanStats tracks MCP request/response counts
 	chanStats *stats.ChannelCounters
 	// memoryAPI provides memory operations (nil when memory disabled)
@@ -106,7 +120,12 @@ type Server struct {
 	// "unavailable" message.
 	agentAuditPath string
 	agentAuditCEF  bool
-	token          string // bearer token for internal API calls
+
+	// configAudit (BL110 extension) — shared config-write audit sink;
+	// when set, the tool middleware in config_write_audit.go records every
+	// config-write tool call (allowed and denied) as one JSON line.
+	configAudit *federation.ConfigAuditor
+	token       string // bearer token for internal API calls
 	// BL317 — federation peer store for MCP SSE auth (nil = no federation).
 	fedPeerStore FedPeerStore
 	// BL363 T3 — set when this MCP server is a Goose channel subprocess;
@@ -132,6 +151,16 @@ func (s *Server) SetVisioner(v VisionerMCP) { s.visioner = v }
 
 // SetResultStore wires a result store into the MCP server (BL360).
 func (s *Server) SetResultStore(store *session.ResultStore) { s.resultStore = store }
+
+// SetScheduleResultStore wires the scheduled-job result history store into
+// the MCP server (result-panel parity with the REST result endpoints).
+func (s *Server) SetScheduleResultStore(store *session.ScheduleResultStore) {
+	s.scheduleResultStore = store
+}
+
+// SetResultHistoryLimit sets the per-schedule retained-entry count used by
+// post_result (normally from results.schedule_history_limit).
+func (s *Server) SetResultHistoryLimit(n int) { s.resultHistoryLimit = n }
 
 // SetCallerSessionID stores the FullID of the session that launched this MCP
 // server (BL363 T3 — Goose channel). Tools can use it for session-aware routing
@@ -256,43 +285,64 @@ type KGMCP interface {
 
 // Options holds optional dependencies for the MCP server.
 type Options struct {
-	AlertStore    *alerts.Store
-	SchedStore    *session.ScheduleStore
-	ExitHookStore *session.ExitHookStore      // BL356
-	QueueStore    *session.QueueStore         // BL357
-	SubStore      *session.DiscussionSubStore // BL358
-	ResultStore   *session.ResultStore        // BL360
-	CmdLib        *session.CmdLibrary
-	RestartFn     func()
-	AcmeManager   *acme.Manager // BL397, nil when ACME is disabled
-	Version       string
-	LatestVersion func() (string, error)
+	AlertStore          *alerts.Store
+	SchedStore          *session.ScheduleStore
+	ExitHookStore       *session.ExitHookStore       // BL356
+	QueueStore          *session.QueueStore          // BL357
+	SubStore            *session.DiscussionSubStore  // BL358
+	ResultStore         *session.ResultStore         // BL360
+	ScheduleResultStore *session.ScheduleResultStore // scheduled-job result panel
+	ResultHistoryLimit  int                          // results.schedule_history_limit
+	CmdLib              *session.CmdLibrary
+	RestartFn           func()
+	RestartForceFn      func(force bool) // force-aware restart; preferred over RestartFn
+	AcmeManager         *acme.Manager    // BL397, nil when ACME is disabled
+	Version             string
+	LatestVersion       func() (string, error)
 	// FallbackToken is cfg.Server.Token (SEC-002) — when mcp.token is
 	// empty, MCP SSE auth falls back to the admin server.token instead of
 	// opening unconditionally, so a daemon that protects REST doesn't
 	// leave MCP SSE's full tool catalog open by omission.
 	FallbackToken string
+	// CostReportCfg is the daemon's cost_report block (internal/costreport);
+	// the cost_report tool serves costreport.Build over the recorded
+	// sessions with this config as its defaults.
+	CostReportCfg config.CostReportConfig
+	// UsageCfg is the daemon's usage config: its Billing map drives the
+	// cost_report rows' billing_mode / billing_label fields (bundled_plan →
+	// API-equivalent, not billed; api_metered → usd_estimate; free_local →
+	// tokens only; unset → assumed api_metered).
+	UsageCfg config.UsageConfig
+	// ConfigAudit — shared config-write audit sink (BL110 extension); nil
+	// = MCP config-write calls are not audited.
+	ConfigAudit *federation.ConfigAuditor
 }
 
 // New creates a new MCP server backed by the given session manager.
 func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataDir string, opts Options) *Server {
 	s := &Server{
-		hostname:      hostname,
-		manager:       manager,
-		cfg:           cfg,
-		dataDir:       dataDir,
-		alertStore:    opts.AlertStore,
-		schedStore:    opts.SchedStore,
-		exitHookStore: opts.ExitHookStore,
-		queueStore:    opts.QueueStore,
-		subStore:      opts.SubStore,    // BL358
-		resultStore:   opts.ResultStore, // BL360
-		cmdLib:        opts.CmdLib,
-		restartFn:     opts.RestartFn,
-		acmeManager:   opts.AcmeManager,
-		version:       opts.Version,
-		latestVersion: opts.LatestVersion,
-		fallbackToken: opts.FallbackToken,
+		hostname:            hostname,
+		manager:             manager,
+		cfg:                 cfg,
+		dataDir:             dataDir,
+		alertStore:          opts.AlertStore,
+		schedStore:          opts.SchedStore,
+		exitHookStore:       opts.ExitHookStore,
+		queueStore:          opts.QueueStore,
+		subStore:            opts.SubStore,    // BL358
+		resultStore:         opts.ResultStore, // BL360
+		scheduleResultStore: opts.ScheduleResultStore,
+		resultHistoryLimit:  opts.ResultHistoryLimit,
+		cmdLib:              opts.CmdLib,
+		restartFn:           opts.RestartFn,
+		restartForceFn:      opts.RestartForceFn,
+		acmeManager:         opts.AcmeManager,
+		version:             opts.Version,
+		latestVersion:       opts.LatestVersion,
+		fallbackToken:       opts.FallbackToken,
+		costReportCfg:       opts.CostReportCfg,
+		usageCfg:            opts.UsageCfg,
+		configAudit:         opts.ConfigAudit,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get
@@ -315,11 +365,27 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		// listChanged=false for prompts (added in S4 when prompts land).
 		server.WithResourceCapabilities(false, false),
 		server.WithPromptCapabilities(false),
+		// mcp-go v1.x refuses RequestSampling/RequestElicitation for clients on
+		// protocol 2026-07-28+ unless this is set; the repo relies on both.
+		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
 	)
 
 	// BL302 S3 — enable sampling so connected clients see the capability
 	// in the server's initialize response and can handle createMessage requests.
 	mcpSrv.EnableSampling()
+
+	// CRASH-SAFETY (findings: docs/plans/2026-10-20-bl463-mcp-drop-findings.md)
+	// — recover panics in any tool handler into a JSON-RPC error result
+	// instead of killing the process. mcp-go's WithRecovery() (opt-in)
+	// was unregistered here, so one panicking tool was a permanent, full
+	// MCP drop (daemon: whole process; bridge: CONNECTION_CLOSED forever).
+	RegisterToolPanicRecovery(mcpSrv)
+	// BL110 extension — single audit point for every MCP config-write
+	// tool (registered after panic recovery, wrapping every handler).
+	RegisterConfigWriteAudit(mcpSrv, s)
+	// Sensitive write gate — registered after the audit so it sits inside it
+	// (first registered runs outermost) and the audit records its denials.
+	RegisterSensitiveWriteGate(mcpSrv, s)
 
 	// tracked wraps an MCP handler with channel stats tracking
 	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -346,6 +412,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	}
 
 	mcpSrv.AddTool(s.toolListSessions(), tracked(s.handleListSessions))
+	mcpSrv.AddTool(s.toolSessionTagList(), tracked(s.handleSessionTagList))
 	mcpSrv.AddTool(s.toolStartSession(), tracked(s.handleStartSession))
 	mcpSrv.AddTool(s.toolSessionChildren(), tracked(s.handleSessionChildren))
 	mcpSrv.AddTool(s.toolReplyToParent(), tracked(s.handleReplyToParent))
@@ -358,6 +425,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolVisionDescribe(), tracked(s.handleVisionDescribe))
 	mcpSrv.AddTool(s.toolKillSession(), tracked(s.handleKillSession))
 	mcpSrv.AddTool(s.toolRenameSession(), tracked(s.handleRenameSession))
+	mcpSrv.AddTool(s.toolSetSessionPriority(), tracked(s.handleSetSessionPriority))
 	mcpSrv.AddTool(s.toolStopAllSessions(), tracked(s.handleStopAllSessions))
 	// BL93/BL94 — orphan session reconciliation + import.
 	mcpSrv.AddTool(s.toolSessionReconcile(), tracked(s.handleSessionReconcile))
@@ -406,6 +474,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolResultGet(), tracked(s.handleResultGet))
 	mcpSrv.AddTool(s.toolResultList(), tracked(s.handleResultList))
 	mcpSrv.AddTool(s.toolResultDelete(), tracked(s.handleResultDelete))
+	mcpSrv.AddTool(s.toolPostResult(), tracked(s.handlePostResult))
+	mcpSrv.AddTool(s.toolScheduleResultsList(), tracked(s.handleScheduleResultsList))
 
 	// Memory import, learnings, config set
 	mcpSrv.AddTool(s.toolMemoryImport(), tracked(s.handleMemoryImport))
@@ -461,6 +531,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolProxyConfigGet(), tracked(s.handleProxyConfigGet))
 	mcpSrv.AddTool(s.toolProxyConfigSet(), tracked(s.handleProxyConfigSet))
 
+	// Pre-push secret scan (git.secret_scan) — MCP surface parity (v9.0.0).
+	mcpSrv.AddTool(s.toolSecretScanConfigGet(), tracked(s.handleSecretScanConfigGet))
+	mcpSrv.AddTool(s.toolSecretScanConfigSet(), tracked(s.handleSecretScanConfigSet))
+	mcpSrv.AddTool(s.toolSecretScanStats(), tracked(s.handleSecretScanStats))
+
 	// v5.27.10 (BL216) — channel bridge introspection.
 	mcpSrv.AddTool(s.toolChannelInfo(), tracked(s.handleChannelInfo))
 
@@ -492,27 +567,49 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSessionBindAgent(), tracked(s.handleSessionBindAgent))
 
 	// Sprint Sx (v3.7.2) — parity backfill for v3.5–v3.7 endpoints.
-	mcpSrv.AddTool(s.toolAsk(), tracked(s.handleAsk))                               // BL34
-	mcpSrv.AddTool(s.toolProjectSummary(), tracked(s.handleProjectSummary))         // BL35
-	mcpSrv.AddTool(s.toolTemplateList(), tracked(s.handleTemplateList))             // BL5
-	mcpSrv.AddTool(s.toolTemplateUpsert(), tracked(s.handleTemplateUpsert))         // BL5
-	mcpSrv.AddTool(s.toolTemplateDelete(), tracked(s.handleTemplateDelete))         // BL5
-	mcpSrv.AddTool(s.toolProjectList(), tracked(s.handleProjectList))               // BL27
-	mcpSrv.AddTool(s.toolProjectUpsert(), tracked(s.handleProjectUpsert))           // BL27
-	mcpSrv.AddTool(s.toolProjectAliasDelete(), tracked(s.handleProjectAliasDelete)) // BL27
-	mcpSrv.AddTool(s.toolSessionRollback(), tracked(s.handleSessionRollback))       // BL29
-	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))         // BL30
-	mcpSrv.AddTool(s.toolCooldownSet(), tracked(s.handleCooldownSet))               // BL30
-	mcpSrv.AddTool(s.toolCooldownClear(), tracked(s.handleCooldownClear))           // BL30
-	mcpSrv.AddTool(s.toolSessionsStale(), tracked(s.handleSessionsStale))           // BL40
-	mcpSrv.AddTool(s.toolCostSummary(), tracked(s.handleCostSummary))               // BL6
-	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                   // BL6
-	mcpSrv.AddTool(s.toolCostRates(), tracked(s.handleCostRates))                   // BL6
-	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                 // BL9
-	mcpSrv.AddTool(s.toolAuditAccessQuery(), tracked(s.handleAuditAccessQuery))     // GH#201
-	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                     // BL37
-	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                         // BL17
-	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                   // BL12
+	mcpSrv.AddTool(s.toolAsk(), tracked(s.handleAsk))                                       // BL34
+	mcpSrv.AddTool(s.toolProjectSummary(), tracked(s.handleProjectSummary))                 // BL35
+	mcpSrv.AddTool(s.toolTemplateList(), tracked(s.handleTemplateList))                     // BL5
+	mcpSrv.AddTool(s.toolTemplateUpsert(), tracked(s.handleTemplateUpsert))                 // BL5
+	mcpSrv.AddTool(s.toolTemplateDelete(), tracked(s.handleTemplateDelete))                 // BL5
+	mcpSrv.AddTool(s.toolProjectList(), tracked(s.handleProjectList))                       // BL27
+	mcpSrv.AddTool(s.toolProjectUpsert(), tracked(s.handleProjectUpsert))                   // BL27
+	mcpSrv.AddTool(s.toolProjectAliasDelete(), tracked(s.handleProjectAliasDelete))         // BL27
+	mcpSrv.AddTool(s.toolProjectPolicyEffective(), tracked(s.handleProjectPolicyEffective)) // project policy tier
+	mcpSrv.AddTool(s.toolProjectRollup(), tracked(s.handleProjectRollup))                   // project roll-up: arcs, progress, points, throughput
+	mcpSrv.AddTool(s.toolProjectHistory(), tracked(s.handleProjectHistory))                 // project history: finished Automata, daily progress
+	mcpSrv.AddTool(s.toolProjectSetArcs(), tracked(s.handleProjectSetArcs))                 // replace the project's ordered arc list
+	mcpSrv.AddTool(s.toolSessionRollback(), tracked(s.handleSessionRollback))               // BL29
+	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))                 // BL30
+	mcpSrv.AddTool(s.toolCooldownSet(), tracked(s.handleCooldownSet))                       // BL30
+	mcpSrv.AddTool(s.toolCooldownClear(), tracked(s.handleCooldownClear))                   // BL30
+	mcpSrv.AddTool(s.toolUsageBackoffStatus(), tracked(s.handleUsageBackoffStatus))         // BL428 Phase 4
+	mcpSrv.AddTool(s.toolUsageBackoffSet(), tracked(s.handleUsageBackoffSet))               // BL428 Phase 4
+	mcpSrv.AddTool(s.toolUsageBackoffClear(), tracked(s.handleUsageBackoffClear))           // BL428 Phase 4
+	mcpSrv.AddTool(s.toolUsageBackoffRecheck(), tracked(s.handleUsageBackoffRecheck))       // pattern-drift guard
+	mcpSrv.AddTool(s.toolBudgetStatus(), tracked(s.handleBudgetStatus))                     // per-LLM dollar budget
+	mcpSrv.AddTool(s.toolUsageAdvice(), tracked(s.handleUsageAdvice))                       // usage calculator
+	mcpSrv.AddTool(s.toolUsageReadings(), tracked(s.handleUsageReadings))                   // usage calculator
+	mcpSrv.AddTool(s.toolUsageReadingAdd(), tracked(s.handleUsageReadingAdd))               // usage calculator
+	mcpSrv.AddTool(s.toolUsageReadingDelete(), tracked(s.handleUsageReadingDelete))         // usage calculator
+	mcpSrv.AddTool(s.toolUsageExtraCreditSet(), tracked(s.handleUsageExtraCreditSet))       // usage calculator
+	mcpSrv.AddTool(s.toolUsageRemainingWorkSet(), tracked(s.handleUsageRemainingWorkSet))   // usage calculator
+	mcpSrv.AddTool(s.toolUsageAutoLanesStatus(), tracked(s.handleUsageAutoLanesStatus))     // usage calculator: auto-lanes (read-only)
+	mcpSrv.AddTool(s.toolBurnGuardStatus(), tracked(s.handleBurnGuardStatus))               // burn guard
+	mcpSrv.AddTool(s.toolBurnGuardRun(), tracked(s.handleBurnGuardRun))                     // burn guard
+	mcpSrv.AddTool(s.toolBurnGuardConfigGet(), tracked(s.handleBurnGuardConfigGet))         // burn guard
+	mcpSrv.AddTool(s.toolBurnGuardConfigSet(), tracked(s.handleBurnGuardConfigSet))         // burn guard
+	mcpSrv.AddTool(s.toolSessionsStale(), tracked(s.handleSessionsStale))                   // BL40
+	mcpSrv.AddTool(s.toolCostSummary(), tracked(s.handleCostSummary))                       // BL6
+	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                           // BL6
+	mcpSrv.AddTool(s.toolCostRates(), tracked(s.handleCostRates))                           // BL6
+	mcpSrv.AddTool(s.toolCostReport(), tracked(s.handleCostReport))                         // cost report (internal/costreport)
+	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                         // BL9
+	mcpSrv.AddTool(s.toolAuditAccessQuery(), tracked(s.handleAuditAccessQuery))             // GH#201
+	mcpSrv.AddTool(s.toolSelfConfigAudit(), tracked(s.handleSelfConfigAudit))               // BL412 (self-config audit view)
+	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                             // BL37
+	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                                 // BL17
+	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                           // BL12
 	// Sprint S4 (v3.8.0).
 	mcpSrv.AddTool(s.toolAssist(), tracked(s.handleAssist))                       // BL42
 	mcpSrv.AddTool(s.toolDeviceAliasList(), tracked(s.handleDeviceAliasList))     // BL31
@@ -535,7 +632,20 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDResetToDraft(), tracked(s.handleAutonomousPRDResetToDraft))
 	// BL191 (v5.2.0) review/approve gate + templates.
 	mcpSrv.AddTool(s.toolAutonomousPRDApprove(), tracked(s.handleAutonomousPRDApprove))
+	mcpSrv.AddTool(s.toolAutonomousPRDResume(), tracked(s.handleAutonomousPRDResume))
 	mcpSrv.AddTool(s.toolAutonomousPRDReject(), tracked(s.handleAutonomousPRDReject))
+	mcpSrv.AddTool(s.toolAutonomousPRDPlanCoverageAcknowledge(), tracked(s.handleAutonomousPRDPlanCoverageAcknowledge))
+	mcpSrv.AddTool(s.toolAutonomousPRDPlanCoverageGet(), tracked(s.handleAutonomousPRDPlanCoverageGet))       // autonomous_prd_plan_coverage_get — plan coverage read
+	mcpSrv.AddTool(s.toolGeneratedArtefactsGet(), tracked(s.handleGeneratedArtefactsGet))                     // generated_artefacts_get
+	mcpSrv.AddTool(s.toolAutonomousPRDChangeRecord(), tracked(s.handleAutonomousPRDChangeRecord))             // autonomous_prd_change_record
+	mcpSrv.AddTool(s.toolAutonomousPRDGeneratedArtefact(), tracked(s.handleAutonomousPRDGeneratedArtefact))   // autonomous_prd_generated_artefact
+	mcpSrv.AddTool(s.toolAutonomousPRDRegenerateArtefact(), tracked(s.handleAutonomousPRDRegenerateArtefact)) // autonomous_prd_regenerate_artefact
+	mcpSrv.AddTool(s.toolAutonomousPRDPlanReview(), tracked(s.handleAutonomousPRDPlanReview))                 // plan review gate
+	// decompose-lint gate — config read/set + per-PRD dry-run / stored findings
+	mcpSrv.AddTool(s.toolAutonomousDecomposeLintConfigGet(), tracked(s.handleAutonomousDecomposeLintConfigGet))
+	mcpSrv.AddTool(s.toolAutonomousDecomposeLintConfigSet(), tracked(s.handleAutonomousDecomposeLintConfigSet))
+	mcpSrv.AddTool(s.toolAutonomousDecomposeLintDryRun(), tracked(s.handleAutonomousDecomposeLintDryRun))
+	mcpSrv.AddTool(s.toolAutonomousDecomposeLintFindings(), tracked(s.handleAutonomousDecomposeLintFindings))
 	mcpSrv.AddTool(s.toolAutonomousPRDRequestRevision(), tracked(s.handleAutonomousPRDRequestRevision))
 	mcpSrv.AddTool(s.toolAutonomousPRDEditTask(), tracked(s.handleAutonomousPRDEditTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDEditStory(), tracked(s.handleAutonomousPRDEditStory))
@@ -544,21 +654,52 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDAddTask(), tracked(s.handleAutonomousPRDAddTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDRemoveTask(), tracked(s.handleAutonomousPRDRemoveTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDResetTask(), tracked(s.handleAutonomousPRDResetTask))
+	mcpSrv.AddTool(s.toolAutonomousPRDRejudge(), tracked(s.handleAutonomousPRDRejudge))
 	mcpSrv.AddTool(s.toolAutonomousPRDRepairDependsOn(), tracked(s.handleAutonomousPRDRepairDependsOn))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelStory(), tracked(s.handleAutonomousPRDCancelStory))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelTask(), tracked(s.handleAutonomousPRDCancelTask))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetFailureEscalation(), tracked(s.handleAutonomousPRDSetFailureEscalation))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskEffortCeiling(), tracked(s.handleAutonomousPRDSetTaskEffortCeiling))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetBranchRefresh(), tracked(s.handleAutonomousPRDSetBranchRefresh))
+	mcpSrv.AddTool(s.toolAutonomousBranchRefreshStats(), tracked(s.handleAutonomousBranchRefreshStats))
+	mcpSrv.AddTool(s.toolAutonomousPRDResolveTaskReview(), tracked(s.handleAutonomousPRDResolveTaskReview))
 	mcpSrv.AddTool(s.toolAutonomousPRDApproveTask(), tracked(s.handleAutonomousPRDApproveTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDInstantiate(), tracked(s.handleAutonomousPRDInstantiate))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetLLM(), tracked(s.handleAutonomousPRDSetLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryLLM(), tracked(s.handleAutonomousPRDSetStoryLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskLLM(), tracked(s.handleAutonomousPRDSetTaskLLM))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetThinkingLevel(), tracked(s.handleAutonomousPRDSetThinkingLevel))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryThinkingLevel(), tracked(s.handleAutonomousPRDSetStoryThinkingLevel))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskThinkingLevel(), tracked(s.handleAutonomousPRDSetTaskThinkingLevel))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskProjectDir(), tracked(s.handleAutonomousPRDSetTaskProjectDir))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetVerificationLLM(), tracked(s.handleAutonomousPRDSetVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryVerificationLLM(), tracked(s.handleAutonomousPRDSetStoryVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskVerificationLLM(), tracked(s.handleAutonomousPRDSetTaskVerificationLLM))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetVerifierPolicy(), tracked(s.handleAutonomousPRDSetVerifierPolicy))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskVerifierPolicy(), tracked(s.handleAutonomousPRDSetTaskVerifierPolicy))
+	// BL427 lifecycle-event subscriptions (proxy /api/autonomous/subscriptions).
+	mcpSrv.AddTool(s.toolAutonomousSubscribe(), tracked(s.handleAutonomousSubscribe))
+	mcpSrv.AddTool(s.toolAutonomousUnsubscribe(), tracked(s.handleAutonomousUnsubscribe))
+	mcpSrv.AddTool(s.toolAutonomousSubscriptions(), tracked(s.handleAutonomousSubscriptions))
+	mcpSrv.AddTool(s.toolAutonomousSubscriptionUpdate(), tracked(s.handleAutonomousSubscriptionUpdate))
+	mcpSrv.AddTool(s.toolAutonomousSubscriptionTest(), tracked(s.handleAutonomousSubscriptionTest))
+	mcpSrv.AddTool(s.toolAutonomousEventsPending(), tracked(s.handleAutonomousEventsPending))
+	mcpSrv.AddTool(s.toolAutonomousEventLog(), tracked(s.handleAutonomousEventLog))
+	// Operator question channel (proxy /api/questions — internal/server/questions.go).
+	// The trailing comment is the MCP tool name each AddTool registers.
+	mcpSrv.AddTool(s.toolQuestionRaise(), tracked(s.handleQuestionRaise))       // "question_raise"
+	mcpSrv.AddTool(s.toolQuestionList(), tracked(s.handleQuestionList))         // "question_list"
+	mcpSrv.AddTool(s.toolQuestionGet(), tracked(s.handleQuestionGet))           // "question_get"
+	mcpSrv.AddTool(s.toolQuestionAnswer(), tracked(s.handleQuestionAnswer))     // "question_answer"
+	mcpSrv.AddTool(s.toolQuestionWithdraw(), tracked(s.handleQuestionWithdraw)) // "question_withdraw"
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 	mcpSrv.AddTool(s.toolAutonomousPRDChildren(), tracked(s.handleAutonomousPRDChildren))
 	// BL221 (v6.2.0) Phase 3 — scan framework tools.
+	// Planning routing: config, scorecard and a no-LLM routing test.
+	mcpSrv.AddTool(s.toolPlanningRoutingGet(), tracked(s.handlePlanningRoutingGet))
+	mcpSrv.AddTool(s.toolPlanningRoutingSet(), tracked(s.handlePlanningRoutingSet))
+	mcpSrv.AddTool(s.toolPlanningScorecard(), tracked(s.handlePlanningScorecard))
+	mcpSrv.AddTool(s.toolPlanningRoutingTest(), tracked(s.handlePlanningRoutingTest))
 	mcpSrv.AddTool(s.toolAutonomousScanConfigGet(), tracked(s.handleAutonomousScanConfigGet))
 	mcpSrv.AddTool(s.toolAutonomousScanConfigSet(), tracked(s.handleAutonomousScanConfigSet))
 	mcpSrv.AddTool(s.toolAutonomousPRDScan(), tracked(s.handleAutonomousPRDScan))
@@ -569,12 +710,101 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousTypeList(), tracked(s.handleAutonomousTypeList))
 	mcpSrv.AddTool(s.toolAutonomousTypeRegister(), tracked(s.handleAutonomousTypeRegister))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetType(), tracked(s.handleAutonomousPRDSetType))
+	// Automata tag registry + per-Automaton assignment.
+	mcpSrv.AddTool(s.toolAutonomousTagList(), tracked(s.handleAutonomousTagList))
+	mcpSrv.AddTool(s.toolAutonomousTagCreate(), tracked(s.handleAutonomousTagCreate))
+	mcpSrv.AddTool(s.toolAutonomousTagRename(), tracked(s.handleAutonomousTagRename))
+	mcpSrv.AddTool(s.toolAutonomousTagSetParent(), tracked(s.handleAutonomousTagSetParent))
+	mcpSrv.AddTool(s.toolAutonomousTagSetColor(), tracked(s.handleAutonomousTagSetColor))
+	mcpSrv.AddTool(s.toolAutonomousTagDelete(), tracked(s.handleAutonomousTagDelete))
+	mcpSrv.AddTool(s.toolAutonomousTagRegistryStatus(), tracked(s.handleAutonomousTagRegistryStatus))
+	mcpSrv.AddTool(s.toolAutonomousTagRegistryDismissNote(), tracked(s.handleAutonomousTagRegistryDismissNote))
+	mcpSrv.AddTool(s.toolAutonomousTagSweep(), tracked(s.handleAutonomousTagSweep))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTags(), tracked(s.handleAutonomousPRDSetTags))
+	mcpSrv.AddTool(s.toolAutonomousAttentionList(), tracked(s.handleAutonomousAttentionList))
+	mcpSrv.AddTool(s.toolSessionSetTags(), tracked(s.handleSessionSetTags))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGuidedMode(), tracked(s.handleAutonomousPRDSetGuidedMode))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetPriority(), tracked(s.handleAutonomousPRDSetPriority))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetKind(), tracked(s.handleAutonomousPRDSetKind))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetReleaseSize(), tracked(s.handleAutonomousPRDSetReleaseSize))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetBreakingChange(), tracked(s.handleAutonomousPRDSetBreakingChange))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetWorkerProfile(), tracked(s.handleAutonomousPRDSetWorkerProfile))
+	mcpSrv.AddTool(s.toolAutonomousShippedRecord(), tracked(s.handleAutonomousShippedRecord))
+	mcpSrv.AddTool(s.toolAutonomousShippedBackfill(), tracked(s.handleAutonomousShippedBackfill))
+	mcpSrv.AddTool(s.toolAutonomousShippedCounts(), tracked(s.handleAutonomousShippedCounts))
+	mcpSrv.AddTool(s.toolAutonomousDefectIntake(), tracked(s.handleAutonomousDefectIntake))
+	mcpSrv.AddTool(s.toolAutonomousDefectBatches(), tracked(s.handleAutonomousDefectBatches))
+	mcpSrv.AddTool(s.toolAutonomousDefectBatchSplit(), tracked(s.handleAutonomousDefectBatchSplit))
+	mcpSrv.AddTool(s.toolAutonomousDefectTinyFixCheck(), tracked(s.handleAutonomousDefectTinyFixCheck))
 	mcpSrv.AddTool(s.toolCapacityStatus(), tracked(s.handleCapacityStatus))
+	mcpSrv.AddTool(s.toolCapacityAdmission(), tracked(s.handleCapacityAdmission))
+	mcpSrv.AddTool(s.toolAutonomousProgress(), tracked(s.handleAutonomousProgress))
+	mcpSrv.AddTool(s.toolAutonomousProgressTrend(), tracked(s.handleAutonomousProgressTrend))
+	mcpSrv.AddTool(s.toolAutonomousLaneFillStatus(), tracked(s.handleAutonomousLaneFillStatus))
+	mcpSrv.AddTool(s.toolAutonomousInfraRetries(), tracked(s.handleAutonomousInfraRetries))
+	mcpSrv.AddTool(s.toolOnboardingReport(), tracked(s.handleOnboardingReport))
+	// Trace views (internal/trace) — read-only proxies of /api/trace/*.
+	mcpSrv.AddTool(s.toolTraceSession(), tracked(s.handleTraceSession))
+	mcpSrv.AddTool(s.toolTraceAutomaton(), tracked(s.handleTraceAutomaton))
+	mcpSrv.AddTool(s.toolTraceRollup(), tracked(s.handleTraceRollup))
+	mcpSrv.AddTool(s.toolTraceCoverage(), tracked(s.handleTraceCoverage))
+	mcpSrv.AddTool(s.toolTraceStats(), tracked(s.handleTraceStats))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskNode(), tracked(s.handleAutonomousPRDSetTaskNode))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryNode(), tracked(s.handleAutonomousPRDSetStoryNode))
+	mcpSrv.AddTool(s.toolAutomationRequirementsReport(), tracked(s.handleAutomationRequirementsReport))
+	mcpSrv.AddTool(s.toolModelPullConsentGet(), tracked(s.handleModelPullConsentGet))
+	mcpSrv.AddTool(s.toolModelPullConsentSet(), tracked(s.handleModelPullConsentSet))
+	mcpSrv.AddTool(s.toolComputeNodeBackendVersions(), tracked(s.handleComputeNodeBackendVersions))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetLanePreference(), tracked(s.handleAutonomousPRDSetLanePreference))
+	mcpSrv.AddTool(s.toolAutonomousTriage(), tracked(s.handleAutonomousTriage))
+	mcpSrv.AddTool(s.toolChecksStatus(), tracked(s.handleChecksStatus))
+	mcpSrv.AddTool(s.toolShipStatus(), tracked(s.handleShipStatus))
+	mcpSrv.AddTool(s.toolRestartInterruptions(), tracked(s.handleRestartInterruptions))
+	mcpSrv.AddTool(s.toolRulesContextStatus(), tracked(s.handleRulesContextStatus))
+	mcpSrv.AddTool(s.toolRulesContextSet(), tracked(s.handleRulesContextSet))
+	mcpSrv.AddTool(s.toolPlatformContextStatus(), tracked(s.handlePlatformContextStatus))
+	mcpSrv.AddTool(s.toolAutonomousDecisions(), tracked(s.handleAutonomousDecisions))
+	mcpSrv.AddTool(s.toolHeldQuestions(), tracked(s.handleHeldQuestions))
+	mcpSrv.AddTool(s.toolDecisionRecordList(), tracked(s.handleDecisionRecordList))
+	mcpSrv.AddTool(s.toolDecisionRecordGet(), tracked(s.handleDecisionRecordGet))
+	mcpSrv.AddTool(s.toolDecisionRecordCreate(), tracked(s.handleDecisionRecordCreate))
+	mcpSrv.AddTool(s.toolDecisionRecordUpdate(), tracked(s.handleDecisionRecordUpdate))
+	mcpSrv.AddTool(s.toolDecisionRecordWithdraw(), tracked(s.handleDecisionRecordWithdraw))
+	mcpSrv.AddTool(s.toolAutonomousRepoCIWatch(), tracked(s.handleAutonomousRepoCIWatch))
+	mcpSrv.AddTool(s.toolQuestionStats(), tracked(s.handleQuestionStats))
+	mcpSrv.AddTool(s.toolQuestionQuality(), tracked(s.handleQuestionQuality))
+	mcpSrv.AddTool(s.toolAutonomousMerge(), tracked(s.handleAutonomousMerge))
+	mcpSrv.AddTool(s.toolAutonomousSafeToDelete(), tracked(s.handleAutonomousSafeToDelete))
+	mcpSrv.AddTool(s.toolAutonomousMergePipelineGet(), tracked(s.handleAutonomousMergePipelineGet))
+	mcpSrv.AddTool(s.toolAutonomousReleaseReadiness(), tracked(s.handleAutonomousReleaseReadiness))
+	mcpSrv.AddTool(s.toolAutonomousMergePipelineSetRecord(), tracked(s.handleAutonomousMergePipelineSetRecord))
+	mcpSrv.AddTool(s.toolAutonomousMergePipelineValidate(), tracked(s.handleAutonomousMergePipelineValidate))
+	mcpSrv.AddTool(s.toolReleasePushStatus(), tracked(s.handleReleasePushStatus)) // release_push_status: push/tag settings, CI window and last release
+	mcpSrv.AddTool(s.toolAutonomousMergeShadowStatus(), tracked(s.handleAutonomousMergeShadowStatus))
+	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
+	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
+	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))       // autonomous_unlanded_work: archived branches with work not on the default branch
+	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
+	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
+	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
+	// autonomous_standard_tasks: built-in standard tasks the decomposer adds to each story (same object as the REST read)
+	mcpSrv.AddTool(s.toolAutonomousStandardTasks(), tracked(s.handleAutonomousStandardTasks))
+	// autonomous_prd_set_authorized_paths: replace one Automaton's authorised protected paths
+	mcpSrv.AddTool(s.toolAutonomousPRDSetAuthorizedPaths(), tracked(s.handleAutonomousPRDSetAuthorizedPaths))
+	mcpSrv.AddTool(s.toolAutonomousOverlapSearch(), tracked(s.handleAutonomousOverlapSearch))
+	mcpSrv.AddTool(s.toolSecurityFailureList(), tracked(s.handleSecurityFailureList))
+	mcpSrv.AddTool(s.toolSupervisorWatchList(), tracked(s.handleSupervisorWatchList))
+	mcpSrv.AddTool(s.toolSupervisorWatchStats(), tracked(s.handleSupervisorWatchStats))
+	mcpSrv.AddTool(s.toolSupervisorLoopJobs(), tracked(s.handleSupervisorLoopJobs))
+	mcpSrv.AddTool(s.toolSupervisorLoopRuns(), tracked(s.handleSupervisorLoopRuns))
+	mcpSrv.AddTool(s.toolSupervisorLoopRunJob(), tracked(s.handleSupervisorLoopRunJob))
+	mcpSrv.AddTool(s.toolSupervisorLoopEval(), tracked(s.handleSupervisorLoopEval))
+	mcpSrv.AddTool(s.toolSupervisorLoopStats(), tracked(s.handleSupervisorLoopStats))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
 	mcpSrv.AddTool(s.toolAutonomousPRDSetContinueOnStoryFailure(), tracked(s.handleAutonomousPRDSetContinueOnStoryFailure))
+	// autonomous_prd_set_notify_events
+	mcpSrv.AddTool(s.toolAutonomousPRDSetNotifyEvents(), tracked(s.handleAutonomousPRDSetNotifyEvents))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGit(), tracked(s.handleAutonomousPRDSetGit))                     // BL407 Phase 5
 	mcpSrv.AddTool(s.toolAutonomousPRDSetMemorySeed(), tracked(s.handleAutonomousPRDSetMemorySeed))       // BL386 P1
 	mcpSrv.AddTool(s.toolAutonomousPRDSetMemoryHarvest(), tracked(s.handleAutonomousPRDSetMemoryHarvest)) // BL386 P2
@@ -598,9 +828,27 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// Automation orchestration — automation CRUD tools.
 	mcpSrv.AddTool(s.toolAutomationList(), tracked(s.handleAutomationList))
 	mcpSrv.AddTool(s.toolAutomationGet(), tracked(s.handleAutomationGet))
+	mcpSrv.AddTool(s.toolAutomationMergedMembers(), tracked(s.handleAutomationMergedMembers))
 	mcpSrv.AddTool(s.toolAutomationCreate(), tracked(s.handleAutomationCreate))
 	mcpSrv.AddTool(s.toolAutomationUpdate(), tracked(s.handleAutomationUpdate))
 	mcpSrv.AddTool(s.toolAutomationDelete(), tracked(s.handleAutomationDelete))
+	mcpSrv.AddTool(s.toolAutomationActivate(), tracked(s.handleAutomationActivate))
+	mcpSrv.AddTool(s.toolAutomationReturnToDraft(), tracked(s.handleAutomationReturnToDraft))
+	mcpSrv.AddTool(s.toolAutomationImportGraph(), tracked(s.handleAutomationImportGraph))
+	mcpSrv.AddTool(s.toolAutomationPause(), tracked(s.handleAutomationPause))
+	mcpSrv.AddTool(s.toolAutomationResume(), tracked(s.handleAutomationResume))
+	mcpSrv.AddTool(s.toolAutomationCancel(), tracked(s.handleAutomationCancel))
+	mcpSrv.AddTool(s.toolAutomationSkipMember(), tracked(s.handleAutomationSkipMember))
+	mcpSrv.AddTool(s.toolAutomationRenameStage(), tracked(s.handleAutomationRenameStage))
+	mcpSrv.AddTool(s.toolAutomationInsertMember(), tracked(s.handleAutomationInsertMember))
+	mcpSrv.AddTool(s.toolAutomationRemoveMember(), tracked(s.handleAutomationRemoveMember))
+	mcpSrv.AddTool(s.toolAutomationReorderEdges(), tracked(s.handleAutomationReorderEdges))
+	mcpSrv.AddTool(s.toolAutomationApproveInsert(), tracked(s.handleAutomationApproveInsert))
+	mcpSrv.AddTool(s.toolAutomationSetLLM(), tracked(s.handleAutomationSetLLM))
+	mcpSrv.AddTool(s.toolAutomationSetVerificationLLM(), tracked(s.handleAutomationSetVerificationLLM))
+	mcpSrv.AddTool(s.toolAutomationSetBudget(), tracked(s.handleAutomationSetBudget))
+	mcpSrv.AddTool(s.toolAutomationSetEffortCeiling(), tracked(s.handleAutomationSetEffortCeiling))
+	mcpSrv.AddTool(s.toolAutomationSetDecisionAssistant(), tracked(s.handleAutomationSetDecisionAssistant))
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -630,6 +878,18 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL325 (v8.1.0) — community registry install + browse.
 	mcpSrv.AddTool(s.toolPluginInstall(), tracked(s.handlePluginInstall))
 	mcpSrv.AddTool(s.toolPluginBrowseRegistry(), tracked(s.handlePluginBrowseRegistry))
+	// BL403 (plugin service reads) — service status, widgets and token
+	// usage over the same REST handlers the widget/token routes use.
+	mcpSrv.AddTool(s.toolPluginServiceStatus(), tracked(s.handlePluginServiceStatus))
+	mcpSrv.AddTool(s.toolPluginWidgetList(), tracked(s.handlePluginWidgetList))
+	mcpSrv.AddTool(s.toolPluginWidgetGet(), tracked(s.handlePluginWidgetGet))
+	mcpSrv.AddTool(s.toolPluginTokenList(), tracked(s.handlePluginTokenList))
+	// Managed-plugin lifecycle writes + token rotation over the same
+	// REST handlers; attach-only plugins are refused by the server.
+	mcpSrv.AddTool(s.toolPluginServiceStart(), tracked(s.handlePluginServiceStart))
+	mcpSrv.AddTool(s.toolPluginServiceStop(), tracked(s.handlePluginServiceStop))
+	mcpSrv.AddTool(s.toolPluginServiceRestart(), tracked(s.handlePluginServiceRestart))
+	mcpSrv.AddTool(s.toolPluginTokenRotate(), tracked(s.handlePluginTokenRotate))
 	// BL242 (v6.4.0) — centralized secrets manager.
 	mcpSrv.AddTool(s.toolSecretList(), tracked(s.handleSecretList))
 	mcpSrv.AddTool(s.toolSecretGet(), tracked(s.handleSecretGet))
@@ -671,6 +931,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolIdentitySet(), tracked(s.handleIdentitySet))
 	mcpSrv.AddTool(s.toolIdentityUpdate(), tracked(s.handleIdentityUpdate))
 	mcpSrv.AddTool(s.toolIdentityConfigure(), tracked(s.handleIdentityConfigure)) // BL257 P2 v6.8.1
+	mcpSrv.AddTool(s.toolIdentityBackups(), tracked(s.handleIdentityBackups))
+	mcpSrv.AddTool(s.toolIdentityRestore(), tracked(s.handleIdentityRestore))
+	mcpSrv.AddTool(s.toolIdentityReset(), tracked(s.handleIdentityReset))
 	// BL258 (v6.9.0) — Algorithm Mode 7-phase per-session harness.
 	mcpSrv.AddTool(s.toolAlgorithmList(), tracked(s.handleAlgorithmList))
 	mcpSrv.AddTool(s.toolAlgorithmGet(), tracked(s.handleAlgorithmGet))
@@ -712,7 +975,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodeUpdate(), tracked(s.handleComputeNodeUpdateMCP))
 	mcpSrv.AddTool(s.toolComputeNodeDelete(), tracked(s.handleComputeNodeDeleteMCP))
 	mcpSrv.AddTool(s.toolComputeNodeHealth(), tracked(s.handleComputeNodeHealthMCP))
+	mcpSrv.AddTool(s.toolComputeNodeDrain(), tracked(s.handleComputeNodeDrainMCP))
+	mcpSrv.AddTool(s.toolComputeNodeUndrain(), tracked(s.handleComputeNodeUndrainMCP))
 	mcpSrv.AddTool(s.toolComputeNodeDetail(), tracked(s.handleComputeNodeDetailMCP))
+	mcpSrv.AddTool(s.toolComputePinSettings(), tracked(s.handleComputePinSettingsMCP))
+	mcpSrv.AddTool(s.toolComputeServedModels(), tracked(s.handleComputeServedModels))
 	// alpha.23b — observer-peer attach/detach + free-list.
 	mcpSrv.AddTool(s.toolObserverPeersFree(), tracked(s.handleObserverPeersFreeMCP))
 	mcpSrv.AddTool(s.toolComputeNodeAttachObserver(), tracked(s.handleComputeNodeAttachObserverMCP))
@@ -725,6 +992,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodePullModel(), tracked(s.handleComputeNodePullModelMCP))
 	mcpSrv.AddTool(s.toolComputeNodeRemoveModel(), tracked(s.handleComputeNodeRemoveModelMCP))
 	mcpSrv.AddTool(s.toolMarketplacePullTask(), tracked(s.handleMarketplacePullTaskMCP))
+	// Missing-model placement asks (policy "ask"): list pending + approve/deny.
+	mcpSrv.AddTool(s.toolComputePlacementList(), tracked(s.handleComputePlacementListMCP))
+	mcpSrv.AddTool(s.toolComputePlacementAnswer(), tracked(s.handleComputePlacementAnswerMCP))
 	// v7.0.0 S2 — LLM-inference registry.
 	mcpSrv.AddTool(s.toolLLMList(), tracked(s.handleLLMListMCP))
 	mcpSrv.AddTool(s.toolLLMGet(), tracked(s.handleLLMGetMCP))
@@ -732,6 +1002,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolLLMUpdate(), tracked(s.handleLLMUpdateMCP))
 	mcpSrv.AddTool(s.toolLLMDelete(), tracked(s.handleLLMDeleteMCP))
 	mcpSrv.AddTool(s.toolLLMTest(), tracked(s.handleLLMTestMCP))
+	mcpSrv.AddTool(s.toolLLMClassifier(), tracked(s.handleLLMClassifier))
 	mcpSrv.AddTool(s.toolLLMEnable(), tracked(s.handleLLMEnableMCP))
 	mcpSrv.AddTool(s.toolLLMDisable(), tracked(s.handleLLMDisableMCP))
 	// v7.0.0-alpha.37 — Enabled Models + in_use.
@@ -780,6 +1051,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolObserverConfigSet(), tracked(s.handleObserverConfigSet))
 	// BL172 (S11) — peer registry parity.
 	mcpSrv.AddTool(s.toolObserverPeersList(), tracked(s.handleObserverPeersList))
+	// Observer pull protocol (pull mode) — live per-peer pull state.
+	mcpSrv.AddTool(s.toolObserverPullStatus(), tracked(s.handleObserverPullStatus))
 	mcpSrv.AddTool(s.toolObserverPeerGet(), tracked(s.handleObserverPeerGet))
 	mcpSrv.AddTool(s.toolObserverPeerStats(), tracked(s.handleObserverPeerStats))
 	mcpSrv.AddTool(s.toolObserverPeerRegister(), tracked(s.handleObserverPeerRegister))
@@ -808,6 +1081,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDeleteSession(), tracked(s.handleDeleteSession))
 	mcpSrv.AddTool(s.toolRestartSession(), tracked(s.handleRestartSession))
 	mcpSrv.AddTool(s.toolGetStats(), tracked(s.handleGetStats))
+	mcpSrv.AddTool(s.toolWorkerProfileStatus(), tracked(s.handleWorkerProfileStatus))
 	mcpSrv.AddTool(s.toolGetConfig(), tracked(s.handleGetConfig))
 
 	// v6.0.4 (BL210-remaining) — detection filters, backends, session state,
@@ -841,8 +1115,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDashboardCardUpdate(), tracked(s.handleDashboardCardUpdateMCP))
 	mcpSrv.AddTool(s.toolDashboardCardAdd(), tracked(s.handleDashboardCardAddMCP))
 	mcpSrv.AddTool(s.toolDashboardCardDelete(), tracked(s.handleDashboardCardDeleteMCP))
+	// Operator console one-glance summary (same data as GET /api/dashboard/console).
+	mcpSrv.AddTool(s.toolDashboardConsoleGet(), tracked(s.handleDashboardConsoleGetMCP))
 	// BL349 — self-session discovery.
 	mcpSrv.AddTool(s.toolGetMySessionID(), tracked(s.handleGetMySessionID))
+	// BL463 — self-scope + isolation surface (superset of BL349).
+	mcpSrv.AddTool(s.toolGetMyScope(), tracked(s.handleGetMyScope))
 	// BL350 — orphaned sessions listing.
 	mcpSrv.AddTool(s.toolListOrphanedSessions(), tracked(s.handleListOrphanedSessions))
 
@@ -854,6 +1132,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 
 	// BL316 S2 — federation peer and group tools.
 	s.RegisterFederationTools()
+
+	// Fingerprint match records — operator decision over /api/federation/fingerprint-matches.
+	s.RegisterFederationFingerprintTools()
 
 	// BL241 P1 — Matrix backend status + test.
 	mcpSrv.AddTool(s.toolMatrixStatus(), tracked(s.handleMatrixStatus))
@@ -1208,11 +1489,13 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolVisionDescribe, "vision_describe"},
 		{s.toolKillSession, "kill_session"},
 		{s.toolRenameSession, "rename_session"},
+		{s.toolSetSessionPriority, "set_session_priority"},
 		{s.toolStopAllSessions, "stop_all_sessions"},
 		{s.toolSessionReconcile, "session_reconcile"},
 		{s.toolSessionImport, "session_import"},
 		{s.toolSessionSummarize, "session_summarize"},
 		{s.toolAgentAudit, "agent_audit"},
+		{s.toolSelfConfigAudit, "self_config_audit"},
 		{s.toolGetAlerts, "get_alerts"},
 		{s.toolCreateAlert, "create_alert"},
 		{s.toolMarkAlertRead, "mark_alert_read"},
@@ -1280,11 +1563,30 @@ func (s *Server) ToolDocs() []ToolDoc {
 		// Automation orchestration
 		{s.toolAutomationList, "automation_list"},
 		{s.toolAutomationGet, "automation_get"},
+		{s.toolAutomationMergedMembers, "automation_merged_members"},
 		{s.toolAutomationCreate, "automation_create"},
 		{s.toolAutomationUpdate, "automation_update"},
 		{s.toolAutomationDelete, "automation_delete"},
+		{s.toolAutomationActivate, "automation_activate"},
+		{s.toolAutomationReturnToDraft, "automation_return_to_draft"},
+		{s.toolAutomationImportGraph, "automation_import_graph"},
+		{s.toolAutomationPause, "automation_pause"},
+		{s.toolAutomationResume, "automation_resume"},
+		{s.toolAutomationCancel, "automation_cancel"},
+		{s.toolAutomationSkipMember, "automation_skip_member"},
+		{s.toolAutomationRenameStage, "automation_rename_stage"},
+		{s.toolAutomationInsertMember, "automation_insert_member"},
+		{s.toolAutomationRemoveMember, "automation_remove_member"},
+		{s.toolAutomationReorderEdges, "automation_reorder_edges"},
+		{s.toolAutomationApproveInsert, "automation_approve_insert"},
+		{s.toolAutomationSetLLM, "automation_set_llm"},
+		{s.toolAutomationSetVerificationLLM, "automation_set_verification_llm"},
+		{s.toolAutomationSetBudget, "automation_set_budget"},
+		{s.toolAutomationSetEffortCeiling, "automation_set_effort_ceiling"},
+		{s.toolAutomationSetDecisionAssistant, "automation_set_decision_assistant"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
+		{s.toolGetMyScope, "get_my_scope"},
 		// BL350 — orphan lineage listing
 		{s.toolListOrphanedSessions, "list_orphaned_sessions"},
 	}
@@ -1333,8 +1635,35 @@ func (s *Server) ToolDocs() []ToolDoc {
 // bufio.NewReader path. Pass os.Stdin/os.Stdout explicitly so the
 // stdio entrypoint handles its first message instead of segfaulting
 // on EOF. Caught by scripts/release-smoke-stdio-mcp.sh.
+//
+// GuardStdioListen adds the close-reason evidence the investigated MCP
+// drop incident lacked: it recovers panics escaping the synchronous
+// dispatch path (tool panics inside queued handlers are covered by the
+// panic-recovery middleware) and logs why the listener stopped.
 func (s *Server) ServeStdio(ctx context.Context) error {
-	return server.NewStdioServer(s.srv).Listen(ctx, os.Stdin, os.Stdout)
+	return GuardStdioListen(server.NewStdioServer(s.srv), ctx, "daemon", os.Stdin, os.Stdout)
+}
+
+// sseBaseURL returns the base URL the SSE server advertises to clients in
+// its "endpoint" event (the URL clients POST messages to). When
+// mcp.public_url is set it wins, with any trailing slash trimmed, so a
+// server bound to localhost behind a TLS-terminating reverse proxy
+// (Tailscale serve, Caddy, nginx) tells remote clients the proxy's
+// address instead of its own bind address. When it is empty the URL is
+// built from the first mcp.sse_host entry, the SSE port, and the TLS
+// setting, which is the historical behavior (unchanged).
+func sseBaseURL(cfg *config.MCPConfig) string {
+	// An invalid configured value (for example from a hand-edited YAML file)
+	// is treated as empty; ServeSSE prints the warning.
+	if pub, err := config.NormalizePublicURL(cfg.PublicURL); err == nil && pub != "" {
+		return pub
+	}
+	host := strings.TrimSpace(strings.Split(cfg.SSEHost, ",")[0])
+	scheme := "http"
+	if cfg.TLSEnabled {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s:%d", scheme, host, cfg.SSEPort)
 }
 
 // ServeSSE starts an HTTP/SSE MCP server for remote AI clients.
@@ -1346,29 +1675,51 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 		hosts = []string{"127.0.0.1"}
 	}
 
-	// Use first host for the base URL (SSE server needs one canonical URL)
-	firstAddr := fmt.Sprintf("%s:%d", strings.TrimSpace(hosts[0]), s.cfg.SSEPort)
-	scheme := "http"
-	if s.cfg.TLSEnabled {
-		scheme = "https"
+	baseURL := sseBaseURL(s.cfg)
+	if strings.TrimSpace(s.cfg.PublicURL) != "" {
+		if _, err := config.NormalizePublicURL(s.cfg.PublicURL); err != nil {
+			fmt.Printf("datawatch MCP SSE server: ignoring mcp.public_url (%v); advertising %s\n", err, baseURL)
+		} else {
+			fmt.Printf("datawatch MCP SSE server advertising public URL %s to clients\n", baseURL)
+		}
 	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, firstAddr)
 
-	sseSrv := server.NewSSEServer(s.srv, server.WithBaseURL(baseURL))
+	sseSrv := server.NewSSEServer(
+		s.srv,
+		server.WithBaseURL(baseURL),
+		// CRASH-SAFETY / RELIABILITY — mcp-go v0.46.0 keeps the SSE
+		// session stream silent unless keepalive is opted in (default
+		// keepAlive=false). A silent long-lived stream is exactly what
+		// proxies/clients kill on their own idle read timeouts — one of
+		// the two traced mid-session drop modes (findings doc in the
+		// header comment of this function). Periodic pings keep the
+		// stream visibly alive on both ends.
+		server.WithKeepAliveInterval(10*time.Second),
+	)
 
 	// BL317 — replace static bearerAuthMiddleware with combined admin+federation auth.
 	// Admin token passes through unrestricted; federation peer tokens are accepted
 	// and tagged in context so per-tool fedCap checks can enforce CBAC.
 	handler := s.mcpFedAuthMiddleware(sseSrv)
 
+	// Observe the long-lived stream: open/close with duration, bytes,
+	// write/flush errors and close reason (see transport_debug.go).
 	mux := http.NewServeMux()
-	mux.Handle("/", handler)
+	mux.Handle("/", ObserveSSEHandler(handler))
 
 	httpSrv := &http.Server{
-		Handler:     mux,
+		Handler: mux,
+		// NOTE (findings doc for the investigated MCP drop incident):
+		// ReadTimeout applies while reading requests — the handler run is
+		// exempt. IdleTimeout applies between keep-alive requests. There is
+		// deliberately NO WriteTimeout: setting one would time out in-flight
+		// SSE event delivery on a slow client and could cut long-lived
+		// streams mid-write. SSE-specific long-lived streams are unaffected
+		// by ReadTimeout/IdleTimeout while their handler is still running.
 		ReadTimeout: 30 * time.Second,
 		IdleTimeout: 120 * time.Second,
 	}
+	LogSSEServerTimeouts(httpSrv)
 
 	var tlsCfg *tls.Config
 	if s.cfg.TLSEnabled {
@@ -1387,22 +1738,33 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 		httpSrv.TLSConfig = tlsCfg
 	}
 
-	errCh := make(chan error, len(hosts))
+	// BL444 — retry failed TCP binds with exponential backoff instead of
+	// failing daemon startup on the first bind error.
+	addrs := make([]string, 0, len(hosts))
 	for _, host := range hosts {
 		host = strings.TrimSpace(host)
 		if host == "" {
 			continue
 		}
-		addr := fmt.Sprintf("%s:%d", host, s.cfg.SSEPort)
-		listener, err := net.Listen("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("MCP SSE listen %s: %w", addr, err)
-		}
+		addrs = append(addrs, fmt.Sprintf("%s:%d", host, s.cfg.SSEPort))
+	}
+	timeout := s.cfg.SSEBindTimeout
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	listeners, err := s.listenWithRetry(ctx, addrs, timeout, nil)
+	if err != nil {
+		return err
+	}
+
+	errCh := make(chan error, len(listeners))
+	for i, listener := range listeners {
+		addr := addrs[i]
 		if tlsCfg != nil {
-			go func(l net.Listener, a string) { errCh <- httpSrv.ServeTLS(l, "", "") }(listener, addr)
+			go func(l net.Listener) { errCh <- httpSrv.ServeTLS(l, "", "") }(listener)
 			fmt.Printf("datawatch MCP SSE server listening on https://%s (TLS 1.3+)\n", addr)
 		} else {
-			go func(l net.Listener, a string) { errCh <- httpSrv.Serve(l) }(listener, addr)
+			go func(l net.Listener) { errCh <- httpSrv.Serve(l) }(listener)
 			fmt.Printf("datawatch MCP SSE server listening on http://%s\n", addr)
 		}
 	}
@@ -1432,7 +1794,31 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 			mcpsdk.Description("BL361 — filter by exact state: running, waiting_input, rate_limited, complete, failed, killed. Empty = all."),
 		),
 		mcpsdk.WithString("backend",
-			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all."),
+			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all. This is the session's own backend, not an axis shortcut: filter the backend placement axis with tag=backend:<value> (the same name cannot be both — one parameter cannot be the backend-family filter and the backend axis; the task's 'backend' shortcut item is settled against the no-regression rule, see the tag-listing plan §12)."),
+		),
+		mcpsdk.WithString("project",
+			mcpsdk.Description("Axis shortcut — expanded to the project:<value> tag filter (a session's own, system, and inherited tags all count). Empty = all."),
+		),
+		mcpsdk.WithString("automaton",
+			mcpsdk.Description("Axis shortcut — expanded to the automaton:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("automation",
+			mcpsdk.Description("Axis shortcut — expanded to the automation:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("stage",
+			mcpsdk.Description("Axis shortcut — expanded to the stage:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("kind",
+			mcpsdk.Description("Axis shortcut — expanded to the kind:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("role",
+			mcpsdk.Description("Axis shortcut — expanded to the role:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("lane",
+			mcpsdk.Description("Axis shortcut — expanded to the lane:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("compute",
+			mcpsdk.Description("Axis shortcut — expanded to the compute:<value> tag filter (the compute node the work was placed on). Empty = all."),
 		),
 		mcpsdk.WithString("alive",
 			mcpsdk.Description("BL361 — filter by claude_alive field: true, false, or any (default). Empty = any."),
@@ -1449,7 +1835,63 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		mcpsdk.WithString("since",
 			mcpsdk.Description("Only sessions updated after this time (RFC3339 or unix seconds). Always JSON."),
 		),
+		mcpsdk.WithArray("tags",
+			mcpsdk.WithStringItems(),
+			mcpsdk.Description("Filter to sessions that carry at least one of these tags (tag_match=all: every tag). A session's own tags, its system tags, and the tags it inherits from the Automaton that spawned it all count. The axis shortcut params (project, automaton, automation, stage, kind, role, lane, compute) expand to axis:value tags and combine with this list under tag_match."),
+		),
+		mcpsdk.WithString("tag_match",
+			mcpsdk.Description("any (default): the session needs at least one of tags (or an expanded shortcut); all: every tag."),
+		),
+		mcpsdk.WithString("group_by",
+			mcpsdk.Description("Group the list by axis: tag, state, node, project or automaton. Returns the grouped response: one group per key with its count, per-state mix and its sessions, plus per-state totals. On automaton each Automaton also carries its story blocks and progress (done/total). Always JSON; tag_prefix narrows the tag axis."),
+		),
+		mcpsdk.WithString("tag_prefix",
+			mcpsdk.Description("With group_by=tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group. Ignored without group_by=tag."),
+		),
 	)
+}
+
+// sessionTagShortcuts expands the axis shortcut params (project, automaton,
+// automation, stage, kind, role, lane, compute) into axis:value tag filters;
+// an empty or blank value is ignored. The backend param is handled by the
+// session filter itself: it matches the backend family OR the backend:<value>
+// placement tag, so it needs no expansion here.
+func sessionTagShortcuts(req mcpsdk.CallToolRequest) []string {
+	var out []string
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
+		if v := strings.TrimSpace(req.GetString(axis, "")); v != "" {
+			out = append(out, axis+":"+v)
+		}
+	}
+	return out
+}
+
+// toolSessionTagList declares the session_tag_list tool: the tags in use
+// across live and archived sessions, each split into its axis and value and
+// counted over the sessions that carry it.
+func (s *Server) toolSessionTagList() mcpsdk.Tool {
+	return mcpsdk.NewTool("session_tag_list",
+		mcpsdk.WithDescription("List the tags in use across live and archived sessions. Each entry has the tag, its axis and value from the axis:value form (axis is empty for a plain tag), and the number of sessions that carry it — a session counts once per tag even when it appears on several of the session's tag lists (own, system, and inherited tags all count). Entries are sorted by axis (tags without an axis last), then count (descending), then tag. Read-only."),
+	)
+}
+
+// handleSessionTagList answers the session_tag_list tool call in-process from
+// the session manager (no HTTP hop), so it works with or without the REST
+// view. Read-only.
+func (s *Server) handleSessionTagList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	entries := s.manager.TagInventory()
+	if entries == nil {
+		entries = []session.TagInventoryEntry{}
+	}
+	out, err := json.Marshal(map[string]any{"tags": entries})
+	if err != nil {
+		return toolErrorf("session_tag_list", "marshal: %v", err), nil
+	}
+	return &mcpsdk.CallToolResult{
+		Content: []mcpsdk.Content{
+			mcpsdk.TextContent{Type: "text", Text: string(out)},
+		},
+	}, nil
 }
 
 func (s *Server) toolStartSession() mcpsdk.Tool {
@@ -1480,9 +1922,16 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithBoolean("kill_children",
 			mcpsdk.Description("When true, killing this session will also kill direct child sessions it has spawned. Default false."),
 		),
+		mcpsdk.WithBoolean("git",
+			mcpsdk.Description("Opt-in git integration: when true, the session works in a git repo with init/snapshot/auto-commit of its changes. Default false (no git integration)."),
+		),
 		mcpsdk.WithBoolean("kill_children_recursive",
 			mcpsdk.Description("BL351 — when true, killing this session kills ALL descendants recursively, regardless of their own kill_children settings. Supersedes kill_children when both are set."),
 		),
+		mcpsdk.WithString("launch_role",
+			mcpsdk.Description("Optional placement role the session plays: worker | verifier | planner | judge | supervisor. Start the operator's supervisor session with launch_role=supervisor; it then carries the supervisor role tag plus compute, backend, lane and project tags and no automaton tag. Omit for an unchanged plain session."),
+		),
+		sessionPriorityOption(),
 		mcpsdk.WithArray("image_paths",
 			mcpsdk.Description("BL368 — local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and the description is prepended to the task as '[image: ...]'. Requires vision.enabled=true in config."),
 			mcpsdk.WithStringItems(),
@@ -1672,7 +2121,10 @@ func (s *Server) toolMarkAlertRead() mcpsdk.Tool {
 
 func (s *Server) toolRestartDaemon() mcpsdk.Tool {
 	return mcpsdk.NewTool("restart_daemon",
-		mcpsdk.WithDescription("Restart the datawatch daemon. Active tmux sessions are preserved."),
+		mcpsdk.WithDescription("Restart the datawatch daemon. Active tmux sessions are preserved. While running Automata work would be interrupted, the restart is refused and the tool result carries the interruption report; pass force=true to restart anyway. See docs/howto/restart-with-work-running.md."),
+		mcpsdk.WithBoolean("force",
+			mcpsdk.Description("Restart even when running Automata work would be interrupted. Default false: a restart that would interrupt work is refused with the report."),
+		),
 	)
 }
 
@@ -1817,18 +2269,22 @@ func (s *Server) toolScheduleCancel() mcpsdk.Tool {
 func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	// BL432 — view / states / since go through the REST list view.
 	if q, ok, errMsg := listSessionsViewQuery(req); errMsg != "" {
-		return mcpsdk.NewToolResultText(errMsg), nil
+		return toolErrorf("list_sessions", "%s", strings.TrimPrefix(errMsg, "Error: ")), nil
 	} else if ok {
 		return s.listSessionsViaREST(q)
 	}
 
 	// BL361 — structured filter params.
 	filter := session.SessionFilter{
-		Name:    req.GetString("name", ""),
-		State:   req.GetString("state", ""),
-		Backend: req.GetString("backend", ""),
-		Alive:   req.GetString("alive", ""),
+		Name:     req.GetString("name", ""),
+		State:    req.GetString("state", ""),
+		Backend:  req.GetString("backend", ""),
+		Alive:    req.GetString("alive", ""),
+		Tags:     req.GetStringSlice("tags", nil),
+		TagMatch: req.GetString("tag_match", ""),
 	}
+	// Axis shortcuts expand to axis:value tag filters under tag_match.
+	filter.Tags = append(filter.Tags, sessionTagShortcuts(req)...)
 	sessions := s.manager.ListSessionsFiltered(filter)
 
 	// BL350 — orphaned=true filter.
@@ -1856,18 +2312,19 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 	// BL361 — json format returns structured array.
 	if req.GetString("format", "text") == "json" {
 		type sessionJSON struct {
-			ID           string    `json:"id"`
-			FullID       string    `json:"full_id"`
-			Name         string    `json:"name,omitempty"`
-			State        string    `json:"state"`
-			Task         string    `json:"task,omitempty"`
-			Backend      string    `json:"backend,omitempty"`
-			ClaudeAlive  *bool     `json:"claude_alive,omitempty"`
-			ParentID     string    `json:"parent_id,omitempty"`
-			CreatedAt    time.Time `json:"created_at"`
-			UpdatedAt    time.Time `json:"updated_at"`
-			ShortSummary string    `json:"short_summary,omitempty"`
-			LastResponse string    `json:"last_response,omitempty"`
+			ID           string                `json:"id"`
+			FullID       string                `json:"full_id"`
+			Name         string                `json:"name,omitempty"`
+			State        string                `json:"state"`
+			Task         string                `json:"task,omitempty"`
+			Backend      string                `json:"backend,omitempty"`
+			ClaudeAlive  *bool                 `json:"claude_alive,omitempty"`
+			ParentID     string                `json:"parent_id,omitempty"`
+			CreatedAt    time.Time             `json:"created_at"`
+			UpdatedAt    time.Time             `json:"updated_at"`
+			ShortSummary string                `json:"short_summary,omitempty"`
+			LastResponse string                `json:"last_response,omitempty"`
+			UIPrompt     *session.UIPromptInfo `json:"ui_prompt,omitempty"`
 		}
 		out := make([]sessionJSON, 0, len(sessions))
 		for _, sess := range sessions {
@@ -1884,11 +2341,12 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 				UpdatedAt:    sess.UpdatedAt,
 				ShortSummary: sess.LastSummaryLong,
 				LastResponse: sess.LastResponse,
+				UIPrompt:     sess.UIPrompt,
 			})
 		}
 		raw, err := json.Marshal(out)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error marshaling JSON: %v", err)), nil
+			return toolError("list_sessions", err), nil
 		}
 		return mcpsdk.NewToolResultText(string(raw)), nil
 	}
@@ -1912,6 +2370,16 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 		}
 		if sess.State == session.StateWaitingInput && sess.LastPrompt != "" {
 			fmt.Fprintf(&sb, "Prompt:  %s\n", sess.LastPrompt)
+		}
+		// A recognised interstitial UI prompt (e.g. the auto-compact nudge)
+		// parks the session on waiting_input without a prompt line to echo;
+		// expose what is actually on the pane.
+		if up := sess.UIPrompt; up != nil && up.Kind != "" {
+			fmt.Fprintf(&sb, "Blocked: %s UI prompt on the pane since %s; the agent is parked until it is dismissed (detection only — datawatch does not answer it)\n",
+				up.Kind, up.Since.Format(time.RFC3339))
+			if up.SelectedOption != "" {
+				fmt.Fprintf(&sb, "Pick:    Enter would select %q — note the selected option can change a setting\n", up.SelectedOption)
+			}
 		}
 		// BL355: show claude_alive for active sessions
 		if sess.ClaudeAlive != nil {
@@ -1982,7 +2450,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	}
 	task := req.GetString("task", "")
 	if strings.TrimSpace(task) == "" {
-		return mcpsdk.NewToolResultText("Error: task is required"), nil
+		return toolErrorf("start_session", "task is required"), nil
 	}
 	if imgPaths := req.GetStringSlice("image_paths", nil); len(imgPaths) > 0 {
 		if prefix := s.buildImagePrefix(ctx, imgPaths); prefix != "" {
@@ -1997,6 +2465,12 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	callerID := req.GetString("caller_session_id", "")
 	killChildren := req.GetBool("kill_children", false)
 	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
+	git := req.GetBool("git", false)
+	launchRole := strings.TrimSpace(req.GetString("launch_role", ""))
+	priority, hasPriority, perr := priorityFromReq(req)
+	if perr != nil {
+		return toolError("start_session", perr), nil
+	}
 
 	if pm != "" {
 		valid := map[string]bool{
@@ -2004,8 +2478,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 			"auto": true, "bypassPermissions": true, "dontAsk": true,
 		}
 		if !valid[pm] {
-			return mcpsdk.NewToolResultText(fmt.Sprintf(
-				"Error: invalid permission_mode %q — valid values: default, plan, acceptEdits, auto, bypassPermissions, dontAsk", pm)), nil
+			return toolErrorf("start_session", "invalid permission_mode %q — valid values: default, plan, acceptEdits, auto, bypassPermissions, dontAsk", pm), nil
 		}
 	}
 
@@ -2015,7 +2488,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive) && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "") && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -2041,6 +2514,15 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		if killChildrenRecursive {
 			body["kill_children_recursive"] = true
 		}
+		if git {
+			body["git"] = true
+		}
+		if hasPriority {
+			body["priority"] = priority
+		}
+		if launchRole != "" {
+			body["launch_role"] = launchRole
+		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
 			fmt.Sprintf("http://127.0.0.1:%d/api/sessions/start", s.webPort),
@@ -2048,12 +2530,12 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		sreq.Header.Set("Content-Type", "application/json")
 		resp, err := s.webDo(sreq)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
+			return toolError("start_session", err), nil
 		}
 		defer resp.Body.Close() //nolint:errcheck
 		raw, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode >= 400 {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session (%d): %s", resp.StatusCode, string(raw))), nil
+			return toolErrorf("start_session", "starting session (%d): %s", resp.StatusCode, string(raw)), nil
 		}
 		var sess struct {
 			ID, Task, ProjectDir, TmuxSession, LLMRef, ComputeNodeRef string
@@ -2073,7 +2555,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	}
 
 	if computeRef != "" {
-		return mcpsdk.NewToolResultText("Error: compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node"), nil
+		return toolErrorf("start_session", "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node"), nil
 	}
 
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -2083,10 +2565,11 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		PermissionMode: pm,
 		ParentID:       callerID,
 		KillChildren:   killChildren,
+		Priority:       priority,
 	}
 	sess, err := s.manager.Start(startCtx, task, "mcp", projectDir, opts)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
+		return toolError("start_session", err), nil
 	}
 
 	return mcpsdk.NewToolResultText(fmt.Sprintf(
@@ -2101,7 +2584,7 @@ func (s *Server) handleSessionOutput(ctx context.Context, req mcpsdk.CallToolReq
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("session_output", "session_id or session_name is required"), nil
 	}
 
 	n := req.GetInt("lines", 50)
@@ -2111,18 +2594,18 @@ func (s *Server) handleSessionOutput(ctx context.Context, req mcpsdk.CallToolReq
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("session_output", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("session_output", "session %q not found", id), nil
 	}
 	if !s.ownsSession(ctx, sess.FullID) {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("session_output", "session %q not found", id), nil
 	}
 
 	out, err := s.manager.TailOutput(sess.FullID, n)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error reading output: %v", err)), nil
+		return toolError("session_output", err), nil
 	}
 
 	header := fmt.Sprintf("[%s] State: %s | Task: %s\n---\n", sess.ID, sess.State, sess.Task)
@@ -2139,7 +2622,7 @@ func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallTool
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("session_summarize", "session_id or session_name is required"), nil
 	}
 	n := req.GetInt("lines", 200)
 	if n <= 0 {
@@ -2151,7 +2634,7 @@ func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallTool
 	body, _ := json.Marshal(map[string]int{"lines": n})
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error building request: %v", err)), nil
+		return toolError("session_summarize", err), nil
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
@@ -2159,7 +2642,7 @@ func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallTool
 	}
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error calling summarize: %v", err)), nil
+		return toolError("session_summarize", err), nil
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
@@ -2184,20 +2667,20 @@ func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolReq
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("session_timeline", "session_id or session_name is required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("session_timeline", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("session_timeline", "session %q not found", id), nil
 	}
 
 	lines, err := s.manager.ReadTimeline(sess.FullID)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error reading timeline: %v", err)), nil
+		return toolError("session_timeline", err), nil
 	}
 
 	if len(lines) == 0 {
@@ -2239,14 +2722,14 @@ func (s *Server) handleTelemetryGet(_ context.Context, req mcpsdk.CallToolReques
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("telemetry_get", "session_id or session_name is required"), nil
 	}
 	if s.webPort <= 0 {
-		return mcpsdk.NewToolResultText("Error: daemon API not available"), nil
+		return toolErrorf("telemetry_get", "daemon API not available"), nil
 	}
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/sessions/%s/telemetry", s.webPort, id))
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("telemetry_get", err), nil
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
@@ -2301,11 +2784,11 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("send_input", "session_id or session_name is required"), nil
 	}
 	text := req.GetString("text", "")
 	if text == "" {
-		return mcpsdk.NewToolResultText("Error: text is required"), nil
+		return toolErrorf("send_input", "text is required"), nil
 	}
 	if imgPaths := req.GetStringSlice("image_paths", nil); len(imgPaths) > 0 {
 		if prefix := s.buildImagePrefix(ctx, imgPaths); prefix != "" {
@@ -2315,39 +2798,39 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("send_input", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("send_input", "session %q not found", id), nil
 	}
 	if !s.ownsSession(ctx, sess.FullID) {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("send_input", "session %q not found", id), nil
 	}
 
 	if err := s.manager.SendInput(sess.FullID, text, "mcp"); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending input: %v", err)), nil
+		return toolError("send_input", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Input sent to session %s.", sess.ID)), nil
 }
 
 func (s *Server) handleVisionDescribe(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.visioner == nil {
-		return mcpsdk.NewToolResultText("Error: vision not enabled — set vision.enabled=true in config"), nil
+		return toolErrorf("vision_describe", "vision not enabled — set vision.enabled=true in config"), nil
 	}
 	imagePath := req.GetString("image_path", "")
 	if imagePath == "" {
-		return mcpsdk.NewToolResultText("Error: image_path is required"), nil
+		return toolErrorf("vision_describe", "image_path is required"), nil
 	}
 	prompt := req.GetString("prompt", "")
 
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error reading image: %v", err)), nil
+		return toolError("vision_describe", err), nil
 	}
 	contentType := visionExtMIME(strings.ToLower(filepath.Ext(imagePath)))
 	desc, err := s.visioner.Describe(ctx, imageData, contentType, prompt)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error describing image: %v", err)), nil
+		return toolError("vision_describe", err), nil
 	}
 	return mcpsdk.NewToolResultText(desc), nil
 }
@@ -2405,22 +2888,23 @@ func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolReque
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("kill_session", "session_id or session_name is required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("kill_session", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("kill_session", "session %q not found", id), nil
 	}
 	if !s.ownsSession(ctx, sess.FullID) {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("kill_session", "session %q not found", id), nil
 	}
 
-	if err := s.manager.Kill(sess.FullID); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error killing session: %v", err)), nil
+	why := session.EndReason{Caller: endCallerMCPKillSession, Reason: fmt.Sprintf("MCP kill_session requested by %s", s.endActor(ctx))}
+	if err := s.manager.EndSession(sess.FullID, why); err != nil {
+		return toolError("kill_session", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s killed.", sess.ID)), nil
 }
@@ -2435,19 +2919,19 @@ func (s *Server) handleRenameSession(ctx context.Context, req mcpsdk.CallToolReq
 	}
 	name := req.GetString("name", "")
 	if id == "" || name == "" {
-		return mcpsdk.NewToolResultText("Error: (session_id or session_name) and name are required"), nil
+		return toolErrorf("rename_session", "(session_id or session_name) and name are required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("rename_session", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("rename_session", "session %q not found", id), nil
 	}
 
 	if err := s.manager.Rename(sess.FullID, name); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error renaming session: %v", err)), nil
+		return toolError("rename_session", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s renamed to %q.", sess.ID, name)), nil
 }
@@ -2462,14 +2946,14 @@ func (s *Server) handleSessionChildren(ctx context.Context, req mcpsdk.CallToolR
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("session_children", "session_id or session_name is required"), nil
 	}
 	parent, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("session_children", err), nil
 	}
 	if parent == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("session_children", "session %q not found", id), nil
 	}
 	children := s.manager.GetChildren(parent.FullID)
 	if len(children) == 0 {
@@ -2494,7 +2978,7 @@ func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolReq
 	}
 	text := req.GetString("text", "")
 	if text == "" {
-		return mcpsdk.NewToolResultText("Error: text is required"), nil
+		return toolErrorf("reply_to_parent", "text is required"), nil
 	}
 	childID := req.GetString("session_id", "")
 
@@ -2505,7 +2989,7 @@ func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolReq
 		var err error
 		childSess, err = s.resolveSession(childID)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error resolving session: %v", err)), nil
+			return toolError("reply_to_parent", err), nil
 		}
 	}
 	// HLLM-004 — reply_to_parent only ever means MY parent; an explicit
@@ -2523,7 +3007,7 @@ func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolReq
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Parent session %q no longer exists.", childSess.ParentID)), nil
 	}
 	if err := s.manager.SendInput(parent.FullID, text, "mcp-reply"); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending to parent session %s: %v", parent.ID, err)), nil
+		return toolErrorf("reply_to_parent", "sending to parent session %s: %s", parent.ID, err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Sent to parent session %s.", parent.ID)), nil
 }
@@ -2533,6 +3017,7 @@ func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolReq
 		return deny, nil
 	}
 	sessions := s.manager.ListSessions()
+	why := session.EndReason{Caller: endCallerMCPStopAll, Reason: fmt.Sprintf("MCP stop_all_sessions requested by %s", s.endActor(ctx))}
 	var killed, skipped int
 	for _, sess := range sessions {
 		if sess.Hostname != s.hostname {
@@ -2544,7 +3029,7 @@ func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolReq
 			continue
 		}
 		if sess.State == session.StateRunning || sess.State == session.StateWaitingInput {
-			if err := s.manager.Kill(sess.FullID); err == nil {
+			if err := s.manager.EndSession(sess.FullID, why); err == nil {
 				killed++
 			} else {
 				skipped++
@@ -2556,7 +3041,7 @@ func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolReq
 
 func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.alertStore == nil {
-		return mcpsdk.NewToolResultText("Alert store not available."), nil
+		return toolErrorf("get_alerts", "Alert store not available."), nil
 	}
 
 	limit := req.GetInt("limit", 10)
@@ -2616,11 +3101,11 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 
 func (s *Server) handleCreateAlert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.alertStore == nil {
-		return mcpsdk.NewToolResultText("Alert store not available."), nil
+		return toolErrorf("create_alert", "Alert store not available."), nil
 	}
 	title := req.GetString("title", "")
 	if title == "" {
-		return mcpsdk.NewToolResultText("Error: title required"), nil
+		return toolErrorf("create_alert", "title required"), nil
 	}
 	var level alerts.Level
 	switch alerts.Level(req.GetString("level", "")) {
@@ -2631,7 +3116,7 @@ func (s *Server) handleCreateAlert(_ context.Context, req mcpsdk.CallToolRequest
 	case alerts.LevelError:
 		level = alerts.LevelError
 	default:
-		return mcpsdk.NewToolResultText("Error: level must be info, warn, or error"), nil
+		return toolErrorf("create_alert", "level must be info, warn, or error"), nil
 	}
 	a := s.alertStore.AddSystem(level, title, req.GetString("body", ""))
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Alert %s created.", a.ID)), nil
@@ -2639,7 +3124,7 @@ func (s *Server) handleCreateAlert(_ context.Context, req mcpsdk.CallToolRequest
 
 func (s *Server) handleMarkAlertRead(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.alertStore == nil {
-		return mcpsdk.NewToolResultText("Alert store not available."), nil
+		return toolErrorf("mark_alert_read", "Alert store not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
@@ -2647,23 +3132,44 @@ func (s *Server) handleMarkAlertRead(_ context.Context, req mcpsdk.CallToolReque
 		return mcpsdk.NewToolResultText("All alerts marked as read."), nil
 	}
 	if err := s.alertStore.MarkRead(id); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("mark_alert_read", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Alert %s marked as read.", id)), nil
 }
 
-func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleRestartDaemon(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
 		return deny, nil
 	}
-	if s.restartFn == nil {
-		return mcpsdk.NewToolResultText("Restart not available (not running as daemon)."), nil
+	if s.restartFn == nil && s.restartForceFn == nil {
+		return toolErrorf("restart_daemon", "Restart not available (not running as daemon)."), nil
+	}
+	force := req.GetBool("force", false)
+	if !force {
+		// Running work would be interrupted and force was not passed: refuse,
+		// and answer with the read-only report in the tool result.
+		if rep, ok := s.restartDaemonReport(); ok && rep.NeedsForce {
+			return mcpsdk.NewToolResultError(restartDaemonRefusal(rep)), nil
+		}
 	}
 	go func() {
 		time.Sleep(500 * time.Millisecond)
+		// Declare the shutdown as MCP-initiated so the cause record shows
+		// source=api-restart via=mcp-restart (picked up by the daemon's
+		// Capture when it writes the audit entry + last-shutdown.json).
+		shutdowncause.MarkAPIInitiated("mcp-restart")
+		if s.restartForceFn != nil {
+			s.restartForceFn(force)
+			return
+		}
 		s.restartFn()
 	}()
-	return mcpsdk.NewToolResultText("Restarting daemon… active tmux sessions will be preserved."), nil
+	msg := "Restarting daemon… active tmux sessions will be preserved."
+	// What the restart interrupts, counted before the restart policy runs.
+	if out, err := s.proxyGet("/api/autonomous/restart-interruptions", nil); err == nil {
+		msg += "\nInterruptions: " + string(out)
+	}
+	return mcpsdk.NewToolResultText(msg), nil
 }
 
 // BL397 — ACME subsystem MCP handlers.
@@ -2673,7 +3179,7 @@ func (s *Server) handleAcmeStatus(ctx context.Context, _ mcpsdk.CallToolRequest)
 		return deny, nil
 	}
 	if s.acmeManager == nil {
-		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+		return toolErrorf("acme_status", "ACME is not enabled (acme.enabled: false)."), nil
 	}
 	b, _ := json.MarshalIndent(s.acmeManager.Status(), "", "  ")
 	return mcpsdk.NewToolResultText(string(b)), nil
@@ -2684,7 +3190,7 @@ func (s *Server) handleAcmeRenew(ctx context.Context, _ mcpsdk.CallToolRequest) 
 		return deny, nil
 	}
 	if s.acmeManager == nil {
-		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+		return toolErrorf("acme_renew", "ACME is not enabled (acme.enabled: false)."), nil
 	}
 	if err := s.acmeManager.IssueNow(); err != nil {
 		return mcpsdk.NewToolResultText("ACME renew failed: " + err.Error()), nil
@@ -2698,7 +3204,7 @@ func (s *Server) handleAcmeIssuerLog(ctx context.Context, _ mcpsdk.CallToolReque
 		return deny, nil
 	}
 	if s.acmeManager == nil {
-		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+		return toolErrorf("acme_issuer_log", "ACME is not enabled (acme.enabled: false)."), nil
 	}
 	b, _ := json.MarshalIndent(s.acmeManager.IssuerLog(), "", "  ")
 	return mcpsdk.NewToolResultText(string(b)), nil
@@ -2730,7 +3236,7 @@ func (s *Server) handleGetVersion(_ context.Context, _ mcpsdk.CallToolRequest) (
 
 func (s *Server) handleListSavedCommands(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.cmdLib == nil {
-		return mcpsdk.NewToolResultText("Command library not available."), nil
+		return toolErrorf("list_saved_commands", "Command library not available."), nil
 	}
 	cmds := s.cmdLib.List()
 	if len(cmds) == 0 {
@@ -2749,7 +3255,7 @@ func (s *Server) handleListSavedCommands(_ context.Context, _ mcpsdk.CallToolReq
 
 func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.cmdLib == nil {
-		return mcpsdk.NewToolResultText("Command library not available."), nil
+		return toolErrorf("send_saved_command", "Command library not available."), nil
 	}
 	id := req.GetString("session_id", "")
 	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
@@ -2757,31 +3263,31 @@ func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRe
 	}
 	name := req.GetString("command_name", "")
 	if id == "" || name == "" {
-		return mcpsdk.NewToolResultText("Error: (session_id or session_name) and command_name are required"), nil
+		return toolErrorf("send_saved_command", "(session_id or session_name) and command_name are required"), nil
 	}
 
 	cmd, ok := s.cmdLib.Get(name)
 	if !ok {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Saved command %q not found.", name)), nil
+		return toolErrorf("send_saved_command", "saved command %q not found", name), nil
 	}
 
 	sess, resolveErr := s.resolveSession(id)
 	if resolveErr != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", resolveErr)), nil
+		return toolError("send_saved_command", resolveErr), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("send_saved_command", "session %q not found", id), nil
 	}
 
 	if err := s.manager.SendInput(sess.FullID, cmd.Command, "mcp"); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending command: %v", err)), nil
+		return toolError("send_saved_command", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Sent command %q (%q) to session %s.", name, cmd.Command, sess.ID)), nil
 }
 
 func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.schedStore == nil {
-		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+		return toolErrorf("schedule_add", "Schedule store not available."), nil
 	}
 	id := req.GetString("session_id", "")
 	sessionName := req.GetString("session_name", "")
@@ -2790,10 +3296,10 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 	scheduleName := req.GetString("schedule_name", "")
 
 	if command == "" {
-		return mcpsdk.NewToolResultText("Error: command is required"), nil
+		return toolErrorf("schedule_add", "command is required"), nil
 	}
 	if id == "" && sessionName == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("schedule_add", "session_id or session_name is required"), nil
 	}
 
 	// Resolve session ID
@@ -2802,10 +3308,10 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 	if id != "" {
 		sess, resolveErr := s.resolveSession(id)
 		if resolveErr != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", resolveErr)), nil
+			return toolError("schedule_add", resolveErr), nil
 		}
 		if sess == nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+			return toolErrorf("schedule_add", "session %q not found", id), nil
 		}
 		resolvedID = sess.FullID
 		sessID = sess.ID
@@ -2855,7 +3361,7 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 		CronExpr:     cronExpr,
 	})
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error scheduling: %v", err)), nil
+		return toolError("schedule_add", err), nil
 	}
 	runDesc := "on next input prompt"
 	if !runAt.IsZero() {
@@ -2870,7 +3376,7 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 
 func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.schedStore == nil {
-		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+		return toolErrorf("schedule_list", "Schedule store not available."), nil
 	}
 	pending := s.schedStore.List("pending")
 	if len(pending) == 0 {
@@ -2899,12 +3405,12 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 
 func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.schedStore == nil {
-		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+		return toolErrorf("schedule_cancel", "Schedule store not available."), nil
 	}
 	id := req.GetString("id", "")
 	name := req.GetString("name", "")
 	if id == "" && name == "" {
-		return mcpsdk.NewToolResultText("Error: id or name is required"), nil
+		return toolErrorf("schedule_cancel", "id or name is required"), nil
 	}
 	if name != "" {
 		n := s.schedStore.CancelByScheduleName(name)
@@ -2914,7 +3420,7 @@ func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequ
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Cancelled %d scheduled command(s) named %q.", n, name)), nil
 	}
 	if err := s.schedStore.Cancel(id); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("schedule_cancel", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Scheduled command [%s] cancelled.", id)), nil
 }
@@ -2922,11 +3428,11 @@ func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequ
 // handleScheduleSpawn schedules an ephemeral one-shot session spawn (GH#128).
 func (s *Server) handleScheduleSpawn(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.schedStore == nil {
-		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+		return toolErrorf("schedule_spawn", "Schedule store not available."), nil
 	}
 	task := req.GetString("task", "")
 	if task == "" {
-		return mcpsdk.NewToolResultText("Error: task is required"), nil
+		return toolErrorf("schedule_spawn", "task is required"), nil
 	}
 
 	cronExpr := req.GetString("cron_expr", "")
@@ -2973,7 +3479,7 @@ func (s *Server) handleScheduleSpawn(_ context.Context, req mcpsdk.CallToolReque
 		Ephemeral:    ephemeral,
 	})
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("schedule_spawn", err), nil
 	}
 
 	when := "immediately"
@@ -3037,49 +3543,49 @@ func (s *Server) toolPipelineList() mcpsdk.Tool {
 
 func (s *Server) handlePipelineStart(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.pipelineAPI == nil {
-		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+		return toolErrorf("pipeline_start", "Pipeline system not available."), nil
 	}
 	spec := req.GetString("spec", "")
 	if spec == "" {
-		return mcpsdk.NewToolResultText("Error: spec is required"), nil
+		return toolErrorf("pipeline_start", "spec is required"), nil
 	}
 	projectDir := req.GetString("project_dir", "")
 	maxParallel := req.GetInt("max_parallel", 3)
 	id, err := s.pipelineAPI.StartPipeline(spec, projectDir, nil, maxParallel)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("pipeline_start", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Pipeline started: %s", id)), nil
 }
 
 func (s *Server) handlePipelineStatus(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.pipelineAPI == nil {
-		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+		return toolErrorf("pipeline_status", "Pipeline system not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required"), nil
+		return toolErrorf("pipeline_status", "id is required"), nil
 	}
 	return mcpsdk.NewToolResultText(s.pipelineAPI.GetStatus(id)), nil
 }
 
 func (s *Server) handlePipelineCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.pipelineAPI == nil {
-		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+		return toolErrorf("pipeline_cancel", "Pipeline system not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required"), nil
+		return toolErrorf("pipeline_cancel", "id is required"), nil
 	}
 	if err := s.pipelineAPI.Cancel(id); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("pipeline_cancel", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Pipeline %s cancelled.", id)), nil
 }
 
 func (s *Server) handlePipelineList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.pipelineAPI == nil {
-		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+		return toolErrorf("pipeline_list", "Pipeline system not available."), nil
 	}
 	return mcpsdk.NewToolResultText(s.pipelineAPI.ListAll()), nil
 }
@@ -3101,10 +3607,10 @@ func (s *Server) handleGetMySessionID(_ context.Context, req mcpsdk.CallToolRequ
 	if hint != "" {
 		sess, err := s.resolveSession(hint)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+			return toolError("get_my_session_id", err), nil
 		}
 		if sess == nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: session %q not found", hint)), nil
+			return toolErrorf("get_my_session_id", "session %q not found", hint), nil
 		}
 		return mcpsdk.NewToolResultText(fmt.Sprintf(
 			"Session ID:   %s\nFull ID:      %s\nState:        %s\nName:         %s\n",
@@ -3122,6 +3628,77 @@ func (s *Server) handleGetMySessionID(_ context.Context, req mcpsdk.CallToolRequ
 		}
 	}
 	return mcpsdk.NewToolResultText("No channel-ready active session found. Set the CLAUDE_SESSION_ID env var or pass hint=<id>."), nil
+}
+
+// BL463 — get_my_scope (self-scope + isolation surface; superset of BL349
+// get_my_session_id). Answers "what is my scope?" from inside the calling
+// session: identity, the MCP server name its channel was actually
+// registered under (per-session user-scope name), the shared/global
+// .mcp.json entry name, host-vs-container mode, project/tmux identity,
+// channel readiness, and the set of every other session's MCP names — so
+// a session can confirm its own name is distinct from every peer's (see
+// docs/plans/2026-10-20-bl463-mcp-drop-findings.md and the BL467 race at
+// docs/plans/2026-10-16-mcp-bridge-registration-race.md).
+
+func (s *Server) toolGetMyScope() mcpsdk.Tool {
+	return mcpsdk.NewTool("get_my_scope",
+		mcpsdk.WithDescription("Describe the calling datawatch session's own scope: session id, full id, hostname, state, mode (host vs container/agent), project dir, tmux session, the MCP server name its channel is registered under, the shared/global .mcp.json entry name, channel readiness, and every other session with its own MCP server name, so you can confirm yours is distinct from all peers and never use one of theirs. Read-only superset of get_my_session_id."),
+		mcpsdk.WithString("hint",
+			mcpsdk.Description("Optional session id (short or full) to resolve as self. Without hint: resolves via the calling session's own in-band scope credential when available, else the channel-ready active session (same fallback as get_my_session_id).")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handleGetMyScope(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	all := s.manager.ListSessions()
+
+	var sess *session.Session
+	var resolvedVia string
+
+	hint := req.GetString("hint", "")
+	if hint != "" {
+		cand, err := s.resolveSession(hint)
+		if err != nil {
+			return toolError("get_my_scope", err), nil
+		}
+		if cand == nil {
+			return toolErrorf("get_my_scope", "session %q not found", hint), nil
+		}
+		sess, resolvedVia = cand, "hint"
+	} else {
+		// 1) In-band caller identity (HLLM-004: POST /api/mcp/call
+		//    authenticated by a session token stashes the FullID on ctx) —
+		//    authoritative when present.
+		if callerID, ok := s.scopedCallerSessionID(ctx); ok {
+			if cand, _ := s.resolveSession(callerID); cand != nil {
+				sess, resolvedVia = cand, "caller-scope"
+			}
+		}
+		// 2) Fallback — the same channel-ready/active rule as
+		//    get_my_session_id and GET /api/sessions/self (flagged as such
+		//    in resolved_via so the first-come ambiguity is visible, not
+		//    silent — BL463/BL467).
+		if sess == nil {
+			for _, cand := range all {
+				if cand.ChannelReady && (cand.State == session.StateRunning || cand.State == session.StateWaitingInput) {
+					sess, resolvedVia = cand, "channel-ready-fallback"
+					break
+				}
+			}
+		}
+	}
+
+	if sess == nil {
+		return toolErrorf("get_my_scope", "no self-scope resolved — pass hint=<session id>, or call from inside a session over its scoped channel."), nil
+	}
+
+	scope := channel.BuildSelfScope(sess, all)
+	scope.ResolvedVia = resolvedVia
+	out, err := json.MarshalIndent(scope, "", "  ")
+	if err != nil {
+		return toolError("get_my_scope", err), nil
+	}
+	return textOK(string(out)), nil
 }
 
 // BL350 — list_orphaned_sessions

@@ -75,7 +75,7 @@ datawatch schedule cancel <id>
 
 ```
 schedule new: in 2 hours: fix the auth bug in login.go
-schedule new: at 14:00: /home/project: review test coverage
+schedule new: at 14:00: /home/<user>: review test coverage
 schedule list
 schedule cancel <id>
 ```

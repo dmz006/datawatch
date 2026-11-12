@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -27,17 +28,79 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "input_idle_timeout", cfg.Session.InputIdleTimeout, "Seconds of idle output before declaring a session is waiting for input")
 	fieldi(&b, "tail_lines", cfg.Session.TailLines, "Default number of output lines returned by tail/status commands")
 	fieldi(&b, "alert_context_lines", cfg.Session.AlertContextLines, "Number of non-empty output lines included in prompt alerts (default 10)")
+	fieldi(&b, "task_delivery_window_seconds", cfg.Session.TaskDeliveryWindowSeconds, "How long one OneShot task delivery attempt waits for the Claude main prompt before trying again (default 60)")
+	fieldi(&b, "task_delivery_attempts", cfg.Session.TaskDeliveryAttempts, "How many delivery attempts are made before giving up (default 3)")
+	fieldi(&b, "store_flush_interval", int(cfg.Session.EffectiveStoreFlushInterval().Milliseconds()), "Milliseconds the session store coalesces changes before saving (default 1000, 0 = write through)")
+	fieldi(&b, "store_archive_after_days", cfg.Session.EffectiveStoreArchiveAfterDays(), "Days after its last update a finished session moves to the archive file (default 14, 0 = never archive)")
+	fieldi(&b, "store_field_cap_kb", cfg.Session.EffectiveStoreFieldCapKB(), "Largest session text field kept inline in the store, in KB; longer text goes to a side file (default 256)")
+	fieldi(&b, "store_side_file_cap_kb", cfg.Session.EffectiveStoreSideFileCapKB(), "Automaton text longer than this many KB is stored in a side file next to its record (default 64)")
 	fieldi(&b, "default_project_dir", cfg.Session.DefaultProjectDir, "Default working directory for new sessions")
 	fieldi(&b, "root_path", cfg.Session.RootPath, "Restrict file browser to this directory tree (empty = no restriction)")
 	fieldi(&b, "claude_enabled", cfg.Session.ClaudeEnabled, "Enable the claude-code backend")
 	fieldi(&b, "auto_git_init", cfg.Session.AutoGitInit, "Auto-initialize git repo in project directory")
 	fieldi(&b, "auto_git_commit", cfg.Session.AutoGitCommit, "Deprecated and ignored: task sessions are committed automatically. Key retained for compatibility")
+	fieldi(&b, "git_default", cfg.Session.GitDefault, "Default for the session-start git flag when a start request does not set it explicitly (git activity: pre-session snapshot, checkpoint tag, completion commit)")
 	fieldi(&b, "kill_sessions_on_exit", cfg.Session.KillSessionsOnExit, "Kill all sessions when daemon stops")
 	fieldi(&b, "mcp_max_retries", cfg.Session.MCPMaxRetries, "Max MCP channel restart attempts per session")
 	fieldi(&b, "schedule_settle_ms", cfg.Session.ScheduleSettleMs, "B30: ms to wait between text and Enter for scheduled commands (0 = legacy single send-keys; 200 default fixes the 2nd-Enter bug for TUIs like claude-code)")
 	fieldi(&b, "log_level", cfg.Session.LogLevel, "Log verbosity: info, debug, warn, error")
 	fieldi(&b, "console_cols", cfg.Session.ConsoleCols, "Default terminal width (cols) for new sessions (0 = 80)")
 	fieldi(&b, "console_rows", cfg.Session.ConsoleRows, "Default terminal height (rows) for new sessions (0 = 24)")
+	b.WriteString("\n")
+
+	section(&b, "Git", "Push behaviour for finished work branches (never force-pushed).")
+	b.WriteString("git:\n")
+	fieldi(&b, "push_on_complete", cfg.Git.PushOnComplete, `What to push when work completes: never (no push, with a visible not-pushed warning), branch (push the finished work branch, default), or default_branch`)
+	fieldi(&b, "push_remote", cfg.Git.PushRemote, "Remote the finished branch is pushed to (default origin)")
+	ss := cfg.Git.SecretScan
+	if ss.Mode != "" || len(ss.Detectors) > 0 || len(ss.AllowList.Paths) > 0 || len(ss.AllowList.Fingerprints) > 0 {
+		b.WriteString("  # Pre-push secret scan of the commits about to be pushed: mode off|shadow|enforce (unset = shadow; shadow logs/records without refusing), detectors (unset = all built-ins), allow_list paths (globs) and fingerprints (16-hex or 64-hex SHA-256)\n")
+		b.WriteString("  secret_scan:\n")
+		if ss.Mode != "" {
+			fmt.Fprintf(&b, "    mode: %s\n", ss.Mode)
+		}
+		if len(ss.Detectors) > 0 {
+			b.WriteString("    detectors:\n")
+			for _, d := range ss.Detectors {
+				fmt.Fprintf(&b, "      - %s\n", d)
+			}
+		}
+		if len(ss.AllowList.Paths) > 0 || len(ss.AllowList.Fingerprints) > 0 {
+			b.WriteString("    allow_list:\n")
+			if len(ss.AllowList.Paths) > 0 {
+				b.WriteString("      paths:\n")
+				for _, p := range ss.AllowList.Paths {
+					fmt.Fprintf(&b, "        - %s\n", p)
+				}
+			}
+			if len(ss.AllowList.Fingerprints) > 0 {
+				b.WriteString("      fingerprints:\n")
+				for _, f := range ss.AllowList.Fingerprints {
+					fmt.Fprintf(&b, "        - %s\n", f)
+				}
+			}
+		}
+	}
+	b.WriteString("\n")
+
+	section(&b, "Tracing", "Normalized agent trace events (tool calls, model requests, state changes).")
+	b.WriteString("tracing:\n")
+	tr := cfg.Tracing.WithDefaults()
+	fieldi(&b, "mode", tr.Mode, "Trace detail: off (no tracing), summary (default) or full")
+	fieldi(&b, "arg_cap_bytes", tr.ArgCapBytes, "Maximum bytes of a tool-call argument summary stored per event (default 512)")
+	fieldi(&b, "retention_days", tr.RetentionDays, "Days trace events are kept (default 14)")
+	b.WriteString("  # Per-backend switches, e.g. {pi: false}; a backend not listed is traced.\n")
+	if len(tr.Backends) > 0 {
+		b.WriteString("  backends:\n")
+		names := make([]string, 0, len(tr.Backends))
+		for n := range tr.Backends {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			fmt.Fprintf(&b, "    %s: %t\n", n, tr.Backends[n])
+		}
+	}
 	b.WriteString("\n")
 
 	section(&b, "Web Server", "HTTP/WebSocket server for the PWA, REST API, and browser access.")
@@ -61,6 +124,8 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "api_gzip_min_bytes", cfg.Server.APIGzipMinBytes, "Only compress /api/* responses larger than this many bytes (min 0)")
 	fieldi(&b, "auto_restart_on_config", cfg.Server.AutoRestartOnConfig, "Auto-restart daemon when config is saved via web UI")
 	fieldi(&b, "suppress_active_toasts", cfg.Server.SuppressActiveToasts, "Hide toast notifications for the currently viewed session")
+	fieldi(&b, "allowed_project_roots", cfg.Server.AllowedProjectRoots, "Extra directories a project directory may lie under, besides the PRD worktree base and the workspace root (always allowed; session.workspace_root, or ~/workspace when unset)")
+	fieldi(&b, "acknowledge_unauthenticated", cfg.Server.AcknowledgeUnauthenticated, "Silence the startup warning for listeners reachable without authentication; changes no listener")
 	b.WriteString("\n")
 
 	section(&b, "MCP Server", "Model Context Protocol server for IDE and AI agent integrations.")
@@ -69,6 +134,8 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "sse_enabled", cfg.MCP.SSEEnabled, "Enable HTTP/SSE transport for remote AI clients")
 	fieldi(&b, "sse_host", cfg.MCP.SSEHost, "SSE bind interface (127.0.0.1 for local, 0.0.0.0 for remote)")
 	fieldi(&b, "sse_port", cfg.MCP.SSEPort, "SSE listen port")
+	fieldi(&b, "sse_bind_timeout", cfg.MCP.SSEBindTimeout, "Max time to retry failed SSE TCP binds (default 120s)")
+	fieldi(&b, "public_url", cfg.MCP.PublicURL, "Public base URL advertised to SSE clients when behind a reverse proxy (empty = bind address)")
 	fieldi(&b, "token", cfg.MCP.Token, "Bearer token for SSE connections (empty = no auth)")
 	fieldi(&b, "tls_enabled", cfg.MCP.TLSEnabled, "Enable TLS for SSE server")
 	fieldi(&b, "tls_auto_generate", cfg.MCP.TLSAutoGenerate, "Auto-generate self-signed cert")

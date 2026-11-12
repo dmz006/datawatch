@@ -1,43 +1,52 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // CommandType identifies the type of a parsed Signal command.
 type CommandType string
 
 const (
-	CmdNew           CommandType = "new"
-	CmdList          CommandType = "list"
-	CmdStatus        CommandType = "status"
-	CmdSend          CommandType = "send"
-	CmdKill          CommandType = "kill"
-	CmdTail          CommandType = "tail"
-	CmdAttach        CommandType = "attach"
-	CmdHistory       CommandType = "history"
-	CmdSetup         CommandType = "setup"
-	CmdVersion       CommandType = "version"
-	CmdUpdateCheck   CommandType = "update"
-	CmdRestart       CommandType = "restart"
-	CmdSchedule      CommandType = "schedule"
-	CmdScheduleSpawn CommandType = "schedule_spawn" // GH#128
-	CmdAlerts        CommandType = "alerts"
-	CmdStats         CommandType = "stats"
-	CmdCapacity      CommandType = "capacity"
-	CmdConfigure     CommandType = "configure"
-	CmdCopy          CommandType = "copy"
-	CmdPrompt        CommandType = "prompt"
-	CmdRemember      CommandType = "remember"
-	CmdRecall        CommandType = "recall"
-	CmdMemories      CommandType = "memories"
-	CmdForget        CommandType = "forget"
-	CmdLearnings     CommandType = "learnings"
-	CmdKG            CommandType = "kg"
-	CmdMemReindex    CommandType = "mem_reindex"
-	CmdResearch      CommandType = "research"
+	CmdNew               CommandType = "new"
+	CmdList              CommandType = "list"
+	CmdSessionGroups     CommandType = "session-groups" // "sessions groups [axis] [tag-prefix]"
+	CmdStatus            CommandType = "status"
+	CmdSend              CommandType = "send"
+	CmdKill              CommandType = "kill"
+	CmdPriority          CommandType = "priority"
+	CmdTail              CommandType = "tail"
+	CmdAttach            CommandType = "attach"
+	CmdHistory           CommandType = "history"
+	CmdSetup             CommandType = "setup"
+	CmdVersion           CommandType = "version"
+	CmdUpdateCheck       CommandType = "update"
+	CmdRestart           CommandType = "restart"
+	CmdSchedule          CommandType = "schedule"
+	CmdScheduleSpawn     CommandType = "schedule_spawn" // GH#128
+	CmdAlerts            CommandType = "alerts"
+	CmdStats             CommandType = "stats"
+	CmdCapacity          CommandType = "capacity"
+	CmdCapacityAdmission CommandType = "capacity-admission"
+	CmdProgress          CommandType = "progress" // progress [automation=..] | progress trend [days]
+	CmdConfigure         CommandType = "configure"
+	CmdCopy              CommandType = "copy"
+	CmdPrompt            CommandType = "prompt"
+	CmdRemember          CommandType = "remember"
+	CmdRecall            CommandType = "recall"
+	CmdMemories          CommandType = "memories"
+	CmdForget            CommandType = "forget"
+	CmdLearnings         CommandType = "learnings"
+	CmdKG                CommandType = "kg"
+	CmdMemReindex        CommandType = "mem_reindex"
+	CmdResearch          CommandType = "research"
 	// v5.27.0 — mempalace alignment surfaces over chat (parity rule).
 	//   "memory pin <id>"                — toggle pinned flag
 	//   "memory sweep"                   — dry-run similarity-stale eviction
@@ -86,11 +95,26 @@ const (
 	// the local loopback so every REST surface is reachable from chat.
 	// Convenience shortcuts (cost / cooldown / audit / stale) pipe
 	// through the same dispatcher with curated paths.
-	CmdRest     CommandType = "rest"
-	CmdCost     CommandType = "cost"
-	CmdCooldown CommandType = "cooldown"
-	CmdStale    CommandType = "stale"
-	CmdAudit    CommandType = "audit"
+	CmdRest       CommandType = "rest"
+	CmdCost       CommandType = "cost"
+	CmdCostReport CommandType = "cost_report"
+	CmdTrace      CommandType = "trace"
+	CmdCooldown   CommandType = "cooldown"
+	CmdStale      CommandType = "stale"
+	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
+	// as REST / MCP / CLI.
+	CmdUsageBackoff CommandType = "usage_backoff"
+	// Per-LLM dollar budget status, same data and field names as REST /
+	// MCP / CLI.
+	CmdBudget CommandType = "budget"
+	// Account usage calculator, same data as REST / MCP / CLI.
+	CmdUsage CommandType = "usage"
+	CmdAudit CommandType = "audit"
+	// Operator console one-glance over chat — the same five sections and the
+	// same data as GET /api/dashboard/console. The dashboard.* config keys
+	// (console.enabled, console.show_*) flow through the existing configure
+	// command and path.
+	CmdDashboardConsole CommandType = "dashboard console"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -117,6 +141,15 @@ const (
 	// "prd" is also accepted as a shorter alias.
 	CmdAutonomous CommandType = "autonomous"
 
+	// Operator question channel over comm (decision item 23): the
+	// /api/questions REST surface as chat verbs. The subverb parsing
+	// and the bare-reply rule live in questions_comm.go.
+	//   "question list"                              — open questions
+	//   "question show <id>"                         — question + answer
+	//   "question answer <id> <N|option-id> [quote…]" — answer one
+	//   "question quality"                           — effective quality policy
+	CmdQuestion CommandType = "question"
+
 	// BL220-G4 — orchestrator graph lifecycle over chat.
 	//   "orchestrator"               → list graphs
 	//   "orchestrator config"        → show orchestrator config
@@ -136,6 +169,12 @@ const (
 	//   "plugins reload"             → rescan plugin dir
 	//   "plugins test <name> <hook> [payload]" → invoke hook
 	CmdPlugins CommandType = "plugins"
+
+	// Service-plugin status over chat — every service-kind plugin gets it;
+	// no per-plugin declaration needed.
+	//   "plugin status <name>"       → state, mode, address, version, uptime,
+	//                                  last check, open service event
+	CmdPluginStatus CommandType = "plugin"
 
 	// BL220-G8 — template lifecycle over chat.
 	//   "templates"                  → list templates
@@ -176,6 +215,7 @@ const (
 	//   "observer envelopes"         → GET /api/observer/envelopes
 	//   "observer envelopes all-peers" → GET /api/observer/envelopes/all-peers
 	//   "observer envelope <id>"     → GET /api/observer/envelope/<id>
+	//   "observer pull status"      → GET /api/observer/pull
 	CmdObserver CommandType = "observer"
 
 	// BL220-G14 — analytics query over chat.
@@ -256,7 +296,7 @@ const (
 
 	// v7.0.0 S1 — ComputeNode registry.
 	//   "compute"                              → list nodes
-	//   "compute node {list,get,add,update,delete,health,detail} ..."
+	//   "compute node {list,get,add,update,delete,health,detail,drain,undrain} ..."
 	CmdCompute CommandType = "compute"
 
 	// v7.0.0 S2 — LLM-inference registry.
@@ -301,6 +341,15 @@ const (
 	//   "retry profile delete <id>"                   → delete profile
 	//   "retry automaton set <id> [...]"              → per-Automaton override
 	CmdRetry CommandType = "retry"
+
+	// Automation lifecycle over chat.
+	// Automation lifecycle over chat: activate, list, get, status, shipped, pause,
+	// resume, cancel, skip, insert, remove, edges, approve, rename-stage, set-llm,
+	// set-verification-llm, set-decision-assistant, set-budget, set-effort-ceiling,
+	// import-graph (see router.AutomationCommVerbs).
+	//   "automation activate <id>" → start a draft Automation
+	//   "automation rename-stage <id> <from> <to>" → rename a member stage
+	CmdAutomation CommandType = "automation"
 
 	// BL302 S1 — MCP resources over chat.
 	//   "mcp resources"          → list resources
@@ -354,6 +403,18 @@ const (
 	//   "result delete name=<n>"
 	CmdResultStore CommandType = "result"
 
+	// CmdScheduleResults — read surface for scheduled jobs' structured
+	// result panel over chat (post stays on the CLI/MCP/API paths):
+	//   "schedule-results"                → one line per schedule: last status, summary, age
+	//   "schedule-results list"           → same as above
+	//   "schedule-results <name>"         → recent history for one schedule
+	//   "schedule-results history <name>" → same as above
+	CmdScheduleResults CommandType = "schedule_results"
+
+	// Project policy browsing over chat: `project policy <name> [automaton]`
+	// — mirrors GET /api/projects/{name}/policy/effective.
+	CmdProject CommandType = "project"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -379,13 +440,16 @@ const (
 
 // Command is a parsed Signal message.
 type Command struct {
-	Type       CommandType
-	SessionID  string // short or full ID
-	Text       string // for new: and send:
-	TailN      int    // for tail command
-	ProjectDir string // for new: with explicit project directory
-	Profile    string // named profile for "new <profile>: <task>"
-	Server     string // target remote server for "new @server: <task>"
+	Type      CommandType
+	SessionID string // short or full ID
+	Text      string // for new: and send:
+	// RestartForce is set on a restart command whose message carries the word
+	// force, so the restart proceeds even when running work would be interrupted.
+	RestartForce bool
+	TailN        int    // for tail command
+	ProjectDir   string // for new: with explicit project directory
+	Profile      string // named profile for "new <profile>: <task>"
+	Server       string // target remote server for "new @server: <task>"
 
 	// v7.0.0-alpha.21 (#259) — operator's session-creation pick from
 	// the v7 unified registries. Parsed from "new: llm=<name>
@@ -398,6 +462,10 @@ type Command struct {
 	// When true, --chrome is forwarded to claude-code at launch.
 	Chrome bool
 
+	// Git — parsed from "new: git=true: <task>". When true, the started
+	// session opts into git init/snapshot/commit. Default false.
+	Git bool
+
 	// BL347/BL351 — session lineage flags parsed from "new:" command.
 	// ParentID: "new: parent=<hostname-hex>: <task>" — records calling session.
 	// KillChildren: "new: kill_children=true: <task>" — cascade kill direct children.
@@ -405,6 +473,13 @@ type Command struct {
 	ParentID              string
 	KillChildren          bool
 	KillChildrenRecursive bool
+
+	// Priority — capacity-queue priority. Parsed from "new: priority=<int>: <task>"
+	// and from "priority <session-id> <int>". HasPriority is true when a value
+	// was given; PriorityErr is the validation message for a non-integer value.
+	Priority    int
+	HasPriority bool
+	PriorityErr string
 
 	// F10 sprint 2 — CmdProfile fields.
 	ProfileKind string // "project" | "cluster"
@@ -444,6 +519,36 @@ type Command struct {
 	CooldownSeconds int
 	CooldownReason  string
 
+	// BL428 Phase 4 — CmdUsageBackoff fields.
+	//   UsageBackoffVerb: "status" | "set" | "clear" | "recheck"
+	//   UsageBackoffBackend: backend for set; for clear "" or "all" = every flag
+	//   UsageBackoffMinutes / UsageBackoffUntil: set deadline — minutes (>= 1)
+	//     or an RFC3339 time; the parser fills whichever the operator gave
+	//   UsageBackoffReason: optional operator note for set
+	UsageBackoffVerb    string
+	UsageBackoffBackend string
+	UsageBackoffMinutes int
+	UsageBackoffUntil   string
+	UsageBackoffReason  string
+
+	// CmdBudget fields. BudgetLLM names one LLM; empty = every budgeted LLM.
+	BudgetLLM string
+	// BudgetVerb is "invalid" when the arguments could not be parsed.
+	BudgetVerb string
+
+	// CmdUsage fields (the usage calculator's comm grammar). UsageVerb is
+	// one of "advice", "reading", "extra", "work" or "invalid"; "" is a
+	// bare `usage`, answered with the advice, as is "advice".
+	UsageVerb     string
+	UsageVariant  string   // advice: variant=<one of pace-gauge|burn-ledger|lane-planner|weekly-trend>
+	UsagePolicy   string   // advice: policy=<one of pace|pace-with-safety|burn|lane-budget|use-all|finish-early>
+	UsageLanes    int      // advice: lanes= (the what-if count; 0 is valid)
+	UsageLanesSet bool     // advice: lanes= was given
+	UsagePercent  float64  // reading: the weekly percentage
+	UsageSession  *float64 // reading: session= (the secondary percentage)
+	UsagePoints   float64  // extra / work: the points figure
+	UsageClear    bool     // work: clear the typed figure
+
 	// BL353 — schedule targeting fields.
 	SessionName  string // for schedule: resolve session by name at fire time
 	CronExpr     string // for schedule: 5-field cron expression
@@ -458,6 +563,7 @@ type Command struct {
 	SpawnEffort    string // quick/normal/thorough
 	SpawnOneShot   bool   // auto-terminate on DATAWATCH_COMPLETE:
 	SpawnEphemeral bool   // reap workspace on delete
+	SpawnGit       bool   // opt in to git init/snapshot/commit (default false)
 
 	// BL356 — CmdExitHook fields.
 	ExitHookVerb          string // "list" | "add" | "delete" | "enable" | "disable"
@@ -490,6 +596,10 @@ type Command struct {
 	ResultPayload string // for put: JSON payload string
 	ResultTTL     int    // for put: TTL in seconds (0=no expiry)
 	ResultPrefix  string // for list: prefix filter
+
+	// CmdScheduleResults fields.
+	ScheduleResultsVerb string // "" | "list" | "history"
+	ScheduleResultsName string // for history: schedule name
 }
 
 // SessionVerb values.
@@ -501,6 +611,7 @@ const (
 	SessionVerbOrphaned         = "orphaned"          // BL350
 	SessionVerbRestart          = "restart"           // BL359
 	SessionVerbGuardrailApprove = "guardrail-approve" // GH#153
+	SessionVerbTags             = "tags"              // list the tags sessions carry (with counts)
 )
 
 // parseBL353ScheduleParams parses a BL353 key=value style schedule command.
@@ -550,7 +661,7 @@ func parseScheduleSpawnParams(text string) Command {
 			params[k] = v
 		}
 	}
-	spawnKeys := []string{" task=", " dir=", " backend=", " llm-ref=", " model=", " effort=", " cron=", " at=", " name=", " session-name=", " one-shot=", " ephemeral="}
+	spawnKeys := []string{" task=", " dir=", " backend=", " llm-ref=", " model=", " effort=", " cron=", " at=", " name=", " session-name=", " one-shot=", " ephemeral=", " git="}
 	// Handle task= which may be multi-word
 	if idx := strings.Index(text, "task="); idx >= 0 {
 		val := text[idx+5:]
@@ -595,6 +706,9 @@ func parseScheduleSpawnParams(text string) Command {
 	if v, ok := params["ephemeral"]; ok {
 		cmd.SpawnEphemeral = v == "true" || v == "1"
 	}
+	if v, ok := params["git"]; ok {
+		cmd.SpawnGit = v == "true" || v == "1"
+	}
 	return cmd
 }
 
@@ -632,10 +746,10 @@ func Parse(text string) Command {
 		// v8.10.0 — extended with parent=<id> and kill_children=true.
 		// v8.10.3 — extended with kill_children_recursive=true (BL351).
 		// Strip leading key=value tokens before the ": <task>" separator.
-		// Recognised keys: llm, compute, chrome, parent, kill_children, kill_children_recursive.
+		// Recognised keys: llm, compute, chrome, git, parent, kill_children, kill_children_recursive.
 		// Unknown keys are left alone (the entire prefix becomes part of the
 		// task), preserving back-compat.
-		knownPrefixes := []string{"llm=", "compute=", "chrome=", "parent=", "kill_children=", "kill_children_recursive="}
+		knownPrefixes := []string{"llm=", "compute=", "chrome=", "git=", "parent=", "kill_children=", "kill_children_recursive=", "priority="}
 		hasKnown := false
 		for _, p := range knownPrefixes {
 			if strings.HasPrefix(rest, p) {
@@ -648,7 +762,8 @@ func Parse(text string) Command {
 			prefix := rest[:idx]
 			tail := strings.TrimSpace(rest[idx+2:])
 			llmRef, computeRef, parentID := "", "", ""
-			chrome, killChildren, killChildrenRecursive := false, false, false
+			chrome, git, killChildren, killChildrenRecursive := false, false, false, false
+			priority, hasPriority, priorityErr := 0, false, ""
 			ok := true
 			for _, tok := range strings.Fields(prefix) {
 				switch {
@@ -660,8 +775,19 @@ func Parse(text string) Command {
 					chrome = true
 				case tok == "chrome=false":
 					// explicit false → leave chrome=false, still valid
+				case tok == "git=true":
+					git = true
+				case tok == "git=false":
+					// explicit false → leave git=false, still valid
 				case strings.HasPrefix(tok, "parent="):
 					parentID = strings.TrimPrefix(tok, "parent=")
+				case strings.HasPrefix(tok, "priority="):
+					hasPriority = true
+					p, perr := session.ParsePriority(strings.TrimPrefix(tok, "priority="))
+					if perr != nil {
+						priorityErr = perr.Error()
+					}
+					priority = p
 				case tok == "kill_children=true":
 					killChildren = true
 				case tok == "kill_children=false":
@@ -674,20 +800,31 @@ func Parse(text string) Command {
 					ok = false
 				}
 			}
-			if ok && (llmRef != "" || chrome || parentID != "" || killChildren || killChildrenRecursive) {
+			if ok && (llmRef != "" || chrome || git || parentID != "" || killChildren || killChildrenRecursive || hasPriority) {
 				return Command{
 					Type:                  CmdNew,
 					Text:                  tail,
 					LLMRef:                llmRef,
 					ComputeNodeRef:        computeRef,
 					Chrome:                chrome,
+					Git:                   git,
 					ParentID:              parentID,
 					KillChildren:          killChildren,
 					KillChildrenRecursive: killChildrenRecursive,
+					Priority:              priority,
+					HasPriority:           hasPriority,
+					PriorityErr:           priorityErr,
 				}
 			}
 		}
 		return Command{Type: CmdNew, Text: rest}
+
+	case lower == "sessions groups" || strings.HasPrefix(lower, "sessions groups "):
+		// Count summary per group over the session-list grouping read
+		// (GET /api/sessions?group_by=...&tag_prefix=...). Axis defaults to
+		// tag; the second token is the tag prefix (tag axis).
+		rest := strings.TrimSpace(text[len("sessions groups"):])
+		return Command{Type: CmdSessionGroups, Text: rest}
 
 	case lower == "list" || strings.HasPrefix(lower, "list ") ||
 		lower == "sessions" || strings.HasPrefix(lower, "sessions "):
@@ -724,6 +861,13 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdRetry, Text: rest}
 
+	case lower == "automation" || strings.HasPrefix(lower, "automation "):
+		rest := ""
+		if strings.HasPrefix(lower, "automation ") {
+			rest = strings.TrimSpace(text[len("automation "):])
+		}
+		return Command{Type: CmdAutomation, Text: rest}
+
 	// BL302 S1 — MCP resources over chat.
 	case lower == "mcp" || strings.HasPrefix(lower, "mcp "):
 		rest := ""
@@ -746,6 +890,22 @@ func Parse(text string) Command {
 
 	case strings.HasPrefix(lower, "kill "):
 		return Command{Type: CmdKill, SessionID: strings.TrimSpace(text[5:])}
+
+	case lower == "priority" || strings.HasPrefix(lower, "priority "):
+		// format: "priority <session-id> <int>"
+		cmd := Command{Type: CmdPriority}
+		if fields := strings.Fields(text); len(fields) > 1 {
+			cmd.SessionID = fields[1]
+			if len(fields) > 2 {
+				cmd.HasPriority = true
+				p, perr := session.ParsePriority(fields[2])
+				if perr != nil {
+					cmd.PriorityErr = perr.Error()
+				}
+				cmd.Priority = p
+			}
+		}
+		return cmd
 
 	case strings.HasPrefix(lower, "bind "):
 		// format: "bind <session-id> <agent-id>" ; "-" or omitted
@@ -784,8 +944,10 @@ func Parse(text string) Command {
 	case lower == "version" || lower == "about":
 		return Command{Type: CmdVersion}
 
-	case lower == "restart":
-		return Command{Type: CmdRestart}
+	// restart [force] — the word force lets the restart proceed past a
+	// running-work refusal. See docs/howto/restart-with-work-running.md.
+	case lower == "restart" || strings.HasPrefix(lower, "restart "):
+		return Command{Type: CmdRestart, RestartForce: restartMessageHasForce(lower)}
 
 	case lower == "update check" || lower == "update":
 		return Command{Type: CmdUpdateCheck}
@@ -849,7 +1011,7 @@ func Parse(text string) Command {
 		rest := strings.TrimSpace(strings.TrimPrefix(text, "session"))
 		parts := strings.Fields(rest)
 		if len(parts) < 1 {
-			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id> | session self | session orphaned | session restart id=<id>|name=<n> [task=<task>]"}
+			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id> | session self | session orphaned | session restart id=<id>|name=<n> [task=<task>] | session tags"}
 		}
 		verb := strings.ToLower(parts[0])
 		cmd := Command{Type: CmdSession, SessionVerb: verb}
@@ -912,6 +1074,8 @@ func Parse(text string) Command {
 			}
 			cmd.SessionRestartTask = params["task"]
 			return cmd
+		case SessionVerbTags:
+			return cmd // no args: list the tags sessions carry, with counts
 		case SessionVerbGuardrailApprove:
 			// GH#153 — "session guardrail-approve id=<id> guardrail=<name> [note=<...>]"
 			params := make(map[string]string)
@@ -973,6 +1137,9 @@ func Parse(text string) Command {
 			}
 		}
 		return cmd
+
+	case lower == "schedule-results" || lower == "schedule-results list" || strings.HasPrefix(lower, "schedule-results "):
+		return parseScheduleResultsCommand(text)
 
 	case strings.HasPrefix(lower, "schedule "):
 		// format: "schedule <id>: <when> <command>"
@@ -1055,6 +1222,12 @@ func Parse(text string) Command {
 	case lower == "capacity":
 		return Command{Type: CmdCapacity}
 
+	case lower == "progress" || strings.HasPrefix(lower, "progress "):
+		return Command{Type: CmdProgress, Text: strings.TrimSpace(text[len("progress"):])}
+
+	case lower == "capacity admission" || strings.HasPrefix(lower, "capacity admission "):
+		return Command{Type: CmdCapacityAdmission, Text: strings.TrimSpace(text[len("capacity admission"):])}
+
 	case strings.HasPrefix(lower, "configure ") || strings.HasPrefix(lower, "config ") || strings.HasPrefix(lower, "set "):
 		rest := text[strings.Index(lower, " ")+1:]
 		return Command{Type: CmdConfigure, Text: strings.TrimSpace(rest)}
@@ -1135,6 +1308,14 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdReload, Text: rest}
 
+	// Project policy browsing: `project policy <name> [automaton]`.
+	case lower == "project" || strings.HasPrefix(lower, "project "):
+		rest := ""
+		if lower != "project" {
+			rest = strings.TrimSpace(text[len("project"):])
+		}
+		return Command{Type: CmdProject, Text: rest}
+
 	// v5.27.10 (BL216) — channel info via chat: `channel info`.
 	case lower == "channel info":
 		return Command{Type: CmdChannelInfo}
@@ -1175,6 +1356,18 @@ func Parse(text string) Command {
 		return Command{Type: CmdHelp}
 
 	// Sprint Sx2 — comm-channel parity for v3.5–v3.7 endpoints.
+	case lower == "cost report" || strings.HasPrefix(lower, "cost report "):
+		// "cost report" → /api/cost/report; "cost report group_by=backend
+		// since=2026-01-01 until=2026-01-08" → the same report with those
+		// query parameters. Matched before the bare `cost` case below so
+		// "report" is never read as a session id.
+		return Command{Type: CmdCostReport, Text: strings.TrimSpace(text[len("cost report"):])}
+
+	case lower == "trace" || strings.HasPrefix(lower, "trace "):
+		// "trace session <id> [k=v ...]", "trace automaton <id> [k=v ...]",
+		// "trace rollup [dimension=<d>] [key=<k>]", "trace coverage [backend=<b>]".
+		return Command{Type: CmdTrace, Text: strings.TrimSpace(text[len("trace"):])}
+
 	case lower == "cost" || strings.HasPrefix(lower, "cost "):
 		// "cost" → /api/cost; "cost <full_id>" → /api/cost?session=<id>
 		rest := strings.TrimSpace(text[len("cost"):])
@@ -1188,6 +1381,9 @@ func Parse(text string) Command {
 		rest := strings.TrimSpace(text[len("audit"):])
 		return Command{Type: CmdAudit, Text: rest}
 
+	case lower == "dashboard console" || lower == "dashboard-console":
+		return Command{Type: CmdDashboardConsole}
+
 	case lower == "peers" || strings.HasPrefix(lower, "peers "):
 		// BL172 (S11) — federated observer peers over chat. Forms:
 		//   "peers"                       → list
@@ -1197,6 +1393,19 @@ func Parse(text string) Command {
 		//   "peers delete <name>"
 		rest := strings.TrimSpace(text[len("peers"):])
 		return Command{Type: CmdPeers, Text: rest}
+
+	case lower == "question" || strings.HasPrefix(lower, "question "):
+		// Operator question channel (decision item 23). The subverb
+		// (list / show / answer) and args sit in Text;
+		// questions_comm.go parses and performs them.
+		rest := strings.TrimSpace(text[len("question"):])
+		return Command{Type: CmdQuestion, Text: rest}
+
+	// "standard tasks" lists the standard task templates the decomposer can
+	// add to a story. It is the autonomous verb standard-tasks, so it routes
+	// through the same handler as "autonomous standard-tasks".
+	case lower == "standard tasks" || lower == "standard-tasks":
+		return Command{Type: CmdAutonomous, Text: "standard-tasks"}
 
 	case lower == "autonomous" || strings.HasPrefix(lower, "autonomous ") ||
 		lower == "prd" || strings.HasPrefix(lower, "prd "):
@@ -1214,6 +1423,29 @@ func Parse(text string) Command {
 			rest = "" // bare "autonomous" or "prd"
 		}
 		return Command{Type: CmdAutonomous, Text: rest}
+
+	// The supervisor loop verbs also answer without the autonomous prefix:
+	// "supervisor jobs", "supervisor runs [job=X] [outcome=Y]" and
+	// "supervisor run job=NAME" dispatch to the same handler.
+	case strings.HasPrefix(lower, "supervisor ") || strings.HasPrefix(lower, "supervisor-loop ") ||
+		strings.HasPrefix(lower, "supervisor_loop "):
+		return Command{Type: CmdAutonomous, Text: strings.TrimSpace(text)}
+
+	// Account usage calculator:
+	//   usage
+	//   usage advice [variant=V] [policy=P] [lanes=N]
+	//   usage reading <percent> [lanes=N] [session=N]
+	//   usage extra <points>
+	//   usage work <points|clear>
+	case lower == "usage" || strings.HasPrefix(lower, "usage "):
+		return parseUsage(strings.TrimSpace(text[len("usage"):]))
+
+	case lower == "usage_backoff" || lower == "usage-backoff" ||
+		strings.HasPrefix(lower, "usage_backoff ") || strings.HasPrefix(lower, "usage-backoff "):
+		return parseUsageBackoff(strings.TrimSpace(text[len("usage_backoff"):]))
+
+	case lower == "budget" || strings.HasPrefix(lower, "budget "):
+		return parseBudget(strings.TrimSpace(text[len("budget"):]))
 
 	case strings.HasPrefix(lower, "cooldown"):
 		rest := strings.TrimSpace(text[len("cooldown"):])
@@ -1265,6 +1497,15 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("orchestrator "):])
 		}
 		return Command{Type: CmdOrchestrator, Text: rest}
+
+	// Service-plugin status (singular "plugin" — distinct from the
+	// "plugins" management verb).
+	case lower == "plugin" || strings.HasPrefix(lower, "plugin "):
+		rest := ""
+		if lower != "plugin" {
+			rest = strings.TrimSpace(text[len("plugin "):])
+		}
+		return Command{Type: CmdPluginStatus, Text: rest}
 
 	// BL220-G5 — plugin management.
 	case lower == "plugins" || strings.HasPrefix(lower, "plugins "):
@@ -1631,15 +1872,43 @@ func parseResultStoreCommand(text string) Command {
 	return cmd
 }
 
+// parseScheduleResultsCommand parses a schedule-results command (read-only
+// list + per-schedule history of scheduled jobs' structured results).
+// Formats:
+//
+//	schedule-results
+//	schedule-results list
+//	schedule-results <name>
+//	schedule-results history <name>
+func parseScheduleResultsCommand(text string) Command {
+	parts := strings.Fields(text)
+	if len(parts) < 2 {
+		return Command{Type: CmdScheduleResults, ScheduleResultsVerb: "list"}
+	}
+	verb := strings.ToLower(parts[1])
+	if verb == "list" {
+		return Command{Type: CmdScheduleResults, ScheduleResultsVerb: "list"}
+	}
+	// Any other first token starts the schedule name. "history" is accepted
+	// as an alias so it reads naturally next to the CLI
+	// `datawatch schedule-results history <name>`.
+	if verb == "history" && len(parts) > 2 {
+		return Command{Type: CmdScheduleResults, ScheduleResultsVerb: "history", ScheduleResultsName: strings.Join(parts[2:], " ")}
+	}
+	return Command{Type: CmdScheduleResults, ScheduleResultsVerb: "history", ScheduleResultsName: strings.TrimSpace(text[len("schedule-results"):])}
+}
+
 // HelpText returns the help message sent back to the messaging backend.
 func HelpText(hostname string) string {
 	return fmt.Sprintf(`[%s] datawatch commands:
 new: <task>                     start session in default project dir
 new: /path/to/project: <task>   start session in specific directory
-list [--active|--inactive|--all] list sessions (default: all)
+list [--active|--inactive|--all] [tag=<axis:value>] [tag_match=any|all] list sessions (default: all)
+sessions groups [axis] [tag-prefix]  per-group count summary (axis: tag, state, node, project, automaton; prefix narrows the tag axis)
 status <id>                     recent output from session
 send <id>: <msg>                send input to waiting session
 kill <id>                       terminate session
+priority <id> <n>               set a session's capacity-queue priority (integer, default 0)
 tail <id> [n]                   last N lines of output (default 20)
 attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder
@@ -1647,14 +1916,22 @@ schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel 
 schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]
 schedule spawn task=<t> [dir=<d>] [backend=<b>] [cron=<c>] [name=<n>]
 schedule cancel id=<id>|name=<sched-name>
+schedule-results               last status + summary per scheduled job
+schedule-results list           same as above
+schedule-results <name>         recent results history for one schedule
 alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)
 capacity                        show Automata capacity pools, holders and wait queue
+capacity admission <backend> [node] [model]  would a start be admitted now, queued or moved elsewhere (changes nothing)
+progress [automation=<id>] [project=<id>] [automaton=<id>] [group=<project|automation|automaton>] [tag=<id>] [since=<date>] [until=<date>]  Automata progress: counts, rates, work left, completion range, totals by group
+progress trend [days]           how the completion range moved over the saved daily snapshots
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)
 configure list                  show common configurable settings
+configure platform_context enabled on|off   turn the platform context on or off
+configure platform_context note <text>      set the platform context note
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
 version / about                 show datawatch version and info
-restart                         restart the datawatch daemon
+restart [force]                 restart the datawatch daemon; refused with the Automata interruption report while work runs unless force is given (docs/howto/restart-with-work-running.md)
 update check                    check for available updates
 copy [id]                       get last LLM response (default: most recent session)
 prompt [id]                     get last user prompt sent to a session
@@ -1683,26 +1960,52 @@ profile project list            list project profiles
 profile cluster list            list cluster profiles
 profile <kind> show <name>      show a profile (kind: project|cluster)
 profile <kind> smoke <name>     run profile validation smoke test
+project policy <name> [automaton]  effective project policy with per-setting sources
+project show <name>             project record (dir, owner, repository, branch, ...)
+project arcs <name>             ordered arc list of the project
+project set <name> <field> <value>  set one record field (owner, repository, default_branch, description, default_backend, major_trigger, weekly_share, branch_retention_days)
+project progress <name>         roll-up: tasks, points and throughput, total and per arc
 agent list                      list active agent workers
 agent spawn <proj> <cluster> [task]   spawn a new agent
 agent show <id>                 show agent detail
 agent logs <id>                 tail agent container logs
 agent kill <id>                 terminate an agent
 bind <session-id> <agent-id>    bind a session to a worker agent (use - to unbind)
+question list                   open operator questions
+question show <id>              a question, its options with trade-offs, and its answer
+%s
+question quality                effective question quality policy
 help                            show this help
 
 — v3.7.x parity (Sx2) —
 cost [<full_id>]                 token+USD rollup (or per-session)
+cost report [group_by=<g>] [since=<t>] [until=<t>]   grouped cost report (report engine: group_by automaton|automation|backend|release|week; bundled-plan rows show the API-equivalent estimate, usage points and share of the monthly price)
+trace session <id> | trace automaton <id> [tool=<t>] [backend=<b>] [kind=<k>] [errors=true] [limit=<n>]   trace events and roll-up of a session or an Automaton
+trace rollup [dimension=<d>] [key=<k>] | trace coverage [backend=<b>]   trace roll-ups and how much of each backend the trace covers
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
+usage_backoff                    show per-backend usage back-off flags, config and the patterns_version/patterns_stale/claude_cli_version drift guard
+usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a backend
+usage_backoff clear [backend|all]  clear one back-off, or all (default)
+usage_backoff recheck            record the rate-limit patterns and the claude tool version as rechecked
+budget [status] [<llm>]          per-LLM dollar spend, ceiling, window end and rollover
+usage                            account usage calculator: verdict, lanes, advice
+usage advice [variant=V] [...]   advice with a per-call variant / policy override and a what-if lanes=N
+usage reading <pct> [..]         store a typed weekly percent (optionally with a session percent; lanes=N is ignored)
+usage extra <points>             set the bought extra credit
+usage work <points|clear>        set or clear the typed remaining work
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
+audit self-config [limit=N]      query self-config audit log: allowed + denied config-write attempts
+dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
+autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —
 orchestrator [config|verdicts|get <id>|create <title> <proj>|plan <id>|run <id>|delete <id>]
 plugins [get <name>|enable <name>|disable <name>|reload|test <name> <hook> [payload]]
+plugin status <name>             one service plugin's state, mode, address, version, uptime, last check and open event
 templates [get <name>|delete <name>]
 routing [test <task>]            list routing rules or test backend selection
 channel-routing [add <pattern> <peer>|delete <n>|clear]  channel→peer routing
@@ -1720,5 +2023,305 @@ exit_hook add name=<n> action=restart [cooldown=<sec>]
 exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]
 exit_hook delete id=<id>         delete a hook
 exit_hook enable id=<id>         enable a hook
-exit_hook disable id=<id>        disable a hook`, hostname)
+exit_hook disable id=<id>        disable a hook`, hostname, questionAnswerHelp)
+}
+
+// parseBudget parses the tail of "budget …": "status" (optional) followed by
+// an optional LLM name. A bare name is accepted so "budget claude" works. An
+// unrecognized verb keeps the verb "invalid" so the handler can answer with
+// usage instead of guessing.
+func parseBudget(rest string) Command {
+	cmd := Command{Type: CmdBudget}
+	fields := strings.Fields(rest)
+	if len(fields) > 0 && strings.EqualFold(fields[0], "status") {
+		fields = fields[1:]
+	}
+	if len(fields) > 1 {
+		cmd.BudgetVerb = "invalid"
+		return cmd
+	}
+	if len(fields) == 1 {
+		cmd.BudgetLLM = fields[0]
+	}
+	return cmd
+}
+
+// usageKV parses the "key=value" tail tokens shared by the usage calculator's
+// verbs. Recognized keys (case-insensitive, like the verbs): variant, policy,
+// lanes, session. A duplicate or unknown key, or an empty value, makes the
+// form invalid; the result is nil so the caller can reject the form. Values
+// pass through verbatim: lanes is validated only by the advice, because a
+// reading ignores it.
+func usageKV(tokens []string) (out map[string]string, ok bool) {
+	out = make(map[string]string, len(tokens))
+	for _, tok := range tokens {
+		key, val, found := strings.Cut(tok, "=")
+		if !found || val == "" {
+			return nil, false
+		}
+		key = strings.ToLower(key)
+		if _, dup := out[key]; dup {
+			return nil, false
+		}
+		switch key {
+		case "variant", "policy", "session", "lanes":
+			out[key] = val
+		default:
+			return nil, false
+		}
+	}
+	return out, true
+}
+
+func usageNumber(tok string) (float64, bool) {
+	n, err := strconv.ParseFloat(tok, 64)
+	return n, err == nil && n >= 0
+}
+
+// parseUsage parses the tail of "usage …" (the comm-channel section of the
+// usage calculator design):
+//
+//	usage
+//	usage advice [variant=V] [policy=P] [lanes=N]
+//	usage reading <percent> [lanes=N] [session=N]
+//	usage extra <points>
+//	usage work <points|clear>
+//	usage burn-guard
+//
+// An unrecognized verb or a malformed figure keeps the verb "invalid" so the
+// handler can answer with the usage lines instead of guessing.
+func parseUsage(rest string) Command {
+	cmd := Command{Type: CmdUsage}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return cmd
+	}
+	switch strings.ToLower(fields[0]) {
+	case "advice":
+		cmd.UsageVerb = "advice"
+		kv, ok := usageKV(fields[1:])
+		if !ok {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		if _, present := kv["session"]; present {
+			// session= belongs to the reading verb, not the advice.
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		cmd.UsageVariant = kv["variant"]
+		cmd.UsagePolicy = kv["policy"]
+		if v, present := kv["lanes"]; present {
+			// The what-if lane count: zero is a valid what-if.
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				cmd.UsageVerb = "invalid"
+				return cmd
+			}
+			cmd.UsageLanes = n
+			cmd.UsageLanesSet = true
+		}
+		return cmd
+	case "reading":
+		if len(fields) < 2 {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		pct, ok := usageNumber(fields[1])
+		if !ok {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		cmd.UsagePercent = pct
+		// A lanes value on a reading is ignored, so it is never validated.
+		kv, ok := usageKV(fields[2:])
+		if !ok {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		sess, present := kv["session"]
+		if present {
+			s, ok := usageNumber(sess)
+			if !ok {
+				cmd.UsageVerb = "invalid"
+				return cmd
+			}
+			cmd.UsageSession = &s
+		}
+		cmd.UsageVerb = "reading"
+		return cmd
+	case "burn-guard", "burnguard":
+		// Mirrors the guard's status; takes no arguments.
+		cmd.UsageVerb = "burn-guard"
+		if len(fields) > 1 {
+			cmd.UsageVerb = "invalid"
+		}
+		return cmd
+	case "extra", "work":
+		cmd.UsageVerb = strings.ToLower(fields[0])
+		if len(fields) < 2 {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		if len(fields) > 2 {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		if strings.EqualFold(fields[1], "clear") {
+			if cmd.UsageVerb != "work" {
+				cmd.UsageVerb = "invalid"
+			}
+			cmd.UsageClear = true
+			return cmd
+		}
+		points, ok := usageNumber(fields[1])
+		if !ok {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		cmd.UsagePoints = points
+		return cmd
+	default:
+		cmd.UsageVerb = "invalid"
+		return cmd
+	}
+}
+
+// parseUsageBackoff parses the tail of "usage_backoff …":
+//
+//	status
+//	set <backend> <minutes|RFC3339-until> [reason words…]
+//	clear [backend|all]
+//	recheck
+//
+// An unrecognized verb or a set without a usable deadline keeps the verb and
+// leaves the deadline fields zero, so the handler can answer with usage
+// instead of guessing.
+func parseUsageBackoff(rest string) Command {
+	cmd := Command{Type: CmdUsageBackoff, UsageBackoffVerb: "status"}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return cmd
+	}
+	switch strings.ToLower(fields[0]) {
+	case "status":
+		return cmd
+	case "recheck":
+		cmd.UsageBackoffVerb = "recheck"
+		return cmd
+	case "clear":
+		cmd.UsageBackoffVerb = "clear"
+		if len(fields) > 1 && !strings.EqualFold(fields[1], "all") {
+			cmd.UsageBackoffBackend = fields[1]
+		}
+		return cmd
+	case "set":
+		cmd.UsageBackoffVerb = "set"
+		if len(fields) > 1 {
+			cmd.UsageBackoffBackend = fields[1]
+		}
+		if len(fields) > 2 {
+			if n, err := strconv.Atoi(fields[2]); err == nil {
+				cmd.UsageBackoffMinutes = n
+			} else if _, perr := time.Parse(time.RFC3339, fields[2]); perr == nil {
+				cmd.UsageBackoffUntil = fields[2]
+			}
+		}
+		if len(fields) > 3 {
+			cmd.UsageBackoffReason = strings.Join(fields[3:], " ")
+		}
+		return cmd
+	}
+	cmd.UsageBackoffVerb = "invalid"
+	return cmd
+}
+
+// handleDashboardConsole is the operator console one-glance over chat: the
+// same five sections and the identical data as GET /api/dashboard/console
+// (open questions, held/blocked sessions, lanes, usage, CI/release), sent
+// back as one summary line. Sections the operator switched off in
+// dashboard.console.* show as off with the endpoint's reason.
+func (r *Router) handleDashboardConsole() {
+	body, err := r.commGet("/api/dashboard/console", nil)
+	if err != nil {
+		// 503 when dashboard.console.enabled=false — the daemon's body says
+		// exactly which key to flip.
+		r.reply("dashboard console failed", err.Error())
+		return
+	}
+	line, err := dashboardConsoleOneLiner(body)
+	if err != nil {
+		r.reply("dashboard console failed", err.Error())
+		return
+	}
+	r.reply("dashboard console:", line)
+}
+
+// dashboardConsoleSectionIDs is the endpoint's canonical section order.
+var dashboardConsoleSectionIDs = []string{"questions_waiting", "held_blocked", "lanes", "usage", "ci_release"}
+
+func dashboardConsoleOneLiner(body string) (string, error) {
+	var c struct {
+		Sections map[string]struct {
+			Available bool   `json:"available"`
+			Count     int    `json:"count"`
+			Summary   string `json:"summary"`
+		} `json:"sections"`
+	}
+	if err := json.Unmarshal([]byte(body), &c); err != nil {
+		return "", err
+	}
+	parts := make([]string, 0, len(dashboardConsoleSectionIDs))
+	for _, id := range dashboardConsoleSectionIDs {
+		s := c.Sections[id]
+		if !s.Available {
+			parts = append(parts, id+" off ("+s.Summary+")")
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %d — %s", id, s.Count, s.Summary))
+	}
+	return strings.Join(parts, " | "), nil
+}
+
+// platformContextConfigure is a parsed "platform_context ..." configure verb.
+type platformContextConfigure struct {
+	Key   string // config key: platform_context.enabled or platform_context.note
+	Value string // value handed to the config set path
+	Err   string // usage message when the verb is malformed
+}
+
+const platformContextUsage = "Usage: configure platform_context enabled on|off, or configure platform_context note <text>"
+
+// parsePlatformContextConfigure parses the configure text "platform_context
+// enabled on|off" and "platform_context note <text>". ok is false when the text
+// is not a platform_context verb at all (so key=value forms fall through);
+// a malformed verb returns ok true with Err set.
+func parsePlatformContextConfigure(text string) (platformContextConfigure, bool) {
+	f := strings.Fields(text)
+	if len(f) == 0 || !strings.EqualFold(f[0], "platform_context") {
+		return platformContextConfigure{}, false
+	}
+	if len(f) < 2 {
+		return platformContextConfigure{Err: platformContextUsage}, true
+	}
+	switch strings.ToLower(f[1]) {
+	case "enabled":
+		if len(f) != 3 {
+			return platformContextConfigure{Err: platformContextUsage}, true
+		}
+		switch strings.ToLower(f[2]) {
+		case "on":
+			return platformContextConfigure{Key: "platform_context.enabled", Value: "true"}, true
+		case "off":
+			return platformContextConfigure{Key: "platform_context.enabled", Value: "false"}, true
+		}
+		return platformContextConfigure{Err: platformContextUsage}, true
+	case "note":
+		note := strings.TrimSpace(text[strings.Index(strings.ToLower(text), "note")+len("note"):])
+		if len(note) > config.PlatformContextNoteMaxLen {
+			return platformContextConfigure{Err: fmt.Sprintf("platform_context note is too long (%d bytes, max %d).", len(note), config.PlatformContextNoteMaxLen)}, true
+		}
+		return platformContextConfigure{Key: "platform_context.note", Value: note}, true
+	}
+	return platformContextConfigure{Err: platformContextUsage}, true
 }

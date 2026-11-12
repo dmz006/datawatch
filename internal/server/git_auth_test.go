@@ -8,8 +8,8 @@ import (
 )
 
 func TestInjectGitToken_HTTPSPublic(t *testing.T) {
-	got := injectGitToken("https://github.com/foo/bar", "ghp_abc")
-	want := "https://x-access-token:ghp_abc@github.com/foo/bar"
+	got := injectGitToken("https://gitea.example.com/foo/bar", "ghp_abc")
+	want := "https://x-access-token:ghp_abc@gitea.example.com/foo/bar"
 	if got != want {
 		t.Errorf("got %q want %q", got, want)
 	}
@@ -58,7 +58,7 @@ func TestInjectGitToken_HTTPS_GitLabStyle(t *testing.T) {
 }
 
 func TestRedactGitToken_RemovesInjected(t *testing.T) {
-	blob := "fatal: could not read from https://x-access-token:ghp_secret@github.com/foo/bar"
+	blob := "fatal: could not read from https://x-access-token:ghp_secret@example.com/foo/bar"
 	got := redactGitToken(blob, "https://github.com/foo/bar")
 	if strings.Contains(got, "ghp_secret") {
 		t.Errorf("token leaked through redact: %q", got)

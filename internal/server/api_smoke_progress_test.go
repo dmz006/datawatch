@@ -30,10 +30,10 @@ import (
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 )
 
-// smokeTestServer isolates handleSmokeProgress's os.UserHomeDir()-rooted
-// storage (~/.datawatch/smoke-runs) into a per-test temp dir via $HOME,
-// rather than touching the real home directory of whatever machine runs
-// this test.
+// smokeTestServer isolates handleSmokeProgress's data-directory-rooted
+// storage (<data_dir>/smoke-runs) into a per-test temp dir. These Servers
+// carry no data-dir override, so the default data directory resolves from
+// $HOME at call time (a "~/.datawatch" value), which is what t.Setenv pins.
 func smokeTestServer(t *testing.T) *Server {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())

@@ -41,3 +41,18 @@ func (*GitLab) OpenPR(_ context.Context, _ PROptions) (string, error) {
 func (*GitLab) CreateIssue(_ context.Context, _ IssueOptions) (string, error) {
 	return "", ErrNotImplemented
 }
+
+// OpenPullRequest is a stub — returns ErrNotImplemented.
+func (*GitLab) OpenPullRequest(_ context.Context, _, _, _, _, _ string) (string, error) {
+	return "", ErrNotImplemented
+}
+
+// PullRequestChecks is a stub — returns ErrNotImplemented.
+func (*GitLab) PullRequestChecks(_ context.Context, _, _ string) (string, error) {
+	return "", ErrNotImplemented
+}
+
+// MergePullRequest is a stub — returns ErrNotImplemented.
+func (*GitLab) MergePullRequest(_ context.Context, _, _ string) error {
+	return ErrNotImplemented
+}

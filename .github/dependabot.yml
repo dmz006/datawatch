@@ -1,0 +1,78 @@
+# Dependabot configuration (version 2).
+#
+# Purpose:
+#   - Security updates: Dependabot opens a dedicated PR per advisory. These are
+#     NOT grouped (see the gomod group below), so each security fix gets its own
+#     reviewable PR.
+#   - Routine version updates: daily, minor and patch only, grouped per
+#     ecosystem so recurring non-security updates arrive as one PR instead of
+#     one per dependency.
+#
+# Repository settings (cannot be checked from the repo):
+#   - "Dependabot security updates" (Dependabot alerts) must be ENABLED in
+#     Settings -> Code security and analysis, or the security PRs above will
+#     never appear. This file alone does not turn them on.
+#
+# Merge policy:
+#   - No auto-merge anywhere in this file. A human merges every Dependabot PR
+#     first; nothing here targets a branch other than the default.
+#   - No custom labels are set: a label that does not exist in the repo is
+#     skipped with a warning, and Dependabot's default "dependencies" labels
+#     are enough.
+#   - No cooldown: security updates ignore it, and no one has asked for one.
+#
+# Maintainer guide: see the upstream-monitoring proposal under docs/plans/
+# (search for "upstream-monitoring"); it covers the whole tooling policy,
+# including the scheduled upstream-watch job that covers what Dependabot
+# cannot see (FROM lines built from ARGs).
+
+version: 2
+
+updates:
+  # Go modules.
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(deps)"
+    # Routine non-security updates arrive as one grouped PR. Version updates
+    # only: security updates stay ungrouped so each advisory gets its own
+    # reviewable PR.
+    groups:
+      version-updates:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  # Docker base images.
+  # Directories cover docker/dockerfiles/Dockerfile.* (dependabot matches any
+  # file name containing "dockerfile" case-insensitively) and the repo-root
+  # Dockerfile.dev.
+  # GAP BY DESIGN: FROM lines built from ARGs (golang:${GO_VERSION}-...,
+  # ${REGISTRY}/agent-base:${BASE_TAG}) are invisible to Dependabot. Closing
+  # that gap is the job of the separate scheduled upstream-watch job, not this
+  # file - do not try to pin those tags here.
+  - package-ecosystem: docker
+    directories:
+      - "/docker/dockerfiles"
+      - "/"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(deps)"
+
+  # GitHub Actions in .github/workflows.
+  # Every `uses:` is pinned by commit SHA with a trailing `# vN` comment.
+  # Dependabot updates both the SHA and that version comment, so keep
+  # pinning new actions the same way - do not switch to bare tags.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(ci)"

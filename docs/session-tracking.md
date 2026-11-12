@@ -82,6 +82,12 @@ datawatch session history a3f2
 # Follow live output
 datawatch session tail a3f2 --lines 50
 
+# Pi sessions: tail also prints one status line (e.g.
+# "progress: turns=5 tools=bash:3,edit:1,read:1 last=bash idle=42s");
+# --follow keeps re-emitting it every --status-interval (default 60s).
+# Non-pi sessions print no status line.
+datawatch session tail a3f2 --lines 50 --follow --status-interval 30s
+
 # Read the conversation
 cat conversation.md
 
@@ -110,6 +116,23 @@ When claude-code hits an API quota or rate limit, the session transitions to a
 4. The daemon schedules a retry after the reset time
 5. On retry: the session resumes, `PAUSED.md` is used as context, and the session
    continues from where it left off
+
+A couple of rules about how a line counts as a rate limit:
+
+- A line that only quotes a throttle phrase inside ordinary output — a doc
+  sentence, an echoed command, a file listing — does not pause a backend.
+  The built-in matches are per backend (each backend family recognises only
+  the phrases captured from its own output) and they are anchored to the
+  start of the line, after surrounding whitespace is trimmed.
+- The `DATAWATCH_RATE_LIMITED:` protocol line is the shared exception: it is
+  recognised line-start on every backend, including backends with no captured
+  throttle line of their own.
+- If you set `detection.rate_limit_patterns`, your list replaces the built-in
+  matches and is applied as before: a flat substring, anywhere on the line,
+  for all backends.
+- After an upgrade, the usage back-off status reports the patterns as stale
+  until an operator rechecks them: `POST /api/usage-backoff/recheck`
+  records the current pattern fingerprint and clears the stale flag.
 
 You can also manually resume a paused session:
 ```

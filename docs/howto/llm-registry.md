@@ -136,7 +136,7 @@ for the full migration table and verification steps.
 
 ```sh
 # Register the Compute Node first (if not already present).
-datawatch compute add gpu-box --url http://192.168.1.50:11434
+datawatch compute add gpu-box --url http://192.0.2.36:11434
 
 # Add the LLM, pointing at that node.
 datawatch llm add my-ollama \
@@ -147,6 +147,10 @@ datawatch llm add my-ollama \
 # Verify reachability.
 datawatch llm test my-ollama
 ```
+
+(Example URL only; the real node URL lives in your operator config and is
+not committed to this repository.)
+
 
 ### Add a cloud inference LLM (Anthropic)
 
@@ -174,6 +178,59 @@ datawatch llm add claude-code \
 datawatch llm models add claude-code --model claude-opus-4-5
 datawatch llm models add claude-code --model claude-sonnet-5
 ```
+
+## Tag roles on LLMs
+
+A role is a workload label on a registry entry, such as `planning` or
+`verification`. It lets a call site ask for "the LLM that does planning" and
+leaves the choice of entry to the registry. Roles are an open set of strings;
+they are trimmed, lower-cased and de-duplicated, and an empty role is refused.
+
+```sh
+# Tag at creation.
+datawatch llm add big-gpu --kind ollama --role planning --role verification
+
+# Change later. Omitting --role keeps the stored roles.
+datawatch llm update big-gpu --role planning
+
+# A single empty value clears them.
+datawatch llm update big-gpu --role ""
+```
+
+The same `roles` list is accepted by REST (`POST /api/llms`, `PUT
+/api/llms/{name}`), MCP (`llm_add`, `llm_update`), the comm channel
+(`llm add|update <name> roles=planning,verification`; `roles=` clears) and the
+Settings → Compute → LLM edit form.
+
+### How a role resolves
+
+1. **An explicit override wins.** A call site that names a backend or model
+   uses it, and the role lookup is skipped.
+2. **Otherwise the role lookup runs.** Only enabled entries count. One
+   claimant is used. Several claimants are ambiguous: the first by name is
+   used and a warning is raised.
+3. **No claimant** leaves the call site on its normal default.
+
+### The contention warning
+
+The daemon checks roles every `autonomous.role_scan_interval_seconds` (300 by
+default) and again on every LLM write. It warns when:
+
+- two or more enabled entries claim one role (the warning names the role, the
+  entries and the one being used), or
+- roles that pointed at different entries at the previous check now resolve to
+  the same one.
+
+Warnings are advisory and are written to the audit log. Nothing is blocked.
+`GET /api/llms` lists them under `status.role_warnings`, `GET /api/llms/{name}`
+shows the ones that name that entry as `role_warnings`, and `GET /api/llm-roles`
+returns the resolved table with them.
+
+### The Workload Roles card
+
+Settings → Automate has a Workload Roles card. It lists each claimed role and
+the entry it resolves to, with the contention warnings beside it. It reads
+`GET /api/llm-roles`, so it matches what the CLI and REST report.
 
 ## Dispatch by use case
 
@@ -233,7 +290,7 @@ When building the `models[]` list, exclude model+node combinations where the mod
 }
 ```
 
-The RTX 5090 (32GB) is intentionally absent from `llm-reasoning` — models that won't fit fully should fail over to a node that can run them, not partially offload to CPU.
+The 32 GB GPU (32GB) is intentionally absent from `llm-reasoning` — models that won't fit fully should fail over to a node that can run them, not partially offload to CPU.
 
 ### Selecting a use-case entry in routing rules
 
@@ -297,7 +354,7 @@ datawatch llm enable my-ollama --pretest
 
 # 9. Delete (blocked if active sessions are using it).
 datawatch llm delete my-ollama
-#  → 409 Conflict: blocked_by: [{kind:session, id:ralfthewise-7a3c, ...}]
+#  → 409 Conflict: blocked_by: [{kind:session, id:peer-d-7a3c, ...}]
 
 # 10. Safe path: reassign bindings first, then delete.
 datawatch llm reassign my-ollama --to-llm claude-api
@@ -505,8 +562,17 @@ launching:
 ]
 ```
 
-`${secret:name}` references in `api_key_ref` are resolved at call time
-via the secrets store (never written to disk in resolved form).
+`api_key_ref` accepts two forms. The preferred form is a `${secret:name}`
+reference into the secrets store, resolved at call time via the secrets
+store (never written to disk in resolved form): because it is re-resolved on
+every call, a rotated secret takes effect from the next call — no restart,
+no config edit. If the secret is missing, the call fails with an error that
+names the secret and the LLM entry and never prints a value, and every
+resolution is audit-logged (entry name, secret name, outcome — never the
+value). The reference must be the whole value: exactly `${secret:name}`,
+with no surrounding text. A literal key still works, but the reference form
+is preferred. See [howto/secrets-manager](secrets-manager.md) § “Keeping LLM
+API keys out of configuration” for the full setup.
 
 ## Block-on-delete and the reassign flow
 
@@ -516,7 +582,7 @@ personas returns `409 Conflict` with a `blocked_by` list:
 ```json
 {
   "blocked_by": [
-    {"kind":"session","id":"ralfthewise-7a3c","name":"my-session","state":"running"},
+    {"kind":"session","id":"peer-d-7a3c","name":"my-session","state":"running"},
     {"kind":"automata","id":"prd-001","title":"Deploy feature X","state":"planning"}
   ]
 }
@@ -587,7 +653,8 @@ tmux process.
   `llm refresh-models`.
 - **`api_key_ref` with wrong secret name.** The LLM will test as
   reachable if the network is OK, but calls fail at runtime when the
-  secret can't resolve. Verify with `datawatch secrets get <name>`.
+  secret can't resolve; the failure names the secret and the LLM entry
+  and never prints a value. Verify with `datawatch secrets get <name>`.
 - **Delete blocked by stale session.** A session stuck in `running`
   after its tmux pane died will still show as a binding. Kill the
   stale session first (`datawatch sessions kill <id>`), then delete

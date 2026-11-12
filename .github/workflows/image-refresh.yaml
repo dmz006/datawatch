@@ -46,9 +46,6 @@ permissions:
   contents: read
   packages: write
 
-env:
-  TRIVY_VERSION: v0.73.0
-
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -82,9 +79,7 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Refreshing images for release $v"
       - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Decide whether to rebuild
         id: decide
         env:
@@ -141,7 +136,7 @@ jobs:
         run: |
           git fetch --no-tags origin main
           git checkout origin/main -- docker/dockerfiles .trivyignore
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
@@ -160,9 +155,7 @@ jobs:
           tags: ghcr.io/dmz006/datawatch-${{ matrix.name }}:refresh-${{ needs.plan.outputs.stamp }}
           push: true
       - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Scan ${{ matrix.name }} staging image (blocking)
         run: |
           trivy image \
@@ -231,9 +224,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Build + scan every real shipped image fresh, without .trivyignore
         id: scan
         env:
@@ -312,6 +303,17 @@ jobs:
         # product artifacts — not in ghcr-cleanup.yaml's known-package
         # matrix, so this job cleans up after itself. Runs even if an
         # earlier build/scan step failed.
+        #
+        # --paginate prints one JSON array per page; jq cannot parse that
+        # as a single document ("Expected separator between values").
+        # There is no flag to fold the pages into one outer array:
+        # `--slurp` is not a gh api flag (the installed gh exits nonzero
+        # with "unknown flag: --slurp"), so the pages are handed to
+        # `jq -s`, which collects the separate pages into one array, and
+        # the [.[][]] filter flattens them into a single version list.
+        # Each attempt's stderr is captured to a mktemp file so a
+        # both-endpoint failure can be reported with its real error line
+        # instead of being masked as an empty `[]`.
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -319,20 +321,66 @@ jobs:
           TAG: cve-recheck-${{ github.run_id }}
         run: |
           set -uo pipefail
+          checked=0
+          listing_failures=0
+          found=0
+          deleted=0
+          delete_failures=0
+          list_err="$(mktemp)"
           for pkg in datawatch-agent-base datawatch-validator datawatch-stats-cluster \
                      datawatch-agent-claude datawatch-agent-opencode datawatch-agent-aider \
                      datawatch-agent-gemini datawatch-agent-goose datawatch-parent-full \
                      "agent-base"; do
-            versions=$(gh api "/users/$OWNER/packages/container/$pkg/versions" --paginate 2>/dev/null \
-              || gh api "/orgs/$OWNER/packages/container/$pkg/versions" --paginate 2>/dev/null \
-              || echo '[]')
-            vid=$(echo "$versions" | jq -r --arg tag "$TAG" '.[] | select(((.metadata.container.tags // []) | index($tag)) != null) | .id' | head -1)
-            if [[ -n "$vid" ]]; then
-              gh api -X DELETE "/users/$OWNER/packages/container/$pkg/versions/$vid" 2>/dev/null \
-                || gh api -X DELETE "/orgs/$OWNER/packages/container/$pkg/versions/$vid" 2>/dev/null \
-                || echo "::warning::failed to delete $pkg:$TAG"
+            checked=$((checked+1))
+            versions=""
+            for ep in "/users/$OWNER/packages/container/$pkg/versions" \
+                      "/orgs/$OWNER/packages/container/$pkg/versions"; do
+              # A usable listing's pages are all JSON arrays (jq -s collects
+              # the pages into one array); an error body such as an
+              # object like {"name":"not_found"} fails this check and falls
+              # through to the next endpoint instead of passing as an
+              # empty list.
+              if out=$(gh api "$ep" --paginate 2>"$list_err") \
+                 && printf '%s' "$out" | jq -se 'map(type == "array") | all' >/dev/null 2>&1; then
+                versions="$out"
+                break
+              fi
+            done
+            if [[ -z "$versions" ]]; then
+              listing_failures=$((listing_failures+1))
+              reason="$(head -n 1 "$list_err")"
+              if [[ -z "$reason" ]]; then reason="gh api exited non-zero with no stderr"; fi
+              echo "::warning::could not list container versions of $pkg — $reason"
+              continue
+            fi
+            # First version (id) whose metadata.container.tags contains $TAG.
+            # Entries whose metadata is missing or not an object are skipped
+            # rather than aborting the whole filter.
+            vid=$(printf '%s' "$versions" | jq -rse --arg tag "$TAG" '
+              [.[][]] // []
+              | map(select(type == "object" and (.metadata? | type) == "object"))
+              | [ .[] | select(((.metadata.container?.tags?) // []) | index($tag) != null) ]
+              | .[0].id // empty')
+            if [[ -n "$vid" && "$vid" != "null" ]]; then
+              found=$((found+1))
+              if gh api -X DELETE "/users/$OWNER/packages/container/$pkg/versions/$vid" 2>"$list_err" \
+                 || gh api -X DELETE "/orgs/$OWNER/packages/container/$pkg/versions/$vid" 2>"$list_err"; then
+                deleted=$((deleted+1))
+              else
+                delete_failures=$((delete_failures+1))
+                echo "::warning::failed to delete $pkg:$TAG"
+              fi
             fi
           done
+          rm -f "$list_err"
+          {
+            echo "## Throwaway recheck image cleanup"
+            echo
+            echo "| packages checked | listing failures | throwaway versions found | versions deleted | delete failures |"
+            echo "|---|---|---|---|---|"
+            echo "| $checked | $listing_failures | $found | $deleted | $delete_failures |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "packages checked: $checked | listing failures: $listing_failures | throwaway versions found: $found | versions deleted: $deleted | delete failures: $delete_failures"
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
@@ -458,8 +506,11 @@ jobs:
             git push origin "$BRANCH"
             gh pr create --title "fix(security): remove $(wc -l < /tmp/stale.txt | tr -d ' ') stale CVE suppression(s) — v$NEW_VERSION" \
               --body-file /tmp/pr-full-body.md \
-              --label security \
-              --reviewer "${{ github.repository_owner }}"
+              --label security
+            # Best effort: the owner cannot be asked to review a pull request their own
+            # token opened (GitHub refuses it), and that refusal must not fail the run.
+            gh pr edit "$BRANCH" --add-reviewer "${{ github.repository_owner }}" \
+              || echo "reviewer request skipped (the pull request author cannot review it)"
           fi
 
       - name: File or update tracking issue (always — audit trail even when nothing is stale)
@@ -534,7 +585,7 @@ jobs:
         run: |
           git fetch --no-tags origin main
           git checkout origin/main -- docker/dockerfiles .trivyignore
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
@@ -556,9 +607,7 @@ jobs:
           tags: ghcr.io/dmz006/datawatch-${{ matrix.name }}:refresh-${{ needs.plan.outputs.stamp }}
           push: true
       - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-            sh -s -- -b /usr/local/bin "$TRIVY_VERSION"
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Scan ${{ matrix.name }} staging image (blocking)
         run: |
           trivy image \

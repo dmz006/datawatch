@@ -29,6 +29,11 @@ exec_steps:
 ---
 # How-to: Automaton-DAG orchestrator
 
+> **Deprecated.** Creating, planning and running graphs here is replaced by
+> Automations. Convert an existing graph with `datawatch automation import-graph <graph-id>`
+> (add `--dry-run` to preview), then follow [`automation-chains.md`](automation-chains.md).
+> The old operations keep working for now and print a deprecation notice.
+
 Compose multiple Automata into a dependency graph with
 guardrails. The orchestrator runs Automata in topological order, gates
 each on its declared verifiers (rules / security / release-readiness

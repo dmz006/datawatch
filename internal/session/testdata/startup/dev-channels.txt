@@ -1,0 +1,10 @@
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │                                                                          │
+  │  Development channels are being loaded from unreviewed local sources.    │
+  │                                                                          │
+  │  Loading development channels                                            │
+  │                                                                          │
+  │     I am using this for local development                                │
+  │                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+  ❯

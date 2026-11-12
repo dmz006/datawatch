@@ -47,10 +47,11 @@ func TestCompletion_PostSessionCommitLandsBeforeStateIsVisibleAsComplete(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "abcd", FullID: "testhost-abcd", Hostname: "testhost",
-		State: StateRunning, OneShot: true, ValidateCommands: []string{"true"}, ProjectDir: dir,
+		State: StateRunning, OneShot: true, Git: true, ValidateCommands: []string{"true"}, ProjectDir: dir,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := store.Save(sess); err != nil {
@@ -126,10 +127,11 @@ func TestCompletion_CommitsEvenWhenAutoCommitConfigIsOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "efgh", FullID: "testhost-efgh", Hostname: "testhost",
-		State: StateRunning, OneShot: true, ValidateCommands: []string{"true"}, ProjectDir: dir,
+		State: StateRunning, OneShot: true, Git: true, ValidateCommands: []string{"true"}, ProjectDir: dir,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := store.Save(sess); err != nil {

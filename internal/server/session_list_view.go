@@ -243,6 +243,8 @@ type sessionListRecord struct {
 	*session.Session
 	ScheduledCount  *int     `json:"scheduled_count,omitempty"`
 	TruncatedFields []string `json:"truncated_fields,omitempty"`
+	// InheritedTags come from the owning Automaton (BL461); never stored.
+	InheritedTags []string `json:"inherited_tags"`
 }
 
 // writeSessionListView encodes the session list for requests that used
@@ -264,6 +266,7 @@ func (s *Server) writeSessionListView(w http.ResponseWriter, sessions []*session
 		if o.summary {
 			rec.Session, rec.TruncatedFields = summarizeSession(sess, textChars)
 		}
+		rec.InheritedTags = s.manager.InheritedTags(rec.Session)
 		if s.schedStore != nil {
 			n := s.schedStore.CountForSession(sess.FullID)
 			rec.ScheduledCount = &n

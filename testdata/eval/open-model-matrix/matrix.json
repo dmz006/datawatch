@@ -1,12 +1,19 @@
 {
   "roles": [
-    {"role": "cpu", "llm": "opencode-node-a-cpu", "model": "qwen3:1.7b", "node": "node-a-cpu"},
-    {"role": "fast", "llm": "opencode-node-a-fast", "model": "qwen3:8b", "node": "node-a"},
-    {"role": "mid", "llm": "opencode-node-a-gpu", "model": "mistral-small3.2", "node": "node-a"},
-    {"role": "decompose-validate", "llm": "opencode-node-b-gpu", "model": "gpt-oss:120b", "node": "node-b"}
+    {"role": "base", "llm": "pi-node-b-gpu", "model": "qwen3.8:27b", "node": "node-b",
+     "thinking_level": "minimal", "functions": ["execute", "decompose", "validate", "guardrail"]},
+    {"role": "swift-1.5-qwen38-27b", "llm": "pi-node-a-gpu-s15", "model": "swift-1.5-qwen38-27b:latest", "node": "node-a",
+     "thinking_level": "minimal", "functions": ["execute"]},
+    {"role": "qwen3-coder", "llm": "pi-node-a-gpu-q3c", "model": "qwen3-coder:30b", "node": "node-a",
+     "thinking_level": "minimal", "functions": ["execute"]},
+    {"role": "qwen3-coder-next", "llm": "pi-node-b-gpu-q3cn", "model": "qwen3-coder-next:q4_K_M", "node": "node-b",
+     "thinking_level": "minimal", "functions": ["execute"]},
+    {"role": "qwen3.5", "llm": "pi-node-a-gpu-q35", "model": "qwen3.5:35b", "node": "node-a",
+     "thinking_level": "minimal", "functions": ["execute"]}
   ],
   "task_types": ["analysis", "scripting", "docs", "review"],
   "fixtures_from": "testdata/eval/model-tiering",
   "effort_axis": null,
+  "prd_thinking_level": null,
   "cell_root": ".datawatch/eval/open-model-matrix"
 }

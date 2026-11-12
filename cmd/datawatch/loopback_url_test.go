@@ -35,10 +35,10 @@ func TestLoopbackBaseURL_BindAll(t *testing.T) {
 
 func TestLoopbackBaseURL_BindSpecificIPv4(t *testing.T) {
 	cfg := &config.Config{}
-	cfg.Server.Host = "192.168.1.5"
+	cfg.Server.Host = "192.0.2.35"
 	cfg.Server.Port = 8080
 	got := loopbackBaseURL(cfg)
-	want := "http://192.168.1.5:8080"
+	want := "http://192.0.2.35:8080"
 	if got != want {
 		// This is the operator's case — daemon bound to a specific
 		// interface means loopback (127.0.0.1) is NOT what should be

@@ -130,7 +130,7 @@ func AutoTag(projectDir, content, wing, room, hall string) (string, string, stri
 }
 
 // deriveFloor returns the project's parent-directory basename when
-// project_dir is nested two levels deep (e.g. /home/user/work/foo →
+// project_dir is nested two levels deep (e.g. /home/<user>/work/foo →
 // "work"). When the parent matches a known org marker (workspace,
 // projects, src, work, code) the grandparent is used. Empty when
 // the structure is shallower than that. (v5.26.72)

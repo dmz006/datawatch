@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,6 +54,78 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.Server.Port != 8080 {
 		t.Errorf("Server.Port = %d, want 8080", cfg.Server.Port)
+	}
+	if cfg.PinCheckSeconds != 300 {
+		t.Errorf("PinCheckSeconds = %d, want 300", cfg.PinCheckSeconds)
+	}
+	if len(cfg.ComputeNodes) != 0 {
+		t.Errorf("ComputeNodes = %d entries, want none by default", len(cfg.ComputeNodes))
+	}
+}
+
+func TestComputeNodeYAML_PinDefaults(t *testing.T) {
+	var node ComputeNodeYAML
+	if node.NodePinnedModel != "" {
+		t.Errorf("NodePinnedModel = %q, want empty (no pin)", node.NodePinnedModel)
+	}
+	if node.AllowModelSwap {
+		t.Error("AllowModelSwap should default to false")
+	}
+}
+
+func TestLoad_PinSettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	yaml := `
+pin_check_seconds: 0
+compute_nodes:
+  - name: gpu1
+    kind: ollama
+    address: http://gpu1:11434
+    node_pinned_model: qwen3.8-64k:27b
+    allow_model_swap: true
+  - name: gpu2
+    kind: ollama
+    address: http://gpu2:11434
+`
+	if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// An explicit 0 means the pin check is off; it must not revert to the default.
+	if cfg.PinCheckSeconds != 0 {
+		t.Errorf("PinCheckSeconds = %d, want 0 (explicit off)", cfg.PinCheckSeconds)
+	}
+	if len(cfg.ComputeNodes) != 2 {
+		t.Fatalf("ComputeNodes = %d entries, want 2", len(cfg.ComputeNodes))
+	}
+	pinned := cfg.ComputeNodes[0]
+	if pinned.NodePinnedModel != "qwen3.8-64k:27b" || !pinned.AllowModelSwap {
+		t.Errorf("gpu1 pin = %q swap=%v, want qwen3.8-64k:27b swap=true", pinned.NodePinnedModel, pinned.AllowModelSwap)
+	}
+	unpinned := cfg.ComputeNodes[1]
+	if unpinned.NodePinnedModel != "" || unpinned.AllowModelSwap {
+		t.Errorf("gpu2 pin = %q swap=%v, want no pin and swap=false", unpinned.NodePinnedModel, unpinned.AllowModelSwap)
+	}
+}
+
+func TestSave_PinCheckSecondsZeroRoundTrips(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.PinCheckSeconds = 0
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.PinCheckSeconds != 0 {
+		t.Errorf("PinCheckSeconds after round trip = %d, want 0", loaded.PinCheckSeconds)
 	}
 }
 
@@ -158,7 +231,8 @@ func TestSave_RoundTrip(t *testing.T) {
 	cfg.Signal.GroupID = "testgroup"
 	cfg.Session.MaxSessions = 3
 	cfg.Server.Port = 9090
-	cfg.Server.PublicURL = "https://datawatch.example.com" // F10 S4.2
+	cfg.Server.PublicURL = "https://datawatch.example.com"      // F10 S4.2
+	cfg.MCP.PublicURL = "https://host.tailnet.example.net:8081" // GH#207
 
 	if err := Save(cfg, path); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -183,6 +257,9 @@ func TestSave_RoundTrip(t *testing.T) {
 	}
 	if loaded.Server.PublicURL != cfg.Server.PublicURL {
 		t.Errorf("Server.PublicURL: got %q, want %q", loaded.Server.PublicURL, cfg.Server.PublicURL)
+	}
+	if loaded.MCP.PublicURL != cfg.MCP.PublicURL {
+		t.Errorf("MCP.PublicURL: got %q, want %q", loaded.MCP.PublicURL, cfg.MCP.PublicURL)
 	}
 }
 
@@ -214,7 +291,7 @@ func TestSave_RoundTrip_MCPSelfConfig(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := DefaultConfig()
-	cfg.MCP.AllowSelfConfig = true
+	cfg.MCP.AllowSelfConfig = BoolPtr(true)
 	cfg.MCP.SelfConfigAuditPath = "/tmp/dw/self.jsonl"
 
 	if err := Save(cfg, path); err != nil {
@@ -224,12 +301,153 @@ func TestSave_RoundTrip_MCPSelfConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !loaded.MCP.AllowSelfConfig {
-		t.Errorf("AllowSelfConfig did not round-trip")
+	if loaded.MCP.AllowSelfConfig == nil || !*loaded.MCP.AllowSelfConfig {
+		t.Errorf("explicit true AllowSelfConfig did not round-trip: got %v", *loaded.MCP.AllowSelfConfig)
+	}
+	if !loaded.MCP.SelfConfigEnabled() {
+		t.Errorf("SelfConfigEnabled() = false, want true")
 	}
 	if loaded.MCP.SelfConfigAuditPath != "/tmp/dw/self.jsonl" {
 		t.Errorf("SelfConfigAuditPath: got %q want /tmp/dw/self.jsonl",
 			loaded.MCP.SelfConfigAuditPath)
+	}
+}
+
+// captureMigrationNotices swaps selfConfigMigrationLogf for a capturing
+// sink and restores it when the test finishes; it returns the raw notices.
+func captureMigrationNotices(t *testing.T) *[]string {
+	t.Helper()
+	orig := selfConfigMigrationLogf
+	var notices []string
+	selfConfigMigrationLogf = func(format string, args ...interface{}) {
+		notices = append(notices, fmt.Sprintf(format, args...))
+	}
+	t.Cleanup(func() { selfConfigMigrationLogf = orig })
+	return &notices
+}
+
+func writeConfig(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+func TestLoad_AllowSelfConfig_AbsentKeyDefaultsEnabled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	notices := captureMigrationNotices(t)
+
+	writeConfig(t, path, "server:\n  token: x\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.MCP.SelfConfigEnabled() {
+		t.Errorf("absent key: SelfConfigEnabled() = false, want true (new default)")
+	}
+	if cfg.MCP.AllowSelfConfig == nil {
+		t.Errorf("migration did not materialize the field for runtime readers")
+	} else if !*cfg.MCP.AllowSelfConfig {
+		t.Errorf("materialized value = false, want true")
+	}
+	if len(*notices) != 1 {
+		t.Fatalf("want exactly one migration notice, got %d: %v", len(*notices), *notices)
+	}
+	if !strings.Contains((*notices)[0], "allow_self_config") {
+		t.Errorf("notice should name the setting: %q", (*notices)[0])
+	}
+}
+
+func TestLoad_AllowSelfConfig_ExplicitFalsePreserved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	notices := captureMigrationNotices(t)
+
+	writeConfig(t, path, "mcp:\n  allow_self_config: false\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MCP.SelfConfigEnabled() {
+		t.Errorf("explicit false: SelfConfigEnabled() = true, want false")
+	}
+	if cfg.MCP.AllowSelfConfig == nil || *cfg.MCP.AllowSelfConfig {
+		t.Errorf("explicit false was not preserved as-written")
+	}
+	if len(*notices) != 0 {
+		t.Errorf("explicit false should not trigger the migration notice, got: %v", *notices)
+	}
+}
+
+func TestLoad_AllowSelfConfig_ExplicitTruePreserved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	notices := captureMigrationNotices(t)
+
+	writeConfig(t, path, "mcp:\n  allow_self_config: true\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.MCP.SelfConfigEnabled() {
+		t.Errorf("explicit true: SelfConfigEnabled() = false, want true")
+	}
+	if cfg.MCP.AllowSelfConfig == nil || !*cfg.MCP.AllowSelfConfig {
+		t.Errorf("explicit true was not preserved as-written")
+	}
+	if len(*notices) != 0 {
+		t.Errorf("explicit true should not trigger the migration notice, got: %v", *notices)
+	}
+}
+
+func TestApplyDefaults_AllowSelfConfig_MigrationIdempotent(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.MCP.AllowSelfConfig != nil {
+		t.Fatalf("DefaultConfig must leave the key absent (nil), got %v", *cfg.MCP.AllowSelfConfig)
+	}
+	// First application: fills nil → true.
+	applyDefaults(cfg)
+	if cfg.MCP.AllowSelfConfig == nil || !*cfg.MCP.AllowSelfConfig {
+		t.Fatalf("first applyDefaults: want *true, got %v", cfg.MCP.AllowSelfConfig)
+	}
+	// Second application: no-op, still true (idempotent).
+	applyDefaults(cfg)
+	if cfg.MCP.AllowSelfConfig == nil || !*cfg.MCP.AllowSelfConfig {
+		t.Errorf("second applyDefaults mutated the value (not idempotent)")
+	}
+	// An explicit false survives re-application too.
+	cfg2 := DefaultConfig()
+	cfg2.MCP.AllowSelfConfig = BoolPtr(false)
+	applyDefaults(cfg2)
+	applyDefaults(cfg2)
+	if cfg2.MCP.AllowSelfConfig == nil || *cfg2.MCP.AllowSelfConfig {
+		t.Errorf("explicit false must survive repeated applyDefaults")
+	}
+}
+
+func TestSave_RoundTrip_AllowSelfConfigExplicitFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	cfg.MCP.AllowSelfConfig = BoolPtr(false)
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(raw), "allow_self_config: false") {
+		t.Errorf("an explicit false must be written (not omitted), file:\n%s", raw)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.MCP.SelfConfigEnabled() {
+		t.Errorf("explicit false lost across Save→Load")
 	}
 }
 
@@ -489,6 +707,12 @@ func TestGetOutputMode_ACPDefaultsToChat(t *testing.T) {
 
 // ── Detection config ──
 
+// TestDefaultDetection pins the built-in detection defaults. Note the
+// rate-limit contract: the built-in default no longer seeds a flat
+// rate_limit_patterns list — when unset, the session Manager falls back
+// to its per-backend anchored table (internal/session/rate_limit_lines.go).
+// An operator-configured rate_limit_patterns keeps the flat-substring
+// behavior (see TestGetDetection_RateLimitPatternsOperatorKept).
 func TestDefaultDetection(t *testing.T) {
 	d := DefaultDetection()
 	if len(d.PromptPatterns) == 0 {
@@ -497,8 +721,8 @@ func TestDefaultDetection(t *testing.T) {
 	if len(d.CompletionPatterns) == 0 {
 		t.Error("expected non-empty completion patterns")
 	}
-	if len(d.RateLimitPatterns) == 0 {
-		t.Error("expected non-empty rate limit patterns")
+	if len(d.RateLimitPatterns) != 0 {
+		t.Errorf("built-in default RateLimitPatterns should be unset (per-backend anchored table is the fallback), got %d entries: %v", len(d.RateLimitPatterns), d.RateLimitPatterns)
 	}
 }
 
@@ -529,6 +753,25 @@ func TestGetDetection_PerBackendOverride(t *testing.T) {
 	}
 }
 
+func TestGetDetection_RateLimitPatternsOperatorKept(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Detection.RateLimitPatterns = []string{"DATAWATCH_RATE_LIMITED:", "my custom phrase"}
+	for _, backend := range []string{"claude-code", "pi-prompt", "ollama"} {
+		got := cfg.GetDetection(backend).RateLimitPatterns
+		if len(got) != 2 || got[0] != "DATAWATCH_RATE_LIMITED:" || got[1] != "my custom phrase" {
+			t.Errorf("backend %q: expected operator rate-limit list to pass through unchanged, got %v", backend, got)
+		}
+	}
+	// And with no operator list configured, GetDetection still leaves the
+	// field unset (the per-backend anchored table applies then).
+	cfg2 := DefaultConfig()
+	for _, backend := range []string{"claude-code", "pi-prompt", "ollama"} {
+		if got := cfg2.GetDetection(backend).RateLimitPatterns; len(got) != 0 {
+			t.Errorf("backend %q: expected unset rate-limit list with no operator config, got %v", backend, got)
+		}
+	}
+}
+
 // ── Pipeline config ──
 
 func TestPipelineConfig_Defaults(t *testing.T) {
@@ -549,9 +792,9 @@ func TestSessionConfig_ResolveProjectDir(t *testing.T) {
 	}{
 		{
 			name: "empty input falls back to default",
-			def:  "/home/u",
+			def:  "/home/<user>",
 			in:   "",
-			want: "/home/u",
+			want: "/home/<user>",
 		},
 		{
 			name: "empty input + no default returns empty (caller decides)",
@@ -697,6 +940,123 @@ func TestBlockOnFileDrift_YAMLRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDriftMode_DefaultIsBlock(t *testing.T) {
+	if got := DefaultConfig().Autonomous.DriftMode; got != "block" {
+		t.Errorf("Autonomous.DriftMode default = %q, want \"block\"", got)
+	}
+}
+
+func TestDriftMode_YAMLRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("autonomous:\n  drift_mode: warn\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Autonomous.DriftMode != "warn" {
+		t.Fatalf("drift_mode: warn in YAML did not load (got %q)", cfg.Autonomous.DriftMode)
+	}
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "drift_mode: warn") {
+		t.Errorf("saved YAML lacks drift_mode: warn:\n%s", raw)
+	}
+	cfg2, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg2.Autonomous.DriftMode != "warn" {
+		t.Errorf("drift_mode did not survive Save/Load round-trip (got %q)", cfg2.Autonomous.DriftMode)
+	}
+	// "block" (the default) must round-trip exactly too.
+	cfg2.Autonomous.DriftMode = "block"
+	if err := Save(cfg2, out); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(out)
+	if !strings.Contains(string(raw), "drift_mode: block") {
+		t.Errorf("drift_mode: block should be written, got:\n%s", raw)
+	}
+}
+
+func TestValidateDriftMode(t *testing.T) {
+	for _, mode := range []string{"block", "warn", "WARN", " block ", "Block", "Warn"} {
+		if err := ValidateDriftMode(mode); err != nil {
+			t.Errorf("ValidateDriftMode(%q) = %v, want nil", mode, err)
+		}
+	}
+	for _, mode := range []string{"", "allow", "silent", "blocking", "warns", "block and warn", "true"} {
+		err := ValidateDriftMode(mode)
+		if err == nil {
+			t.Errorf("ValidateDriftMode(%q) = nil, want error", mode)
+			continue
+		}
+		if !strings.Contains(err.Error(), "block\" or \"warn\"") {
+			t.Errorf("ValidateDriftMode(%q) error %q does not name the accepted values", mode, err)
+		}
+	}
+}
+
+func TestDefaultConfig_ScopeLintEnforce(t *testing.T) {
+	if got := DefaultConfig().Autonomous.ScopeLint; got != ScopeLintEnforce {
+		t.Errorf("Autonomous.ScopeLint = %q, want %q", got, ScopeLintEnforce)
+	}
+}
+
+func TestScopeLint_YAMLRoundTrip(t *testing.T) {
+	for _, mode := range []string{ScopeLintOff, ScopeLintWarn, ScopeLintEnforce} {
+		t.Run(mode, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte("autonomous:\n  scope_lint: "+mode+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := cfg.Autonomous.ScopeLintMode(); got != mode {
+				t.Fatalf("loaded ScopeLintMode() = %q, want %q", got, mode)
+			}
+			out := filepath.Join(t.TempDir(), "saved.yaml")
+			if err := Save(cfg, out); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+			raw, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// yaml.v3 quotes "off" (a YAML 1.1 boolean word), so accept either form.
+			if !strings.Contains(string(raw), "scope_lint: "+mode) && !strings.Contains(string(raw), `scope_lint: "`+mode+`"`) {
+				t.Errorf("saved YAML lacks scope_lint: %s:\n%s", mode, raw)
+			}
+			cfg2, err := Load(out)
+			if err != nil {
+				t.Fatalf("reload: %v", err)
+			}
+			if got := cfg2.Autonomous.ScopeLintMode(); got != mode {
+				t.Errorf("ScopeLintMode() after round-trip = %q, want %q", got, mode)
+			}
+		})
+	}
+}
+
+func TestScopeLintMode_UnknownFallsBackToEnforce(t *testing.T) {
+	for _, value := range []string{"", "   ", "garbage", "on"} {
+		a := AutonomousConfig{ScopeLint: value}
+		if got := a.ScopeLintMode(); got != ScopeLintEnforce {
+			t.Errorf("ScopeLint %q resolved to %q, want %q", value, got, ScopeLintEnforce)
+		}
+	}
+}
+
 // BL428 §3a — autonomous.project_write_serialization /
 // autonomous.refuse_dirty_tree_start (config surface for
 // docs/plans/2026-10-14-concurrency-and-budget-design.md).
@@ -799,5 +1159,217 @@ func TestDeprecatedKeys_MaxParallelTasksStillDetected(t *testing.T) {
 		if k == "autonomous.project_write_serialization" || k == "autonomous.refuse_dirty_tree_start" {
 			t.Fatalf("DeprecatedKeys = %v — the new BL428 keys are not deprecated", cfg.DeprecatedKeys)
 		}
+	}
+}
+
+func TestDefaultConfig_UndeclaredEditModeWarn(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Autonomous.UndeclaredEditMode != "warn" {
+		t.Fatalf("Autonomous.UndeclaredEditMode = %q, want \"warn\"", cfg.Autonomous.UndeclaredEditMode)
+	}
+}
+
+func TestYAMLRoundTrip_UndeclaredEditMode(t *testing.T) {
+	// An explicitly set value ("block") must survive Marshal->Unmarshal.
+	cfg := DefaultConfig()
+	cfg.Autonomous.UndeclaredEditMode = "block"
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "undeclared_edit_mode: block") {
+		t.Errorf("saved YAML lacks 'undeclared_edit_mode: block':\n%s", raw)
+	}
+	cfg2, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg2.Autonomous.UndeclaredEditMode != "block" {
+		t.Errorf("UndeclaredEditMode after round-trip = %q, want \"block\"", cfg2.Autonomous.UndeclaredEditMode)
+	}
+
+	// No omitempty: an unset config still marshals the default explicitly
+	// as 'undeclared_edit_mode: warn' (explicit-clear discipline).
+	cfg3 := DefaultConfig()
+	out3 := filepath.Join(t.TempDir(), "default.yaml")
+	if err := Save(cfg3, out3); err != nil {
+		t.Fatalf("Save(default): %v", err)
+	}
+	raw3, err := os.ReadFile(out3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw3), "undeclared_edit_mode: warn") {
+		t.Errorf("default YAML lacks 'undeclared_edit_mode: warn':\n%s", raw3)
+	}
+}
+
+func TestValidateUndeclaredEditMode(t *testing.T) {
+	for _, ok := range []string{"off", "warn", "block", " Block ", "OFF"} {
+		if err := ValidateUndeclaredEditMode(ok); err != nil {
+			t.Errorf("ValidateUndeclaredEditMode(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "strict", "on", "true"} {
+		if err := ValidateUndeclaredEditMode(bad); err == nil {
+			t.Errorf("ValidateUndeclaredEditMode(%q) = nil, want error", bad)
+		}
+	}
+}
+
+func TestResourceLimits_Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	rl := cfg.ResourceLimits
+	if rl.MemorySharePercent != 50 {
+		t.Errorf("MemorySharePercent = %d, want 50", rl.MemorySharePercent)
+	}
+	if rl.MemoryFloorMB != 2048 {
+		t.Errorf("MemoryFloorMB = %d, want 2048", rl.MemoryFloorMB)
+	}
+	if rl.MemoryCapMB != 16384 {
+		t.Errorf("MemoryCapMB = %d, want 16384", rl.MemoryCapMB)
+	}
+
+	// A missing file loads the defaults too.
+	loaded, err := Load(filepath.Join(t.TempDir(), "absent.yaml"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.ResourceLimits != DefaultResourceLimits() {
+		t.Errorf("loaded defaults = %+v, want %+v", loaded.ResourceLimits, DefaultResourceLimits())
+	}
+}
+
+func TestResourceLimits_YAMLOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	yaml := `
+resource_limits:
+  memory_share_percent: 30
+  memory_floor_mb: 1024
+  memory_cap_mb: 8192
+`
+	if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	rl := cfg.ResourceLimits
+	if rl.MemorySharePercent != 30 || rl.MemoryFloorMB != 1024 || rl.MemoryCapMB != 8192 {
+		t.Errorf("ResourceLimits = %+v, want {30 1024 8192}", rl)
+	}
+}
+
+func TestReleaseSettingsDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Autonomous.PushAndTag {
+		t.Error("PushAndTag should default to false")
+	}
+	if cfg.Autonomous.ReleasePath != "direct_push" {
+		t.Errorf("ReleasePath = %q, want direct_push", cfg.Autonomous.ReleasePath)
+	}
+	if cfg.Git.ReleaseCIWindowMinutes != 60 {
+		t.Errorf("ReleaseCIWindowMinutes = %d, want 60", cfg.Git.ReleaseCIWindowMinutes)
+	}
+}
+
+func TestReleaseSettingsLoadFromYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	doc := "autonomous:\n  push_and_tag: true\n  release_path: pull_request\ngit:\n  release_ci_window_minutes: 15\n"
+	if err := os.WriteFile(path, []byte(doc), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Autonomous.PushAndTag {
+		t.Error("PushAndTag not loaded")
+	}
+	if cfg.Autonomous.ReleasePath != "pull_request" {
+		t.Errorf("ReleasePath = %q", cfg.Autonomous.ReleasePath)
+	}
+	if cfg.Git.ReleaseCIWindowMinutes != 15 {
+		t.Errorf("ReleaseCIWindowMinutes = %d", cfg.Git.ReleaseCIWindowMinutes)
+	}
+}
+
+func TestValidateReleaseSettings(t *testing.T) {
+	pathCases := []struct {
+		name, in string
+		wantErr  bool
+	}{
+		{"direct_push accepted", "direct_push", false},
+		{"pull_request accepted", "pull_request", false},
+		{"unknown rejected", "squash", true},
+	}
+	for _, c := range pathCases {
+		t.Run("release_path/"+c.name, func(t *testing.T) {
+			err := ValidateReleasePath(c.in)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("ValidateReleasePath(%q) = %v, wantErr %v", c.in, err, c.wantErr)
+			}
+			if err != nil && (!strings.Contains(err.Error(), "release_path") || !strings.Contains(err.Error(), "direct_push") || !strings.Contains(err.Error(), "pull_request")) {
+				t.Errorf("error %q must name the setting and list allowed values", err)
+			}
+		})
+	}
+	winCases := []struct {
+		name    string
+		in      int
+		wantErr bool
+	}{
+		{"positive accepted", 60, false},
+		{"zero rejected", 0, true},
+	}
+	for _, c := range winCases {
+		t.Run("release_ci_window_minutes/"+c.name, func(t *testing.T) {
+			err := ValidateReleaseCIWindowMinutes(c.in)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("ValidateReleaseCIWindowMinutes(%d) = %v, wantErr %v", c.in, err, c.wantErr)
+			}
+			if err != nil && !strings.Contains(err.Error(), "release_ci_window_minutes") {
+				t.Errorf("error %q must name the setting", err)
+			}
+		})
+	}
+}
+
+func TestSensitiveWritesEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		val  *bool
+		want bool
+	}{
+		{"absent", nil, true},
+		{"true", BoolPtr(true), true},
+		{"false", BoolPtr(false), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := MCPConfig{AllowSensitiveWrites: tc.val}
+			if got := m.SensitiveWritesEnabled(); got != tc.want {
+				t.Errorf("SensitiveWritesEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAutonomousBranchRefreshDefaults(t *testing.T) {
+	var a AutonomousConfig
+	if a.BranchRefreshEnabled {
+		t.Error("BranchRefreshEnabled should default off")
+	}
+	if got := a.BranchRefreshLimit(); got != 5 {
+		t.Errorf("default limit = %d, want 5", got)
+	}
+	a.BranchRefreshBehindLimit = 12
+	if got := a.BranchRefreshLimit(); got != 12 {
+		t.Errorf("explicit limit = %d, want 12", got)
 	}
 }

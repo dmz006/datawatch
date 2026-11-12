@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/inference"
 )
 
 // AssistRequest is the wire form of POST /api/assist.
@@ -79,6 +80,10 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		if msg, refused := inference.PinRefusalMessage(err); refused {
+			http.Error(w, msg, http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -7,8 +7,11 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
 )
@@ -26,12 +29,14 @@ func (s *HTTPServer) SetCapacity(l *capacity.Ledger) {
 // CapacityAdmitFn blocks (up to a short, caller-chosen timeout) until an
 // interactive session start may proceed on the given backend+model's
 // node:/llm: pools, or returns an error (typically capacity.ErrWaitTimeout)
-// if it can't. holder is a caller-generated key for this admission attempt;
+// if it can't. On success it also returns the compute node the lease was
+// granted on ("" when the admission names no node), and the session must start
+// there. holder is a caller-generated key for this admission attempt;
 // on success the caller must, once the real session ID is known, bind it via
 // the same ledger (see wireCapacity's admitInteractive closure) so the
 // existing Reap() cycle in capacity_wiring.go's syncPools releases it
 // automatically once the session ends — no separate release call needed.
-type CapacityAdmitFn func(ctx context.Context, backend, model, holder string) error
+type CapacityAdmitFn func(ctx context.Context, backend, model, holder string, priority int) (node string, err error)
 
 // SetCapacityAdmit wires interactive-session capacity gating (handleStartSession).
 func (s *Server) SetCapacityAdmit(fn CapacityAdmitFn) { s.capacityAdmit = fn }
@@ -83,32 +88,58 @@ func (s *HTTPServer) InferenceRegistry() *inference.Registry {
 	return s.api.inferenceReg
 }
 
-// NodeGPUStats returns the busiest GPU's utilisation (percent) reported for a
-// compute node, and whether any GPU data was available.
-func (s *HTTPServer) NodeGPUStats(name string) (maxUtilPct float64, ok bool) {
+// NodeObservation returns the observer figures a compute node's slot count
+// reads, from the node detail the observer serves: each GPU's memory, the VRAM
+// of every model the node has loaded (the "ollama_model:" envelopes), and the
+// busiest GPU's utilisation. ok is false when the detail could not be read; a
+// node whose detail has no GPUs returns ok with an empty GPU list.
+func (s *HTTPServer) NodeObservation(name string) (obs compute.NodeObservation, ok bool) {
 	if s.api == nil || s.api.computeReg == nil {
-		return 0, false
+		return obs, false
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/compute/nodes/"+name+"/detail", nil)
-	s.api.handleComputeNodeDetail(rec, req, name)
+	s.api.serveComputeNodeDetail(rec, req, name)
 	if rec.Code != http.StatusOK {
-		return 0, false
+		return obs, false
 	}
 	var d struct {
 		GPU []struct {
-			UtilPct float64 `json:"util_pct"`
+			UtilPct       float64 `json:"util_pct"`
+			MemUsedBytes  uint64  `json:"mem_used_bytes"`
+			MemTotalBytes uint64  `json:"mem_total_bytes"`
 		} `json:"gpu"`
+		Mem struct {
+			UsedBytes  uint64 `json:"used_bytes"`
+			TotalBytes uint64 `json:"total_bytes"`
+		} `json:"mem"`
+		Envelopes []struct {
+			ID          string `json:"id"`
+			GPUMemBytes uint64 `json:"gpu_mem_bytes"`
+			RSSBytes    uint64 `json:"rss_bytes"`
+		} `json:"envelopes"`
 	}
-	if json.Unmarshal(rec.Body.Bytes(), &d) != nil || len(d.GPU) == 0 {
-		return 0, false
+	if json.Unmarshal(rec.Body.Bytes(), &d) != nil {
+		return obs, false
 	}
 	for _, g := range d.GPU {
-		if g.UtilPct > maxUtilPct {
-			maxUtilPct = g.UtilPct
+		obs.GPUs = append(obs.GPUs, compute.GPUMemory{TotalBytes: g.MemTotalBytes, UsedBytes: g.MemUsedBytes})
+		obs.MaxUtilPct = max(obs.MaxUtilPct, g.UtilPct)
+	}
+	obs.SystemTotalBytes = d.Mem.TotalBytes
+	obs.SystemUsedBytes = d.Mem.UsedBytes
+	for _, e := range d.Envelopes {
+		if !strings.HasPrefix(e.ID, "ollama_model:") {
+			continue
+		}
+		if e.GPUMemBytes > 0 {
+			obs.LoadedModelBytes = append(obs.LoadedModelBytes, e.GPUMemBytes)
+		}
+		if e.RSSBytes > 0 {
+			obs.CPUModelBytes = append(obs.CPUModelBytes, e.RSSBytes)
 		}
 	}
-	return maxUtilPct, true
+	return obs, true
 }
 
 // resolvePoolsForBackend mirrors capacity_wiring.go's keys() closure (which
@@ -126,8 +157,15 @@ func (s *Server) resolvePoolsForBackend(backend string) []string {
 		return nil
 	}
 	pools := []string{"llm:" + l.Name}
-	if len(l.ComputeNodes) > 0 {
-		pools = append(pools, "node:"+l.ComputeNodes[0])
+	// Every node of the entry is listed so a card scoped to it finds each
+	// node a start may land on; a one-node entry lists its one node as before.
+	seen := map[string]bool{}
+	for _, n := range l.ComputeNodes {
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		pools = append(pools, "node:"+n)
 	}
 	return pools
 }
@@ -188,18 +226,206 @@ func (s *Server) prdRelevantPools(prdID string) (relevant map[string]bool, ok bo
 // capacityPoolJSON is one pool in the /api/capacity response. queue_depth and
 // holder are only set on node:<name> pools; they are pointers so every node
 // pool reports them (zero / empty when idle) while other pools keep the
-// plain PoolStatus shape.
+// plain PoolStatus shape. HolderNames is the readable, resolved form of the
+// same holders (holders stays a raw id array, unchanged for scripts).
 type capacityPoolJSON struct {
 	capacity.PoolStatus
 	QueueDepth *int    `json:"queue_depth,omitempty"`
 	Holder     *string `json:"holder,omitempty"`
+	// HolderNames is the parallel readable list of Holders (node pools only,
+	// mirroring Holder). Always an array there — empty when idle.
+	HolderNames []autonomous.HolderNameView `json:"holder_names,omitempty"`
+	// For llm:<name> pools: the effective inflight limit and the rule that
+	// produced it ("explicit" | "plan_tier" | "kind") — the same
+	// inference.EffectiveMaxInflight the daemon's capacity wiring enforces,
+	// so the value shown here IS the value the ledger admits against.
+	// Nil on non-LLM pools (omitted from JSON). A present 0 means
+	// "unlimited by design" (local/API kinds or an explicit operator 0).
+	EffectiveMaxInflight *int    `json:"effective_max_inflight,omitempty"`
+	InflightSource       *string `json:"inflight_source,omitempty"`
+	// Usage carries the per-node usage figures (loaded models, GPU stats;
+	// see the nodeUsage contract in node_usage.go) for node:<name> pools.
+	// Nil — and therefore omitted from JSON — on host: and llm: pools.
+	Usage *nodeUsage `json:"usage,omitempty"`
+	// VerifierLimit and VerifierHeld are the node's verifier pool
+	// (node-verify:<name>) limit and held count, alongside the executor
+	// pool's own limit and held. Nil — omitted from JSON — when that pool
+	// has no limit yet. Node pools only.
+	VerifierLimit *int `json:"verifier_limit,omitempty"`
+	VerifierHeld  *int `json:"verifier_held,omitempty"`
+	// FreeGPUMB, HeadroomOK and HeadroomReason are the node's last-seen
+	// verifier headroom figures from the daemon's admission cache (node
+	// pools only; omitted when the reader is not wired or the node has not
+	// been synced).
+	FreeGPUMB      *uint64 `json:"free_gpu_mb,omitempty"`
+	HeadroomOK     *bool   `json:"headroom_ok,omitempty"`
+	HeadroomReason *string `json:"headroom_reason,omitempty"`
 }
 
 // capacityResponse is the /api/capacity body.
 type capacityResponse struct {
-	Pools   []capacityPoolJSON `json:"pools"`
-	Leases  []capacity.Lease   `json:"leases"`
-	Waiting []capacity.Waiter  `json:"waiting"`
+	Pools   []capacityPoolJSON   `json:"pools"`
+	Leases  []capacityLeaseJSON  `json:"leases"`
+	Waiting []capacityWaiterJSON `json:"waiting"`
+	// Warnings are model-to-node collisions from the live config (see
+	// modelNodeWarnings). Omitted when there are none.
+	Warnings []inference.ModelNodeConflict `json:"warnings,omitempty"`
+	// Backoff lists the live per-backend usage back-off flags that gate
+	// autonomous dispatch (BL428 Phase 4). Always an array, empty when none.
+	Backoff []capacityBackoffJSON `json:"backoff"`
+	// PatternsVersion / PatternsStale mirror the usage back-off status: the
+	// rate-limit pattern fingerprint and whether an operator has rechecked it.
+	// ClaudeCLIVersion is the cached `claude --version` text mixed into the
+	// fingerprint ("unknown" when the tool is absent).
+	PatternsVersion  string `json:"patterns_version"`
+	PatternsStale    bool   `json:"patterns_stale"`
+	ClaudeCLIVersion string `json:"claude_cli_version"`
+	// Budgets lists the dollar budget state of every LLM that has a budget.
+	// Always an array, empty when none.
+	Budgets []autonomous.BudgetStatus `json:"budgets"`
+	// Tasks lists, for every queued task, the reason it is waiting, and for
+	// every running task what it holds. Both are always arrays.
+	Tasks capacityTasksJSON `json:"tasks"`
+	// Verifier carries the rolling verifier cost aggregates: queue wait, run
+	// time and outcome category counts.
+	Verifier autonomous.VerifierStatsView `json:"verifier"`
+}
+
+// capacityTasksJSON is the per-task part of the capacity response.
+type capacityTasksJSON struct {
+	Waiting []autonomous.TaskWaitView `json:"waiting"`
+	Running []autonomous.TaskHoldView `json:"running"`
+}
+
+// capacityLeaseJSON is one lease in the capacity response: the raw id
+// fields (holder, prd_id, …) untouched, plus holder_name — the resolved
+// readable form of that holder. Omitted when no name resolver is wired.
+type capacityLeaseJSON struct {
+	capacity.Lease
+	HolderName autonomous.HolderNameView `json:"holder_name,omitempty"`
+}
+
+// capacityWaiterJSON is one waiting request in the capacity response: the
+// raw id fields (holder, prd_id, pools, reason) untouched, plus holder_name —
+// the resolved readable form of the waiting holder.
+type capacityWaiterJSON struct {
+	capacity.Waiter
+	// Cause is the classified wait cause (rate_ceiling, pool_full, …); omitted
+	// when the reason is not a known one. ResetsAt is set when the window of a
+	// rate ceiling will free the waiter.
+	Cause      autonomous.WaitCause      `json:"cause,omitempty"`
+	ResetsAt   *time.Time                `json:"resets_at,omitempty"`
+	HolderName autonomous.HolderNameView `json:"holder_name,omitempty"`
+}
+
+// capacityBackoffJSON is one active usage back-off flag in the capacity
+// response. ResetKnown is false when Until is only the maximum back-off
+// applied because the rate-limit message named no reset time. Rung names
+// the ladder rung that set the flag (burn guard hold_claude hold) and is
+// omitted on rate-limit and operator entries.
+type capacityBackoffJSON struct {
+	Backend    string    `json:"backend"`
+	Until      time.Time `json:"until"`
+	Reason     string    `json:"reason"`
+	ResetKnown bool      `json:"reset_known"`
+	Rung       string    `json:"rung,omitempty"`
+}
+
+// taskVisibilityProvider is the optional autonomous-manager capability that
+// supplies the per-task wait and hold views. Kept off AutonomousAPI so test
+// fakes don't all need it.
+type taskVisibilityProvider interface {
+	TaskVisibility() ([]autonomous.TaskWaitView, []autonomous.TaskHoldView)
+}
+
+// holderNameProvider is the optional autonomous-manager capability that
+// resolves raw holder ids into readable names (autonomous/capacity_titles.go).
+// Same optional-interface pattern as taskVisibilityProvider: fakes that
+// don't know about names simply leave the holder_name fields out.
+type holderNameProvider interface {
+	ResolveHolder(holderID string) autonomous.HolderName
+}
+
+// readableWaitReasoner is the optional autonomous-manager capability that
+// words a wait reason readably with the holders named (autonomous/
+// capacity_titles.go). Same optional-interface pattern as
+// holderNameProvider: fakes without it get raw-holder-id wording instead.
+type readableWaitReasoner interface {
+	ReadableWaitSentence(reason string) string
+}
+
+// readableWaitSentence returns the readable wording of a wait reason: the
+// manager's resolver names the holders when it can, otherwise the holders
+// appear with their raw ids. Empty reason stays empty.
+func readableWaitSentence(mgr AutonomousAPI, reason string) string {
+	if reason == "" {
+		return ""
+	}
+	if r, ok := mgr.(readableWaitReasoner); ok {
+		return r.ReadableWaitSentence(reason)
+	}
+	return autonomous.ReadableWaitText(reason, autonomous.WaitReasonHolders(reason), nil)
+}
+
+// holderNames returns the manager's holder-name resolver, or nil when the
+// wired manager doesn't provide one.
+func (s *Server) holderNames() holderNameProvider {
+	if p, ok := s.autonomousMgr.(holderNameProvider); ok {
+		return p
+	}
+	return nil
+}
+
+// taskVisibility returns the waiting and running task views (empty, never
+// nil, when the autonomous subsystem is not wired or has none). With prdID
+// set, only that PRD's tasks.
+func (s *Server) taskVisibility(prdID string) capacityTasksJSON {
+	out := capacityTasksJSON{Waiting: []autonomous.TaskWaitView{}, Running: []autonomous.TaskHoldView{}}
+	p, ok := s.autonomousMgr.(taskVisibilityProvider)
+	if !ok {
+		return out
+	}
+	res := s.holderNames()
+	waiting, running := p.TaskVisibility()
+	for _, w := range waiting {
+		if prdID != "" && w.PRDID != prdID {
+			continue
+		}
+		if res != nil && w.Readable == "" {
+			n := res.ResolveHolder(w.TaskID)
+			w.Readable = n.Readable
+			w.ShortID = n.ShortID
+		}
+		out.Waiting = append(out.Waiting, w)
+	}
+	for _, h := range running {
+		if prdID != "" && h.PRDID != prdID {
+			continue
+		}
+		if res != nil && h.Readable == "" {
+			n := res.ResolveHolder(h.TaskID)
+			h.Readable = n.Readable
+			h.ShortID = n.ShortID
+		}
+		out.Running = append(out.Running, h)
+	}
+	return out
+}
+
+// capacityBackoff snapshots the live usage back-off flags for the capacity
+// response (empty, never nil, when none are wired or active).
+func (s *Server) capacityBackoff() []capacityBackoffJSON {
+	out := []capacityBackoffJSON{}
+	if s.usageBackoff == nil {
+		return out
+	}
+	for _, e := range s.usageBackoff.Live() {
+		// The deadline is shown in the daemon's own zone: the flag may have
+		// been set from a reset in another zone, and the surfaces show local time.
+		local := e.Until.In(time.Local)
+		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: local, Reason: e.Reason, ResetKnown: e.ResetKnown, Rung: e.Rung})
+	}
+	return out
 }
 
 // handleCapacity serves GET /api/capacity: pools, limits, holders and the
@@ -217,11 +443,28 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapAutonomousRead) {
 		return
 	}
+	warnings := s.modelNodeWarnings()
+	// long=1 switches on the never-truncated "full" sentence in the resolved
+	// holder names (the web tooltip reads it); short form is the default.
+	long := r.URL.Query().Get("long") == "1"
+	res := s.holderNames()
+	// holderView resolves one raw holder id through the manager's shared
+	// snapshot (one store read per batch). Nil when no resolver is wired — the
+	// holder_name fields are then simply left out, the raw ids still stand.
+	holderView := func(id string) *autonomous.HolderNameView {
+		if res == nil || id == "" {
+			return nil
+		}
+		v := res.ResolveHolder(id).View(long)
+		return &v
+	}
 	if s.capacityLedger == nil {
-		writeJSONOK(w, capacity.Status{Pools: []capacity.PoolStatus{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}})
+		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacityLeaseJSON{}, Waiting: []capacityWaiterJSON{}, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id")), Verifier: autonomous.DefaultVerifierStats.Snapshot()}
+		empty.PatternsVersion, empty.ClaudeCLIVersion, empty.PatternsStale = s.rateLimitPatternsStatus()
+		writeJSONOK(w, empty)
 		return
 	}
-	st := s.capacityLedger.Snapshot()
+	st := s.capacityLedger.SnapshotWatched(s.capacityWatchdogThreshold, capacity.LogLockWedge)
 	if st.Pools == nil {
 		st.Pools = []capacity.PoolStatus{}
 	}
@@ -252,6 +495,17 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 				have["node:"+n.Name] = true
 			}
 		}
+	}
+
+	// Prune the per-node usage cache once per request, against the full
+	// registered node set and before any ?prd_id= scoping, so scoping to a
+	// PRD's own pools never evicts cache entries for other nodes.
+	if s.computeReg != nil {
+		names := []string{}
+		for _, n := range s.computeReg.List() {
+			names = append(names, n.Name)
+		}
+		s.nodeUsageCache().prune(names)
 	}
 
 	if prdID := r.URL.Query().Get("prd_id"); prdID != "" {
@@ -290,7 +544,36 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
 
-	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting}
+	leases := make([]capacityLeaseJSON, 0, len(st.Leases))
+	for _, l := range st.Leases {
+		cj := capacityLeaseJSON{Lease: l}
+		if v := holderView(l.Holder); v != nil {
+			cj.HolderName = *v
+		}
+		leases = append(leases, cj)
+	}
+	waitingJSON := make([]capacityWaiterJSON, 0, len(st.Waiting))
+	for _, wtr := range st.Waiting {
+		cj := capacityWaiterJSON{Waiter: wtr, Cause: autonomous.ClassifyWaitReason(wtr.Reason)}
+		if cj.Cause == autonomous.WaitCauseRateCeiling {
+			cj.ResetsAt = rateWaiterResetsAt(wtr.Reason, st.Pools)
+		}
+		if v := holderView(wtr.Holder); v != nil {
+			cj.HolderName = *v
+		}
+		waitingJSON = append(waitingJSON, cj)
+	}
+
+	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: leases, Waiting: waitingJSON, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id")), Verifier: autonomous.DefaultVerifierStats.Snapshot()}
+	out.PatternsVersion, out.ClaudeCLIVersion, out.PatternsStale = s.rateLimitPatternsStatus()
+	// node-verify pools are gathered once so each node pool can report its
+	// verifier limit and held alongside its own limit and held.
+	verifierPool := map[string]capacity.PoolStatus{}
+	for _, p := range st.Pools {
+		if strings.HasPrefix(p.Name, "node-verify:") {
+			verifierPool[p.Name] = p
+		}
+	}
 	for _, p := range st.Pools {
 		pj := capacityPoolJSON{PoolStatus: p}
 		if strings.HasPrefix(p.Name, "node:") {
@@ -298,8 +581,75 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 			holder := strings.Join(p.Holders, ",")
 			pj.QueueDepth = &depth
 			pj.Holder = &holder
+			if s.computeReg != nil {
+				if n, err := s.computeReg.Get(strings.TrimPrefix(p.Name, "node:")); err == nil && n != nil {
+					// Non-blocking: the cache returns the cached figure (or a
+					// pending placeholder) immediately and starts at most one
+					// background refresh per node — it never waits on the
+					// network probes, so this handler stays fast.
+					u := s.nodeUsageCache().get(s, *n)
+					pj.Usage = &u
+				}
+				// The node's verifier pool limit and held count, next to this
+				// executor pool's own limit and held.
+				if vp, ok := verifierPool["node-verify:"+strings.TrimPrefix(p.Name, "node:")]; ok {
+					verLimit, verHeld := vp.Limit, vp.Held
+					pj.VerifierLimit = &verLimit
+					pj.VerifierHeld = &verHeld
+				}
+				// The node's last-seen verifier headroom, from the daemon's
+				// admission cache (no observer I/O here).
+				if s.verifierNodeStatus != nil {
+					if stt, ok := s.verifierNodeStatus(strings.TrimPrefix(p.Name, "node:")); ok {
+						freeMB, okVal, reason := stt.FreeMB, stt.HeadroomOK, stt.HeadroomReason
+						pj.FreeGPUMB = &freeMB
+						pj.HeadroomOK = &okVal
+						pj.HeadroomReason = &reason
+					}
+				}
+			}
+			// holder_names: the same holders as readable objects, alongside the
+			// untouched comma-string and the raw holders array.
+			pj.HolderNames = make([]autonomous.HolderNameView, 0, len(p.Holders))
+			for _, h := range p.Holders {
+				if v := holderView(h); v != nil {
+					pj.HolderNames = append(pj.HolderNames, *v)
+				}
+			}
+		}
+		if llmName := strings.TrimPrefix(p.Name, "llm:"); strings.HasPrefix(p.Name, "llm:") && s.inferenceReg != nil {
+			if l, err := s.inferenceReg.Get(llmName); err == nil && l != nil {
+				var table map[string]int
+				if s.cfg != nil {
+					table = s.cfg.Autonomous.PlanTierMaxInflight
+				}
+				effective := inference.EffectiveMaxInflight(*l, table)
+				source := string(inference.InflightSourceOf(*l, table))
+				pj.EffectiveMaxInflight = &effective
+				pj.InflightSource = &source
+			}
 		}
 		out.Pools = append(out.Pools, pj)
 	}
 	writeJSONOK(w, out)
+}
+
+// rateWaiterResetsAt returns when the rate window will free a waiter blocked
+// by a rate ceiling: the reset the reason names, else the ceilinged pool's own
+// reset from the snapshot. Nil when neither is known.
+func rateWaiterResetsAt(reason string, pools []capacity.PoolStatus) *time.Time {
+	pool, at, ok := autonomous.RateCeilingWaitFacts(reason)
+	if !ok {
+		return nil
+	}
+	if !at.IsZero() {
+		return &at
+	}
+	for _, p := range pools {
+		if p.Name == pool && !p.RateResetsAt.IsZero() {
+			at := p.RateResetsAt
+			return &at
+		}
+	}
+	return nil
 }

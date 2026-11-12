@@ -1,4 +1,4 @@
-// WebSocket session-list negotiation and delta stream (BL432 / GH#242).
+// WebSocket session-list negotiation and delta stream.
 //
 // Every session-list change used to go out to every WebSocket client as a
 // full "sessions" frame — the whole list, multiple megabytes on a busy
@@ -17,6 +17,44 @@
 //     list. A delta client must fetch the initial list itself over REST
 //     (GET /api/sessions?view=summary) right after hello_ack, then apply
 //     the stream on top. Frames received before hello_ack can be ignored.
+//   - "window" — the bounded form (capability ws.session_list_window).
+//     After hello_ack the server sends exactly one "sessions" frame whose
+//     data.sessions are summary rows (the GET /api/sessions?view=summary
+//     row shape, scheduled_count included) for the default-view sessions
+//     only, plus data.version, data.window_minutes (the window below),
+//     data.total (sessions the daemon holds) and data.more (true when the
+//     frame omits some). After that there is no "sessions" frame at all:
+//     every change is one "session_state" {session:<summary row>} for the
+//     changed session. "session_removed" is sent only when a session is
+//     deleted, never because it aged out of the window.
+//
+// Default view and the window: a session is in the default view when it is
+// not finished, or when it is finished (complete, failed or killed, the
+// PWA's DONE_STATES) and was updated within the last
+// server.recent_session_minutes minutes (a value <= 0 means 5; the PWA
+// reads the same setting). Finished sessions older than the window are
+// never sent over the websocket, to any client mode; a client fetches them
+// with GET /api/sessions?view=summary&limit=50, paged by cursor (and
+// history=1 for the archive). The setting is read live (see
+// ws_session_window.go), so PUT /api/config changes the window without a
+// restart.
+//
+// Connect ordering (for client authors): a client can only say hello after
+// the socket is open, so the connect-time frame is always the bounded
+// legacy "sessions" frame described below — a window client receives it
+// first and should treat it as provisional. The client's hello is answered
+// with hello_ack, immediately followed by the one summary-row "sessions"
+// frame; that frame is the window client's initial list and replaces
+// whatever the connect-time frame held. A hello that selects window again
+// is answered the same way (a fresh list). A hello that does not select
+// window sends no rows frame.
+//
+// A client that does not announce window (no hello, or session_list "full")
+// keeps the legacy "sessions" frame and the legacy full session_state, but
+// the frame is bounded: only default-view sessions, long text fields cut by
+// summarizeSession at server.session_summary_text_chars (so
+// truncated_fields is set, as for the summary view), plus data.more,
+// data.total and data.window_minutes.
 //
 // session_view:
 //   - "full"    — session_state carries the full session record.
@@ -40,18 +78,20 @@
 // fingerprint is an FNV-64a hash of the session's JSON encoding. Any
 // change to a serialized field — rename, state, needs-input prompt,
 // updated_at, last response — therefore produces a session_state. The
-// snapshot is maintained on every BroadcastSessions call even while no
-// delta client is connected, so a client that joins later is diffed
-// against the true previous state. BroadcastSessionState (the per-change
-// call in NotifyStateChange) goes through the same snapshot, so a delta
-// client never receives the same unchanged session twice.
+// snapshot is kept only while a window or delta client is connected; with
+// none connected nothing is fingerprinted and the snapshot is dropped. A
+// window or delta client that joins seeds it from the current default view
+// (at connect for a delta default, otherwise at its hello), so its first
+// change is diffed against the list it was given. BroadcastSessionState
+// (the per-change call in NotifyStateChange) goes through the same
+// snapshot, so a delta client never receives the same unchanged session
+// twice.
 
 package server
 
 import (
 	"encoding/json"
 	"hash/fnv"
-	"sort"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/session"
@@ -59,8 +99,9 @@ import (
 
 // Negotiable hello modes.
 const (
-	sessionListFull  = "full"
-	sessionListDelta = "delta"
+	sessionListFull   = "full"
+	sessionListDelta  = "delta"
+	sessionListWindow = "window"
 
 	sessionViewFull    = "full"
 	sessionViewSummary = "summary"
@@ -96,10 +137,20 @@ type sessionSummaryStateData struct {
 // normalizeSessionListMode returns the mode, or "" if it is not one.
 func normalizeSessionListMode(v string) string {
 	switch v {
-	case sessionListFull, sessionListDelta:
+	case sessionListFull, sessionListDelta, sessionListWindow:
 		return v
 	}
 	return ""
+}
+
+// normalizeSessionListDefault is normalizeSessionListMode for the
+// server.ws_session_list_default setting: a client that never said hello
+// cannot be a window client, so window is not a valid default.
+func normalizeSessionListDefault(v string) string {
+	if v == sessionListWindow {
+		return ""
+	}
+	return normalizeSessionListMode(v)
 }
 
 // normalizeSessionViewMode returns the view, or "" if it is not one.
@@ -121,7 +172,7 @@ func (h *Hub) setSessionStreamConfig(listDefault func() string, textChars func()
 // defaultSessionList is the mode for clients that never chose one.
 func (h *Hub) defaultSessionList() string {
 	if h.sessionListDefaultFn != nil {
-		if v := normalizeSessionListMode(h.sessionListDefaultFn()); v != "" {
+		if v := normalizeSessionListDefault(h.sessionListDefaultFn()); v != "" {
 			return v
 		}
 	}
@@ -147,11 +198,6 @@ func (h *Hub) sessionModes(c *client) (list, view string) {
 		view = sessionViewFull
 	}
 	return list, view
-}
-
-func (h *Hub) isDeltaClient(c *client) bool {
-	list, _ := h.sessionModes(c)
-	return list == sessionListDelta
 }
 
 func (h *Hub) isSummaryClient(c *client) bool {
@@ -183,57 +229,30 @@ func sessionFingerprint(sess *session.Session) (uint64, bool) {
 	return f.Sum64(), true
 }
 
-// BroadcastSessions sends the full session list to full-mode clients and
-// the per-session diff to delta-mode clients. Call sites pass the
-// manager's whole list; they need no knowledge of client modes.
+// BroadcastSessions diffs the given sessions against the snapshot and
+// streams the result: legacy clients get the bounded sessions frame,
+// window and delta clients get session_state per changed session and
+// session_removed per session missing from the list. Call sites with the
+// manager's list use Server.broadcastSessionsAsync, which selects the
+// default-view sessions first; this entry point treats sessions as both the
+// default view and the set of held sessions.
 func (h *Hub) BroadcastSessions(sessions []*session.Session) {
-	h.broadcastTo(MsgSessions, SessionsData{Sessions: sessions, Version: h.version},
-		func(c *client) bool { return !h.isDeltaClient(c) })
-
-	// The lock is held while queueing so frames reach the hub in the same
-	// order as snapshot updates.
-	h.snapMu.Lock()
-	defer h.snapMu.Unlock()
-	next := make(map[string]uint64, len(sessions))
-	var changed []*session.Session
+	held := make(map[string]struct{}, len(sessions))
 	for _, sess := range sessions {
-		if sess == nil {
-			continue
-		}
-		fp, ok := sessionFingerprint(sess)
-		if !ok {
-			continue
-		}
-		next[sess.FullID] = fp
-		if old, seen := h.snapshot[sess.FullID]; !seen || old != fp {
-			changed = append(changed, sess)
+		if sess != nil {
+			held[sess.FullID] = struct{}{}
 		}
 	}
-	var removed []string
-	for id := range h.snapshot {
-		if _, ok := next[id]; !ok {
-			removed = append(removed, id)
-		}
-	}
-	sort.Strings(removed)
-	h.snapshot = next
-
-	if !h.hasClient(h.isDeltaClient) {
-		return
-	}
-	for _, sess := range changed {
-		h.sendSessionState(sess, h.isDeltaClient)
-	}
-	for _, id := range removed {
-		h.broadcastTo(MsgSessionRemoved, SessionRemovedData{SessionID: id}, h.isDeltaClient)
-	}
+	h.broadcastSessionList(sessions, held)
 }
 
-// BroadcastSessionState (v8.37.0, GH#162) sends a single updated session.
-// Full-mode clients always get it, alongside the full list (see
-// HTTPServer.NotifyStateChange), exactly as before. Delta-mode clients get
-// it only when it differs from the snapshot, so the session_state that
-// BroadcastSessions already streamed for the same change is not repeated.
+// BroadcastSessionState sends a single updated session. Legacy clients
+// always get it, alongside the bounded list (see HTTPServer.NotifyStateChange),
+// exactly as before. Window and delta clients get it only when it differs
+// from the snapshot, so the session_state that BroadcastSessions already
+// streamed for the same change is not repeated. The caller passes a
+// snapshot copy that is in the default view; finished sessions older than
+// the window are never sent.
 func (h *Hub) BroadcastSessionState(sess *session.Session) {
 	if sess == nil {
 		return
@@ -241,31 +260,38 @@ func (h *Hub) BroadcastSessionState(sess *session.Session) {
 	h.snapMu.Lock()
 	defer h.snapMu.Unlock()
 	changed := true
-	if fp, ok := sessionFingerprint(sess); ok {
-		if old, seen := h.snapshot[sess.FullID]; seen && old == fp {
-			changed = false
-		} else {
-			if h.snapshot == nil {
-				h.snapshot = make(map[string]uint64)
+	if h.hasClient(h.isStreamClient) {
+		if fp, ok := sessionFingerprint(sess); ok {
+			if old, seen := h.snapshot[sess.FullID]; seen && old == fp {
+				changed = false
+			} else {
+				if h.snapshot == nil {
+					h.snapshot = make(map[string]uint64)
+				}
+				h.snapshot[sess.FullID] = fp
 			}
-			h.snapshot[sess.FullID] = fp
 		}
 	}
-	h.sendSessionState(sess, func(c *client) bool { return changed || !h.isDeltaClient(c) })
+	h.sendSessionState(sess, func(c *client) bool { return changed || h.isLegacyClient(c) })
 }
 
-// sendSessionState queues session_state for the clients want selects,
-// in the full or summary representation each client negotiated.
+// sendSessionState queues session_state for the clients want selects, in
+// the representation each client negotiated: a summary row for window
+// clients, the cut-down record for summary-view clients, the full session
+// otherwise.
 func (h *Hub) sendSessionState(sess *session.Session, want func(*client) bool) {
 	h.broadcastTo(MsgSessionState, SessionStateData{Session: sess},
-		func(c *client) bool { return want(c) && !h.isSummaryClient(c) })
-	summaryWant := func(c *client) bool { return want(c) && h.isSummaryClient(c) }
-	if !h.hasClient(summaryWant) {
-		return
+		func(c *client) bool { return want(c) && !h.isWindowClient(c) && !h.isSummaryClient(c) })
+	summaryWant := func(c *client) bool { return want(c) && !h.isWindowClient(c) && h.isSummaryClient(c) }
+	if h.hasClient(summaryWant) {
+		rec := sessionListRecord{}
+		rec.Session, rec.TruncatedFields = summarizeSession(sess, h.summaryTextChars())
+		h.broadcastTo(MsgSessionState, sessionSummaryStateData{Session: rec}, summaryWant)
 	}
-	rec := sessionListRecord{}
-	rec.Session, rec.TruncatedFields = summarizeSession(sess, h.summaryTextChars())
-	h.broadcastTo(MsgSessionState, sessionSummaryStateData{Session: rec}, summaryWant)
+	windowWant := func(c *client) bool { return want(c) && h.isWindowClient(c) }
+	if h.hasClient(windowWant) {
+		h.broadcastTo(MsgSessionState, sessionRowStateData{Session: h.summaryRow(sess, h.summaryTextChars())}, windowWant)
+	}
 }
 
 // handleHello applies a client's hello and replies with hello_ack.
@@ -274,9 +300,11 @@ func (h *Hub) handleHello(c *client, raw json.RawMessage) {
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &d) // malformed data → no change, still ack
 	}
+	wantWindow := false
 	c.mu.Lock()
 	if v := normalizeSessionListMode(d.SessionList); v != "" {
 		c.sessionList = v
+		wantWindow = v == sessionListWindow
 	}
 	if v := normalizeSessionViewMode(d.SessionView); v != "" {
 		c.sessionView = v
@@ -286,15 +314,21 @@ func (h *Hub) handleHello(c *client, raw json.RawMessage) {
 	}
 	c.mu.Unlock()
 	list, view := h.sessionModes(c)
+	if list != sessionListFull {
+		h.seedSnapshotIfIdle()
+	}
 	ackRaw, _ := json.Marshal(HelloAckData{SessionList: list, SessionView: view, Output: h.outputScope(c), Capabilities: wsCapabilities()})
 	c.safeSend(mustMarshal(WSMessage{Type: MsgHelloAck, Data: ackRaw, Timestamp: time.Now()}))
+	if wantWindow {
+		c.safeSend(h.windowSessionsFrame())
+	}
 }
 
 // wsSessionListDefault reads server.ws_session_list_default from the live
 // config; anything unset or invalid means "full".
 func (s *Server) wsSessionListDefault() string {
 	if s.cfg != nil {
-		if v := normalizeSessionListMode(s.cfg.Server.WSSessionListDefault); v != "" {
+		if v := normalizeSessionListDefault(s.cfg.Server.WSSessionListDefault); v != "" {
 			return v
 		}
 	}
@@ -312,6 +346,10 @@ func (s *Server) wsSummaryTextChars() int {
 func (s *Server) wireHubSessionStream() {
 	if s.hub != nil {
 		s.hub.setSessionStreamConfig(s.wsSessionListDefault, s.wsSummaryTextChars)
+		s.hub.setSessionWindowConfig(s.recentSessionWindow, s.sessionSummaryRow)
+		if s.manager != nil {
+			s.hub.setSessionViewSource(s.manager.SnapshotFiltered)
+		}
 		s.hub.outputScopeDefaultFn = s.wsOutputScopeDefault
 	}
 }

@@ -9,7 +9,7 @@
   (this doc records the decisions; see §Decisions log).
 - **Source PRD**: `74e9eb05` ("Let's Encrypt integration research for public
   datawatch deployments"), research-only, completed 2026-10-06. Output docs:
-  `/home/dmz/workspace/datawatch-letsencrypt/docs/01-le-options-landscape.md`
+  `/home/<user>/workspace/datawatch-letsencrypt/docs/01-le-options-landscape.md`
   through `06-comparison-recommendations.md`. No datawatch code was written by
   that PRD — this plan is the build that follows from its research.
 
@@ -262,8 +262,8 @@ TODO in this doc, not blocking Phase 1).
   session's Apple sandbox — confirmed via peer coordination, nothing live
   depends on it yet (no Apple review submitted). Runs as unprivileged user
   `demo` via a systemd **user** service (`systemctl --user -M demo@
-  restart datawatch`), binary at `/home/demo/.local/bin/datawatch`, config
-  at `/home/demo/.datawatch/config.yaml`. Firewall (ufw): only 22 and 8443
+  restart datawatch`), binary at `/home/<user>/.local/bin/datawatch`, config
+  at `/home/<user>/.datawatch/config.yaml`. Firewall (ufw): only 22 and 8443
   open; 8080 and 80 closed. Must preserve: the `demo-token` auth token, 3
   seeded tmux sessions + 2 planned Automata in the data dir, the
   `demo-cpu`/`ollama` compute-node+LLM registration. Must report back:

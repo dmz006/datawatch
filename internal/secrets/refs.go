@@ -33,6 +33,20 @@ func IsRef(s string) bool {
 	return secretRefExactRe.MatchString(s)
 }
 
+// RefNames returns the name of every ${secret:name} token in s, in order
+// of appearance. Empty when s contains none. Used for usage listing
+// (names and fields only — never the secret's value).
+func RefNames(s string) []string {
+	if !secretRefRe.MatchString(s) {
+		return nil
+	}
+	var out []string
+	for _, m := range secretRefRe.FindAllStringSubmatch(s, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
+
 // ResolveRef replaces all ${secret:name} tokens in s with values from store.
 // Missing secrets are returned as errors; the original token is left in the
 // output so the caller can decide whether to continue or abort.

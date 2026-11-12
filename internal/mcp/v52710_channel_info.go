@@ -22,7 +22,7 @@ func (s *Server) toolChannelInfo() mcpsdk.Tool {
 func (s *Server) handleChannelInfo(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/channel/info", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("channel_info", err), nil
 	}
 	return textOK(string(out)), nil
 }

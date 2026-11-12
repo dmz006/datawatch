@@ -1,0 +1,36 @@
+# scripts/leak-check.allowed-emails
+#
+# Addresses the tree legitimately needs. One glob per line, matched
+# against the whole lower-cased address; comments and blank lines are
+# ignored. Only non-personal, generic addresses belong here — never an
+# operator's personal address.
+
+# IANA reserved example domains (AGENT.md "No local-environment leaks")
+*@example.com
+*@example.org
+*@example.net
+
+# SSH clone and noreply forms the tooling and docs legitimately ship with
+git@github.com
+git@gitlab.com
+
+# IANA-reserved example domains used by webhook/fixture hosts (hooks, peer, datawatch, h, ...).
+*.example
+*.example.net
+# Subdomain hosts of IANA-reserved example domains (fixture git hosts, e.g. gitea.example.com).
+*@*.example.com
+*@*.example.net
+# RFC 2606 never-assigned domains used in test fixtures.
+*.invalid
+*.local
+# IANA-reserved .test domain used for git test identities.
+*.test
+# systemd user-bus unit names (user@UID.service) referenced in test evidence.
+*.service
+# GitHub Actions default committer noreply identifier (bot, not a person).
+*@users.noreply.github.com
+
+# Retina asset filenames ending @2x.png (screenshot names, not mailboxes).
+*@*.png
+noreply@*
+no-reply@*

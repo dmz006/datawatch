@@ -27,6 +27,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Daemon lifecycle: scripts/test-daemon-lib.sh owns every end path. It records
+# each daemon pid with the config path as the cmdline marker, ends sessions
+# via the API first (recorded token), and ends the daemon only after its
+# cmdline is re-verified — never by name. All three daemon starts in this
+# script go through it.
+TD_LIB="$SCRIPT_DIR/test-daemon-lib.sh"
+[[ -f "$TD_LIB" ]] || { echo "ERROR: missing shared daemon lifecycle helper: $TD_LIB"; exit 1; }
+# shellcheck source=test-daemon-lib.sh
+. "$TD_LIB"
+
 DW_BIN="${DW_BIN:-}"
 NO_CLEANUP=0
 PASS=0
@@ -76,12 +86,13 @@ cleanup() {
   if [[ "$NO_CLEANUP" -eq 0 ]]; then
     echo ""
     echo "Cleaning up…"
-    # Stop daemon if running
-    if [[ -n "${DW_PID:-}" ]] && kill -0 "$DW_PID" 2>/dev/null; then
-      kill "$DW_PID" 2>/dev/null || true
-      wait "$DW_PID" 2>/dev/null || true
+    # End daemon(s) this script started: td_stop_all ends sessions via the API
+    # first (recorded token), then each recorded pid after its cmdline still
+    # carries this run's config path. No-op for a daemon that already ended.
+    if ! td_stop_all; then
+      echo "warn: daemon did not stop cleanly; continuing container cleanup" >&2
     fi
-    # Stop and remove Synapse container
+    # Stop and remove Synapse container (single fixed name owned by this script)
     docker stop dw-test-synapse 2>/dev/null || true
     docker rm   dw-test-synapse 2>/dev/null || true
     # Remove Synapse data dir (files may be owned by uid 991, use Docker to clean)
@@ -103,6 +114,11 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# HUP as well: an untrapped HUP kills the shell without running its EXIT
+# trap, which would leave the daemon, the container, and both data dirs alive.
+trap 'exit 129' HUP
 
 SYNAPSE_URL="http://localhost:8008"
 BOT_USER="dwmatrixbot"
@@ -261,6 +277,12 @@ YAML
 
 "$DW_BIN" start --foreground --config "$DW_CONFIG" >"$TMPDIR_DW/daemon-init.log" 2>&1 &
 DW_PID=$!
+# Track the recorded pid with this run's config path as the cmdline marker,
+# so every later stop (including cleanup, whatever signal caused it) ends
+# exactly this daemon — re-verified against its cmdline, never by name.
+td_track_pid "$DW_PID" "$DW_CONFIG"
+# Exit-path credentials: end this init daemon's sessions via the API first.
+td_set_api "$DW_PID" "http://localhost:${DW_PORT}" "matrixtesttoken"
 echo -n "Waiting for daemon (init phase)"
 for i in $(seq 1 20); do
   if curl -sf -H "Authorization: Bearer matrixtesttoken" \
@@ -278,9 +300,11 @@ done
   || { ko "secrets set failed — check daemon logs"; exit 1; }
 ok "matrix-access-token stored in secrets store"
 
-# Stop init daemon
-kill -SIGTERM "$DW_PID" 2>/dev/null || true
-wait "$DW_PID" 2>/dev/null || true
+# Stop init daemon (recorded pid; marker re-verified by the library; sessions
+# via the API first per td_set_api above)
+if ! td_stop_one "$DW_PID"; then
+  ko "init daemon did not stop cleanly"; exit 1
+fi
 DW_PID=""
 
 # Phase 2: write full config with Matrix using ${secret:...} reference
@@ -303,6 +327,9 @@ ok "Full config written — Matrix uses secrets-store ref"
 H "5. Start datawatch daemon"
 "$DW_BIN" start --foreground --config "$DW_CONFIG" >"$TMPDIR_DW/daemon.log" 2>&1 &
 DW_PID=$!
+td_track_pid "$DW_PID" "$DW_CONFIG"
+# Exit-path credentials: sessions are ended via the API before this daemon.
+td_set_api "$DW_PID" "http://localhost:${DW_PORT}" "matrixtesttoken"
 
 echo -n "Waiting for daemon health"
 for i in $(seq 1 30); do
@@ -423,12 +450,16 @@ fi
 
 # ── Step 10: Daemon restart mid-conversation ──────────────────────────────────
 H "10. Daemon restart — no message loss"
-kill -SIGTERM "$DW_PID" 2>/dev/null || true
-wait "$DW_PID" 2>/dev/null || true
+# Restart goes through the library too: marker-verified stop, then start.
+if ! td_stop_one "$DW_PID"; then
+  ko "daemon did not stop for restart"; exit 1
+fi
 DW_PID=""
 
 "$DW_BIN" start --foreground --config "$DW_CONFIG" >"$TMPDIR_DW/daemon-restart.log" 2>&1 &
 DW_PID=$!
+td_track_pid "$DW_PID" "$DW_CONFIG"
+td_set_api "$DW_PID" "http://localhost:${DW_PORT}" "matrixtesttoken"
 
 echo -n "Waiting for daemon restart"
 for i in $(seq 1 20); do

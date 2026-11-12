@@ -133,7 +133,7 @@ func TestResolveVerifierCandidates(t *testing.T) {
 		switch raw {
 		case "ollama-datawatch":
 			return "ollama", "qwen3.8:27b", nil
-		case "ollama-johnnyjohnny":
+		case "ollama-local-node":
 			return "ollama", "qwen3:1.7b", nil
 		case "claude-code":
 			return "claude-code", "sonnet", nil
@@ -145,12 +145,12 @@ func TestResolveVerifierCandidates(t *testing.T) {
 	askCompatible := func(kind string) bool { return kind == "ollama" }
 
 	got := resolveVerifierCandidates(
-		[]string{"ollama-datawatch", " ", "claude-code", "bogus", "ollama-johnnyjohnny"},
+		[]string{"ollama-datawatch", " ", "claude-code", "bogus", "ollama-local-node"},
 		resolve, askCompatible)
 
 	want := []verifierCandidate{
 		{backend: "ollama-datawatch", kind: "ollama", model: "qwen3.8:27b"},
-		{backend: "ollama-johnnyjohnny", kind: "ollama", model: "qwen3:1.7b"},
+		{backend: "ollama-local-node", kind: "ollama", model: "qwen3:1.7b"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("resolveVerifierCandidates() = %+v, want %+v", got, want)
@@ -800,7 +800,7 @@ func TestResolveEmptyDiffWithPriorWork_Retries(t *testing.T) {
 	if len(priorDiff) == 0 || !strings.Contains(string(priorDiff), "work.md") {
 		t.Fatalf("prior diff must carry the reachable commit's patch for the verifier's evidence: %q", priorDiff)
 	}
-	if priorNames == nil || len(priorNames) == 0 {
+	if len(priorNames) == 0 {
 		t.Fatalf("prior names = %v, want the commit's changed files for RecordTaskFilesTouched", priorNames)
 	}
 

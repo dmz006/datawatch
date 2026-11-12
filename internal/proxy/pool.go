@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 )
 
 // PoolConfig controls connection pool and resilience behaviour.
@@ -78,14 +79,16 @@ func NewPool(servers []config.RemoteServerConfig, cfg PoolConfig) *Pool {
 			URL:     sv.URL,
 			Healthy: true, // optimistic start
 		}
-		p.clients[sv.Name] = &http.Client{
-			Timeout: cfg.RequestTimeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 5,
-				IdleConnTimeout:     90 * time.Second,
-			},
+		c := multiserver.PeerHTTPClient(sv.TLSSkipVerify, "", cfg.RequestTimeout)
+		tr, ok := c.Transport.(*http.Transport)
+		if !ok {
+			tr = &http.Transport{}
+			c.Transport = tr
 		}
+		tr.MaxIdleConns = 10
+		tr.MaxIdleConnsPerHost = 5
+		tr.IdleConnTimeout = 90 * time.Second
+		p.clients[sv.Name] = c
 	}
 	return p
 }

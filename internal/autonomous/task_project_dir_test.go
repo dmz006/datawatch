@@ -122,7 +122,7 @@ func TestTaskScope_WithOverride(t *testing.T) {
 
 func TestValidateTaskProjectDir(t *testing.T) {
 	prd := &PRD{ProjectDir: "/srv/proj"}
-	for _, ok := range []string{"/srv/proj/sub", "/home/u/x", "/srv/other"} {
+	for _, ok := range []string{"/srv/proj/sub", "/home/<user>/x", "/srv/other"} {
 		if err := ValidateTaskProjectDir(prd, ok); err != nil {
 			t.Errorf("%q: unexpected error %v", ok, err)
 		}
@@ -192,6 +192,7 @@ func TestSetTaskProjectDir(t *testing.T) {
 
 func TestAPISetTaskProjectDir(t *testing.T) {
 	m, prd := newTaskDirManager(t)
+	m.SetProjectRoots(func() []string { return []string{"/srv"} })
 	a := &API{M: m}
 	if _, err := a.SetTaskProjectDir(prd.ID, "t1", "/srv/a", "api"); err != nil {
 		t.Fatalf("api set: %v", err)

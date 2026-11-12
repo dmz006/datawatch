@@ -16,8 +16,8 @@ Added two probes to `internal/observer/`:
 
 1. **`gpu_tegrastats.go`** — Runs `tegrastats --interval 500` in a background goroutine, takes the
    first parseable line with a 4s context timeout. Handles two output formats:
-   - Classic Jetson: `GR3D_FREQ X%@Y GPU@T.TC RAM X/YMB`
-   - NVIDIA Thor/GB10 SoC: timestamp prefix, no `GR3D_FREQ`, lowercase `gpu@T.TC`, `VDD_GPU XmW/YmW`
+   - Classic Jetson: `GR3D_FREQ X%@Y GPUnC temp field (T dot TC, tegrastats) RAM X/YMB`
+   - NVIDIA Thor/GB10 SoC: timestamp prefix, no `GR3D_FREQ`, lowercase `gpu temp field (T dot TC, tegrastats)`, `VDD_GPU XmW/YmW`
 
 2. **`gpu_smi.go`** — Polls `nvidia-smi --query-gpu=index,name,utilization.gpu,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits` every 5s. Converts `[N/A]` fields to 0 (Tegra unified memory has no discrete GPU memory).
 

@@ -134,25 +134,25 @@ func TestRegistrySeed(t *testing.T) {
 
 func TestRegistryEnsureFromStatsPeer(t *testing.T) {
 	r := newTestRegistry(t)
-	n, created, err := r.EnsureFromStatsPeer("gpu-remote", "10.0.0.5:9001", "B")
+	n, created, err := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.5:9001", "B")
 	// v7.0.0-alpha.23: AutoCreatedFromStatsPeer now defaults to KindOllama
 	// (the operator's safe assumption for observed peers; they re-pick if wrong).
 	if err != nil || !created || n.Name != "gpu-remote" || n.Kind != KindOllama || !n.AutoCreated {
 		t.Fatalf("first peer: %v created=%v node=%+v", err, created, n)
 	}
 	// Second push from same peer should NOT re-create.
-	_, created2, _ := r.EnsureFromStatsPeer("gpu-remote", "10.0.0.5:9001", "B")
+	_, created2, _ := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.5:9001", "B")
 	if created2 {
 		t.Fatalf("second peer push should not auto-create")
 	}
 	// Address change should refresh (normalized to http:// on store).
-	n3, _, _ := r.EnsureFromStatsPeer("gpu-remote", "10.0.0.6:9001", "B")
-	if n3.Address != "http://10.0.0.6:9001" {
+	n3, _, _ := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.6:9001", "B")
+	if n3.Address != "http://192.0.2.6:9001" {
 		t.Fatalf("address refresh: %s", n3.Address)
 	}
 	// v7.0.0-alpha.23: Shape C now flagged via AutoTag "shape:cluster"
 	// (Kind defaults to KindOllama; operator re-picks if wrong).
-	nk8s, created3, _ := r.EnsureFromStatsPeer("k8s-pod-1", "10.42.0.1:9001", "C")
+	nk8s, created3, _ := r.EnsureFromStatsPeer("k8s-pod-1", "192.0.2.241:9001", "C")
 	if !created3 || nk8s.Kind != KindOllama {
 		t.Fatalf("shape C: created=%v kind=%s", created3, nk8s.Kind)
 	}
@@ -256,17 +256,104 @@ func TestRegistryAdd_NormalizesAddress(t *testing.T) {
 // strings from incoming stats-peer pushes are stored with http:// prefix.
 func TestEnsureFromStatsPeer_NormalizesAddress(t *testing.T) {
 	r := newTestRegistry(t)
-	n, _, err := r.EnsureFromStatsPeer("gpu-stats", "10.0.0.5:9001", "B")
+	n, _, err := r.EnsureFromStatsPeer("gpu-stats", "192.0.2.5:9001", "B")
 	if err != nil {
 		t.Fatalf("EnsureFromStatsPeer: %v", err)
 	}
-	if n.Address != "http://10.0.0.5:9001" {
-		t.Errorf("Address = %q, want http://10.0.0.5:9001", n.Address)
+	if n.Address != "http://192.0.2.5:9001" {
+		t.Errorf("Address = %q, want http://192.0.2.5:9001", n.Address)
 	}
 	// Update via second push — should also normalize.
-	n2, _, _ := r.EnsureFromStatsPeer("gpu-stats", "10.0.0.6:9001", "B")
-	if n2.Address != "http://10.0.0.6:9001" {
-		t.Errorf("refreshed Address = %q, want http://10.0.0.6:9001", n2.Address)
+	n2, _, _ := r.EnsureFromStatsPeer("gpu-stats", "192.0.2.6:9001", "B")
+	if n2.Address != "http://192.0.2.6:9001" {
+		t.Errorf("refreshed Address = %q, want http://192.0.2.6:9001", n2.Address)
+	}
+}
+
+// TestSetDrainPersisted verifies SetDrain goes through the same save path
+// as the other node setters: re-opening the registry restores the fields,
+// and an expired drain reads as not active without auto-clearing the
+// stored fields.
+func TestSetDrainPersisted(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nodes.json")
+	r1, _ := NewRegistry(path)
+	_ = r1.Add(validNode("n1"))
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	until := now.Add(time.Hour)
+	if err := r1.SetDrain("n1", true, until, now, "maintenance"); err != nil {
+		t.Fatalf("set drain: %v", err)
+	}
+	r2, err := NewRegistry(path)
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	n, _ := r2.Get("n1")
+	if !n.Drained || !n.DrainUntil.Equal(until) || n.DrainReason != "maintenance" {
+		t.Fatalf("drain not persisted: %+v", n)
+	}
+	// Expired drain: still stored, only reads as inactive.
+	if n.DrainActive(now.Add(24 * time.Hour)) {
+		t.Fatal("expired drain must read as not active")
+	}
+	if !n.Drained || !n.DrainUntil.Equal(until) {
+		t.Fatal("expired drain must keep stored fields (no auto-clear)")
+	}
+}
+
+// TestSetDrainClear verifies undrain clears Drained, DrainUntil and
+// DrainReason on the stored node.
+func TestSetDrainClear(t *testing.T) {
+	r := newTestRegistry(t)
+	_ = r.Add(validNode("n1"))
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	until := now.Add(2 * time.Hour)
+
+	if err := r.SetDrain("n1", true, until, now, "maintenance"); err != nil {
+		t.Fatalf("set drain: %v", err)
+	}
+	n, _ := r.Get("n1")
+	if !n.Drained || !n.DrainUntil.Equal(until) || n.DrainReason != "maintenance" {
+		t.Fatalf("drain not stored: %+v", n)
+	}
+
+	if err := r.SetDrain("n1", false, time.Time{}, now.Add(time.Hour), ""); err != nil {
+		t.Fatalf("undrain: %v", err)
+	}
+	n, _ = r.Get("n1")
+	if n.Drained || !n.DrainUntil.IsZero() || n.DrainReason != "" {
+		t.Fatalf("undrain did not clear fields: %+v", n)
+	}
+	if n.DrainActive(now) {
+		t.Fatal("undrained node must not report drain active")
+	}
+}
+
+// TestSetDrainPastUntilRejected verifies a non-zero until that is not
+// after now is rejected with a clear message, and that the unknown-node
+// path returns ErrNotFound.
+func TestSetDrainPastUntilRejected(t *testing.T) {
+	r := newTestRegistry(t)
+	_ = r.Add(validNode("n1"))
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+
+	for _, until := range []time.Time{now.Add(-time.Minute), now} {
+		if err := r.SetDrain("n1", true, until, now, "late"); err == nil {
+			t.Fatalf("until %s not after now %s: want error", until, now)
+		}
+	}
+	n, _ := r.Get("n1")
+	if n.Drained || !n.DrainUntil.IsZero() || n.DrainReason != "" {
+		t.Fatalf("rejected drain must not mutate the node: %+v", n)
+	}
+
+	// Far-future until is fine.
+	if err := r.SetDrain("n1", true, now.Add(time.Hour), now, "ok"); err != nil {
+		t.Fatalf("future until rejected: %v", err)
+	}
+	// Unknown node.
+	if err := r.SetDrain("ghost", true, time.Time{}, now, "x"); err != ErrNotFound {
+		t.Fatalf("unknown node: want ErrNotFound, got %v", err)
 	}
 }
 

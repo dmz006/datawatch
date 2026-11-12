@@ -49,8 +49,17 @@ func TestRulesContextSuffix_NoFileNoSuffix(t *testing.T) {
 	// Nothing written — neither AGENT.md nor CONTEXT.md exists.
 	m := &Manager{cfg: Config{}}
 	got := m.rulesContextSuffix(&PRD{ProjectDir: dir})
-	if got != "" {
-		t.Errorf("no rules/context file present: want empty suffix, got %q", got)
+	// Expectation changed: a configured file that is missing is now stated
+	// explicitly (one not-found line each) instead of silently omitted, so
+	// the model and the operator both see it. No pointer sentence appears
+	// because there is nothing to read.
+	if strings.Contains(got, "Before planning, read") {
+		t.Errorf("nothing present: must not tell the planner to read files, got %q", got)
+	}
+	for _, name := range []string{"AGENT.md", "CONTEXT.md"} {
+		if !strings.Contains(got, name+" was configured and not found") {
+			t.Errorf("want a not-found line for %s, got %q", name, got)
+		}
 	}
 }
 
@@ -77,8 +86,13 @@ func TestRulesContextSuffix_OnlyMentionsFilesThatActuallyExist(t *testing.T) {
 	// No CONTEXT.md written.
 	m := &Manager{cfg: Config{}}
 	got := m.rulesContextSuffix(&PRD{ProjectDir: dir})
-	if strings.Contains(got, "CONTEXT.md") {
-		t.Errorf("must not mention a context file that doesn't exist, got %q", got)
+	// Expectation changed: the missing CONTEXT.md is now named, but only in
+	// the explicit not-found line, never in the "read" pointer.
+	if !strings.Contains(got, "CONTEXT.md was configured and not found") {
+		t.Errorf("want an explicit not-found line for the missing context file, got %q", got)
+	}
+	if strings.Contains(got, "read AGENT.md and CONTEXT.md") {
+		t.Errorf("must not point the reader at a context file that doesn't exist, got %q", got)
 	}
 }
 
@@ -142,7 +156,9 @@ func TestDecompose_PromptPointsToRulesFileWithoutInliningContent(t *testing.T) {
 	// Checks the rules-pointer header, not a bare "AGENT.md": BL416
 	// Phase 2's static verification-script suffix always names the
 	// configured rules file, present or not.
-	if strings.Contains(capturedPrompt, "--- Project rules ---") {
+	// Expectation changed: the block now also carries a not-found line for a
+	// missing file, so check for the read pointer rather than the header.
+	if strings.Contains(capturedPrompt, "Before planning, read") {
 		t.Fatalf("no AGENT.md exists yet; prompt should not point to one, got %q", capturedPrompt)
 	}
 
@@ -159,7 +175,7 @@ func TestDecompose_PromptPointsToRulesFileWithoutInliningContent(t *testing.T) {
 	if strings.Contains(capturedPrompt, seeded) {
 		t.Fatalf("prompt must NOT inline the 50KB file content — that's the exact B122 bug")
 	}
-	if len(capturedPrompt) > 5000 {
+	if len(capturedPrompt) > 12000 { // far below the 50KB file; room for the planner rules and the decompose-guidance block (decompose_guidance.go)
 		t.Errorf("prompt should stay small even with a large AGENT.md present, got %d bytes", len(capturedPrompt))
 	}
 }

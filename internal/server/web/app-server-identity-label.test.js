@@ -38,11 +38,11 @@ function fakeResponse(status, body) {
 test('_ensureLocalHostname: caches the real hostname from /api/health', async () => {
   const sandbox = loadAppJS();
   sandbox.fetch = (url) => url.includes('/api/health')
-    ? Promise.resolve(fakeResponse(200, JSON.stringify({ hostname: 'johnnyjohnny', version: '1.2.3' })))
+    ? Promise.resolve(fakeResponse(200, JSON.stringify({ hostname: 'local-node', version: '1.2.3' })))
     : Promise.resolve(fakeResponse(200, '{}'));
   vm.runInContext('_ensureLocalHostname()', sandbox);
   await flushAsync();
-  assert.equal(vm.runInContext('_localHostname', sandbox), 'johnnyjohnny');
+  assert.equal(vm.runInContext('_localHostname', sandbox), 'local-node');
 });
 
 test('_ensureLocalHostname: does not re-fetch once already resolved', async () => {
@@ -62,10 +62,10 @@ test('_serverPickerBar: shows the real hostname for the local chip once known', 
   const sandbox = loadAppJS();
   vm.runInContext(`
     state.servers = { servers: [{ name: 'host-a', enabled: true }] };
-    _localHostname = 'johnnyjohnny';
+    _localHostname = 'local-node';
   `, sandbox);
   const html = vm.runInContext(`_serverPickerBar({})`, sandbox);
-  assert.match(html, /johnnyjohnny/, `expected the real hostname in the chip; got: ${html}`);
+  assert.match(html, /local-node/, `expected the real hostname in the chip; got: ${html}`);
   assert.doesNotMatch(html, />Local</, 'the literal word "Local" must never appear as a chip label');
 });
 
@@ -87,7 +87,7 @@ test('loadSystemStatsGrid: the server\'s own synthesized self-peer is not shown 
   sandbox.fetch = (url) => {
     if (url.includes('/api/stats')) {
       return Promise.resolve(fakeResponse(200, JSON.stringify({
-        timestamp: Date.now(), hostname: 'johnnyjohnny', cpu_cores: 8, cpu_load_avg_1: 1, cpu_load_avg_5: 1, cpu_load_avg_15: 1,
+        timestamp: Date.now(), hostname: 'local-node', cpu_cores: 8, cpu_load_avg_1: 1, cpu_load_avg_5: 1, cpu_load_avg_15: 1,
         mem_used: 100, mem_total: 200,
       })));
     }
@@ -98,7 +98,7 @@ test('loadSystemStatsGrid: the server\'s own synthesized self-peer is not shown 
     if (url.endsWith('/api/observer/peers')) {
       return Promise.resolve(fakeResponse(200, JSON.stringify({
         peers: [
-          { name: 'johnnyjohnny', is_self: true },   // same machine as /api/stats above -- must be filtered
+          { name: 'local-node', is_self: true },   // same machine as /api/stats above -- must be filtered
           { name: 'other-peer', is_self: false, last_push_at: new Date().toISOString() },
         ],
       })));
@@ -109,8 +109,8 @@ test('loadSystemStatsGrid: the server\'s own synthesized self-peer is not shown 
   await flushAsync();
   await flushAsync();
   const html = gridEl.innerHTML;
-  const occurrences = (html.match(/johnnyjohnny/g) || []).length;
-  assert.equal(occurrences, 1, `"johnnyjohnny" (the local hostname AND the self-peer's name) should render exactly once, not duplicated; got ${occurrences} in: ${html}`);
+  const occurrences = (html.match(/local-node/g) || []).length;
+  assert.equal(occurrences, 1, `"local-node" (the local hostname AND the self-peer's name) should render exactly once, not duplicated; got ${occurrences} in: ${html}`);
   assert.match(html, /other-peer/, 'the genuinely distinct peer should still render');
   assert.doesNotMatch(html, />local</, 'no card should carry a literal "local" badge/tag');
 });
@@ -126,7 +126,7 @@ test('loadServers (Settings list): the local entry displays its real hostname, n
     if (url.includes('/api/config')) return Promise.resolve(fakeResponse(200, '{}'));
     if (url.includes('/api/servers')) {
       return Promise.resolve(fakeResponse(200, JSON.stringify([
-        { name: 'local', url: 'http://localhost:8443', has_auth: false, enabled: true, hostname: 'johnnyjohnny' },
+        { name: 'local', url: 'http://localhost:8443', has_auth: false, enabled: true, hostname: 'local-node' },
       ])));
     }
     return Promise.resolve(fakeResponse(200, '{}'));
@@ -134,6 +134,6 @@ test('loadServers (Settings list): the local entry displays its real hostname, n
   vm.runInContext('loadServers()', sandbox);
   await flushAsync();
   await flushAsync();
-  assert.match(listEl.innerHTML, /johnnyjohnny/, `expected the real hostname; got: ${listEl.innerHTML}`);
+  assert.match(listEl.innerHTML, /local-node/, `expected the real hostname; got: ${listEl.innerHTML}`);
   assert.doesNotMatch(listEl.innerHTML, /<strong>local<\/strong>/, 'the row must not display the literal word "local" as the name');
 });

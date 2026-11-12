@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -66,8 +68,22 @@ func NewOpenAICompat(endpoint, apiKey, model, language string) (*OpenAICompatTra
 	}, nil
 }
 
-// Transcribe POSTs the audio file as multipart/form-data and returns
-// the transcribed text.
+// Transcribe converts an audio file to text via the OpenAI-compat
+// endpoint, with long-audio support (2026-10-20 root-cause fix, see
+// docs/plans/2026-10-20-voice-long-recording-rootcause.md):
+//
+//  1. A single full-file upload is attempted first — OpenAI / OpenWebUI
+//     accept multi-minute audio natively.
+//  2. If the backend is a 30-second-windowed engine that rejects long
+//     recordings with 400/413/422, the recording is split locally into
+//     ≤ window chunks (silence-aware for PCM WAV, ffmpeg for other
+//     containers — see split.go), each chunk is transcribed in order,
+//     and the texts are joined deterministically (trimmed, non-empty
+//     parts, single spaces) — a non-truncated full-length transcript.
+//
+// Backend rejections are always surfaced to the caller; the chunked
+// retry replaces a hard refusal, it never swallows one. The Transcriber
+// interface (transcribe.go) is unchanged.
 func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath string) (string, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -75,6 +91,73 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 		defer cancel()
 	}
 
+	text, err := o.transcribeFile(ctx, audioPath)
+	if err == nil {
+		return text, nil
+	}
+
+	// Only server-side refusals (400/413/422) are worth a chunked
+	// retry — network failures, timeouts, 404 model fallback and
+	// broken-engine errors would just be reproduced per chunk.
+	// Surface those as-is.
+	if !isDurationRejection(err) {
+		return "", err
+	}
+
+	window := audioWindowFromError(err)
+	files, cleanup, serr := splitAudioLong(ctx, audioPath, window)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if serr != nil || len(files) < 2 {
+		// Could not split (or nothing to split): surface the backend's
+		// original rejection untouched — never swallow it.
+		return "", err
+	}
+
+	parts := make([]string, 0, len(files))
+	for i, path := range files {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		ctext, cerr := o.transcribeFile(ctx, path)
+		if cerr != nil {
+			return "", fmt.Errorf("transcribe(openai_compat): backend refused full recording (%v); chunk %d/%d also failed: %w", err, i+1, len(files), cerr)
+		}
+		if s := strings.TrimSpace(ctext); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, " "), nil
+}
+
+// isDurationRejection reports whether err carries a server refusal
+// (HTTP 400/413/422) — the shape windowed whisper backends use to
+// reject long audio ("audio duration 65.0s exceeds maximum window 30s").
+func isDurationRejection(err error) bool {
+	s := err.Error()
+	return strings.Contains(s, ": HTTP 400:") ||
+		strings.Contains(s, ": HTTP 413:") ||
+		strings.Contains(s, ": HTTP 422:")
+}
+
+var audioWindowRE = regexp.MustCompile(`(?:window|duration|limit)\D*?(\d{1,3})\s*s`)
+
+// audioWindowFromError parses the server-reported window ("exceeds
+// maximum window 30s") and falls back to Whisper's native 30 s window.
+func audioWindowFromError(err error) time.Duration {
+	if m := audioWindowRE.FindStringSubmatch(err.Error()); m != nil {
+		if n, convErr := strconv.Atoi(m[1]); convErr == nil && n >= 1 && n <= 300 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return DefaultAudioWindow
+}
+
+// transcribeFile POSTs the audio file as a SINGLE full-file
+// multipart/form-data upload and returns the transcribed text — no
+// chunking here; the split-and-retry lives in Transcribe.
+func (o *OpenAICompatTranscriber) transcribeFile(ctx context.Context, audioPath string) (string, error) {
 	f, err := os.Open(audioPath)
 	if err != nil {
 		return "", fmt.Errorf("transcribe(openai_compat): open audio: %w", err)
@@ -291,9 +374,9 @@ func (o *OpenAICompatTranscriber) listModels(ctx context.Context) []string {
 // hosts list ONLY chat models on that endpoint — the audio transcribe
 // path uses a separate, well-known model name).
 var knownWhisperNames = []string{
-	"whisper-1",      // OpenAI canonical + most openai-compat servers
-	"whisper",        // OpenWebUI shorthand
-	"large-v3",       // whisper.cpp / faster-whisper-server defaults
+	"whisper-1", // OpenAI canonical + most openai-compat servers
+	"whisper",   // OpenWebUI shorthand
+	"large-v3",  // whisper.cpp / faster-whisper-server defaults
 	"large-v2", "large",
 	"medium", "small", "base", "tiny",
 }
@@ -322,12 +405,12 @@ func pickWhisperModel(ids []string) string {
 	return ""
 }
 
-// transcribeWithModel runs Transcribe with a one-shot model override.
-// Used by the auto-fallback path on model-not-found.
+// transcribeWithModel runs transcribeFile with a one-shot model
+// override. Used by the auto-fallback path on model-not-found.
 func (o *OpenAICompatTranscriber) transcribeWithModel(ctx context.Context, audioPath, model string) (string, error) {
 	tmp := *o
 	tmp.Model = model
-	return tmp.Transcribe(ctx, audioPath)
+	return tmp.transcribeFile(ctx, audioPath)
 }
 
 // Preflight (v7.0.0-alpha.14 #236) — actively probe the openai-compat

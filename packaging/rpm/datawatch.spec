@@ -55,5 +55,5 @@ exit 0
 %attr(0750,datawatch,datawatch) %dir %{_sharedstatedir}/datawatch
 
 %changelog
-* Wed Jan 01 2025 dmz006 <dmz006@github.com> - 0.1.0-1
+* Wed Jan 01 2025 datawatch <datawatch@example.com> - 0.1.0-1
 - Initial package release

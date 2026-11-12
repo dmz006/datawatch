@@ -104,3 +104,22 @@ func TestBuildSummaryView_NilPRD(t *testing.T) {
 		t.Errorf("nil PRD gave non-zero view: %+v", view)
 	}
 }
+
+// An untagged Automaton still carries "tags": [] and "primary_tag_id" in its
+// JSON, so the list shape does not change with the tag count.
+func TestBuildSummaryView_UntaggedCarriesEmptyTagFields(t *testing.T) {
+	raw, err := json.Marshal(BuildSummaryView(&PRD{ID: "untagged01", Status: PRDDraft}))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if string(got["tags"]) != "[]" {
+		t.Errorf("tags = %s, want []", got["tags"])
+	}
+	if string(got["primary_tag_id"]) != `""` {
+		t.Errorf("primary_tag_id = %s, want empty string", got["primary_tag_id"])
+	}
+}

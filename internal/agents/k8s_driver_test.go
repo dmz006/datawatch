@@ -122,7 +122,7 @@ func TestK8sDriver_NewDefaultsBin(t *testing.T) {
 func TestK8sDriver_Spawn_ManifestContent(t *testing.T) {
 	dir := newFakeKubectl(t)
 	withFakePath(t, dir)
-	_ = os.WriteFile(filepath.Join(dir, "output.get"), []byte("10.244.0.5"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "output.get"), []byte("192.0.2.245"), 0644)
 
 	d := NewK8sDriver("", "registry.example.com/datawatch", "v2.4.5", "http://parent:8080")
 	a := k8sTestAgent(t, func(c *profile.ClusterProfile) {
@@ -135,8 +135,8 @@ func TestK8sDriver_Spawn_ManifestContent(t *testing.T) {
 	if a.DriverInstance != "datawatch/dw-agent-xyz" {
 		t.Errorf("DriverInstance=%q want datawatch/dw-agent-xyz", a.DriverInstance)
 	}
-	if a.ContainerAddr != "10.244.0.5:8080" {
-		t.Errorf("ContainerAddr=%q want 10.244.0.5:8080", a.ContainerAddr)
+	if a.ContainerAddr != "192.0.2.245:8080" {
+		t.Errorf("ContainerAddr=%q want 192.0.2.245:8080", a.ContainerAddr)
 	}
 
 	manifest, _ := os.ReadFile(filepath.Join(dir, "stdin.last"))

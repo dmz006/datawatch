@@ -13,8 +13,9 @@
 //	GET    /api/memory/discussion/{id}/conflicts         → list conflicting WAL entries (T42b)
 //	POST   /api/memory/discussion/{id}/conflicts/resolve → mark conflict resolved (T42b)
 //
-// WAL path: ~/.datawatch/discussions/<id>/wal.jsonl
-// Participants: ~/.datawatch/discussions/<id>/participants.json
+// WAL path: <data dir>/discussions/<id>/wal.jsonl
+// Participants: <data dir>/discussions/<id>/participants.json
+// (data dir via Server.statePath — see internal/server/state_paths.go)
 // Discussion IDs are derived from the URL path segment after /api/memory/discussion/.
 
 package server
@@ -101,31 +102,14 @@ func walDecryptLine(line string, key []byte) ([]byte, error) {
 	return pt, nil
 }
 
-// discussionsBaseDir returns ~/.datawatch/discussions, creating it on demand.
-func discussionsBaseDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("discussions dir: %w", err)
-	}
-	d := filepath.Join(home, ".datawatch", "discussions")
+// discussionsBaseDir returns the discussions state directory
+// (<data dir>/discussions), creating it on demand.
+func (s *Server) discussionsBaseDir() (string, error) {
+	d := s.statePath("discussions")
 	if err := os.MkdirAll(d, 0755); err != nil {
 		return "", fmt.Errorf("mkdir discussions: %w", err)
 	}
 	return d, nil
-}
-
-// discussionWALPath returns the WAL file path for a discussion.
-// Creates the directory if needed.
-func discussionWALPath(id string) (string, error) {
-	base, err := discussionsBaseDir()
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(base, id)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("mkdir discussion dir: %w", err)
-	}
-	return filepath.Join(dir, "wal.jsonl"), nil
 }
 
 // discussionRole returns the memory role string used for discussion scope rows.
@@ -134,7 +118,7 @@ func discussionRole(id string) string {
 }
 
 // handleDiscussionScopeList handles GET /api/memory/discussion — lists all
-// discussion IDs that have a WAL directory under ~/.datawatch/discussions/.
+// discussion IDs that have a WAL directory under <data dir>/discussions/.
 func (s *Server) handleDiscussionScopeList(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapCommRead) {
 		return
@@ -144,7 +128,7 @@ func (s *Server) handleDiscussionScopeList(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	base, err := discussionsBaseDir()
+	base, err := s.discussionsBaseDir()
 	if err != nil {
 		// If we can't even get the base dir, return empty list gracefully.
 		writeJSONOK(w, map[string]any{"discussions": []string{}, "count": 0})
@@ -188,8 +172,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /conflicts/resolve sub-path first (most specific).
 	if idx := strings.Index(rest, "/conflicts/resolve"); idx >= 0 && rest[idx:] == "/conflicts/resolve" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !s.fedCap(w, r, federation.CapCommWrite) {
@@ -202,8 +186,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /conflicts sub-path.
 	if idx := strings.Index(rest, "/conflicts"); idx >= 0 && rest[idx:] == "/conflicts" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !s.fedCap(w, r, federation.CapCommRead) {
@@ -216,8 +200,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /receive sub-path — peer-to-peer WAL sync (fix #79).
 	if idx := strings.Index(rest, "/receive"); idx >= 0 && rest[idx:] == "/receive" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !s.fedCap(w, r, federation.CapCommWrite) {
@@ -230,8 +214,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /participants sub-path (T42b).
 	if idx := strings.Index(rest, "/participants"); idx >= 0 && rest[idx:] == "/participants" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if r.Method == http.MethodGet {
@@ -250,8 +234,8 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 	// Check for /wal sub-path.
 	if idx := strings.LastIndex(rest, "/wal"); idx >= 0 && rest[idx:] == "/wal" {
 		id := rest[:idx]
-		if id == "" {
-			http.Error(w, "discussion id required", http.StatusBadRequest)
+		if err := validateDiscussionID(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !s.fedCap(w, r, federation.CapCommRead) {
@@ -267,6 +251,10 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 
 	// The rest of the path is the discussion ID.
 	id := rest
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -291,6 +279,10 @@ func (s *Server) handleDiscussionScope(w http.ResponseWriter, r *http.Request) {
 
 // handleDiscussionRecall handles GET /api/memory/discussion/{id}.
 func (s *Server) handleDiscussionRecall(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if s.memoryBackend == nil {
 		writeJSONOK(w, map[string]any{"results": []any{}, "count": 0, "discussion_id": id})
 		return
@@ -315,6 +307,10 @@ func (s *Server) handleDiscussionRecall(w http.ResponseWriter, r *http.Request, 
 
 // handleDiscussionWrite handles POST /api/memory/discussion/{id}.
 func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	// T42b: throttle — 60 writes/minute per Bearer token.
 	if !checkDiscussionThrottle(w, r) {
 		return
@@ -358,7 +354,7 @@ func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, i
 	}
 
 	// Append to WAL and capture the entry for sync.
-	walEntry, err := discussionAppendWALEntry(id, body.Content, body.Role, body.OriginPeer, s.encKey)
+	walEntry, err := s.discussionAppendWALEntry(id, body.Content, body.Role, body.OriginPeer, s.encKey)
 	if err != nil {
 		// WAL failure is non-fatal.
 		_ = err
@@ -379,6 +375,10 @@ func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, i
 
 // handleDiscussionDelete handles DELETE /api/memory/discussion/{id}.
 func (s *Server) handleDiscussionDelete(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	mu := discussionLock(id)
 	mu.Lock()
 	defer mu.Unlock()
@@ -400,9 +400,8 @@ func (s *Server) handleDiscussionDelete(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Remove WAL directory.
-	base, err := discussionsBaseDir()
+	dir, err := s.discussionFolderForID(id)
 	if err == nil {
-		dir := filepath.Join(base, id)
 		os.RemoveAll(dir) //nolint:errcheck
 	}
 
@@ -415,10 +414,14 @@ func (s *Server) handleDiscussionDelete(w http.ResponseWriter, r *http.Request, 
 
 // handleDiscussionWAL handles GET /api/memory/discussion/{id}/wal.
 func (s *Server) handleDiscussionWAL(w http.ResponseWriter, r *http.Request, id string) {
+	if err := validateDiscussionID(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	q := r.URL.Query()
 	n := atoiDefault(q.Get("n"), 50)
 
-	entries, err := discussionReadWAL(id, n, s.encKey)
+	entries, err := s.discussionReadWAL(id, n, s.encKey)
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeJSONOK(w, map[string]any{"discussion_id": id, "entries": []any{}, "count": 0})
@@ -437,11 +440,18 @@ func (s *Server) handleDiscussionWAL(w http.ResponseWriter, r *http.Request, id 
 // discussionAppendWALEntry appends one entry and returns it (for sync).
 // originPeer may be empty for local writes. When encKey is non-nil each
 // line is encrypted as "ENC:<base64(nonce24+ciphertext)>" (BL334 T43c).
-func discussionAppendWALEntry(id, content, role, originPeer string, encKey []byte) (*discussionWALEntry, error) {
-	walPath, err := discussionWALPath(id)
+func (s *Server) discussionAppendWALEntry(id, content, role, originPeer string, encKey []byte) (*discussionWALEntry, error) {
+	if err := validateDiscussionID(id); err != nil {
+		return nil, err
+	}
+	dir, err := s.discussionFolderForID(id)
 	if err != nil {
 		return nil, err
 	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("mkdir discussion dir: %w", err)
+	}
+	walPath := filepath.Join(dir, "wal.jsonl")
 
 	// Compute next sequence number by counting existing lines.
 	seq := 0
@@ -489,11 +499,15 @@ func discussionAppendWALEntry(id, content, role, originPeer string, encKey []byt
 // discussionReadWAL reads the last n entries from the discussion WAL.
 // When encKey is non-nil each line is decrypted before parsing (BL334 T43c).
 // Lines without the "ENC:" prefix are accepted transparently for migration compat.
-func discussionReadWAL(id string, n int, encKey []byte) ([]discussionWALEntry, error) {
-	walPath, err := discussionWALPath(id)
+func (s *Server) discussionReadWAL(id string, n int, encKey []byte) ([]discussionWALEntry, error) {
+	if err := validateDiscussionID(id); err != nil {
+		return nil, err
+	}
+	dir, err := s.discussionFolderForID(id)
 	if err != nil {
 		return nil, err
 	}
+	walPath := filepath.Join(dir, "wal.jsonl")
 
 	f, err := os.Open(walPath)
 	if err != nil {

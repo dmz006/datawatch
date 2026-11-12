@@ -1,0 +1,43 @@
+--- fresh sandbox: build the daemon from this tree
+tree: commit f1d0ceaa, 0 uncommitted path(s)
+PASS: built /tmp/tmp.ZvHNKAE1kn/datawatch
+PASS: sandbox daemon pid 1640902 healthy at https://127.0.0.1:36991 (built from commit f1d0ceaa)
+start: sandbox https://127.0.0.1:36991, webhook settings {"autonomous.notify.webhook.enabled": false, "autonomous.notify.webhook.allow_hosts": [], "autonomous.notify.webhook.backoff_seconds": [1, 4, 16, 64]}
+--- step 1: start the throwaway receiver
+PASS: receiver listening on 127.0.0.1:42375 (pid 1641478)
+--- step 2: store the throwaway signing secret
+PASS: secret lifecycle-smoke-signing stored
+--- step 3: enable the webhook sink with the receiver allow-listed
+PASS: with the sink switched off, a webhook subscription is refused (400, says disabled)
+PASS: sink enabled, allow-list is [127.0.0.1:42375]
+--- step 4: create a subscription and test-fire it
+PASS: subscription sub-ebb6498f6a411113 created (201)
+PASS: test-fire returned ok with exactly one POST at the receiver
+PASS: request 1 signature verifies, envelope parses, event is the labelled test
+PASS: the how-to snippet accepts request 1, and rejects a changed body and a wrong secret
+PASS: audit autonomous_lifecycle_webhook_delivery for delivery 0711d531d93c0060b9b86620c71698a5: {'delivered': 1}
+PASS: the throwaway secret value is absent from the API response
+PASS: the throwaway secret value is absent from 2 receiver file(s)
+--- step 5: negative checks
+PASS: a host that is not allow-listed is refused at creation (400)
+PASS: the cloud metadata address is refused at creation (400)
+PASS: with the allow-list emptied, test-fire is refused and makes zero requests
+--- step 6: retries with growing gaps
+PASS: attempt gaps 1.07s 2.06s
+PASS: 3 attempts share delivery 9fc04edc9119b5270fe648f73735141b; receiver answered [500, 500, 200]
+PASS: audit autonomous_lifecycle_webhook_delivery for delivery 9fc04edc9119b5270fe648f73735141b: {'delivered': 1, 'retry': 2}
+--- step 7: failure alert and final failure record
+PASS: receiver stopped
+PASS: audit autonomous_lifecycle_webhook_delivery for delivery 5c0bbeb3c20699d873de0272a7d3ebc9: {'failed': 1, 'retry': 4}
+PASS: audit autonomous_lifecycle_webhook_failed for delivery 5c0bbeb3c20699d873de0272a7d3ebc9: {'failed': 1}
+PASS: the throwaway secret value is absent from the API response
+PASS: failure alert names subscription sub-ebb6498f6a411113 after 5 attempts (1 matching)
+PASS: the throwaway secret value is absent from the API response
+PASS: the daemon log and 2 audit file(s) hold no secret value and no signature (12 webhook audit line(s) on disk)
+--- step 8: forwarding (in-process Go tests)
+PASS: forwarding tests: 52 top-level tests passed
+PASS: the throwaway secret value is absent from 8 receiver file(s)
+OK: lifecycle webhook smoke passed
+restored: autonomous.notify.webhook.* to the values found at start
+removed: throwaway signing secret
+stopped: sandbox daemon pid 1640902

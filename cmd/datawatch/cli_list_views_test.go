@@ -74,6 +74,27 @@ func TestSessionListQuery_EmptyWithoutFlags(t *testing.T) {
 	}
 }
 
+// The repeatable --tag flag and the --tag-match rule both reach the API.
+func TestSessionListQuery_MapsTagFlags(t *testing.T) {
+	c := sessionListSubcmd(t)
+	if err := c.ParseFlags([]string{"--tag", "web", "--tag", "perf", "--tag-match", "all"}); err != nil {
+		t.Fatal(err)
+	}
+	q := sessionListQuery(c)
+	want := url.Values{"tag": {"web", "perf"}, "tag_match": {"all"}}
+	if q.Encode() != want.Encode() {
+		t.Errorf("query = %q, want %q", q.Encode(), want.Encode())
+	}
+
+	c2 := sessionListSubcmd(t)
+	if err := c2.ParseFlags([]string{"--tag", "web,perf"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := sessionListQuery(c2).Encode(); got != (url.Values{"tag": {"web,perf"}}).Encode() {
+		t.Errorf("comma form query = %q", got)
+	}
+}
+
 func TestSessionListCmd_SummaryHitsAPI(t *testing.T) {
 	seen := recordingDaemon(t, `[]`)
 	if err := runCmd(t, newSessionCmd(), "list", "--summary", "--states", "running"); err != nil {

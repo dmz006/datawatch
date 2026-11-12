@@ -1,0 +1,50 @@
+# Final gate — header Tags icon + shared-navigation fit
+
+Run: 2026-10-29 (UTC). Branch automaton/1a4e0001 at f2296bbcf.
+Scope base for all diffs: merge-base with main = 06936fc8e09c7e179668d60bef1edd9f1f7c8ae8.
+Source read-only held: this run modified no source files. Post-run `git status` shows only
+updated docs/testing/runs evidence (shared-nav-mobile-fit-report.json, guard-stories-run.md);
+`scripts/test-stories/pwa/node_modules` was restored to its tracked symlink after the runner's npm ci.
+
+1. node tests — 6 files, 55 tests: pass 55, fail 0, skipped 0. Exit code: 0 (node v24.15.0).
+   Files: app-header-tags-icon.test.js, app-tags-menu-shell.test.js, app-tags-menu-wiring.test.js,
+   app-tags-menu-content.test.js, app-shared-nav.test.js, app-automation-nav.test.js.
+   contrast (from app-header-tags-icon.test.js): Tags icon fill vs header background,
+   dark (#a855f7 on #1a1d27) 4.25:1; light (#7c3aed on #f1f5f9) 5.20:1 —
+   both above the 3:1 UI contrast floor; test asserts this in both themes.
+
+2. Browser stories — sandbox daemon per scripts/e2e-pwa.sh (127.0.0.1 random ports, no Docker, TMUX/TMUX_TMPDIR unset):
+   - TS-825: Exit code: 0 (dropdown/tags/filter/360px-scroll/Escape/cleanup assertions all pass;
+     report docs/testing/runs/header-tags-icon/ts825-run.md; evidence/TS-825.log).
+   - TS-817 (Observer mobile-fit, MOBILE_FIT_SCOPE=#view, 99 scenarios): Exit code: 0,
+     0 findings in all 68 recorded regression groups (evidence/TS-817.log, ts817-mobile-fit-report.json).
+   - TS-818 (mobile-fit-desktop, 3 viewports): Exit code: 0, all 3 viewports within 2px/1%
+     tolerance of the in-run baseline (evidence/TS-818.log).
+   - shared-nav-mobile-fit: Exit code: 0. Re-run 2026-10-29 through the canonical invocation
+     `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh shared-nav-mobile-fit` (external-daemon mode)
+     against bin/datawatch, datawatch v9.32.0 (healthy /api/health; ports 20390/17105):
+     gate pass, 0 nav findings at 320x568, 360x740, 390x844 in light and dark themes.
+     Evidence: evidence/shared-nav-mobile-fit.log, evidence/shared-nav-mobile-fit-report.json
+     (JSON field daemon_version: "datawatch v9.32.0"), runner trace evidence/shared-nav-e2e-run.log.
+     Clarification: scripts/test-stories/pwa/shared-nav-mobile-fit.mjs IS present in this branch
+     (added in commit cccbd9f08) and it is the script this invocation ran — a gate wrapper around
+     shared-nav-mobile-fit-probe.mjs in gate mode, per docs/plans/2026-10-25-shared-nav-mobile-fit.md.
+     The JSON's `substitute_for: "... (absent from this branch)"` field is a stale constant embedded
+     in the probe source; earlier run records that repeated it as a claim about this run were wrong.
+
+3. Verify scripts — all nine re-run this session, all emit PASS (exit 0):
+   header-tags-icon-markup.sh, header-tags-icon-state.sh, header-tags-icon-tests.sh,
+   header-tags-icon-ts825-run.sh, header-tags-icon-guard-run.sh, header-tags-icon-howto.sh,
+   header-tags-icon-testing-docs.sh, header-tags-icon-changelog.sh, header-tags-icon-parity.sh.
+
+4. scope — git diff vs merge-base main: change set is limited to this feature —
+   internal/server/web/{app.js,index.html,style.css,app-header-tags-icon.test.js},
+   docs/{howto/automata-tags.md,howto/sessions-deep-dive.md,plans/parity-issues/header-tags-icon-filled.md,
+   testing.md,testing-tracker.md}, docs/testing/runs/header-tags-icon/**, CHANGELOG.md,
+   scripts/test-stories/pwa/mobile-fit-desktop-baseline.json.
+   - ok: index.html change does not touch the alert pill, install button or status dot
+   - ok: app.js change does not touch the session detail tag row
+   - ok: no version or locale file changed (no cmd/datawatch/main.go, internal/server/api.go or web/locales/)
+   - untracked extras are this session's CHECKPOINT.md and gitignored evidence logs only
+
+RESULT: PASS

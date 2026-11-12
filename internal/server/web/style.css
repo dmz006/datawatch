@@ -1,3 +1,9 @@
+/* Automatic tags: grouped filter rows and the system-tag lock. */
+.tag-filter-group-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); padding: 6px 0 2px; }
+.tag-system-badge, .tag-system-mark { font-size: 10px; color: var(--text2); white-space: nowrap; }
+.tag-filter-control { margin: 6px 0; }
+.automation-form-member-stage { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+
 /* ── Custom properties ── */
 /* v6.13.11 (BL278) — light/dark theme toggle. Dark is the default
    palette and lives on `:root`; the light overrides live on
@@ -118,11 +124,23 @@ body {
   letter-spacing: 1px;
 }
 .splash-version {
-  font-size: 11px;
+  font-size: 15px;
   color: var(--accent2);
   opacity: 0.85;
   margin-top: 8px;
   letter-spacing: 0.5px;
+}
+/* Previous-version line under the new version; only shown when the daemon
+   version changed since the last splash display. */
+.splash-version-prev {
+  font-size: 13px;
+  color: var(--text2);
+  opacity: 0.8;
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+  /* Keep long version strings inside the 320 px / 16 px gutter envelope. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 /* GH#172 D59 — splash status line (Android already has this). */
 .splash-status {
@@ -173,6 +191,213 @@ body {
   align-items: center;
   gap: 4px;
   overflow: hidden;
+  /* mobile-fit gate 2026-10-22: at narrow widths / high zoom the title
+     overflows; keep the overflow:hidden clipping but declare the text
+     overflow model (and a synced title= tooltip, see app.js) so it is a
+     declared truncation, not an accident. */
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* mobile-fit gate 2026-10-22: the header's clickable controls carry only
+   display/padding inline styles — their boxes came out 21-62px across
+   viewports: 28px tap targets below the 40px floor, and (oversized at
+   extreme zoom) still pushing #statusDot / the pill off the right edge —
+   measured at z130: help link 60px, alert pill 62px. Root cause: their
+   inline padding + borders + the <a> underline add on top of any min-size.
+   Fix: declare the 44px minimum on the CONTENT box (border-box + the
+   inline border/padding would let the UA box grow past the budget), and
+   strip the inline padding so the hit area lands on exactly 44px (help
+   link / fullscreen) or 46px (alert pill, 1px border) — both fit the 56px
+   header (var(--header-h)) and keep the z200 row total (160 CSS px) inside
+   the viewport. At ≤219 CSS px (200% zoom on phones) even 44px controls
+   can't all fit, so the least-essential ones (help toggle, fullscreen
+   toggle) are hidden there — status dot, alert pill and the title keep the
+   row inside the viewport. */
+.header > #headerTagsBtn,
+.header > #headerAlertPill,
+.header > #headerFullscreenBtn,
+.header > #headerHelpLink {
+  box-sizing: content-box;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.header > #headerHelpLink {
+  padding: 0 !important;      /* inline 4px 8px padding pushed the box to 60px (measured) */
+  text-decoration: none;
+  border: none;
+  text-align: center;
+}
+.header > #headerAlertPill {
+  padding: 0 !important;      /* inline 2px 8px + 1px border pushed the box to 62px (measured) */
+  cursor: pointer;
+}
+.header > #headerFullscreenBtn {
+  padding: 0 !important;      /* inline 4px 6px */
+}
+.header > #headerTagsBtn {
+  padding: 0 !important;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.header > #headerTagsBtn > svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+  flex: none;
+}
+/* Header Tags icon — filled drawing, all colour from theme tokens (no literals).
+   Fill token choice: WCAG contrast of the body fill against the header
+   background var(--bg2). Formula: contrast = (Llighter + 0.05) / (Ldarker + 0.05)
+   with L = 0.2126R + 0.7152G + 0.0722B over sRGB channels linearized per WCAG.
+     --accent  #7c3aed on #1a1d27 (dark)  = 2.95:1  ✗ below 3:1
+     --accent2 #a855f7 on #1a1d27 (dark)  = 4.25:1  ✓
+     --accent2 #7c3aed on #f1f5f9 (light) = 5.20:1  ✓
+   So the body fills with var(--accent2) — ≥3:1 in both themes. */
+.header-tags-icon {
+  display: block;
+}
+.header-tags-icon-body {
+  fill: var(--accent2);
+  stroke: color-mix(in srgb, var(--accent2) 70%, var(--bg));
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.header-tags-icon-hole {
+  fill: color-mix(in srgb, var(--accent2) 30%, var(--text));
+}
+.header-tags-icon-shine {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 35%, transparent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.header > #headerTagsBtn { position: relative; }
+.header-tags-count:empty { display: none; }
+.header-tags-count {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent2);
+  color: var(--bg);
+  /* token-colored ring keeps the accent2 badge readable on the accent2 icon fill */
+  box-shadow: 0 0 0 2px var(--bg2);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Tags button interaction states: hover lift, keyboard focus ring, and the
+   is-active class (toggled by _tagsMenuRefresh) while the menu is open or a
+   tag filter is applied. All colours come from theme tokens (no literals),
+   and the only animated properties are colours — under prefers-reduced-motion
+   the transitions drop out and only the instant colour change remains. */
+.header > #headerTagsBtn:hover {
+  background: color-mix(in srgb, var(--accent2) 12%, transparent);
+  border-radius: 8px;
+}
+.header > #headerTagsBtn:hover .header-tags-icon-body {
+  fill: color-mix(in srgb, var(--accent2) 85%, var(--text));
+  stroke: color-mix(in srgb, var(--accent2) 55%, var(--text));
+}
+.header > #headerTagsBtn:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.header > #headerTagsBtn.is-active {
+  background: color-mix(in srgb, var(--accent2) 18%, transparent);
+  border-radius: 8px;
+}
+.header > #headerTagsBtn.is-active .header-tags-icon-body {
+  fill: color-mix(in srgb, var(--accent2) 70%, var(--text));
+  stroke: color-mix(in srgb, var(--accent2) 50%, var(--text));
+}
+/* The .header-tags-count badge sits on top of these fills and keeps its own
+   token background plus the 2px var(--bg2) ring, so it stays readable in the
+   hover and active states without any changes here. */
+@media (prefers-reduced-motion: no-preference) {
+  .header > #headerTagsBtn { transition: background-color 120ms ease; }
+  .header-tags-icon-body { transition: fill 120ms ease, stroke 120ms ease; }
+}
+
+/* Tags menu panel: fixed under the header, never wider than the viewport so a
+   320px phone gets no horizontal page scroll with it open. */
+.header-tags-menu {
+  position: fixed;
+  top: var(--header-h);
+  right: 8px;
+  width: min(340px, calc(100vw - 16px));
+  max-height: calc(100vh - var(--header-h) - 16px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  z-index: 110;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+.header-tags-menu[hidden] { display: none; }
+
+.tags-menu-section + .tags-menu-section { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.tags-menu-head { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+.tags-menu-row { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+.tags-menu-list { max-height: 220px; overflow-y: auto; margin-bottom: 6px; }
+.tags-menu-actions { display: flex; align-items: center; gap: 6px; }
+.tags-menu-btn {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 6px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.tags-menu-actions .tags-menu-btn { width: auto; margin-top: 0; text-align: center; }
+
+/* Narrow phones (320px at 130% zoom = 246 CSS px): the Tags button would squeeze
+   the title to nothing, so tighten the row and drop the help toggle, the same
+   least-essential control the 219px rule hides. */
+@media (max-width: 279px) {
+  .header {
+    padding-left: 8px;
+    padding-right: 8px;
+    gap: 4px;
+  }
+  .header > #headerHelpLink { display: none !important; }
+}
+
+/* Extreme zoom (200% on a 320px phone = 160 CSS px): even 44px controls
+   can't all fit (44×3 + 10px dot + gaps + padding > 160). The spec floor
+   is 40px and the fullscreen/help affordances are the least essential —
+   hide them below 220 CSS px so #statusDot and the alert pill stay on
+   screen. (The matrix's z130 cells: 320→246, 360→277 … z200: 320→160,
+   360→180, 390→195, 412→206 CSS px.) */
+@media (max-width: 219px) {
+  .header > #headerHelpLink,
+  .header > #headerTagsBtn,
+  .header > #headerFullscreenBtn { display: none !important; }
 }
 
 .back-btn {
@@ -210,6 +435,27 @@ body {
   background: var(--success);
 }
 
+.status-dot.reconnecting {
+  background: var(--warning, #d9a400);
+  animation: ws-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.status-dot.offline {
+  background: var(--error);
+}
+
+@keyframes ws-dot-pulse {
+  50% { opacity: 0.4; }
+}
+
+.ws-state-chip {
+  font-size: 11px;
+  color: var(--text2);
+  margin-right: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Header search-icon — moved from the sessions card so it's reachable
    from any tab without scrolling. Mirrors the in-card affordance the
    mobile app uses. Visible only on the sessions view (toggled in JS). */
@@ -225,6 +471,7 @@ body {
   align-items: center;
   justify-content: center;
   margin-right: 8px;
+  min-width: 40px; min-height: 40px; /* 40 px minimum tap target (worklist, shared fix) */
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 .header-search-btn:hover {
@@ -296,11 +543,13 @@ body {
   border-top: 2px solid transparent;
   color: var(--text2);
   cursor: pointer;
-  padding: 6px 14px 8px;
+  padding: 6px 2px 8px;
   border-radius: 0;
   transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-  min-width: 68px;
-  flex-shrink: 0;
+  /* Equal share of the bar at every width, so six buttons fit a 320 px
+     phone without the bar scrolling. 40 px is the minimum tap target. */
+  flex: 1 1 0;
+  min-width: 40px;
   scroll-snap-align: center;
 }
 
@@ -323,6 +572,10 @@ body {
   font-size: 10px;
   font-family: system-ui, sans-serif;
   letter-spacing: 0.3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Scrollable content area ── */
@@ -416,6 +669,7 @@ body {
 .prd-card-status-rejected      { border-left-color: var(--error); }
 .prd-card-status-cancelled     { border-left-color: var(--text2); }
 .prd-card-status-planning      { border-left-color: var(--accent2); }
+.prd-card-status-active        { border-left-color: var(--success); }
 
 /* BL221 (v6.2.0) — Automata tab redesign */
 
@@ -483,6 +737,78 @@ body {
 .automata-action-btn:hover { color: var(--text); background: var(--bg3); }
 .automata-action-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(96,165,250,0.1); }
 
+/* Phone width: three sub-tabs plus the action buttons must fit at 320 px with
+   no clipping and no sideways scroll. The tabs shrink (ellipsis) before they
+   would overflow, the action buttons wrap onto a second row when they do not
+   fit beside them, and every tab and action button keeps a 40 px tap target. */
+@media (max-width: 600px), (pointer: coarse) {
+  .automata-tabs-bar {
+    flex-wrap: wrap;
+    overflow: visible;
+    box-sizing: border-box;
+    max-width: 100%;
+    row-gap: 4px;
+  }
+  .automata-tabs-bar .output-tab {
+    flex: 0 1 auto;
+    min-width: 0;
+    min-height: 40px;
+    padding: 6px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+  }
+  .automata-tabs-bar > div:empty { flex: 1 1 0; min-width: 0; }
+  .automata-tabs-bar .automata-action-btn {
+    min-width: 40px;
+    min-height: 40px;
+    height: 40px;
+  }
+  .automata-tabs-bar .btn-primary {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+}
+
+/* Second row of sub-tabs — sits directly below the first sub-tab bar and
+   shares its look: same padding, bottom border and background. The strip now
+   scrolls horizontally like the About and Settings strips and never wraps:
+   six tabs do not fit a phone row, so it slides with momentum on touch and
+   the active tab is scrolled into view by _automationSubtabsReveal. */
+.automation-subtabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+.automation-subtabs::-webkit-scrollbar { display: none; }
+.automation-subtabs .output-tab {
+  flex: 0 0 auto;            /* tabs keep their natural width; the strip scrolls */
+  margin-right: 0;
+  white-space: nowrap;
+}
+
+/* Phone width: 40 px tap targets; the strip slides sideways instead of
+   squeezing the tabs, so no horizontal page scroll. */
+@media (max-width: 600px), (pointer: coarse) {
+  .automation-subtabs .output-tab {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+}
+
 /* Filter bar */
 .automata-filter-bar {
   display: flex;
@@ -516,6 +842,9 @@ body {
 .automata-filter-badge.status-running.active       { background: #10b981; }
 .automata-filter-badge.status-paused.active        { background: #f59e0b; }
 .automata-filter-badge.status-blocked.active       { background: #ef4444; }
+.automata-filter-badge.status-active.active        { background: #10b981; }
+.automata-filter-badge.status-completed.active     { background: #6b7280; }
+.automata-filter-badge.status-cancelled.active     { background: #6b7280; }
 .automata-filter-badge.type-badge.active           { background: var(--accent2); }
 
 /* Progress bar inside card */
@@ -533,6 +862,426 @@ body {
   transition: width 0.3s ease;
 }
 .automata-progress-fill.complete { background: var(--success); }
+
+/* Shared work tile: the Automata and Automation lists draw each item as a
+   tile. The layout follows data-tile-mode on .work-tile-grid, which the
+   viewport width sets: tile (720px and up), compact (420px to 719px, two-line
+   rows) and line (under 420px, one-line rows). Colours are the existing
+   .prd-card-status-* left borders and the automata progress bar; no new palette. */
+.work-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.work-tile { margin: 0; padding: 12px 14px; cursor: pointer; min-width: 0; }
+.work-tile-head { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.work-tile-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.work-tile-status { flex-shrink: 0; }
+.work-tile-count-head,
+.work-tile-dot,
+.work-tile-tagcount,
+.work-tile-menu .work-tile-primary-copy { display: none; }
+.work-tile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text2); flex-shrink: 0; margin-top: 6px; }
+.work-tile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text2);
+  font-family: var(--mono, monospace);
+}
+.work-tile-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: auto; }
+.work-tile-progress { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.work-tile-progress .automata-progress-wrap { flex: 1; min-width: 0; margin: 0; }
+.work-tile-count { font-size: 11px; color: var(--text2); white-space: nowrap; font-family: var(--mono, monospace); }
+.work-tile-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+.work-tile-tags-more-chip {
+  list-style: none;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-weight: 600;
+}
+.work-tile-tags-more-chip::-webkit-details-marker { display: none; }
+.work-tile-tags-all { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.work-tile-body { margin-top: 6px; font-size: 12px; color: var(--text2); }
+.work-tile-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.work-tile-activity { font-size: 11px; color: var(--text2); margin-right: auto; }
+.work-tile-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.work-tile-more { position: relative; flex-shrink: 0; }
+.work-tile-more-btn {
+  list-style: none;
+  cursor: pointer;
+  padding: 0 8px;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--text2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.work-tile-more-btn::-webkit-details-marker { display: none; }
+.work-tile-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  margin-top: 4px;
+  padding: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.work-tile-menu-item { font-size: 12px; text-align: left; padding: 4px 8px; white-space: nowrap; }
+.work-tile-more.is-narrow-only { display: none; }
+.work-tile.prd-card-status-running .work-tile-dot,
+.work-tile.prd-card-status-active .work-tile-dot { background: var(--success); }
+.work-tile.prd-card-status-blocked .work-tile-dot,
+.work-tile.prd-card-status-rejected .work-tile-dot { background: var(--error); }
+.work-tile.prd-card-status-needs_review .work-tile-dot,
+.work-tile.prd-card-status-paused .work-tile-dot,
+.work-tile.prd-card-status-revisions_asked .work-tile-dot { background: var(--warning); }
+.work-tile.prd-card-status-approved .work-tile-dot { background: var(--accent); }
+
+/* compact: one column of two-line rows (420px to 719px). Line one is the title,
+   the status chip and the count; line two is the backend, the tag count and the
+   last activity. Actions move into the overflow menu. */
+.work-tile-grid[data-tile-mode="compact"],
+.work-tile-grid[data-tile-mode="line"] { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile,
+.work-tile-grid[data-tile-mode="line"] .work-tile { padding: 9px 12px; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-progress,
+.work-tile-grid[data-tile-mode="compact"] .work-tile-tags,
+.work-tile-grid[data-tile-mode="compact"] .work-tile-body,
+.work-tile-grid[data-tile-mode="compact"] .work-tile-primary,
+.work-tile-grid[data-tile-mode="line"] .work-tile-progress,
+.work-tile-grid[data-tile-mode="line"] .work-tile-tags,
+.work-tile-grid[data-tile-mode="line"] .work-tile-body,
+.work-tile-grid[data-tile-mode="line"] .work-tile-primary { display: none; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-count-head,
+.work-tile-grid[data-tile-mode="line"] .work-tile-count-head,
+.work-tile-grid[data-tile-mode="compact"] .work-tile-tagcount { display: inline; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-more.is-narrow-only,
+.work-tile-grid[data-tile-mode="line"] .work-tile-more.is-narrow-only { display: block; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-menu .work-tile-primary-copy,
+.work-tile-grid[data-tile-mode="line"] .work-tile-menu .work-tile-primary-copy { display: flex; flex-direction: column; gap: 4px; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-title,
+.work-tile-grid[data-tile-mode="line"] .work-tile-title { -webkit-line-clamp: 1; }
+
+/* line: one line per item (under 420px). Title, status dot and count; the
+   status chip, meta line, bar, tags and foot are dropped. */
+.work-tile-grid[data-tile-mode="line"] .work-tile-status,
+.work-tile-grid[data-tile-mode="line"] .work-tile-meta,
+.work-tile-grid[data-tile-mode="line"] .work-tile-foot { display: none; }
+.work-tile-grid[data-tile-mode="line"] .work-tile-dot { display: inline-block; order: -1; }
+
+/* Tag browser: the [List] [Tags] switch, the sections (web and tablet), the
+   drill-down (under 720px), the facet bar with its phone sheet, and the "also in:"
+   line on a tile. Colours are the existing tokens. */
+.tag-view-switch {
+  display: inline-flex;
+  margin: 2px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tag-view-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--text2);
+  border: 0;
+  cursor: pointer;
+}
+.tag-view-btn.active { background: var(--accent); color: var(--bg); font-weight: 600; }
+.tag-showing { font-size: 11px; color: var(--text2); margin: 4px 0 8px; font-family: var(--mono, monospace); }
+.tag-no-matches { text-align: center; padding: 32px 8px; color: var(--text2); }
+.tag-no-matches-btn {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Sections: a collapsible block per tag, nested sub-sections inside the parent. */
+.tag-sections { display: flex; flex-direction: column; gap: 8px; }
+.tag-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg2);
+}
+.tag-section .tag-section { background: transparent; margin-top: 2px; }
+.tag-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.tag-section-head::-webkit-details-marker { display: none; }
+.tag-section-head::before {
+  content: '▸';
+  display: inline-block;
+  color: var(--text2);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+.tag-section[open] > .tag-section-head::before { transform: rotate(90deg); }
+.tag-section-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-section-count { font-family: var(--mono, monospace); font-size: 11px; color: var(--text2); font-weight: 400; }
+.tag-section-body { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px 10px; }
+
+/* Shared tag registry status: the line under the browser header and the Settings
+   panel, the stale banner when the keeper is unreachable, the stale marker on a
+   count, the pending sync badge and the merge notes with their Dismiss button. */
+.tag-registry-block { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; font-size: 12px; }
+.tag-registry-line { font-size: 11px; color: var(--text2); font-family: var(--mono, monospace); }
+.tag-registry-banner {
+  border: 1px solid var(--warning);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  font-weight: 600;
+}
+.tag-registry-paused { font-size: 11px; color: var(--text2); margin: 4px 0 8px; }
+.tag-registry-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+}
+.tag-registry-note-text { flex: 1; min-width: 160px; }
+.tag-stale-mark {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+.tag-pending-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent2);
+  border: 1px dashed var(--accent2);
+  border-radius: 6px;
+  padding: 0 5px;
+  margin-left: 6px;
+}
+.tag-registry-control:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Pinned groups above the tag browser: Needs attention and the Running strip. An
+   empty group is never drawn, so it takes no height. */
+.tag-pinned { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
+.tag-pinned-attention { border-color: var(--warning, var(--border)); }
+.tag-pinned-rows { gap: 2px; }
+.tag-pinned-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 6px 4px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.tag-pinned-row:first-child { border-top: 0; }
+.tag-pinned-title { flex: 1 1 8em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-pinned-status { flex: 0 0 auto; cursor: pointer; }
+.tag-pinned-reason { flex: 1 1 100%; color: var(--text2); font-size: 11px; }
+.tag-pinned-running .tag-pinned-row { flex-wrap: nowrap; }
+.tag-pinned-more { padding: 4px; font-size: 11px; color: var(--text2); font-family: var(--mono, monospace); }
+.tag-attention-none { padding: 16px 4px; }
+.work-tile-grid.tag-section-items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1024px) {
+  .work-tile-grid.tag-section-items { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Drill-down under 720px: breadcrumb, back row, one list of rows, then items. */
+.tag-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; margin: 4px 0 8px; color: var(--text2); }
+.tag-crumb { background: none; border: 0; color: var(--accent); padding: 2px 4px; font-size: 12px; cursor: pointer; }
+.tag-crumb-sep,
+.tag-crumb-ellipsis { color: var(--text2); }
+.tag-drill-back {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.tag-drill-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; margin: 4px 0 8px; }
+.tag-drill-rows { display: flex; flex-direction: column; gap: 6px; }
+.tag-drill-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.tag-drill-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-drill-chev { color: var(--text2); }
+.tag-drill-label { font-size: 11px; color: var(--text2); margin: 12px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Filter bar: the tag multi-select with ANY/ALL, the backend and status chips.
+   On a phone the controls sit in a bottom sheet behind one Filters button. */
+.tag-filter-phone-row { display: none; }
+.tag-filter-sheet { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.tag-filter-sheet-head { display: none; }
+.tag-facets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tag-facet-group { display: inline-flex; align-items: flex-start; gap: 6px; }
+.tag-multi { position: relative; }
+.tag-multi-summary {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  list-style: none;
+  color: var(--text);
+  background: var(--bg);
+}
+.tag-multi-summary::-webkit-details-marker { display: none; }
+.tag-multi-list {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 220px;
+  max-height: 260px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+.tag-multi-row { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 0; color: var(--text); }
+.tag-multi-name { flex: 1; min-width: 0; }
+.tag-multi-empty { font-size: 12px; color: var(--text2); }
+.tag-mode-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+}
+.tag-mode-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.tag-facet-count { font-family: var(--mono, monospace); font-size: 10px; color: var(--text2); margin-left: 2px; }
+.tag-filter-phone-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.tag-filter-done {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+@media (max-width: 719px) {
+  .tag-filter-phone-row { display: flex; width: 100%; }
+  .tag-filter-sheet {
+    display: none;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    max-height: 80vh;
+    overflow: auto;
+    flex-direction: column;
+    align-items: stretch;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    border-radius: 14px 14px 0 0;
+    padding: 12px 16px 20px 16px;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+  }
+  .tag-filter-sheet.is-open { display: flex; }
+  .tag-filter-sheet-head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; }
+  .tag-multi-list { position: static; min-width: 0; max-height: 200px; box-shadow: none; margin-top: 4px; }
+}
+
+/* The "also in:" line under a tile's tag chips; each name opens its tag. */
+.work-tile-also { font-size: 11px; color: var(--text2); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.work-tile-also-label { font-style: italic; }
+.work-tile-also-link {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}
 
 /* Batch action bar (sticky below filter) */
 .automata-batch-bar {
@@ -1378,6 +2127,33 @@ body {
 /* PRD detail tabs — proper tab styling (not buttons). */
 .prd-detail-tabs.output-tabs {
   margin: 8px 0 6px;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+.prd-detail-tabs.output-tabs::-webkit-scrollbar { display: none; }
+.prd-detail-tabs .output-tab {
+  flex: 0 0 auto;            /* tabs keep their natural width; the strip scrolls */
+  white-space: nowrap;
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .prd-detail-tabs .output-tab {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+}
+/* The detail view's wrappers must not let the tab strip widen the page. */
+#automataDetailBody,
+#automataDetailBody .prd-detail-tab-body {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* v6.13.8 — PRD detail action row (lifecycle strip hoisted into the
@@ -1755,8 +2531,16 @@ body {
 .prd-task-status-glyph.status-running_tests { color: var(--accent2,#8b5cf6); }
 .prd-task-status-glyph.status-blocked       { color: var(--error); }
 .prd-task-status-glyph.status-waiting_capacity { color: var(--warning,#f59e0b); }
+.prd-task-status-glyph.status-waiting_decision { color: var(--warning,#f59e0b); }
 .prd-task-wait-badge { font-size: 10px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--warning,#f59e0b); color: var(--warning,#f59e0b); white-space: nowrap; }
+/* Failure escalation: a task held for operator review, and the held-count badges. */
+.prd-task-status-glyph.status-review_needed { color: var(--warning,#f59e0b); }
+.prd-task-review-badge { font-size: 10px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--warning,#f59e0b); color: var(--warning,#f59e0b); white-space: nowrap; }
+.prd-held-badge, .automation-held-badge { font-size: 10px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; background: var(--warning,#f59e0b); color: #111; white-space: nowrap; }
+.automation-held-strip { font-size: 11px; color: var(--warning,#f59e0b); padding: 2px 0 6px; }
 .prd-task-wait-reason { font-size: 11px; color: var(--warning,#f59e0b); margin: 4px 0; }
+/* Decision line card on the Automaton detail. */
+.decision-line-card .decision-quote { color: var(--text); font-size: 12px; }
 .prd-capacity-card { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--warning,#f59e0b); border-radius: 6px; padding: 8px 12px; margin-top: 4px; font-size: 11px; }
 .prd-capacity-card .cap-title { font-weight: 600; color: var(--text2); margin-bottom: 6px; }
 .prd-capacity-wait { color: var(--text2); margin-top: 2px; }
@@ -2462,6 +3246,27 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .composer-status-spinner { animation: none; opacity: 0.6; }
 }
 
+/* Persistent voice transcription failure notice — message, "recording kept"
+   line, Retry / Discard. Sits next to the input the recording was for. */
+.voice-failure-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(239,68,68,0.12);
+  border-top: 1px solid var(--error, #ef4444);
+  font-size: 12px;
+  color: var(--text);
+}
+.voice-failure-notice-inline {
+  padding: 0;
+  background: none;
+  border-top: 0;
+}
+.voice-failure-kept { color: var(--text2); }
+.voice-failure-notice button { font-size: 12px; padding: 4px 10px; }
+
 /* GH#182 — alert deep link (web+datawatch://alert/<id>) lands here. */
 .alert-deep-link-highlight {
   animation: dw-picker-pulse 2s ease-out;
@@ -2523,10 +3328,15 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   height: 5px;
 }
 .state-badge-waiting_input { background: rgba(59,130,246,0.15); color: var(--waiting); }
+.state-badge-stalled { background: rgba(239,68,68,0.1); color: var(--error); }
 .state-badge-rate_limited { background: rgba(245,158,11,0.15); color: var(--warning); }
 .state-badge-complete { background: rgba(148,163,184,0.1); color: var(--text2); }
 .state-badge-failed { background: rgba(239,68,68,0.15); color: var(--error); }
 .state-badge-killed { background: rgba(148,163,184,0.1); color: var(--text2); }
+/* Shipped chip (autonomous.shipped): the work landed in a release. Distinct
+   from the status badges — cancelled-but-merged still shows this. */
+.state-badge-shipped { background: rgba(16,185,129,0.15); color: var(--success, #10b981); font-weight: 600; }
+.shipped-chip { cursor: help; }
 
 /* v6.11.24 (BL266) — stale-comms early indicator. Amber dot adjacent to
    the state badge after >2 s with no channel events (running sessions
@@ -2965,6 +3775,38 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   padding: 16px 20px;
   min-width: 220px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+/* showModal dialog: cap to the visible height (overlay has 12px padding top and
+   bottom) and scroll the body so title and buttons stay reachable on a phone. */
+.generic-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: calc(100vh - 24px);
+}
+@supports (height: 100dvh) {
+  .generic-modal {
+    max-height: calc(var(--generic-modal-vvh, 100dvh) - 24px);
+  }
+}
+.generic-modal-title,
+.generic-modal-actions {
+  flex: 0 0 auto;
+}
+/* The body is a scroll container: its top padding must stay at least as
+   large as any sticky header it may hold, and first children must not use
+   negative top margins (a negative margin would push the first line above
+   the scroll origin where it cannot be reached). */
+.generic-modal-body {
+  padding-top: 4px;
+  overflow-anchor: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  overflow-wrap: anywhere;
 }
 
 .term-toolbar {
@@ -4381,8 +5223,11 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
-  width: 28px;
-  height: 28px;
+  /* mobile-fit gate 2026-10-22: 28x28 was below the 40px tap-target floor
+     (TAP_MIN); 44x44 matches the app's other touch targets. The 16px
+     glyph stays centered via the flex layout below. */
+  width: 44px;
+  height: 44px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 16px;
@@ -4456,11 +5301,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
     border-left: 1px solid var(--border);
     border-right: 1px solid var(--border);
     justify-content: space-around;
-  }
-
-  .nav-btn {
-    flex: 1;
-    min-width: 0;
   }
 
   .view {
@@ -5134,6 +5974,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 40px; /* 40 px minimum tap target; the Observer section header was 35 px */
 }
 .settings-section-toggle:hover { color: var(--accent); }
 .settings-chevron {
@@ -5703,6 +6544,13 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
    window.resizeTo() has no effect and the screen is already full-width. */
 @media (max-width: 600px) {
   #headerFullscreenBtn { display: none !important; }
+  /* MOBILE-FIT — Observer phone-width (≤600px) contract: the per-system
+     grid collapses to one full-width column and the local system panel
+     may shrink with the viewport. The 40px tap-row floors live in the
+     later media block so the desktop tap-row base rule stays first
+     file-wide (see the Observer styles below). */
+  .obs-sys-grid { grid-template-columns: 1fr; }
+  #statsPanel { min-width: 0; overflow-wrap: anywhere; }
 }
 
 /* BL327 — Badge/chip multi-select input (replaces CSV text fields) */
@@ -5779,3 +6627,1076 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .badge-input-dropdown-item:hover,
 .badge-input-dropdown-item.focused { background: var(--bg3,#2d3148); }
 .badge-input-wrap-container { position: relative; width: 100%; }
+
+/* ---------------- Status tab — Result card (GH#204 phase 3) ------------ */
+/* The card body is built inline by renderResultPanelBody in app.js; these
+   class hooks give the status badge its ok/warn/error colors and make the
+   markdown/prose sections + tables themeable without inline edits. */
+.result-status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border,#334155);
+}
+.result-status-ok    { color: var(--success,#10b981); border-color: var(--success,#10b981); background: rgba(16,185,129,0.12); }
+.result-status-warn  { color: var(--warning,#f59e0b); border-color: var(--warning,#f59e0b); background: rgba(245,158,11,0.12); }
+.result-status-error { color: var(--error,#ef4444);  border-color: var(--error,#ef4444);  background: rgba(239,68,68,0.12); }
+.result-status-dot   { flex-shrink: 0; }
+.result-markdown { overflow-wrap: anywhere; }
+.result-markdown h1, .result-markdown h2, .result-markdown h3 {
+  font-size: 12px;
+  margin: 8px 0 4px;
+}
+.result-markdown p { margin: 4px 0; }
+.result-markdown ul, .result-markdown ol { margin: 4px 0; padding-left: 18px; }
+.result-markdown code {
+  background: var(--bg,#0f172a);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 11px;
+}
+.result-markdown pre {
+  background: var(--bg,#0f172a);
+  border-radius: 4px;
+  padding: 8px;
+  overflow: auto;
+}
+.result-table th, .result-table td {
+  border-bottom: 1px solid var(--border,#334155);
+  overflow-wrap: anywhere;
+}
+.result-table tr:last-child td { border-bottom: none; }
+
+/* ── Automation pipeline strip ── */
+.automation-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0;
+}
+.automation-strip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.automation-strip-row[data-row^="on_"] {
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+}
+.automation-strip-row[data-row="unlinked"] {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.automation-edge-label {
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.automation-member {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 260px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text);
+}
+.automation-member-clickable { cursor: pointer; }
+.automation-member-clickable:hover { border-color: var(--accent); }
+.automation-member-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.automation-member-status {
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.automation-member-ref {
+  display: inline-flex;
+  align-items: center;
+  max-width: 160px;
+  padding: 4px 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text2);
+}
+.automation-chip {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg3);
+  color: var(--text2);
+  font-family: monospace;
+  font-size: 10px;
+}
+.automation-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text2);
+}
+.automation-member-pending .automation-dot { background: var(--text2); }
+.automation-member-approved .automation-dot { background: var(--waiting); }
+.automation-member-running .automation-dot {
+  background: var(--success);
+  animation: dw-pulse 1.4s ease-in-out infinite;
+}
+.automation-member-blocked .automation-dot { background: var(--warning); }
+.automation-member-completed .automation-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  background: var(--success);
+  color: var(--bg);
+  font-size: 10px;
+  line-height: 1;
+}
+.automation-member-completed .automation-dot::before { content: "✓"; }
+.automation-member-failed .automation-dot { background: var(--error); }
+@media (prefers-reduced-motion: reduce) {
+  .automation-member-running .automation-dot { animation: none; }
+}
+.automation-member-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.automation-member-readonly { opacity: 0.85; }
+.automation-inserted-marker {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--warning);
+  border-radius: 4px;
+  color: var(--warning);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.automation-fork-glyph {
+  margin-left: auto;
+  padding-left: 4px;
+  color: var(--accent);
+  font-size: 14px;
+}
+.automation-connector {
+  position: relative;
+  flex-shrink: 0;
+  width: 22px;
+  height: 2px;
+  background: var(--text2);
+}
+.automation-connector::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: -3px;
+  border-left: 6px solid var(--text2);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.automation-connector-untaken {
+  opacity: 0.4;
+  background: none;
+  border-top: 2px dashed var(--text2);
+  height: 0;
+}
+.automation-join-rule {
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.automation-fork-group {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.automation-lane {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.automation-lane .automation-member { max-width: none; flex: 1 1 auto; }
+.automation-nested {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 6px 0 0 16px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+.automation-nested-missing {
+  font-size: 11px;
+  color: var(--text2);
+}
+.automation-nested-toggle {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.automation-nested-toggle:hover { border-color: var(--accent); }
+@media (max-width: 520px) {
+  .automation-strip-row[data-row="main"],
+  .automation-strip-row[data-row="unlinked"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .automation-strip-row[data-row^="on_"] {
+    margin-left: 12px;
+    padding: 6px 0 6px 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .automation-member { max-width: none; }
+  .automation-fork-group { flex-direction: column; align-items: stretch; }
+  .automation-lane { flex: 0 0 auto; }
+  .automation-nested { margin-left: 8px; padding-left: 8px; }
+  .automation-connector {
+    align-self: center;
+    width: 2px;
+    height: 16px;
+  }
+  .automation-connector::after {
+    right: -3px;
+    top: auto;
+    bottom: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid var(--text2);
+    border-bottom: 0;
+  }
+  .automation-connector-untaken {
+    width: 0;
+    height: 16px;
+    border-top: 0;
+    border-left: 2px dashed var(--text2);
+  }
+}
+
+/* Automation detail page */
+.automation-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.automation-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.automation-detail-back {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.automation-detail-back:hover { border-color: var(--accent); color: var(--text); }
+.automation-detail-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.automation-detail-status,
+.automation-detail-version {
+  font-size: 11px;
+  color: var(--text2);
+}
+.automation-detail-status {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+}
+.automation-detail-desc {
+  margin: 0;
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+.automation-blocked-banner {
+  background: var(--bg2);
+  border: 1px solid var(--error);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+}
+.automation-detail-section-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+}
+.automation-active-members,
+.automation-pending-inserts,
+.automation-decisions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.automation-pending-insert,
+.automation-decision {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  overflow-wrap: anywhere;
+}
+.automation-pending-insert-name,
+.automation-decision-kind { font-weight: 600; }
+.automation-pending-insert-by,
+.automation-decision-actor,
+.automation-decision-at { color: var(--text2); font-size: 12px; }
+.automation-join-wait { color: var(--text2); margin-top: 4px; }
+.automation-member-details-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 8px;
+}
+.automation-member-details-btn:hover { border-color: var(--accent); color: var(--text); }
+.automation-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-basis: 100%;
+}
+.automation-member-action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 8px;
+}
+.automation-member-action-btn:hover { border-color: var(--accent); color: var(--text); }
+.automation-approve-insert { font-size: 11px; padding: 1px 8px; }
+.automation-picker-item input:disabled { cursor: not-allowed; }
+.automation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.automation-form-title,
+.automation-form-section { margin: 0; }
+.automation-form-field { display: block; }
+.automation-form-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 2px;
+}
+.automation-form-field .form-input,
+.automation-form > .form-input { width: 100%; box-sizing: border-box; }
+.automation-form-member {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 6px;
+}
+.automation-form-member.readonly { opacity: 0.8; }
+.automation-form-member-head,
+.automation-form-member-edges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.automation-form-edge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.automation-form-edge-label { color: var(--text2); }
+.automation-form-edge-select { max-width: 200px; }
+.automation-form-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.automation-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.45);
+}
+.automation-drawer-panel {
+  width: min(380px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  color: var(--text);
+  padding: 14px 16px;
+}
+.automation-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+.automation-drawer-close {
+  background: none;
+  border: 0;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 16px;
+}
+.automation-drawer-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+.automation-drawer-fields dt { color: var(--text2); }
+.automation-drawer-fields dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  .automation-detail { padding: 6px 0; }
+  .automation-detail-header { align-items: flex-start; }
+  .automation-detail-title { flex-basis: 100%; order: 2; }
+  .automation-drawer-panel { width: 100%; border-left: 0; }
+  .automation-drawer-fields { grid-template-columns: 1fr; gap: 2px 0; }
+  .automation-drawer-fields dd { margin-bottom: 8px; }
+}
+
+/* Triage detail panel: sections sit inside the automation drawer. */
+.triage-detail-panel { min-width: 0; font-size: 13px; }
+.triage-detail-headline { font-weight: 700; overflow-wrap: anywhere; }
+.triage-detail-rows { display: grid; gap: 4px; margin-top: 8px; }
+.triage-detail-row { overflow-wrap: anywhere; }
+.triage-detail-label { color: var(--text2); }
+.triage-detail-value { color: var(--text); }
+.triage-detail-section { margin-top: 12px; min-width: 0; }
+.triage-detail-heading { font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+.triage-detail-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.triage-detail-history { margin: 0; padding-left: 18px; font-size: 12px; }
+.triage-detail-history li { margin-bottom: 8px; overflow-wrap: anywhere; }
+.triage-detail-when { color: var(--text2); font-size: 11px; }
+.triage-detail-empty { color: var(--text2); }
+
+/* ── listLoader states (skeleton, failed banner, cached badge) ───────────── */
+.list-state-skeleton { padding: 8px 0; }
+.list-state-loading-label { display: block; color: var(--text2); font-size: 12px; margin-bottom: 8px; }
+.list-skel-row {
+  height: 44px; margin-bottom: 8px; border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg2) 25%, var(--bg3) 50%, var(--bg2) 75%);
+  background-size: 200% 100%;
+  animation: list-skel-shimmer 1.4s linear infinite;
+}
+@keyframes list-skel-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.list-state-failed {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; margin-bottom: 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--error); color: var(--error); background: var(--bg2);
+}
+.list-state-meta { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+/* metaExtra row: the loader's meta spans sit left, the loader's extra HTML
+   (opts.metaExtra, e.g. a link) sits right. */
+.list-state-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+@media (pointer: coarse) {
+  /* Touch: a link inside the metaExtra row keeps a >=40x40px tap target
+     (mobile-fit TAP_MIN=40), same form as the #statsPanel link rule. */
+  .list-state-meta-row a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
+  /* The alerts help link ("?") rides the alerts loader's metaExtra row; the
+     class is what guarantees the 40px tap target even if the row markup
+     changes. */
+  a.alerts-help-link { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; min-width: 40px; }
+}
+.list-state-cached {
+  display: inline-block; padding: 0 6px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg3); color: var(--text2);
+}
+.list-state-stale { color: var(--warning); }
+@media (prefers-reduced-motion: reduce) {
+  .list-skel-row { animation: none; }
+}
+/* ── MOBILE-FIT: Observer "#perSystemGrid" per-system cards ─────────────────
+   The JS in app.js (loadSystemStatsGrid) used to emit all of these
+   declarations inline. They live here now so narrow screens can override
+   them: the grid collapses to a single column at ≤600px, and every text
+   span is allowed to wrap (or shows an ellipsis with a matching title
+   tooltip) instead of clipping. Desktop/tablet renders are pixel-identical
+   to the old inline styles. */
+/* Track min uses min(200px,100%) so a card can shrink to fit the container
+   (e.g. 180px effective viewport at 360/z200) instead of forcing 200px and
+   overflowing the page. On desktop/tablet (container >= 200px) this resolves
+   to 200px, so wide renders are pixel-identical. */
+.obs-sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 8px; margin-bottom: 4px; }
+.obs-sys-card { background: var(--surface1, var(--bg2)); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.obs-sys-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.obs-sys-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.obs-sys-name { font-size: 11px; font-weight: 600; color: var(--text); min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.obs-bar { margin-bottom: 4px; }
+.obs-bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10px; color: var(--text2); margin-bottom: 2px; }
+.obs-bar-label { overflow-wrap: anywhere; }
+.obs-bar-val { font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
+.obs-bar-track { height: 5px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.obs-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.obs-kv { margin-bottom: 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10px; }
+.obs-kv-k { color: var(--text2); overflow-wrap: anywhere; }
+.obs-kv-v { font-variant-numeric: tabular-nums; color: var(--text); }
+
+/* ── MOBILE-FIT: Observer "#statsPanel" (local system panel) ────────────────
+   loadStatsData/renderStatsData emitted the grid inline; the named class
+   keeps the same auto-fit behavior on desktop/tablet while letting the
+   ≤600px rule below stack the cards. .stats-panel-wide mirrors the old
+   inline `grid-column:span 2;min-width:260px` so the Search-Usage card
+   looks unchanged, and drops back to a normal single-column card on phones.
+   The ≥40×40px tap-target requirements (mobile-fit-lib.mjs TAP_MIN=40)
+   for the session/channel expand rows, the "sessions in store" link and
+   the History button are applied in the ≤600px block below ONLY: as
+   unconditional rules they inflated #statsPanel by ~200px at every
+   width and failed TS-818 (desktop must stay baseline-identical). */
+/* The panel container itself stays shrinkable + wrappable at every width:
+   min-width:0 lets it sit in a flex/grid track without forcing the page
+   wider; overflow-wrap lets unbreakable values (long hostnames) wrap inside
+   the panel instead of clipping. Unconditional, but layout-neutral on
+   desktop (rows/cards keep their baseline sizing). */
+#statsPanel { min-width: 0; overflow-wrap: anywhere; }
+.stats-panel-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+/* Cards must stay shrinkable: an unbreakable long value must wrap instead of
+   forcing the grid track (and the whole page) wider than the viewport. */
+.stats-panel-grid .stat-card { min-width: 0; overflow-wrap: anywhere; }
+.stats-panel-grid .stat-label, .stats-panel-grid .stat-value { overflow-wrap: anywhere; }
+.stats-panel-wide { grid-column: span 2; min-width: 260px; }
+.stats-taprow { cursor: pointer; user-select: none; -webkit-user-select: none; }
+
+/* Touch viewports (phones in portrait and landscape, and 768-portrait
+   tablets) need >=40x40px tap targets per the mobile-fit harness (TAP_MIN=40).
+   max-width:768px covers the 740 (360-landscape) and 768 (tablet) quick
+   profile cells while leaving true desktop 1280/1920 baselined unchanged.
+   Grid stacking below stays at <=600px so tablet desktop multi-column layout
+   is not collapsed. */
+@media (max-width: 768px), (max-height: 500px) {
+  .stats-taprow { min-height: 40px; flex-wrap: wrap; }
+  #statsPanel a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
+  #statsPanel button { min-height: 40px; min-width: 40px; }
+}
+@media (max-width: 600px) {
+  .stats-panel-grid { grid-template-columns: minmax(0, 1fr); }
+  .stats-panel-wide { grid-column: auto; min-width: 0; }
+}
+
+/* ── MOBILE-FIT: Observer "#settings-sec-stats" System Statistics blocks
+   (eBPF status/network, installed plugins, backend health, certificates,
+   envelopes, peer resources, federated peers, cluster nodes, channel
+   bridge/diagnostics, communication backends) ─────────────────────────
+   Same contracts as the #perSystemGrid / #statsPanel blocks above:
+   shrinkable + wrappable text is unconditional (overflow-wrap inherits
+   into every descendant; layout-neutral on desktop because it only
+   matters for unbreakable tokens); >=40x40px tap targets (mobile-fit-
+   lib.mjs TAP_MIN=40) apply only inside the <=768px media query so the
+   1280/1920 desktop baseline stays unchanged.
+   Plugin rows go inline-flow -> flex-wrap: with inline flow a wrapped
+   chip span keeps one union bounding box that swallows the row's status
+   dot (overlapping sibling pair for the mobile-fit overlap check); flex
+   items own their own box, so a chip that wraps still stays to the
+   right of the dot. The dot keeps its size under space pressure with
+   flex: 0 0 auto (.obs-dot). */
+#settings-sec-stats { min-width: 0; overflow-wrap: anywhere; }
+.obs-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto; /* keep the dot's size under space pressure */
+}
+.plugin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+  padding: 3px 0;
+  min-width: 0;
+}
+.plugin-name { min-width: 0; }
+.plugin-tag {
+  opacity: 0.55;
+  font-size: 11px;
+  border: 1px solid var(--text2);
+  border-radius: 3px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.plugin-state { opacity: 0.6; white-space: nowrap; }
+.plugin-note { opacity: 0.7; min-width: 0; }
+.plugin-err { color: var(--error); }
+.peer-name-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+.peer-name-cell strong { min-width: 0; }
+/* Flex rows in this section must shrink below their content-based
+   automatic minimum (min-width:0) so long tokens (peer names, bound
+   ComputeNode lists, hostnames, service names) wrap inside their chip
+   instead of clipping the row or pushing the page past the viewport
+   (page-scroll findings). Dots and short tags opt out of shrinking. */
+#pluginsStatusList .plugin-row > *,
+#peerResourceList > div > *,
+#observerPeersList > div > *,
+#observerClusterList > div > *,
+#backendHealthList > div > *,
+#acmeHealthList > div > *,
+#envelopesList > div > * { min-width: 0; }
+#pluginsStatusList .plugin-tag { flex: 0 0 auto; }
+/* These rows used inline display:flex without wrap; a long token would
+   then blow the row's width (clip) — allow the chip line to wrap. */
+#backendHealthList > div,
+#acmeHealthList > div,
+#envelopesList > div { flex-wrap: wrap; }
+
+/* Touch viewports (phones portrait + 768 portrait tablet quick cells)
+   need >=40x40px tap targets for every interactive element in this
+   section: filter pills, peer action buttons (btn-icon), channel bridge
+   "help" link and diagnostics refresh button, the two collapsible block
+   headers (toggled via onclick) and the hints <summary>; the
+   communication-backends Test buttons sit here too. Scoped to the block
+   so out-of-section buttons keep the desktop baseline. */
+@media (max-width: 768px), (max-height: 500px) {
+  #settings-sec-stats button { min-height: 40px; min-width: 40px; }
+  #channelBridgeBlock > div:first-child,
+  #channelDiagBlock > div:first-child { min-height: 40px; }
+  #channelBridgeBlock a,
+  #channelDiagBlock a,
+  #channelDiagBlock summary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    min-width: 40px;
+  }
+}
+
+/* ── Operator console cards (GET /api/dashboard/console) ─────────────────
+   One number + one line + one acting link per card; a reason line replaces
+   the number when the daemon reports the section unavailable. Only the
+   theme tokens are referenced here — the dark/light switch comes for free. */
+.dash-console-card { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; text-align:center; justify-content:center; gap:4px; }
+.dash-console-num { font-size:30px; font-weight:700; line-height:1.1; color:var(--accent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-console-line { font-size:11px; color:var(--text2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.dash-console-reason { color:var(--text); }
+.dash-console-link { align-self:center; font-size:11px; color:var(--accent); text-decoration:none; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+.dash-console-link:hover { text-decoration:underline; }
+
+/* Observer sections below System Statistics: fluid rows, wrapping text and
+   40px tap targets at phone widths. The classes carry no rule above the
+   breakpoint except the flex-row defaults, so 768px and wider is unchanged. */
+/* Usage page: a verdict sentence above small fixed-size cards. The cards never
+   stretch on a wide screen: fixed width and height, with max-width on narrow ones. */
+.usage-verdict-sentence { font-size: 14px; font-weight: 600; line-height: 1.4; max-width: 720px; }
+.usage-cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.usage-card { box-sizing: border-box; width: 220px; height: 190px; max-width: 100%; padding: 8px 10px; overflow: hidden; display: flex; flex-direction: column; gap: 4px; font-size: 12px; background: var(--bg2, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; }
+.usage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.usage-card-title { font-weight: 600; font-size: 13px; }
+.usage-card-state { font-weight: 600; }
+.usage-card-why, .usage-card-next { color: var(--text2); overflow: hidden; }
+.usage-card-chart { display: block; width: 100%; max-width: 196px; height: 32px; flex: none; }
+.usage-help-wrap { position: relative; display: inline-block; }
+.usage-help { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 11px; line-height: 1; cursor: pointer; color: var(--accent2, #60a5fa); background: none; border: 1px solid var(--accent2, #60a5fa); }
+.usage-help-pop { position: absolute; z-index: 20; top: 22px; right: 0; box-sizing: border-box; width: 240px; max-width: 80vw; padding: 8px 10px; font-size: 12px; font-weight: 400; background: var(--bg, #111); color: var(--text, #ddd); border: 1px solid var(--border, #333); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+.usage-help-pop[hidden] { display: none; }
+/* Lanes card: one row per lane with a small bounded bar; a clear gap under the card header. */
+.card-head { margin-bottom: 10px; }
+.lane-card { max-width: 720px; min-width: 0; }
+.lane-rows { margin-top: 8px; }
+.lane-row { display: grid; grid-template-columns: minmax(80px, 160px) minmax(60px, 120px) minmax(70px, 120px) 64px minmax(0, 1fr); gap: 2px 10px; align-items: center; padding: 4px 0; border-top: 1px solid rgba(128,128,128,.25); min-width: 0; }
+.lane-row-name { font-weight: 600; overflow-wrap: anywhere; }
+.lane-row-node, .lane-row-state { color: var(--text2); overflow-wrap: anywhere; }
+.lane-row-runs { overflow-wrap: anywhere; min-width: 0; }
+.lane-bar { display: block; width: 64px; max-width: 64px; height: 6px; border-radius: 3px; background: rgba(128,128,128,.3); overflow: hidden; }
+.lane-bar-fill { display: block; height: 100%; background: var(--accent2, #60a5fa); }
+.lane-fill-queued, .lane-fill-evidence { margin-top: 6px; overflow-wrap: anywhere; }
+.lane-fill-evidence { color: var(--text2); }
+.lane-fill-gap { height: 14px; }
+@media (max-width: 600px) { .lane-row { grid-template-columns: 1fr 64px; } .lane-row-runs { grid-column: 1 / -1; } }
+/* Headline cards: fixed maximum size so nothing stretches on a wide screen. */
+.metric-cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; margin: 6px 8px 0; }
+.metric-card { box-sizing: border-box; width: 220px; max-width: 100%; height: 130px; padding: 8px 10px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; font-size: 12px; background: var(--bg2, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; }
+.metric-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.metric-card-title { font-weight: 600; font-size: 13px; }
+.metric-card-value { font-size: 28px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metric-card-unit { color: var(--text2); }
+.metric-card-trend { font-weight: 600; }
+.metric-trend-up { color: var(--warning, #f59e0b); }
+.metric-trend-down { color: var(--success, #22c55e); }
+.metric-trend-flat { color: var(--text2); }
+
+.obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
+.obs-row-nowrap { flex-wrap: nowrap; }
+.obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }
+.obs-fluid { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.obs-search { min-width: 120px; }
+.obs-select { width: auto; }
+.obs-scope-input { width: 110px; }
+.obs-maint-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px 12px; }
+.obs-maint-sweep { display: flex; gap: 4px; flex-wrap: wrap; }
+.obs-sweep-days { width: 80px; }
+.obs-log-actions { padding: 6px 0; gap: 8px; }
+.obs-table-scroll { overflow-x: auto; max-width: 100%; }
+.obs-audit-details { overflow-wrap: anywhere; word-break: break-word; }
+.obs-kg-triple { overflow-wrap: anywhere; }
+.obs-sched-meta { flex-shrink: 0; }
+
+@media (max-width: 768px), (max-height: 500px) {
+  .obs-tap { min-height: 40px; min-width: 40px; box-sizing: border-box; }
+  .obs-maint-grid { grid-template-columns: 1fr; }
+  .obs-row > .obs-fluid,
+  .obs-row > .obs-select { flex: 1 1 140px; width: auto; min-width: 40px; max-width: 100%; }
+  .obs-row-nowrap > .obs-fluid { flex: 1 1 0; }
+  .obs-row-nowrap > button { flex: 0 0 auto; }
+  .obs-search { flex: 1 1 100%; min-width: 40px; }
+  .obs-scope-input { flex: 1 1 120px; width: auto; min-width: 40px; max-width: 100%; }
+  .obs-sweep-days { flex: 0 1 96px; min-width: 40px; }
+  [id^="settings-sec-"] { overflow-wrap: anywhere; }
+  /* The tap target is the clickable span inside the title bar, 40px tall;
+     the negative margins give the extra height back so the title bar keeps
+     the height it has on wide screens. */
+  .settings-section-hit { min-height: 40px; margin-top: -10.5px; margin-bottom: -10.5px; box-sizing: border-box; }
+  .settings-section-title .docs-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    min-width: 40px;
+    box-sizing: border-box;
+  }
+  .obs-log { max-height: 240px; overflow-wrap: anywhere; max-width: 100%; box-sizing: border-box; }
+  .obs-log-actions { padding: 6px 0; }
+  .obs-mem-row, .obs-sched-row { flex-wrap: wrap; }
+  .obs-mem-body { overflow-wrap: anywhere; }
+  .obs-sched-row > div:first-of-type { min-width: 0; flex: 1 1 140px; }
+  .obs-sched-meta { flex-wrap: wrap; flex-shrink: 1; }
+  .obs-panel { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .obs-panel select, .obs-panel input:not([type=checkbox]), .obs-panel button { min-height: 40px; }
+  .obs-peer-row { gap: 4px; overflow-wrap: anywhere; }
+  .obs-kg-results { overflow-wrap: anywhere; }
+  .obs-list { overflow-wrap: anywhere; }
+}
+
+.settings-section-hit { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; cursor: pointer; }
+.obs-mem-body { font-size: 12px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; text-overflow: ellipsis; }
+.obs-diag-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; min-width: 0; }
+.obs-diag-row > span { min-width: 0; overflow-wrap: anywhere; }
+.obs-mem-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; min-width: 0; }
+.obs-mem-tags > span { overflow-wrap: anywhere; }
+
+/* Tablet portrait (601-768px) keeps the wide-layout footprint of the peer
+   list. The filter pills become one scrolling line of full 40px buttons
+   (padded to the height two wrapped lines take on desktop). Each peer row
+   stays on one line: its text shrinks and wraps inside its own span, the
+   action buttons stay 40px wide, and their 40px height is offset with
+   negative margins so rows keep their desktop height. Phones (<=600px)
+   and short landscape screens simply wrap and grow. */
+@media (min-width: 601px) and (max-width: 768px) and (min-height: 501px) {
+  #observerPeersList .obs-peer-pills { flex-wrap: nowrap !important; overflow-x: auto; padding-bottom: 11px !important; }
+  #observerPeersList .obs-peer-pills > button { flex: 0 0 auto; }
+  #observerPeersList .obs-peer-item { flex-wrap: nowrap !important; margin-right: -12px; }
+  #observerPeersList .obs-peer-item > .btn-icon { flex: 0 0 auto; margin: -11.5px 0 !important; }
+  #observerPeersList .obs-peer-item > .obs-dot { margin-right: 2px !important; }
+  #observerPeersList .obs-peer-item > span:nth-child(3) { margin-left: 0 !important; }
+  #observerPeersList .obs-peer-item > span:nth-child(4) { margin-left: 2px !important; }
+  #channelBridgeBlock > div:first-child,
+  #channelDiagBlock > div:first-child { box-sizing: border-box; margin-top: -9.5px; margin-bottom: -9.5px; }
+  #channelBridgeBlock a,
+  #channelDiagBlock a,
+  #channelDiagBlock summary,
+  #channelDiagBlock button { margin-top: -12px; margin-bottom: -12px; }
+}
+
+/* Count badge on the Automation Inbox sub-tab: everything waiting on the operator. */
+.automation-subtab-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.automation-subtab-badge[hidden] { display: none; }
+
+/* Very narrow screens (a phone at 200% zoom is 160px wide): the add-memory
+   row cannot hold an input and its button side by side, so it wraps. */
+@media (max-width: 240px) {
+  .obs-row-nowrap { flex-wrap: wrap; }
+  .obs-row-nowrap > .obs-fluid { flex: 1 1 100%; }
+  .obs-row-nowrap > button { max-width: 100%; }
+}
+
+/* Templates tab sub-tab bar (Automaton templates | Standard tasks). It wraps
+   inside its own container, so a long sub-tab list never widens the page. */
+.automata-templates-subtabs {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Templates tab body. The 16px side gutter applies at phone width; the body
+   and its sub-tab bar never scroll the page sideways. */
+.automata-templates-body {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px), (pointer: coarse) {
+  .automata-templates-subtabs {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .automata-templates-subtabs .output-tab {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+  .automata-templates-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+/* Standard tasks table becomes stacked rows below a narrow breakpoint: the
+   header row is hidden and each cell shows its column name from data-label. */
+@media (max-width: 599px) {
+  .automata-standard-tasks,
+  .automata-standard-tasks tbody,
+  .automata-standard-tasks tr,
+  .automata-standard-tasks td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .automata-standard-tasks thead { display: none; }
+  .automata-standard-tasks tr {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 4px 0;
+  }
+  .automata-standard-tasks td {
+    padding: 2px 10px !important;
+  }
+  .automata-standard-tasks td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text2);
+  }
+}
+
+/* ── Sessions view modes: list / tiles / compact ─────────────────────────
+   The tile + compact variants are the shared .work-tile-grid (drawn by the
+   same renderWorkTile as the Automata/Automation cards); these rules only
+   wrap the mode toggle, the per-state summary bar and the Show-more page
+   control that the sessions view adds around the grid. */
+.sessions-mode-toggle { display: flex; gap: 4px; padding: 6px 14px 2px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.sessions-mode-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.sessions-mode-btn:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.sessions-summary-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.sessions-summary-chip { display: inline-flex; gap: 5px; align-items: center; background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 11px; padding: 2px 9px; font-size: 11px; font-family: inherit; cursor: pointer; }
+.sessions-summary-chip:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-summary-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sessions-summary-dot { font-size: 9px; line-height: 1; }
+.sessions-summary-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+.sessions-summary-total { margin-left: auto; font-size: 11px; color: var(--text2); white-space: nowrap; }
+.sessions-show-more { text-align: center; padding: 10px 0 14px; }
+.session-tile-grid { margin: 4px 0; --session-tile-pad: 10px; }
+.session-tile-grid .work-tile { padding: var(--session-tile-pad); }
+.session-tile-grid-compact { --session-tile-pad: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .sessions-mode-btn, .sessions-summary-chip { transition: none; }
+}
+
+/* ── Sessions: group axes, Automaton → story nesting, saved views ──── */
+.sessions-groups, .automaton-tree { width: 100%; }
+.sessions-group, .automaton-block, .story-block {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.automaton-block { border-left: 3px solid var(--accent2); background: var(--bg2); }
+.automaton-body { padding: 2px 8px 8px; }
+.story-block { margin: 6px 4px; border: 1px dashed var(--border); background: var(--surface); }
+.story-body { padding: 2px 6px 6px; }
+.sessions-group-header, .automaton-header, .story-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.sessions-group-header:hover, .automaton-header:hover, .story-header:hover {
+  background: var(--bg3);
+}
+.automaton-header .sgp-label { font-weight: 700; font-size: 14px; color: var(--accent2); }
+.story-header { padding: 6px 10px; }
+.automaton-header .sgp-label, .story-header .sgp-label {
+  font-weight: 700;
+  font-size: 14px;
+}
+.story-header .sgp-label { color: var(--text); font-weight: 600; font-size: 13px; }
+.sgp-caret { width: 12px; flex: 0 0 auto; color: var(--text2); }
+.sgp-label { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+.sgp-count {
+  background: var(--bg3);
+  border-radius: 10px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text2);
+}
+.sgp-mix-row { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.sgp-mix { font-size: 11px; color: var(--text2); white-space: nowrap; }
+.sgp-mix-running { color: var(--success); font-weight: 600; }
+.sgp-mix-waiting_input, .sgp-mix-waiting { color: var(--waiting); font-weight: 600; }
+.sgp-mix-paused, .sgp-mix-idle { color: var(--warning); }
+.sgp-mix-error, .sgp-mix-stopped { color: var(--error); }
+.sessions-group-empty { padding: 8px 14px; color: var(--text2); font-size: 12px; }
+.sgp-paging { padding: 0 12px 10px; }
+.sgp-more { font-size: 12px; padding: 3px 10px; }
+.session-tile-grid, .session-tile-grid-compact { margin: 2px 0; }
+
+/* Group axis picker */
+.sessions-group-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 2px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.sgp-label-static { font-size: 12px; color: var(--text2); }
+.sgp-select {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Saved views bar */
+.sessions-saved-views {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 4px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.svs-title { font-size: 12px; color: var(--text2); font-weight: 600; }
+.svs-save-row, .svs-chip { display: inline-flex; align-items: center; gap: 4px; }
+.svs-chip {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2px 4px;
+  background: var(--bg2);
+}
+.svs-apply {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.svs-apply:hover { color: var(--accent2); }
+.svs-rename, .svs-delete {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  font-size: 12px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.svs-rename:hover { color: var(--text); }
+.svs-delete:hover { color: var(--error); }
+.svs-save-row .svs-save, .svs-rename-row .svs-save {
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.svs-input {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  width: 130px;
+}

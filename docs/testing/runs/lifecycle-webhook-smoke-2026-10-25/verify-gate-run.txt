@@ -1,0 +1,54 @@
+commit: 00fd1c21
+uncommitted paths before run: 0
+command: bash .datawatch/verify/lifecycle-webhook-smoke.sh
+---
+==> Unscoped tmux kill audit (kill-server / kill-session -a)
+OK: no unscoped tmux kills
+==> Production service-control audit (stop/restart/kill of the datawatch unit)
+OK: no production service-control hits
+--- fresh sandbox: build the daemon from this tree
+tree: commit 00fd1c21, 0 uncommitted path(s)
+PASS: built /tmp/tmp.NkVuEMRK4r/datawatch
+PASS: sandbox daemon pid 1665827 healthy at https://127.0.0.1:32817 (built from commit 00fd1c21)
+start: sandbox https://127.0.0.1:32817, webhook settings {"autonomous.notify.webhook.enabled": false, "autonomous.notify.webhook.allow_hosts": [], "autonomous.notify.webhook.backoff_seconds": [1, 4, 16, 64]}
+--- step 1: start the throwaway receiver
+PASS: receiver listening on 127.0.0.1:46327 (pid 1666365)
+--- step 2: store the throwaway signing secret
+PASS: secret lifecycle-smoke-signing stored
+--- step 3: enable the webhook sink with the receiver allow-listed
+PASS: with the sink switched off, a webhook subscription is refused (400, says disabled)
+PASS: sink enabled, allow-list is [127.0.0.1:46327]
+--- step 4: create a subscription and test-fire it
+PASS: subscription sub-ff9c4668beba920a created (201)
+PASS: test-fire returned ok with exactly one POST at the receiver
+PASS: request 1 signature verifies, envelope parses, event is the labelled test
+PASS: the how-to snippet accepts request 1, and rejects a changed body and a wrong secret
+PASS: audit autonomous_lifecycle_webhook_delivery for delivery cf7490eba8b3373951762638696efdb9: {'delivered': 1}
+PASS: the throwaway secret value is absent from the API response
+PASS: the throwaway secret value is absent from 2 receiver file(s)
+--- step 5: negative checks
+PASS: a host that is not allow-listed is refused at creation (400)
+PASS: the cloud metadata address is refused at creation (400)
+PASS: with the allow-list emptied, test-fire is refused and makes zero requests
+--- step 6: retries with growing gaps
+PASS: attempt gaps 0.94s 1.89s
+PASS: 3 attempts share delivery b44b37ea6dbf63c8a1e6b0c6b68345c3; receiver answered [500, 500, 200]
+PASS: audit autonomous_lifecycle_webhook_delivery for delivery b44b37ea6dbf63c8a1e6b0c6b68345c3: {'delivered': 1, 'retry': 2}
+--- step 7: failure alert and final failure record
+PASS: receiver stopped
+PASS: audit autonomous_lifecycle_webhook_delivery for delivery 94b2a86cc1aa97d8b2694f3fd4442adf: {'failed': 1, 'retry': 4}
+PASS: audit autonomous_lifecycle_webhook_failed for delivery 94b2a86cc1aa97d8b2694f3fd4442adf: {'failed': 1}
+PASS: the throwaway secret value is absent from the API response
+PASS: failure alert names subscription sub-ff9c4668beba920a after 5 attempts (1 matching)
+PASS: the throwaway secret value is absent from the API response
+PASS: the daemon log and 2 audit file(s) hold no secret value and no signature (12 webhook audit line(s) on disk)
+--- step 8: forwarding (in-process Go tests)
+PASS: forwarding tests: 52 top-level tests passed
+PASS: the throwaway secret value is absent from 8 receiver file(s)
+OK: lifecycle webhook smoke passed
+restored: autonomous.notify.webhook.* to the values found at start
+removed: throwaway signing secret
+stopped: sandbox daemon pid 1665827
+lifecycle-webhook-smoke OK (rc=0, all eight steps ran)
+exit code: 0
+uncommitted paths after run: 0

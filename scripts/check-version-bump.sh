@@ -45,8 +45,29 @@
 #           difference passes.
 #
 # Exempt (recognized zero-behavior-change) paths, regex:
-#   _test\.go$|_test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$
+#   _test\.go$|_test\.js$|\.test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$|^scripts/supervisor-watch\.py$|^scripts/v10-status\.py$
 # A range where every changed file matches this passes without a bump.
+#
+# Dependabot exemption (AGENT.md, Versioning):
+#   AGENT.md's Versioning rule explicitly exempts "Dependabot-authored
+#   dependency-bump PRs". Those land as dependency-only changes (go.mod,
+#   go.sum, Dockerfile) with no behavior change of our own, so a range in
+#   which EVERY non-merge commit is authored by the exact git author name
+#   `dependabot[bot]` passes BOTH mode without a bump — no version file is
+#   consulted and no changed file is inspected. Merge commits are ignored
+#   altogether (a human merge, or a squash/rebase merge that keeps the bot
+#   as author, does not break the exemption). A range that mixes a
+#   Dependabot commit with any commit by another author, or whose author
+#   name merely CONTAINS "dependabot[bot]" (e.g. dependabot[bot]-fake),
+#   follows the normal bump rules.
+#
+#   Note: authorship in git is NOT authenticated — %an is a self-declared
+#   string anyone can set via GIT_AUTHOR_NAME. This is therefore a BUMP
+#   EXEMPTION ONLY; the real gates for such PRs remain the required CI
+#   checks (build, tests, lint) and the `dependency-review` job.
+#   Detection: `git log --no-merges --format=%an BASE..HEAD` must be
+#   non-empty and every line exactly "dependabot[bot]" (whole-string
+#   compare, not substring).
 #
 # Exit codes: 0 = pass or skip, 1 = fail.
 #
@@ -62,7 +83,7 @@ cd "$ROOT"
 
 MAIN_FILE="cmd/datawatch/main.go"
 API_FILE="internal/server/api.go"
-EXEMPT_RE='_test\.go$|_test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$'
+EXEMPT_RE='_test\.go$|_test\.js$|\.test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$|^scripts/supervisor-watch\.py$|^scripts/v10-status\.py$'
 ZERO_SHA="0000000000000000000000000000000000000000"
 
 # --- mode selection -------------------------------------------------------
@@ -94,6 +115,23 @@ valid_ref() {
     [[ -n "$ref" ]] || return 1
     [[ "$ref" != "$ZERO_SHA" ]] || return 1
     git rev-parse --quiet --verify "${ref}^{commit}" >/dev/null 2>&1
+}
+
+dependabot_exempt() {
+    # $1 = base ref. Returns 0 (true) iff the range $1..HEAD contains at
+    # least one commit and EVERY non-merge commit in it has the author
+    # name exactly "dependabot[bot]" (whole-name compare — a name that
+    # merely contains the text does not qualify). Merge commits are
+    # ignored. See the header's Dependabot exemption note: authorship in
+    # git is not authenticated, so this is a bump exemption only; the
+    # real gates remain required CI checks and dependency-review.
+    local authors a
+    authors=$(git log --no-merges --format=%an "${1}..HEAD" 2>/dev/null) || return 1
+    [[ -n "$authors" ]] || return 1
+    while IFS= read -r a; do
+        [[ "$a" == "dependabot[bot]" ]] || return 1
+    done <<< "$authors"
+    return 0
 }
 
 ver_gt() {
@@ -134,6 +172,13 @@ if [[ "$MODE" == "commit" ]]; then
     BASE_REF="${1:-HEAD^}"
     if ! valid_ref "$BASE_REF"; then
         echo "  (base ref '$BASE_REF' not resolvable — shallow history, skipping reuse check)"
+        exit 0
+    fi
+
+    # Dependabot exemption (AGENT.md Versioning — see header note): a
+    # range authored entirely by dependabot[bot] passes without a bump.
+    if dependabot_exempt "$BASE_REF"; then
+        echo "✓ PASS: range authored entirely by Dependabot - exempt, see AGENT.md Versioning [VERSION_CHECK_MODE=$MODE]"
         exit 0
     fi
 
@@ -227,6 +272,13 @@ if [[ -n "$BASE_API" && "$BASE_MAIN" != "$BASE_API" ]]; then
 fi
 
 echo "    base: $BASE_REF (resolved via $BASE_HOW), version at base: $BASE_MAIN"
+
+# Dependabot exemption (AGENT.md Versioning — see header note): a range
+# authored entirely by dependabot[bot] passes without a bump.
+if dependabot_exempt "$BASE_REF"; then
+    echo "✓ PASS: range authored entirely by Dependabot - exempt, see AGENT.md Versioning [VERSION_CHECK_MODE=$MODE]"
+    exit 0
+fi
 
 # Non-exempt changes anywhere in base..HEAD require a strictly greater
 # version at HEAD; an all-exempt range passes without a bump.

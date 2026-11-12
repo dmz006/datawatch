@@ -26,6 +26,13 @@ per-session deep-dives — all driven by WebSocket, zero polling.
 - **Sprint pipeline** — shown when Automata are running. Horizontal stage
   bar with story nodes, gate rings (pass/fail from guardrail verdicts), and
   stage colours matching story status.
+- **Integration status (opt-in)** — one row per schedule: status badge,
+  summary and time of the latest posted result, an inline SVG sparkline of
+  recent statuses (oldest → newest, capped at 60), and a click-through into
+  the session that posted it. Not in the default layout — add it via the
+  Add-Card panel. When no schedules have posted yet, the empty state
+  explains how jobs post results and links the result endpoint in the API
+  reference (`/api/openapi.yaml`).
 - **Expand panel** — click any constellation node (or the `⊞` button on a
   session or Automata card) to open a three-column overlay:
   - **Left sidebar**: live task tree (reuses S3 `renderLiveTaskTree`).

@@ -32,11 +32,12 @@ out from this transition.
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/sessions` | List sessions (active + recent). Filter via `?name=`, `?state=`, `?backend=`, `?alive=`; compact list via `?view=summary`, narrow with `?since=` / `?states=` — see [Compact session list](#compact-session-list-viewsummary). |
-| `POST /api/sessions/start` | Start a new session. Body: `{task, project_dir, backend, name?, template?, effort?}`. |
+| `POST /api/sessions/start` | Start a new session. Body: `{task, project_dir, backend, name?, template?, effort?, one_shot?, skip_snapshot?, tags?}`. `tags` is an array of tag IDs the session carries from the start; an unknown ID refuses the start with 404. `one_shot` terminates the session on `DATAWATCH_COMPLETE:`. `skip_snapshot` (bool, default false) is for planning/judgment sessions: when true the session must never stage or commit the repo — both the pre-session snapshot commit and the completion commit are skipped. |
 | `GET /api/output?id=&n=` | Last N output lines. |
 | `POST /api/command` | Send raw input to a session's tmux pane. |
 | `POST /api/sessions/kill` | Kill the underlying backend; tmux pane stays. |
 | `POST /api/sessions/rename` | Rename a session. |
+| `POST /api/sessions/tags` | Replace a session's own tags. Body: `{id, tag_ids}`; `id` is the full or short session ID. Duplicates are dropped (first wins); an unknown tag ID is refused with 404 and nothing is written. Returns the session with `tags` and `inherited_tags`. Needs the federation sessions-write capability. See [Session tags](#session-tags). |
 | `POST /api/sessions/restart` | Re-launch the backend with the same task + project. |
 | `POST /api/sessions/delete` | Forget a stopped session entirely. |
 | `POST /api/sessions/{id}/rollback` | Roll back to the pre-session git tag (`datawatch-pre-<id>`). |
@@ -47,6 +48,33 @@ out from this transition.
 | `POST /api/sessions/bind` | Bind a session to an ephemeral worker / agent. |
 | `GET /api/sessions/response` | Last `response` event content for one session (used by the PWA "view last response" modal). |
 | `GET /api/sessions/{id}/telemetry` | Structured telemetry for a session (tasks, guardrail verdicts, sprint, progress). |
+| `GET /api/sessions/{id}/progress` | Live progress snapshot parsed from the session's own pi log: assistant turns, tool-call counts, last action (tool, args, summary), tokens. Same shape as the `progress` field of a running autonomous task. 404 for a non-pi session — a pi log from another session is never read. |
+
+#### Session tags
+
+A session carries its own managed tags (`tags`, a list of tag IDs). Set
+them at start with the `tags` field of `POST /api/sessions/start`, or
+replace them later with `POST /api/sessions/tags`:
+
+```json
+{"id": "a3f2", "tag_ids": ["5e6f7a8b", "1a2b3c4d"]}
+```
+
+A session spawned by an Automaton also shows that Automaton's tags as
+`inherited_tags`. The value is computed on every read and never stored, so
+it follows the Automaton: change the Automaton's tags and its sessions show
+the new set on the next read. A session outside any Automaton has
+`inherited_tags: []`. The session's own tags are not changed by inheritance.
+
+Session list and detail responses carry `tags` and `inherited_tags`
+additively; the compact summary rows carry the placement `system_tags`
+names as well (names, not registry IDs — that is what lets the PWA draw
+the placement chips on the Sessions page at first load, before the tag
+registry has loaded; see
+[automata-tags](../howto/automata-tags.md#placement-tags-the-system-tags)).
+No existing field changed. Deleting a tag is refused with 409
+while an Automaton or a session still carries it; the `count` in the 409
+body covers both.
 
 #### Compact session list (`view=summary`)
 
@@ -100,6 +128,37 @@ The same compact record is what WebSocket clients receive in
 `session_state` after negotiating `session_view: summary` — see
 [mobile-surface.md](mobile-surface.md#low-bandwidth-client-flow).
 
+#### Paged summary list (`limit`, `cursor`, `status`, `active`, `q`, `view`)
+
+`view=summary`, and any of `limit`, `cursor`, `status`, `active` and `q`, switch
+`GET /api/sessions` to a row-only list: `id`, `full_id`, `name`, `state`, `backend`,
+`project_dir`, `hostname`, `created_at`, `updated_at`, `last_activity`, `parent_id`,
+cost and token counts, `scheduled_count` and a one-line `status_line`. No task text,
+prompt context or summaries are included. A request with none of these parameters
+still returns the full legacy array.
+
+| Parameter | Effect |
+|---|---|
+| `view=summary` | Row-only list as above. Without `limit` or `cursor` the reply is a JSON array and terminal sessions are capped as described above. Any other `view` value returns 400. |
+| `limit=<n>` | Switches to the paged envelope `{"sessions": [...], "total": N, "next_cursor": "..."}`. Default 50, maximum 500; below 1 or not a number returns 400. |
+| `cursor=<opaque>` | The `next_cursor` of the previous page. Newest `updated_at` first, ties by `full_id`. An invalid cursor returns 400. |
+| `status=<list>` | Comma list of states, e.g. `running,waiting_input`. Unknown names return 400. |
+| `active=1` | Only non-terminal sessions. |
+| `q=<text>` | Case-insensitive match against name, ids and the first 256 characters of the task. |
+
+The filtered total is also sent as `X-Datawatch-Sessions-Total`.
+
+**ETag.** Row-only replies carry `ETag` and `Cache-Control: no-cache`. Send the value
+in `If-None-Match`; an unchanged list answers `304 Not Modified` with an empty body.
+The full legacy array has no ETag. Fetch a whole session with
+`GET /api/sessions/{id}`.
+
+```bash
+# First page of live work, then poll cheaply
+curl -si -H "Authorization: Bearer $TOKEN" "$BASE/api/sessions?limit=50&active=1"
+curl -si -H "Authorization: Bearer $TOKEN" -H 'If-None-Match: "<etag>"' "$BASE/api/sessions?limit=50&active=1"   # 304
+```
+
 #### GET /api/sessions/{id}/telemetry
 
 Returns structured telemetry accumulated from hook payloads for
@@ -150,6 +209,47 @@ Timings (`started_at`, `completed_at`, `duration_ms`) are
 server-stamped on task status transitions. Hook scripts do not
 need to compute or send them.
 
+#### GET /api/sessions/{id}/progress
+
+Parses the session's own pi JSONL log and returns how far it has gotten.
+Read-only and stateless — works for any stored pi session whose log exists
+(the log is located under the sessions root from the session's
+`project_dir` and start time, preferring a log whose name carries the
+session's recorded id, then the earliest log at or after the start time).
+404 when the session is unknown, is not a pi session, or has no locatable
+log (non-pi backends, or a log not yet flushed) — the route never reads a
+pi log that does not belong to the session, so a non-pi session with a
+leftover stale pi log also gets 404; 405 for non-GET methods.
+
+**Response schema:**
+
+```json
+{
+  "session_id": "a3f2",
+  "full_id": "host-a3f2",
+  "state": "running",
+  "log_path": "/sessions/--home-user-proj--/2026-10-14T12-00-00-000Z_a3f2.jsonl",
+  "last_event_at": "2026-10-14T12:04:41Z",
+  "assistant_turns": 12,
+  "tool_calls": {"bash": 9, "write": 3},
+  "last_tool_name": "bash",
+  "last_tool_args": "{\"command\": \"go test ./...\"}",
+  "last_summary": "Now running the full test suite before wrapping up.",
+  "tokens": 48210
+}
+```
+
+`last_event_at` is the newest event's timestamp (RFC3339) — check it
+first to tell "just finished" from "still grinding". `last_summary` is the
+first 200 characters of the agent's last planning/reporting block, which is
+usually the most human-readable field here. This is the exact shape the
+autonomous executor refreshes into a task's `progress` field — see
+[autonomous.md](autonomous.md#live-task-progress--looping-warning).
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/sessions/a3f2/progress"
+```
+
 ### MCP
 
 `list_sessions`, `start_session`, `session_output`, `send_input`,
@@ -167,7 +267,7 @@ when the summary cap omitted sessions.
 ### CLI
 
 ```bash
-datawatch session start --task "fix the auth tests" --project /home/me/work/auth
+datawatch session start --task "fix the auth tests" --project /home/<user>/work/auth
 datawatch session list
 datawatch session list --summary --states active      # compact JSON, running/waiting only
 datawatch session list --since 2026-10-14T12:00:00Z    # sessions updated since a time
@@ -206,8 +306,8 @@ session:
   input_idle_timeout: 30
   tail_lines: 100
   alert_context_lines: 10
-  default_project_dir: /home/me/work
-  root_path: /home/me        # file-browser clamp
+  default_project_dir: /home/<user>/work
+  root_path: /home/<user>        # file-browser clamp
   console_cols: 80
   console_rows: 24
   skip_permissions: true     # claude-code --dangerously-skip-permissions
@@ -216,6 +316,8 @@ session:
   auto_git_commit: false
   kill_sessions_on_exit: false
   stale_timeout_seconds: 1800
+  task_delivery_window_seconds: 60 # max wait per attempt for the Claude prompt before redelivery
+  task_delivery_attempts: 3    # redelivery attempts before the task fails
   schedule_settle_ms: 1500
   default_effort: normal     # quick | normal | thorough
   persist_telemetry_on_stop: false  # flush structured telemetry to episodic memory on Stop

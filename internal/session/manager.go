@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -22,12 +23,19 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/git"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
+	"github.com/dmz006/datawatch/internal/platformcontext"
+	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/secfile"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -38,7 +46,9 @@ import (
 // - DCS/PM/APC sequences: \x1bP...\x1b\\ , \x1b^...\x1b\\ , \x1b_...\x1b\\
 // - Simple two-byte escapes: \x1bX where X is in [@-Z\\-_]
 // - DEC private two-byte escapes: \x1b7, \x1b8, \x1b=, \x1b> (cursor save/restore, keypad mode)
-var ansiEscapeRe = regexp.MustCompile(`\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[78=>]|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+// An OSC payload ends at its first terminator and never contains ESC, so output
+// between two OSC sequences is not swallowed as one long payload.
+var ansiEscapeRe = regexp.MustCompile(`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[78=>]|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 
 // cursorForwardRe matches ANSI cursor-forward sequences: \x1b[Nc where N >= 1.
 // TUI applications (e.g. claude-code) use these instead of literal space characters.
@@ -128,45 +138,12 @@ func StripANSI(s string) string {
 	return ansiEscapeRe.ReplaceAllString(s, "")
 }
 
-// Rate limit detection patterns
-var rateLimitPatterns = []string{
-	"DATAWATCH_RATE_LIMITED:",
-	"You've hit your limit",
-	"rate limit exceeded",
-	"quota exceeded",
-	// Modern claude-code rate-limit dialog (shows a 1/2/3 menu where
-	// option 1 is "Stop and wait for limit to reset"). Detected here so
-	// the auto-select + schedule-resume flow fires immediately.
-	"usage limit will reset",
-	"Approaching usage limit",
-	"limit will reset at",
-	// v5.27.4 — operator-reported: rate-limit detection broke when
-	// claude-code switched to the "5-hour limit reached" / "weekly
-	// limit reached" phrasing. Newer claude prints both forms; the
-	// "Approaching usage limit" + "limit will reset at" patterns
-	// catch the WARN dialog (~80% of capacity) but not the actual
-	// HARD limit message that ends the session.
-	"limit reached",      // "5-hour limit reached", "Weekly limit reached"
-	"weekly usage limit", // "Weekly usage limit reached"
-	"hit weekly limit",   // "Hit weekly limit"
-	"5-hour limit",       // 5-hour-window phrasing
-	"opus limit reached", // model-specific limit phrasings
-	"sonnet limit reached",
-	// BL240 (v6.2.0) — additional patterns for missed dialogs observed 2026-05-03.
-	"claude usage limit",      // "Claude usage limits" header in newer dialogs
-	"you've exceeded",         // "You've exceeded your Claude plan"
-	"plan limit",              // "plan limit reached" variants
-	"resets at",               // "Resets at 2pm" — reset time announcement (also feeds parser)
-	"stop and wait",           // Part of the option text in some dialog formats
-	"wait for limit to reset", // Option 1 text — appears when dialog auto-wraps to next line
-	// BL262 (v6.11.3) — operator-reported 2026-05-05: "You're out of extra
-	// usage · resets 11:50am (America/New_York)". The "out of extra usage"
-	// phrasing isn't covered by any existing pattern; the existing
-	// parseClaudeClockTime "resets " marker handles the time-extraction
-	// half once the line is detected as rate-limited.
-	"out of extra usage", // "You're out of extra usage · resets ..."
-	"you're out of",      // wider catch for "You're out of credits/quota/usage" phrasings
-}
+// Rate-limit detection moved to rate_limit_lines.go: a per-backend table
+// of recorded line starts (see that file's comment for the matching rule,
+// and the testdata/rate_limit_lines README for provenance), evaluated
+// against the session's BackendFamily with an anchored (line-start) match.
+// The flat-substring check remains available when an operator configures
+// rate_limit_patterns.
 
 // Completion detection patterns. All matched against the trimmed
 // prompt line via strings.HasPrefix.
@@ -200,7 +177,9 @@ var inputNeededPatterns = []string{
 // it takes no focus and the CLI keeps working, so it must never be read as
 // a prompt, a rate limit, or a stall, and no key is sent for it (Enter
 // would submit the input box, Esc would interrupt a running turn). Matched
-// case-insensitively as substrings, like rateLimitPatterns. Each entry
+// case-insensitively as substrings against its own flat list (the
+// rate-limit table in rate_limit_lines.go is anchored and separate). Each
+// entry
 // carries the update-specific wording; the generic "Enter to confirm" /
 // "Esc to cancel" footer belongs to other dialogs and is NOT used here.
 var selfUpdatePatterns = []string{
@@ -220,11 +199,20 @@ func (m *Manager) effectivePromptPatterns() []string {
 	return promptPatterns
 }
 
+// effectiveRateLimitPatterns returns the fingerprint/audit input for the
+// effective rate-limit match set.
+//
+// Operator-configured rate_limit_patterns (config global or per-LLM) is
+// used as-is — that list keeps the flat-substring behavior for lines. When
+// unset, the built-in per-backend table (rate_limit_lines.go) is flattened
+// including the backend family names it is keyed by, so any change to a
+// built-in entry — a phrase or the backend it belongs to — recomputes the
+// patterns_version digest.
 func (m *Manager) effectiveRateLimitPatterns() []string {
 	if len(m.detection.RateLimitPatterns) > 0 {
 		return m.detection.RateLimitPatterns
 	}
-	return rateLimitPatterns
+	return builtinRateLimitPatternsFlat()
 }
 
 func (m *Manager) effectiveCompletionPatterns() []string {
@@ -344,6 +332,14 @@ type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile
 
 // Manager manages LLM coding sessions via tmux.
 type Manager struct {
+	judgeDeliveryPerThousand int                 // extra judge main-prompt wait, seconds per 1000 prompt lines; guarded by mu
+	placementStartHook       func(*Session)      // called with each started session; guarded by mu; see placement_start_hook.go
+	tagIdx                   systemTagIndexCache // system tag index cache; own mutex, never m.mu
+	// platformContextFirstPromptOff disables first-prompt delivery of the
+	// platform context. The zero value keeps it on, matching the guardrails
+	// default.
+	platformContextFirstPromptOff bool
+
 	hostname       string
 	dataDir        string
 	llmBin         string      // fallback binary path (legacy; prefer launchFn)
@@ -354,6 +350,7 @@ type Manager struct {
 	workspaceRoot  string // F10: container/PVC base for relative project_dirs
 	store          *Store
 	tmux           TmuxAPI
+	paneChildFn    func(tmuxSession string) bool // busy probe: pane has child processes; nil → paneHasChildProcess
 	idleTimeout    time.Duration
 	autoGitInit    bool   // whether to git init project dir if needed
 	verbose        bool   // enable debug logging
@@ -361,13 +358,48 @@ type Manager struct {
 	encKey         []byte // AES-256 key for encrypting session logs (nil = plaintext)
 	secureTracking string // "full" = encrypt tracker .md files too
 
+	// GH#204 Phase 1 — subprocess result-posting credential wiring.
+	resultTokenMinter SessionTokenMinter // mints the per-session scoped token (nil = no token env var)
+	subprocessBaseURL string             // daemon base URL injected as DATAWATCH_BASE_URL
+
+	// commitGuards holds the commit guard of each guarded session, keyed by
+	// session full ID. Guarded by guardMu.
+	guardMu      sync.Mutex
+	commitGuards map[string]*gitguard.CommitGuard
+
 	// mcpRetryCounts tracks per-session MCP retry attempts.
 	mcpRetryCounts map[string]int
+
+	// ledger receives spend attribution entries (nil = disabled).
+	ledgerMu sync.Mutex
+	ledger   SpendLedger
 
 	// restartedAt records when each session was last restarted (in-memory only).
 	// Used to suppress DATAWATCH_COMPLETE: detection during the post-restart
 	// grace window while the resumed TUI re-renders prior conversation history.
 	restartedAt map[string]time.Time
+
+	// uiPromptMu guards uiPromptState (ui_prompt_blocked.go): one tracked
+	// interstitial-prompt block per session while it is on a pane.
+	// Separate from mu — a block transition never holds both.
+	uiPromptMu    sync.Mutex
+	uiPromptState map[string]*uiPromptRecord
+
+	// Scan timing seams. The zero values mean the production defaults (see
+	// scan_timing.go), so only tests set them: they let a test drive the
+	// post-restart grace, the task-echo window, the prompt debounce and the
+	// idle-scan cadence from a fake clock instead of wall time and machine load.
+	clock          func() time.Time
+	sleepFn        func(time.Duration)
+	restartGrace   time.Duration
+	taskEchoWindow time.Duration
+	scanInterval   time.Duration
+
+	// claudeCli caches the `claude --version` text for the rate-limit drift
+	// guard fingerprint (see claude_cli_version.go). Zero value is
+	// production-ready (default runner, wall clock, never read); tests
+	// inject a runner and clock through the Manager setters.
+	claudeCli claudeCLIState
 
 	// restartTaskOverride marks sessions whose restart carried an explicit
 	// task override (RestartSession called with a non-empty task). Restart's
@@ -425,6 +457,10 @@ type Manager struct {
 	// onNeedsInput is called when a session needs user input.
 	onNeedsInput func(sess *Session, prompt string)
 
+	// onTaskDeliveryFailed is called once DeliverOneShotTask gives up on a
+	// task: the worker session has already been ended by then.
+	onTaskDeliveryFailed func(fullID string, reason string)
+
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
 
@@ -440,11 +476,68 @@ type Manager struct {
 	// onSessionStart is called immediately after a session is successfully started.
 	onSessionStart func(sess *Session)
 
+	// onSessionCreated is called for PRD task sessions once the new session
+	// record is persisted and before the task text is delivered into it.
+	onSessionCreated func(sess *Session)
+
+	// tagRegistry validates session tag IDs and tagOwners resolves the tags
+	// inherited from an owning Automaton (BL461). Both are wired by the
+	// server; nil until then.
+	tagRegistry TagRegistry
+	tagOwners   TagOwnerLookup
+
 	// onPreLaunch is called just before the LLM backend is launched (for per-session setup like MCP registration).
 	onPreLaunch func(sess *Session)
 
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
+	// onSessionReap ends the processes proven to belong to a session once the
+	// session is over. It runs from every end path (EndSession, which also
+	// serves kill, cancel and delete, and the terminal-state transition that
+	// serves normal completion).
+	onSessionReap func(sess *Session)
+
+	// traceIngest feeds trace events into the trace store and the session
+	// timeline (see trace_ingest.go). nil until wired; observe only.
+	traceIngest *TraceIngestor
+
+	// sessionTempRelease releases the session's own temporary files (task
+	// capture files, per-session worker config directories for the pi,
+	// claude-code, opencode, aider and goose backends) using the created-path
+	// record in internal/llm/scratch. nil skips it; it runs at every end path
+	// through emitSessionEnd, before onSessionEnd.
+	sessionTempRelease func(sess *Session)
+
+	// workerQuestion routes a recognised DATAWATCH_QUESTION line to the daemon
+	// (see question_marker.go). It is off unless a gate and a hook are set.
+	workerQuestion workerQuestionRoute
+
+	// uiPrompt holds the live UI prompt settings getter (see
+	// ui_prompt_settings.go). A nil getter means the defaults apply.
+	uiPrompt uiPromptRoute
+
+	// uiPromptAudit receives the final UI-prompt dismissal outcomes for the
+	// daemon's audit log and metrics (see ui_prompt_dismiss.go). The session
+	// package cannot import the daemon's audit writer, so outcomes flow out
+	// through this hook — same seam as workerQuestion. Zero value (nil hook)
+	// means outcomes are counted and recorded but not audited externally.
+	uiPromptAudit uiPromptAuditRoute
+
+	// uiPromptDismissStats is the in-memory dismissal outcome counter
+	// (reset at daemon restart; see ui_prompt_dismiss.go and
+	// UIPromptStatsSnapshot). Zero value is production-ready.
+	uiPromptDismissStats uiPromptStatsState
+
+	// uiPromptEscalate / uiPromptEscalateWithdraw are the escalation-out
+	// seams (see ui_prompt_escalate.go): when the safe-dismiss rules could
+	// not clear a blocked prompt, the daemon asks the operator a question.
+	// Zero value = escalation not wired; the manager never sends anything.
+	uiPromptEscalate         uiPromptEscalateRoute
+	uiPromptEscalateWithdraw uiPromptEscalateWithdrawRoute
+
+	// journal receives the session end and pane-close lines (see end_reason.go).
+	// nil writes them to stdout; tests set it to capture them.
+	journal io.Writer
 
 	// onChatMessage is called when a chat-mode backend emits a structured message.
 	onChatMessage func(sessionID, role, content string, streaming bool)
@@ -460,12 +553,43 @@ type Manager struct {
 	// is configured. The callback should start a new session with the next profile.
 	onRateLimitFallback func(sess *Session)
 
+	// rateLimitListeners are chainable observers of rate-limit state
+	// transitions (see AddRateLimitListener). Guarded by rateLimitMu so
+	// listeners can be added while output processing runs.
+	rateLimitMu        sync.RWMutex
+	rateLimitListeners []func(backend string, resetAt time.Time, hasReset bool)
+
 	// onClaudeAliveChange (BL355) — called when claude_alive transitions from true to false
 	// (AI process died but session still appears active — zombie).
 	onClaudeAliveChange func(sess *Session)
 
+	// gitPushSettings returns the live push-on-complete (policy, remote)
+	// for one-shot completion pushes (see git_push.go). The closure is
+	// read on every push attempt, so a runtime config change applies
+	// without a restart. Nil = one-shot pushes disabled.
+	gitPushSettings func() (policy, remote string)
+
+	// secretScanPolicyFn returns the live pre-push secret scan policy
+	// (git.secret_scan: mode, detectors, allow-lists) read on every
+	// push attempt (see git_push.go). Nil (or zero policy) = no scan.
+	secretScanPolicyFn func() git.SecretScanPolicy
+
+	// secretScanAuditFn reports one security-relevant scanned push to the
+	// operator audit log (audit.NewSecretScanSink over the daemon's audit
+	// log): a shadow-mode finding report or an enforce-mode refusal,
+	// redacted fields only (see git_push.go). Nil = no audit emission
+	// (recording and alerts are unchanged).
+	secretScanAuditFn audit.SecretScanReporter
+
+	// pushAlertFn delivers operator alerts for one-shot push failures.
+	// Called as fn("warn", title, body). Nil = no alert (state still
+	// recorded on the session).
+	pushAlertFn func(level, title, body string)
+
 	// probeClaudeAliveFunc (BL355) — test injection point; overrides probeClaudeAlive.
 	probeClaudeAliveFunc func(sess *Session) bool
+	// paneCommandFn — test injection point for the pane foreground command; nil → paneForegroundCommand.
+	paneCommandFn func(tmuxSession string) (string, error)
 
 	// cfg holds the full config reference for per-LLM settings lookup.
 	cfg *config.Config
@@ -508,6 +632,11 @@ type Manager struct {
 	// costRates (BL6) — backend → CostRate. nil = DefaultCostRates().
 	costRates map[string]CostRate
 
+	// usageHook receives one UsageEvent per usage delta; guarded by its own
+	// lock so it can be read without holding m.mu.
+	usageHookMu sync.RWMutex
+	usageHook   func(UsageEvent)
+
 	// promptDebounce tracks per-session prompt debounce state.
 	// Key: fullID, Value: time when prompt was first detected in current window.
 	promptFirstSeen map[string]time.Time
@@ -517,15 +646,33 @@ type Manager struct {
 	// Key: fullID, Value: timestamps of recent running→waiting transitions.
 	promptOscillation map[string][]time.Time
 
+	// bg tracks the goroutines that write under the data dir after a
+	// call returns (output monitors, screen capture, send-queue drains);
+	// WaitBackground waits for them.
+	bg sync.WaitGroup
+
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
 
-	// startupDialogSent prevents multiple goroutines from firing for the same
-	// startup dialog (channels consent, workspace-trust) when processOutputLine
-	// is called across multiple screen-capture ticks while the dialog is visible.
-	// Key: "fullID:dialog-type" (e.g. "johnnyjohnny-abc1:channels").
-	startupDialogSent sync.Map
+	// launching holds the cancel func of every Start that has registered its
+	// launch (launch_registry.go), keyed by session full ID. launchSessions
+	// holds the same launches' sessions so DrainLaunches can roll them back.
+	// draining is set when DrainLaunches begins and refuses every new launch.
+	// All three are guarded by mu.
+	launching      map[string]context.CancelFunc
+	launchSessions map[string]*Session
+	draining       bool
+
+	// claudeDialogDismiss tracks the accept-keystroke record per
+	// (session, dialog) for claude-code startup dialogs (workspace trust,
+	// dev-channels consent). Key: fullID + ":" + dialog name.
+	// Replaces the old startupDialogSent sync.Map: that latch fired once and
+	// then blocked every further attempt, so a single failed or mistimed
+	// keystroke wedged the session permanently. This record instead tracks
+	// in-flight / attempts and confirms the dismissal once the dialog is
+	// observed gone — see dismissClaudeStartupDialog.
+	claudeDialogDismiss sync.Map
 
 	// summaries stores the last generated summary per session ID.
 	// Access is protected by the summariesMu mutex.
@@ -545,6 +692,9 @@ type Manager struct {
 	// summaryLinesFor returns the recommended history line count for the
 	// configured model's context window. nil = use default 200.
 	summaryLinesFor func() int
+
+	// extraProjectRoots are roots added with AllowProjectRoot, beyond the config's.
+	extraProjectRoots []string
 }
 
 // NewManager creates a new session Manager.
@@ -596,6 +746,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		mcpRetryCounts:    make(map[string]int),
 		restartedAt:       make(map[string]time.Time),
 		taskDeliveredAt:   make(map[string]time.Time),
+		uiPromptState:     make(map[string]*uiPromptRecord),
 		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:       make(map[string]time.Time),
 		encKey:            key,
@@ -762,6 +913,28 @@ func (m *Manager) ReapOrphanWorkspaces() (removed []string, err error) {
 // SetMCPMaxRetries sets the maximum MCP restart attempts per session.
 func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
 
+// SessionTokenMinter issues a session-scoped credential for the given
+// session, scoped to exactly the given capability set. Satisfied by
+// *auth.SessionTokenStore; defined here (rather than importing the auth
+// package) so the session package stays decoupled from credential-storage
+// details.
+type SessionTokenMinter interface {
+	Mint(sessionID string, caps []string) (string, error)
+}
+
+// SetSessionTokenMinter (GH#204 Phase 1) wires the daemon's per-session
+// token store into the manager. Subprocess sessions then get a freshly
+// minted scoped credential — carrying ONLY
+// federation.CapSessionsResultWrite, for exactly that session — injected
+// as DATAWATCH_RESULT_TOKEN in the child's environment. Nil-safe: with no
+// minter set the child gets no token variable at all.
+func (m *Manager) SetSessionTokenMinter(minter SessionTokenMinter) { m.resultTokenMinter = minter }
+
+// SetSubprocessBaseURL (GH#204 Phase 1) sets the daemon base URL injected
+// as DATAWATCH_BASE_URL into subprocess sessions' environment (empty = the
+// variable is omitted). Trailing slashes are trimmed.
+func (m *Manager) SetSubprocessBaseURL(url string) { m.subprocessBaseURL = strings.TrimRight(url, "/") }
+
 // SetMaxSessions overrides the maximum concurrent active sessions (0 = unlimited).
 func (m *Manager) SetMaxSessions(n int) { m.maxSessions = n }
 
@@ -838,6 +1011,46 @@ func (m *Manager) SetSecureTracking(mode string) { m.secureTracking = mode }
 // relative session project_dirs are resolved. Empty disables the rewrite
 // (bare-metal back-compat).
 func (m *Manager) SetWorkspaceRoot(root string) { m.workspaceRoot = root }
+
+// AllowProjectRoot adds a directory a request-supplied project directory may
+// lie under, on top of the PRD worktree base, session.workspace_root and
+// server.allowed_project_roots from the config. Embedders and tests that
+// start sessions in directories outside those roots register them here.
+func (m *Manager) AllowProjectRoot(dir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.extraProjectRoots = append(m.extraProjectRoots, dir)
+}
+
+// AllowedProjectRoots returns the directories a request-supplied project
+// directory may lie under: the config's roots (PRD worktree base, workspace
+// root, server.allowed_project_roots), the workspace root set on the manager
+// and any root added with AllowProjectRoot. The PRD worktree base and the
+// workspace root are always included.
+func (m *Manager) AllowedProjectRoots() []string {
+	m.mu.Lock()
+	extra := append([]string(nil), m.extraProjectRoots...)
+	m.mu.Unlock()
+	roots := m.cfg.AllowedProjectRoots() // nil-safe: falls back to the default worktree base
+	if m.workspaceRoot != "" {
+		roots = append(roots, m.workspaceRoot)
+	}
+	return append(roots, extra...)
+}
+
+// configDefaultProjectDir returns session.default_project_dir with "~"
+// expanded, or "" when unset. It is daemon-config input, not request input.
+func (m *Manager) configDefaultProjectDir() string {
+	if m.cfg == nil || m.cfg.Session.DefaultProjectDir == "" {
+		return ""
+	}
+	d := m.cfg.Session.DefaultProjectDir
+	if d == "~" || strings.HasPrefix(d, "~/") {
+		home, _ := os.UserHomeDir()
+		d = filepath.Join(home, strings.TrimPrefix(d, "~"))
+	}
+	return d
+}
 
 // BackfillOutputMode sets output_mode on existing sessions that don't have it,
 // reading from the per-backend config. Call after SetConfig.
@@ -922,6 +1135,15 @@ func (m *Manager) SetNeedsInputHandler(fn func(*Session, string)) {
 	m.onNeedsInput = fn
 }
 
+// SetOnTaskDeliveryFailed sets the callback invoked when DeliverOneShotTask
+// exhausts its attempts and has ended the worker session. Guarded by m.mu so
+// it can be set while delivery runs on another goroutine.
+func (m *Manager) SetOnTaskDeliveryFailed(fn func(fullID string, reason string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onTaskDeliveryFailed = fn
+}
+
 // StateChangeHandler returns the currently registered state-change callback (may be nil).
 func (m *Manager) StateChangeHandler() func(*Session, State) {
 	return m.onStateChange
@@ -952,14 +1174,103 @@ func (m *Manager) SetOnSessionStart(fn func(*Session)) {
 	m.onSessionStart = fn
 }
 
+// SetOnSessionCreated sets the callback invoked after a PRD/task session record
+// is persisted and before the task is delivered into it, so the owner can make
+// the task-to-session link durable ahead of delivery.
+func (m *Manager) SetOnSessionCreated(fn func(*Session)) {
+	m.onSessionCreated = fn
+}
+
+// notifySessionCreated persists the fresh record and fires onSessionCreated for
+// sessions that belong to a PRD task. Persist failure is non-fatal here; the
+// final save after launch still reports it.
+func (m *Manager) notifySessionCreated(sess *Session) {
+	if m.onSessionCreated == nil || sess.PRDID == "" || sess.TaskID == "" {
+		return
+	}
+	if err := m.store.Save(sess); err != nil {
+		fmt.Printf("[warn] early save of session %s: %v\n", sess.FullID, err)
+		return
+	}
+	m.onSessionCreated(sess)
+}
+
 // SetOnPreLaunch sets a callback invoked just before the LLM backend is launched.
 func (m *Manager) SetOnPreLaunch(fn func(*Session)) {
 	m.onPreLaunch = fn
 }
 
+// SetOnSessionReap sets the callback that ends the processes proven to belong
+// to a session after any path that ends it.
+func (m *Manager) SetOnSessionReap(fn func(*Session)) {
+	m.onSessionReap = fn
+}
+
 // SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
 func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
+}
+
+// SetTraceIngestor wires the trace ingestor into the session lifecycle: it
+// is told when a session starts and when it ends, and receives the
+// timeline lines through AppendTimeline. Pass nil to detach.
+func (m *Manager) SetTraceIngestor(t *TraceIngestor) { m.traceIngest = t }
+
+// notifySessionStart tells the trace ingestor, then fires onSessionStart.
+func (m *Manager) notifySessionStart(sess *Session) {
+	if m.traceIngest != nil {
+		m.traceIngest.SessionStarted(m.store.Snapshot(sess))
+	}
+	if m.onSessionStart != nil {
+		m.onSessionStart(sess)
+	}
+}
+
+// AppendTimeline appends one line to a session's existing timeline.md,
+// through the live tracker when there is one, else the folder on disk.
+func (m *Manager) AppendTimeline(id, line string) error {
+	m.mu.Lock()
+	tracker := m.trackers[id]
+	m.mu.Unlock()
+	if tracker == nil {
+		tracker = ResumeTracker(m.dataDir, &Session{FullID: id})
+	}
+	return tracker.appendTimeline(line)
+}
+
+// SetScratchReleaser sets the callback that releases a session's own
+// temporary files when the session ends. It runs on the session manager's
+// end path — before the registered SessionEnd listeners — for the pi,
+// claude-code, opencode, aider and goose backend files (task capture files
+// and per-session worker config directories) that the daemon created at
+// launch and that the run left behind. It receives the ending session, so
+// it releases exactly that session's files and never a live session's. See
+// internal/llm/scratch for the created-path record it works from.
+func (m *Manager) SetScratchReleaser(fn func(*Session)) {
+	m.sessionTempRelease = fn
+}
+
+// emitSessionEnd is the one place a session's terminal state is delivered:
+// first the scratch releaser drops the session's own leftover temp files
+// (best effort — a refused removal stays put and the autonomous temp sweep
+// may still collect it later), then the registered end listener runs,
+// unchanged in behaviour. Every end path (complete, failed, killed,
+// interrupted-after-restart, ...) funnels through here.
+func (m *Manager) emitSessionEnd(sess *Session) {
+	if m.onSessionReap != nil {
+		// Normal completion: the reap may wait out a grace period, so it
+		// never blocks the state transition that called us.
+		go m.onSessionReap(sess)
+	}
+	if m.sessionTempRelease != nil {
+		m.sessionTempRelease(sess)
+	}
+	if m.traceIngest != nil {
+		m.traceIngest.SessionEnded(m.store.Snapshot(sess))
+	}
+	if m.onSessionEnd != nil {
+		m.onSessionEnd(sess)
+	}
 }
 
 // SetClaudeAliveChangeHandler (BL355) sets the callback invoked when claude_alive
@@ -1474,6 +1785,9 @@ func (m *Manager) GetLastResponse(fullID string) string {
 			return ""
 		}
 	}
+	// stalled falls through the default: the process is gone (or silent beyond
+	// the window), so fresh capture is unavailable and the stored LastResponse
+	// IS the latest view — we return it below.
 	switch sess.State {
 	case StateRunning, StateWaitingInput:
 		// When a session is waiting for input AND the dual-summary pipeline has
@@ -1539,6 +1853,30 @@ func (m *Manager) SetChatMemoryHandler(fn func(tmuxSession, text string) (string
 	m.chatMemoryFn = fn
 }
 
+// AddRateLimitListener registers a callback invoked after a session
+// transitions to StateRateLimited. Unlike SetStateChangeHandler it is
+// chainable: every registered listener fires, and registering one never
+// replaces another. hasReset is false when the rate-limit pattern matched
+// but no reset time could be parsed (resetAt is then the zero time).
+func (m *Manager) AddRateLimitListener(fn func(backend string, resetAt time.Time, hasReset bool)) {
+	if fn == nil {
+		return
+	}
+	m.rateLimitMu.Lock()
+	defer m.rateLimitMu.Unlock()
+	m.rateLimitListeners = append(m.rateLimitListeners, fn)
+}
+
+// notifyRateLimit fires every registered rate-limit listener.
+func (m *Manager) notifyRateLimit(backend string, resetAt time.Time, hasReset bool) {
+	m.rateLimitMu.RLock()
+	ls := append([]func(string, time.Time, bool){}, m.rateLimitListeners...)
+	m.rateLimitMu.RUnlock()
+	for _, fn := range ls {
+		fn(backend, resetAt, hasReset)
+	}
+}
+
 // SetOnRateLimitFallback sets the callback for triggering fallback chain on rate limit.
 func (m *Manager) SetOnRateLimitFallback(fn func(*Session)) {
 	m.onRateLimitFallback = fn
@@ -1547,6 +1885,170 @@ func (m *Manager) SetOnRateLimitFallback(fn func(*Session)) {
 // OutputHandler returns the currently registered output callback (may be nil).
 func (m *Manager) OutputHandler() func(*Session, string) {
 	return m.onOutput
+}
+
+// scrubTmuxEnvCommand is typed into a PRD-owned pane shell before the LLM
+// backend launches.
+//
+// Incident: tmux sets TMUX in every pane to the socket of the server that
+// owns it, and tmux gives TMUX priority over TMUX_TMPDIR when choosing a
+// server. An LLM running in a pane that issued a tmux command (even one
+// meant for a sandbox via TMUX_TMPDIR) therefore still reached the
+// production server and could kill its sessions. Unsetting both in the pane
+// shell makes tmux fall back to the default socket resolution, which the
+// LLM can no longer point at production by accident. The pane shell
+// outlives the LLM process, so restarts and resumes inherit the scrub.
+// The daemon's own environment is deliberately left untouched.
+const scrubTmuxEnvCommand = "unset TMUX TMUX_TMPDIR"
+
+// scrubPaneTmuxEnv types scrubTmuxEnvCommand into sess's pane shell when the
+// session was started with ScrubTmuxEnv. It is the single place both the
+// initial launch and the restart/resume relaunch go through, so every
+// backend is covered. Failure is logged, not fatal: the launch proceeds.
+func (m *Manager) scrubPaneTmuxEnv(sess *Session) {
+	if sess == nil || !sess.ScrubTmuxEnv || sess.TmuxSession == "" {
+		return
+	}
+	if err := m.tmux.SendKeys(sess.TmuxSession, scrubTmuxEnvCommand); err != nil {
+		fmt.Printf("[warn] scrub tmux env for %s: %v\n", sess.ID, err)
+	}
+}
+
+// Ceiling paths recorded on Session.CeilingPath.
+const (
+	// CeilingPathScope: the pane shell runs inside a systemd user scope.
+	CeilingPathScope = "scope"
+	// CeilingPathWatchdog: the /proc watchdog enforces the ceiling.
+	CeilingPathWatchdog = "watchdog"
+	// CeilingPathNone: no ceiling applies (operator opt-out or no mechanism).
+	CeilingPathNone = "none"
+)
+
+// Seams for tests; production values talk to the host.
+var (
+	scopeAvailableFn = resources.ScopeAvailable
+	procExistsFn     = func() bool { return resources.ProcFS{Root: "/proc"}.Exists() }
+	hostTotalMBFn    = resources.HostTotalMB
+	scopeCommandFn   = resources.ScopeCommand
+	killPaneGroupFn  = func(pgid int) error {
+		return exec.Command("kill", "-KILL", "--", "-"+strconv.Itoa(pgid)).Run()
+	}
+)
+
+// paneLaunchPlan says how a worker's pane is started.
+type paneLaunchPlan struct {
+	Path      string   // CeilingPath* constant, "" when the pane is not a worker pane
+	CeilingMB int      // resolved ceiling; 0 when none
+	Cmd       []string // pane command (scope path only); nil = tmux default shell
+}
+
+// planPaneLaunch resolves the ceiling and the launcher for a worker pane.
+// Only PRD-owned worker sessions (ScrubTmuxEnv) get a plan; the scope wraps
+// the pane's shell, never the tmux server or the new-session call.
+func (m *Manager) planPaneLaunch(sess *Session, ov resources.Override) paneLaunchPlan {
+	if sess == nil || !sess.ScrubTmuxEnv {
+		return paneLaunchPlan{}
+	}
+	limits := config.DefaultResourceLimits()
+	if m.cfg != nil {
+		c := m.cfg.ResourceLimits
+		if c.MemorySharePercent > 0 {
+			limits.MemorySharePercent = c.MemorySharePercent
+		}
+		if c.MemoryFloorMB > 0 {
+			limits.MemoryFloorMB = c.MemoryFloorMB
+		}
+		if c.MemoryCapMB > 0 {
+			limits.MemoryCapMB = c.MemoryCapMB
+		}
+	}
+	total, _ := hostTotalMBFn() // 0 on error: the floor applies
+	ceil := resources.ResolveCeiling(total, limits, ov)
+	if ceil.NoCeiling() {
+		return paneLaunchPlan{Path: CeilingPathNone}
+	}
+	switch resources.SelectStatus(scopeAvailableFn(), procExistsFn()) {
+	case resources.StatusScope:
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "/bin/sh"
+		}
+		bin, args, err := scopeCommandFn(resources.ScopeSpec{
+			ID:        fmt.Sprintf("%s-%d", sess.FullID, time.Now().Unix()),
+			Kind:      "worker",
+			CeilingMB: ceil.MB,
+			Command:   []string{shell},
+		})
+		if err == nil {
+			return paneLaunchPlan{Path: CeilingPathScope, CeilingMB: ceil.MB, Cmd: append([]string{bin}, args...)}
+		}
+		fmt.Printf("[warn] scope launcher for %s: %v; using the watchdog\n", sess.ID, err)
+		if procExistsFn() {
+			return paneLaunchPlan{Path: CeilingPathWatchdog, CeilingMB: ceil.MB}
+		}
+		return paneLaunchPlan{Path: CeilingPathNone}
+	case resources.StatusWatchdog:
+		return paneLaunchPlan{Path: CeilingPathWatchdog, CeilingMB: ceil.MB}
+	default:
+		return paneLaunchPlan{Path: CeilingPathNone}
+	}
+}
+
+// startWorkerPane creates the tmux session for sess, recording the ceiling
+// path on it. The scope path hands the wrapped shell command to tmux as the
+// pane command; the watchdog path starts a plain pane and watches it.
+func (m *Manager) startWorkerPane(sess *Session, cols, rows int, ov resources.Override) error {
+	plan := m.planPaneLaunch(sess, ov)
+	if plan.Path != "" {
+		sess.CeilingPath, sess.CeilingMB = plan.Path, plan.CeilingMB
+	}
+	if len(plan.Cmd) > 0 {
+		if pl, ok := m.tmux.(PaneLauncher); ok {
+			return pl.NewSessionWithPaneCommand(sess.TmuxSession, cols, rows, plan.Cmd)
+		}
+		sess.CeilingPath, sess.CeilingMB = CeilingPathNone, 0
+	}
+	if err := m.tmux.NewSessionWithSize(sess.TmuxSession, cols, rows); err != nil {
+		return err
+	}
+	if sess.CeilingPath == CeilingPathWatchdog {
+		m.startPaneWatchdog(sess)
+	}
+	return nil
+}
+
+// startPaneWatchdog turns job control off in the pane shell, so every worker
+// process stays in the pane's process group, and watches that group until the
+// tmux session ends or the ceiling is passed.
+func (m *Manager) startPaneWatchdog(sess *Session) {
+	pp, ok := m.tmux.(PanePIDer)
+	if !ok || sess.CeilingMB <= 0 {
+		return
+	}
+	_ = m.tmux.SendKeys(sess.TmuxSession, "set +m")
+	pgid := pp.PanePID(sess.TmuxSession)
+	if pgid <= 1 {
+		return
+	}
+	tmuxSession, ceilingMB, id := sess.TmuxSession, sess.CeilingMB, sess.ID
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(resources.WatchdogInterval)
+		defer t.Stop()
+		for range t.C {
+			if !m.tmux.SessionExists(tmuxSession) {
+				close(done)
+				return
+			}
+		}
+	}()
+	go func() {
+		res := resources.WatchGroup(done, resources.ProcFS{Root: "/proc"}, pgid, 0, ceilingMB,
+			resources.WatchdogInterval, killPaneGroupFn)
+		if res.Killed {
+			fmt.Printf("[warn] session %s passed its %d MB memory ceiling; its process group was ended (%s)\n", id, ceilingMB, res)
+		}
+	}()
 }
 
 // StartOptions holds optional parameters for starting a session.
@@ -1559,6 +2061,17 @@ type StartOptions struct {
 	AutoGitCommit *bool             // deprecated/ignored: task sessions are committed automatically; retained for API compatibility
 	AutoGitInit   *bool             // per-session override for auto git init (nil = use manager default)
 	Env           map[string]string // environment variable overrides (for profile-based launches)
+
+	// WorkerProfile is the resolved worker profile this session starts
+	// with (empty = the session is not profile-based). At start time the
+	// manager asks the backend for a per-field outcome when it implements
+	// the duck-typed `interface{ RecordApplied(workerprofile.WorkerProfile) []workerprofile.FieldOutcome }`
+	// optional interface, and records the list on the session start record
+	// (Session.AppliedFields) so the operator can see exactly which
+	// profile fields the backend dropped. Claude Code applies the profile
+	// in its own launch path and does not implement the interface, so it
+	// is left untouched.
+	WorkerProfile workerprofile.WorkerProfile
 
 	// Effort (BL41) — operator-supplied thoroughness hint:
 	// "quick", "normal", "thorough". Empty falls through to
@@ -1584,11 +2097,31 @@ type StartOptions struct {
 	// the other.
 	ClaudeEffort string
 
+	// ThinkingLevel — the pi --thinking level override (off|minimal|
+	// low|medium|high, validated at the set_thinking_level write edge)
+	// resolved per-task → per-story → per-PRD by the autonomous executor.
+	// Applied in Start only to backends implementing SetThinkingLevel(string)
+	// (the pi family); other backends silently ignore it. Empty = leave the
+	// global cfg.Pi.ThinkingLevel (applied earlier in Start) as-is.
+	ThinkingLevel string
+
 	// EphemeralWorkspace (v5.26.26) — set by handleStartSession when
 	// it created ProjectDir via the project_profile clone path. Causes
 	// Manager.Delete to reap the cloned tree after the session ends.
 	// Default false; only set true at the clone site.
 	EphemeralWorkspace bool
+
+	// ScrubTmuxEnv makes the pane shell run `unset TMUX TMUX_TMPDIR`
+	// before the LLM backend is launched. See scrubTmuxEnvCommand for why.
+	// Set by PRD-owned launchers only; operator-started interactive
+	// sessions leave it false. Recorded on Session.ScrubTmuxEnv so restart
+	// and resume re-apply it to the fresh pane shell.
+	ScrubTmuxEnv bool
+
+	// MemoryCeiling is the per-project / per-task-kind ceiling override
+	// (already picked with resources.PickOverride). Zero value = no override.
+	// Only used for worker panes (ScrubTmuxEnv).
+	MemoryCeiling resources.Override
 
 	// Skills (v6.13.7) — comma-separated list of synced-skill names to
 	// inject into <ProjectDir>/.datawatch/skills/<name>/ at session
@@ -1634,6 +2167,11 @@ type StartOptions struct {
 	// a compute node. Written to opencode.json at launch.
 	OllamaURL string
 
+	// NodeAddress — the compute node's address for pi-family and opencode
+	// sessions, resolved from the compute registry by the server. Persisted on
+	// the Session (Session.NodeAddress) so a resume or restart reuses the host.
+	NodeAddress string
+
 	// Chrome (v8.8.3) — when non-nil, passes --chrome (true) or --no-chrome (false)
 	// to claude-code at launch. Nil = omit flag (use claude default).
 	Chrome *bool
@@ -1647,12 +2185,37 @@ type StartOptions struct {
 	KillChildren          bool
 	KillChildrenRecursive bool
 
+	// Priority orders the session's calls in the capacity wait queue (higher
+	// first). Zero is the default and is not stored.
+	Priority int
+
 	// PRDID, TaskID, and StoryID link an autonomous task session to its executor
 	// so the PWA detail view can filter sessions by PRD and show which task is
 	// actively being worked on. StoryID added BL385 Phase 4 for memory scope routing.
-	PRDID   string
-	TaskID  string
-	StoryID string
+	PRDID  string
+	TaskID string
+	// AutomatonID (defaults to PRDID) and SpendRole attribute the session's
+	// spend ledger entry.
+	AutomatonID string
+	SpendRole   string
+	StoryID     string
+	// TaskTitle is the PRD task's title, used for the automatic task commit subject.
+	TaskTitle string
+
+	// Tags (BL461) are the session's own tag IDs, validated against the tag
+	// registry before the session is created. Duplicates are dropped.
+	Tags []string
+
+	// Git — when true, Start opts the session into git activity in its
+	// project dir: `git init` (if the dir is not yet a repo), the
+	// pre-session snapshot commit (PRD task sessions) and the
+	// pre-checkpoint tag at start; and commitOnCompletion is allowed to
+	// run its validation gate + completion commit (covering the
+	// one-shot reaper / monitor / restart paths, which only have the
+	// stored Session). Default false: Start touches no git at all and no
+	// completion commit ever runs. Persisted on Session.Git so the flag
+	// survives the restart paths.
+	Git bool
 	// WriteScope (auto-commit leak fix) — the session's effective write
 	// directories (PRD.WriteDirs or the task's ProjectDir override,
 	// resolved by the autonomous executor via
@@ -1666,6 +2229,80 @@ type StartOptions struct {
 	// before a one-shot's completion commit. Required for auto-commit of
 	// one-shots started outside a PRD. See commitOnCompletion.
 	ValidateCommands []string
+
+	// SkipSnapshot — planning/judgment sessions must never stage or commit
+	// the repo: they are read-only work (decompose, judge, verify) whose
+	// output is a JSON verdict, not repo changes. When true, Start skips the
+	// pre-session snapshot commit and commitOnCompletion skips the
+	// completion commit entirely. Task-execution (executor) sessions leave
+	// this false and keep their current commit behaviour.
+	SkipSnapshot bool
+
+	// RequireExistingWorktree — set for sessions whose project directory is
+	// an Automaton-owned linked worktree. When true, Start must fail
+	// instead of creating or initialising the project directory: the
+	// directory has to exist already and its .git entry has to be the
+	// gitlink file of a linked worktree. A missing worktree is therefore
+	// reported, never replaced by an empty directory or a fresh
+	// repository. False (the default) keeps the historical behaviour of
+	// creating the directory and, for git one-shots, initialising a repo.
+	RequireExistingWorktree bool
+}
+
+// ErrProjectDirNotWorktree is returned (wrapped) by Start when
+// StartOptions.RequireExistingWorktree is set and the project directory is
+// missing, is not a directory, or is not a linked worktree.
+var ErrProjectDirNotWorktree = errors.New("project directory is not a linked worktree")
+
+// checkExistingWorktree verifies that dir is an existing linked worktree:
+// a directory whose .git entry is a regular file (the gitlink a linked
+// worktree carries), not a directory (a standalone repository) and not
+// absent. It never creates or modifies anything. dir must lie under one of
+// roots (the allowed project roots); anything else is refused before any file
+// is touched, and the path that is inspected is the contained one.
+func checkExistingWorktree(roots []string, requested string) error {
+	dir, err := containedUnderAny(roots, requested)
+	if err != nil {
+		return fmt.Errorf("%w: %s is outside the allowed project roots: %v", ErrProjectDirNotWorktree, requested, err)
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: %s does not exist; the worktree is missing", ErrProjectDirNotWorktree, dir)
+		}
+		return fmt.Errorf("%w: cannot inspect %s: %v", ErrProjectDirNotWorktree, dir, err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("%w: %s is not a directory", ErrProjectDirNotWorktree, dir)
+	}
+	gi, err := os.Lstat(filepath.Join(dir, ".git"))
+	if err != nil {
+		return fmt.Errorf("%w: %s has no .git entry; the worktree is missing or was replaced", ErrProjectDirNotWorktree, dir)
+	}
+	if !gi.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s has a .git directory, not a worktree link file; it is a standalone repository", ErrProjectDirNotWorktree, dir)
+	}
+	return nil
+}
+
+// containedUnderAny returns path cleaned and made absolute when it lies under
+// one of roots, using gitguard.ContainedPath (so '..' and symlinks that leave
+// the root are refused). Roots that are empty or cannot be resolved are
+// skipped. When none contains path the last containment error is returned
+// and the path result is empty: a refused value is never handed back.
+func containedUnderAny(roots []string, path string) (string, error) {
+	err := errors.New("no allowed project root is configured")
+	for _, root := range roots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+		contained, cerr := gitguard.ContainedPath(root, path)
+		if cerr == nil {
+			return contained, nil
+		}
+		err = cerr
+	}
+	return "", err
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1676,10 +2313,25 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if len(opts) > 0 && opts[0] != nil {
 		opt = opts[0]
 	}
+	// BL461 — refuse the start before any work when a requested tag is unknown.
+	var startTags []string
+	if opt != nil && len(opt.Tags) > 0 {
+		tags, err := m.ValidateTagIDs(opt.Tags)
+		if err != nil {
+			return nil, err
+		}
+		startTags = tags
+	}
 	// BL30 — refuse new sessions while a global cooldown is active
 	// AND the operator has opted in via session.rate_limit_global_pause.
 	if m.rateLimitGlobalPause && m.inGlobalCooldown() {
 		return nil, ErrGlobalCooldown
+	}
+
+	// Refuse before any filesystem or git work once the daemon is draining.
+	// registerLaunch repeats the check under mu, where it is race-free.
+	if m.launchesDraining() {
+		return nil, ErrDaemonDraining
 	}
 
 	// Check max sessions (count only running/waiting sessions on this host)
@@ -1702,36 +2354,97 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	//     didn't, so a test daemon wrote CLAUDE.md/.mcp.json into the
 	//     operator's real $HOME (B108).
 	//   - relative + workspaceRoot set → join under workspaceRoot (F10 container mode)
-	//   - relative + no workspaceRoot → leave to caller (back-compat with the
-	//     pre-F10 absolute-path expectation; many call sites already pass abs)
-	//   - absolute → unchanged
-	if projectDir == "" {
+	//   - relative + no workspaceRoot → joined under the process working
+	//     directory
+	//   - absolute → cleaned
+	// A directory that came with the request (everything but the empty
+	// default, and the configured default itself, which the REST layer fills
+	// in) must lie under an allowed project root; see AllowedProjectRoots.
+	requestSupplied := projectDir != ""
+	// safeDir is the directory every filesystem call below uses. A request-
+	// supplied directory becomes safeDir only through the roots check further
+	// down; the daemon's own defaults are assigned to it directly.
+	var safeDir string
+	switch {
+	case projectDir == "":
 		home, _ := os.UserHomeDir()
-		projectDir = home
-		if m.cfg != nil && m.cfg.Session.DefaultProjectDir != "" {
-			d := m.cfg.Session.DefaultProjectDir
-			if d == "~" || strings.HasPrefix(d, "~/") {
-				d = filepath.Join(home, strings.TrimPrefix(d, "~"))
-			}
-			projectDir = d
+		safeDir = home
+		if d := m.configDefaultProjectDir(); d != "" {
+			safeDir = d
 		}
-	} else if !filepath.IsAbs(projectDir) && m.workspaceRoot != "" {
-		projectDir = filepath.Join(m.workspaceRoot, projectDir)
+	case !filepath.IsAbs(projectDir):
+		// A relative value is contained under the workspace root, or under
+		// the process working directory when no root is configured.
+		root := m.workspaceRoot
+		if root == "" {
+			cwd, werr := os.Getwd()
+			if werr != nil {
+				return nil, fmt.Errorf("resolve relative project dir: %w", werr)
+			}
+			root = cwd
+		}
+		resolved, rerr := resolveWorkspaceDir(root, projectDir)
+		if rerr != nil {
+			return nil, rerr
+		}
+		projectDir = resolved
+	default:
+		cleaned, cerr := gitguard.CleanProjectDir(projectDir)
+		if cerr != nil {
+			return nil, fmt.Errorf("project dir %q: %w", projectDir, cerr)
+		}
+		if d := m.configDefaultProjectDir(); d != "" && cleaned == filepath.Clean(d) {
+			requestSupplied = false
+			safeDir = filepath.Clean(d) // the daemon's own config value, not the request's
+		} else {
+			projectDir = cleaned
+		}
+	}
+	if requestSupplied {
+		// ResolveContainedProjectDir applies the allowed-roots check and
+		// returns the value checked under the root that accepted it.
+		checked, perr := gitguard.ResolveContainedProjectDir(projectDir, m.AllowedProjectRoots())
+		if perr != nil {
+			return nil, fmt.Errorf("project dir refused: %w", perr)
+		}
+		safeDir = checked
+	}
+	projectDir = safeDir
+
+	// An Automaton-owned worktree must already exist: never recreate it as
+	// an empty directory (and never git-init it below).
+	if opt != nil && opt.RequireExistingWorktree {
+		if err := checkExistingWorktree(m.AllowedProjectRoots(), safeDir); err != nil {
+			return nil, err
+		}
 	}
 
 	// Ensure project dir exists
-	if err := os.MkdirAll(projectDir, 0755); err != nil {
+	if err := os.MkdirAll(safeDir, 0755); err != nil {
 		return nil, fmt.Errorf("create project dir: %w", err)
 	}
 
-	// Pre-session snapshot: one-shot task sessions always get a
-	// deterministic snapshot of the tree as of launch (init-ing the
-	// repo first if the dir is not yet one). This is the only place
-	// Start touches git; interactive (non-one-shot) sessions do not
-	// auto-commit here at all, regardless of manager-level auto-git
-	// settings or per-session overrides.
+	// Pre-session snapshot: one-shot task sessions opt in via StartOptions.Git
+	// and get a deterministic snapshot of the tree as of launch (init-ing the
+	// repo first if the dir is not yet one). With Git false (default) Start
+	// touches git in no way at all — no git init in the working dir, no
+	// snapshot commit, no checkpoint tag. Interactive (non-one-shot)
+	// sessions never auto-commit here, regardless of manager-level
+	// auto-git settings or per-session overrides.
+	// One-shot decision (BL474): resolve the effective backend name first
+	// (opt.Backend wins, else the manager default) so the check sees the
+	// real backend, not an alias. Prompt backends (<family>-prompt) are
+	// headless one-run adapters and run one-shot by default; interactive
+	// backends stay interactive. Decided once here for newly created
+	// sessions; stored sessions are never rewritten on load.
+	effectiveBackend := m.llmBackend
+	if opt != nil && opt.Backend != "" {
+		effectiveBackend = opt.Backend
+	}
+	effectiveOneShot := effectiveOneShot(opt, effectiveBackend)
+
 	projGit := NewProjectGit(projectDir)
-	if opt != nil && opt.OneShot {
+	if opt != nil && effectiveOneShot && opt.Git {
 		if !projGit.IsRepo() {
 			if err := projGit.Init(); err != nil {
 				fmt.Printf("[warn] git init %s: %v\n", projectDir, err)
@@ -1739,8 +2452,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		// Validation gate: only PRD-owned one-shots snapshot-commit here. An
 		// ad-hoc one-shot must not commit operator work on its own.
-		if projGit.IsRepo() && opt.PRDID != "" {
-			if err := projGit.PreSessionCommit("", task, opt.WriteScope); err != nil {
+		// SkipSnapshot (planning/judgment sessions) must never stage or commit
+		// the repo, so it short-circuits here as well.
+		if projGit.IsRepo() && opt.PRDID != "" && !opt.SkipSnapshot {
+			if err := projGit.PreSessionCommit(opt.PRDID, opt.TaskTitle, opt.WriteScope); err != nil {
 				fmt.Printf("[warn] pre-session commit: %v\n", err)
 			}
 		}
@@ -1758,7 +2473,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	tmuxHostname := strings.NewReplacer(".", "-", ":", "-").Replace(m.hostname)
 	tmuxSession := fmt.Sprintf("cs-%s-%s", tmuxHostname, id)
 
-	backendName := m.llmBackend
+	backendName := effectiveBackend
 	launchFn := m.launchFn
 	backendObj := m.backendObj
 	sessionName := ""
@@ -1814,8 +2529,24 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.EphemeralWorkspace {
 		sess.EphemeralWorkspace = true
 	}
+	if opt != nil && opt.ScrubTmuxEnv {
+		sess.ScrubTmuxEnv = true
+	}
 	if opt != nil && len(opt.Skills) > 0 {
 		sess.Skills = append([]string(nil), opt.Skills...)
+	}
+	// Record which worker-profile fields this backend honours at launch
+	// (workerprofile.RecordApplied semantics: one outcome per field, in
+	// stable order, each dropped field carrying the "backend cannot honour
+	// this field" reason) so the session start record shows the operator
+	// what the backend dropped. Duck-typed so backends that apply the
+	// profile in their own launch path (Claude Code) are left untouched.
+	if opt != nil && opt.WorkerProfile.Name != "" {
+		if rec, ok := backendObj.(interface {
+			RecordApplied(workerprofile.WorkerProfile) []workerprofile.FieldOutcome
+		}); ok {
+			sess.AppliedFields = rec.RecordApplied(opt.WorkerProfile)
+		}
 	}
 	if opt != nil && opt.LLMRef != "" {
 		sess.LLMRef = opt.LLMRef
@@ -1823,8 +2554,14 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.ComputeNodeRef != "" {
 		sess.ComputeNodeRef = opt.ComputeNodeRef
 	}
-	if opt != nil && opt.OneShot {
+	if effectiveOneShot {
 		sess.OneShot = true
+	}
+	if opt != nil && opt.SkipSnapshot {
+		sess.SkipSnapshot = true
+	}
+	if opt != nil && opt.Git {
+		sess.Git = true
 	}
 	if opt != nil && opt.LSPLanguage != "" {
 		sess.LSPLanguage = opt.LSPLanguage
@@ -1835,8 +2572,14 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.OllamaURL != "" {
 		sess.OllamaURL = opt.OllamaURL
 	}
+	if opt != nil && opt.NodeAddress != "" {
+		sess.NodeAddress = opt.NodeAddress
+	}
 	if opt != nil && opt.ParentID != "" {
 		sess.ParentID = opt.ParentID
+	}
+	if opt != nil && opt.Priority != 0 {
+		sess.Priority = opt.Priority
 	}
 	if opt != nil && opt.KillChildren {
 		sess.KillChildren = true
@@ -1847,11 +2590,24 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.PRDID != "" {
 		sess.PRDID = opt.PRDID
 	}
+	if opt != nil {
+		sess.AutomatonID = opt.AutomatonID
+		if sess.AutomatonID == "" {
+			sess.AutomatonID = opt.PRDID
+		}
+		sess.SpendRole = opt.SpendRole
+	}
 	if opt != nil && opt.TaskID != "" {
 		sess.TaskID = opt.TaskID
 	}
 	if opt != nil && opt.StoryID != "" {
 		sess.StoryID = opt.StoryID
+	}
+	if opt != nil && opt.TaskTitle != "" {
+		sess.TaskTitle = opt.TaskTitle
+	}
+	if len(startTags) > 0 {
+		sess.Tags = startTags
 	}
 	if opt != nil && len(opt.WriteScope) > 0 {
 		sess.WriteScope = opt.WriteScope
@@ -1889,8 +2645,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		home, _ := os.UserHomeDir()
 		templatePath = filepath.Join(home, ".local", "share", "datawatch", "templates", "session-guardrails.md")
 	}
-	guardrailOpts := GuardrailsOptions{}
+	// Default on; platform_context.enabled and the per-project override apply below.
+	guardrailOpts := GuardrailsOptions{PlatformContextEnabled: true, PlatformContextText: platformcontext.PlatformContext}
 	if m.cfg != nil {
+		guardrailOpts.PlatformContextEnabled = m.cfg.PlatformContext.EffectiveEnabled(m.projectPolicyFor(sess.ProjectDir))
+		guardrailOpts.PlatformContextText = m.cfg.PlatformContext.AppendNote(platformcontext.PlatformContext)
 		// Fix: cfg.Memory.SessionAwareness (documented "injects memory
 		// instructions into session guardrails, default true") was never
 		// actually consulted here — only Memory.Enabled was. An operator
@@ -1913,12 +2672,21 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		if err := m.store.Save(sess); err != nil {
 			return nil, fmt.Errorf("save subprocess session: %w", err)
 		}
+		m.notifySessionCreated(sess)
 		go m.runSubprocess(sess)
-		if m.onSessionStart != nil {
-			m.onSessionStart(sess)
-		}
+		m.notifySessionStart(sess)
+		m.runPlacementStartHook(sess)
 		return sess, nil
 	}
+
+	// Register the launch before the tmux session exists so DrainLaunches can
+	// find it. Every return path below deregisters it.
+	launchCtx, cancelLaunch := context.WithCancel(ctx)
+	if err := m.registerLaunch(sess, cancelLaunch); err != nil {
+		cancelLaunch()
+		return nil, err
+	}
+	defer m.deregisterLaunch(fullID)
 
 	// Create tmux session with per-LLM console size.
 	// LLM registry values (via opts) take precedence over cfg defaults.
@@ -1945,7 +2713,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		sess.InputMode = m.cfg.GetInputMode(backendName)
 	}
 	m.debugf("creating tmux session %q for backend=%q task=%q dir=%q size=%dx%d mode=%s", tmuxSession, backendName, task, projectDir, cols, rows, sess.OutputMode)
-	if err := m.tmux.NewSessionWithSize(tmuxSession, cols, rows); err != nil {
+	var ceilingOv resources.Override
+	if opt != nil {
+		ceilingOv = opt.MemoryCeiling
+	}
+	if err := m.startWorkerPane(sess, cols, rows, ceilingOv); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 
@@ -1962,13 +2734,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		encLogPath := logFile + ".enc"
 		fifo, err := secfile.NewEncryptingFIFO(logFile+".pipe", encLogPath, m.encKey)
 		if err != nil {
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: encrypted output FIFO setup failed")
 			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
 		}
 		// tmux pipes to the FIFO; encrypted output goes to .enc file
 		if err := m.tmux.PipeOutput(tmuxSession, fifo.FIFOPath()); err != nil {
 			_ = fifo.Close()
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: encrypted output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
 		}
 		// Store FIFO reference for cleanup on session end
@@ -1981,7 +2753,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.debugf("tmux session %q piped to encrypted FIFO → %s", tmuxSession, encLogPath)
 	} else {
 		if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output: %w", err)
 		}
 		m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
@@ -1992,6 +2764,16 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.onPreLaunch(sess)
 	}
 
+	// The backend is a singleton: hold the launch lock from the first
+	// per-session setting until the launch has read them.
+	unlockBackend := lockSharedBackend(backendObj)
+	defer unlockBackend()
+
+	// PRD workers must not read ancestor CLAUDE.md files (other sessions'
+	// Session:/Task: lines). Set on every launch: the backend is a singleton.
+	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
+		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
+	}
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
@@ -2010,6 +2792,28 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		case "pi":
 			if mo := m.cfg.Pi.Model; mo != "" {
 				sm.SetModel(mo)
+			}
+		}
+	}
+
+	// Pi family: point the launch at the session's compute node. The backend
+	// is shared across sessions, so this runs on every launch; a session that
+	// names no node passes an empty address, which clears any earlier node.
+	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
+		nh.SetNodeHost(sess.NodeAddress)
+	}
+
+	// Pi family: pass the configured thinking level (pi.thinking_level) to
+	// any backend that supports pi's own --thinking flag. "" = leave unset
+	// so pi picks its model default. Both the interactive ("pi") and
+	// one-shot ("pi-prompt") variants receive it; the level is one of the
+	// closed set off|minimal|low|medium|high, validated by
+	// config.ValidatePiThinkingLevel at every config write edge.
+	if st, ok := backendObj.(interface{ SetThinkingLevel(string) }); ok {
+		switch backendName {
+		case "pi-prompt", "pi":
+			if tl := m.cfg.Pi.ThinkingLevel; tl != "" {
+				st.SetThinkingLevel(tl)
 			}
 		}
 	}
@@ -2090,6 +2894,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				em.SetEffort(opt.ClaudeEffort)
 			}
 		}
+		if opt.ThinkingLevel != "" {
+			if st, ok := backendObj.(interface{ SetThinkingLevel(string) }); ok {
+				st.SetThinkingLevel(opt.ThinkingLevel)
+			}
+		}
 		if opt.Chrome != nil {
 			if cm, ok := backendObj.(interface{ SetChrome(bool) }); ok {
 				cm.SetChrome(*opt.Chrome)
@@ -2131,6 +2940,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
+	// Guarded sessions (autonomous task, or one-shot with validation
+	// commands): a worker git commit hits the guard hooks; the harness
+	// commits after validation. Nothing is written to the worktree config.
+	m.armCommitGuard(sess, tmuxSession)
+
 	// Launch the LLM backend in the tmux session.
 	// GH#128: OneShot + bare shell task — wrap to emit DATAWATCH_COMPLETE: so
 	// the one-shot reaper can kill the session after the command exits.
@@ -2139,6 +2953,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if sess.OneShot && strings.HasPrefix(task, "!") {
 		launchTask = task + `; echo "DATAWATCH_COMPLETE: shell task done"`
 	}
+	launchTask = m.prependPlatformContextOnce(sess, backendName, launchTask)
+	m.scrubPaneTmuxEnv(sess)
+	m.upsertLedger(sess)
+	m.notifySessionCreated(sess)
 	if launchFn != nil {
 		var launchErr error
 		if resumeID != "" {
@@ -2151,28 +2969,59 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				} else {
 					m.debugf("launching %q with resume=%q", backendName, resumeID)
 				}
-				launchErr = rb.LaunchResume(ctx, launchTask, tmuxSession, projectDir, logFile, resumeID)
+				launchErr = rb.LaunchResume(launchCtx, launchTask, tmuxSession, projectDir, logFile, resumeID)
 			} else {
 				m.debugf("launching %q (no resume support, ignoring resumeID)", backendName)
-				launchErr = launchFn(ctx, launchTask, tmuxSession, projectDir, logFile)
+				launchErr = launchFn(launchCtx, launchTask, tmuxSession, projectDir, logFile)
 			}
 		} else {
 			m.debugf("launching %q", backendName)
-			launchErr = launchFn(ctx, launchTask, tmuxSession, projectDir, logFile)
+			launchErr = launchFn(launchCtx, launchTask, tmuxSession, projectDir, logFile)
 		}
 		if launchErr != nil {
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: LLM backend launch failed")
 			return nil, fmt.Errorf("launch LLM backend: %w", launchErr)
 		}
 		m.debugf("backend %q launched in tmux session %q", backendName, tmuxSession)
+		unlockBackend()
 		// Persist backend state for reconnect after daemon restart
 		m.saveBackendState(sess)
 	} else {
 		// Fallback: run LLM binary directly (legacy path, no configured backend)
 		llmCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.llmBin, projectDir, launchTask)
 		if err := m.tmux.SendKeys(tmuxSession, llmCmd); err != nil {
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: sending the LLM command failed")
 			return nil, fmt.Errorf("send LLM command: %w", err)
+		}
+		// Right after the paste: confirm the prompt was actually submitted.
+		// Bracketed-paste TUIs (claude-code) can absorb the trailing Enter
+		// into the paste event, leaving the task sitting in the input line
+		// as a "[Pasted text #N]" placeholder while the operator waits.
+		// Only for claude-code sessions (this is the legacy claude-code
+		// fallback path); claude-code TUIs, not other backends, render the
+		// paste-placeholder marker.
+		if m.llmBackend == "claude-code" || strings.Contains(m.llmBin, "claude") {
+			// Assistant activity = the session already reports running, or
+			// the pane has moved past the pending paste (marker expanded /
+			// assistant output rendered). The monitor is not yet started at
+			// this point, so the pane is the ground truth.
+			assistantActive := func() bool {
+				if sess.State == StateRunning {
+					return true
+				}
+				cap, err := m.tmux.CapturePaneVisible(tmuxSession)
+				if err != nil {
+					return false
+				}
+				return !pastePending(cap)
+			}
+			if err := confirmPromptSubmitted(m.tmux, tmuxSession, assistantActive,
+				30*time.Second, time.Second); err != nil {
+				// Non-fatal: the session may still submit a moment later
+				// (operator press, TUI latency). Log and let the monitor
+				// and idle reaper handle a session that truly never starts.
+				fmt.Printf("[warn] confirm prompt submitted for %s: %v\n", fullID, err)
+			}
 		}
 	}
 
@@ -2181,39 +3030,44 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 	// Persist the session
 	if err := m.store.Save(sess); err != nil {
-		_ = m.tmux.KillSession(tmuxSession)
+		m.killPane(sess.FullID, tmuxSession, "spawn aborted: session save failed")
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
 	// Start monitoring the session output
-	monCtx, cancel := context.WithCancel(ctx)
+	monCtx, cancel := context.WithCancel(launchCtx)
 	m.mu.Lock()
 	m.monitors[fullID] = cancel
 	m.mu.Unlock()
 
 	// BL29 — record the pre-session checkpoint tag once the session
-	// ID exists. Best-effort; failure does not block start.
-	if sess.OneShot && projGit.IsRepo() {
+	// ID exists. Best-effort; failure does not block start. Only for
+	// sessions that opted into git (StartOptions.Git), so git-less
+	// one-shots get no tags.
+	if sess.OneShot && sess.Git && projGit.IsRepo() {
 		if err := projGit.TagCheckpoint("pre", sess.ID, task); err != nil {
 			fmt.Printf("[warn] pre-checkpoint tag: %v\n", err)
 		}
 	}
 
-	go m.monitorOutput(monCtx, sess, projGit)
+	m.goBG(func() { m.monitorOutput(monCtx, sess, projGit) })
 	// v8.21.4: one-shot sessions need pane-watcher for DATAWATCH_COMPLETE: detection.
 	// StartScreenCapture is normally called by PWA subscribers, but one-shot sessions
 	// run autonomously with no browser connection. Start it at creation so completion
 	// is detected regardless of whether any client is subscribed.
 	if sess.OneShot && sess.TmuxSession != "" {
-		go func() {
-			time.Sleep(2 * time.Second) // let the TUI initialize before first capture
+		m.goBG(func() {
+			select { // let the TUI initialize before first capture
+			case <-time.After(2 * time.Second):
+			case <-monCtx.Done():
+				return
+			}
 			m.StartScreenCapture(monCtx, sess.FullID, 500)
-		}()
+		})
 	}
 
-	if m.onSessionStart != nil {
-		m.onSessionStart(sess)
-	}
+	m.notifySessionStart(sess)
+	m.runPlacementStartHook(sess)
 
 	return sess, nil
 }
@@ -2231,7 +3085,12 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 	if intervalMs <= 0 {
 		intervalMs = 200
 	}
+	// Started with a direct go statement (not goBG) so captureLoopCount in
+	// tests can still attribute the goroutine to StartScreenCapture's caller;
+	// the WaitGroup entry lets WaitBackground wait for it.
+	m.bg.Add(1)
 	go func() {
+		defer m.bg.Done()
 		ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
 		defer ticker.Stop()
 		var lastCapture string
@@ -2263,6 +3122,21 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					stateCapture = displayCapture // fall back to old behaviour on capture error
 				}
 				capture := displayCapture
+				// Recognised interstitial prompts (the auto-compact nudge
+				// family) block the pane: the loop parks claude-code sessions on
+				// them (detection only — the safe dismiss lands in a later
+				// phase) and none of the waiting-input consumer side effects
+				// fire (no needs-input alert or push, no response capture or
+				// summarisation), because this path never takes the needs-input
+				// transition. Run before the firstTick skip so a session adopted
+				// after a daemon restart is recognised on attach, and outside
+				// the content-change gate so a static pane that still carries the
+				// blocking prompt keeps the session parked. While the pane shows a
+				// recognised prompt, skip the rest of this tick's state detection:
+				// the pane is blocked by the prompt, not by a needs-input question.
+				if m.scanInterstitialTick(current, stateCapture, m.now()) {
+					continue
+				}
 				// Only send if content changed
 				if capture != lastCapture {
 					lastCapture = capture //nolint:staticcheck
@@ -2271,6 +3145,18 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						lines := strings.Split(capture, "\n")
 						m.onScreenCapture(sess, lines)
 					}
+
+					// One-shot claude-code startup dialogs (workspace trust /
+					// dev-channels consent) must be accepted: there is no human
+					// at the terminal, and the log-line match in
+					// processOutputLine can miss the TUI rendering. The capture
+					// loop is the only component started unconditionally for
+					// one-shot sessions, so it forms the reliable floor. Runs
+					// before the firstTick skip so a dialog already on screen
+					// at attach time is handled, not only later redraw. Gated
+					// on one-shot claude-code inside the helper — a no-op for
+					// interactive sessions and other backends.
+					m.dismissClaudeStartupDialog(current, capture)
 
 					// Skip state detection on the first tick for interactive
 					// sessions — this is the initial baseline capture when a
@@ -2308,7 +3194,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					m.noteSelfUpdateInLines(fullID, capLines)
 
 					// Check for prompt patterns in last 10 non-empty lines
-					matchedLine, promptCtx := m.matchPromptInLines(capLines, 10)
+					matchedLine, promptCtx := m.matchPromptForSession(current, capLines, 10)
 					if matchedLine != "" {
 						promptSeenCount++
 						// Always update PromptContext
@@ -2327,7 +3213,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						}
 						if promptSeenCount >= minSeen {
 							wasRunning := current.State == StateRunning
-							if m.tryTransitionToWaiting(fullID, matchedLine, "", nil) {
+							if m.transitionOnPane(fullID, matchedLine, "", nil) {
 								// Capture last response on running→waiting_input
 								if wasRunning {
 									go func(s *Session) {
@@ -2440,9 +3326,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								if m.onStateChange != nil {
 									m.onStateChange(current, oldState)
 								}
-								if m.onSessionEnd != nil {
-									m.onSessionEnd(current)
-								}
+								m.emitSessionEnd(current)
 								m.triggerSummarize(current.FullID, 200)
 								return
 							}
@@ -2460,6 +3344,8 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					if current.OneShot {
 						visibleScanLimit = len(capLines)
 					}
+					echoEnd := lastTaskEchoIndex(capLines, current.Task)
+					echoLocated := false
 					for i, checked := len(capLines)-1, 0; i >= 0 && checked < visibleScanLimit; i-- {
 						l := strings.TrimSpace(capLines[i])
 						if l == "" {
@@ -2478,12 +3364,16 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						// The LLM's real completion never contains the literal angle-bracket
 						// placeholder text; this guards against the task-box remaining visible
 						// on screen indefinitely while the LLM processes.
-						if strings.Contains(l, "<one-sentence summary") {
+						if isCompletionPlaceholder(l) {
 							m.debugf("StartScreenCapture: skipping placeholder line=%q session=%s", l, sess.FullID)
 							continue
 						}
+						if !echoGate(i, echoEnd) {
+							break
+						}
 						for _, pat := range m.effectiveCompletionPatterns() {
-							if matchesCompletionPattern(l, pat) {
+							if isRealCompletionLine(l, pat) {
+								echoLocated = echoEnd >= 0
 								lRunes := []rune(l)
 								lastR := ""
 								if len(lRunes) > 0 {
@@ -2511,6 +3401,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					if !completionDetected && current.OneShot {
 						if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 500); sbErr == nil {
 							sbLines := strings.Split(StripANSI(sb), "\n")
+							sbEchoEnd := lastTaskEchoIndex(sbLines, current.Task)
 							for i, checked := len(sbLines)-1, 0; i >= 0 && checked < 500; i-- {
 								l := strings.TrimSpace(sbLines[i])
 								if l == "" {
@@ -2522,11 +3413,15 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 									continue
 								}
 								// Same placeholder guard as the visible scan above.
-								if strings.Contains(l, "<one-sentence summary") {
+								if isCompletionPlaceholder(l) {
 									continue
 								}
+								if !echoGate(i, sbEchoEnd) {
+									break
+								}
 								for _, pat := range m.effectiveCompletionPatterns() {
-									if matchesCompletionPattern(l, pat) {
+									if isRealCompletionLine(l, pat) {
+										echoLocated = sbEchoEnd >= 0
 										sbRunes := []rune(l)
 										sbLast := ""
 										if len(sbRunes) > 0 {
@@ -2555,13 +3450,99 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					// this guard; StartScreenCapture needs a longer window because the box
 					// stays on screen permanently, and needs to start BEFORE SendInput so
 					// the input-field rendering phase is also covered.
-					if completionDetected {
-						m.mu.Lock()
-						deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
-						m.mu.Unlock()
-						if wasDelivered && time.Since(deliveredAt) < 5*time.Minute {
-							m.debugf("StartScreenCapture: suppressing completion within 5min task-echo window for %s (elapsed=%v)", sess.FullID, time.Since(deliveredAt).Round(time.Second))
+					if completionDetected && !echoLocated {
+						deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
+						if wasDelivered && m.now().Sub(deliveredAt) < 5*time.Minute {
+							m.debugf("StartScreenCapture: suppressing completion within 5min task-echo window for %s (elapsed=%v)", sess.FullID, m.now().Sub(deliveredAt).Round(time.Second))
 							completionDetected = false
+						}
+					}
+					// BL468 — symmetric failure branch: a one-shot session that never
+					// completed because pi exited non-zero shows the wrapper's
+					// "DATAWATCH_PI_FAILED: pi exited with status <N> [ (model <m>) ]"
+					// line in the pane. Scan the same way as the completion scans above
+					// (box-border guard, echoGate, scrollback fallback) and transition
+					// to StateFailed with the exit code recorded — not to StateComplete.
+					// The terminal-state guard (running/waiting_input only) means an
+					// already-failed (or complete/killed) session is never re-transitioned.
+					if !completionDetected && current.OneShot && (current.State == StateRunning || current.State == StateWaitingInput) {
+						failureLine := ""
+						failureEchoLocated := false
+						for i := len(capLines) - 1; i >= 0; i-- {
+							l := strings.TrimSpace(capLines[i])
+							if l == "" {
+								continue
+							}
+							// Same box-border guard as the completion scan above.
+							if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
+								continue
+							}
+							if !echoGate(i, echoEnd) {
+								break
+							}
+							if isRealFailureLine(l) {
+								failureEchoLocated = echoEnd >= 0
+								m.debugf("StartScreenCapture: failure-scan match line=%q session=%s", l, sess.FullID)
+								failureLine = l
+								break
+							}
+						}
+						// Scrollback fallback, mirroring the v8.20.11 completion fallback:
+						// the failure line may already have scrolled off the visible pane.
+						if failureLine == "" {
+							if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 500); sbErr == nil {
+								sbLines := strings.Split(StripANSI(sb), "\n")
+								sbEchoEnd := lastTaskEchoIndex(sbLines, current.Task)
+								for i, checked := len(sbLines)-1, 0; i >= 0 && checked < 500; i-- {
+									l := strings.TrimSpace(sbLines[i])
+									if l == "" {
+										continue
+									}
+									checked++
+									// Same box-border and echo guards as the visible scan.
+									if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
+										continue
+									}
+									if !echoGate(i, sbEchoEnd) {
+										break
+									}
+									if isRealFailureLine(l) {
+										failureEchoLocated = sbEchoEnd >= 0
+										m.debugf("StartScreenCapture: scrollback failure-scan match line=%q session=%s", l, sess.FullID)
+										failureLine = l
+										break
+									}
+								}
+							}
+						}
+						// Same task-echo suppression as the completion path above: if the
+						// echoed task text cannot be located and the task was delivered
+						// recently, the marker text still being rendered on screen cannot
+						// be the wrapper's own output — wait it out like the success path.
+						if failureLine != "" && !failureEchoLocated {
+							if deliveredAt, wasDelivered := m.taskDeliveredTime(sess); wasDelivered && m.now().Sub(deliveredAt) < 5*time.Minute {
+								m.debugf("StartScreenCapture: suppressing failure within 5min task-echo window for %s (elapsed=%v)", sess.FullID, m.now().Sub(deliveredAt).Round(time.Second))
+								failureLine = ""
+							}
+						}
+						if failureLine != "" {
+							failureExit := 0
+							if n, ok := parsePiFailureExit(failureLine); ok {
+								failureExit = n
+							}
+							oldState := current.State
+							// No commitOnCompletion here: the post-session commit belongs
+							// to the success path only; a failed run's changes stay
+							// uncommitted so an operator can inspect them.
+							current.State = StateFailed
+							current.FailureExitCode = failureExit
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil {
+								m.onStateChange(current, oldState)
+							}
+							m.emitSessionEnd(current)
+							return
 						}
 					}
 					if completionDetected {
@@ -2587,9 +3568,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							if m.onStateChange != nil {
 								m.onStateChange(current, oldState)
 							}
-							if m.onSessionEnd != nil {
-								m.onSessionEnd(current)
-							}
+							m.emitSessionEnd(current)
 							m.triggerSummarize(current.FullID, 200)
 							return
 						}
@@ -2601,13 +3580,49 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 	}()
 }
 
+// goBG runs fn on a goroutine that WaitBackground waits for.
+func (m *Manager) goBG(fn func()) {
+	m.bg.Add(1)
+	go func() {
+		defer m.bg.Done()
+		fn()
+	}()
+}
+
+// WaitBackground cancels every output monitor, closes every send queue and
+// blocks until all goroutines started via goBG have exited, so nothing is
+// still writing to the data dir afterwards. Intended for tests (call it before
+// the data dir is removed) and for orderly shutdown; the manager must not
+// start new sessions concurrently with it.
+func (m *Manager) WaitBackground() {
+	m.mu.Lock()
+	for id, cancel := range m.monitors {
+		cancel()
+		delete(m.monitors, id)
+	}
+	m.mu.Unlock()
+	m.sendQueuesMu.Lock()
+	for id, q := range m.sendQueues {
+		close(q.ch) // ends drainSessionSendQueue
+		delete(m.sendQueues, id)
+	}
+	m.sendQueuesMu.Unlock()
+	m.bg.Wait()
+}
+
 // KillTmuxSession terminates the tmux session for a datawatch session (e.g. after completion).
 func (m *Manager) KillTmuxSession(fullID string) {
+	m.killTmuxSessionFor(fullID, "KillTmuxSession called from "+callerAt(1))
+}
+
+// killTmuxSessionFor closes the pane of a session that is still in the store,
+// giving the reason to the journal.
+func (m *Manager) killTmuxSessionFor(fullID, why string) {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
 		return
 	}
-	_ = m.tmux.KillSession(sess.TmuxSession)
+	m.killPane(fullID, sess.TmuxSession, why)
 }
 
 // sessionSendQueue serializes channel sends for one session.
@@ -2630,7 +3645,7 @@ func (m *Manager) getOrCreateSendQueue(fullID string) *sessionSendQueue {
 	}
 	q := &sessionSendQueue{ch: make(chan sessionSendItem, 256)}
 	m.sendQueues[fullID] = q
-	go m.drainSessionSendQueue(fullID, q)
+	m.goBG(func() { m.drainSessionSendQueue(fullID, q) })
 	return q
 }
 
@@ -2946,7 +3961,7 @@ func (m *Manager) MarkChannelActivity(fullID string) {
 // produce a false-positive completion before the LLM has had time to respond.
 func (m *Manager) MarkTaskDelivered(fullID string) {
 	m.mu.Lock()
-	m.taskDeliveredAt[fullID] = time.Now()
+	m.taskDeliveredAt[fullID] = m.now()
 	m.mu.Unlock()
 }
 
@@ -2979,10 +3994,87 @@ func (m *Manager) ClaimTaskDelivery(fullID string) bool {
 	if _, inMem := m.taskDeliveredAt[fullID]; inMem || sess.TaskDeliveredAt != nil {
 		return false
 	}
-	now := time.Now()
+	now := m.now()
 	sess.TaskDeliveredAt = &now
+	// Arm the task-echo suppression from the moment the claim is won, so the
+	// echo of the task while it is being typed cannot read as a completion.
+	m.taskDeliveredAt[fullID] = now
 	_ = m.store.Save(sess)
 	return true
+}
+
+// isCompletionPlaceholder reports whether l is the instruction placeholder
+// ("DATAWATCH_COMPLETE: <one-sentence summary ...>" or "<one-line plain-text
+// summary ...>") rather than a real model completion: it contains the marker
+// followed by an angle-bracket placeholder mentioning "summary".
+func isCompletionPlaceholder(l string) bool {
+	if i := strings.Index(l, "DATAWATCH_COMPLETE"); i >= 0 {
+		rest := l[i:]
+		if j := strings.Index(rest, ":"); j >= 0 && strings.HasPrefix(strings.TrimSpace(rest[j+1:]), "<") {
+			// "DATAWATCH_COMPLETE: <one-line plain-text ..." — also covers a
+			// placeholder wrapped before the word "summary".
+			return true
+		}
+		k := strings.Index(l, "<")
+		return k >= 0 && strings.Contains(l[k:], "summary")
+	}
+	// Wrapped continuation of the placeholder ("summary of what was done>").
+	t := strings.TrimSpace(l)
+	return strings.HasSuffix(t, ">") && !strings.Contains(t, "<") && strings.Contains(t, "summary")
+}
+
+// BL468 — parsePiFailureExit parses the exit code <N> from a pi failure line
+// of the shape "DATAWATCH_PI_FAILED: pi exited with status <N>", where <N> is
+// a decimal integer and an optional trailing " (model <m>)" suffix (the
+// one-shot path's wording) is allowed. Anything else — including the other
+// DATAWATCH_PI_FAILED lines the pi wrapper prints for non-status failures —
+// yields ok=false.
+func parsePiFailureExit(line string) (int, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, piFailureMarker) {
+		return 0, false
+	}
+	rest := strings.TrimSpace(line[len(piFailureMarker):])
+	const statusPrefix = "pi exited with status "
+	if !strings.HasPrefix(rest, statusPrefix) {
+		return 0, false
+	}
+	rest = strings.TrimPrefix(rest, statusPrefix)
+	n, digits := 0, 0
+	for _, r := range rest {
+		if r < '0' || r > '9' {
+			break
+		}
+		n = n*10 + int(r-'0')
+		digits++
+	}
+	if digits == 0 {
+		return 0, false
+	}
+	// Everything after the integer must be the optional "(model ...)" suffix.
+	tail := strings.TrimSpace(rest[digits:]) // digits here are ASCII, so rune count = byte offset
+	if tail != "" && !strings.HasPrefix(tail, "(model ") {
+		return 0, false
+	}
+	return n, true
+}
+
+// BL468 — isRealFailureLine reports whether l is a genuine pi failure line
+// from the pi launch wrapper. Mirrors isRealCompletionLine's guards: the
+// line must carry a real exit code (parsePiFailureExit), the tail after the
+// marker must be non-empty, not an angle-bracket instruction placeholder,
+// and not the wrapped tail of the typed launch command (isShellSourceTail —
+// a line ending in a quote with an odd count of that quote, i.e. the echo of
+// a command that merely quoted the marker text rather than the wrapper's
+// own output). Scans additionally apply the box-border guard and echoGate
+// (lines at or before the echoed task text never count), same as the
+// completion scans.
+func isRealFailureLine(l string) bool {
+	if _, ok := parsePiFailureExit(l); !ok {
+		return false
+	}
+	tail := strings.TrimSpace(l[len(piFailureMarker):])
+	return tail != "" && !strings.HasPrefix(tail, "<") && !isShellSourceTail(tail)
 }
 
 // ReleaseTaskDelivery undoes a ClaimTaskDelivery whose send failed, so a
@@ -2990,6 +4082,7 @@ func (m *Manager) ClaimTaskDelivery(fullID string) bool {
 func (m *Manager) ReleaseTaskDelivery(fullID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	delete(m.taskDeliveredAt, fullID)
 	if sess, ok := m.store.Get(fullID); ok && sess.TaskDeliveredAt != nil {
 		sess.TaskDeliveredAt = nil
 		_ = m.store.Save(sess)
@@ -3009,6 +4102,30 @@ func (m *Manager) MarkInputSent(fullID string) {
 // runSubprocess executes sess.Task as a child process via bash -c,
 // streaming stdout+stderr to the session log file. Transitions to
 // StateComplete on exit 0, StateFailed on non-zero exit or error.
+// subprocessEnv (GH#204 Phase 1) builds the child environment for a
+// subprocess session: the daemon's own environment plus the session's
+// identity (DATAWATCH_SESSION_ID) and base URL (DATAWATCH_BASE_URL), and —
+// when a token minter is wired (SetSessionTokenMinter) — a freshly minted
+// scoped credential (DATAWATCH_RESULT_TOKEN) carrying ONLY
+// federation.CapSessionsResultWrite, issued for exactly this session. A
+// nil/absent minter means no token variable at all (an unset minter can't
+// mint anything, so there is no capability regression path).
+func (m *Manager) subprocessEnv(sess *Session) []string {
+	env := os.Environ()
+	if sess != nil && sess.FullID != "" {
+		env = append(env, "DATAWATCH_SESSION_ID="+sess.FullID)
+	}
+	if baseURL := m.subprocessBaseURL; baseURL != "" {
+		env = append(env, "DATAWATCH_BASE_URL="+baseURL)
+	}
+	if minter := m.resultTokenMinter; minter != nil && sess != nil && sess.FullID != "" {
+		if tok, err := minter.Mint(sess.FullID, []string{federation.CapSessionsResultWrite}); err == nil && tok != "" {
+			env = append(env, "DATAWATCH_RESULT_TOKEN="+tok)
+		}
+	}
+	return env
+}
+
 func (m *Manager) runSubprocess(sess *Session) {
 	f, err := os.OpenFile(sess.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
@@ -3020,6 +4137,8 @@ func (m *Manager) runSubprocess(sess *Session) {
 	_, _ = fmt.Fprintf(f, "[subprocess] task: %s\n[subprocess] dir: %s\n", sess.Task, sess.ProjectDir)
 
 	cmd := subprocessCommand(sess)
+	// GH#204 Phase 1 — identity + scope the job's result-posting credential.
+	cmd.Env = m.subprocessEnv(sess)
 	cmd.Stdout = f
 	cmd.Stderr = f
 
@@ -3067,12 +4186,11 @@ func (m *Manager) subprocessFinish(sess *Session, runErr error) {
 	}
 	snap.UpdatedAt = time.Now()
 	_ = m.store.Save(&snap)
+	m.releaseCommitGuard(snap.FullID, snap.ProjectDir)
 	if m.onStateChange != nil {
 		m.onStateChange(&snap, oldState)
 	}
-	if m.onSessionEnd != nil {
-		m.onSessionEnd(&snap)
-	}
+	m.emitSessionEnd(&snap)
 	m.triggerSummarize(snap.FullID, 200)
 }
 
@@ -3159,6 +4277,25 @@ func (m *Manager) CapturePaneScrollback(fullID string, lines int) (string, error
 	return m.tmux.CapturePaneScrollback(sess.TmuxSession, lines)
 }
 
+// CapturePaneVisible returns the currently visible pane content of a
+// session (ANSI codes stripped), resolved from fullID or short ID — the
+// same tmux-layer capture the UI display uses. The autonomous start-confirm
+// check captures with this to see the assistant's first response before any
+// state transition is visible in the session store.
+func (m *Manager) CapturePaneVisible(fullID string) (string, error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return "", fmt.Errorf("session not found: %s", fullID)
+		}
+	}
+	if sess.TmuxSession == "" {
+		return "", nil
+	}
+	return m.tmux.CapturePaneVisible(sess.TmuxSession)
+}
+
 // SendRawKeys sends literal bytes to the tmux session (for interactive terminal).
 // Unlike SendInput, this does not append Enter and uses send-keys -l for literal mode.
 func (m *Manager) SendRawKeys(fullID, data string) error {
@@ -3212,22 +4349,25 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		}
 		fullID = sess.FullID
 	}
+	// sess is shared with the monitor goroutines, so read it through a
+	// snapshot and write it through store.Mutate below.
+	snap := m.store.Snapshot(sess)
 	// Allow sending to running sessions too — the user may need to send input
 	// before the idle detector fires (or when the session accepted the input
 	// without transitioning states).
-	if sess.State != StateWaitingInput && sess.State != StateRunning && sess.State != StateRateLimited {
-		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, sess.State)
+	if snap.State != StateWaitingInput && snap.State != StateRunning && snap.State != StateRateLimited {
+		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, snap.State)
 	}
 
-	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, sess.TmuxSession, input, sess.BackendFamily)
+	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, snap.TmuxSession, input, snap.BackendFamily)
 
 	// For chat-mode sessions, intercept memory commands before sending to backend.
 	// This works for any backend with output_mode=chat (Ollama, OpenWebUI, etc.)
-	if sess.OutputMode == "chat" {
-		sessionID := strings.TrimPrefix(sess.TmuxSession, "cs-")
+	if snap.OutputMode == "chat" {
+		sessionID := strings.TrimPrefix(snap.TmuxSession, "cs-")
 		// Memory command interception
 		if m.chatMemoryFn != nil {
-			if response, handled := m.chatMemoryFn(sess.TmuxSession, input); handled {
+			if response, handled := m.chatMemoryFn(snap.TmuxSession, input); handled {
 				if m.onChatMessage != nil {
 					m.onChatMessage(sessionID, "user", input, false)
 					m.onChatMessage(sessionID, "system", response, false)
@@ -3243,24 +4383,24 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	}
 
 	// For opencode-acp sessions, route input via HTTP API if ACP session is active.
-	if sess.BackendFamily == "opencode-acp" {
-		if opencode.SendMessageACP(sess.TmuxSession, input) {
+	if snap.BackendFamily == "opencode-acp" {
+		if opencode.SendMessageACP(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via opencode ACP HTTP")
 			return nil
 		}
 		m.debugf("SendInput ACP not active, falling back to tmux send-keys")
 	}
 	// For openwebui sessions, route through Go HTTP conversation manager.
-	if sess.BackendFamily == "openwebui" {
-		if openwebui.SendMessageOWUI(sess.TmuxSession, input) {
+	if snap.BackendFamily == "openwebui" {
+		if openwebui.SendMessageOWUI(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via openwebui Go conversation manager")
 			return nil
 		}
 		m.debugf("SendInput openwebui conversation not active, falling back to tmux send-keys")
 	}
 	// For ollama chat-mode sessions, route through Go API conversation manager.
-	if sess.BackendFamily == "ollama" && sess.OutputMode == "chat" {
-		if ollama.SendMessageOllama(sess.TmuxSession, input) {
+	if snap.BackendFamily == "ollama" && snap.OutputMode == "chat" {
+		if ollama.SendMessageOllama(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via ollama Go conversation manager")
 			return nil
 		}
@@ -3274,10 +4414,10 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	// not configured (scheduleSettleMs == 0).
 	var sendErr error
 	if m.scheduleSettleMs > 0 {
-		sendErr = m.tmux.SendKeysWithSettle(sess.TmuxSession, input,
+		sendErr = m.tmux.SendKeysWithSettle(snap.TmuxSession, input,
 			time.Duration(m.scheduleSettleMs)*time.Millisecond)
 	} else {
-		sendErr = m.tmux.SendKeys(sess.TmuxSession, input)
+		sendErr = m.tmux.SendKeys(snap.TmuxSession, input)
 	}
 	if sendErr != nil {
 		return fmt.Errorf("send input: %w", sendErr)
@@ -3285,7 +4425,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	m.debugf("SendInput OK")
 
 	// Increment input counter
-	sess.InputCount++
+	m.store.Mutate(func() { sess.InputCount++ })
 
 	// Record input in tracker
 	m.mu.Lock()
@@ -3298,11 +4438,14 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	}
 
 	// Transition back to running if we were waiting for input or rate limited
-	if sess.State == StateWaitingInput || sess.State == StateRateLimited {
-		oldState := sess.State
-		sess.State = StateRunning
-		sess.PendingInput = ""
-		sess.RateLimitResetAt = nil
+	var oldState State
+	m.store.Mutate(func() {
+		oldState = sess.State
+		if oldState == StateWaitingInput || oldState == StateRateLimited {
+			sess.State = StateRunning
+			sess.PendingInput = ""
+			sess.RateLimitResetAt = nil
+		}
 		sess.LastInput = truncateStr(input, 100) // for alert logging
 		sess.UpdatedAt = time.Now()
 		// BL266 / v6.11.24 — operator input counts as activity for the
@@ -3310,9 +4453,11 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		// flip Running → WaitingInput 15 s later if the LLM hasn't
 		// produced any pane changes yet.
 		sess.LastChannelEventAt = sess.UpdatedAt
-		if err := m.store.Save(sess); err != nil {
-			return fmt.Errorf("save session: %w", err)
-		}
+	})
+	if err := m.store.Save(sess); err != nil {
+		return fmt.Errorf("save session: %w", err)
+	}
+	if oldState == StateWaitingInput || oldState == StateRateLimited {
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
@@ -3326,114 +4471,10 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		// the unrelated screen-capture poll. Record the activity and notify
 		// through the separate onActivity hook so every connected client's
 		// list view reflects it too, not just the one open pane.
-		sess.LastInput = truncateStr(input, 100)
-		sess.UpdatedAt = time.Now()
-		sess.LastChannelEventAt = sess.UpdatedAt
-		if err := m.store.Save(sess); err != nil {
-			return fmt.Errorf("save session: %w", err)
-		}
 		if m.onActivity != nil {
 			m.onActivity(sess)
 		}
 	}
-	return nil
-}
-
-// Kill terminates a session by full ID.
-func (m *Manager) Kill(fullID string) error {
-	sess, ok := m.store.Get(fullID)
-	if !ok {
-		// Accept short 4-char hex IDs (e.g. from Task.SessionID).
-		if sess, ok = m.store.GetByShortID(fullID); ok {
-			fullID = sess.FullID
-		} else {
-			return fmt.Errorf("session %s not found", fullID)
-		}
-	}
-
-	// Cancel the monitor goroutine and clean up encrypting FIFO
-	m.mu.Lock()
-	if cancel, ok := m.monitors[fullID]; ok {
-		cancel()
-		delete(m.monitors, fullID)
-	}
-	if fifo, ok := m.encFIFOs[fullID]; ok {
-		_ = fifo.Close()
-		delete(m.encFIFOs, fullID)
-	}
-	if sp, ok := m.streamPipes[fullID]; ok {
-		sp.Close()
-		delete(m.streamPipes, fullID)
-	}
-	tracker := m.trackers[fullID]
-	m.mu.Unlock()
-
-	// Cancel any pending scheduled commands (e.g. rate-limit auto-resume)
-	if m.schedStore != nil {
-		if n := m.schedStore.CancelBySession(fullID); n > 0 {
-			fmt.Printf("[session] cancelled %d scheduled command(s) for killed session %s\n", n, sess.ID)
-		}
-	}
-
-	// Kill the tmux session — but ONLY if there is one. Virtual
-	// sessions (council-virtual, etc.) have no tmux pane; calling
-	// `tmux kill-session -t ""` without a target munches arbitrary
-	// tmux sessions, which is how stopping one virtual council
-	// persona killed a bunch of operator-attached real sessions
-	// (operator-flagged 2026-05-09 as "stopped 4169ux and it killed
-	// all sessions"). Skip the tmux call entirely when there's no
-	// pane to kill.
-	if strings.TrimSpace(sess.TmuxSession) != "" {
-		_ = m.tmux.KillSession(sess.TmuxSession)
-	}
-
-	oldState := sess.State
-	sess.State = StateKilled
-	sess.UpdatedAt = time.Now()
-	if err := m.store.Save(sess); err != nil {
-		return fmt.Errorf("save session: %w", err)
-	}
-
-	// Record in tracker
-	if tracker != nil {
-		if err := tracker.RecordComplete(StateKilled); err != nil {
-			fmt.Printf("[warn] tracker.RecordComplete(killed): %v\n", err)
-		}
-	}
-
-	if m.onStateChange != nil {
-		m.onStateChange(sess, oldState)
-	}
-	if m.onSessionEnd != nil {
-		m.onSessionEnd(sess)
-	}
-	m.triggerSummarize(sess.FullID, 200)
-
-	// BL351 — deep recursive cascade: kill all descendants regardless of their own settings.
-	if sess.KillChildrenRecursive {
-		var killAll func(parentID string)
-		killAll = func(parentID string) {
-			for _, child := range m.GetChildren(parentID) {
-				killAll(child.FullID)
-				if child.State == StateRunning || child.State == StateWaitingInput || child.State == StateRateLimited {
-					if err := m.Kill(child.FullID); err != nil {
-						fmt.Printf("[warn] recursive kill %s: %v\n", child.ID, err)
-					}
-				}
-			}
-		}
-		killAll(sess.FullID)
-	} else if sess.KillChildren {
-		// BL347 — shallow cascade: direct children only.
-		for _, child := range m.GetChildren(sess.FullID) {
-			if child.State == StateRunning || child.State == StateWaitingInput || child.State == StateRateLimited {
-				if err := m.Kill(child.FullID); err != nil {
-					fmt.Printf("[warn] cascade kill child %s: %v\n", child.ID, err)
-				}
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -3467,7 +4508,10 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		}
 	}
 
-	// Only allow restart of terminal-state sessions
+	// Only allow restart of terminal-state sessions. StateStalled is
+	// deliberately rejected here: it is non-terminal and resumable — activity
+	// returning to the session moves it back to StateRunning, and it reaches
+	// a terminal state before Restart is ever offered for it.
 	switch sess.State {
 	case StateComplete, StateFailed, StateKilled:
 		// OK to restart
@@ -3499,7 +4543,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	m.mu.Unlock()
 
 	// Kill any leftover tmux session
-	_ = m.tmux.KillSession(sess.TmuxSession)
+	m.killPane(sess.FullID, sess.TmuxSession, "restart: clearing leftover pane before relaunch")
 
 	// Resolve backend
 	backendName := sess.BackendFamily
@@ -3541,13 +4585,14 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 			cols, rows = m.cfg.GetConsoleSize(backendName)
 		}
 	}
-	if err := m.tmux.NewSessionWithSize(sess.TmuxSession, cols, rows); err != nil {
+	if err := m.startWorkerPane(sess, cols, rows, resources.Override{}); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 	switch backendName {
 	case "opencode", "opencode-acp":
 		_ = m.tmux.DisableAlternateScreen(sess.TmuxSession)
 	}
+	m.armCommitGuard(sess, sess.TmuxSession)
 
 	// Pipe output
 	logFile := sess.LogFile
@@ -3555,12 +4600,12 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		encLogPath := logFile + ".enc"
 		fifo, err := secfile.NewEncryptingFIFO(logFile+".pipe", encLogPath, m.encKey)
 		if err != nil {
-			_ = m.tmux.KillSession(sess.TmuxSession)
+			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: encrypted output FIFO setup failed")
 			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
 		}
 		if err := m.tmux.PipeOutput(sess.TmuxSession, fifo.FIFOPath()); err != nil {
 			_ = fifo.Close()
-			_ = m.tmux.KillSession(sess.TmuxSession)
+			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: encrypted output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
 		}
 		m.mu.Lock()
@@ -3571,7 +4616,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.mu.Unlock()
 	} else {
 		if err := m.tmux.PipeOutput(sess.TmuxSession, logFile); err != nil {
-			_ = m.tmux.KillSession(sess.TmuxSession)
+			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output: %w", err)
 		}
 	}
@@ -3581,9 +4626,24 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.onPreLaunch(sess)
 	}
 
-	// Set session name on backend
+	// The backend is a singleton: hold the launch lock from the first
+	// per-session setting until the launch has read them.
+	unlockBackend := lockSharedBackend(backendObj)
+	defer unlockBackend()
+
+	// PRD workers must not read ancestor CLAUDE.md files (other sessions'
+	// Session:/Task: lines). Set on every launch: the backend is a singleton.
+	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
+		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
+	}
+	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
+	}
+
+	// Pi family: a restart reuses the node the session was started on.
+	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
+		nh.SetNodeHost(sess.NodeAddress)
 	}
 
 	// BL363 T2+T3 — re-inject goose config on restart (same as initial launch path).
@@ -3649,6 +4709,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 			resumeLaunchTask = ""
 		}
 	}
+	m.scrubPaneTmuxEnv(sess)
 	var launchErr error
 	if rb, ok := backendObj.(llm.Resumable); ok {
 		m.debugf("restarting %q with resume=%q", backendName, resumeID)
@@ -3658,13 +4719,14 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		launchErr = launchFn(ctx, sess.Task, sess.TmuxSession, sess.ProjectDir, logFile)
 	}
 	if launchErr != nil {
-		_ = m.tmux.KillSession(sess.TmuxSession)
+		m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: relaunch LLM backend failed")
 		return nil, fmt.Errorf("relaunch LLM backend: %w", launchErr)
 	}
+	unlockBackend()
 
 	// Save updated session
 	if err := m.store.Save(sess); err != nil {
-		_ = m.tmux.KillSession(sess.TmuxSession)
+		m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: session save failed")
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
@@ -3675,22 +4737,29 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	m.monitors[sess.FullID] = cancel
 	// Record restart time so processOutputLine can ignore DATAWATCH_COMPLETE:
 	// replayed from prior conversation history during the TUI re-render window.
-	m.restartedAt[sess.FullID] = time.Now()
+	m.restartedAt[sess.FullID] = m.now()
 	m.mu.Unlock()
-	go m.monitorOutput(monCtx, sess, projGit)
+	m.goBG(func() { m.monitorOutput(monCtx, sess, projGit) })
 	if sess.OneShot && sess.TmuxSession != "" {
-		go func() {
-			time.Sleep(2 * time.Second)
+		m.goBG(func() {
+			select {
+			case <-time.After(2 * time.Second):
+			case <-monCtx.Done():
+				return
+			}
 			m.StartScreenCapture(monCtx, sess.FullID, 500)
-		}()
+		})
 	}
 
 	if m.onStateChange != nil {
 		m.onStateChange(sess, oldState)
 	}
-	if m.onSessionStart != nil {
-		m.onSessionStart(sess)
-	}
+	m.notifySessionStart(sess)
+	// Re-derive the relaunched session's placement (system) tags from its
+	// record, the same as Start. Only reached on a successful relaunch: every
+	// error return above leaves the hook uncalled. RestartSession delegates
+	// here, so it is covered too.
+	m.runPlacementStartHook(sess)
 
 	return sess, nil
 }
@@ -3709,8 +4778,11 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 	}
 
 	// Kill the session if it is still alive.
+	// StateStalled is included: a stalled print session's pane may still be
+	// alive (silent beyond the window), and a restart requires it to be
+	// torn down just like any other non-terminal live state.
 	switch sess.State {
-	case StateRunning, StateWaitingInput, StateRateLimited:
+	case StateRunning, StateWaitingInput, StateRateLimited, StateStalled:
 		// Cancel the monitor goroutine and clean up resources before Kill so
 		// Kill's tmux call is the only thing that tears it down.
 		m.mu.Lock()
@@ -3728,7 +4800,7 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 		}
 		m.mu.Unlock()
 		if strings.TrimSpace(sess.TmuxSession) != "" {
-			_ = m.tmux.KillSession(sess.TmuxSession)
+			m.killPane(sess.FullID, sess.TmuxSession, "restart requested: stopping live pane before relaunch")
 		}
 	}
 
@@ -3749,10 +4821,13 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 	// Delegate to the existing Restart logic (which handles terminal states).
 	// Temporarily set state to a terminal state so Restart's guard passes, then
 	// let Restart do the full relaunch sequence.
+	from := sess.State
 	sess.State = StateKilled
 	if err := m.store.Save(sess); err != nil {
 		return nil, fmt.Errorf("save before restart: %w", err)
 	}
+	m.recordEnd(sess, m.getTracker(sess.FullID), from, StateKilled,
+		EndReason{Caller: callerAt(0), Reason: "restart requested: state set to killed before relaunch"})
 
 	return m.Restart(ctx, sess.FullID)
 }
@@ -3771,7 +4846,7 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 
 	// Kill if still active
 	if sess.State == StateRunning || sess.State == StateWaitingInput || sess.State == StateRateLimited {
-		if err := m.Kill(fullID); err != nil {
+		if err := m.EndSession(fullID, EndReason{Caller: callerAt(0), Reason: "session deleted while still active"}); err != nil {
 			return fmt.Errorf("kill before delete: %w", err)
 		}
 	}
@@ -3813,6 +4888,12 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 			fmt.Printf("[session] cancelled %d scheduled command(s) for deleted session %s\n", n, sess.ID)
 		}
 	}
+
+	// Save unpushed commits before the record (and, for daemon-owned
+	// checkouts, the ProjectDir clone itself) disappears. Bounded and
+	// never fails the delete; a push failure still proceeds below and
+	// the local commits are kept.
+	m.pushUnpushedBeforeTeardown(sess)
 
 	// Delete from store
 	if err := m.store.Delete(fullID); err != nil {
@@ -3981,6 +5062,19 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	if !current.OneShot {
 		return
 	}
+	// Planning/judgment sessions must never stage or commit the repo. This
+	// is the single choke point for the completion commit (CommitSessionWork
+	// + checkpoint tag), so gating it here covers every call site.
+	if current.SkipSnapshot {
+		return
+	}
+	// Git-less sessions (StartOptions.Git false, the default) never
+	// commit on completion — no repo may have been created for them, so
+	// validate/stage/commit none of it. Persisted on the Session so the
+	// monitor, one-shot reaper and restart paths all see the same flag.
+	if !current.Git {
+		return
+	}
 	if projGit == nil || !projGit.IsRepo() {
 		return
 	}
@@ -4001,6 +5095,12 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 		}
 	}
 
+	// Validation passed (or, for a PRD task, the verifier already passed):
+	// only now does the harness commit carry the guard's commit token, and
+	// the guard is released once the commit attempt is over.
+	m.AuthorizeCommit(current.FullID, projGit)
+	defer m.releaseCommitGuard(current.FullID, current.ProjectDir)
+
 	// Best-effort summary from the worker's recent output; a read failure
 	// just falls back to "" (CommitSessionWork falls back to the task).
 	summary := ""
@@ -4014,12 +5114,47 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	if !current.CreatedAt.IsZero() {
 		projGit.SetRunStart(current.CreatedAt)
 	}
+	// Automatic commits must never stage paths that are gitignored or that
+	// match the autonomous.snapshot_never_stage patterns (built-in
+	// defaults when unset). StageChanges enforces both; the skipped paths
+	// are reported per-path with a reason (log + LastStagingSkipped).
+	if m.cfg != nil {
+		projGit.SetNeverStagePatterns(m.cfg.Autonomous.EffectiveSnapshotNeverStage())
+	}
 
-	if sha, err := projGit.CommitSessionWork(current.ID, current.Task, summary, current.WriteScope); err != nil {
+	var sha string
+	var err error
+	if current.PRDID != "" {
+		// Verification is not known on this path (the verifier ran earlier),
+		// so the body says it was not run before this commit.
+		sha, err = projGit.CommitTaskWork(current.ID, TaskCommitLabel{
+			PRDID:     current.PRDID,
+			TaskTitle: current.TaskTitle,
+			Prompt:    current.Task,
+			Summary:   summary,
+		}, current.WriteScope)
+	} else {
+		sha, err = projGit.CommitSessionWork(current.ID, current.Task, summary, current.WriteScope)
+	}
+	if err != nil {
 		fmt.Printf("[warn] completion commit: %v\n", err)
 	} else {
 		current.CommitSHA = sha
 		current.CompletionSummary = summary
+		// One-shots started outside a PRD push their own finished work
+		// here (PRD task sessions are pushed by the autonomous executor
+		// instead). The push never affects the commit or the session's
+		// completion state — failures are recorded + alerted on the
+		// session (see pushAfterCommit).
+		if sha != "" && current.PRDID == "" {
+			m.pushAfterCommit(current, sha)
+		}
+	}
+	// The staging pass ran even if the commit itself failed, so record
+	// what it left unstaged in either case (last staging pass wins).
+	current.StagingSkipped = projGit.LastStagingSkipped()
+	for _, sk := range projGit.LastStagingSkipped() {
+		fmt.Printf("[datawatch] completion commit: left %q unstaged (%s)\n", sk.Path, sk.Reason)
 	}
 
 	if stat, _ := projGit.DiffStat(); !stat.IsZero() {
@@ -4215,6 +5350,19 @@ func (m *Manager) ReadTimeline(id string) ([]string, error) {
 	return diskTracker.ReadTimeline()
 }
 
+// SessionSnapshot returns a copy of sess that is safe to marshal while the
+// monitor goroutines keep updating the live session.
+func (m *Manager) SessionSnapshot(sess *Session) Session {
+	return m.store.Snapshot(sess)
+}
+
+// SnapshotFiltered returns copies of the sessions keep selects by state and
+// update time (safe to marshal while the monitor goroutines keep writing the
+// live ones) and the set of every held session ID; see Store.SnapshotFiltered.
+func (m *Manager) SnapshotFiltered(keep func(State, time.Time) bool) ([]*Session, map[string]struct{}) {
+	return m.store.SnapshotFiltered(keep)
+}
+
 // GetSession returns a session by full ID or short ID.
 func (m *Manager) GetSession(id string) (*Session, bool) {
 	if sess, ok := m.store.Get(id); ok {
@@ -4254,6 +5402,20 @@ func (m *Manager) FindSessionByName(name string) (*Session, bool) {
 
 // SaveSession persists the session state to the store.
 func (m *Manager) SaveSession(sess *Session) error {
+	// Session end (never resurrected): drop any tracked interstitial-prompt
+	// block state and clear the exposed prompt from the record that is being
+	// persisted, so a terminal session never serialises one.
+	if sess.State.IsTerminal() {
+		m.uiPromptMu.Lock()
+		delete(m.uiPromptState, sess.FullID)
+		m.uiPromptMu.Unlock()
+		if sess.UIPrompt != nil {
+			// Shared session pointer: nil the exposed prompt under the
+			// store write lock so REST marshalling under the read lock
+			// never races this write.
+			m.store.Mutate(func() { sess.UIPrompt = nil })
+		}
+	}
 	return m.store.Save(sess)
 }
 
@@ -4264,6 +5426,17 @@ func (m *Manager) Rename(id, name string) error {
 		return fmt.Errorf("session %s not found", id)
 	}
 	sess.Name = name
+	sess.UpdatedAt = time.Now()
+	return m.store.Save(sess)
+}
+
+// SetPriority sets the session's capacity-queue priority. Zero clears it.
+func (m *Manager) SetPriority(id string, priority int) error {
+	sess, ok := m.GetSession(id)
+	if !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	sess.Priority = priority
 	sess.UpdatedAt = time.Now()
 	return m.store.Save(sess)
 }
@@ -4364,63 +5537,213 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 }
 
 // GetActiveStartupPromptInput captures the live tmux pane for sessID and
-// returns the appropriate auto-accept keystroke for whichever Claude Code
-// startup prompt is currently on screen, or "" if no known prompt is visible.
-//
-// Priority (checked in order):
-//  1. Bypass-permissions disclaimer ("Yes, I accept" + "No, exit") → "2\n"
-//  2. Trust-folder check ("Quick safety check" / "trust this folder")  → "1\n"
-//  3. MCP server trust prompt ("New MCP server found")                 → "1\n"
-//  4. Nothing recognisable                                             → ""
+// returns the auto-accept text payload (via StartupDialogSendText) for
+// whichever Claude Code startup prompt is currently on screen, or "" if no
+// SendInput-answerable prompt is visible. The decision is delegated to
+// classifyStartupDialog — see ActiveStartupDialog for the full action
+// (trust-folder arrow keys and Esc declines are not answerable with text
+// and therefore render as "").
 //
 // The "" return signals the caller to skip sending entirely — important when
 // this goroutine fires after all startup prompts have already been accepted.
 func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
+	return StartupDialogSendText(m.ActiveStartupDialog(fullID))
+}
+
+// ActiveStartupDialog captures the live tmux pane for fullID and returns
+// the classifier's decision for the dialog currently on screen (kind, keys,
+// retry flag). It returns {Kind: StartupDialogNone} when the session is
+// unknown, the capture fails, or no recognised dialog is visible.
+func (m *Manager) ActiveStartupDialog(fullID string) StartupDialogAction {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
-		return ""
+		return StartupDialogAction{Kind: StartupDialogNone}
 	}
 	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
 	if err != nil || content == "" {
-		return ""
+		return StartupDialogAction{Kind: StartupDialogNone}
+	}
+	return classifyStartupDialog(content)
+}
+
+// ErrTaskUndelivered is returned by DeliverOneShotTask when the task never
+// reached the session's main prompt within every attempt.
+var ErrTaskUndelivered = errors.New("task never reached the session main prompt")
+
+// activeChoiceDialogPhrases are the lowercase phrases of Claude Code startup
+// and choice dialogs that are still awaiting an answer. Any of them on
+// screen means the main prompt is not yet the place to type a task.
+var activeChoiceDialogPhrases = []string{
+	"yes, i accept",
+	"no, exit",
+	"quick safety check",
+	"trust this folder",
+	"yes, i trust",
+	"new mcp server found",
+	"use this mcp server",
+	"i am using this for local development",
+	"loading development channels",
+}
+
+// mainPromptLine matches a numbered choice row ("❯ 1. ...") that a dialog
+// draws with the same ❯ cursor as the main input prompt.
+var mainPromptLine = regexp.MustCompile(`^❯\s*\d+\.\s`)
+
+// MainPromptReady reports whether the live pane for fullID shows the
+// interactive main input prompt ("❯" input line) with no active choice
+// dialog on screen. Passive lines (a banner, an update notice, a doctor
+// hint) do not stop it from reporting ready. An empty or failed pane
+// capture reports not ready.
+func (m *Manager) MainPromptReady(fullID string) bool {
+	sess, ok := m.store.Get(fullID)
+	if !ok || sess.TmuxSession == "" {
+		return false
+	}
+	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
+	if err != nil || content == "" {
+		return false
 	}
 	lower := strings.ToLower(StripANSI(content))
-	switch {
-	case strings.Contains(lower, "yes, i accept") && strings.Contains(lower, "no, exit"):
-		return "2\n"
-	case strings.Contains(lower, "quick safety check"),
-		strings.Contains(lower, "trust this folder"),
-		strings.Contains(lower, "yes, i trust"):
-		// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
-		// Sending "1\n" here would type "1" and press Enter, confirming "No, exit".
-		// Callers must use SendTrustDialogAccept (Down+Enter) instead.
-		return ""
-	case strings.Contains(lower, "new mcp server found"),
-		strings.Contains(lower, "use this mcp server"):
-		return "1\n"
-	case strings.Contains(lower, "i am using this for local development"),
-		strings.Contains(lower, "loading development channels"):
-		return "1\n"
+	for _, phrase := range activeChoiceDialogPhrases {
+		if strings.Contains(lower, phrase) {
+			return false
+		}
 	}
-	return ""
+	for _, line := range strings.Split(StripANSI(content), "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "❯") && !mainPromptLine.MatchString(t) {
+			return true
+		}
+	}
+	return false
+}
+
+// awaitOneShotPrompt polls on ~1 s ticks (m.now()/m.sleep so a test can
+// drive it with virtual time) until the session is waiting for input with
+// its main prompt visible, until window elapses, or — checked on every
+// poll before the prompt check — until the session has exited: it is
+// missing from the store, in a terminal state, or its tmux session no
+// longer exists.
+func (m *Manager) awaitOneShotPrompt(fullID string, window time.Duration) oneShotPromptOutcome {
+	deadline := m.now().Add(window)
+	for {
+		sess, ok := m.store.Get(fullID)
+		if !ok || sess.State.IsTerminal() || (sess.TmuxSession != "" && !m.tmux.SessionExists(sess.TmuxSession)) {
+			return oneShotSessionExited
+		}
+		if sess.State == StateWaitingInput && m.MainPromptReady(fullID) {
+			return oneShotReady
+		}
+		if !m.now().Before(deadline) {
+			return oneShotTimedOut
+		}
+		m.sleep(time.Second)
+	}
+}
+
+// DeliverOneShotTask types input into a OneShot session once its main prompt
+// is ready, then marks the task delivered. Each attempt waits up to window
+// for the prompt (defaultTaskDeliveryWindow when window <= 0); a timed-out
+// attempt is retried after a linear backoff (backoff * attempt), and after
+// the last attempt the claim is released, the session is ended and
+// ErrTaskUndelivered is returned. If the worker session ends (or its tmux
+// session dies) before the prompt appears, no further attempts are made:
+// the claim is released — the already-finished session is not Killed again
+// — and ErrTaskUndelivered is returned. The caller must already hold the
+// ClaimTaskDelivery claim.
+func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts int, window, backoff time.Duration) error {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	if window <= 0 {
+		window = defaultTaskDeliveryWindow
+	}
+	window = m.scaledDeliveryWindow(fullID, input, window)
+
+	promptLines := strings.Count(input, "\n") + 1
+	isJudge := false
+	if sess, ok := m.GetSession(fullID); ok && sess != nil {
+		isJudge = strings.HasPrefix(sess.Name, judgeSessionNamePrefix)
+	}
+
+	exited := false
+	attemptsMade := 0
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attemptsMade = attempt
+		if isJudge {
+			m.debugf("judge prompt delivery: %d lines, attempt %d of %d, waiting up to %ds", promptLines, attempt, maxAttempts, int(window/time.Second))
+		}
+		switch outcome := m.awaitOneShotPrompt(fullID, window); outcome {
+		case oneShotReady:
+			err := m.SendInput(fullID, input, "channel-task")
+			if err == nil {
+				m.MarkTaskDelivered(fullID)
+				// The worker may already be inside a silent tool call; keep it
+				// Running rather than letting the gap watcher flip it back.
+				m.applyBusyProbe(fullID, time.Time{})
+				return nil
+			}
+			m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d (window %s): %v", fullID, attempt, maxAttempts, window, err)
+		case oneShotSessionExited:
+			m.debugf("DeliverOneShotTask: session for %s ended before attempt %d/%d could wait for its main prompt", fullID, attempt, maxAttempts)
+			exited = true
+		case oneShotTimedOut:
+			m.debugf("DeliverOneShotTask: no main prompt within %s for %s attempt %d/%d", window, fullID, attempt, maxAttempts)
+		}
+		if exited {
+			break
+		}
+		if attempt < maxAttempts {
+			m.sleep(backoff * time.Duration(attempt))
+		}
+	}
+
+	m.ReleaseTaskDelivery(fullID)
+
+	var reason string
+	if exited {
+		reason = "task delivery failed: session ended before the task was delivered"
+	} else {
+		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task (prompt %d lines, total wait used %s)", window, maxAttempts, promptLines, window*time.Duration(attemptsMade))
+	}
+	m.debugf("DeliverOneShotTask: %s: %s", fullID, reason)
+
+	if !exited {
+		// Ending the session lets the executor's worker wait loop observe a
+		// terminal state, so the task takes its normal retry path with a fresh
+		// session. This is the same session end path the stall handler uses.
+		if err := m.EndSession(fullID, EndReason{Caller: callerAt(0), Reason: reason}); err != nil {
+			m.debugf("DeliverOneShotTask: session end path for %s: %v", fullID, err)
+		}
+	}
+
+	m.mu.Lock()
+	onFailed := m.onTaskDeliveryFailed
+	m.mu.Unlock()
+	if onFailed != nil {
+		onFailed(fullID, reason)
+	}
+	return ErrTaskUndelivered
 }
 
 // IsTrustDialogShowing returns true if the live tmux pane for the given
 // session is currently displaying Claude Code's workspace-trust dialog.
 // Used by the startup trust poller in main.go.
 func (m *Manager) IsTrustDialogShowing(fullID string) bool {
+	return m.ActiveStartupDialog(fullID).Kind == StartupDialogTrustFolder
+}
+
+// DeclineStartupDialog sends a single Esc to sessID's pane through the
+// tmux layer, declining a classifier-marked unsafe startup dialog
+// (StartupDialogConfirmUnsafe, StartupDialogUpdatePrompt). Callers must not
+// retry: the session stays in waiting_input, the silent-start detector
+// marks it a start failure and the start-failure budget re-tries it.
+func (m *Manager) DeclineStartupDialog(fullID string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
-		return false
+		return fmt.Errorf("session %s not found", fullID)
 	}
-	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
-	if err != nil || content == "" {
-		return false
-	}
-	lower := strings.ToLower(StripANSI(content))
-	return strings.Contains(lower, "quick safety check") ||
-		strings.Contains(lower, "trust this folder") ||
-		strings.Contains(lower, "yes, i trust")
+	return m.tmux.SendKeysLiteral(sess.TmuxSession, "\x1b")
 }
 
 // IsOpenCodeAtPrompt returns true when the live pane for fullID shows
@@ -4458,13 +5781,234 @@ func (m *Manager) IsOpenCodeAtPrompt(fullID string) bool {
 }
 
 // SendTrustDialogAccept accepts the workspace-trust TUI dialog for sessID
-// by delegating to tmux.SendTrustPromptAccept (Down then Enter).
+// by delegating to tmux.SendTrustPromptAccept (pane-aware: Enter or
+// Down+Enter depending on which option claude preselected).
 func (m *Manager) SendTrustDialogAccept(fullID string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
 		return fmt.Errorf("session %s not found", fullID)
 	}
 	return m.tmux.SendTrustPromptAccept(sess.TmuxSession)
+}
+
+// Claude-code startup-dialog dismissal (workspace trust + dev-channels
+// consent), shared by the screen-capture loop and processOutputLine.
+//
+// One-shot sessions have no human at the terminal, and Claude Code's Ink
+// TUI renders the dialog text with cursor addressing so the per-log-line
+// match in processOutputLine can miss it entirely (split reads, redraws).
+// The capture loop reads the rendered pane and therefore forms the
+// reliable floor for the dismissal; both paths converge on
+// dismissClaudeStartupDialog, which inspects a block of text (a pane
+// capture or a log line) and sends the matching accept keystrokes through
+// the m.tmux abstraction.
+const (
+	claudeDialogTrust    = "trust"
+	claudeDialogChannels = "channels"
+
+	// claudeStartupDialogMaxAttempts bounds how many accept-send attempts
+	// one session may make for one dialog before a burst is exhausted
+	// (logged, left to the operator). The bound only throttles bursts: a
+	// dialog still on the screen re-arms the budget (see
+	// trySendDialogAccept), so a persisting dialog is retried forever at a
+	// bounded pace instead of being stranded.
+	claudeStartupDialogMaxAttempts = 5
+
+	// claudeStartupDialogRetryGap is the minimum distance between two send
+	// attempts for the same dialog — it only prevents two concurrent
+	// callers (capture loop + output monitor) from double-firing within a
+	// single burst; failed attempts are otherwise re-sent on the next
+	// evaluation that still sees the dialog.
+	claudeStartupDialogRetryGap = 10 * time.Millisecond
+
+	// claudeDialogConfirmWindow is how long the dialog must stay absent
+	// from the evaluated text after a successful accept send before the
+	// "dismissed" latch commits. A single fleeting absence (a mid-render
+	// frame, a cursor-addressing redraw, a stray log line that never
+	// carried the dialog text) must NOT confirm the dismissal: the
+	// one-shot live run of 2026-10-21 latched on exactly such a frame and
+	// left a still-visible trust dialog unhandled for ~6'41" (see
+	// docs/plans/2026-10-20-oneshot-startup-dialog-dismiss.md, Live
+	// Validation).
+	claudeDialogConfirmWindow = 700 * time.Millisecond
+
+	// claudeDialogReSendGap is the minimum wait after a successful send
+	// before a re-send is allowed when the dialog is still (or re-)visible
+	// — Claude needs a beat to apply the keystrokes, and re-firing while
+	// the TUI is mid-transition risks the second keystroke landing on the
+	// wrong frame.
+	claudeDialogReSendGap = 500 * time.Millisecond
+)
+
+// claudeDialogState is the per-(session, dialog) record of accept
+// keystrokes sent for one claude-code startup dialog. "Dismissed
+// confirmed" means the absence persisted past claudeDialogConfirmWindow
+// after a successful send — not "fired once": a failed send stays
+// retryable, a sent keystroke is suppressed while the dialog is still
+// visible (with a bounded re-send after the settle gap), and a dialog
+// text that re-appears after the dismissed latch re-arms the budget —
+// the stale latch wins nothing when the dialog is actually on the pane.
+type claudeDialogState struct {
+	mu          sync.Mutex
+	inFlight    bool      // an accept send went out; absence window running or not yet started
+	dismissed   bool      // sustained absence confirmed the dismissal — re-arm only if it re-appears
+	attempts    int       // send attempts made so far (bounded by claudeStartupDialogMaxAttempts)
+	lastAttempt time.Time // wall time of the last send attempt
+	absentSince time.Time // first absent evaluation after a successful send; zero = window not started
+}
+
+// dismissClaudeStartupDialog inspects text (a visible pane capture from
+// the screen-capture loop, or a log-pipe line via processOutputLine) for
+// claude-code startup dialogs on a one-shot session and sends the matching
+// accept keystrokes through m.tmux. Returns true if it sent or attempted a
+// send. Interactive sessions — where a human is at the terminal and the
+// main-loop pollers already cover auto-accept — and other backends are
+// intentionally untouched.
+func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
+	if sess == nil || sess.BackendFamily != "claude-code" || !sess.OneShot || sess.TmuxSession == "" {
+		return false
+	}
+	lower := strings.ToLower(StripANSI(text))
+
+	specs := []struct {
+		name       string
+		visible    bool
+		sendAccept func() error
+	}{
+		{
+			// "No, exit / Yes, I trust this folder" (the
+			// "Quick safety check" heading suffices) — confirm the
+			// preselected trust option via the existing TmuxAPI method
+			// (it reads the pane to pick between plain Enter and
+			// Down+Enter — see TmuxManager.SendTrustPromptAccept).
+			name:    claudeDialogTrust,
+			visible: strings.Contains(lower, "yes, i trust this folder") || strings.Contains(lower, "quick safety check"),
+			sendAccept: func() error {
+				return m.tmux.SendTrustPromptAccept(sess.TmuxSession)
+			},
+		},
+		{
+			// "❯ I am using this for local development" — confirm the
+			// pre-selected option with Enter. Match the option text only
+			// (not the "loading development channels" warning) so a stray
+			// Enter never races ahead of a still-pending trust dialog.
+			name:    claudeDialogChannels,
+			visible: strings.Contains(lower, "i am using this for local development"),
+			sendAccept: func() error {
+				return m.tmux.SendKeys(sess.TmuxSession, "Enter")
+			},
+		},
+	}
+
+	acted := false
+	for _, d := range specs {
+		if d.visible {
+			if m.trySendDialogAccept(sess, d.name, d.sendAccept) {
+				acted = true
+			}
+		} else {
+			m.markDialogConfirmedIfGone(sess, d.name)
+		}
+	}
+	return acted
+}
+
+// trySendDialogAccept sends the accept for the named dialog unless the
+// per-dialog record says otherwise: dismissed (confirmed gone), in flight
+// (send recorded, awaiting the dialog to disappear), attempts bounded,
+// or a second attempt inside the retry gap. A failed send leaves the
+// record retryable — a later evaluation that still sees the dialog
+// re-sends, up to the bound.
+func (m *Manager) trySendDialogAccept(sess *Session, dialog string, sendAccept func() error) bool {
+	key := sess.FullID + ":" + dialog
+	v, _ := m.claudeDialogDismiss.LoadOrStore(key, &claudeDialogState{})
+	st := v.(*claudeDialogState)
+
+	st.mu.Lock()
+	if st.dismissed {
+		// The dialog text is visible again after we confirmed a dismissal —
+		// the stale latch was wrong (it committed on a mid-render frame).
+		// Re-arm with a fresh budget; the settle gap below bounds the pace.
+		st.dismissed = false
+		st.absentSince = time.Time{}
+		st.attempts = 0
+		st.lastAttempt = time.Time{}
+		m.debugf("dismissClaudeStartupDialog: %s (%s): dialog re-appeared after dismiss confirmed — re-armed the accept budget", dialog, sess.FullID)
+	} else if st.inFlight {
+		// A successful send went out, but the dialog is still (or re-)visible:
+		// the keystrokes did not take (sent while the TUI was still rendering).
+		// Let the pane settle before re-sending instead of firing every tick.
+		if time.Since(st.lastAttempt) < claudeDialogReSendGap {
+			st.mu.Unlock()
+			return false
+		}
+		st.inFlight = false
+		st.absentSince = time.Time{} // any earlier absence streak is void once the dialog is visible again
+		if st.attempts >= claudeStartupDialogMaxAttempts {
+			st.attempts = 0
+			m.debugf("dismissClaudeStartupDialog: %s (%s): dialog still on screen after %d accepted sends — re-armed the accept budget", dialog, sess.FullID, claudeStartupDialogMaxAttempts)
+		}
+	}
+	if st.attempts >= claudeStartupDialogMaxAttempts {
+		st.mu.Unlock()
+		m.debugf("dismissClaudeStartupDialog: %s (%s): giving up after %d attempts — dialog still visible", dialog, sess.FullID, st.attempts)
+		return false
+	}
+	if st.attempts > 0 && time.Since(st.lastAttempt) < claudeStartupDialogRetryGap {
+		st.mu.Unlock()
+		return false
+	}
+	st.attempts++
+	attempt := st.attempts
+	st.mu.Unlock()
+
+	err := sendAccept()
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.lastAttempt = time.Now()
+	if err != nil {
+		st.inFlight = false
+		m.debugf("dismissClaudeStartupDialog: %s (%s): attempt %d/%d FAILED: %v — retrying while the dialog stays visible", dialog, sess.FullID, attempt, claudeStartupDialogMaxAttempts, err)
+		return true
+	}
+	st.inFlight = true
+	m.debugf("dismissClaudeStartupDialog: %s (%s): attempt %d/%d sent via m.tmux — awaiting the dialog to disappear", dialog, sess.FullID, attempt, claudeStartupDialogMaxAttempts)
+	return true
+}
+
+// markDialogConfirmedIfGone runs when an evaluation no longer sees the
+// named dialog in the text. If an accept send is in flight, absence starts
+// (and, once sustained past claudeDialogConfirmWindow, confirms) the
+// dismissal — a single fleeting absence never latches, so a mid-render
+// flash cannot lock out a dialog that is actually still on screen. If the
+// dialog vanished without our send confirming it (e.g. an operator
+// accepted it), clear the failed-attempt record so a fresh appearance
+// later in the session's life gets a full retry budget again.
+func (m *Manager) markDialogConfirmedIfGone(sess *Session, dialog string) {
+	v, ok := m.claudeDialogDismiss.Load(sess.FullID + ":" + dialog)
+	if !ok {
+		return
+	}
+	st := v.(*claudeDialogState)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.inFlight {
+		if st.absentSince.IsZero() {
+			st.absentSince = time.Now()
+			m.debugf("dismissClaudeStartupDialog: %s (%s): absence observed — starting the dismiss confirm window", dialog, sess.FullID)
+			return
+		}
+		if time.Since(st.absentSince) < claudeDialogConfirmWindow {
+			return // keep the send confirmed-pending; absence may be a fleeting frame
+		}
+		st.inFlight = false
+		st.dismissed = true
+		st.attempts = 0
+		st.absentSince = time.Time{}
+		m.debugf("dismissClaudeStartupDialog: %s (%s): sustained absence — dismissed confirmed, no re-send", dialog, sess.FullID)
+	} else if st.attempts > 0 && !st.dismissed {
+		st.attempts = 0
+	}
 }
 
 // KillAll terminates all running and waiting sessions on this host.
@@ -4534,7 +6078,34 @@ func (m *Manager) saveBackendState(sess *Session) {
 	}
 }
 
+// Close flushes the session store and stops its background writer. Call it
+// on daemon shutdown and before a process re-exec; the store stays usable
+// (writing through) afterwards.
+func (m *Manager) Close() error {
+	if m == nil || m.store == nil {
+		return nil
+	}
+	return m.store.Close()
+}
+
+// Store returns the manager's underlying session store. Tests use it with
+// the leak guard (Path, WriterRunning, IsClosed); the manager remains the
+// ownership boundary for everything non-read-only.
+func (m *Manager) Store() *Store {
+	if m == nil {
+		return nil
+	}
+	return m.store
+}
+
+// KillAll ends every live session on this host with the stop-all reason.
 func (m *Manager) KillAll() error {
+	return m.EndAllSessions(EndReason{Caller: callerAt(0), Reason: "stop all sessions requested"})
+}
+
+// EndAllSessions ends every live session on this host, recording why for each.
+// Only running, waiting-input and rate-limited sessions are ended.
+func (m *Manager) EndAllSessions(why EndReason) error {
 	var errs []string
 	for _, sess := range m.store.List() {
 		if sess.Hostname != m.hostname {
@@ -4543,10 +6114,11 @@ func (m *Manager) KillAll() error {
 		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
 			continue
 		}
-		if err := m.Kill(sess.FullID); err != nil {
+		if err := m.EndSession(sess.FullID, why); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", sess.ID, err))
 		}
 	}
+	m.releaseAllCommitGuards()
 	if len(errs) > 0 {
 		return fmt.Errorf("errors killing sessions: %s", strings.Join(errs, "; "))
 	}
@@ -4558,6 +6130,55 @@ func (m *Manager) ListSessions() []*Session {
 	return m.store.List()
 }
 
+// GetSessionOrArchived is GetSession with a fallback to the archive.
+func (m *Manager) GetSessionOrArchived(id string) (*Session, bool) {
+	if sess, ok := m.GetSession(id); ok {
+		return sess, true
+	}
+	return m.store.GetArchived(id)
+}
+
+// ListArchivedSessions returns archived sessions matching f, extra (nil = any) and text (the
+// ArchivedQuery.Text rules), newest first, updated at or before before (zero =
+// no limit), at most limit (<= 0 = all).
+func (m *Manager) ListArchivedSessions(f SessionFilter, extra func(*Session) bool, text string, before time.Time, limit int) []*Session {
+	out, _, err := m.store.ListArchivedFiltered(ArchivedQuery{
+		Text: text, Before: before, Limit: limit,
+		Match: func(sess *Session) bool {
+			return f.matches(sess) && m.sessionMatchesBackend(f, sess) && m.sessionMatchesTagFilter(f, sess) && (extra == nil || extra(sess))
+		},
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] list archived sessions: %v\n", err)
+	}
+	return out
+}
+
+// RestoreArchivedSession moves an archived session back to the active set.
+func (m *Manager) RestoreArchivedSession(id string) (*Session, error) {
+	return m.store.RestoreFromArchive(id)
+}
+
+// SetArchiveAfter sets the age after which terminal sessions are archived
+// (<= 0 disables archiving).
+func (m *Manager) SetArchiveAfter(d time.Duration) { m.store.SetArchiveAfter(d) }
+
+// StartArchiver runs an archive pass now and then every interval (<= 0 means
+// hourly) until the store closes.
+func (m *Manager) StartArchiver(interval time.Duration) { m.store.StartArchiver(interval) }
+
+// ArchiveSessions runs one archive pass at now and returns how many sessions
+// moved. The background pass does the same on a timer.
+func (m *Manager) ArchiveSessions(now time.Time) (int, error) { return m.store.ArchiveOnce(now) }
+
+// SetFlushInterval sets how long the session store coalesces changes before
+// writing them (<= 0 writes through on every change).
+func (m *Manager) SetFlushInterval(d time.Duration) { m.store.SetFlushInterval(d) }
+
+// SetFieldCap sets the per-field size cap in bytes for persisted sessions
+// (<= 0 disables it).
+func (m *Manager) SetFieldCap(n int) { m.store.SetFieldCap(n) }
+
 // SessionFilter holds optional filter criteria for BL361 structured session listing.
 // All non-empty fields are ANDed together. Empty/zero values mean "no filter on
 // this field". Alive is a tri-state: "true", "false", or "" / "any" = no filter.
@@ -4566,41 +6187,119 @@ type SessionFilter struct {
 	State   string // exact State match, empty = all
 	Backend string // exact BackendFamily match, empty = all
 	Alive   string // "true", "false", "" or "any" = no filter
+	// Tags are the tag IDs a session must carry, counting the tags the
+	// session itself has, its system tags, and the tags it inherits from
+	// the Automaton that spawned it; empty = no filter.
+	Tags []string
+	// TagMatch is "any" (default): the session needs at least one of Tags,
+	// or "all": every tag in Tags.
+	TagMatch string
+}
+
+// matches reports whether sess passes every non-empty criterion in f.
+func (f SessionFilter) matches(sess *Session) bool {
+	if f.Name != "" {
+		matched, err := path.Match(f.Name, sess.Name)
+		if err != nil || !matched {
+			return false
+		}
+	}
+	if f.State != "" && string(sess.State) != f.State {
+		return false
+	}
+	// Backend is checked by Manager.sessionMatchesBackend (family name or
+	// the backend:<value> placement-axis tag).
+	switch f.Alive {
+	case "true":
+		if sess.ClaudeAlive == nil || !*sess.ClaudeAlive {
+			return false
+		}
+	case "false":
+		if sess.ClaudeAlive == nil || *sess.ClaudeAlive {
+			return false
+		}
+	}
+	return true
 }
 
 // ListSessionsFiltered returns sessions that match all non-empty fields in f.
 // BL361 — structured session listing with filter support.
 func (m *Manager) ListSessionsFiltered(f SessionFilter) []*Session {
 	all := m.store.List()
-	if f.Name == "" && f.State == "" && f.Backend == "" && (f.Alive == "" || f.Alive == "any") {
+	if f.Name == "" && f.State == "" && f.Backend == "" && (f.Alive == "" || f.Alive == "any") && len(f.Tags) == 0 {
 		return all
 	}
 	out := make([]*Session, 0, len(all))
 	for _, sess := range all {
-		if f.Name != "" {
-			matched, err := path.Match(f.Name, sess.Name)
-			if err != nil || !matched {
-				continue
-			}
+		if f.matches(sess) && m.sessionMatchesBackend(f, sess) && m.sessionMatchesTagFilter(f, sess) {
+			out = append(out, sess)
 		}
-		if f.State != "" && string(sess.State) != f.State {
-			continue
-		}
-		if f.Backend != "" && sess.BackendFamily != f.Backend {
-			continue
-		}
-		if f.Alive == "true" {
-			if sess.ClaudeAlive == nil || !*sess.ClaudeAlive {
-				continue
-			}
-		} else if f.Alive == "false" {
-			if sess.ClaudeAlive == nil || *sess.ClaudeAlive {
-				continue
-			}
-		}
-		out = append(out, sess)
 	}
 	return out
+}
+
+// sessionMatchesBackend applies the backend filter. The value is both the
+// BL361 session-backend family name (claudecode, opencode) and the backend
+// placement-axis shortcut (backend:<value>: claude, pi, ollama, vllm): a
+// session matches when its family equals the value OR it carries the
+// backend:<value> tag, so every result the family filter returned before
+// is still returned.
+func (m *Manager) sessionMatchesBackend(f SessionFilter, sess *Session) bool {
+	if f.Backend == "" || sess.BackendFamily == f.Backend {
+		return true
+	}
+	want := "backend:" + f.Backend
+	for _, t := range m.sessionEffectiveTagIDs(sess) {
+		if t == want {
+			return true
+		}
+	}
+	return false
+}
+
+// sessionEffectiveTagIDs returns the session's own tag IDs, its system tag
+// IDs, and the tags it inherits from the Automaton that spawned it,
+// duplicates dropped.
+func (m *Manager) sessionEffectiveTagIDs(sess *Session) []string {
+	if sess == nil {
+		return nil
+	}
+	inherited := m.InheritedTags(sess)
+	ids := append(append([]string{}, sess.Tags...), sess.SystemTags...)
+	return dedupeTagIDs(append(ids, inherited...))
+}
+
+// sessionMatchesTagFilter reports whether sess satisfies f's tag criteria,
+// counting the session's own tags, its system tags, and the tags it inherits
+// from the Automaton that spawned it. An empty Tags list passes every session.
+func (m *Manager) sessionMatchesTagFilter(f SessionFilter, sess *Session) bool {
+	wanted := dedupeTagIDs(f.Tags)
+	if len(wanted) == 0 {
+		return true
+	}
+	effective := m.sessionEffectiveTagIDs(sess)
+	have := func(id string) bool {
+		for _, t := range effective {
+			if t == id {
+				return true
+			}
+		}
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(f.TagMatch), "all") {
+		for _, id := range wanted {
+			if !have(id) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, id := range wanted {
+		if have(id) {
+			return true
+		}
+	}
+	return false
 }
 
 // ResumeRateLimitedSession resumes a session that was paused due to rate limiting.
@@ -4643,6 +6342,19 @@ func (m *Manager) getTracker(fullID string) *Tracker {
 
 // ResumeMonitors restores monitoring for sessions that were running when the daemon last stopped.
 func (m *Manager) ResumeMonitors(ctx context.Context) {
+	var liveForGuards []*Session
+	for _, sess := range m.store.List() {
+		if sess.Hostname != m.hostname || sess.TmuxSession == "" {
+			continue
+		}
+		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
+			continue
+		}
+		if m.tmux.SessionExists(sess.TmuxSession) {
+			liveForGuards = append(liveForGuards, sess)
+		}
+	}
+	m.adoptCommitGuards(liveForGuards)
 	for _, sess := range m.store.List() {
 		if sess.Hostname != m.hostname {
 			continue
@@ -4710,9 +6422,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
 			}
-			if m.onSessionEnd != nil {
-				m.onSessionEnd(sess)
-			}
+			m.emitSessionEnd(sess)
 			m.triggerSummarize(sess.FullID, 200)
 			continue
 		}
@@ -4782,6 +6492,18 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		sess.LastChannelEventAt = time.Now()
 		_ = m.store.Save(sess)
 
+		// A session whose task was already typed before the restart still has
+		// that task (and its verbatim DATAWATCH_COMPLETE instruction) on the
+		// pane. Rehydrate the in-memory delivery stamp from the persisted one
+		// and start the 30s post-restart grace so the re-rendered echo cannot
+		// read as a completion. Sessions with no delivered task are untouched.
+		if sess.TaskDeliveredAt != nil {
+			m.mu.Lock()
+			m.taskDeliveredAt[sess.FullID] = *sess.TaskDeliveredAt
+			m.restartedAt[sess.FullID] = m.now()
+			m.mu.Unlock()
+		}
+
 		// Resume tracker for this session
 		tracker := ResumeTracker(m.dataDir, sess)
 		m.mu.Lock()
@@ -4823,7 +6545,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		m.mu.Unlock()
 
 		projGit := NewProjectGit(sess.ProjectDir)
-		go m.monitorOutput(monCtx, sess, projGit)
+		m.goBG(func() { m.monitorOutput(monCtx, sess, projGit) })
 	}
 }
 
@@ -4912,7 +6634,7 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 		m.mu.Lock()
 		firstSeen, exists := m.promptFirstSeen[fullID]
 		if !exists {
-			m.promptFirstSeen[fullID] = time.Now()
+			m.promptFirstSeen[fullID] = m.now()
 			m.mu.Unlock()
 			m.debugf("prompt debounce started session=%s prompt=%q (waiting %v)", fullID, matchedLine, debounce)
 			return false
@@ -4920,7 +6642,7 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 		m.mu.Unlock()
 
 		// Debounce period not yet elapsed
-		if time.Since(firstSeen) < debounce {
+		if m.now().Sub(firstSeen) < debounce {
 			return false
 		}
 	}
@@ -4994,6 +6716,14 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 // matchPromptInLines checks the last N non-empty lines for a prompt pattern match.
 // Returns the matched line and context (surrounding non-empty lines) or empty strings.
 func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, context string) {
+	return m.matchPromptLines(lines, n, true)
+}
+
+// matchPromptLines is matchPromptInLines with control over needs-input
+// markers. A line that merely mentions a marker (task text, wrapped
+// placeholder, shell echo) is never a prompt; a real standalone marker is
+// returned as the match only when markersTrusted.
+func (m *Manager) matchPromptLines(lines []string, n int, markersTrusted bool) (matched string, context string) {
 	// Check the status bar (last few lines) for active-processing indicators.
 	// "esc to interrupt" is the claude-code pattern; opencode shows "esc interrupt"
 	// (without "to"). Both mean the LLM is actively working — suppress detection.
@@ -5065,6 +6795,22 @@ func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, con
 		// The self-update footer is never a prompt, whatever shares its row.
 		if m.matchesSelfUpdateDialog(l) {
 			continue
+		}
+		// The echoed completion instruction ("DATAWATCH_COMPLETE: <one-line ...>")
+		// ends in ">" but is task text, never a prompt.
+		if isCompletionPlaceholder(l) {
+			continue
+		}
+		// Likewise an instruction that mentions DATAWATCH_NEEDS_INPUT ends in
+		// ">" ("<your question>") and would match the "> " prompt pattern.
+		switch kind, _ := classifyNeedsInput(l, m.effectiveInputNeededPatterns()); kind {
+		case needsInputInstruction:
+			continue
+		case needsInputReal:
+			if !markersTrusted {
+				continue
+			}
+			return l, extractPromptContext(lines, i, 10)
 		}
 		for _, pat := range m.effectivePromptPatterns() {
 			match := false
@@ -5295,6 +7041,21 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			if sc.Type != SchedTypeSpawn {
 				sc.SessionID = newSess.FullID
 			}
+			// GH#204 Phase 1 — attach the schedule that spawned this session, set
+			// server-side (never self-reported by the job): the DeferredSession
+			// carries it from AddSpawn; fall back to the entry's own
+			// ScheduleName for schedules written before DeferredSession had the
+			// field.
+			name := ds.ScheduleName
+			if name == "" {
+				name = sc.ScheduleName
+			}
+			if name != "" && newSess.ScheduleName == "" {
+				newSess.ScheduleName = name
+				if err := m.store.Save(newSess); err != nil {
+					fmt.Printf("[schedule] persist schedule_name on %s: %v\n", newSess.FullID, err)
+				}
+			}
 			_ = m.schedStore.MarkDone(sc.ID, false)
 			fmt.Printf("[schedule] spawned session %s (%s type=%s)\n", newSess.FullID, ds.Name, sc.Type)
 		}
@@ -5341,10 +7102,16 @@ func (m *Manager) StartReconciler(ctx context.Context) {
 }
 
 // probeClaudeAlive (BL355) — returns true when the AI process is alive in the
-// tmux pane. Uses `tmux display-message -p -t <session> '#{pane_current_command}'`
-// to read the foreground command. If it is a shell (bash/sh/zsh/fish/dash/ksh/tcsh),
-// Claude has exited and the session is a zombie. Virtual sessions (no TmuxSession)
-// are always considered alive.
+// tmux pane. It reads the pane's foreground command (Manager.paneCommandFn,
+// defaulting to paneForegroundCommand). The rule:
+//   - virtual sessions (no TmuxSession) are always alive;
+//   - an unreadable or empty command means dead;
+//   - a foreground command that is not a shell (bash/sh/zsh/fish/dash/ksh/tcsh)
+//     means alive;
+//   - a shell foreground is not proof of death, because a pipeline pane
+//     (for example pi piped through tee) reports the shell. In that case the
+//     answer is paneProcessAlive: alive when the pane process has a live
+//     child, dead for a bare shell with no child.
 func (m *Manager) probeClaudeAlive(sess *Session) bool {
 	if m.probeClaudeAliveFunc != nil {
 		return m.probeClaudeAliveFunc(sess)
@@ -5352,22 +7119,34 @@ func (m *Manager) probeClaudeAlive(sess *Session) bool {
 	if sess.TmuxSession == "" {
 		return true // virtual sessions (council, agent, etc.) have no pane
 	}
-	out, err := exec.Command("tmux", "display-message", "-p", "-t", sess.TmuxSession, "#{pane_current_command}").Output()
+	cmdFn := m.paneCommandFn
+	if cmdFn == nil {
+		cmdFn = paneForegroundCommand
+	}
+	paneCmd, err := cmdFn(sess.TmuxSession)
 	if err != nil {
 		return false
 	}
-	paneCmd := strings.TrimSpace(string(out))
+	paneCmd = strings.TrimSpace(paneCmd)
 	if paneCmd == "" {
 		return false
 	}
-	// If the foreground command is a shell, Claude has exited
 	shells := []string{"bash", "sh", "zsh", "fish", "dash", "ksh", "tcsh"}
 	for _, shell := range shells {
 		if paneCmd == shell {
-			return false
+			return m.paneProcessAlive(sess)
 		}
 	}
 	return true
+}
+
+// paneForegroundCommand returns the trimmed foreground command of a tmux pane.
+func paneForegroundCommand(tmuxSession string) (string, error) {
+	out, err := exec.Command("tmux", "display-message", "-p", "-t", tmuxSession, "#{pane_current_command}").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (m *Manager) reconcileSessions(ctx context.Context) {
@@ -5408,9 +7187,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
 			}
-			if m.onSessionEnd != nil {
-				m.onSessionEnd(sess)
-			}
+			m.emitSessionEnd(sess)
 			// Cancel orphaned monitor if any
 			m.mu.Lock()
 			if cancel, ok := m.monitors[sess.FullID]; ok {
@@ -5427,7 +7204,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 			if sess.OneShot {
 				go func(s *Session) {
 					time.Sleep(500 * time.Millisecond)
-					_ = m.tmux.KillSession(s.TmuxSession)
+					m.killPane(s.FullID, s.TmuxSession, "one-shot completed session still had a live pane")
 				}(sess)
 				continue
 			}
@@ -5456,14 +7233,14 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 				tracker := ResumeTracker(m.dataDir, sess)
 				m.mu.Lock()
 				m.trackers[sess.FullID] = tracker
-				m.restartedAt[sess.FullID] = time.Now()
+				m.restartedAt[sess.FullID] = m.now()
 				m.mu.Unlock()
 				projGit := NewProjectGit(sess.ProjectDir)
 				monCtx, cancel := context.WithCancel(ctx)
 				m.mu.Lock()
 				m.monitors[sess.FullID] = cancel
 				m.mu.Unlock()
-				go m.monitorOutput(monCtx, sess, projGit)
+				m.goBG(func() { m.monitorOutput(monCtx, sess, projGit) })
 			}
 		}
 
@@ -5563,9 +7340,14 @@ func parseClaudeClockTime(line, low, marker string) time.Time {
 		return time.Time{}
 	}
 	now := time.Now()
-	candidate := time.Date(now.Year(), now.Month(), now.Day(), hour, min, 0, 0, now.Location())
+	day := now
+	candidate := time.Date(day.Year(), day.Month(), day.Day(), hour, min, 0, 0, now.Location())
 	if !candidate.After(now) {
-		candidate = candidate.Add(24 * time.Hour)
+		// Next calendar day in local time. A flat +24h would shift the
+		// wall-clock time across a DST transition (a "2pm" reset the day
+		// before fall-back would come back as 1pm the next morning).
+		day = day.AddDate(0, 0, 1)
+		candidate = time.Date(day.Year(), day.Month(), day.Day(), hour, min, 0, 0, now.Location())
 	}
 	return candidate
 }
@@ -5752,8 +7534,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	// stopped together via ctx) so TokensIn/TokensOut/EstCostUSD
 	// actually populate instead of staying at zero forever.
 	if sess.BackendFamily == "claude-code" {
-		go trackClaudeCodeUsage(ctx, sess.FullID, sess.ProjectDir, sess.UsageLinesRead, 10*time.Second, func(sessID string, tokensIn, tokensOut, linesRead int) {
-			_ = m.AddUsageLinesRead(sessID, tokensIn, tokensOut, linesRead)
+		go trackClaudeCodeUsageDelta(ctx, sess.FullID, sess.ProjectDir, sess.UsageLinesRead, 10*time.Second, func(sessID string, d ClaudeUsageDelta) {
+			_ = m.AddClaudeUsage(sessID, d)
 		})
 	}
 
@@ -5787,7 +7569,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	var pendingLines []string
 	var lastPromptMatchTime time.Time // tracks when we last saw a prompt pattern
 	var lastPartialDrain time.Time    // when we last drained partial (no-newline) data
-	idleCheckTicker := time.NewTicker(2 * time.Second)
+	idleCheckTicker := time.NewTicker(m.scanTick())
 	defer idleCheckTicker.Stop()
 	livenessTicker := time.NewTicker(30 * time.Second)
 	defer livenessTicker.Stop()
@@ -5874,8 +7656,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					stripped := StripANSI(capture)
 					capLines := strings.Split(stripped, "\n")
 					if _, ok := m.store.Get(sess.FullID); ok {
-						if matchedLine, promptCtx := m.matchPromptInLines(capLines, 10); matchedLine != "" {
-							m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
+						if matchedLine, promptCtx := m.matchPromptForSession(sess, capLines, 10); matchedLine != "" {
+							m.transitionOnPane(sess.FullID, matchedLine, promptCtx, getTracker)
 						}
 					}
 				}
@@ -5892,9 +7674,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					current, ok := m.store.Get(sess.FullID)
 					if ok {
 						// Check last 10 non-empty lines for prompt patterns
-						matchedLine, promptCtx := m.matchPromptInLines(capLines, 10)
+						matchedLine, promptCtx := m.matchPromptForSession(sess, capLines, 10)
 						if matchedLine != "" {
-							m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
+							m.transitionOnPane(sess.FullID, matchedLine, promptCtx, getTracker)
 						}
 						// Check for completion — scan all visible lines for one-shot
 						// sessions; limit to 5 for interactive ones (same rationale as
@@ -5904,6 +7686,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if current.OneShot {
 							visibleScanLimitCh = len(capLines)
 						}
+						chEchoEnd := lastTaskEchoIndex(capLines, current.Task)
+						chEchoLocated := false
 						for ci, cc := len(capLines)-1, 0; ci >= 0 && cc < visibleScanLimitCh; ci-- {
 							cl := strings.TrimSpace(capLines[ci])
 							if cl == "" {
@@ -5916,9 +7700,13 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							if strings.HasSuffix(cl, "┃") || strings.HasSuffix(cl, "│") {
 								continue
 							}
+							if !echoGate(ci, chEchoEnd) {
+								break
+							}
 							for _, pat := range m.effectiveCompletionPatterns() {
-								if strings.HasPrefix(cl, pat) {
+								if isRealCompletionLine(cl, pat) {
 									completionFound = true
+									chEchoLocated = chEchoEnd >= 0
 									break
 								}
 							}
@@ -5930,6 +7718,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if !completionFound && current.OneShot {
 							if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 50); sbErr == nil {
 								sbLines := strings.Split(StripANSI(sb), "\n")
+								sbChEchoEnd := lastTaskEchoIndex(sbLines, current.Task)
 								for ci, cc := len(sbLines)-1, 0; ci >= 0 && cc < 50; ci-- {
 									cl := strings.TrimSpace(sbLines[ci])
 									if cl == "" {
@@ -5940,9 +7729,13 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 									if strings.HasSuffix(cl, "┃") || strings.HasSuffix(cl, "│") {
 										continue
 									}
+									if !echoGate(ci, sbChEchoEnd) {
+										break
+									}
 									for _, pat := range m.effectiveCompletionPatterns() {
-										if strings.HasPrefix(cl, pat) {
+										if isRealCompletionLine(cl, pat) {
 											completionFound = true
+											chEchoLocated = sbChEchoEnd >= 0
 											break
 										}
 									}
@@ -5955,11 +7748,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						// Same task-echo suppression as StartScreenCapture: suppress completion
 						// for 5 minutes after task delivery so the input-field rendering phase
 						// (where DATAWATCH_COMPLETE: appears as plain text) cannot falsely trigger.
-						if completionFound {
-							m.mu.Lock()
-							deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
-							m.mu.Unlock()
-							if wasDelivered && time.Since(deliveredAt) < 5*time.Minute {
+						if completionFound && !chEchoLocated {
+							deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
+							if wasDelivered && m.now().Sub(deliveredAt) < 5*time.Minute {
 								m.debugf("monitorOutput structured-channel: suppressing completion within 5min task-echo window for %s", sess.FullID)
 								completionFound = false
 							}
@@ -5977,9 +7768,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							if m.onStateChange != nil {
 								m.onStateChange(current, oldState)
 							}
-							if m.onSessionEnd != nil {
-								m.onSessionEnd(current)
-							}
+							m.emitSessionEnd(current)
 							return
 						}
 						// If waiting but no prompt matches, go back to running.
@@ -6082,9 +7871,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if m.onStateChange != nil {
 							m.onStateChange(current, oldState)
 						}
-						if m.onSessionEnd != nil {
-							m.onSessionEnd(current)
-						}
+						m.emitSessionEnd(current)
 					}
 					return
 				}
@@ -6223,44 +8010,23 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				}
 			}
 		}
-		// Auto-approve claude-code startup dialogs so executor/automated sessions
-		// don't block waiting for user input.
-		// Each handler fires at most once per session per dialog type — the
-		// startupDialogSent guard prevents duplicate goroutines when the same
-		// dialog text appears across multiple screen-capture ticks.
-		if sess.BackendFamily == "claude-code" && sess.TmuxSession != "" {
-			tmuxSess := sess.TmuxSession
-			// Channels dialog: with --channels pre-selecting option 1 ("I am using
-			// this for local development"), pressing Enter confirms it. Trigger on
-			// the specific option text only (not "Please use --channels") to avoid
-			// sending two Enters that would also dismiss the subsequent trust dialog.
-			if strings.Contains(line, "I am using this for local development") {
-				key := sess.FullID + ":channels"
-				if _, loaded := m.startupDialogSent.LoadOrStore(key, struct{}{}); !loaded {
-					go func() {
-						time.Sleep(300 * time.Millisecond)
-						_ = exec.Command("tmux", "send-keys", "-t", tmuxSess, "Enter").Run()
-					}()
-				}
-			}
-			// Trust dialog: "❯ No, exit / Yes, I trust this folder" — press Down to
-			// select "Yes, I trust this folder" and Enter to confirm.
-			if strings.Contains(line, "Yes, I trust this folder") {
-				key := sess.FullID + ":trust"
-				if _, loaded := m.startupDialogSent.LoadOrStore(key, struct{}{}); !loaded {
-					go func() {
-						time.Sleep(300 * time.Millisecond)
-						_ = exec.Command("tmux", "send-keys", "-t", tmuxSess, "Down", "Enter").Run()
-					}()
-				}
-			}
-		}
+		// Auto-approve claude-code startup dialogs (workspace trust /
+		// dev-channels consent) so automated sessions don't block waiting
+		// for user input. Shared with the screen-capture loop in
+		// dismissClaudeStartupDialog: gated on one-shot claude-code
+		// sessions, keystrokes go through the m.tmux abstraction
+		// (observable and testable), and the per-dialog record lets a
+		// failed send be retried instead of a permanent fire-once latch.
+		m.dismissClaudeStartupDialog(sess, line)
 		// Check for explicit completion pattern — applies to all backends, including
 		// structured-channel ones (claude-code emits DATAWATCH_COMPLETE: when its
 		// shell wrapper runs `echo` after claude exits).
 		completionLine := strings.TrimSpace(line)
 		for _, pat := range m.effectiveCompletionPatterns() {
 			if matchesCompletionPattern(completionLine, pat) {
+				if isCompletionPlaceholder(completionLine) {
+					continue
+				}
 				// Post-restart grace window: when a session is restarted with
 				// --resume, the TUI re-renders prior conversation history to the
 				// terminal. If that history contained DATAWATCH_COMPLETE: (from
@@ -6269,16 +8035,16 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				// loop. Suppress completion detection for 30 s after restart.
 				m.mu.Lock()
 				restartTime, wasRestarted := m.restartedAt[sess.FullID]
-				deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
 				m.mu.Unlock()
-				if wasRestarted && time.Since(restartTime) < 30*time.Second {
+				deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
+				if wasRestarted && m.now().Sub(restartTime) < m.restartGraceWindow() {
 					m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
 					return
 				}
 				// Task-echo suppression: for 5 s after task delivery via send_input
 				// the TUI re-renders the task text (which may include DATAWATCH_COMPLETE:
 				// verbatim as instruction text). Skip until the echo window has passed.
-				if wasDelivered && time.Since(deliveredAt) < 5*time.Second {
+				if wasDelivered && m.now().Sub(deliveredAt) < m.echoWindow() {
 					m.debugf("processOutputLine: suppressing %q within 5s task-echo window for %s", pat, sess.FullID)
 					continue
 				}
@@ -6318,9 +8084,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 					if m.onStateChange != nil {
 						m.onStateChange(current, oldState)
 					}
-					if m.onSessionEnd != nil {
-						m.onSessionEnd(current)
-					}
+					m.emitSessionEnd(current)
 				}
 				return
 			}
@@ -6341,28 +8105,40 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		m.onRawOutput(sess, rawTrimmed)
 	}
 
-	// Check for rate limit patterns. v5.27.6 (BL215) — operator hit
-	// a real rate-limit on 2026-04-30 that datawatch missed. The
-	// previous 200-char length gate was too tight: modern claude
-	// rate-limit dialogs are paragraph-length with context (e.g.
-	// "5-hour limit reached. Use the limit reset time to plan...
-	//  Resets at 2pm. To continue working, ..."). Whole message
-	// can be 400+ chars on a single line. Raised to 1024 to keep
-	// the false-positive guard but cover the realistic message size.
-	// DATAWATCH_RATE_LIMITED protocol pattern always matches regardless.
-	lineLower := strings.ToLower(line)
+	// Check for rate limit patterns. v5.27.6 — the detector must also fire
+	// when the notice arrives mid-turn, not only at the prompt; the
+	// 2048-char line gate keeps the false-positive guard for
+	// paragraph-length tool output while covering real dialog sizes.
+	//
+	// The line is trimmed of surrounding whitespace before any check: panes
+	// render notices indented, and an indented line still leads with the
+	// phrase after trimming, while a line that merely quotes a phrase
+	// mid-sentence never has the phrase at the start and is not a
+	// detection.
+	//
+	// The shared protocol marker fires only when the trimmed line starts
+	// with it (every backend). Otherwise the trimmed line is matched
+	// against the per-backend anchored table for this session's
+	// BackendFamily (rate_limit_lines.go). An operator-configured
+	// rate_limit_patterns keeps its classic flat-substring behavior and
+	// applies to every backend.
+	lineLower := strings.ToLower(strings.TrimSpace(line))
 	isRateLimit := false
-	if strings.Contains(line, "DATAWATCH_RATE_LIMITED:") {
+	if strings.HasPrefix(lineLower, builtinRateLimitMarkerLower) {
 		isRateLimit = true
 	} else if len(line) < 2048 {
-		for _, pat := range m.effectiveRateLimitPatterns() {
-			if pat == "DATAWATCH_RATE_LIMITED:" {
-				continue
-			} // already checked above
-			if strings.Contains(lineLower, strings.ToLower(pat)) {
-				isRateLimit = true
-				break
+		if pats := m.detection.RateLimitPatterns; len(pats) > 0 {
+			for _, pat := range pats {
+				if pat == builtinRateLimitMarker {
+					continue
+				} // already checked above
+				if strings.Contains(lineLower, strings.ToLower(pat)) {
+					isRateLimit = true
+					break
+				}
 			}
+		} else {
+			isRateLimit = matchesBuiltinRateLimitLines(sess.BackendFamily, lineLower)
 		}
 	}
 	if isRateLimit {
@@ -6387,6 +8163,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			if m.onStateChange != nil {
 				m.onStateChange(current, oldState)
 			}
+			m.notifyRateLimit(current.BackendFamily, resetAt, !resetAt.IsZero())
 
 			// Auto-accept the default wait option ("1. Stop and wait for limit to reset")
 			// by sending "1" + Enter to the tmux session after a brief delay.
@@ -6488,17 +8265,17 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	// `line` is already StripANSI'd at function entry (line 3731).
 	completionLine := strings.TrimSpace(line)
 	for _, pat := range m.effectiveCompletionPatterns() {
-		if matchesCompletionPattern(completionLine, pat) {
+		if matchesCompletionPattern(completionLine, pat) && !isCompletionPlaceholder(completionLine) {
 			// Same post-restart grace window as the structured-channel path above.
 			m.mu.Lock()
 			restartTime, wasRestarted := m.restartedAt[sess.FullID]
-			deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
 			m.mu.Unlock()
-			if wasRestarted && time.Since(restartTime) < 30*time.Second {
+			deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
+			if wasRestarted && m.now().Sub(restartTime) < m.restartGraceWindow() {
 				m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
 				return
 			}
-			if wasDelivered && time.Since(deliveredAt) < 5*time.Second {
+			if wasDelivered && m.now().Sub(deliveredAt) < m.echoWindow() {
 				m.debugf("processOutputLine: suppressing %q within 5s task-echo window for %s", pat, sess.FullID)
 				continue
 			}
@@ -6536,9 +8313,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				if m.onStateChange != nil {
 					m.onStateChange(current, oldState)
 				}
-				if m.onSessionEnd != nil {
-					m.onSessionEnd(current)
-				}
+				m.emitSessionEnd(current)
 			}
 			return
 		}
@@ -6546,15 +8321,24 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 
 	// Check for explicit input needed pattern (no debounce — explicit protocol marker)
 	// `line` is already StripANSI'd at function entry (line 3731).
-	for _, pat := range m.effectiveInputNeededPatterns() {
-		if strings.Contains(line, pat) {
-			idx := strings.Index(line, pat)
-			question := strings.TrimSpace(line[idx+len(pat):])
+	// Only a standalone marker line is a request: task text that merely
+	// mentions the marker ("When blocked, print DATAWATCH_NEEDS_INPUT: <q>"),
+	// a wrapped placeholder or a shell echo is plain output. A real marker is
+	// also ignored inside the post-restart grace and the task-echo window, when
+	// the TUI is replaying history or re-rendering the task.
+	if kind, question := classifyNeedsInput(line, m.effectiveInputNeededPatterns()); kind == needsInputReal {
+		if m.markersTrusted(sess) {
 			// Explicit markers bypass debounce but still respect notification cooldown
 			m.tryTransitionToWaiting(sess.FullID, question, "", getTracker, true)
-			return
+		} else {
+			m.debugf("processOutputLine: ignoring needs-input marker inside restart-grace/task-echo window for %s", sess.FullID)
 		}
+		return
 	}
+
+	// A recognised worker question goes to the hook behind the gate. It never
+	// changes session state: the line still falls through as ordinary output.
+	m.routeWorkerQuestion(sess, line)
 
 	// If we were waiting for input and see new output, transition back to running.
 	// v6.11.26 — also bump LastChannelEventAt so the gap watcher sees the
@@ -6569,7 +8353,10 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	if ok {
 		now := time.Now()
 		switch current.State {
-		case StateWaitingInput:
+		case StateWaitingInput, StateStalled:
+			// StateStalled resumes here too: output arriving on the channel is
+			// activity resuming, and a stalled session must return to
+			// StateRunning on exactly that signal.
 			oldState := current.State
 			current.State = StateRunning
 			current.UpdatedAt = now
@@ -6641,4 +8428,18 @@ func ensureClaudeTUISetting(claudeDir string) error {
 		return err
 	}
 	return os.WriteFile(settingsPath, append(data, '\n'), 0600)
+}
+
+// projectPolicyFor returns the per-project policy for dir, or nil when the
+// project is not registered or has no policy.
+func (m *Manager) projectPolicyFor(dir string) *config.ProjectPolicy {
+	if m.cfg == nil || dir == "" {
+		return nil
+	}
+	for _, entry := range m.cfg.Projects {
+		if entry.Dir == dir {
+			return entry.Policy
+		}
+	}
+	return nil
 }

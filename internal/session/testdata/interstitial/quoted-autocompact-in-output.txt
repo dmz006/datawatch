@@ -1,0 +1,52 @@
+  While I was working this session I hit the settings prompt Claude Code
+  shows after a long turn. It reads "Want to autocompact at 400k tokens
+  instead?", offers "Autocompact at 400k" alongside "Keep auto (1m
+  tokens)", and its hint line names Esc as the "not now" key. I pressed
+  the dismiss key and the prompt went away; the setting did not change.
+
+  What that prompt means, section by section:
+
+  1. Compaction is the step where Claude Code folds earlier turns into a
+     running summary so the context window does not run out mid-task.
+  2. "Autocompact" is the automatic trigger: the session compacts by
+     itself when the context window reaches its configured fraction.
+  3. The 400k threshold is half of a 1m-token window; picking the row
+     would lower that trigger permanently for this kind of session.
+  4. Keeping auto leaves the trigger where it was, which is the
+     conservative choice when nothing is currently wrong.
+  5. The prompt appears at the end of a turn, between that turn ending
+     and the next input line, so it never interrupts work in flight.
+  6. It does not ask for a decision about the conversation: no message,
+     file or plan state is changed while the prompt is on screen.
+  7. Dismissing it simply closes the prompt; the worker continues.
+  8. The option rows are ordinary settings options, not commands.
+  9. The cursor row is the one Enter would accept, so reading the
+     cursor before acting is the whole of the safety story.
+  10. A row that says "keep" or "unchanged" is always the neutral one.
+  11. A row that names a lower number, smaller window or new limit is
+      the one that changes a setting.
+  12. The hint line is the prompt documenting its own keys: move,
+      confirm, and the dismiss key, in that order.
+  13. Escape-style dismissal is the only key that is safe to send
+      without first knowing which row the cursor sits on.
+  14. Digits, arrows and Enter are all decision keys: they move or
+      choose, so they may never be the automatic dismissal.
+  15. Quoting a prompt's wording in output notes must not be confused
+      with the prompt being on screen.
+  16. Only a prompt rendered at the very bottom of the pane, with its
+      own hint line, is worth reacting to at all.
+  17. Truncated captures, missing one option row or the hint line, are
+      treated as unidentifiable rather than guessed.
+  18. This note is a worker recap of that incident, written after the
+      fact, and contains the quoted wording verbatim on purpose.
+  19. It is not, in any line of it, the prompt itself: a real prompt
+      ends with its frame and its hint line at the bottom.
+  20. Nothing above this line, however long it is, should make a
+      watch send any key at all.
+  21. The watch should record the quote, if anything, as ordinary
+      output text with none of the prompt's semantics attached.
+  22. When the session returns to its idle input line, the incident is
+      over and there is nothing left to dismiss.
+
+  ┌────────────────────────────────────────────────────────────────────────┐
+  ❯

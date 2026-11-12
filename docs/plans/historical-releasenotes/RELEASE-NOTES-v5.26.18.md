@@ -32,7 +32,7 @@ v5.26.17 replaced 6 highest-priority hardcoded `http://127.0.0.1:port` sites in 
 
 The only remaining `127.0.0.1` literal is the return value inside `loopbackBaseURL` itself, which is correct (resolves to 127.0.0.1 when bind is `0.0.0.0` / `""`).
 
-Combined with v5.26.17, **every** daemon-internal loopback HTTP call now respects `cfg.Server.Host`. Operators with non-default binds (`192.168.1.5`, `::`, etc.) get autonomous + orchestrator + voice + channel + test-message + stats/alerts/config CLI working out of the box.
+Combined with v5.26.17, **every** daemon-internal loopback HTTP call now respects `cfg.Server.Host`. Operators with non-default binds (`192.0.2.35`, `::`, etc.) get autonomous + orchestrator + voice + channel + test-message + stats/alerts/config CLI working out of the box.
 
 ## Configuration parity
 

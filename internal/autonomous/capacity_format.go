@@ -1,0 +1,380 @@
+// Operator-facing text rendering of the /api/capacity response, shared by the
+// CLI and the comm channel so both print the same reasons the API carries.
+
+package autonomous
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/dmz006/datawatch/internal/capacity"
+)
+
+// CapacityTextClock supplies "now" for the waited and held durations in
+// FormatCapacityText. Tests override it so two renders of one body match.
+var CapacityTextClock = time.Now
+
+// capacityBackoffView is one active back-off flag as /api/capacity carries it.
+type capacityBackoffView struct {
+	Backend    string    `json:"backend"`
+	Until      time.Time `json:"until"`
+	Reason     string    `json:"reason"`
+	ResetKnown bool      `json:"reset_known"`
+	// Rung names the ladder rung that set the flag (for example the burn
+	// guard's hold_claude hold); empty on rate-limit and operator back-offs.
+	Rung string `json:"rung"`
+}
+
+// capacityPoolView is one /api/capacity pool entry: the base PoolStatus plus
+// HolderNames (node pools), the resolved readable form of the raw holder ids
+// in Holders, and Usage (node pools) — the per-node usage object. HolderNames
+// and Usage are absent on older daemons.
+type capacityPoolView struct {
+	capacity.PoolStatus
+	HolderNames []HolderNameView   `json:"holder_names"`
+	Usage       *capacityNodeUsage `json:"usage"`
+}
+
+// capacityNodeUsage is the per-node usage object a node:<name> pool of
+// /api/capacity carries when the daemon reports it: the model-probe state,
+// the models loaded in memory (with their memory footprint and eviction time)
+// and the GPU figures. Absent on older daemons and on non-node pools.
+type capacityNodeUsage struct {
+	State           string                   `json:"state"`
+	CheckedAt       time.Time                `json:"checked_at"`
+	Error           string                   `json:"error"`
+	ModelsSupported bool                     `json:"models_supported"`
+	Models          []capacityNodeUsageModel `json:"models"`
+	GPU             []capacityNodeUsageGPU   `json:"gpu"`
+}
+
+// capacityNodeUsageModel is one loaded model inside a node's usage object.
+type capacityNodeUsageModel struct {
+	Name          string    `json:"name"`
+	SizeBytes     int64     `json:"size_bytes"`
+	SizeVRAMBytes int64     `json:"size_vram_bytes"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	NoExpiry      bool      `json:"no_expiry"`
+}
+
+// capacityNodeUsageGPU is one GPU inside a node's usage object.
+type capacityNodeUsageGPU struct {
+	Name          string  `json:"name"`
+	UtilPct       float64 `json:"util_pct"`
+	MemUsedBytes  int64   `json:"mem_used_bytes"`
+	MemTotalBytes int64   `json:"mem_total_bytes"`
+}
+
+// capacityWaiterView is one ledger waiter as /api/capacity carries it, plus
+// HolderName (the resolved readable form of the raw holder id). Absent on
+// older daemons.
+type capacityWaiterView struct {
+	capacity.Waiter
+	HolderName HolderNameView `json:"holder_name"`
+}
+
+// capacityBody is the part of the /api/capacity response the text needs.
+type capacityBody struct {
+	Pools  []capacityPoolView `json:"pools"`
+	Leases []struct {
+		NodeUnknown bool `json:"node_unknown"`
+	} `json:"leases"`
+	Waiting []capacityWaiterView  `json:"waiting"`
+	Backoff []capacityBackoffView `json:"backoff"`
+	Budgets []BudgetStatus        `json:"budgets"`
+	Tasks   struct {
+		Waiting []TaskWaitView `json:"waiting"`
+		Running []TaskHoldView `json:"running"`
+	} `json:"tasks"`
+	Verifier *VerifierStatsView `json:"verifier"`
+}
+
+// FormatCapacityText renders a GET /api/capacity body as text: each pool as
+// used/limit with holders (their readable form and short id when the response
+// carries holder names, otherwise the raw ids), each queued task with
+// readable name, its readable reason (falling back to the raw reason) and
+// how long it has waited, each running task with what it holds, each active
+// back-off flag and each budget. The budget lines are the ones
+// FormatBudgetText prints. Ledger waiters are listed only when the response
+// carries no queued tasks.
+func FormatCapacityText(body []byte) (string, error) {
+	var c capacityBody
+	if err := json.Unmarshal(body, &c); err != nil {
+		return "", fmt.Errorf("capacity response: %w", err)
+	}
+	now := CapacityTextClock()
+	var b strings.Builder
+	b.WriteString(poolsTextWithUsage(c.Pools))
+	unknown := 0
+	for _, l := range c.Leases {
+		if l.NodeUnknown {
+			unknown++
+		}
+	}
+	if unknown > 0 {
+		fmt.Fprintf(&b, "Leases with unknown node: %d (counted in host and llm pools, held on no node pool)\n", unknown)
+	}
+
+	switch {
+	case len(c.Tasks.Waiting) > 0:
+		fmt.Fprintf(&b, "Queued tasks (%d):\n", len(c.Tasks.Waiting))
+		for _, w := range c.Tasks.Waiting {
+			fmt.Fprintf(&b, "  %s: %s - waiting %s%s\n",
+				taskLine(w.Readable, w.ShortID, w.TaskTitle, w.TaskID, firstNonEmpty(w.PRDTitle, w.PRDID)),
+				firstNonEmpty(w.ReadableReason, w.Reason), waitedFor(now, w.Since),
+				waiterPrioritySuffix(w.Priority, w.PrioritySource))
+		}
+	case len(c.Waiting) > 0:
+		fmt.Fprintf(&b, "Waiting (%d):\n", len(c.Waiting))
+		for _, w := range c.Waiting {
+			fmt.Fprintf(&b, "  %s (PRD %s) %s: %s%s\n",
+				holderDisplay(w.HolderName, w.Holder), w.PRDID, waitedFor(now, w.Since), w.Reason,
+				waiterPrioritySuffix(w.Priority, ""))
+		}
+	default:
+		b.WriteString("Queued tasks: none\n")
+	}
+
+	if len(c.Tasks.Running) == 0 {
+		b.WriteString("Running tasks: none\n")
+	} else {
+		fmt.Fprintf(&b, "Running tasks (%d):\n", len(c.Tasks.Running))
+		for _, h := range c.Tasks.Running {
+			fmt.Fprintf(&b, "  %s: holds %s",
+				taskLine(h.Readable, h.ShortID, h.TaskTitle, h.TaskID, h.PRDID),
+				holdList(h.Pools))
+			if h.Node != "" {
+				fmt.Fprintf(&b, ", node %s", h.Node)
+			} else if h.NodeUnknown {
+				b.WriteString(", node unknown")
+			}
+			if h.SessionID != "" {
+				fmt.Fprintf(&b, ", session %s", h.SessionID)
+			}
+			fmt.Fprintf(&b, " - running %s", waitedFor(now, h.Since))
+			if h.Note != "" {
+				fmt.Fprintf(&b, " (%s)", h.Note)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	if len(c.Backoff) == 0 {
+		b.WriteString("Back-off: none\n")
+	} else {
+		fmt.Fprintf(&b, "Back-off (%d):\n", len(c.Backoff))
+		for _, f := range c.Backoff {
+			// Until was parsed once by json.Unmarshal and keeps the offset the
+			// daemon sent it with; Format(RFC3339) prints that same offset
+			// instead of converting to UTC.
+			when := "reset time unknown"
+			if f.ResetKnown {
+				when = "resets " + f.Until.Format(time.RFC3339)
+			}
+			fmt.Fprintf(&b, "  %s: %s", f.Backend, when)
+			switch {
+			case f.Rung != "" && f.Reason != "":
+				fmt.Fprintf(&b, " (burn guard rung %s: %s)", f.Rung, f.Reason)
+			case f.Rung != "":
+				fmt.Fprintf(&b, " (burn guard rung %s)", f.Rung)
+			default:
+				if f.Reason != "" {
+					fmt.Fprintf(&b, " (%s)", f.Reason)
+				}
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	if c.Verifier != nil {
+		b.WriteString(FormatVerifierLine(*c.Verifier))
+	}
+
+	if len(c.Budgets) == 0 {
+		b.WriteString("Budgets: none configured\n")
+	} else {
+		b.WriteString("Budgets:\n")
+		for _, st := range c.Budgets {
+			writeBudgetStatus(&b, st)
+		}
+	}
+	return b.String(), nil
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// waiterPrioritySuffix renders a queued entry's priority for the text view:
+// " (priority 80, kind)". An entry with no priority at all (0, no source)
+// renders nothing, exactly as before; the ledger waiter fallback carries the
+// number without a source, which prints as the safe default.
+func waiterPrioritySuffix(priority int, source string) string {
+	if priority == 0 && source == "" {
+		return ""
+	}
+	if source == "" {
+		source = PrioritySourceDefault
+	}
+	return fmt.Sprintf(" (priority %d, %s)", priority, source)
+}
+
+// capacityPoolsForText folds each pool entry down to the base PoolStatus, and
+// when the entry carries the new holder_names array beside the raw Holder
+// list, resolves each holder to the readable form with the short id as the
+// secondary reference. Entries without a matching readable list (older daemon,
+// or a holder the resolver could not name) keep their raw ids exactly as before.
+func capacityPoolsForText(views []capacityPoolView) []capacity.PoolStatus {
+	out := make([]capacity.PoolStatus, 0, len(views))
+	for _, v := range views {
+		ps := v.PoolStatus
+		if len(v.HolderNames) == len(ps.Holders) && len(v.HolderNames) > 0 {
+			names := make([]string, len(v.HolderNames))
+			for i, n := range v.HolderNames {
+				names[i] = holderNameDisplay(n)
+			}
+			ps.HoldNames = names
+		}
+		out = append(out, ps)
+	}
+	return out
+}
+
+// poolsTextWithUsage renders the pools section: each pool exactly as
+// capacity.FormatPools prints it, and directly under every pool that carries
+// the per-node usage object, the indented usage lines. A body whose pools
+// carry no usage objects renders byte-for-byte the way FormatPools does.
+func poolsTextWithUsage(views []capacityPoolView) string {
+	if len(views) == 0 {
+		return capacity.FormatPools(nil)
+	}
+	folds := capacityPoolsForText(views)
+	var b strings.Builder
+	for i := range views {
+		b.WriteString(capacity.FormatPools(folds[i : i+1]))
+		writePoolUsage(&b, views[i].Usage)
+	}
+	return b.String()
+}
+
+// writePoolUsage prints the indented per-node usage lines under a pool line:
+// one "  model: ..." line per loaded model (its memory footprint, then when
+// it is evicted or "stays loaded") and one "  GPU <name>: ..." line per GPU.
+// The GPU lines are printed whenever the observer has them, including for an
+// unreachable model server. A pending probe prints "  checking..." instead,
+// an unreachable one "  unreachable: <reason>", and a no_data node adds no
+// line. A nil usage (absent from the body) prints nothing.
+func writePoolUsage(b *strings.Builder, u *capacityNodeUsage) {
+	if u == nil {
+		return
+	}
+	switch u.State {
+	case "pending":
+		b.WriteString("  checking...\n")
+	case "no_data":
+		// The node has no address and no observer data: nothing to show.
+	case "unreachable":
+		if u.Error != "" {
+			fmt.Fprintf(b, "  unreachable: %s\n", u.Error)
+		} else {
+			b.WriteString("  unreachable\n")
+		}
+	default: // "ok" and any state we do not know
+		now := CapacityTextClock()
+		for _, m := range u.Models {
+			expiry := "stays loaded"
+			if !m.NoExpiry && !m.ExpiresAt.IsZero() {
+				d := m.ExpiresAt.Sub(now)
+				if d < 0 {
+					d = 0
+				}
+				expiry = "expires in " + d.Round(time.Second).String()
+			}
+			fmt.Fprintf(b, "  model: %s %s GiB in memory, %s\n", m.Name, gibs(m.SizeBytes), expiry)
+		}
+	}
+	if u.State == "ok" || u.State == "unreachable" {
+		for _, g := range u.GPU {
+			fmt.Fprintf(b, "  GPU %s: %s%% util, %s of %s GiB memory\n",
+				g.Name, strconv.FormatFloat(g.UtilPct, 'g', -1, 64), gibs(g.MemUsedBytes), gibs(g.MemTotalBytes))
+		}
+	}
+}
+
+// gibs renders a byte count in GiB, one decimal ("5.0").
+func gibs(bytes int64) string {
+	v := float64(bytes) / (1024 * 1024 * 1024)
+	return strconv.FormatFloat(math.Round(v*10)/10, 'f', 1, 64)
+}
+
+// holderNameDisplay renders one resolved holder from the API's holder_names
+// array: readable form first, short id in parentheses as the secondary
+// reference when the readable does not already carry it. Bodies without the
+// new fields (older daemon) fall back to the raw holder id, unchanged.
+func holderNameDisplay(v HolderNameView) string {
+	if v.Readable == "" {
+		return v.ID
+	}
+	if v.ShortID != "" && v.Readable != v.ShortID && !strings.Contains(v.Readable, v.ShortID) {
+		return v.Readable + " (" + v.ShortID + ")"
+	}
+	return v.Readable
+}
+
+// holderDisplay renders a ledger waiter's holder: the readable form from the
+// response's holder_name field when present, else the raw holder id
+// (older daemon).
+func holderDisplay(v HolderNameView, raw string) string {
+	if d := holderNameDisplay(v); d != "" {
+		return d
+	}
+	return raw
+}
+
+// taskLine renders one queued/running task: the operator-readable sentence
+// (<PRD title> / <task title> (<short id>)) when the response carries the
+// new readable field, with the short id in parentheses as the secondary
+// reference when the sentence does not already carry it; for bodies with
+// only the old fields (older daemon) the raw title/id plus the PRD reference
+// in the previous format (prdRef is the PRD title for queued tasks and the
+// PRD id for running tasks, exactly as before).
+func taskLine(readable, shortID, taskTitle, taskID, prdRef string) string {
+	if readable != "" {
+		// The sentence already ends in a parenthetical ("… (untitled xxx)",
+		// "… (xxx)") or names the short id: no second parenthesization.
+		if shortID != "" && !strings.Contains(readable, shortID) && !strings.HasSuffix(readable, ")") {
+			return readable + " (" + shortID + ")"
+		}
+		return readable
+	}
+	return firstNonEmpty(taskTitle, taskID) + " (PRD " + prdRef + ")"
+}
+
+func holdList(pools []string) string {
+	if len(pools) == 0 {
+		return "nothing"
+	}
+	return strings.Join(pools, ", ")
+}
+
+// waitedFor is the time since t, rounded to the second ("unknown" when t is
+// the zero time).
+func waitedFor(now, t time.Time) string {
+	if t.IsZero() {
+		return "unknown time"
+	}
+	d := now.Sub(t)
+	if d < 0 {
+		d = 0
+	}
+	return d.Round(time.Second).String()
+}

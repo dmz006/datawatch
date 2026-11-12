@@ -24,3 +24,49 @@ func TestAutonomousConfigGetHelp_MentionsMaxEnginesPerNode(t *testing.T) {
 		t.Fatalf("config-get help lacks concurrency keys:\n%s", help)
 	}
 }
+
+// B165 — resume_max_age_seconds is a user-facing key with two meaningful
+// sentinels (0 = never resume, -1 = no age limit); it must be documented
+// in both surfaces' help next to the concurrency keys.
+func TestAutonomousConfigSetHelp_MentionsResumeMaxAge(t *testing.T) {
+	help := newAutonomousConfigSetCmd().Long
+	if !strings.Contains(help, "resume_max_age_seconds") {
+		t.Fatalf("config-set help lacks resume_max_age_seconds:\n%s", help)
+	}
+	if !strings.Contains(help, `config-set '{"resume_max_age_seconds":1800}'`) {
+		t.Errorf("config-set help lacks resume_max_age_seconds example:\n%s", help)
+	}
+	if !strings.Contains(help, "0 = never resume") || !strings.Contains(help, "-1 = no age limit") {
+		t.Errorf("config-set help must document both sentinels:\n%s", help)
+	}
+}
+
+func TestAutonomousConfigGetHelp_MentionsResumeMaxAge(t *testing.T) {
+	help := newAutonomousConfigGetCmd().Long
+	if !strings.Contains(help, "resume_max_age_seconds") {
+		t.Fatalf("config-get help lacks resume_max_age_seconds:\n%s", help)
+	}
+}
+
+// gate_disagreement (warn|block) is a first-class config key; the CLI
+// help must name it and show a config-set example, next to
+// max_concurrent_tasks / max_engines_per_node.
+func TestAutonomousConfigSetHelp_MentionsGateDisagreement(t *testing.T) {
+	help := newAutonomousConfigSetCmd().Long
+	if !strings.Contains(help, "gate_disagreement") {
+		t.Fatalf("config-set help lacks gate_disagreement:\n%s", help)
+	}
+	if !strings.Contains(help, `{"gate_disagreement":"block"}`) {
+		t.Errorf("config-set help lacks a gate_disagreement example:\n%s", help)
+	}
+	if !strings.Contains(help, `"warn"`) || !strings.Contains(help, `"block"`) {
+		t.Errorf("config-set help should name the accepted values \"warn\" and \"block\":\n%s", help)
+	}
+}
+
+func TestAutonomousConfigGetHelp_MentionsGateDisagreement(t *testing.T) {
+	help := newAutonomousConfigGetCmd().Long
+	if !strings.Contains(help, "gate_disagreement") {
+		t.Fatalf("config-get help lacks gate_disagreement:\n%s", help)
+	}
+}

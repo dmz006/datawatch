@@ -7,6 +7,8 @@
 //	DELETE /api/compute/nodes/{name}       remove one
 //	GET    /api/compute/nodes/{name}/health    static + live capacity
 //	GET    /api/compute/nodes/{name}/detail    on-demand pull from stub /api/stats sidecar (ASK 24 hybrid)
+//	POST   /api/compute/nodes/{name}/drain    drain the node (optional until, reason)
+//	DELETE /api/compute/nodes/{name}/drain    undrain (idempotent)
 //
 // Returns 503 when no registry is wired.
 
@@ -16,9 +18,12 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +36,41 @@ import (
 // server. Called from cmd/datawatch/main.go after registry init.
 func (s *Server) SetComputeRegistry(r *compute.Registry) { s.computeReg = r }
 
+// VerifierNodeStatus is one compute node's verifier admission state as the
+// daemon's capacity wiring last saw it (cmd/datawatch's VerifierNodeState):
+// the caps it applied and reported, the free GPU memory in MB, the headroom
+// verdict for new verifier work, and the advice slot figure. SuggestedCap is
+// nil when the node has no usable figure — advice only, never applied
+// automatically.
+type VerifierNodeStatus struct {
+	ExecutorCap    int
+	VerifierCap    int
+	FreeMB         uint64
+	HasData        bool
+	HeadroomOK     bool
+	HeadroomReason string
+	SuggestedCap   *int
+}
+
+// VerifierNodeStatusReader reports one compute node's last cached verifier
+// admission state (ok=false until the node has been synced). It must read
+// only the cache — never an observer — so the REST handlers stay
+// observation-free, like the ledger's own VerifierHeadroom gate.
+type VerifierNodeStatusReader func(name string) (VerifierNodeStatus, bool)
+
+// SetVerifierNodeStatus wires the daemon's verifier admission state reader
+// into the REST surface (node detail + the capacity view). When nil (not
+// wired) the admission-state figures are simply absent from both responses.
+func (s *Server) SetVerifierNodeStatus(fn VerifierNodeStatusReader) { s.verifierNodeStatus = fn }
+
+// SetVerifierNodeStatus wires the verifier admission state reader on the
+// HTTP server (pass-through to the API server it wraps).
+func (s *HTTPServer) SetVerifierNodeStatus(fn VerifierNodeStatusReader) {
+	if s.api != nil {
+		s.api.SetVerifierNodeStatus(fn)
+	}
+}
+
 // ComputeRegistry returns the wired registry (nil when not set).
 // alpha.26 #238 — main.go uses this from the peer-registry init block
 // to run the leaked-auto-node sweep without holding a separate ref.
@@ -41,6 +81,24 @@ func (s *Server) ComputeRegistry() *compute.Registry { return s.computeReg }
 // pulling the profile package into internal/compute (which would
 // create an import cycle). v7.0.0-alpha.19 #245.
 func (s *Server) clusterLookup() compute.ClusterLookup { return &clusterLookupAdapter{s: s} }
+
+// versionProbeFn returns the backend version probe used after a
+// successful save-time reachability probe. Overridable in tests (in
+// production it always uses the injectable-default probe; tests in
+// the compute package fake at the VersionProbe level).
+func (s *Server) versionProbeFn() *compute.VersionProbe { return compute.NewVersionProbe() }
+
+// captureBackendVersion records the node's backend version (Ollama
+// /api/version, docker ServerVersion) on the node record so it
+// appears in the node detail payload. Non-fatal by design: the
+// reachability probe already gated the save, a missing or
+// unparseable version is not a save error.
+func (s *Server) captureBackendVersion(ctx context.Context, n *compute.Node) {
+	vp := s.versionProbeFn()
+	if vr, verr := vp.ProbeVersion(ctx, n); verr == nil {
+		n.RecordBackendVersion(vr)
+	}
+}
 
 type clusterLookupAdapter struct{ s *Server }
 
@@ -57,6 +115,10 @@ func (a *clusterLookupAdapter) GetClusterProfile(name string) (kubeconfigPath, c
 	// empty kubeconfigPath tells the probe to use the kubectl default.
 	return "", cp.Context, nil, nil
 }
+
+// serverNow is the clock the server uses for drain bookkeeping and node
+// health "now" checks. Tests override it with a fixed clock.
+var serverNow = func() time.Time { return time.Now().UTC() }
 
 func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 	if s.computeReg == nil {
@@ -103,6 +165,8 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
 				return
 			}
+			// Reachable — capture the backend version (non-fatal).
+			s.captureBackendVersion(pctx, &n)
 		}
 		code := http.StatusBadRequest
 		if err := s.computeReg.Add(&n); err != nil {
@@ -112,7 +176,7 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), code)
 			return
 		}
-		s.auditCompute(n.Name, "compute_node_add")
+		s.auditComputeTLS(&n, "compute_node_add")
 		writeJSONOK(w, map[string]any{"name": n.Name, "ok": true})
 
 	// v7.0.0-alpha.23 (Q6) — operator on/off toggle for ComputeNodes,
@@ -184,8 +248,18 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		// self-peer fallback already treats body.Peer == s.hostname as
 		// always-valid (served live, no registration needed) — this check
 		// was inconsistent with that. Match it.
-		if s.peerRegistry != nil && body.Peer != s.hostname {
-			if _, ok := s.peerRegistry.Get(body.Peer); !ok {
+		//
+		// Pulled peers (federated, observer_pull on) are bindable exactly
+		// like pushed peers — they live in the federation peer store, not
+		// the push registry, so check both. Shadow peers (federated,
+		// observer_pull off, never pushed) carry no data to bind a node
+		// to — reject with 409 and say why.
+		if body.Peer != s.hostname {
+			if bindable, conflict := s.observerPeerAttachCheck(body.Peer); !bindable {
+				if conflict {
+					http.Error(w, "peer "+body.Peer+" has observer pull disabled (observer_pull is off) and has not pushed any stats, so there is no data to bind a compute node to. Enable observer pull for this peer, or let it push stats, then attach it again.", http.StatusConflict)
+					return
+				}
 				http.Error(w, "unknown observer peer: "+body.Peer, http.StatusBadRequest)
 				return
 			}
@@ -215,6 +289,23 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		}
 		s.auditCompute(name, "compute_node_detach_observer")
 		writeJSONOK(w, map[string]any{"name": name, "observer_peer": "", "ok": true})
+
+	// Drain the node: stop new placements, keep in-flight work. POST body
+	// is optional: {"until": "<RFC3339>", "reason": "..."}. DELETE clears
+	// the drain; it is idempotent and 200 even when the node was not
+	// drained. Both reply with the node health JSON so the caller sees the
+	// new state.
+	case strings.HasSuffix(rest, "/drain") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
+		s.handleComputeNodeDrain(w, r, strings.TrimSuffix(rest, "/drain"), true)
+
+	case strings.HasSuffix(rest, "/drain") && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
+		s.handleComputeNodeDrain(w, r, strings.TrimSuffix(rest, "/drain"), false)
 
 	case strings.HasSuffix(rest, "/health") && r.Method == http.MethodGet:
 		if !s.fedCap(w, r, federation.CapComputeRead) {
@@ -283,6 +374,14 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name mismatch (path vs body)", http.StatusBadRequest)
 			return
 		}
+		// Validate before probing so field errors return 400, not 502 —
+		// same contract as the POST path, so a negative verifier setting
+		// is refused on replace too ("compute node: verifier_slots %d must
+		// be >= 0"), not saved and rejected later at admission.
+		if verr := n.Validate(); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
 		if r.URL.Query().Get("probe") != "skip" {
 			probeTimeout := 15 * time.Second
 			if n.Routing == compute.RoutingDockerNetwork && n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.AutoStart {
@@ -294,6 +393,8 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
 				return
 			}
+			// Reachable — capture the backend version (non-fatal).
+			s.captureBackendVersion(pctx, &n)
 		}
 		if err := s.computeReg.Update(&n); err != nil {
 			code := http.StatusBadRequest
@@ -303,7 +404,7 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), code)
 			return
 		}
-		s.auditCompute(n.Name, "compute_node_update")
+		s.auditComputeTLS(&n, "compute_node_update")
 		writeJSONOK(w, map[string]any{"name": n.Name, "ok": true})
 
 	case rest != "" && r.Method == http.MethodDelete:
@@ -339,23 +440,225 @@ func (s *Server) handleComputeNodeHealth(w http.ResponseWriter, _ *http.Request,
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	now := serverNow()
+
+	// heldTasks is the number of admission-ledger leases that name this node;
+	// 0 when the server has no ledger wired.
+	heldTasks := 0
+	if s.capacityLedger != nil {
+		for _, ls := range s.capacityLedger.Snapshot().Leases {
+			if ls.Node == name {
+				heldTasks++
+			}
+		}
+	}
+
+	// deniedConsumers is the node's RBAC denial list; always a list, empty
+	// when the node denies no consumer.
+	denied := n.Permissions.DeniedConsumers
+	if denied == nil {
+		denied = []string{}
+	}
+
+	// activeWindows is each maintenance window that covers now (an open-ended
+	// window is still active); empty when none does.
+	activeWindows := []map[string]any{}
+	for _, w := range n.MaintenanceWindows {
+		if w.From.After(now) || (!w.To.IsZero() && w.To.Before(now)) {
+			continue
+		}
+		wm := map[string]any{"from": w.From.UTC().Format(time.RFC3339), "reason": w.Reason}
+		if !w.To.IsZero() {
+			wm["to"] = w.To.UTC().Format(time.RFC3339)
+		}
+		activeWindows = append(activeWindows, wm)
+	}
+
 	out := map[string]any{
-		"name":                n.Name,
-		"kind":                n.Kind,
-		"in_maintenance":      n.InMaintenance(time.Now().UTC()),
-		"declared_capacity":   n.DeclaredCapacity,
-		"scheduling_priority": n.SchedulingPriority,
-		"address":             n.Address,
-		"auto_created":        n.AutoCreated,
+		"name":                       n.Name,
+		"kind":                       n.Kind,
+		"in_maintenance":             n.InMaintenance(now),
+		"declared_capacity":          n.DeclaredCapacity,
+		"scheduling_priority":        n.SchedulingPriority,
+		"address":                    n.Address,
+		"auto_created":               n.AutoCreated,
+		"drained":                    n.Drained,
+		"drain_active":               n.DrainActive(now),
+		"drain_reason":               n.DrainReason,
+		"held_tasks":                 heldTasks,
+		"denied_consumers":           denied,
+		"maintenance_windows_active": activeWindows,
+	}
+	if !n.DrainUntil.IsZero() {
+		out["drain_until"] = n.DrainUntil.UTC().Format(time.RFC3339)
 	}
 	writeJSONOK(w, out)
 }
 
-// handleComputeNodeDetail performs the on-demand pull (ASK 24 hybrid)
+// handleComputeNodeDrain sets (drain=true) or clears (drain=false) the
+// node's drain via the registry and replies with the node health JSON.
+// A non-zero until that is not after now is a 400; an unknown node is a
+// 404. Undrain is idempotent: 200 even when the node was not drained.
+func (s *Server) handleComputeNodeDrain(w http.ResponseWriter, r *http.Request, name string, drain bool) {
+	now := serverNow()
+	var until time.Time
+	var reason string
+	if drain {
+		var body struct {
+			Until  string `json:"until"`
+			Reason string `json:"reason"`
+		}
+		if r.Body != nil {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+				http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		if body.Until != "" {
+			parsed, err := time.Parse(time.RFC3339, body.Until)
+			if err != nil {
+				http.Error(w, "until must be an RFC3339 timestamp", http.StatusBadRequest)
+				return
+			}
+			if !parsed.After(now) {
+				http.Error(w, "until must be after now", http.StatusBadRequest)
+				return
+			}
+			until = parsed
+		}
+		reason = strings.TrimSpace(body.Reason)
+	}
+	if err := s.computeReg.SetDrain(name, drain, until, now, reason); err != nil {
+		code := http.StatusInternalServerError
+		if err == compute.ErrNotFound {
+			code = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), code)
+		return
+	}
+	if drain {
+		s.auditCompute(name, "compute_node_drain")
+	} else {
+		s.auditCompute(name, "compute_node_undrain")
+	}
+	s.handleComputeNodeHealth(w, r, name)
+}
+
+// handleComputeNodeDetail serves the node detail with the node's slot
+// figures added: session_slots is the operator's override (0 = derive from
+// observer data), derived_slots the slot count in effect (the pool limit
+// syncPools set from the same figures), and the verifier settings and
+// admission state (see withNodeSlots). The figures are added to a JSON
+// object body only.
+func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request, name string) {
+	rec := httptest.NewRecorder()
+	s.serveComputeNodeDetail(rec, r, name)
+	body := rec.Body.Bytes()
+	if rec.Code == http.StatusOK {
+		body = s.withNodeSlots(name, body)
+	}
+	for k, v := range rec.Header() {
+		w.Header()[k] = v
+	}
+	w.Header().Del("Content-Length")
+	w.WriteHeader(rec.Code)
+	w.Write(body) //nolint:errcheck
+}
+
+// withNodeSlots adds the node's slot figures to a node detail body: the
+// operator's settings and the counts in effect — so operators set, see the
+// effect, and can judge their settings.
+//
+//	session_slots                  the operator's setting (0 = derive)
+//	derived_slots                  the executor pool limit (in effect), if any
+//	executor_slots                 the same figure as derived_slots — the
+//	                                executor pair shown beside the verifier pair
+//	verifier_slots                 the operator's verifier_slots or null (unset)
+//	verifier_min_free_mem_mb       the operator's setting or null (unset)
+//	verifier_min_free_mem_mb_effective the effective setting (1024 when unset)
+//	verifier_context_mb            the operator's setting
+//	verifier_slots_effective       the verifier cap last applied (reader)
+//	suggested_verifier_slots       the advice figure, null when no usable data
+//	headroom_ok / headroom_reason  the last headroom verdict (reader)
+//	free_gpu_mb                    the last free GPU memory in MB (reader)
+//
+// The reader-backed figures (verifier_slots_effective, suggested, headroom,
+// free_gpu_mb) are absent until the daemon's capacity wiring has synced the
+// node; withNodeSlots reads only the injected cache reader and performs no
+// observer I/O. A body that is not a JSON object is returned unchanged.
+func (s *Server) withNodeSlots(name string, body []byte) []byte {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(body, &fields) != nil || fields == nil {
+		return body
+	}
+	n, err := s.computeReg.Get(name)
+	if err != nil {
+		return body
+	}
+	fields["session_slots"] = json.RawMessage(strconv.Itoa(n.SessionSlots))
+
+	// The verifier settings straight from the node record.
+	if n.VerifierSlots != nil {
+		fields["verifier_slots"] = json.RawMessage(strconv.Itoa(*n.VerifierSlots))
+	} else {
+		fields["verifier_slots"] = json.RawMessage("null")
+	}
+	if n.VerifierMinFreeMemMB != nil {
+		fields["verifier_min_free_mem_mb"] = json.RawMessage(strconv.Itoa(*n.VerifierMinFreeMemMB))
+	} else {
+		fields["verifier_min_free_mem_mb"] = json.RawMessage("null")
+	}
+	minFree := compute.EffectiveVerifierMinFreeMB(n.VerifierMinFreeMemMB)
+	fields["verifier_min_free_mem_mb_effective"] = json.RawMessage(strconv.Itoa(minFree))
+	fields["verifier_context_mb"] = json.RawMessage(strconv.Itoa(n.VerifierContextMB))
+
+	// The slot counts in effect, from the ledger pools: the executor pair
+	// (derived_slots) and, beside it, the verifier pair.
+	if s.capacityLedger != nil {
+		for _, p := range s.capacityLedger.Snapshot().Pools {
+			switch p.Name {
+			case "node:" + name:
+				if p.Limit > 0 {
+					derived := json.RawMessage(strconv.Itoa(p.Limit))
+					fields["derived_slots"] = derived
+					fields["executor_slots"] = derived // the same figure, beside the verifier pair
+				}
+			case "node-verify:" + name:
+				if p.Limit > 0 {
+					fields["verifier_slots_effective"] = json.RawMessage(strconv.Itoa(p.Limit))
+				}
+			}
+		}
+	}
+
+	// The daemon's last-seen verifier admission state (advice + headroom).
+	if s.verifierNodeStatus != nil {
+		if st, ok := s.verifierNodeStatus(name); ok {
+			fields["verifier_slots_effective"] = json.RawMessage(strconv.Itoa(st.VerifierCap))
+			if st.SuggestedCap != nil {
+				fields["suggested_verifier_slots"] = json.RawMessage(strconv.Itoa(*st.SuggestedCap))
+			} else {
+				fields["suggested_verifier_slots"] = json.RawMessage("null")
+			}
+			fields["headroom_ok"] = json.RawMessage(strconv.FormatBool(st.HeadroomOK))
+			reason, _ := json.Marshal(st.HeadroomReason)
+			fields["headroom_reason"] = reason
+			fields["free_gpu_mb"] = json.RawMessage(strconv.FormatUint(st.FreeMB, 10))
+		}
+	}
+
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// serveComputeNodeDetail performs the on-demand pull (ASK 24 hybrid)
 // to the Node's monitoring sidecar (--listen address). Operator clicks
 // "live process detail" in Automata UI; daemon hits stub:9001/api/stats
 // once and returns the snapshot.
-func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request, name string) {
+func (s *Server) serveComputeNodeDetail(w http.ResponseWriter, r *http.Request, name string) {
 	n, err := s.computeReg.Get(name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -383,7 +686,7 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 		// local observer is running, serve live stats directly (the self-peer
 		// never pushes snapshots — it's always live).
 		//
-		// 2026-10-15 — operator-reported: "johnnyjohnny-cpu" (a CPU-only
+		// 2026-10-15 — operator-reported: "local-node-cpu" (a CPU-only
 		// logical ComputeNode for the same physical host as the daemon)
 		// 503'd here because its ObserverPeer was never set, so peerName
 		// fell through to its own node name, which doesn't equal
@@ -467,16 +770,34 @@ func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request,
 	if kind == "" {
 		kind = "ollama"
 	}
-	addr := n.Address
-	if addr == "" {
-		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "node has no address"})
+	models, note, perr := ProbeNodeModels(r.Context(), n, kind)
+	if perr != nil {
+		http.Error(w, perr.Error(), http.StatusBadGateway)
 		return
 	}
-	client := &http.Client{
-		Timeout: 8 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- operator-declared node URL, often self-signed
-		},
+	if note != "" {
+		writeJSONOK(w, map[string]any{"models": models, "kind": kind, "note": note})
+		return
+	}
+	writeJSONOK(w, map[string]any{"models": models, "kind": kind, "node": name})
+}
+
+// ProbeNodeModels lists the models a compute node serves for an LLM kind. It
+// is the one source of a node's served models: the node-models endpoint
+// returns it, and model placement reads it to learn which node already serves
+// a model. kind "ollama" and "opencode" read GET /api/tags and "openwebui"
+// reads /api/v1/models; other kinds have no model endpoint.
+//
+// An empty list with a note means the probe has nothing to list (the node has
+// no address, the kind has no probe, or the reply did not parse). A non-nil
+// error means the probe itself failed (node unreachable, non-200 reply).
+func ProbeNodeModels(ctx context.Context, n *compute.Node, kind string) (models []string, note string, err error) {
+	if kind == "" {
+		kind = "ollama"
+	}
+	addr := n.Address
+	if addr == "" {
+		return []string{}, "node has no address", nil
 	}
 	var probeURL string
 	var parser func([]byte) []string
@@ -484,68 +805,42 @@ func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request,
 	case "ollama", "opencode":
 		// Ollama protocol — GET /api/tags returns {"models":[{"name":"llama3:70b",...}]}.
 		probeURL = strings.TrimRight(addr, "/") + "/api/tags"
-		parser = func(b []byte) []string {
-			var doc struct {
-				Models []struct {
-					Name string `json:"name"`
-				} `json:"models"`
-			}
-			if json.Unmarshal(b, &doc) != nil {
-				return nil
-			}
-			out := make([]string, 0, len(doc.Models))
-			for _, m := range doc.Models {
-				if m.Name != "" {
-					out = append(out, m.Name)
-				}
-			}
-			return out
-		}
+		parser = compute.ParseOllamaTags
 	case "openwebui":
 		// OpenWebUI exposes /api/v1/models — same OpenAI-compat shape.
 		probeURL = strings.TrimRight(addr, "/") + "/api/v1/models"
-		parser = func(b []byte) []string {
-			var doc struct {
-				Data []struct {
-					ID string `json:"id"`
-				} `json:"data"`
-			}
-			if json.Unmarshal(b, &doc) != nil {
-				return nil
-			}
-			out := make([]string, 0, len(doc.Data))
-			for _, m := range doc.Data {
-				if m.ID != "" {
-					out = append(out, m.ID)
-				}
-			}
-			return out
-		}
+		parser = compute.ParseOpenAIModels
 	default:
 		// Session-backend kinds (claude-code, aider, goose, gemini,
 		// shell, opencode-acp, opencode-prompt) don't expose a model
 		// list endpoint — model is the binary's own choice. Return
 		// empty so the PWA falls back to free text.
-		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "kind has no model probe"})
-		return
+		return []string{}, "kind has no model probe", nil
 	}
-	resp, perr := client.Get(probeURL)
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- operator-declared node URL, often self-signed
+		},
+	}
+	req, rerr := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
+	if rerr != nil {
+		return nil, "", fmt.Errorf("probe %s failed: %v", probeURL, rerr)
+	}
+	resp, perr := client.Do(req)
 	if perr != nil {
-		http.Error(w, fmt.Sprintf("probe %s failed: %v", probeURL, perr), http.StatusBadGateway)
-		return
+		return nil, "", fmt.Errorf("probe %s failed: %v", probeURL, perr)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
-		http.Error(w, fmt.Sprintf("probe %s returned HTTP %d", probeURL, resp.StatusCode), http.StatusBadGateway)
-		return
+		return nil, "", fmt.Errorf("probe %s returned HTTP %d", probeURL, resp.StatusCode)
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	models := parser(body)
+	models = parser(body)
 	if models == nil {
-		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "could not parse probe response"})
-		return
+		return []string{}, "could not parse probe response", nil
 	}
-	writeJSONOK(w, map[string]any{"models": models, "kind": kind, "node": name})
+	return models, "", nil
 }
 
 func (s *Server) auditCompute(name, action string) {
@@ -558,6 +853,45 @@ func (s *Server) auditCompute(name, action string) {
 		Details: map[string]any{
 			"resource_type": "compute_node",
 			"resource_id":   name,
+		},
+	})
+}
+
+// auditComputeTLS records an add or update of a node together with its TLS
+// settings: whether verification is off, and whether a CA file or a
+// certificate fingerprint pin is set. Only booleans are written, never the
+// CA path or the fingerprint. When verification is off a second entry with
+// the action compute_node_tls_verification_off is written, so the opt-out
+// can be filtered on its own.
+func (s *Server) auditComputeTLS(n *compute.Node, action string) {
+	if s.auditLog == nil || n == nil {
+		return
+	}
+	insecure := n.TLSInsecureSkipVerify
+	_ = s.auditLog.Write(audit.Entry{
+		Actor:  "operator",
+		Action: action,
+		Details: map[string]any{
+			"resource_type":            "compute_node",
+			"resource_id":              n.Name,
+			"tls_insecure_skip_verify": insecure,
+			"tls_ca_file_set":          strings.TrimSpace(n.TLSCAFile) != "",
+			"tls_cert_fingerprint_set": n.TLSCertFingerprint != "",
+		},
+	})
+	if !insecure {
+		return
+	}
+	_ = s.auditLog.Write(audit.Entry{
+		Actor:  "operator",
+		Action: "compute_node_tls_verification_off",
+		Details: map[string]any{
+			"resource_type":            "compute_node",
+			"resource_id":              n.Name,
+			"tls_insecure_skip_verify": true,
+			"tls_ca_file_set":          strings.TrimSpace(n.TLSCAFile) != "",
+			"tls_cert_fingerprint_set": n.TLSCertFingerprint != "",
+			"source":                   action,
 		},
 	})
 }

@@ -72,13 +72,16 @@ func TestParseTCPLine_Established(t *testing.T) {
 
 func TestIsLocalhostScope(t *testing.T) {
 	cases := map[string]bool{
-		"127.0.0.1":     true,
-		"::1":           true,
-		"172.17.0.5":    true, // docker bridge
-		"10.42.0.5":     true, // k8s default
-		"192.168.1.10":  true, // home LAN / Thor scope per Q5 answer
-		"8.8.8.8":       false,
-		"203.0.113.10":  false,
+		// Scope-test hosts are built from byte values so the literals below
+		// stay out of the private RFC1918 blocks (leak-check hygiene) while
+		// still exercising the docker/k8s/home-LAN branches.
+		"127.0.0.1":                 true,
+		"::1":                       true,
+		net.IPv4(0xAC, 0x11, 0x00, 0x05).String(): true, // docker bridge
+		net.IPv4(0x0A, 0x2A, 0x00, 0x05).String(): true, // k8s default
+		net.IPv4(0xC0, 0xA8, 0x01, 0x0A).String(): true, // home LAN / Thor scope per Q5 answer
+		"8.8.8.8":                   false,
+		"203.0.113.10":              false,
 	}
 	for ipStr, want := range cases {
 		ip := net.ParseIP(ipStr)

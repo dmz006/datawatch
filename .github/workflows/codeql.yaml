@@ -1,0 +1,103 @@
+# CodeQL alert gate. The analysis itself is done by GitHub default setup
+# (Settings > Code security), which stays enabled. This workflow uploads
+# nothing.
+#
+#   - On push and pull_request it first waits until default setup has uploaded
+#     its analyses for this commit (the default setup analysis for a commit
+#     takes minutes after each push). Dependabot rebases every open pull
+#     request on each push to main, so about fifteen jobs poll the same
+#     installation rate limit at once; the earlier fixed 30 second poll
+#     exhausted that limit and the step failed with a rate-limit error rather
+#     than a finding. A red check whose log shows "Rate limited" with a reset
+#     time is wait-and-retry and not a finding. A line "No analysis for" is
+#     the real missing-analysis timeout. The check never reruns security
+#     workflows to get green.
+#   - alert-gate (BLOCKING) — lists open alerts at severity high or critical
+#     for this ref and fails with the counts. Only alerts in state "open"
+#     count, so any alert dismissed in code scanning is excluded. The gate
+#     does not read security/accepted-risks.yml; that registry documents the
+#     reason for each dismissal, which the operator applies in GitHub.
+#   - A push which changes only documents starts no run.
+#
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'CHANGELOG.md'
+      - '**/*.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'channel/**' # the channel package and its lock file
+      - 'internal/server/web/**' # the web app files
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.mjs'
+      - '**/*.py'
+      - '.github/workflows/**'
+      - 'scripts/**'
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+# Concurrency keyed on the ref: a newer run replaces an older one on the same
+# ref. This is the reason a rebase cancels the older run.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  alert-gate:
+    name: Open high/critical alerts
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      security-events: read
+      contents: read
+    # The default setup analysis for a commit takes minutes after each push.
+    # Dependabot rebases every open pull request on each push to main, so about
+    # fifteen jobs poll the same installation rate limit at once. The earlier
+    # fixed 30 second poll exhausted that limit and the step failed with a
+    # rate-limit error rather than a finding. A red check whose log shows
+    # "Rate limited" with a reset time is wait-and-retry and not a finding. A
+    # line "No analysis for" is the real missing-analysis timeout. This check
+    # never reruns security workflows to get green.
+    steps:
+      # Both steps below shell out to scripts/codeql-alert-gate.sh, which only
+      # exists in the repository — the runner starts with an empty workspace,
+      # so the checkout must land before either of them runs.
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+
+      - name: Wait for the default setup analyses
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_CATEGORIES: "/language:actions /language:go /language:javascript-typescript /language:python"
+          WAIT_INITIAL_SECONDS: 60
+          WAIT_MAX_INTERVAL_SECONDS: 300
+          WAIT_MAX_SECONDS: 1500
+        run: |
+          bash scripts/codeql-alert-gate.sh wait-analyses
+
+      - name: Fail on open high or critical alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          bash scripts/codeql-alert-gate.sh open-alerts

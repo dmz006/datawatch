@@ -123,10 +123,12 @@ func TestBL410_GuardrailAskUnparseable_TerminalInvalidResponse(t *testing.T) {
 // is meaningful).
 func TestBL410_SessionErrorBranchKeepsInfra(t *testing.T) {
 	src := readMainGo(t)
+	helper := readVerifierRunCapRetrySource(t)
 	if !contains(src, `Summary:   "guardrail(session): " + serr.Error(),`) ||
 		!contains(src, `Category:  "infra",`) ||
-		!contains(src, `Summary:    "verifier(session): " + serr.Error(),`) ||
-		!contains(src, `Category:   "infra",`) {
+		!contains(src, `return verifierSessionInfraResult(serr), nil`) ||
+		!contains(helper, `Summary:    "verifier(session): " + err.Error(),`) ||
+		!contains(helper, `Category:   "infra",`) {
 		t.Error(`autonomousGuardrail/autonomousVerify: the session-error (no output file) branch must keep Category "infra" — that is the only "infra" verdict left for a written-file-less failure, and the infra retry must still fire for it`)
 	}
 }

@@ -24,7 +24,7 @@ to any repo, per operator instruction ("build a plan... if needed"). Memory chec
 (`memory_recall`): no prior plan or decision record for GitHub-settings
 hardening exists in datawatch's project memory; the only related prior work is
 an *application-level* code security assessment (injection/SSRF/secrets/authz
-in the daemon itself — `johnnyjohnny-6297`, 2026-08-29), a different and
+in the daemon itself — `local-node-6297`, 2026-08-29), a different and
 already-separately-tracked effort, not overlapping with this repo-config scope.
 Checked both repos' own `docs/plans/` trees (including `historical-plans/`)
 for an existing GitHub-hardening doc — none found. `datawatch-app`'s

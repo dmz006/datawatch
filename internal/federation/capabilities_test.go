@@ -29,6 +29,9 @@ func TestResolve_BuiltinGroup(t *testing.T) {
 	if !hasCap(federation.CapHealthRead) {
 		t.Errorf("monitor should include %s", federation.CapHealthRead)
 	}
+	if !hasCap(federation.CapUsageRead) {
+		t.Errorf("monitor should include %s", federation.CapUsageRead)
+	}
 	if !hasCap(federation.CapSessionsList) {
 		t.Errorf("monitor should include %s", federation.CapSessionsList)
 	}
@@ -118,6 +121,9 @@ func TestFullControl_HasAll(t *testing.T) {
 		// these were added.
 		federation.CapQueueRead, federation.CapQueueWrite,
 		federation.CapResultsList, federation.CapResultsRead, federation.CapResultsWrite,
+		federation.CapPluginRead, federation.CapPluginWrite,
+		// Federated usage calculator series.
+		federation.CapUsageRead, federation.CapUsageWrite,
 	}
 	for _, c := range must {
 		if !has[c] {
@@ -152,6 +158,7 @@ func TestFederationPeer_DefaultCaps(t *testing.T) {
 		federation.CapAlertsList, federation.CapAlertsRead,
 		federation.CapDashboardRead,
 		federation.CapFederationList, federation.CapFederationRead,
+		federation.CapUsageRead, federation.CapUsageWrite,
 	}
 	for _, c := range noLonger {
 		if has[c] {
@@ -186,5 +193,185 @@ func TestListBuiltinGroups(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected 'federation-peer' in builtin group list")
+	}
+}
+
+// TestCapSessionsResultWrite_NotInAnyBuiltinGroup (GH#204 Phase 1) —
+// sessions:result_write is a per-session, explicitly minted capability: it
+// must not leak into any built-in group's default set (not even
+// full-control), so a peer or a session granted a group never receives it
+// without the daemon minting it into that session's own scoped token.
+func TestCapSessionsResultWrite_NotInAnyBuiltinGroup(t *testing.T) {
+	for _, g := range federation.ListBuiltinGroups() {
+		resolved := federation.Resolve([]string{g.Name}, nil)
+		if len(resolved) == 0 {
+			t.Fatalf("builtin group %q resolved to no caps at all", g.Name)
+		}
+		if federation.Check(resolved, federation.CapSessionsResultWrite) {
+			t.Errorf("builtin group %q must not grant %s by default — it is minted explicitly into per-session tokens", g.Name, federation.CapSessionsResultWrite)
+		}
+	}
+	// And a standalone grant still resolves (the constant is live).
+	if got := federation.Resolve([]string{federation.CapSessionsResultWrite}, nil); len(got) != 1 || got[0] != federation.CapSessionsResultWrite {
+		t.Errorf("standalone grant of %s should resolve to itself, got %v", federation.CapSessionsResultWrite, got)
+	}
+}
+
+// TestCapFederationFingerprintOnlyInFullControl — federation:fingerprint
+// gates the endpoint a peer calls to read this daemon's fingerprint hashes.
+// It must be held by full-control (allCaps) but by NO other built-in group
+// — a peer's control capability does not imply fingerprint trust (the
+// per-peer opt-in is the Entry's FingerprintSync flag, a separate
+// decision; docs/plans/2026-10-14-concurrency-and-budget-design.md, open
+// question 10). A standalone grant still resolves so it can be given to a
+// custom group explicitly.
+func TestCapFederationFingerprintOnlyInFullControl(t *testing.T) {
+	for _, g := range federation.ListBuiltinGroups() {
+		resolved := federation.Resolve([]string{g.Name}, nil)
+		if len(resolved) == 0 {
+			t.Fatalf("builtin group %q resolved to no caps at all", g.Name)
+		}
+		has := federation.Check(resolved, federation.CapFederationFingerprint)
+		if g.Name == "full-control" {
+			if !has {
+				t.Errorf("full-control must hold %s", federation.CapFederationFingerprint)
+			}
+			continue
+		}
+		if has {
+			t.Errorf("builtin group %q must NOT grant %s by default — it is opt-in per peer (FingerprintSync) and held only by full-control among builtins", g.Name, federation.CapFederationFingerprint)
+		}
+	}
+	// A standalone grant still resolves (the constant is live and grantable
+	// via a custom group).
+	if got := federation.Resolve([]string{federation.CapFederationFingerprint}, nil); len(got) != 1 || got[0] != federation.CapFederationFingerprint {
+		t.Errorf("standalone grant of %s should resolve to itself, got %v", federation.CapFederationFingerprint, got)
+	}
+}
+
+// TestPluginCaps_NotInDefaultPresets: plugin:read / plugin:write must be
+// granted explicitly — no built-in group other than full-control carries them.
+func TestPluginCaps_NotInDefaultPresets(t *testing.T) {
+	for _, g := range federation.ListBuiltinGroups() {
+		if g.Name == "full-control" {
+			continue
+		}
+		for _, c := range federation.Resolve([]string{g.Name}, nil) {
+			if c == federation.CapPluginRead || c == federation.CapPluginWrite {
+				t.Errorf("builtin group %q should NOT include %s", g.Name, c)
+			}
+		}
+	}
+}
+
+// TestUsageCapabilityGroups — the shared usage calculator series splits
+// into usage:read (a peer reading the keeper's readings) and usage:write
+// (a peer forwarding writes to the keeper). Presets grant them the same
+// way as their read/write ancestors: read-only presets grant read, the
+// config + session operational grants grant both, and the minimal peer
+// default grants neither.
+func TestUsageCapabilityGroups(t *testing.T) {
+	cases := []struct {
+		group    string
+		required string
+		want     bool
+	}{
+		{"monitor", federation.CapUsageRead, true},
+		{"monitor", federation.CapUsageWrite, false},
+		{"read-only", federation.CapUsageRead, true},
+		{"read-only", federation.CapUsageWrite, false},
+		{"analytics-viewer", federation.CapUsageRead, true},
+		{"analytics-viewer", federation.CapUsageWrite, false},
+		{"config-admin", federation.CapUsageRead, true},
+		{"config-admin", federation.CapUsageWrite, true},
+		{"session-default", federation.CapUsageRead, true},
+		{"session-default", federation.CapUsageWrite, true},
+		{"session-viewer", federation.CapUsageRead, false},
+		{"session-viewer", federation.CapUsageWrite, false},
+		{"federation-peer", federation.CapUsageRead, false},
+		{"federation-peer", federation.CapUsageWrite, false},
+		{"full-control", federation.CapUsageRead, true},
+		{"full-control", federation.CapUsageWrite, true},
+	}
+	for _, tc := range cases {
+		granted := federation.Resolve([]string{tc.group}, nil)
+		if got := federation.Check(granted, tc.required); got != tc.want {
+			t.Errorf("%s: %s = %v, want %v", tc.group, tc.required, got, tc.want)
+		}
+	}
+}
+
+// TestSelfConfigGroup pins the BL412 option C group
+// (docs/plans/2026-10-29-bl412-self-config-gate-proposal.md): the built-in
+// self-config group holds exactly the config-write capabilities the operator
+// selected (non-secret settings), never the excluded ones (secrets,
+// federation), is listed by ListBuiltinGroups, and — per this task's scope —
+// does not enlarge the session-default grant.
+func TestSelfConfigGroup(t *testing.T) {
+	g, ok := federation.BuiltinGroups["self-config"]
+	if !ok {
+		t.Fatal("BuiltinGroups missing self-config group")
+	}
+	if !g.Builtin {
+		t.Error("self-config must be a builtin group")
+	}
+	if g.Name != "self-config" {
+		t.Errorf("Name = %q, want %q", g.Name, "self-config")
+	}
+	if len(g.Description) < 10 {
+		t.Error("Description must record the capability set and the chosen exclusions")
+	}
+
+	granted := federation.Resolve([]string{"self-config"}, nil)
+	for _, c := range []string{
+		federation.CapConfigWrite,
+		federation.CapAutonomousWrite,
+		federation.CapObserversWrite,
+		federation.CapLLMsWrite,
+		federation.CapUsageWrite,
+	} {
+		if !federation.Check(granted, c) {
+			t.Errorf("self-config must grant %s", c)
+		}
+	}
+
+	// Exclusions per the operator's "non-secret settings only" answer: the
+	// secrets surface and the federation surface (server_add & friends stay
+	// gated by federation:write).
+	for _, c := range []string{
+		federation.CapSecretsList,
+		federation.CapSecretsRead,
+		federation.CapSecretsWrite,
+		federation.CapFederationList,
+		federation.CapFederationRead,
+		federation.CapFederationWrite,
+		federation.CapFederationFingerprint,
+		federation.CapFederationSelf,
+	} {
+		if federation.Check(granted, c) {
+			t.Errorf("self-config must NOT grant %s (excluded by operator answer)", c)
+		}
+	}
+
+	var listed []string
+	for _, gg := range federation.ListBuiltinGroups() {
+		listed = append(listed, gg.Name)
+	}
+	found := false
+	for _, n := range listed {
+		if n == "self-config" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("ListBuiltinGroups() missing self-config: %v", listed)
+	}
+
+	// This task does not change the session-default grant: sessions do not
+	// automatically gain the config-write surface.
+	def := federation.Resolve([]string{"session-default"}, nil)
+	if federation.Check(def, federation.CapConfigWrite) {
+		t.Error("session-default must not automatically grant config:write (session-default is out of scope for this task)")
 	}
 }

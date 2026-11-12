@@ -16,7 +16,7 @@ Disabled by default — opt in by setting `autonomous.enabled: true`.
 |---|---|
 | YAML  | `autonomous:` block in `~/.datawatch/config.yaml` |
 | REST  | `/api/autonomous/*` (bearer-authenticated) |
-| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings` |
+| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_request_watch`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | CLI   | `datawatch autonomous <subcmd>` |
 | Comm  | `rest GET /api/autonomous/status` etc. via the comm `rest` passthrough (Signal/Slack/Telegram/Matrix/etc.) |
 
@@ -29,8 +29,8 @@ GET    /api/autonomous/status              loop snapshot (running, active PRDs, 
 GET    /api/autonomous/config              read current config
 PUT    /api/autonomous/config              replace config (full body)
 
-POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort]}
-GET    /api/autonomous/prds                list all PRDs newest-first
+POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort], [kind]}
+GET    /api/autonomous/prds                summary list, newest-updated first, paged; ?full=1 for whole records; ?shipped=true|false for the shipped selection (see "The shipped state")
 GET    /api/autonomous/prds/{id}           one PRD with story+task tree
 PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
 DELETE /api/autonomous/prds/{id}           cancel + archive (status → cancelled)
@@ -38,6 +38,7 @@ DELETE /api/autonomous/prds/{id}?hard=true permanently delete the PRD + descenda
 POST   /api/autonomous/prds/{id}/plan      run LLM planning phase (creates stories+tasks) [BL304 canonical]
 POST   /api/autonomous/prds/{id}/decompose run LLM planning phase (back-compat alias for /plan)
 POST   /api/autonomous/prds/{id}/approve   review/approve gate                                                       [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/resume   resume a paused PRD, or one the boot-resume gate parked; body: {actor, note} (409-style 400 if neither)
 POST   /api/autonomous/prds/{id}/reject    operator rejects the plan; body: {actor, reason}                          [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/request_revision  ask for a re-plan; body: {actor, note}                            [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/revisions_asked; body: {task_id, …}    [v5.2.0  / BL191 Q1]
@@ -48,31 +49,187 @@ POST   /api/autonomous/prds/{id}/set_task_project_dir  per-task project dir over
 POST   /api/autonomous/prds/{id}/set_task_verification_llm   per-task verifier LLM; body: {task_id, [verification_backend], [verification_model], [verification_effort], actor}   [v9.0.69]
 POST   /api/autonomous/prds/{id}/set_story_verification_llm  per-story verifier LLM; body: {story_id, [verification_backend], [verification_model], [verification_effort], actor} [v9.0.69]
 POST   /api/autonomous/prds/{id}/set_verification_llm        per-Automaton verifier LLM; body: {[verification_backend], [verification_model], [verification_effort], actor}       [v9.0.69]
+POST   /api/autonomous/prds/{id}/set_verifier_policy         per-Automaton verifier policy; body: {[mode], [backends[]], actor}
+POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier policy; body: {task_id, [mode], [backends[]], actor}
+POST   /api/autonomous/prds/{id}/set_failure_escalation     failure escalation override; body: {[task_id], policy|null, actor} (null clears; see "Failure escalation")
+POST   /api/autonomous/prds/{id}/resolve_task_review        operator decision on a task held for review; body: {task_id, action: retry|cancel, [spec], [backend], [model], [effort], [files[]], [note], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
+POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {[tag_ids[]], [primary_tag_id]}; tag_ids may be omitted when primary_tag_id is sent, which keeps the current tags ([] clears; primary_tag_id must be one of the tags or empty, else 400)
+POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
+POST   /api/autonomous/prds/{id}/set_lane_preference  lane an Automaton may take; body: {lane_preference: gpu|claude|any} ("" means any); 400 on an unknown value, 404 on an unknown id
+POST   /api/autonomous/prds/{id}/set_notify_events  set the lifecycle event kinds the Automaton notifies on; body: {notify_events[]} — absent/null/[] clears (inherit); the reply carries the computed notify_events_effective
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
+GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
+
+GET    /api/autonomous/tags[?include_sub=&counts=]  tag tree (parent_id) with Automata counts; counts=true adds subtree, direct and session counts and an untagged object
+POST   /api/autonomous/tags                 create; body: {name, [parent_id], [color], [description]}
+PATCH  /api/autonomous/tags/{id}            rename / recolor / describe / reparent; 409 if the move makes a cycle
+DELETE /api/autonomous/tags/{id}            409 while the tag has child tags, 409 with {count} while Automata carry it
+GET    /api/autonomous/attention           the attention group: {statuses, items}; see "Attention list" below
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
+GET    /api/sessions/{id}/progress         live progress snapshot for one session (turns, tool calls, last action,
+                                           tokens) — same `progress` shape prd-get carries per running task;
+                                           404 for a non-pi session (never reads another session's pi log)
 
 GET    /api/autonomous/learnings           extracted post-task learnings
+GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress metrics object (counts by kind, throughput, utilization, remaining work, completion range); since/until are YYYY-MM-DD, until is inclusive; 400 on a bad date
+GET    /api/autonomous/progress/trend[?days=]  saved daily snapshots as {days, points[], direction}; days 1..365 (default 30), 400 outside that range
+GET    /api/autonomous/lane-fill[?limit=N]  lane fill status: mode, lanes, queued eligible counts, pool evidence, newest decisions and idle alerts; limit 1..1000 (default 50), 400 outside that range
+GET    /api/autonomous/request-watch[?session=&automaton=]  model request progress: the watch settings in effect and one observation per watched worker or verifier session (state, time without progress, summary); read-only, makes no model call
+POST   /api/autonomous/merge/run           run a merge through the resolved merge pipeline: body {project?, title, branches}; answers {run, error?}; each step is recorded in pipeline_runs of the merge state
+GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions, merge_lock (the lock held on the base repository by a running merge, omitted when none); read-only, never runs git
+GET    /api/autonomous/merge/shadow        shadow merge state per project: stored plans, stored comparisons and per-release-size matched/different counts; read-only, stores only
+GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
+GET    /api/autonomous/restart-interruptions  the planning Automata, verifying tasks, running judges, running tasks and live sessions a daemon restart now would interrupt (each id + count) plus `needs_force` and the restart policy; read-only, autonomous read capability. `POST /api/restart` (409 + the report while `needs_force` and no force) and `restart_daemon` (error + the report; `force=true` to proceed) reuse it
+
+# The shipped state — orthogonal to status; see "The shipped state"
+POST   /api/autonomous/prds/{id}/shipped   record the Automaton's shipped state; body: {merged_in_release?, merged_at?, merge_commit (required), source: merge_step|backfill (required)}
+POST   /api/automations/{id}/shipped       record the Automation's shipped state (same body)
+GET    /api/autonomous/shipped/counts      per-status shipped counts (PRD + Automation buckets) plus the in-force autonomous.shipped settings
+POST   /api/autonomous/shipped/backfill[?dry_run=true]  one backfill pass over the base repository's default-branch merge history; dry_run scans and reports without writing
+GET    /api/dashboard/cards/shipped        live payload for the dashboard Shipped card (system card in the factory layout); the companion app renders it through the parity item below
 
 # Guardrail Library + Profiles
 GET    /api/autonomous/guardrails                  list guardrail library (built-ins + skill-contributed)
 GET    /api/autonomous/guardrail_profiles          list profiles
-POST   /api/autonomous/guardrail_profiles          create profile; body: {name, description?, guardrails[]}
+POST   /api/autonomous/guardrail_profiles          create profile; body: {name, description?, guardrails[], block_on_file_drift?, notify_events?}
 GET    /api/autonomous/guardrail_profiles/{id}     get one profile
-PUT    /api/autonomous/guardrail_profiles/{id}     update profile
+PUT    /api/autonomous/guardrail_profiles/{id}     update profile (a key left out stays as-is; an explicit empty notify_events clears it)
 DELETE /api/autonomous/guardrail_profiles/{id}     delete profile
 PUT    /api/autonomous/prds/{id}/guardrails        set per-Automaton override; body: {guardrail_profile?, per_task_guardrails[], per_story_guardrails[]}
 
 # Automations — orchestration records (see the Automations section below)
-GET    /api/automations              list Automations
+GET    /api/automations              list Automations (each carries a computed tags array: the member Automata's tag IDs; ?shipped=true|false for the shipped selection)
 POST   /api/automations              create (returns draft, version 1); body: {name, entry_member_id?, members[], budget_policy?, project_dir?, actor, reason}
 GET    /api/automations/{id}         get one
 PUT    /api/automations/{id}         update; body: create fields + expected_version (required)
 DELETE /api/automations/{id}         delete (draft/completed/cancelled only); body: {actor?, reason?}
+POST   /api/automations/{id}/set_llm               set the execution and planning defaults; body: {backend?, model?, effort?, planning_backend?, planning_model?, expected_version?, actor?, reason?}
+POST   /api/automations/{id}/set_verification_llm  set the verification default; body: {backend?, model?, effort?, expected_version?, actor?, reason?}
+POST   /api/automations/{id}/set_budget   set, replace or clear the spending limit of an Automation or one member (see "Spending limit" below); body: {member_id?, ceiling_type, ceiling_value, window, pacing?, on_breach?, backend?, allocation_estimate?, peer_window?, reset_time?, reset_weekday?, reset_day?, reset_zone?, estimated_cost_usd?, clear?, expected_version, actor?, reason?}
+POST   /api/automations/{id}/stages/rename   rename every member stage named `from` to `to` in place (see "Renaming a member stage" below); body: {from, to, expected_version, actor?, reason?}
+
+# Lifecycle event subscriptions (BL427 — PRD lifecycle events, phase 3)
+GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions (optional ?owner= lists only those created by the named owner)
+POST   /api/autonomous/subscriptions        create (201 + the record); body: {filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}. Sink types: comm | session | topic | alert. An action is only valid with a session sink (action.type must be send_input, ≤4096 chars). 400 with the validation message on bad input
+DELETE /api/autonomous/subscriptions/{id}   delete (204; 404 when unknown) — also accepted as DELETE /api/autonomous/subscriptions?id={id}. One-shot subscriptions are also auto-deleted by the engine after their first delivery. Changes take effect live — the engine re-attaches on store changes, no restart
 ```
+
+`GET/POST/DELETE /api/autonomous/subscriptions` sit on the operator's
+persisted lifecycle subscriptions (`<data_dir>/lifecycle_subscriptions.json`):
+`filter.kinds` picks event kinds from the known set (`prd.completed`,
+`task.completed`, … every PRD/task status-change kind plus
+`task.session_started`, `task.session_cleared`, `scope_warning`,
+`guardrail_warn`, `prd.updated`),
+`filter.level` narrows to `prd` or `task` events, and the `sink` is
+where matching events are delivered (`comm` = the notify pipeline, `session`
+= a datawatch-managed session, `topic` = the push-topic bus, `alert` = the
+in-app alerts store). With `sink.type = session`, `action` may type
+`action.text` into the session each time (`send_input`), which replaces
+per-event watch-and-inject scripts. `one_shot: true` consumes the
+subscription after its first delivery; `expires_at` (RFC 3339, future)
+expires it instead. These endpoints require the same auth as the other
+`/api/autonomous` routes (federation peers need `autonomous:read` for
+list, `autonomous:write` for create/delete). They are served only when the
+daemon runs the subscription engine; otherwise 503.
 
 When `autonomous.enabled` is false, every endpoint returns
 `503 autonomous disabled`.
+
+### Notify events (`set_notify_events`)
+The set of lifecycle event kinds (the same known set as the subscription
+filter above, `prd.completed`, `task.completed`, …) that the notification
+pipeline fires for this Automaton, independent of who is subscribed.
+Resolution is a tiered precedence chain — **Automaton > guardrail profile
+> global default**. Each level may supply the whole set, or inherit
+from the level behind it. An empty or unset list on a tier falls
+through to the next one; the result is always an effective list.
+
+```
+POST /api/autonomous/prds/{id}/set_notify_events
+     {"notify_events":["prd.completed","task.completed"]}
+     # clear → inherit from the guardrail profile / global default:
+     #   {}            /  {"notify_events":null}  /  {"notify_events":[]}
+```
+
+* **Per-Automaton** (`set_notify_events`): sets, replaces, or clears
+    (`notify_events` null, `[]`, or an absent key) the list for that
+    Automaton. POST only — any other method is `405`. Invalid entries are
+    rejected with `400` and a message that names the offending kind (or
+    its index) *and* lists the valid kinds, so nothing is ever partially
+    applied.
+* **Per-guardrail-profile** (create/update body `notify_events`, same
+    key rule): applies to every Automaton that runs under the profile and
+    whose Automaton-tier list is empty.
+* **Global default** (config key `autonomous.notify.default_events`,
+    written through the standard config surfaces — `PUT /api/config`
+    and the autonomous config endpoint): the floor of the chain. Unset
+    (`nil`) falls back to the built-in five default kinds; an explicit
+    empty list is preserved as "no events at all", so it is distinguishable
+    from unset.
+
+Reads surface the resolution without ambiguity. The by-id Automaton and
+`set_*` replies carry both `notify_events` (the raw list set at this
+tier) and `notify_events_effective` — `{events, source}` where
+`source` is `automaton`, `profile` or `global`, the tier that actually
+supplied the effective kinds. `GET /api/autonomous/status` reports a
+`notify` block: `default_events` (the in-effect global defaults) and
+`overrides`, one entry per non-terminal Automaton whose effective list
+resolves from the `automaton` or `profile` tier (`id`, `source`,
+`events`) — sorted by Automaton ID and capped at 100. Both arrays are
+always lists: empty, never null. All of these endpoints follow the same
+auth as the other
+`/api/autonomous` routes: the `set_notify_events` action requires
+`autonomous:write` for federation peers, `autonomous:read` for the
+status/config reads.
+
+### Live task progress + looping warning
+
+While a task is actively running — `status` `in_progress` or `verifying` —
+the executor's periodic session poll also parses the worker's own pi JSONL
+log and refreshes two fields that ride along in every PRD view (`prd-get`,
+`tasks` and `full` detail, MCP `autonomous_prd_get`):
+
+```json
+{
+  "id": "task-1234", "status": "in_progress",
+  "progress": {
+    "last_event_at": "2026-10-14T12:04:41Z",
+    "assistant_turns": 12,
+    "tool_calls": {"bash": 9, "write": 3},
+    "last_tool_name": "bash",
+    "last_tool_args": "{\"command\": \"go test ./...\"}",
+    "last_summary": "Now running the full test suite before wrapping up.",
+    "tokens": 48210
+  },
+  "looping_warning": "suspected looping: same call x5"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `progress.last_event_at` | Timestamp (RFC3339) of the newest event in the log — freshness is the first thing to check. |
+| `progress.assistant_turns` | Assistant-role messages so far, one per LLM reply (tool-calling ones included) — a proxy for "how much work has been attempted". |
+| `progress.tool_calls` | Per-tool-name call counts across the log so far. |
+| `progress.last_tool_name` / `last_tool_args` | The most recent tool call, with arguments as compact JSON (truncated to 500 chars). |
+| `progress.last_summary` | First 200 chars of the most recent thinking/text block — what the worker was last planning or reporting. |
+| `progress.tokens` | Cumulative tokens reported by the log's usage fields. |
+| `looping_warning` | **Omitted unless set.** The worker re-issued the same tool name + arguments on three consecutive periodic polls (~an hour of real time); treat it as "stuck, needs an operator" rather than "progressing slowly". |
+
+**Presence semantics.** The store forces both fields off the moment a task
+leaves the active statuses (and strips them at every save/load), so
+`progress` present ⇔ the worker is running right now. A `pending` task has
+neither key in JSON; a `completed` task that ran for an hour keeps none of
+its progress behind — history lives in the decisions log and the session
+log on disk, not on the task.
+
+`GET /api/sessions/{id}/progress` returns the same snapshot for any pi
+session whose log exists, regardless of autonomous involvement — session id,
+full id, state, `log_path`, plus the fields above. The route never reads a
+pi log from another session: a non-pi session gets 404 even when a stale pi
+log sits in its project directory, 405 for non-GET. The PWA shows the
+snapshot on the running task's card in the Status tab; the session view no
+longer carries a progress strip of its own (removed in 9.31.3).
 
 ### Clean restart on `reset_task`
 
@@ -120,6 +277,107 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_llm \
   -H "Content-Type: application/json" \
   -d '{"task_id":"<task-id>","guardrail_model":""}'
 ```
+
+### Override outcomes on a running or queued Automaton (`set_llm` / `set_task_llm` / `set_story_llm`)
+
+`autonomous.override_queued_tasks` (boolean; unset reads as `true`, explicit
+`false` restores the classic refusal) controls what happens when
+`autonomous.task_override_statuses` would refuse an override — most often a
+PRD that is `running` while the target task has not started yet:
+
+- **On (default).** The call is accepted as long as it can reach an unstarted
+  task (`pending`, `queued`, `waiting_capacity`, `waiting_decision`,
+  `awaiting_approval`, or never scheduled). Unstarted tasks are changed; a
+  `waiting_capacity` task gets its queued capacity request retargeted to the
+  pool the new backend and model resolve to. Started tasks (running, running
+  tests, verifying), finished tasks (completed, failed, cancelled) and parked
+  ones (blocked, waiting for review) are never modified — they are reported
+  as left alone with the reason, and the override takes effect on their next
+  run. A task-level call aimed at a task that already started or finished is
+  not refused either — it answers 2xx with the task in `left_alone`, its
+  record left exactly as it was.
+- **Off.** Any status outside `autonomous.task_override_statuses` is a `400`
+  with the classic lock message, exactly as before.
+
+In queued mode the reply is the PRD view plus an `override` object:
+
+```json
+{
+  "prd": { "…": "…" },
+  "override": {
+    "changed": [
+      { "task_id": "t2", "reason": "not started: the override takes effect when the task runs; its queued capacity request was retargeted to the new pool", "capacity_moved": true },
+      { "task_id": "t3", "reason": "not started: the override takes effect when the task runs" }
+    ],
+    "left_alone": [
+      { "task_id": "t1", "reason": "task is running; the override takes no effect while it runs" }
+    ]
+  }
+}
+```
+
+`changed` / `left_alone` are arrays of `{task_id, reason}`; `capacity_moved`
+is present (and `true`) only on a `waiting_capacity` task whose queued
+request was retargeted. The `override` object is present **only** in this
+mode: a classic-accepted call (status in `task_override_statuses`) and a
+refused call (setting disabled) return the plain PRD view. A story-level call
+reports the story's tasks. The Automaton-level `set_llm` worker pair on a
+`running` PRD is applied per task under the same rule. Guardrail and
+verification LLM setters are never affected by the setting.
+
+The same key over REST (`PUT /api/config` `autonomous.override_queued_tasks`),
+MCP (`autonomous_config_set`), CLI (`datawatch config set
+autonomous.override_queued_tasks false`) and comm channel (`configure
+autonomous.override_queued_tasks=false`).
+
+### Planning requeue (`set_llm` / `decompose`)
+
+Changing the decomposition pair (`decomposition_profile`,
+`decomposition_model`) with `set_llm` while the PRD's planning run is still
+in the capacity queue retargets that run's single queue entry in place to the
+pool the new pair resolves to — the PRD stays in `planning`, the wait reason
+now names the new pool, and no new attempt starts (the decompose retry budget
+is untouched, the wait budget is not reset). `decompose` (alias `plan`) is the
+restart-decompose path: re-calling it while the planning run is still queued
+re-queues that same run on the pool the current profile resolves to instead of
+starting a second run; while the run is already started it answers plainly
+that the run is in progress and was left alone.
+
+Both replies carry a `planning` object (present on `set_llm` whenever a
+planning field — `decomposition_profile` or `decomposition_model` — is part
+of the call, and on the `decompose` reply while a planning run is in flight):
+
+```json
+{
+  "prd": { "…": "…" },
+  "planning": {
+    "outcome": "requeued",
+    "old_backend": "ollama",
+    "new_backend": "opencode",
+    "old_pools": ["llm:ollama"],
+    "new_pools": ["llm:opencode"],
+    "reason": "queued planning run re-queued on llm:opencode"
+  }
+}
+```
+
+`outcome` is one of:
+
+| Outcome | Meaning |
+|---|---|
+| `requeued` | The queued planning run was retargeted to the pool the current profile resolves to. |
+| `deferred_to_next_run` | The run already started and holds a live lease; it was left alone (wait for it to finish or cancel it) and the new pair applies from the next planning run. |
+| `unchanged` | Nothing to move — the resolved pair is unchanged, no live planning run, or the queue entry already sits on the target pool. |
+
+The `old_*` / `new_*` fields and `reason` are present whenever the answer is
+not a plain requeue. Re-targeting an entry that already carries the desired
+placement is a no-op, so changing the pair twice leaves exactly one queue
+entry and no leaked capacity. Cancelling or rejecting the PRD still drops a
+queued planner at once ("decompose cancelled"), not consuming the retry
+budget. See [`howto/autonomous-planning.md`](../howto/autonomous-planning.md)
+(“Changing the planning backend while planning”) and
+[`howto/automata-capacity.md`](../howto/automata-capacity.md) (“Retargeting
+while queued”).
 
 ### Per-task project dir override (`set_task_project_dir`)
 
@@ -183,7 +441,7 @@ variants. `verification_backend` must be a configured LLM name (unknown
 Automaton is `needs_review`, `revisions_asked` or `cancelled`. The
 response is the updated Automaton.
 
-Resolution: task → story → Automaton → global
+Resolution: task → story → Automaton → Automation → global
 `autonomous.verification_backend` / `verification_model` /
 `verification_effort`. The model is taken from the same level the
 backend was found at; effort resolves independently. A backend set at
@@ -195,7 +453,8 @@ runs as a session.
 Each verification records what actually ran on the task's
 `verification` object: `verifier_backend`, `verifier_model`,
 `verifier_effort` and `verifier_source` (`task`, `story`, `prd` for the
-Automaton level, `global`, or `pool`).
+Automaton level, `automation` for the default set on the Automation the
+Automaton belongs to, `global`, or `pool`).
 
 ```bash
 # a stronger verifier for one risky task
@@ -217,6 +476,465 @@ system-populated and read-only — they appear in
 `GET /api/autonomous/prds/{id}` (and the MCP / CLI / comm `get`
 surfaces, which pass the same JSON through) but have no setter.
 
+### Verifier policy (`set_task_verifier_policy` / `set_verifier_policy`)
+
+The verifier policy chooses **which backend runs a verification**, as
+opposed to the verification LLM override above, which names the LLM that
+judges. The global policy is `autonomous.verifier_policy`; an Automaton or
+a single task can override its **mode** and **backend list**.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `autonomous.verifier_policy.*` in `~/.datawatch/config.yaml` (fields below) |
+| **REST** | `POST /api/autonomous/prds/{id}/set_verifier_policy` and `POST /api/autonomous/prds/{id}/set_task_verifier_policy`; global keys through `PUT /api/config` and `PUT /api/autonomous/config` |
+| **MCP** | `autonomous_prd_set_verifier_policy`, `autonomous_prd_set_task_verifier_policy`; the global keys are the `verifier_policy_*` arguments of `autonomous_config_set` |
+
+Modes:
+
+| Mode | Behaviour |
+|------|-----------|
+| `fixed` (default) | The first eligible backend only. |
+| `prefer-free` | The first backend that has a free slot; falls back down the list. |
+| `balance` | The backend with the lowest relative load. |
+| `gpu-only` | Keeps only local/GPU backends in the list. |
+| `claude-only` | Keeps only Claude backends in the list. |
+
+Global fields (`autonomous.verifier_policy.<field>` in `PUT /api/config`, or
+one `verifier_policy` object in `PUT /api/autonomous/config`):
+
+| Field | Meaning |
+|-------|---------|
+| `mode` | One of the modes above. Empty means `fixed`. |
+| `backends` | Ordered list of eligible verifier backends. Empty falls back to `autonomous.verification_backends`, then `autonomous.verification_backend`. |
+| `claude_session_cap` | Most Claude verifier sessions started per window. `0` = unlimited. |
+| `claude_cap_window_minutes` | Window length for the cap. `0` = 60. |
+| `force_stronger_on_retry` | Send a retried verification to the stronger verifier. |
+| `final_gate_stronger` | Send the final verification gate to the stronger verifier. |
+| `stronger_backend` / `stronger_model` | The stronger verifier. Empty means `claude-code` and the default Sonnet model. |
+
+A config write is validated before anything is stored: an unknown `mode`,
+an empty entry in `backends`, a negative `claude_session_cap` or
+`claude_cap_window_minutes`, a value of the wrong type, or an unknown field
+is a `400` and changes nothing. A valid write applies to the next
+verification with no restart, and is persisted to `config.yaml`.
+`PUT /api/autonomous/config` merges the `verifier_policy` object onto the
+current policy field by field, so a partial object leaves the other fields
+alone. `GET /api/config` and `GET /api/autonomous/config` return the policy
+under `verifier_policy`.
+
+Per-unit body keys are presence-aware like the verification LLM keys:
+**absent** leaves the field unchanged, **`""`** (mode) or **`[]`** (backends)
+clears it so the level inherits, a value sets it. Clearing both fields
+removes the override. `task_id` is required on the task variant. `mode`
+must be one of the modes above; every `backends` entry must be a non-empty,
+configured LLM name (an unknown name is a `400`). Resolution is task →
+Automaton → global; the mode and the backend list each resolve
+independently, so a task that sets only a mode still uses the Automaton's
+backend list. The other policy fields come from the global policy.
+
+Locking follows the verification LLM override: the Automaton variant is
+accepted while the Automaton is `needs_review`, `revisions_asked` or
+`cancelled`; the task variant while the Automaton's status is listed in
+`autonomous.task_override_statuses`. Any other status is a `400`. Each change
+is audit-logged and appended to the Automaton's decision log
+(`set_prd_verifier_policy` / `set_task_verifier_policy`). The response is the
+updated Automaton.
+
+Each verification records the backend the policy picked on the task's
+`verifier_policy_choice` (backend, model, reason, time) and in a
+`verifier_policy` decision on the Automaton.
+
+```bash
+# balance one risky task across two local backends
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verifier_policy \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","mode":"balance","backends":["ollama-a","ollama-b"]}'
+
+# clear the mode only; the backend list stays
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verifier_policy \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","mode":""}'
+
+# global policy: prefer a free local backend, cap Claude verifiers at 4 per hour
+curl -sX PUT http://localhost:7433/api/autonomous/config \
+  -H "Content-Type: application/json" \
+  -d '{"verifier_policy":{"mode":"prefer-free","backends":["ollama-a","claude-code"],"claude_session_cap":4,"claude_cap_window_minutes":60}}'
+```
+
+### Judge routing and time limit (`autonomous.judge_policy` / `autonomous.judge_timeout_seconds` / `autonomous.judge_size_threshold_lines`)
+
+The judges (the Automaton's guardrail, plan review and other autonomous judges)
+are a distinct role in the verifier routing policy. Their backend list is
+`autonomous.judge_policy`, one attempt per backend; an empty list means the
+judges follow the verifier policy above. `autonomous.judge_timeout_seconds` is
+the time limit for one judge run, 1800 seconds by default, and the wait for a
+capacity slot does not count against it. When every backend in the judge policy
+has timed out, the Automaton is held in `needs_review` and an error alert lists
+every attempt. `autonomous.judge_size_threshold_lines` (default 400, `0` = off) is the
+changed-line count (added plus deleted, on the Automaton branch against its merge
+base, lock files left out) above which the judges try `claude-code` first and the
+rest follow in their usual order, still one attempt per backend; the decision log
+names the rule and the line count. The settings are read and written with `GET/PUT /api/autonomous/config`
+(`judge_policy`, `judge_timeout_seconds`, `judge_size_threshold_lines`), MCP `autonomous_config_set`, the CLI
+`autonomous config-set --judge-policy --judge-timeout-seconds --judge-size-threshold-lines`, and the comm verbs
+`autonomous judge-policy` and `autonomous judge-policy-set`. The guide, with the
+modes, the alerts and how to resolve a hold, is [howto/judge-policy.md](../howto/judge-policy.md).
+
+### Failure escalation and held tasks (`set_failure_escalation` / `resolve_task_review`)
+
+A task that keeps failing moves up a ladder of workers and, at `max_failures` failed attempts, is held with status `review_needed` for the operator. The policy has three fields, `enabled`, `max_failures` and `steps`, and each resolves per field: task override, then Automaton override, then the daemon default (`autonomous.failure_escalation`). A nil, zero or empty field means "not set at this level." The guide is [howto/failure-escalation.md](../howto/failure-escalation.md).
+
+```
+POST /api/autonomous/prds/{id}/set_failure_escalation
+{"task_id": "<optional>", "policy": {"enabled": true, "max_failures": 4,
+  "steps": [{"backend": "pi-prompt", "model": "ollama/qwen3.8:27b", "attempts": 2},
+            {"backend": "claude-code", "model": "claude-opus-5-5", "effort": "high"}]},
+ "actor": "operator"}
+
+POST /api/autonomous/prds/{id}/set_failure_escalation
+{"policy": null}              # clears the Automaton override
+{"task_id": "t1", "policy": null}   # clears one task's override
+```
+
+- `task_id` absent or empty addresses the Automaton; a non-empty `task_id` addresses that task.
+- `policy` is required. `null` clears the override at that level. An absent `policy` is a 400.
+- The response is the updated Automaton.
+
+```
+POST /api/autonomous/prds/{id}/resolve_task_review
+{"task_id": "t1", "action": "retry", "spec": "<replacement spec>", "backend": "claude-code",
+ "model": "claude-opus-5-5", "effort": "high", "files": ["internal/parser/parse.go"],
+ "note": "the failure is in the parser only", "actor": "operator"}
+
+{"task_id": "t1", "action": "cancel", "note": "out of scope for this release", "actor": "operator"}
+```
+
+- `action` is `retry` or `cancel`. The other fields apply to `retry` only.
+- Each change in a retry is checked before anything is written, so a refused change leaves the task held.
+- `note` is recorded on the Automaton's decision log and given to the next attempt.
+- The call works while the Automaton is running and other tasks are live. It answers at once, does not wait for the executor, and starts no second executor: a running executor is woken to read the Automaton again and launch the retried task (or fail the dependents of a cancelled one). An Automaton with no running executor is relaunched, as Resume does.
+- The response is the updated Automaton.
+
+Status codes for both routes:
+
+| Code | When |
+|---|---|
+| 200 | Applied. The response is the updated Automaton. |
+| 400 | Bad JSON, an invalid policy or action, an unknown effort or model/backend pair, or a missing `policy` key. The message names the field. |
+| 403 | The session token lacks the autonomous-write capability (federation peers). |
+| 404 | Unknown Automaton or task. |
+| 405 | Method other than POST. |
+| 409 | `resolve_task_review` only: the task is not held for review. Nothing changes. |
+| 501 | The Automaton manager does not support the operation (test doubles only; the daemon always supports it). |
+
+Both routes write an audit entry (`set_failure_escalation` or `resolve_task_review`, target `automaton`).
+
+**New and changed fields.** These appear in the JSON views:
+
+| Where | Field | Meaning |
+|---|---|---|
+| Automaton | `failure_escalation` | The Automaton's override (omitted when unset). |
+| Task | `failure_escalation` | The task's override (omitted when unset). |
+| Task | `attempts` | One entry per failed, stalled or cancelled attempt: `number`, `backend`, `model`, `effort`, `started_at`, `ended_at`, `duration_seconds`, `outcome`, `failure_category`, `failure_summary`, `verifier_summary`, `verifier_issues`, `changed_files`, `snapshot_ref`, `escalated`, `runner_exit_status`, `runner_last_output`, `runner_processes`. The three runner fields are set only for a pi-prompt attempt that stalled and are omitted otherwise: `runner_exit_status` is pi's exit status when the pane showed it, `runner_last_output` the last non-empty pane lines (at most 20, oldest first), `runner_processes` the runner's processes as `pid name argv` lines (at most 40). The task's `runner_evidence` is internal: the worker wait loop sets it just before a stall and clears it when the attempt is recorded, so it is never returned on its own. |
+| Task | `escalation_failures` | Failed attempts since the last operator action. Any reset of the task sets it back to 0. |
+| Task | `review_summary` | Set while the task is held: `held_at`, `failure_count`, `total_seconds` and `text`, a plain-text report of every attempt. |
+| Task | `operator_worker_set` | `true` when the operator's last review retry chose the task's worker. The escalation ladder then keeps that worker; a retry without a worker change clears it. |
+| Task | `status` | `review_needed` while held. It is not terminal and not a failure. |
+| Task | `executor_source` | `escalation` when a ladder step chose the worker. |
+| Decision log | `kind` | `failure_escalation` when an attempt moves to a different worker; `review_needed` when a task is held. |
+| `GET /api/autonomous/status` | `review_needed` | Every held task across all Automata, oldest hold first: `automaton_id`, `automaton_title`, `task_id`, `task_title`, `failure_count`, `last_backend`, `last_model`, `held_at`. Omitted when none is held. |
+| Automaton summary | `review_needed` | The Automaton's held tasks, in the same shape. Omitted when none is held. |
+| Task listing | `escalation_failures`, `attempt_count`, `review_summary` | The count, the number of attempts recorded, and the report text. |
+| Automation status | `review_needed_count`, `review_needed_task_ids` | Held tasks of the current member Automaton. Omitted when none is held. |
+
+Daemon default: `GET /api/config` returns `autonomous.failure_escalation` (`enabled`, `max_failures`, `steps`), and `PUT /api/config` takes the keys `autonomous.failure_escalation.enabled`, `.max_failures` and `.steps`. `steps` accepts a JSON array or the compact text `backend:model[@attempts],...`, where `-` means the task's normal worker. A bad value is a 400 naming the key, and nothing in that write is applied.
+
+### Tags on Automata and the tag counts
+
+Every Automaton carries its tags. A summary list row (the default
+`GET /api/autonomous/prds`) carries them as `tags`; the full record
+(`?full=1`, and `GET /api/autonomous/prds/{id}`) carries them as `tag_ids`. Both
+are the same tag IDs. A row also carries `primary_tag_id` when the Automaton has
+a primary tag. The primary tag is set with `POST .../set_tags` and is used only to
+sort an Automaton in a tag browser; it never hides a membership. The primary
+defaults to none, and removing the primary tag from the Automaton clears it.
+The same route sets it from every surface: `datawatch autonomous prd-set-tags <id> --primary <tag-id>`,
+the MCP `autonomous_prd_set_tags` tool with `primary_tag_id`, and the comm verb
+`autonomous set-primary <prd-id> <tag-id|none>`. A body that sends `primary_tag_id` without
+`tag_ids` keeps the current tag set and changes only the primary. A body that sends
+`tag_ids` alone keeps the current primary while its tag stays and clears it when the
+tag is removed.
+`task_count`, `story_count` and `task_status_counts` are unchanged.
+
+`GET /api/autonomous/tags?counts=true` adds these fields to each tag:
+
+| Field | Meaning |
+|---|---|
+| `count` | Unchanged: Automata carrying the tag, rolled up with `include_sub`. |
+| `subtree_count` | Distinct Automata carrying the tag or any descendant. An Automaton counts once per tag, however many of its tags sit in that subtree. This is the main figure a tag browser shows. |
+| `direct_count` | Automata carrying exactly this tag. |
+| `session_subtree_count` | As `subtree_count`, for sessions. A session counts through its own tags and through the tags it inherits from its Automaton. |
+| `session_direct_count` | As `direct_count`, for sessions, with inherited tags included. |
+
+The reply also carries `untagged: {count, session_count}`: the Automata, and the
+sessions, that carry no tag at all. A session's inherited tags count, so a session
+is untagged only when neither it nor its Automaton has a tag.
+
+### Tag change events (WebSocket `tag_update`)
+
+Every change to the tag registry and to tag assignments sends one `tag_update`
+frame to every connected WebSocket client, so an open tag browser refreshes its
+counts without polling. The frame is sent after the change is saved, and a refused
+change (a cycle, a tag still in use, a tag with children, an unknown tag) sends nothing.
+
+The data carries IDs only. A client that needs names or counts refetches
+`GET /api/autonomous/tags?counts=true`.
+
+| `kind` | Sent when | Fields |
+|---|---|---|
+| `created` | A tag is created | `tag_id` |
+| `renamed` | A tag is renamed | `tag_id` |
+| `reparented` | A tag's parent changes | `tag_id` |
+| `recolored` | A tag's color changes | `tag_id` |
+| `deleted` | A tag is deleted | `tag_id` |
+| `assigned` | An Automaton's tag list or primary tag is saved | `prd_id` |
+| `session_assigned` | A session's own tags are saved | `session_id` (the full ID) |
+| `registry_synced` | A peer pulls a snapshot from its keeper and applies it | none (the client refetches `GET /api/autonomous/tags`) |
+
+A tag description change sends nothing, because a description never changes a count.
+A rename or a re-parent sends exactly one frame. An Automaton's tag change is also
+reported by its `prd_update` frame, which the Automata list already uses.
+
+A status change (for example `blocked`, `needs_review` or `paused`) sends one `prd_update`
+frame for the Automaton, with its `prd_id` and `status`. Attention lists refresh from that frame.
+
+Surfaces: `tag_update` is a WebSocket event only; it has no REST, MCP, CLI or comm-channel
+form. The PWA refreshes its tag counts from it. The Android and iPhone clients have not
+been given a handler for it yet. Tag changes made through REST, MCP, CLI or the comm channel
+go through the same registry methods, so they send the same frames.
+
+### Shared tag registry
+
+Several daemons can share one tag registry, so the same tags (their names,
+parents, colors and descriptions) appear on each of them. One daemon keeps the
+registry. The others keep a cached copy of it and send their tag edits to the
+keeper. The registry is set with `autonomous.tags.registry_keeper` and synced on
+`autonomous.tags.registry_sync_seconds`. The sync paths (pull, forwarded write,
+stale copy, merge) are drawn in [flow/tag-registry-sync-flow.md](../flow/tag-registry-sync-flow.md),
+and the operator steps are in [howto/automata-tag-registry.md](../howto/automata-tag-registry.md).
+
+**Roles.** The role follows from `registry_keeper`:
+
+| Value | Role | What the daemon does |
+|---|---|---|
+| empty | standalone | Keeps its own tags and syncs with nobody. This is the default, and what a daemon did before the registry existed. |
+| this daemon's own name | keeper | Holds the registry. Its peers pull the registry from it, and its own writes apply directly. |
+| another peer's name | peer | Pulls the keeper's tags into a local cache and forwards its tag writes to the keeper. |
+
+The keeper's name is a federation peer name, so the peer must be a federation peer
+of the daemon. Both config keys take effect at runtime; no restart is needed.
+
+**Cache and stale copies.** A peer keeps the last copy of the keeper's tags on disk,
+so a restart does not lose it. Every `registry_sync_seconds` (a whole number of
+seconds, minimum 5, default 30) the peer asks the keeper for its snapshot. While the
+keeper has not answered, the peer shows the cached copy and reports `stale: true`
+with the time of the last successful sync in `last_synced_at`.
+
+**Writes.** On a peer, a create, rename, re-parent, recolor, describe or delete is
+forwarded to the keeper, and the reply shows the keeper's value. A keeper or a
+standalone daemon applies a write to its own registry.
+
+If the keeper is unreachable from a peer:
+
+- rename, re-parent, recolor, describe and delete are refused with 503. The
+  message says the last copy is shown, and nothing changes;
+- create still works. The tag is created on the peer and marked `pending_sync: true`
+  until it reaches the keeper.
+
+**Conflicts.** A peer sends the registry revision it last saw with each write, and
+the keeper compares it with the last change to each field (name, parent, color and
+description). When the keeper has changed a field the peer also edited, the keeper
+keeps its own value and the reply carries `"conflict": true` and `"conflict_field"`
+naming the field. The peer shows the keeper's value.
+
+**Pending sync.** A tag a peer created while the keeper was unreachable is counted
+in `pending_sync_count` until the keeper has it. When the keeper answers, the tag is
+pushed. If the keeper already holds a tag with the same name under the same parent,
+the two merge into the keeper's tag, and a merge note records it.
+
+**Merge and removed-on-keeper notes.** The registry object lists the notes that
+have not been dismissed on this daemon:
+
+- `merged`: a pending tag was merged into a keeper tag. `kept_id` is the keeper's
+  tag, `replaced_id` is the pending tag, and `merged_at` is when it happened.
+- `removed_on_keeper`: the keeper deleted a tag that this daemon still had
+  assignments on. `tag_id` names the deleted tag, so the operator can see which
+  Automata and sessions it touched.
+
+A note is dismissed on the daemon that shows it. A dismissed note stays dismissed
+when later snapshots are applied. Dismissing a note changes no tag and no
+assignment.
+
+**Routes.**
+
+| Method and path | Capability | Purpose |
+|---|---|---|
+| `GET /api/autonomous/tags` | autonomous read | Now carries a `registry` object (see below) with the tag reply. |
+| `POST`, `PATCH`, `DELETE /api/autonomous/tags[/{id}]` | autonomous write | Go through the registry on a peer; see the write rules above. |
+| `GET /api/autonomous/tags/registry` | autonomous read | Keeper-to-peer protocol route: the keeper's snapshot `{revision, tags, notes}`. A peer answers 409. |
+| `POST /api/autonomous/tags/registry/write` | autonomous write | Keeper-to-peer protocol route: applies one forwarded write and returns the keeper's result. Not for operators. |
+| `POST /api/autonomous/tags/registry/notes/{note-id}/dismiss` | autonomous write | Dismisses one note on this daemon. Returns `{"dismissed": id}`; 404 when no such note. |
+
+The `registry` object on `GET /api/autonomous/tags`:
+
+```json
+"registry": {
+  "role": "peer",
+  "keeper": "keeper-node",
+  "stale": false,
+  "last_synced_at": "2026-10-26T02:10:00Z",
+  "revision": 42,
+  "pending_sync_count": 0,
+  "notes": [],
+  "last_error": ""
+}
+```
+
+`last_synced_at` is omitted before the first answer from the keeper. `notes` is always
+an array. Fields: `role` (`standalone`, `keeper` or `peer`), `keeper` (the keeper's
+name, empty when standalone), `stale`, `last_synced_at`, `revision`,
+`pending_sync_count`, `notes` and `last_error`.
+
+**Refusal bodies.** A refusal is JSON `{"error": text, "kind": kind}`, and a `count`
+field is added only for `in_use`.
+
+| Kind | HTTP status | Meaning |
+|---|---|---|
+| `not_found` | 404 | Unknown tag |
+| `invalid` | 400 | The name, parent, color or other value is not valid |
+| `has_children` | 409 | The tag still has child tags |
+| `in_use` | 409 | Automata still carry the tag; `count` is how many |
+| `cycle` | 409 | A move would make a tag its own ancestor |
+| `not_keeper` | 409 | A keeper-only route was called on a peer or standalone daemon |
+| `note_not_found` | 404 | No such merge or removal note on this daemon |
+| `unreachable` | 503 | The keeper cannot be reached from this peer |
+
+**Configuration.**
+
+```yaml
+autonomous:
+  tags:
+    registry_keeper: ""          # "" = standalone; this daemon's own name = keeper; another peer's name = peer
+    registry_sync_seconds: 30    # how often a peer pulls the keeper's snapshot; whole seconds, minimum 5
+```
+
+Both keys can be set from YAML under `autonomous.tags`, through `GET` and `PUT
+/api/config`, the comm `configure` verb, MCP `config_set` and the CLI `config set`.
+
+**Feature access.** Every surface for the registry, with the reason for each
+exclusion. The keeper-to-peer routes are protocol routes, not operator actions.
+
+| Endpoint | REST | MCP | CLI | Comm channel | YAML/config | PWA | Android | iPhone |
+|---|---|---|---|---|---|---|---|---|
+| `GET /api/autonomous/tags/registry` (keeper snapshot) | yes | no (keeper-to-peer protocol; the status tool shows the local registry object) | no (same reason) | no (same reason) | n/a | no (no UI; a peer's sync is not something an operator edits) | no (not in this change) | no (not in this change) |
+| `POST /api/autonomous/tags/registry/write` | yes (protocol) | no (protocol route, peers only, not an operator action) | no (same reason) | no (same reason) | n/a | no | no | no |
+| `GET /api/autonomous/tags` (registry object) | yes | yes (`autonomous_tag_registry_status`; `autonomous_tag_list` returns it too) | yes (`tag-registry`; `tag-list` prints it too) | yes (`tag-registry`) | n/a | reads it through the tag browser; no registry banner in this change | no (not in this change) | no (not in this change) |
+| `POST /api/autonomous/tags/registry/notes/{id}/dismiss` | yes | yes (`autonomous_tag_registry_dismiss_note`) | yes (`tag-registry-dismiss`) | yes (`tag-registry-dismiss`) | n/a | no (no dismiss control in this change) | no (not in this change) | no (not in this change) |
+| `autonomous.tags.registry_keeper` and `registry_sync_seconds` | yes (`GET`/`PUT /api/config`) | yes (`config_set`) | yes (`config set`) | yes (`configure`) | yes (`autonomous.tags`) | yes: the Settings card's Automata tag browser group has a text field for the keeper and a number field for the sync interval | no (not in this change) | no (not in this change) |
+
+When a surface gains or loses one of these endpoints, update its cell in this table
+in the same change.
+
+### Attention list (`GET /api/autonomous/attention`)
+
+Returns `{"statuses": [...], "items": [...]}`. The items are the Automata whose
+status is one of `statuses`, plus every Automaton with a task held for operator
+review. Each item is the summary view, with `blocked_reason`. `statuses` names the
+statuses in force; they are `blocked`, `needs_review` and `paused`, so a paused
+Automaton is in the group. Read-only; needs the autonomous read capability.
+
+An Automaton that completion review held in `needs_review` with no corrective task
+on the way is listed even when `needs_review` is not one of `statuses`, and it
+leaves the list once its `rules_review_outcome` is cleared. Its item carries
+`rules_review_outcome` (see below), so a surface can show the findings without
+reading the free-text `blocked_reason`.
+
+### Rules review outcome (`rules_review_outcome`)
+
+When the rules review at the end of an Automaton's run blocks it, the Automaton
+records what the review found and what happened next. The record is on the full
+Automaton (`GET /api/autonomous/prds/{id}`) and on the summary view, and it is
+omitted when there is none. A later review that passes clears it.
+
+| Field | Meaning |
+|---|---|
+| `action` | What recovery happened: `fix_task_created` (a corrective story was added and runs normally), `fix_task_failed` (the corrective task could not be created, so the Automaton waits in `needs_review`), `retries_spent` (the automatic fix attempts are used up, so it waits in `needs_review`) or `auto_fix_disabled` (automatic fixing is turned off, so it waits in `needs_review`). |
+| `findings` | The review's findings, one string each; never null. When the review gave no itemised issues, the summary is the single finding. |
+| `summary` | The review's one-line summary. |
+| `attempt` | Which fix attempt this review was. |
+| `retry_budget` | How many automatic fix attempts are allowed. |
+| `retries_spent` | How many have been used. |
+| `reason` | Why the recovery stopped, when it did; omitted otherwise. |
+| `at` | When the review was recorded. |
+
+The decision log gains the kinds `rules_review_fix_failed`, `rules_review_retries_spent`
+and `rules_review_auto_fix_disabled`, one for each of the three held actions. Show an
+unknown kind as plain text.
+
+### Automata list (`GET /api/autonomous/prds`)
+
+The default reply is a summary list, not whole records: each row carries ids,
+title, status, counts, tags and timestamps, and none of the story, task or
+verifier text. The body is `{"prds": [...], "total": N, "next_cursor": "..."}`.
+Fetch one Automaton in full with `GET /api/autonomous/prds/{id}`.
+
+| Parameter | Effect |
+|---|---|
+| `limit=<n>` | Rows per page. Default 50, maximum 500; anything below 1 or not a number returns 400. |
+| `cursor=<opaque>` | The `next_cursor` of the previous page. Pages run newest `updated_at` first, ties by id descending. An invalid cursor returns 400. `next_cursor` is absent on the last page. |
+| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. May include `shipped`, which selects the shipped bucket on the *status* axis. |
+| `shipped=<true|false>` | The shipped selection: `true` keeps only records that carry shipped state (a non-empty `merge_commit`), `false` only records that do not. Absent, the server's `autonomous.shipped.filter_default` view applies. Orthogonal to `status` — set either, both, or neither. |
+| `active=1` | Keep only running, queued, waiting, approved, blocked and paused work. |
+| `q=<text>` | Case-insensitive match against title and id. |
+| `tag=<id>` | Keep Automata carrying that tag. `tag_id` is the same parameter. |
+| `full=1` | The original shape: every Automaton in full under `prds`, with stories and tasks. Ignores the paging and filter parameters. Can be tens of megabytes on a daemon with a long history. |
+
+With no filter, the first page holds every active Automaton plus the most recent
+`limit` others, so work in progress is never paged out of sight; `cursor` pages walk
+only the others. `total` is the number of rows matching the filters.
+
+**ETag.** The summary list carries `ETag` and `Cache-Control: no-cache`. Send the
+value back in `If-None-Match`; an unchanged page answers `304 Not Modified` with an
+empty body. The tag changes when a returned row's `rev` or `updated_at` changes, so
+a poll that finds nothing new costs a header exchange only. `full=1` has no ETag.
+
+### Capped text in the by-id GET
+
+`GET /api/autonomous/prds/{id}` cuts only the heavy output fields (PRD
+`memory_report`, task `error`, `prior_attempt_hint`, `start_failure_tail[]`,
+`attempt_refs[]`, `verification.raw_judge`, `verification.summary`,
+`verification.issues[]`, and verdict text) to `autonomous.detail_text_cap_bytes` (default
+4096). A cut field ends with `\n…[truncated: kept N of M bytes]`, and the record carries a
+`truncated` array of `{field, bytes, kept, ref}` where `ref` is the URL of the full text.
+The Automaton `spec`, every story `description` and every task `spec` are always
+returned whole, so a capped reply can be read and saved back verbatim. The store is
+never cut. To get everything:
+
+- `?full=1` returns the record uncapped, as before.
+- `GET /api/autonomous/prds/{id}/outputs` returns the heavy fields of every task, uncapped;
+  `?task=<task_id>` or `GET /api/autonomous/prds/{id}/tasks/{task_id}/outputs` returns one
+  task (404 for an unknown task).
+
+`detail=tasks` applies the same cap to the heavy task output text. Every spec and
+description write refuses (400) text containing the truncation marker — the marker is
+refused anywhere in the text, so even a copy edited after the cut is still a copy — and
+the CLI (`autonomous prd create`/`edit`/`edit-task`/`edit-story`), the MCP
+`autonomous_prd_*` tools, and the comm verbs — `autonomous create`, `edit-task`,
+`edit-story`, `add-story`, `add-task`, `template-create`, `template-update`, and the
+review verb's `retry` path — refuse the same text with the same operator-facing message,
+before the request reaches the daemon. The list (`GET /api/autonomous/prds`)
+never reads these fields.
+
 ---
 
 ## Automations (orchestration records)
@@ -231,9 +949,11 @@ outcome:
 | `blocked` | `on_blocked` member (empty = the Automation is `blocked`) |
 | `failed` | `on_failed` member (empty = the Automation is `blocked`) |
 
-One cursor per Automation: members run one at a time — sequential
-steps with conditional branches, no fan-out. Records persist under
-`<data_dir>/autonomous/` and survive daemon restarts.
+A linear Automation has one cursor: members run one at a time, as
+sequential steps with conditional branches. An Automation can also fan
+out with `fork`/`join` members and nest other Automations; see the
+Phase 3a section below. Records persist under `<data_dir>/autonomous/`
+and survive daemon restarts.
 
 **Example — creating two members, the first handing off to the second
 on completion:**
@@ -267,23 +987,1335 @@ the entry member may only actually change while an Automation is in
 
 | HTTP | Meaning |
 |------|---------|
-| 400 | validation: unknown member or edge target, cycle in the member graph, member PRD already owned by another Automation, or a template/owned PRD enrolled as a member |
+| 400 | validation: unknown member or edge target, cycle in the member graph (including a cycle across nested Automations), member PRD already owned by another Automation, a template/owned PRD enrolled as a member, or an invalid fork/join/nested member (the message names the member ID) |
 | 401 | missing token |
 | 404 | no Automation with that id |
 | 405 | wrong method (e.g. PATCH) |
 | 409 | `expected_version` stale; members/entry changed while not in draft; or delete of a non-deletable status |
 | 503 | the daemon runs with autonomous disabled |
 
-> **Stored records only, for now.** Creating an Automation stores its
-> definition, membership and any history — it does not kick anything
-> off, and nothing on the server advances from one member to the next
-> or starts the next Automaton automatically yet. Running a member
-> stays a normal run action on that PRD today.
+> **Creating stores; activating starts.** Creating an Automation stores
+> its definition, membership and any history. `POST
+> /api/automations/{id}/activate` starts a draft Automation at its entry
+> member, and from then on the daemon advances it: each finished member's
+> outcome edge starts the next member, or completes or blocks the
+> Automation.
 >
 > Full request/response schemas (`Automation`, `AutomationMember`,
 > `BudgetPolicy`) are in `openapi.yaml` next to this file.
 
+### Phase 3a — fork/join branches and nested Automations
+
+An Automation tracks a **set of active cursors** instead of one. A
+linear Automation (no `fork`, `join` or `automation` members) behaves
+exactly as described above.
+
+**Member fields.** Each member gains the fields below. All are optional,
+and `kind` defaults to `prd` when omitted or empty.
+
+| Field | Used by `kind` | Meaning |
+|---|---|---|
+| `kind` | all | `""` or `prd` (default): a member Automaton named by `prd_id`. `automation`: a nested Automation named by `automation_id`. `fork`: starts its branches together. `join`: collects its branches. |
+| `automation_id` | `automation` | The child Automation's ID. |
+| `fork_members` | `fork` | Branch member IDs started together. At least two, distinct, each a `prd` or `automation` member. |
+| `join_members` | `join` | Branch member IDs the join collects. Must be the same set as the paired fork's `fork_members`. |
+| `on_branch_failure` | `join` | `all_must_succeed` (default when omitted), `any_one_is_enough` or `continue_anyway`. See the join rules below. |
+
+Set only the fields that belong to a member's kind. Any other field is
+a `400` that names the member ID: a `prd` member cannot carry
+`fork_members`, `join_members` or `on_branch_failure`, and a `fork` or
+`join` member cannot carry `prd_id`.
+
+**Fork and branches.** When a fork is reached, through an incoming edge
+or as the entry member, every branch starts at once, in sorted member-ID
+order. Each branch goes through the normal start gate. A branch that the
+gate denies, or whose start fails, is recorded as a failed branch, and
+its siblings still start. Branches carry no outcome edges:
+`on_complete`, `on_blocked` and `on_failed` must all be empty. The fork
+has no outcome edges either. Its forward path is its paired join.
+
+**Join rules.** A join is reached only through its fork, so no outcome
+edge may name a join. Its only outgoing edge is `on_complete`.
+`on_blocked` and `on_failed` must be empty, because a join that cannot
+fire blocks the Automation rather than routing along an edge. A branch
+counts as successful only when it completes. Blocked, failed, cancelled
+and skipped branches count as not successful. Rule evaluation reads the
+branches' final statuses, not the order of events, so a replay gives the
+same result.
+
+- `all_must_succeed` (default): the join fires `on_complete` only when
+  every branch succeeded. While any branch is still live, the join waits.
+  Once every branch is final, a join with a non-success branch blocks the
+  Automation, with the reason `join <id>: not all branches succeeded
+  (non-success: <member IDs>)`.
+- `any_one_is_enough`: the join fires as soon as one branch succeeds.
+  Branches still running finish, and their later results are recorded
+  without firing the join again. If every branch ends without success,
+  the Automation blocks with the reason `join <id>: no branch succeeded`.
+- `continue_anyway`: the join fires once every branch is final, whatever
+  their outcomes. Non-success branches are named in the join's decision.
+
+An empty `on_complete` on the join completes the Automation when the join
+fires.
+
+**Nested Automations.** An `automation` member starts its child by
+activating it, and the child's entry member starts through the normal
+start gate. A child that is not a `draft` cannot be activated, so the
+start fails with a `409`. That counts as a failed start of the member: a
+failed branch inside a fork, and otherwise a blocked Automation, as for
+any start failure. The child's terminal status
+selects the nested member's edge:
+
+| Child ends | Edge followed |
+|---|---|
+| `completed` | `on_complete` |
+| `blocked` | `on_blocked` |
+| `cancelled` | `on_failed` |
+
+- **Ownership.** A child Automation may be a member of at most one
+  non-terminal Automation at a time. Non-terminal means `draft`, `active`,
+  `paused` or `blocked`. A write that would add the child to a second one
+  is a `400`. The child's PRDs belong to the child. The parent's member
+  list is the only record of the nesting, and the child has no parent
+  pointer. The child keeps its own budget policy, and the parent does not
+  cap it.
+- **Cycle rejection.** A create or update is a `400` when the Automation
+  can reach itself through its nested members, directly or transitively.
+  That covers a member that names its own Automation, and the two-cycle
+  A → B → A. The same check follows fork-to-branch and branch-to-join
+  pairings, so a loop through a fork is rejected too. The error names the
+  member ID.
+
+**Concurrency.** A stale `expected_version` on update returns `409`, and
+the record is left unchanged. Inside the daemon, a write that races
+another one re-reads the Automation, re-evaluates, and does nothing if
+the state has already moved.
+
+**Status.** `GET /api/autonomous/status` returns the following on each
+`automations[]` row. The existing fields are kept.
+
+- `active_cursors`: one entry per in-flight member, sorted by
+  `member_id`. Each entry has `member_id`, `prd_id` for a `prd` member or
+  `automation_id` for an `automation` member, and `status`. The list is
+  always present, and it is `[]` when the Automation is idle.
+- `join_wait`: present only while a join waits on its branches. It has
+  `join_member_id`, `rule`, `pending_branches` (still live) and
+  `failed_branches` (ended without success).
+- `current_member_id`, `current_prd_id` and `current_prd_title` are
+  derived from the first active cursor, sorted by member ID, and are empty
+  when no cursor is active. A client that draws a fork/join Automation
+  should read `active_cursors` and `join_wait`, not `current_member_id`
+  alone.
+- `pending_members` counts members not yet started plus every held
+  pending insert. When at least one insert is held, the row also carries
+  an optional `pending_inserts` list: one entry per pending insert with
+  the same fields as the Automation record's `pending_inserts` (`id`,
+  `prd_id`, `name`, `urgent`, `after_member_id`, `actor`, `reason`,
+  `added_at`, `status`), omitted when there are none. The change is
+  additive, so Android and iOS keep reading `pending_members` unchanged;
+  `pending_inserts` is simply a new optional field on the row.
+
+```json
+{
+  "id": "3fa9c2d1",
+  "name": "parallel checks",
+  "status": "active",
+  "current_member_id": "tests",
+  "current_prd_id": "e5f6a7b8",
+  "current_prd_title": "unit test sweep",
+  "active_cursors": [
+    {"member_id": "tests", "prd_id": "e5f6a7b8", "status": "running"}
+  ],
+  "join_wait": {
+    "join_member_id": "join1",
+    "rule": "all_must_succeed",
+    "pending_branches": ["tests"],
+    "failed_branches": ["lint"]
+  }
+}
+```
+
+**Restart.** On daemon start, reconciliation runs once over the whole
+cursor set. A member that finished while the daemon was down replays its
+outcome. Unstarted branches of a fork start, and branches that were
+already running keep running. A waiting join fires or blocks exactly
+once, with the same decision it would have made before the restart.
+
+**Example — a fork with two branches, joined by any one success:**
+
+```json
+{
+  "name": "parallel checks",
+  "actor": "operator",
+  "reason": "run lint and tests side by side; join when either passes",
+  "entry_member_id": "fork1",
+  "members": [
+    {"id": "fork1", "kind": "fork", "fork_members": ["lint", "tests"]},
+    {"id": "lint",  "prd_id": "a1b2c3d4"},
+    {"id": "tests", "prd_id": "e5f6a7b8"},
+    {"id": "join1", "kind": "join", "join_members": ["lint", "tests"],
+     "on_branch_failure": "any_one_is_enough"}
+  ]
+}
+```
+
+The REST endpoints do not change. `GET/POST /api/automations` and
+`GET/PUT/DELETE /api/automations/{id}` accept the member fields above.
+`openapi.yaml` documents them.
+
+### Phase 3b — control operations
+
+An operator, or a session or agent acting through the API, can steer a
+running Automation with eleven `POST` endpoints under
+`/api/automations/{id}/`. They need the autonomous write capability, like
+the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
+`405`.
+
+| Endpoint | Allowed while the Automation is | What it does |
+|---|---|---|
+| `POST /api/automations/{id}/pause` | `active` | Moves it to `paused`. Members already running keep running and nothing is ended. A paused Automation moves its cursor on when a member finishes but starts nothing. |
+| `POST /api/automations/{id}/resume` | `paused` | Moves it back to `active`. Members that finished while paused are routed on and the next member is started. Finished members are not restarted. |
+| `POST /api/automations/{id}/cancel` | `active`, `paused`, `blocked` | Cancels it. Needs `cancel_in_flight` (below). |
+| `POST /api/automations/{id}/skip_member` | `active`, `paused` | Skips an active member and follows one of its edges, as if the member had ended that way. A session the skipped member is running is not ended. |
+| `POST /api/automations/{id}/insert_member` | `draft`, `active`, `paused`, `blocked` | Adds a member PRD to the chain (see "Inserting a member"). |
+| `POST /api/automations/{id}/remove_member` | `active`, `paused` | Removes a member that has not started and has no outgoing edges. Edges of other members that named it are cleared. |
+| `POST /api/automations/{id}/reorder_edges` | `active`, `paused` | Rewires the outgoing edges of a member that has not started. |
+| `POST /api/automations/{id}/approve_insert` | `draft`, `active`, `paused`, `blocked` | Promotes a pending insert into the graph (operator only). |
+| `POST /api/automations/{id}/set_budget` | `draft`, `active`, `paused`, `blocked` | Sets, replaces or clears the spending limit of the Automation, or of one member that has not finished (see "Spending limit"). Does not change the status. |
+| `POST /api/automations/{id}/set_decision_assistant` | `draft`, `active`, `paused`, `blocked` | Sets or clears the optional local-model decision assistant of the Automation, or of one member (default off; see "Decision assistant"). Does not change the status. |
+| `POST /api/automations/{id}/stages/rename` | `draft`, `active`, `paused`, `blocked` | Renames every member stage named `from` to `to` in place (see "Renaming a member stage"). Does not change the status. |
+
+**Request body.** Every endpoint takes a JSON object. All fields are
+optional on the wire, but each operation has the fields it needs.
+
+| Field | Used by | Meaning |
+|---|---|---|
+| `expected_version` | all | The Automation `version` you read. It must equal the stored version exactly. A stale value, or an omitted one (read as `0`), is a `409` and nothing changes, whatever the Automation's state. Read the Automation again and retry. |
+| `actor` | all | Who is acting, recorded in the audit trail. Defaults to `operator`. An agent or session passes `agent:<id>` or `session:<id>`. |
+| `reason` | all | Free text recorded with the audit entry and the Automation's decision log. Required by `insert_member`. |
+| `cancel_in_flight` | `cancel` | Boolean, required, no default. See below. |
+| `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert`, `set_budget`, `set_decision_assistant` | The member to act on. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
+| `edge` | `skip_member` | `on_complete` (default when omitted), `on_blocked` or `on_failed`. Any other value is a `400`. |
+| `on_complete`, `on_blocked`, `on_failed` | `reorder_edges` | The member ID each edge now names. An edge that is left out or empty becomes no next member, so send all three edges you want to keep. A target must exist and must not have started. |
+| `member` | `insert_member` | Object `{"prd_id": "...", "name": "...", "stage": "..."}`. `prd_id` is required. `name` is an optional display name. `stage` is an optional stage label recorded on the inserted member (it shows on the member in `automation_get` and in the decision-log entry; the `stages/rename` rules apply to it like any other member stage). |
+| `urgent` | `insert_member` | Boolean. `true` takes the next slot, `false` (default) goes to the end of the chain. |
+| `after` | `insert_member` | Member ID to insert directly after. Empty means the end of the chain. An urgent insert must leave it empty. |
+| `from` | `stages/rename` | The stage to rename; must be carried by at least one member. |
+| `to` | `stages/rename` | The new stage: a trimmed label of 1 to 64 characters that no other member already uses. |
+| `ceiling_type`, `ceiling_value`, `window`, `pacing`, `on_breach`, `backend`, `allocation_estimate`, `peer_window`, `reset_time`, `reset_weekday`, `reset_day`, `reset_zone` | `set_budget` | The spending limit. They replace the whole limit; see "Spending limit". |
+| `estimated_cost_usd` | `set_budget` | With `member_id`: the member's expected cost in dollars (a number, `0` removes it). Alone it changes only the estimate. |
+| `clear` | `set_budget` | Boolean. `true` removes the limit; it cannot be combined with any policy field or `estimated_cost_usd`. |
+| `backend`, `model`, `mode`, `hooks`, `thresholds` | `set_decision_assistant` | The decision assistant. They replace the whole setting; see "Decision assistant". `backend` and `model` are required together; an empty `backend` turns it off. |
+| `clear` | `set_decision_assistant` | Boolean. `true` turns the assistant off; it cannot be combined with `backend`, `model`, `mode`, `hooks` or `thresholds`. |
+
+**Responses.** `200` returns the updated Automation (same shape as
+`GET /api/automations/{id}`).
+
+| HTTP | Meaning |
+|------|---------|
+| 400 | Malformed body. `cancel` without `cancel_in_flight` (a missing value or `null`). `insert_member` without a `reason`, without `member.prd_id`, or naming an unknown PRD. An invalid `edge`. A bad edge target in `reorder_edges`. `stages/rename` with an empty `from` or `to`, a `to` longer than 64 characters, or a `to` another member already uses. A branch-naming rejection (below). |
+| 404 | No Automation with that ID, no such member, no such pending insert, or (for `stages/rename`) no member carries the stage `from`. |
+| 405 | A method other than `POST`. |
+| 409 | Stale or omitted `expected_version`. The Automation is in a state the operation does not allow (the message names the state and the states it needs). A draft that needs activating first. A member that has started and so cannot be removed or rewired. A PRD that is already a member, already pending, or owned by another Automation. A second urgent insert while one is pending. An `approve_insert` by anyone but the operator. |
+| 500 | `cancel` only: the Automation is cancelled, but ending one or more in-flight member sessions failed. The message names the members. |
+| 503 | Autonomous is disabled, or the daemon has no Automation control support. |
+
+#### Decision assistant (`set_decision_assistant`)
+
+An Automation, or one of its members, can hand a bounded judgment call to a
+configured local model instead of a hardcoded default or an operator stop. It
+is **off by default**. The setting is `decision_assistant` on the record, and a
+member's setting wins over the Automation's.
+
+```
+POST /api/automations/3fa9c2d1/set_decision_assistant
+{"backend": "pi-prompt", "model": "qwen3.8:27b", "mode": "shadow",
+ "hooks": ["empty_edge", "budget_breach"], "thresholds": {"empty_edge": 0.85},
+ "expected_version": 4, "actor": "operator"}
+```
+
+`mode` is `shadow` (the default; records what the assistant would have done)
+or `live` (acts on a decision at or above the hook's threshold). `hooks` are
+`empty_edge`, `skip_member`, `insert_member` and `budget_breach`; none enabled
+means no hook consults the assistant. `thresholds` map a hook to a confidence
+in `(0,1]`; the defaults are `0.9`, and `0.95` for `budget_breach`. Below the
+threshold the assistant escalates to the operator. `member_id` targets one
+member; `{"clear": true}` or an empty `backend` turns the assistant off. The
+assistant only chooses among already-allowed options: destroying state or
+history, raising a budget ceiling and any action a guardrail marks as needing
+human sign-off stay with the operator.
+
+Errors: `400` for an unknown backend, hook or mode, a threshold outside
+`(0,1]`, a backend without a model, or `clear` combined with settings; `404`
+for an unknown Automation or member; `409` for a stale `expected_version` or a
+completed or cancelled Automation. The audit entry is
+`automation_set_decision_assistant`.
+
+#### Spending limit (`set_budget`)
+
+An Automation can carry a `budget_policy`: a dollar ceiling over a window.
+A member can carry one too, which narrows the Automation's and counts only
+that member's spend. `set_budget` sets, replaces or clears one of them.
+
+```json
+POST /api/automations/3fa9c2d1/set_budget
+{"expected_version": 7, "actor": "operator", "reason": "weekly cap",
+ "ceiling_type": "dollar", "ceiling_value": 40, "window": "week",
+ "pacing": "even", "on_breach": "pause", "backend": "claude-code",
+ "reset_weekday": "monday", "reset_time": "09:00", "reset_zone": "America/New_York"}
+```
+
+| Field | Meaning |
+|---|---|
+| `ceiling_type` | `dollar` or `allocation_pct`. Required. Only `dollar` can pause or block; `allocation_pct` is accepted but is an estimate only. |
+| `ceiling_value` | Number above zero (dollars). Required. |
+| `window` | `automation` (the whole life of the Automation, never resets), `day`, `week` or `month`. Required. |
+| `pacing` | `none` (default) or `even`. Even pacing holds a member start while spend is ahead of an even spread across the window. Ignored for the `automation` window. |
+| `on_breach` | `pause` (default) or `block`. See below. |
+| `backend` | Optional LLM whose spend is measured; empty counts every member's spend. Needed for `peer_window`. |
+| `allocation_estimate` | Boolean, default `false`. Adds an estimated share-of-allocation figure to the budget view, always labelled estimated, never used to pause or block. It uses `autonomous.plan_tier_allocation_usd`. |
+| `peer_window` | Array of peer names, default empty. Another daemon's usage counts toward the ceiling only for the peers named. There is no automatic confirmation that a peer shares the account. |
+| `reset_time`, `reset_weekday`, `reset_day`, `reset_zone` | Optional anchors for the day, week and month windows: 24h `HH:MM`, `monday`..`sunday` (week only), `1`..`28` (month only) and an IANA zone. Unset anchors default to local midnight, Monday and the first of the month in the daemon's zone. |
+
+The ceiling is checked before any member starts (activation, moving to the
+next member, a whole fork) and before a member's task starts a new session.
+Work already running is not interrupted. When a dollar ceiling is reached the
+Automation **pauses and resumes by itself at the window reset** when the reset
+time is known (a `day`, `week` or `month` window, or a reset time parsed from a
+rate-limit message) and `on_breach` is `pause`. When the reset time is unknown,
+or `on_breach` is `block`, it goes to `blocked` and waits for the operator; a
+`resume` is refused with a `409` carrying the reason while the ceiling is still
+reached. An alert is raised either way. A pacing or estimate hold is not a
+breach: the Automation stays `active` and the periodic check retries.
+
+`GET /api/automations/{id}` returns the stored record with the policy in
+`budget_policy` and the current breach, if any, in `budget_state`
+(`action`, `breached_at`, `reason`, `scope`, `spent_usd`, `ceiling_usd`,
+`window`, `resume_at`, `reset_known`, `reset_source`). It also returns a
+computed `budget` view, never stored: `scope`, `ceiling_type`, `ceiling_usd`,
+`spent_usd`, `remaining_usd`, `window`, `window_start`, `window_end`, `pacing`,
+`pacing_allowed_usd`, `on_breach`, `ceiling_reached`, `hold` and `hold_reason`,
+`reset_at`, `reset_known`, `reset_source` (`window` or `rate_limit`), `state`,
+`allocation_estimate`, and for opted-in peers `peers[]`, `peer_spend_usd`,
+`peer_basis` and `peer_note`. Each Automation row of `GET
+/api/autonomous/status` carries the same `budget` view plus `spent_usd` and
+`ceiling_display`. Spend is the sum, over every member Automaton (and nested
+Automation), of the cost of its task, planning and verification sessions.
+
+Errors specific to `set_budget`: `400` for an invalid policy (unknown type,
+window, pacing or `on_breach`; ceiling not above zero; an anchor that does not
+parse or does not fit the window; a repeated or empty peer name; `clear`
+combined with policy fields; `estimated_cost_usd` without `member_id` or
+negative; a fork or join member); `404` for an unknown Automation or member;
+`409` for a stale `expected_version`, an Automation that is `completed` or
+`cancelled`, or a member that has finished.
+
+#### `cancel` and the required `cancel_in_flight`
+
+`cancel` has no default for what happens to members that are running at
+that moment, so the request must say. `cancel_in_flight` is a boolean
+and **both values are valid**:
+
+- `"cancel_in_flight": true` ends the session of every in-flight member
+  and marks it cancelled, using the same path as cancelling the member's
+  Automaton on its own. A running nested Automation is cancelled the same
+  way.
+- `"cancel_in_flight": false` leaves running members alone. The Automation
+  is cancelled, and the later end of a running member is ignored because
+  the Automation is already cancelled.
+
+In both cases, members that had not started become cancelled, the
+Automation's status becomes `cancelled`, and the member Automatons are
+released from the Automation. A missing or `null` value is a `400` whose
+message names both allowed values: `cancel_in_flight=true` (end the
+session of every in-flight member) and `cancel_in_flight=false` (leave
+in-flight members running). If ending a session fails, the Automation
+stays cancelled, and the `500` message names the members it could not end.
+
+```json
+POST /api/automations/3fa9c2d1/cancel
+{"expected_version": 7, "cancel_in_flight": false, "actor": "operator", "reason": "superseded"}
+```
+
+#### Inserting a member
+
+`insert_member` adds `member.prd_id` to the chain. The PRD must exist, and
+it must not already be a member or a pending insert of this Automation or
+belong to another Automation that has not ended.
+
+- **Placement.** A normal insert goes to the end of the chain, or directly
+  after `after` when that is given. An urgent insert takes the next slot: on
+  a draft it becomes the entry member, and on a started Automation it goes
+  between the one running member and that member's `on_complete` target.
+  An urgent insert on a started Automation needs exactly one active member
+  to follow, so in a forked Automation with several branches active it is a
+  `409` that lists them.
+- **Stage.** `member.stage` optionally records a stage label on the inserted
+  member; the member then carries it in `automation_get`, and
+  `stages/rename` treats it like any other member stage.
+- **Draft.** On a draft Automation the member lands in the graph at once.
+- **Started Automation.** On an `active`, `paused` or `blocked` Automation
+  the insert is always held as a **pending insert**: it appears in the
+  Automation's `pending_inserts` (`id`, `prd_id`, `name`, `urgent`,
+  `after_member_id`, `actor`, `reason`, `added_at`, `status: pending`),
+  and the Automation keeps advancing without it. It is also visible on the
+  Automation's `GET /api/autonomous/status` row: `pending_members` counts
+  it, and the optional `pending_inserts` list carries it (see **Status**),
+  until approved. It enters the graph, at
+  the position reserved for it, when the operator calls `approve_insert`
+  with `member_id` set to the pending insert's `id`. The endpoint requires
+  a `reason`. A `completed` or `cancelled` Automation refuses an insert.
+- **Agent insert policy.** The global setting
+  `autonomous.automation.agent_insert_policy` decides whether an insert
+  from a session or agent (an `actor` that starts with `session:` or
+  `agent:`) may edit a draft directly:
+  - `allow` (default): the draft insert lands at once.
+  - `require_operator`: the draft insert is held as a pending insert too,
+    and needs `approve_insert`.
+
+  An insert from the operator on a draft always lands at once, and
+  every insert on a started Automation is held whatever the policy.
+- **One urgent insert at a time.** An Automation can have at most one
+  pending urgent insert. A second urgent `insert_member` is a `409` naming
+  the pending one. Once that insert is approved, another urgent insert is
+  accepted. `approve_insert` of a pending urgent insert is also a `409`
+  while a different urgent insert is pending.
+- **Approval.** Only the operator may approve (`actor` empty or
+  `operator`). Any other actor is a `409`.
+
+```json
+POST /api/automations/3fa9c2d1/insert_member
+{"expected_version": 8, "actor": "agent:ab12", "reason": "tests found a gap",
+ "member": {"prd_id": "c9d0e1f2", "name": "fix flaky step"}, "urgent": true}
+```
+
+#### Branches (active cursors)
+
+In a forked Automation, several members can be active at once. An
+operation that acts on a position must say which active cursor it means,
+by naming that branch member in `member_id`. `skip_member` is the
+operation that needs it. In a linear Automation, or when only one cursor is
+active, no name is needed. If it is needed and missing, the request is a
+`400` with a message that lists the active branch member IDs:
+`automation <id> has <n> active branches; name the branch member to act
+on, one of [<member IDs>]`. A `member_id` that is not an active branch is
+also a `400`: `member <member ID> is not an active branch of automation
+<id>; active branches are [<member IDs>]`. An Automation with no active
+member to act on is a `409`.
+
+#### Renaming member stages (`stages/rename`)
+
+Member stages are the optional operator labels on the members of one
+Automation (the `stage` field on each member, e.g. `build` or `review`).
+They are cosmetic — the graph edges, the advance rule and the budget never
+read them; with auto tagging on, a member's stage is part of the tag name
+it gets, and the stage name is read verbatim from the member's `stage`
+field (see [implementation.md](../implementation.md), Configuration Reference, `autonomous.auto_tags` rows).
+
+`POST /api/automations/{id}/stages/rename` renames every member stage
+named `from` to `to` in place, without touching the graph: the members
+keep their edges, their status and their order. It is allowed while the
+Automation is `draft`, `active`, `paused` or `blocked`. Body: `{from, to,
+expected_version, actor?, reason?}`.
+
+When auto tagging is on for the Automation, the stage tag of the
+Automation's members migrates to the new name in place, in the daemon's
+own registry; operator tags of other Automations are never touched. A
+member whose stage tag has a record is re-pointed from the old name to the
+new one; members without a record get none at this point.
+
+Failures: an empty `from` or `to` is a `400`; a `to` longer than 64
+characters is a `400`; a `to` already used by another member is a `400`;
+a `from` no member carries is a `404` (the automation's `404` is the
+same code); a stale `expected_version` is a `409`. Audited as
+`automation_rename_stage` with `from` and `to`.
+
+The same operation is the MCP tool `automation_rename_stage` (see
+[mcp.md](../mcp.md)), the CLI `datawatch automation rename-stage
+<id> <from-stage> <to-stage>` and the comm verb `automation rename-stage
+<id> <from-stage> <to-stage>`.
+
+#### Audit
+
+Every control operation writes an audit entry on the `automation`
+resource: `automation_pause`, `automation_resume`, `automation_cancel`
+(with `cancel_in_flight` and the members that were in flight),
+`automation_skip_member`, `automation_insert_member`,
+`automation_remove_member`, `automation_reorder_edges`,
+`automation_approve_insert`, `automation_set_decision_assistant` (with the
+backend, model, mode and hooks, or `cleared`), `automation_rename_stage`
+(with `from` and `to`) and `automation_set_budget` (with the policy
+that was set, or `clear`). The limit also writes `automation_budget_breach`
+(once per breach, again when a pause turns into a block; details: Automation,
+scope, spent, ceiling, window, what it did, and the reset time when known) and
+`automation_budget_resumed` (when a pause or block is lifted by the daemon at
+the window reset or by an operator). The entry records the actor, the reason, the
+`expected_version` the caller sent, the operation's own fields, and the new
+`version`. The Automation's `decisions` list gets a matching entry. A
+`cancel` that cancelled the Automation but could not end every member
+session is audited with the error before the `500` is returned.
+
+The same operations are reachable as MCP tools (`automation_pause`,
+`automation_resume`, `automation_cancel`, `automation_skip_member`,
+`automation_insert_member`, `automation_remove_member`,
+`automation_reorder_edges`, `automation_approve_insert`,
+`automation_rename_stage`, `automation_set_budget`; see
+[mcp.md](../mcp.md)), as `datawatch automation
+pause|resume|cancel|skip|insert|remove|edges|approve|rename-stage|set-budget` (`cancel`
+requires `--cancel-in-flight <true|false>`; `rename-stage` takes the
+Automation ID and the from/to stage names; `set-budget` takes
+`--ceiling-type`, `--ceiling-value`, `--window` and the optional flags, or
+`--clear`), and as the comm verbs `automation
+pause|resume|cancel|skip|insert|remove|edges|approve|rename-stage|set-budget` (`cancel`
+requires `in-flight=true` or `in-flight=false`; `rename-stage <id>
+<from-stage> <to-stage>`; `set-budget <id>
+ceiling_type=dollar ceiling_value=40 window=week` or `clear=true`). `openapi.yaml` documents the
+endpoints.
+
+### Converting an orchestrator graph (`import-graph`)
+
+`POST /api/automations/import-graph/{graph_id}` reads an orchestrator graph and
+creates a draft Automation from it. Automaton nodes become members, a fan-out
+and its fan-in become a paired fork and join, and guardrail nodes are dropped
+with a warning. The graph is only read, never changed. Body: `{"dry_run": bool}`
+(optional).
+
+| Status | Meaning |
+|---|---|
+| `200` | The new draft Automation; with `dry_run` true, `{input, warnings, dry_run: true}` and nothing is stored or audited |
+| `404` | Unknown graph |
+| `409` | A member Automaton already belongs to another Automation |
+| `422` | The graph cannot be expressed as an Automation; the body gives the reason |
+| `503` | The orchestrator or the automation manager is not available |
+
+Preview first with a dry run:
+
+```
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"dry_run": true}' https://localhost:8443/api/automations/import-graph/3fa9c2d1
+```
+
+A real import writes one `automation_import_graph` audit entry. The same verb
+is the MCP tool `automation_import_graph`, the CLI `datawatch automation
+import-graph <graph-id> [--dry-run]` and the comm verb `automation import-graph
+<graph-id> [dry-run]`.
+
+#### Deprecation
+
+The three orchestrator graph operations that build and start a graph are
+deprecated and keep working until a later release removes them:
+
+| Operation | REST | MCP tool | CLI / comm |
+|---|---|---|---|
+| Create | `POST /api/orchestrator/graphs` | `orchestrator_graph_create` | `orchestrator create` |
+| Plan | `POST /api/orchestrator/graphs/{id}/plan` | `orchestrator_graph_plan` | `orchestrator plan` |
+| Run | `POST /api/orchestrator/graphs/{id}/run` | `orchestrator_graph_run` | `orchestrator run` |
+
+Each response carries a `Deprecation: true` header and a `deprecation` field (REST),
+or a trailing notice (MCP, CLI, comm) that names `automation import-graph`. The daemon
+logs the warning once per operation per process. Migrate existing graphs with
+`import-graph`; see [howto/automation-chains](../howto/automation-chains.md).
+
+### Model-tier defaults (`set_llm` and `set_verification_llm`)
+
+An Automation can carry default model settings for the member Automata it
+runs, so a whole chain can be pointed at one backend, model and effort without
+editing every Automaton. Two more `POST` endpoints under
+`/api/automations/{id}/` set them. They need the autonomous write capability,
+like the control operations above, and a `GET`, `PUT` or `DELETE` on either
+path is a `405`.
+
+| Endpoint | Body fields | What it sets |
+|---|---|---|
+| `POST /api/automations/{id}/set_llm` | `backend`, `model`, `effort`, `planning_backend`, `planning_model` | The execution default (`backend`, `model`, `effort` on the Automation) and the planning default (`planning_backend`, `planning_model`). |
+| `POST /api/automations/{id}/set_verification_llm` | `backend`, `model`, `effort` | The verification default (`verification_backend`, `verification_model`, `verification_effort` on the Automation). |
+
+Both also take the optional `expected_version`, `actor` and `reason` fields
+described under "Request body" above. The response is the updated
+Automation.
+
+**Presence-aware fields.** A field that is left out is kept as it is, and a
+field sent as an empty string clears it. At least one setting field is
+required: a body with none is a `400` that names the fields the endpoint
+accepts. `planning_backend` and `planning_model` are not accepted by
+`set_verification_llm` (a `400`). `backend` and `planning_backend` must be a
+configured LLM name (an unknown name is a `400`; check `/api/llms`), and an
+empty value clears without a lookup. `effort` must be one of `low`, `medium`,
+`high`, `max`, `quick`, `normal` or `thorough`. A backend and model pair that
+cannot work together, as the Automation would hold it after the call, is a
+`400`.
+
+**`expected_version` is optional here.** Unlike the control operations
+above, an omitted `expected_version`, or `0`, skips the version check. A
+stale positive value is a `409` and nothing changes.
+
+**When.** Both endpoints are allowed while the Automation is `draft`,
+`active`, `paused` or `blocked`. A `completed` or `cancelled` Automation is a
+`409`. A change applies to member Automata that start afterwards. It does not
+change a task that is already running.
+
+**Resolution order.** For the execution backend, model and effort, and for
+the verification LLM, the first level that sets a value wins:
+
+1. the task
+2. the story
+3. the Automaton
+4. the Automation the Automaton belongs to (the new level)
+5. the global default
+
+Backend and model are taken from the same level, so a model set on a less
+specific level is never paired with a backend from a more specific one. Effort
+resolves independently of them. The Automation level sits between the
+Automaton and the global default, so it never overrides anything set on a
+task, story or Automaton.
+
+**Planning is separate.** `planning_backend` and `planning_model` are an
+optional pair used only when a member Automaton is decomposed into stories and
+tasks. Unset means the global planning backend and model. They never change
+the execution or verification default, and the execution and verification
+defaults never change which LLM plans.
+
+**What gets recorded.** Each task run record gains `executor_source`, beside
+the verification result's `verifier_source`:
+
+| Field | Where | Values |
+|---|---|---|
+| `executor_source` | the task, set when its run starts and overwritten by each later attempt | `task`, `story`, `prd` (the Automaton level), `automation`, `global` |
+| `verifier_source` | the task's `verification` object | `task`, `story`, `prd`, `automation`, `global`, `pool` |
+
+`executor_source` names the level that supplied the execution backend. The
+session status for a task shows it too, and so does the PWA.
+
+**Errors.**
+
+| HTTP | Meaning |
+|------|---------|
+| 400 | Malformed body, no setting field, a planning field sent to `set_verification_llm`, an unknown backend name, an invalid `effort`, or a backend and model pair that do not fit. |
+| 403 | The caller lacks the autonomous write capability. |
+| 404 | No Automation with that ID. |
+| 405 | A method other than `POST`. |
+| 409 | A stale positive `expected_version`, or an Automation in a status that does not allow the change. |
+| 503 | Autonomous is disabled, or the daemon has no Automation control support. |
+
+Each successful call writes one audit entry, `automation_set_llm` or
+`automation_set_verification_llm`, with the actor, the fields that were sent
+and the new `version`, and adds a matching entry to the Automation's
+`decisions` list.
+
+```bash
+# run every member on a stronger model unless it names its own
+curl -sX POST http://localhost:7433/api/automations/<id>/set_llm \
+  -H "Content-Type: application/json" \
+  -d '{"backend":"claude-code","model":"claude-opus-5-5","effort":"high"}'
+
+# a separate, cheaper planner for decomposing members, and clear the model
+curl -sX POST http://localhost:7433/api/automations/<id>/set_llm \
+  -H "Content-Type: application/json" \
+  -d '{"planning_backend":"pi-prompt","planning_model":"qwen3.8:27b","model":""}'
+
+# a different verifier, guarded by the version you read
+curl -sX POST http://localhost:7433/api/automations/<id>/set_verification_llm \
+  -H "Content-Type: application/json" \
+  -d '{"expected_version":7,"backend":"claude-code","model":"claude-sonnet-5-5"}'
+```
+
+The same operations are reachable as the MCP tools `automation_set_llm` and
+`automation_set_verification_llm` (see [mcp.md](../mcp.md)), as `datawatch
+automation set-llm <id>` and `datawatch automation set-verification-llm <id>`
+(flags `--backend`, `--model`, `--effort`, plus `--planning-backend` and
+`--planning-model` on `set-llm`; an empty value clears), and as the comm verbs
+`automation set-llm <id> backend=<b> model=<m> effort=<e>
+planning-backend=<b> planning-model=<m>` and `automation set-verification-llm
+<id> backend=<b> model=<m> effort=<e>` (name at least one; `model=` with an
+empty value clears).
+
 ---
+
+## Lane fill (`GET /api/autonomous/lane-fill`)
+
+Lane fill runs a planner on every coordinator poll. It records, for each idle lane, what it would start, and in `on` mode it carries the decisions out. The how-to is [howto/automation-lane-fill.md](../howto/automation-lane-fill.md).
+
+**Status response.** `GET /api/autonomous/lane-fill` (`limit` 1 to 1000, default 50; the decisions are newest first):
+
+```json
+{
+  "mode": "shadow",
+  "last_poll_at": "2026-10-24T13:00:00Z",
+  "lanes": [
+    {"id": "gpu-1", "type": "gpu", "state": "occupied",
+     "occupant": {"prd_id": "a1b2c3d4", "title": "Example Automaton", "backend": "pi-prompt"},
+     "blocker": "", "eligible_waiting": 0},
+    {"id": "claude-1", "type": "claude", "state": "idle", "occupant": null,
+     "blocker": "no eligible work for this lane", "eligible_waiting": 0}
+  ],
+  "queued_eligible": {"gpu": 3, "claude": 1},
+  "evidence": {"checked_at": "2026-10-24T13:00:00Z", "gpu_active_sessions": 1,
+               "loaded_models": [{"host": "local", "model": "qwen3.8:27b"}], "error": ""},
+  "decisions": [
+    {"at": "2026-10-24T13:00:00Z", "mode": "shadow", "lane_id": "gpu-2", "lane_type": "gpu",
+     "action": "start_prd", "prd_id": "b1c2d3e4", "title": "Example", "reason": "...",
+     "blocker": "", "executed": false, "error": "", "repeat_count": 1,
+     "last_seen_at": "2026-10-24T13:00:00Z"}
+  ],
+  "alerts": [
+    {"at": "2026-10-24T12:30:00Z", "lane_id": "gpu-2", "work": "Example (b1c2d3e4)",
+     "message": "Lane gpu-2 has been idle for 30 minutes with eligible work waiting. First eligible: Example (b1c2d3e4)."}
+  ]
+}
+```
+
+- `lanes[].state` is `occupied` or `idle`. An idle lane carries a `blocker` when the planner will not call it idle without a reason.
+- `evidence.error` is set when a pool host could not be read. A GPU lane is then never reported as idle.
+- `decisions[].action` is `start_prd`, `decompose`, `decompose_ahead`, `report_merge`, `blocked` or `idle`. `executed: false` is a would-start in shadow mode and must not be shown as a start.
+- `decisions[].mode` is `off`, `shadow` or `on`, the mode in effect when the decision was made.
+- `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. It is absent when the decision is not a refusal.
+- `modes` is the mode in effect for each lane kind (`gpu` and `claude`); a kind with no mode of its own takes the base `mode`.
+- `lane_counts` gives, for `gpu` and `claude`, the `configured` count, the `effective` count the last poll used and the `source` of the effective count: `config`, or `llm_caps` when it is the sum of the LLM in-flight caps.
+
+**Lane preference.** `POST /api/autonomous/prds/{id}/set_lane_preference` with `{"lane_preference": "gpu" | "claude" | "any"}`. An empty value means `any`. The stored value is returned on the Automaton as `lane_preference`, and an absent value means `any`. A value outside the three is refused with 400 and nothing is stored.
+
+**Configuration.** Every key is under `autonomous.lane_fill` and is read live:
+
+```yaml
+autonomous:
+  lane_fill:
+    mode: shadow               # off | shadow | on (default shadow)
+    gpu_lanes: 2               # GPU lanes on the local model pool
+    claude_lanes: 3            # Claude lanes; 0 means none
+    idle_alert_minutes: 30     # 0 turns the idle alert off
+    decompose_ahead_min: 2     # decomposed Automata kept ready per lane type
+    poll_seconds: 60           # minimum 5
+    gpu_backend: pi-prompt
+    gpu_model: ""              # empty = the backend's own model
+    claude_backend: claude-code
+```
+
+**Surfaces.** The same status is read by MCP `autonomous_lane_fill_status`, the CLI `datawatch autonomous lane-fill [--limit N] [--json]` and the comm verb `autonomous lane-fill [limit]`. The preference is set with MCP `autonomous_prd_set_lane_preference`, the CLI `datawatch autonomous prd-set-lane-preference <id> gpu|claude|any` and the comm verb `autonomous set-lane-preference <prd-id> gpu|claude|any`. The PWA shows the status on the Automation sub-tab.
+
+## Triage records (`GET /api/autonomous/triage`)
+
+The engine keeps one **triage record** per Automaton that ends **failed** or **blocked**, and you read them from the daemon. The pass that fills them runs on every coordinator tick (~60 s); this section documents only the read. The operator reference — what the record contains, what the pass does, the alert key and what triage never does — is in [docs/operations.md](../operations.md) (section *Triage records*).
+
+```
+GET /api/autonomous/triage
+    ?automation_id=<automation-id>
+    ?prd_id=<automaton-id>
+    ?status=failed | blocked
+
+200: { "records": [ { ... } ], "alert_minutes": 30 }
+```
+
+The filter params are optional and can be combined. `status` accepts only `failed` or `blocked`; anything else is refused with the daemon's message. A read that matches nothing is `records: []`, not an error. The last field, `alert_minutes`, states the triage alert threshold currently in force (`autonomous.automation.triage_alert_minutes`, default 30, `0` = off) in the same body as the records it applies to.
+
+A record (newest first in `records`):
+
+```json
+{
+  "prd_id": "d0442737d38c",
+  "prd_title": "nightly ingest",
+  "automation_id": "4522f306c266",
+  "automation_name": "nightly pipeline",
+  "member_id": "member-2",
+
+  "status": "failed",
+  "task_id": "task-9",
+  "task_title": "run integration tests",
+  "error": "connection refused: testdb:5432 (truncated at 2000 chars)",
+  "blocked_reason": "dependency gate: awaiting operator approval",
+  "session_end_reason": "runtime error: exit 2 (truncated at 2000 chars)",
+
+  "first_seen_at": "2026-10-27T09:12:44Z",
+  "updated_at": "2026-10-27T09:44:02Z",
+  "alerted_at": "2026-10-27T09:44:02Z",
+
+  "retry_budget": {
+    "infra":   { "limit": 3, "used": 1, "left": 2 },
+    "content": { "limit": 4, "used": 4, "left": 0 },
+    "scope":   { "limit": 2, "used": 0, "left": 2 },
+    "policy":  { "limit": 1, "used": 0, "left": 1 },
+    "ceiling_total": 10,
+    "ceiling_left": 4
+  },
+
+  "notes": [
+    { "at": "2026-10-27T09:12:44Z", "source": "triage", "text": "Automaton failed on task 'run integration tests'" }
+  ]
+}
+```
+
+The fields are copied from the live Automaton at the last pass, not derived: `prd_title` names the Automaton (absent when it has no title); `automation_name` and `member_id` place the record in its Automation; `task_id` and `task_title` name the task that failed (or was blocked), `error` is that task's error and `session_end_reason` why its live sessions were ended, each already truncated to 2000 chars by the pass; `blocked_reason` is the Automaton's own block reason, kept separate from the task error; `first_seen_at` is when the Automaton first ended in this failed or blocked state (its own status timestamp), `updated_at` when the pass last refreshed it, and `alerted_at` when the triage alert for this episode fired (absent until it does). `retry_budget` is the engine's existing retry budget, reused as-is and shown for all four categories — `limit` is the maximum, `used` what has been consumed, `left` what remains — plus `ceiling_total` and `ceiling_left`, the overall retry ceiling when one is set; it is **informational**: the pass neither spends nor resets any of it. `notes` is an append-only list (at, source, text) the pass grows over the life of the record. `alert_minutes` is not on the record: it rides the list body beside `records`.
+
+The route is read-only and a sibling of the lane-fill read under the same access rules: bearer-authenticated locally, and it needs the autonomous read **capability** when called by a federated peer. Its surfaces are the REST route above, the MCP tool `autonomous_triage` (the same three filters, proxying the route), the CLI (`datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed|blocked] [--json]`), the comm verb (`autonomous triage [automation-id]`, one optional positional argument: the Automation id), the PWA triage card in the Automaton detail view, and the same contract documented for the mobile and wear surfaces in [mobile-surface.md](mobile-surface.md). The record card on each client displays, in order: the Automaton name (title, or id), the status chip (failed/blocked), the owning Automation name with its member id when one exists, the failed task title, the task error, the blocked reason, the session end reason, the first-seen time, whether the alert has fired and when, one row per retry-budget category (used of limit, left), and the overall retry ceiling when one is set; values the record does not carry are simply not shown. Triage has exactly one configuration key, `autonomous.automation.triage_alert_minutes`. The record shape is in `internal/server/web/openapi.yaml` (`TriageList`, `TriageRecord`).
+
+## Model request progress (`GET /api/autonomous/request-watch`)
+
+The daemon observes the in-flight model request of a worker or verifier session whose model runs on a registered compute node, so a hung request can be told from a slow one. The route reads what the watch already holds. It makes no model call and changes nothing: it never ends a worker, retries on another backend or unloads a model. The how-to is [howto/model-request-progress.md](../howto/model-request-progress.md).
+
+**Query parameters.** `session` keeps only the observation of that session id; `automaton` keeps only the observations of that Automaton id. Both are optional. An id that matches nothing gives an empty list, not an error.
+
+**Response.**
+
+```json
+{
+  "enabled": true,
+  "poll_seconds": 30,
+  "no_progress_minutes": 30,
+  "observations": [
+    {
+      "session_id": "ab12-3",
+      "automaton_id": "8f040001",
+      "task_id": "t-7",
+      "role": "worker",
+      "node": "gpu-node-1",
+      "model": "example-model:latest",
+      "state": "idle",
+      "last_change": "2026-11-01T14:02:10Z",
+      "no_progress_seconds": 1500,
+      "last_poll": "2026-11-01T14:27:10Z",
+      "over_threshold": false,
+      "summary": "waiting on a model request: no progress for 25 minutes"
+    }
+  ]
+}
+```
+
+`state` is `generating`, `idle`, `unreachable` or `unknown` (before the first sample). `role` is `worker` or `verifier`. `last_change` and `last_poll` are RFC 3339 times. `error` is present only when the node could not be read. `summary` is plain text: `waiting on a model request: generating`, `waiting on a model request: no progress for N minutes`, or, for an unreachable node, `waiting on a model request: node unreachable, no progress for N minutes`. With `autonomous.request_watch.enabled` off the list is empty.
+
+**Status codes.** `200` with the body above; `405` for any method but GET (with an `Allow: GET` header); `503` until the watch is wired; `403` for a federated peer without the autonomous read capability.
+
+**Configuration.** The eleven keys are under `autonomous.request_watch` and are read live; `GET /api/config` shows them with defaults filled in and `PUT /api/config` sets them (a bad value is a `400` that names the key and the valid values):
+
+```yaml
+autonomous:
+  request_watch:
+    enabled: true              # default true
+    poll_seconds: 30           # whole number, 1 or more; default 30
+    no_progress_minutes: 30    # whole number, 1 or more; default 30
+    observe_workers: true      # default true
+    observe_verifiers: true    # default true
+    use_gpu_signal: true       # default true
+    gpu_busy_percent: 10       # 1 to 100; default 10
+    unreachable_counts: true   # default true
+    raise_alert: true          # default true
+    raise_question: true       # default true
+    remediation_options: [keep_waiting, end_worker, retry_other_backend, unload_reload_model]   # unset reads as all four
+```
+
+**Surfaces.** The same read is available as the MCP tool `autonomous_request_watch` (read-only; optional `session` and `automaton`), the CLI `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` and the comm verb `autonomous request-watch [session <id> | automaton <id>]`. The web app shows it as a card on the Automata Events tab and as chips on the session and task views. At the no-progress threshold the daemon raises one alert and one non-blocking operator question; answering it only records the choice.
+
+## Merge state and safe-to-delete report (`GET /api/autonomous/merge`, `GET /api/autonomous/safe-to-delete`)
+
+Two read routes report whether the work branches of finished Automata have reached `main`. The check that fills the first one runs on every coordinator tick when `autonomous.automation.merge_pending_mode` is `shadow` or `on`; this section documents only the reads. The operator reference — the five states, shadow mode, the alert and what the check never does — is in [docs/operations.md](../operations.md) (section *Merge-pending check*), and the walk-through is [howto/automation-tab.md](../howto/automation-tab.md).
+
+Both routes share one gate:
+
+| Condition | Response |
+|---|---|
+| Any method but `GET` | `405` with `Allow: GET` |
+| Automata disabled | `503` `autonomous disabled` |
+| Federated peer without the autonomous read capability | `403` |
+| Otherwise | `200` with the JSON body below |
+
+Neither of these two reads takes a query parameter or merges, deletes or pushes. Running a merge is the separate `POST /api/autonomous/merge/run` route below.
+
+### `POST /api/autonomous/merge/run`
+
+Runs a merge of `branches` (in order) in the configured worktree base repo through the pipeline in effect: the project's own file, else the daemon record, else the built-in pipeline, as `autonomous.merge_pipeline` sets. The built-in pipeline reproduces the merge helper script. A conflict is settled by `autonomous.merge_pipeline.conflict_policy`; the version files the release-version step edits come from `autonomous.merge_pipeline.version_files` (none by default). Tag, push, deploy and hook steps run only when the pipeline lists them. The run is synchronous and answers `200` with `{"run": {...}, "error": "..."}` — a failing step is in `run.steps`, not an HTTP error. Other answers: `405` (not POST, `Allow: POST`), `503` (Automata disabled, or no worktree base repo), `403` (federated peer without the autonomous write capability), `409` (a merge is already running). Every step (step, start, end, result) and the source in effect is listed under `pipeline_runs` of `GET /api/autonomous/merge`, newest run first; secrets are removed from the recorded text.
+
+### Merge pipeline in effect, records and checks
+
+`GET /api/autonomous/merge-pipeline?project=NAME` answers which pipeline a merge would run for the project: `definition` (the steps; null when the project's file is unusable and `fallback_on_bad_file` is `none`), `source` (`file`, `record` or `default`), `reason`, `file_error`, the `settings` in effect (file name, source order, bad-file fallback, version files), the configured `conflict_policy` and `conflict_model` with `conflict_policy_in_effect`, `conflict_model_in_effect` and `conflict_degraded_reason` (a policy that needs a model falls back to `stop_and_ask` when no model is set or available), the `release_approval_in_effect` (the resolved approval mode per release size for the project: `patch`, `minor`, `major`, each `auto`, `ask` or `manual` — the project's `autonomous.merge_pipeline.projects.<project>.release_approval.<size>`, else the global `autonomous.merge_pipeline.release_approval.<size>`, else the default — patch `auto`, minor `auto`, major `ask`), and the project's `overrides`. `project` defaults to the base name of the worktree base repo. When no project is given and no worktree base repo is set, the answer is a `400` with the JSON body `{"code": "project_required", "error": "..."}` naming both fixes; the other `400` cases (a project name that is too long or holds control characters) stay plain text. Other answers: `403` (peer without the autonomous read capability), `405`, `500` (records unreadable), `503` (no config).
+
+The answer also carries `conflict_confirmation`, the counter for the project's model-resolved conflicts: `mode` (`shadow` or `on`, what a passing model proposal does; `shadow` is the default), `confirm_first_n` (how many of the first applied conflicts wait for the operator's confirmation; default 5, `0` turns it off), `counted` (the conflicts counted so far for the project, or `null` when the counter cannot be read), `remaining` (`confirm_first_n` minus `counted`, never below zero, or `null` with `counted`), `enabled` (true only when `mode` is `on` and `confirm_first_n` is above 0) and `error` (present only when the counter could not be read, and then `counted` and `remaining` are `null`). Only code and document conflicts applied in `on` mode are counted. The same block is shown by the CLI, MCP and the PWA card; see [read the counter](../howto/merge-pipeline.md#read-the-counter).
+
+`PUT /api/autonomous/merge-pipeline/record?project=NAME` stores the pipeline the daemon keeps for the project, from `{"definition": {"steps": [...]}}` or `{"yaml": "..."}` (not both; `project` may be in the body). An invalid pipeline is a `400` listing every problem and nothing is stored. `DELETE` on the same path (with `project`) removes the record, `404` when there is none. Both need the autonomous write capability (`403` otherwise).
+
+`POST /api/autonomous/merge-pipeline/validate` checks a pipeline without saving: a body (`definition` or `yaml`), or `{"project": "NAME", "file": true}` (the file name in effect) or `"file": "path/in/project.yaml"` for a repository file. The answer is `200` with `valid`, `errors` (every problem), and the `definition` read when valid; `400` for a request that cannot be read (both a body and a file, a file outside the project), `404` when the project has no directory. Needs the autonomous read capability.
+
+Settings: `autonomous.merge_pipeline.{file_name,source_order,fallback_on_bad_file,conflict_policy,conflict_model,conflict_mode,conflict_confirm_first_n,version_files}` and the same eight per project as `autonomous.merge_pipeline.projects.<project>.<key>` on `PUT /api/config`; a bad value or unknown key rejects the whole PUT, `null` clears a key.
+
+The same reads and writes are available from the other surfaces: MCP `autonomous_merge_pipeline_get`, `autonomous_merge_pipeline_set_record` (`clear=true` removes) and `autonomous_merge_pipeline_validate`, with the settings as `merge_pipeline_*` arguments of `autonomous_config_set` (including `merge_pipeline_release_approval_patch|minor|major` — each `auto`, `ask` or `manual` — and `merge_pipeline_project` for one project); the command line `datawatch autonomous merge-pipeline show|set-record|clear-record|validate` (`--project`, `--from-file`, `--repo-file`, `--json`); and the chat verb `autonomous merge-pipeline [show|set-record|clear-record|validate]` with the settings through `configure autonomous.merge_pipeline.<key>=<value>` (a mode outside the three on a release approval key is refused with the key named). All print the same text.
+
+### `GET /api/autonomous/merge`
+
+```
+GET /api/autonomous/merge
+
+200: {
+  "mode": "shadow",
+  "alert_minutes": 30,
+  "automata": [
+    {
+      "automaton_id": "d0442737d38c",
+      "name": "nightly ingest",
+      "branch": "automaton/d0442737d38c",
+      "state": "pending",
+      "commits_ahead": 3,
+      "pending_since": "2026-10-29T09:12:44Z",
+      "alerted_at": null,
+      "would_alert": true
+    }
+  ],
+  "shadow_decisions": [
+    {
+      "at": "2026-10-29T09:12:44Z",
+      "automaton_id": "d0442737d38c",
+      "name": "nightly ingest",
+      "branch": "automaton/d0442737d38c",
+      "state": "pending",
+      "commits_ahead": 3,
+      "would_alert": false,
+      "repeat_count": 31,
+      "last_seen_at": "2026-10-29T09:42:44Z"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `mode` | The `merge_pending_mode` in effect: `off`, `shadow` or `on` (an unset key reports `off`) |
+| `alert_minutes` | The `merge_pending_alert_minutes` in effect (default 30; `0` = alert off), in the same body as the entries it applies to |
+| `automata` | One entry per **completed** Automaton that has a work branch, sorted by `automaton_id`. Empty while `mode` is `off` |
+| `automata[].automaton_id`, `.name`, `.branch` | The Automaton, its title (its id when it has none) and its work branch |
+| `automata[].state` | `merged`, `pending`, `needs_look`, `empty` or `unknown` (see below) |
+| `automata[].commits_ahead` | Commits on the branch that are not on `main` (0 until the check has compared the branch) |
+| `automata[].pending_since` | When the Automaton was first seen merge pending; `null` when it is not pending or has not been seen yet |
+| `automata[].alerted_at` | When the merge-pending alert fired; `null` until it does, and always `null` in `shadow` mode, which never alerts |
+| `automata[].would_alert` | Present **only in `shadow` mode**: whether an alert would have fired by now |
+| `shadow_decisions` | The shadow history, **newest first**. Empty outside `shadow` mode |
+
+The states:
+
+| `state` | Meaning |
+|---|---|
+| `merged` | Every commit's patch and subject line are on `main` |
+| `pending` | A patch and a subject line are both missing from `main`: not merged |
+| `needs_look` | The patch and subject checks disagree, so the check cannot say whether the work landed. **A commit whose patch changed while it was merged lands here, not in `pending`.** It raises no alert |
+| `empty` | No commits on the branch that are not on `main` |
+| `unknown` | Not compared yet, or the comparison failed (no worktree base repository, a git error). A client must treat it as "no information", never as merged or pending |
+
+`state` is read from the daemon's in-memory comparison, so this route **never runs git** and answers quickly; an Automaton the check has not compared yet reads `unknown`. A shadow decision is one row per change of an Automaton's outcome: an identical decision is not appended again, it raises `repeat_count` and moves `last_seen_at` instead. `repeat_count` can therefore be 1 for a row seen once. The history is bounded at 1000 rows and survives a daemon restart.
+
+### `GET /api/autonomous/merge/shadow`
+The shadow merge plan state (Phase 4, shadow mode), grouped by project: the stored **plans** (one per finished Automaton, `applied` always `false`), the stored **comparisons**, and the matched/different comparison counts per release size. Read-only: it reads the two stores under the daemon's data directory (`merge-plans/`, `merge-comparisons/`); it runs no git, merges nothing and never applies a plan. The settings (`autonomous.merge_shadow.*`) and the walkthrough are in [howto/merge-shadow.md](../howto/merge-shadow.md).
+
+```
+GET /api/autonomous/merge/shadow
+
+200: {
+  "projects": [
+    {
+      "project": "datawatch",
+      "plans": [
+        {
+          "automaton_id": "d0442737d38c",
+          "project": "datawatch",
+          "branch": "automaton/d0442737d38c",
+          "base_ref": "main",
+          "release_size": "patch",
+          "planned_version": "9.35.0",
+          "changelog_heading": "## [9.35.0] - 2026-11-07",
+          "changelog_body": "...",
+          "changelog_source": "task",
+          "readme_line": "Current release: 9.35.0",
+          "registry_row": "| datawatch | ... |",
+          "parity_issue_needed": false,
+          "conflicts": [],
+          "gates": [
+            { "name": "tests", "status": "ok", "duration": "41s", "detail": "" }
+          ],
+          "findings": [],
+          "created_at": "2026-11-07T09:12:10Z",
+          "applied": false
+        }
+      ],
+      "comparisons": [
+        {
+          "automaton_id": "d0442737d38c",
+          "release_size": "patch",
+          "matched": 5,
+          "different": 1,
+          "not_compared": 0,
+          "differences": [
+            { "field": "readme_line", "severity": "minor", "planned": "Current release: 9.35.0", "landed": "Current release: 9.35.0 (beta)" }
+          ],
+          "created_at": "2026-11-07T09:12:44Z"
+        }
+      ],
+      "counts": {
+        "patch": { "matched": 3, "different": 1 },
+        "minor": { "matched": 0, "different": 0 },
+        "major": { "matched": 0, "different": 0 },
+        "none":  { "matched": 0, "different": 0 }
+      }
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `projects` | One entry per project that has a stored plan or comparison, sorted by name; **an empty list is the normal empty state, not an error**. A plan or comparison whose Automaton names no project (or has no stored plan) is listed under `project` `unknown` |
+| `projects[].plans` | The stored shadow merge plans for the project, always an array (never `null`); one per finished Automaton, each with `applied` `false` — a record, not a queue |
+| `projects[].comparisons` | The stored comparisons, always an array; a comparison joins its plan by `automaton_id` to find its project |
+| `projects[].counts` | All four release sizes (`patch`, `minor`, `major`, `none`) always present. A comparison counts as `different` when it found at least one difference, as `matched` otherwise |
+| `comparisons[].differences[]` | Each difference: `field`, `severity` (`major` or `minor`), `planned` (the plan's value) and `landed` (the landed value, `(missing)` when it landed nowhere) |
+
+Answers: `405` with `Allow: GET` for any other method; `403` for a federated peer without the autonomous read capability; `500` with the store's error when the plan or comparison store cannot be read. The **defect candidates** the comparison records are not in this body — they stay the JSON file under the data directory (`<data directory>/defect-candidates/<automaton id>.json`) until filing them into the defect queue lands.
+
+The same answer is the read behind the MCP tool `autonomous_merge_shadow_status` (optional `project` argument), the CLI `datawatch autonomous merge-shadow status` and `compare <automaton-id>`, the comm verb `autonomous merge-shadow`, and the Merge shadow card on the Automata Events tab — all read-only, none of them writes or files anything. Note that the CLI and the card render comparison state, and the comparison is stored empty today: the post-ship flow persists the **defect candidates**, not the comparison record, so these reads stay empty until that wiring lands — the stored plans are the part that is populated now.
+
+### `GET /api/autonomous/safe-to-delete`
+
+```
+GET /api/autonomous/safe-to-delete
+
+200: {
+  "safe": [
+    { "branch": "automaton/a1b2c3d4e5f6", "worktree": "/home/<user>/.datawatch/prd-worktrees/a1b2c3d4e5f6", "reason": "all commits on main", "commits": 4 }
+  ],
+  "held": [
+    { "branch": "automaton/d0442737d38c", "worktree": "", "state": "pending" },
+    { "branch": "automaton/9f8e7d6c5b4a", "worktree": "/home/<user>/.datawatch/prd-worktrees/9f8e7d6c5b4a", "state": "merged", "dirty": true, "note": "Automaton worktree has uncommitted changes" }
+  ],
+  "held_dirty": 1,
+  "computed_at": "2026-10-30T10:00:00Z",
+  "stale": false
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `safe` | Local `automaton/*` branches that can be cleaned up: state `merged` (`reason` `all commits on main`) or `empty` (`reason` `no commits ahead of main`), with no uncommitted changes in the worktree |
+| `safe[].worktree` | The checked-out worktree path; empty when the branch has none |
+| `safe[].commits` | Commits on the branch that are not on `main` (0 for `empty`) |
+| `safe[].dirty_check_skipped` | `true` when this entry's worktree was not checked for uncommitted changes — the branch's Automaton is still running. Present only when true |
+| `held` | Branches that must stay |
+| `held[].state` | `pending`, `needs_look` or `unknown`; or `merged` / `empty` for a branch held only because its worktree is dirty |
+| `held[].dirty` | `true` when the worktree has uncommitted changes; omitted otherwise |
+| `held[].note` | The reason in words (the git error for an `unknown` branch); omitted when empty |
+| `held_dirty` | How many branches are safe by state but held back for uncommitted changes |
+| `computed_at` | UTC time the stored result was computed; empty when the report carries no computed-at stamp |
+| `stale` | `true` when this read missed the report's 60-second lifetime — the stored result was returned at once while a background refresh was under way or had failed. Always present: `false` for a fresh read |
+
+Both lists are always arrays, never `null`. The base branch and the branch checked out in the main checkout are never listed. The report is computed by git, but not on every read: the daemon keeps each result in an in-memory cache for **60 seconds**, keyed by the worktree base repository. A read within the lifetime returns the stored result at once, with no git work; a read that misses the lifetime still returns the stored result at once (with `stale` set) and starts at most one background refresh — further readers in the same window start none and also get the stored result. The background refresh is bounded at 60 seconds, and the route itself is bounded the same way by the handler, so a slow git call cannot hang the read. A refresh that fails is counted (`safe_delete_refresh_failures`) and the reader still gets the last successful result, never a hard error in place of usable data. It works in every mode, including `off`. It only needs the worktree base repository, and clients may poll it on a 60-second cadence (the PWA refreshes it every 60 seconds).
+
+| Status | When |
+|---|---|
+| `200` | The report |
+| `500` | The branches or worktrees could not be listed |
+| `503` | Automata are disabled, or no `worktree_base_repo` is configured for Automata |
+
+**The report never deletes anything.** There is no delete, merge or push route beside it; cleaning up a branch or worktree is a separate step the operator approves.
+
+### The `merge_pending` triage status
+
+The existing optional `triage` record on an Automaton (see *Triage records* above) gains one status value and two fields. In `on` mode, a completed Automaton whose branch is `pending` carries a record with `status: "merge_pending"`, plus `branch` (the work branch) and `commits_ahead` (the count not on `main`); `first_seen_at` and `alerted_at` mean the same as on a failed or blocked record. Both new fields are omitted on `failed` and `blocked` records. The record is cleared when the branch is no longer pending, and shadow mode never writes one. Clients that list triage records must tolerate the new status value.
+
+### Surfaces and configuration
+
+The same reads are served by MCP `autonomous_merge` and `autonomous_safe_to_delete`, the CLI `datawatch autonomous merge [--json]` and `datawatch autonomous safe-to-delete [--json]`, the comm verbs `autonomous merge` and `autonomous safe-to-delete`, and the PWA (a merge badge on finished Automata and a safe-to-delete card on the Automation Housekeeping sub-tab). The same contract for the mobile and wear surfaces is in [mobile-surface.md](mobile-surface.md). There are exactly two configuration keys, both under `autonomous.automation`, both in the Automata config object and `PUT /api/config`:
+
+| Key | Values | Default | Notes |
+|---|---|---|---|
+| `merge_pending_mode` | `off`, `shadow`, `on` | `off` | An empty string or any other value is refused with `400` and nothing is written |
+| `merge_pending_alert_minutes` | whole number ≥ 0 | `30` | `0` turns the alert off and round-trips as `0`; unset reads `30`; a negative or non-whole value is refused with `400` |
+
+The response shapes are in `docs/api/openapi.yaml` (`MergeStatus`, `MergeAutomaton`, `MergeShadowDecision`, `SafeDeleteReport`).
+
+## Merged-member decisions (`GET /api/automations/merged-members`, `GET /api/automations/{id}/merged-members`)
+
+Two read routes list the decisions the Automation coordinator made when a member Automaton ended cancelled or completed and its work branch (`automaton/<id>`) was already merged into the project's own default branch. The operator how-to is [howto/automation-merged-member.md](../howto/automation-merged-member.md); the operator reference is in [docs/operations.md](../operations.md) (section *Merged-member policy*).
+
+```
+GET /api/automations/merged-members          every Automaton's decisions
+GET /api/automations/{id}/merged-members     one Automaton's decisions
+
+200: {
+  "automation_id": "4522f306c266",
+  "count": 1,
+  "merged_members": [
+    {
+      "automation_id": "4522f306c266",
+      "automation_name": "nightly pipeline",
+      "member": "b",
+      "prd_id": "d0442737d38c",
+      "branch": "automaton/d0442737d38c",
+      "default_branch": "main",
+      "proving_commit": "3f9a1c0e7b2d4a58c6e1f0a9b8d7c6e5f4a3b2c1",
+      "policy": "completed",
+      "outcome": "advanced",
+      "at": "2026-10-30T09:12:44Z",
+      "note": "member nightly ingest: branch automaton/d0442737d38c is merged on main (commit 3f9a1c0e7b2d4a58c6e1f0a9b8d7c6e5f4a3b2c1); policy completed treats the cancelled member as completed"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `automation_id` (top level) | The requested id; empty for the all-Automata route |
+| `count` | The length of `merged_members` |
+| `merged_members` | The decisions, oldest first. Always an array, never `null` |
+| `automation_id`, `automation_name` | The Automaton the member belongs to (`automation_name` is omitted when empty) |
+| `member` | The member id within the Automaton |
+| `prd_id` | The member's work record id (omitted when empty) |
+| `branch` | The member's work branch |
+| `default_branch` | The project default branch the member was proved merged into |
+| `proving_commit` | The commit that proves the merge |
+| `policy` | The `merged_member_policy` in force: `completed`, `manual` or `block` |
+| `outcome` | `advanced` when the Automation moved on past the member, `blocked` when it stayed blocked for the operator. A client must show an unknown value as written |
+| `at` | RFC 3339 time of the decision |
+| `note` | The recorded explanation (omitted when empty) |
+
+An unknown `{id}` is a `404`; an Automaton with no such decision returns an empty list. Both routes are GET-only (any other method is `405`), answer `503` while Automata are disabled, and need the autonomous read capability when called by a federated peer (`403` without it). A read changes nothing.
+
+The same decision is also written into the Automaton's existing `decisions` array as an entry with `kind: "merged_member"` and one optional object `merged_member` (`member`, `prd_id`, `branch`, `default_branch`, `commit`, `policy`, `outcome`; the proving commit is `commit` there and `proving_commit` on the route). A client that lists decisions must tolerate an entry of this kind.
+
+### Surfaces and configuration
+
+The same reads are served by MCP `automation_merged_members` (optional `id`), the CLI `datawatch autonomous merged-members [automation-id] [--json]`, the comm verb `autonomous merged-members [automation-id]`, and the PWA (a block on the Automation detail view). There is one configuration key, under `autonomous.automation`:
+
+| Key | Values | Default | Notes |
+|---|---|---|---|
+| `merged_member_policy` | `completed`, `manual`, `block` | `completed` | Absent reads `completed`. An empty string or any other value is refused with `400` on `PUT /api/config` and on the Automata config object, and nothing is written. Applies to the next member that ends, with no restart |
+
+The response shapes are in `docs/api/openapi.yaml` (`MergedMemberList`, `MergedMemberRow`).
+
+## Operator decisions (`GET /api/autonomous/decisions`)
+
+An operator decision is a question raised on the [operator question channel](#operator-question-channel) that an Automaton task can wait on. This route is the one read of them: every decision with its state, its answer and the tasks that name it or are held on it. The operator how-to is [howto/automaton-operator-decisions.md](../howto/automaton-operator-decisions.md); the operator reference is in [docs/operations.md](../operations.md) (section *Decision gate*).
+
+```
+GET /api/autonomous/decisions
+    ?prd_id=<automaton-id>
+    ?state=open | answered | withdrawn | expired
+    ?limit=<n>
+
+200: { "decisions": [ { ... } ] }
+```
+
+| Parameter | Type | Meaning |
+|---|---|---|
+| `prd_id` | string, optional | Only the decisions linked to this Automaton. An id that matches nothing gives an empty list. |
+| `state` | string, optional | Only decisions in this state: `open`, `answered`, `withdrawn` or `expired`. Any other value is a 400. |
+| `limit` | integer, optional | At most this many decisions, newest first. A positive whole number; default 100, maximum 1000 (a larger value is capped). Zero, a negative number or a non-number is a 400. |
+
+The filters are exact matches and combine. A read that matches nothing is `{"decisions": []}`, not a 404.
+
+A decision (newest first in `decisions`):
+
+```json
+{
+  "id": "q-3f9a1c7e5b2d4a60c8e1",
+  "question": "Use the existing session table or add a new one?",
+  "label": "decision",
+  "state": "answered",
+  "asked_by": "automaton",
+  "asked_at": "2026-10-29T12:00:00Z",
+  "prd_id": "d0442737d38c",
+  "task_ids": ["task-4", "task-7"],
+  "waiting_task_ids": [],
+  "waiting_tasks": [],
+  "answer": {
+    "id": "a-91b0c2d3e4f5",
+    "quote": "Add a new table.\nKeep the old one read-only.",
+    "quote_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actor": "operator",
+    "surface": "pwa",
+    "answered_at": "2026-10-29T12:05:00Z"
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `id` | The decision id: `q-` followed by lowercase hex. |
+| `question`, `label` | The question text and its short label (may be empty). |
+| `state` | `open`, `answered`, `withdrawn` or `expired`. A withdrawn or expired decision is listed too. |
+| `asked_by`, `asked_at` | Who raised it and when. |
+| `prd_id` | The Automaton the decision belongs to; empty when it is not linked to one. |
+| `task_ids` | The tasks of that Automaton whose spec names the decision. Always an array. |
+| `waiting_task_ids` | The tasks among them that are held on it right now (status `waiting_decision`). Always an array. |
+| `waiting_tasks` | The same held tasks as `{task_id, wait_reason}`. Always an array. |
+| `answer` | `null` until the decision is answered; then the current answer: `id`, `quote`, `quote_sha256`, `actor`, `surface`, `answered_at`. |
+
+`answer.quote` is the operator's words exactly as stored. Show it as it is; do not trim, cut, re-wrap or change its case.
+
+**Status codes.**
+
+| Code | When |
+|---|---|
+| 200 | the decisions, possibly an empty array |
+| 400 | `state` is not one of the four states; `limit` is not a positive whole number |
+| 401 | the bearer token is missing or wrong |
+| 403 | a federated peer without the autonomous read capability |
+| 405 | a method other than GET |
+| 503 | the Automaton engine is not running, or the question store is not available |
+
+Errors are plain text, the message only. The route is read-only and writes nothing.
+
+**A held task.** A task whose spec names a decision id that has no answer has the status `waiting_decision` while the gate is on (`autonomous.questions.decision_gate_mode: on`). The Automaton JSON (`GET /api/autonomous/prds/{id}`) shows it on the task: `status: "waiting_decision"` and `wait_reason`, one plain sentence such as `operator decision q-3f9a1c7e5b2d4a60c8e1 is waiting for an answer: Use the existing session table or add a new one?` (an open decision's question is cut to its first 160 characters; a withdrawn or expired one reads `operator decision <id> was withdrawn without an answer`, and an unknown id `operator decision <id> was not found`). When the decision is answered the task returns to `pending` on its own and `wait_reason` clears. The Automaton's decision log (the `decisions` array on the same JSON) gains the entry kinds `operator_decision`, `operator_answer` and `decision_gate_shadow`, and its entries can carry three optional fields that link them to a decision: `question_id`, `answer_id` (answer entries only) and `decision_state`. They are left out when empty; show an unknown kind as plain text.
+
+**Configuration.** Two keys under `autonomous.questions`, both read live:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `autonomous.questions.decision_gate` | boolean | on when absent | Whether the gate looks at task specs at all. |
+| `autonomous.questions.decision_gate_mode` | string | `shadow` when empty | `shadow` records what would be held and holds nothing; `on` holds the task. Any other value is refused with 400 by `PUT /api/config` and nothing changes. |
+
+**Surfaces.** The same read is on MCP as `autonomous_decisions` (same three filters), on the CLI as `datawatch autonomous decisions [automaton-id] [--state open|answered|withdrawn|expired] [--limit N] [--json]`, on the comm channel as `autonomous decisions [automaton-id]` (the newest ten) and in the PWA as the Decisions card on the Automaton detail. The record shape is in `docs/api/openapi.yaml` (`DecisionLine`, `DecisionLineEntry`).
+
+## Overlap search (`GET /api/autonomous/overlap`)
+
+The read an operator or an agent runs before it creates an Automaton. It asks the same finder the create route runs: every Automaton in the store, the registry rows in `docs/plans/README.md` and the unmerged `automaton/` branches, with no Automaton excluded. The operator reference, including how to read each kind of warning and how shadow mode is compared with the supervisor's decisions, is in [docs/howto/automaton-search-before-create.md](../howto/automaton-search-before-create.md).
+
+```
+GET /api/autonomous/overlap
+    ?title=<plan title>
+    ?spec=<plan spec>
+    ?limit=<1 to 50, default 10>
+
+200: { "warnings": [ { ... } ], "threshold": 0.5, "mode": "shadow" }
+400: title and spec both blank, or limit not a whole number from 1 to 50
+403: federated peer lacks the autonomous read capability
+500: the overlap search failed (never an empty list)
+503: autonomous is disabled
+```
+
+Give a `title`, a `spec`, or both. The warnings come back best match first, at most `limit` of them. Each warning:
+
+```json
+{
+  "kind": "automaton",
+  "id": "3fa9c2d1",
+  "status": "completed",
+  "score": 0.72,
+  "shared_terms": ["automaton", "existing", "overlaps", "warn"],
+  "reason": "Automaton 3fa9c2d1 already describes this plan.",
+  "read_hint": "datawatch autonomous get 3fa9c2d1"
+}
+```
+
+`kind` is one of `automaton`, `registry`, `branch` or `unavailable`. `id` and `status` are set on the `automaton` kind, `row` on `registry`, and `branch` on `branch`. `unavailable` means one of the three places could not be read, so it was not checked. `threshold` is the match threshold in force and `mode` the search-before-create mode in force (`off`, `shadow` or `on`). The route is a read: it writes nothing, works in every mode, and a search that fails answers 500 rather than an empty list.
+
+The create route, `POST /api/autonomous/prds`, runs the same finder after it stores the Automaton, so a failed search never stops a create. In `on` mode its reply carries `overlap_warnings`, an empty list when nothing matches. In `shadow` mode it writes one `automaton_create_search` audit entry and the reply has no such field. In `off` mode it searches nothing.
+
+Surfaces: the REST route above; the MCP tool `autonomous_overlap_search` (`title`, `spec`, `limit`, proxying the route); the CLI `datawatch autonomous overlap [spec] [--title T] [--spec S] [--json]`; and the comm verb `autonomous overlap <text>`, where the text is the spec. The CLI and the comm verb render the warnings with the same text; the REST route and the MCP tool return the JSON object.
+
+---
+
+## The shipped state (`autonomous.shipped`)
+
+A finished Automaton (PRD) can carry a **shipped** record: the fact that its work landed on the default branch, and the details of how. Shipped is **orthogonal to status**: recording it never touches the stored status, and the stored status never implies it. A PRD that is `cancelled` whose branch was merged is `cancelled` in the store and **shipped** in the shipped views; a PRD cancelled before anything merged is only cancelled. A record **is shipped** exactly when its `merge_commit` is non-empty — that field is the whole test.
+
+Every shipped record keeps four fields:
+
+| Field | Meaning |
+|---|---|
+| `merged_in_release` | the release the work landed in, e.g. `v1.2.0` |
+| `merged_at` | when it merged (RFC 3339; omitted when the time is unknown) |
+| `merge_commit` | the default-branch merge commit — non-empty is what makes the record shipped |
+| `shipped_source` | where the record came from: `merge_step` or `backfill` |
+
+**Idempotent per commit.** Re-recording with the same `merge_commit` answers 200 and changes nothing (stored fields, revision and updated-time alone); re-recording with a different commit overwrites all four. `shipped_source` is a stored field of the record, not a query parameter.
+
+### Recording
+
+```
+POST /api/autonomous/prds/{id}/shipped      # an Automaton
+POST /api/automations/{id}/shipped          # an Automation (same body)
+```
+
+Request body:
+
+| Field | Rule |
+|---|---|
+| `merge_commit` | required, non-empty string |
+| `merged_in_release` | optional string |
+| `merged_at` | optional, RFC 3339 — an unparseable time is a 400 |
+| `source` | `merge_step` or `backfill`; the server refuses an empty or unknown value with 400 |
+
+The 200 reply is the record as stored. Each record writes an audit entry (`record_shipped` for PRDs, `automation_shipped_record` for Automations).
+
+### The shipped selection and the `shipped` status axis
+
+- `GET /api/autonomous/prds` and `GET /api/automations` accept `shipped=true` (only the records that carry shipped state) or `shipped=false` (only the ones that do not). Absent, the server's `autonomous.shipped.filter_default` view applies (`all`, `shipped` or `unshipped`).
+- `status=…` on either list may include `shipped` as one of the statuses; that selects the shipped bucket on the *status* axis.
+- The two axes are independent: set either, both, or neither.
+- The MCP list tools take the same parameter, strictly `"true"` or `"false"` (`autonomous_prd_list` and `automation_list`) — omit it for the default view.
+
+While `autonomous.shipped.enabled` and `count_separately` hold, a shipped record is drawn out of its status bucket and counted in a **shipped** bucket of its own across the lists and the per-status counts; switch `count_separately` off and it folds back into its stored status. Either way the record's stored status and shipped fields are untouched.
+
+### Counts
+
+```
+GET /api/autonomous/shipped/counts
+→ {
+    "prds":        {"completed": 4, "cancelled": 1, "shipped": 3},
+    "automations": {"completed": 1, "shipped": 2},
+    "settings":    {"enabled": true, "show_chip": true,
+                    "filter_default": "all", "count_separately": true}
+  }
+```
+
+Computed under the in-force settings, with those settings riding along. The same read is MCP `autonomous_shipped_counts`, the CLI `datawatch autonomous shipped counts`, and the comm verb `autonomous shipped-counts`.
+
+### Backfill
+
+```
+POST /api/autonomous/shipped/backfill            # writes
+POST /api/autonomous/shipped/backfill?dry_run=true   # scans and reports without writing
+```
+
+One pass over the base repository's default branch (the `MAIN_BRANCH` env var, or `main` when unset):
+
+- every merge commit naming an `automaton/<id>` branch records the shipped state (`source=backfill`) on the matching Automaton, with the release name (a version number, or the release heading) and the merge time recovered from the history;
+- an Automation is marked when it has at least one non-skipped member whose non-skipped members are **all** shipped; the latest member merge supplies the time, commit and release;
+- it never touches any status; records that already carry shipped state are counted, not re-recorded;
+- one bad record lands in the report's `errors` and the pass carries on.
+
+The reply is the same in both modes:
+
+```
+{
+  "prds_scanned": 42, "prds_marked": 3, "prds_already_marked": 2,
+  "automations_marked": 1, "left_cancelled": 1,
+  "unmatched_ids": ["9d8e7f6a"], "errors": []
+}
+```
+
+400 when the repository is absent on the serving machine, or while `autonomous.shipped.enabled` is off (the reply names the key). The same pass is MCP `autonomous_shipped_backfill` (`dry_run` optional; the federation write cap applies), the CLI `datawatch autonomous shipped backfill [--dry-run]`, and the comm verb `autonomous shipped-backfill [dry_run=true]`. `backfill_on_start` runs it once at every daemon start.
+
+### Settings
+
+Five keys, one block, daemon-wide (there is no per-record override): every one is refused on write when it is not a legal value, and settable from YAML, `PUT /api/config` / `PUT /api/autonomous/config`, MCP `autonomous_config_set`, the CLI (`datawatch config set autonomous.shipped.<key>=…`) and comm (`configure`).
+
+| Key | Default | Effect |
+|---|---|---|
+| `autonomous.shipped.enabled` | `true` | master gate: shipped-state recording, display, selection, counts and backfill |
+| `autonomous.shipped.show_chip` | `true` | the shipped chip is rendered on shipped items by the client surface |
+| `autonomous.shipped.filter_default` | `all` | the shipped views open on: `all` \| `shipped` \| `unshipped` (a blank value reads as `all`) |
+| `autonomous.shipped.count_separately` | `true` | shipped records count in their own bucket instead of their stored status |
+| `autonomous.shipped.backfill_on_start` | `false` | run the backfill pass at daemon startup |
+
+### The dashboard card
+
+The dashboard carries a **Shipped** system card — it is in the factory layout and is re-added if removed, not deletable. `GET /api/dashboard/cards/shipped` (and the `data` field of the `shipped` entry in `GET /api/dashboard/cards`) returns the live per-status count plus the in-force settings, computed at read time. The PWA renders no shipped card, selection or chip yet; that client-side gap, and the Android/iOS build, are the parity item in [plans/2026-11-01-shipped-status-parity-issue.md](plans/2026-11-01-shipped-status-parity-issue.md).
+
+### The merge step
+
+`scripts/merge-branches-bump-version.sh` sources `scripts/merge-shipped-record.sh`: after the release-bump commit it records the shipped state best-effort for every merged `automaton/<id>` branch (`source=merge_step`), and records the matching Automation when one has all its non-skipped members shipped. A failed record never fails a successful merge, and the recording honours `autonomous.shipped.enabled`.
+
+### What shipped never does
+
+- It never changes a stored status, in either direction.
+- It never pushes, merges or moves any branch — it records facts about merges that happened.
+- It is not a per-record override; the settings are daemon-wide.
+- It never fails a merge; the merge step's record is best-effort.
+
+See also: the operator walk-through [howto/automata-shipped-status.md](../howto/automata-shipped-status.md), the [Shipped section of implementation.md](../implementation.md#shipped-state-autonomousshipped), the [Shipped entry of datawatch-definitions.md](../datawatch-definitions.md#shipped), the plan [plans/2026-11-01-shipped-status.md](plans/2026-11-01-shipped-status.md), and the companion-app parity issue [plans/2026-11-01-shipped-status-parity-issue.md](plans/2026-11-01-shipped-status-parity-issue.md).
 
 ## Configuration
 
@@ -302,20 +2334,134 @@ autonomous:
   planning_effort:        "thorough"  # BL41 effort hint (BL304; old key decomposition_effort still accepted)
   verification_effort:    "normal"    # per-task/story/Automaton overrides (set_*_verification_llm) take precedence
   stale_task_seconds:     900         # activity-based stall window: no output, child process, backend activity, or file change for this long = stalled; 0 = inherit session.stale_timeout_seconds
+  stuck_running_seconds:  900         # stuck-running watchdog: an Automaton running with every task finished, no live session and no live executor for this long gets its completion roll-up re-fired once, then is blocked after a second full bound; 0 = 900
+  descendant_stall_seconds: 2700      # pi-prompt only: bound on a stalled worker whose only liveness is a live working descendant process; exceeded => infrastructure failure, descendants are cleaned up, task is retried via the auto_fix_retries budget; 0 or below => use the default 2700
+  task_max_attempt_seconds:  0        # wall-clock cap on one task attempt in seconds; 0 = off; recommended 5400
+  task_no_progress_seconds:  0        # stop an attempt after N seconds without output, file changes, commits, or a CPU-using child process; 0 = off; recommended 1800
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit
+  snapshot_never_stage:   []          # never-stage patterns for the automatic snapshot commits; unset reads the built-in list (scratch/, tmp/, temp/, .tmp/, data/, .data/, *.tmp); an explicit [] protects nothing (see "Snapshot never-stage list")
+  verifier_policy:                    # which backend runs a verification (see "Verifier policy")
+    mode:                 fixed       # fixed | prefer-free | balance | gpu-only | claude-only
+    backends:             []          # ordered eligible backends; empty = verification_backends, then verification_backend
+    claude_session_cap:   0           # Claude verifier sessions per window; 0 = unlimited
+    claude_cap_window_minutes: 0      # window length; 0 = 60
+    force_stronger_on_retry: false    # retried verification goes to the stronger verifier
+    final_gate_stronger:  false       # final verification gate goes to the stronger verifier
+    stronger_backend:     ""          # empty = claude-code
+    stronger_model:       ""          # empty = the default Sonnet model
+  judge_policy:           []          # ordered judge backends, one attempt each; empty = follow the verifier routing policy
+  judge_timeout_seconds:  1800        # time limit for one judge run; the capacity-slot wait does not count
+  judge_size_threshold_lines: 400     # changed lines above which claude-code is tried first; 0 = size rule off
+  shipped:                            # the shipped state, orthogonal to status (see "The shipped state")
+    enabled:        true               # master switch for shipped-state recording and display
+    show_chip:       true              # render the shipped chip on shipped items
+    filter_default:  all               # the shipped views open on: all | shipped | unshipped
+    count_separately: true             # shipped items count in a shipped bucket of their own
+    backfill_on_start: false           # run the backfill pass at daemon startup
+  automation:
+    create_search_mode:   shadow      # off | shadow | on: search-before-create over the existing Automata, registry rows and branches
+    create_search_threshold: 0.5      # score at or above which an existing Automaton counts as an overlap; above 0, at most 1
 ```
+
+### Snapshot never-stage list (`snapshot_never_stage`)
+
+`autonomous.snapshot_never_stage` is the list of path patterns the
+automatic snapshot and commit paths must never `git add`. Patterns are
+matched against the candidate's repo-relative path, **anchored at the
+repository root**: an entry ending in `/` names a root directory (it and
+everything under it are refused — `data/` covers `data/notes` but not
+`build/data/notes`); a slash-free glob is also matched against the
+candidate's file name alone, so `*.tmp` refuses at any depth while
+`secrets/key.*` covers only `secrets/key.<name>` at the root; an exact
+entry names that path or a root-level directory and its contents. Absolute
+patterns are inert.
+
+- **Unset** (key absent) reads the built-in list: `scratch/`, `tmp/`,
+  `temp/`, `.tmp/`, `data/`, `.data/`, `*.tmp`.
+- **An explicit empty list** (`[]`) disables every never-stage rule — a
+  different state from unset, preserved by a config round trip.
+- **Blank entries** are refused (`400`, naming the rule) and nothing in
+  the write is applied.
+
+`PUT /api/autonomous/config` takes `{"snapshot_never_stage": [...]}` — an
+array; a non-array non-null value is a `400`. `null` is treated as
+absent (merge-onto-current), and an explicit `[]` is stored verbatim.
+`GET /api/autonomous/config` renders the **effective** list — the
+configured list, or the built-in defaults when the key is unset. The same
+key is also settable as `autonomous.snapshot_never_stage` through
+`GET`/`PUT /api/config` (an array or a comma-separated string), MCP
+`autonomous_config_set` / `autonomous_config_get`, the CLI
+`datawatch config set autonomous.snapshot_never_stage`, the comm
+`configure` verb, and the PWA settings field. The full operator view —
+the scope rule around staging, every surface, and the task's
+`skipped_snapshot_paths` skip record — is
+[howto/autonomous.md](../howto/autonomous.md).
+
+### Task attempt limits (`task_max_attempt_seconds`, `task_no_progress_seconds`)
+
+Both default to `0` (off). `task_max_attempt_seconds` hard-caps one
+attempt by wall clock; `task_no_progress_seconds` stops an attempt that
+goes N seconds without progress, where progress is terminal output
+growth, a changed tracked or untracked file in the work directory (harness
+scratch files ignored), a new commit, or a live child process using CPU.
+A no-progress stop fails the attempt with `no progress for N seconds: no
+output, no file changes, no commits`. In both cases the uncommitted work
+is saved to a ref before the worker is stopped (never discarded) and the
+normal retry budget applies. Recommended values: `5400` and `1800`.
+
+### Search before create (`create_search_mode`, `create_search_threshold`)
+
+`autonomous.automation.create_search_mode` is `off`, `shadow` or `on`, default `shadow`. `off` never searches before a create. `shadow` searches and records what it would have warned in the audit log, and the reply does not change. `on` also adds the warnings to the create reply as `overlap_warnings`. Any other value is refused with 400 and nothing is written. An empty value reads as `shadow`.
+
+`autonomous.automation.create_search_threshold` is the score at or above which an existing Automaton, registry row or branch counts as an overlap. It is a number above 0 and at most 1, default `0.5`. A zero, negative, above-1, non-finite or non-numeric value is refused with 400 and nothing is written; an out-of-range value in the file is an error on load.
+
+Settable through `GET` and `PUT /api/config` (keys `autonomous.automation.create_search_mode` and `autonomous.automation.create_search_threshold`), through `GET` and `PUT /api/autonomous/config` (the `automation` object), through the MCP `autonomous_config_set` tool (`automation_create_search_mode`, `automation_create_search_threshold`), through the CLI `datawatch config set autonomous.automation.create_search_mode=on`, and through the comm verb `configure`. The mode and threshold are read on every create and every search, so a change applies to the next create with no restart.
 
 ### Compute-node engine cap (`max_engines_per_node`)
 
-`autonomous.max_engines_per_node` caps how many local-model sessions one
-compute node runs at once. The default is `1`, and a value below `1` is
-clamped to `1`. Only sessions on a local engine on that node count
-(`pi`, `pi-prompt`, `ollama`, `opencode`, `opencode-acp`); hosted backends
-such as `claude-code` are not gated by it. Sessions past the cap wait with
-the reason `waiting for node <name>`. The operator guide, including queue
-priority, is in `docs/operations.md` → "Compute-node queue".
+`autonomous.max_engines_per_node` is the slot count of a compute node that
+hosts a local engine when the node has no operator `session_slots` and its
+observer reports neither GPU data nor system memory with a model size. It is
+the last step of the rule in [Node slots](#node-slots-session_slots). The
+default is `1`, and a value below `1` is clamped to `1`. Only sessions on a
+local engine on that node count (`pi`, `pi-prompt`, `ollama`, `opencode`,
+`opencode-acp`); hosted backends such as `claude-code` are not gated by it.
+Sessions past the count wait with the reason `waiting for node <name>`. The
+operator guide, including queue priority, is in `docs/operations.md` →
+"Compute-node queue".
+
+### Node slots (`session_slots`)
+
+Each compute node that hosts a local engine takes a slot count, the number of
+workers it runs at once. Its `node:<name>` pool limit is that count. The count
+is the first of these that applies:
+
+1. `session_slots` on the node, when above `0`. Set by the operator; `0` (the
+   default) means derive.
+2. One slot per GPU, from the observer's GPU data, limited by the free GPU
+   memory against the size of the served model. A GPU takes at most one engine.
+3. Free system memory divided by the served model's size, at least one, when the
+   observer reports no GPU data.
+4. `autonomous.max_engines_per_node`.
+
+`max_concurrent_sessions` on the node, when set and smaller, caps the count. A
+derived count never falls below the workers already holding the node, but that
+floor is capped at the GPU count. A negative `session_slots` is refused. A node
+that hosts no local engine ignores `session_slots` and keeps its
+`max_concurrent_sessions` limit. The count is re-read every 10 seconds.
+
+- **REST:** `PUT /api/compute/nodes/{name}` with `session_slots`.
+  `GET /api/compute/nodes/{name}/detail` returns `session_slots` (the operator's
+  value, `0` = derive) and `derived_slots` (the count in effect). `derived_slots`
+  is omitted until the node has a pool limit.
+- **MCP:** `compute_node_add` and `compute_node_update` take `session_slots`.
+  Update replaces the whole node, so omitting it clears the override.
+  `compute_node_detail` returns `session_slots` and `derived_slots`.
+- **CLI:** `datawatch compute node add|update <name> --session-slots N`;
+  `datawatch compute node detail <name>`.
+- **Comm channel:** `compute node update <name> session_slots=N`.
 
 - **REST:** `PUT /api/config` with `{"autonomous.max_engines_per_node": N}`;
   `PUT /api/autonomous/config` with `{"max_engines_per_node": N}`. Both
@@ -330,6 +2476,27 @@ priority, is in `docs/operations.md` → "Compute-node queue".
   (merges into the config; `config-get` shows it).
 - **Comm:** `configure autonomous.max_engines_per_node=2` (any channel that
   accepts `configure`; the key is listed in the usage help).
+
+### Quality-gate disagreement policy
+
+`autonomous.gate_disagreement` (`warn` by default, or `block`) decides what
+happens when a task's own verifier passed but the quality gate confirmed a
+regression from a valid baseline: `warn` records the disagreement on the task
+and in the decision log and the task completes; `block` fails the task with a
+`gate_disagreement: …` error. An invalid gate (unusable baseline) never
+blocks under either value. Any other value is rejected. The operator guide is
+`docs/operations.md` → "Quality gate".
+
+- **REST:** `PUT /api/config` with `{"autonomous.gate_disagreement": "block"}`
+  (`400` for any other value); `PUT /api/autonomous/config` with
+  `{"gate_disagreement": "block"}`. Read back from `GET /api/config` and
+  `GET /api/autonomous/config`. `GET /api/autonomous/prds/{id}` returns
+  `quality_gate_status` / `quality_gate_invalid_reason` on the Automaton and
+  `gate_disagreement` on a task.
+- **MCP:** `autonomous_config_set` with `gate_disagreement`;
+  `autonomous_config_get` returns it.
+- **CLI:** `datawatch autonomous config-set '{"gate_disagreement":"block"}'`.
+- **Comm:** `configure autonomous.gate_disagreement=block`.
 
 ### Model pairing warnings
 
@@ -348,6 +2515,160 @@ cancelled, rejected and archived PRDs are not checked.
 
 ---
 
+## Capacity (`GET /api/capacity`) readable holder names
+
+`GET /api/capacity` resolves raw holder ids (task ids, PRD ids) into
+operator-readable names — "PRD title / task title (short id)" — and adds the
+resolved form **beside** the raw id fields, never in place of them. Scripts
+that read `holder`, `prd_id`, `task_id`, `pools` or `reason` see exactly what
+they always saw; the name fields are pure additions and are simply absent
+when the daemon has no name resolver wired (older daemons, or a build
+without the autonomous manager).
+
+| Where | New field(s) | Meaning, beside the unchanged id field |
+|---|---|---|
+| `pools[]` on `node:<name>` pools | `holder_names` (array) | the same holders as name objects, parallel to the untouched `holders` array and `holder` comma string. Always present on node pools — empty when idle. A name object can be omitted there only when the resolver can't resolve that one id. |
+| `leases[]` | `holder_name` (object) | the resolved readable form of that lease's `holder`; `holder` untouched. Omitted when unresolvable. |
+| `waiting[]` | `holder_name` (object) | the resolved readable form of the waiting `holder`; `holder`, `prd_id`, `pools`, `reason` untouched. |
+| `tasks.waiting[]` | `readable`, `short_id`, `prd_title`, `task_title`, `readable_reason` | the task line in readable form beside `task_id` (omitted pair when the resolver gives no title); `prd_title`/`task_title` are the source titles; `readable_reason` is the same `reason` with holder ids replaced by names — empty for reasons that name no holders (back-off, budget waits). |
+| `tasks.running[]` | `readable`, `short_id`, `prd_title`, `task_title` | the running task line beside `task_id`. |
+| Session status `automaton` block | `wait_reason_readable` | the wait reason worded with names, beside the raw `wait_reason`. Same text, one source. |
+
+Every name object (`holder_name`, each `holder_names[]` entry) has the same
+shape:
+
+| Field | Notes |
+|---|---|
+| `id` | the raw holder id (task or PRD id) — the same value the old fields carried |
+| `kind` | `session` or `task` |
+| `task_title`, `prd_title` | the source titles when known (omitted when not) |
+| `prd_id` | the owning PRD id when known (omitted when not) |
+| `short_id` | first 8 chars of the task or PRD id; what the UI shows as the secondary label |
+| `readable` | the short form: each title capped and middle-truncated (…); falls back to the raw id when no title exists |
+| `full` | the long form: the same sentence, titles never truncated. **Omitted by default**; add `?long=1` to the request and every name object carries it (the PWA tooltip reads it for long names) |
+
+The short form is the default so cheap polls stay small; `?long=1` is purely
+additive. When a resolved holder has a short id but no title, every surface
+renders the fallback label **`(untitled <short id>)`** (localized via the
+`capacity_name_untitled` PWA key) so a titleless task never shows as a bare
+dot — the raw id fields still carry the real id in the body.
+
+- **REST:** `GET /api/capacity` (bearer-authenticated). Query: `?prd_id=<id>`
+  scopes the pools/leases/waiting/tasks lists to one Automaton (all four
+  surfaces); `?long=1` includes the never-truncated `full` field in every
+  name object.
+- **MCP:** `capacity_status` — same body; the readable fields appear when
+  the daemon resolves names.
+- **CLI:** `datawatch capacity --json` — same body as the REST endpoint.
+- **PWA:** the capacity card and task details render `readable` first with
+  `short_id` as a smaller secondary label, the full text in a tooltip, and
+  the `(untitled <short id>)` fallback above. The web tests asserting the
+  rendering are in `internal/server/web/app-capacity-names.test.js`.
+
+### Holder nodes
+
+Every pool in `GET /api/capacity` carries `hold_nodes`, the node each holder's
+lease sits on. It is a parallel array to `holders` (same length, same order):
+the entry at index `i` is the node of the lease held by `holders[i]`, or `""`
+when that lease names no node. The field is omitted when no holder of the pool
+has a node, so a pool with only node-less leases serialises exactly as before.
+`hold_nodes` is a pure addition; `holders`, `holder` and `holder_names` are
+unchanged.
+
+The same node is printed in the text views, which read the same snapshot. The
+pool line gains ` on <node>` after each holder, so `llm:pi: 2/4 held by
+task-a on gpu-a,task-b on gpu-b`. The node appears only on a pool whose holders
+span two or more nodes; a one-node entry (every holder on one node) renders as
+it did before.
+
+- **REST:** `GET /api/capacity` and `GET /api/capacity?prd_id=<id>` both carry
+  `hold_nodes` on each pool. The Automaton-scoped view keeps the same pool
+  objects, so it carries the field too.
+- **MCP:** `capacity_status` returns the same body, so it carries `hold_nodes`.
+- **CLI:** `datawatch capacity` prints the node after each holder in the pool
+  line; `datawatch capacity --json` carries `hold_nodes`.
+- **Comm channel:** the `capacity` reply prints the node after each holder in
+  the pool line, as the CLI does.
+- **PWA:** the capacity card shows the node name as a small muted label beside
+  each holder's short id, under the same one-node rule. The web tests asserting
+  it are in `internal/server/web/app-capacity-holder-nodes.test.js`.
+
+### Unknown node after a restart
+
+When a daemon restart adopts a surviving worker of a local-engine LLM entry that
+lists two or more compute nodes and the node cannot be determined (the task's
+recorded node, the session's `compute_node_ref` and its endpoint matched against
+a node `address` all come up empty), the lease holds **no** node and is flagged
+`node_unknown: true`. No node is guessed from a host name, DNS or a partial name
+match. The lease still counts against the `host` and `llm:<name>` pools, so those
+caps are respected; it occupies no `node:<name>` pool. A later adoption that
+learns the node clears the flag. A lease with no node that is not flagged (a
+hosted backend) is unchanged, and the field is omitted when false.
+
+- **REST / MCP / CLI:** each entry of `leases` in `GET /api/capacity` carries
+  `node_unknown`, and each entry of `tasks.running` carries it for its task.
+- **Text views:** the running task line says `node unknown`, and a
+  `Leases with unknown node: N` line follows the pools.
+- **Log:** one line at adoption names the task, session and endpoint that
+  matched no node.
+- **PWA:** the capacity card marks the holder `node unknown`.
+
+### Rate ceilings
+
+A pool can carry a rolling-window rate ceiling (requests and/or tokens per
+window) on top of its concurrency limit. The fields below are pure additions;
+a pool without a ceiling serialises exactly as before.
+
+| Where | Field | Meaning |
+|---|---|---|
+| `pools[]` | `rate_requests`, `rate_tokens` | the ceilings (omitted when unset) |
+| `pools[]` | `rate_window_seconds` | rolling window length |
+| `pools[]` | `requests_in_window`, `tokens_in_window` | usage counted in the window now |
+| `pools[]` | `rate_resets_at` | when the window next frees usage (omitted when nothing is counted) |
+| `waiting[]` | `cause` | classified wait cause; `rate_ceiling` when a pool's rate ceiling blocks the waiter |
+| `waiting[]` | `resets_at` | when the window will free the waiter (rate-ceiling waits only, when known) |
+| `tasks.waiting[]`, `queue[]` in autonomous status | `cause`, `resets_at` | same `rate_ceiling` cause and reset time for a task waiting on the ceiling |
+
+The wait `reason` reads `pool <p> rate ceiling: <requests|tokens> <used>/<ceiling> in <window>, resets at <RFC3339>`
+(the reset part is left out when unknown). `readable_reason` words it as
+`pool <p> rate ceiling: requests 3/3 used, resets in 5m`. The audit log records
+the wait with the existing `autonomous_capacity_wait` action: `cause` is
+`rate_ceiling`, and `pool` and `resets_at` appear in the details.
+
+### Admission query
+
+`GET /api/capacity/admission` answers "would a start of this backend be
+admitted now?" without starting anything. It takes no lease, adds no waiter
+and changes no state. It resolves the same `host`, `llm:<name>` and
+`node:<name>` pools a real start uses.
+
+| Query parameter | Meaning |
+|---|---|
+| `backend` (or `llm`) | backend or named LLM to start; required |
+| `node`, `model` | compute node and model wanted |
+| `role` | `worker` (default), `verifier`, `planner` or `interactive` |
+| `priority` | integer queue priority, higher first (default 0) |
+| `prd_id` | Automaton the start would belong to (fairness group) |
+
+The response is a Decision:
+
+```json
+{"kind": "queued", "queue_position": 1, "reason": "pool llm:x rate ceiling: requests 3/3 in 1h0m0s, resets at 2026-10-23T11:00:00Z", "resets_at": "2026-10-23T11:00:00Z", "alternates": [{"pool": "llm:y", "node": "", "model": ""}]}
+```
+
+`kind` is `admit`, `queued` or `alternate_available`; `queue_position` is
+1-based (0 when admitted); `resets_at` is present only when a rate ceiling is
+the blocker and the time is known; `alternates` lists pools of the same kind
+elsewhere with room. When the backend's LLM entry pools two or more known nodes
+and no `node` is given, the node pools are not required, and `node` (present
+only with `admit`) names the node the start would be placed on. A missing or
+unknown backend, a non-integer priority or
+an unknown role returns 400. The same query is the MCP tool
+`capacity_admission` (read-only), `datawatch capacity admission --backend <b>`
+and the chat command `capacity admission <backend> [node] [model]`.
+
+---
+
 ## CLI
 
 ```
@@ -355,6 +2676,7 @@ datawatch autonomous status
 datawatch autonomous config-get
 datawatch autonomous config-set '{"enabled":true,"max_concurrent_tasks":2}'   # merges; any deprecated_fields note goes to stderr
 datawatch autonomous config-set '{"max_engines_per_node":2}'                  # local-model sessions per compute node (default 1)
+datawatch autonomous config-set '{"gate_disagreement":"block"}'                 # fail a verifier-passed task on a confirmed gate regression (default warn)
 datawatch autonomous prd-list
 datawatch autonomous prd-create "Add OAuth login with Google + GitHub"
 datawatch autonomous prd-get <id>
@@ -366,6 +2688,17 @@ datawatch autonomous prd-set-task-llm <id> --task <task-id> --guardrail-backend 
 datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend claude-code --model opus --effort high
 datawatch autonomous prd-set-story-verification-llm <id> --story <story-id> --backend ollama --model qwen3:8b
 datawatch autonomous prd-set-verification-llm <id> --model ""   # clear the Automaton-level verifier model
+datawatch autonomous tag-list [--include-sub]
+datawatch autonomous tag-create "Mobile App" --parent <id> --color "#6366f1"
+datawatch autonomous tag-rename <id> <new-name>
+datawatch autonomous tag-move <id> --parent <new-parent-id|root>
+datawatch autonomous tag-delete <id>
+datawatch autonomous tag-registry                  # shared tag registry status: role, keeper, stale, pending sync, notes
+datawatch autonomous tag-registry-dismiss <note-id>
+datawatch autonomous prd-set-tags <prd-id> --tags <id1,id2>   # empty value clears
+datawatch autonomous prd-create "Fix the retry loop" --kind bug   # optional; omit to derive the kind
+datawatch autonomous prd-set-kind <id> <feature|bug|other>
+datawatch autonomous decisions [automaton-id] [--state open|answered|withdrawn|expired] [--limit N] [--json]   # operator decisions, newest first
 datawatch autonomous learnings
 ```
 
@@ -380,7 +2713,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 |---|---|
 | `autonomous_status`         | loop snapshot |
 | `autonomous_config_get`     | read config |
-| `autonomous_config_set`     | merge fields into config (incl. `max_concurrent_tasks` and `max_engines_per_node`) |
+| `autonomous_config_set`     | merge fields into config (incl. `max_concurrent_tasks`, `max_engines_per_node` and `gate_disagreement`) |
 | `autonomous_prd_list`       | list all PRDs |
 | `autonomous_prd_create`     | create draft PRD |
 | `autonomous_prd_get`        | fetch one PRD with tree |
@@ -388,7 +2721,18 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_prd_run`        | kick executor |
 | `autonomous_prd_cancel`     | cancel + archive |
 | `autonomous_learnings`      | list learnings |
+| `autonomous_decisions`      | the operator decisions, newest first, with their tasks and answers (read; `prd_id`, `state`, `limit`) |
+| `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
+| `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) and/or set its primary tag (`primary_tag_id`; alone it keeps the tags) |
+| `autonomous_tag_list` with `counts` | adds the subtree and direct counts (Automata and sessions) and the untagged totals |
+| `autonomous_tag_registry_status` | the shared tag registry object of this daemon (read; the `registry` field of `GET /api/autonomous/tags`) |
+| `autonomous_tag_registry_dismiss_note` | dismiss one merge or removed-on-keeper note by `id` (write; `POST /api/autonomous/tags/registry/notes/{id}/dismiss`) |
+| `autonomous_attention_list` | the attention group: `{statuses, items}` (read) |
+| `session_set_tags`          | replace a session's own tags (`id`, `tag_ids_json`); inherited tags are not set here (write) |
+| `autonomous_prd_set_kind`   | set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again); `autonomous_prd_create` takes the same optional `kind` |
+| `autonomous_progress` / `autonomous_progress_trend` | read the progress metrics object (`automation_id`, `tag_id`, `since`, `until`) / the trend over the saved daily snapshots (`days`); read-only, proxied through the REST routes |
 | `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |
+| `autonomous_prd_set_verifier_policy` / `_set_task_verifier_policy` | per-Automaton / per-task verifier policy (`mode`, `backends`; `""` / `[]` clears, omit = unchanged) |
 | `autonomous_prd_set_task_project_dir` | per-task project dir override (empty = inherit Automaton dir) |
 
 Typical AI workflow:
@@ -416,12 +2760,58 @@ autonomous set-task-llm abcd1234 t1 claude-code high guardrail_backend=ollama
 autonomous set-task-verification-llm abcd1234 t1 backend=claude-code model=opus effort=high
 autonomous set-story-verification-llm abcd1234 s1 backend=ollama model=qwen3:8b
 autonomous set-verification-llm abcd1234 model=
+autonomous tags
+autonomous tag-registry
+autonomous tag-registry-dismiss 9f8e7d6c
+autonomous tag-create "Mobile App" parent=1a2b3c4d
+autonomous set-tags abcd1234 1a2b3c4d,5e6f7a8b
+autonomous set-kind abcd1234 bug
+autonomous decisions abcd1234
 ```
 
 `guardrail_backend=` / `guardrail_model=` tokens can be appended to
 `autonomous set-llm` / `set-task-llm`; when they are the only settings
 given, no backend positional is needed and the worker LLM is left
 unchanged. `guardrail_model=` with no value clears the override.
+
+### Automaton kind
+
+An Automaton carries a kind of `feature`, `bug` or `other`. When none is set the
+kind is derived from the title and the start of the spec. Set it when the Automaton
+is created (`kind` in the create body, `--kind` on `prd-create`, `kind` on
+`autonomous_prd_create`) or change it later with `set_kind` (`prd-set-kind`,
+`autonomous_prd_set_kind`, `autonomous set-kind`). An unknown kind is refused with a
+400 and the valid values. Each change is logged on the decision timeline.
+
+### Progress metrics
+
+`GET /api/autonomous/progress` returns the one metrics object every surface shows
+(MCP `autonomous_progress` returns the same body). `GET /api/autonomous/progress/trend`
+returns the saved daily snapshots as a trend (MCP `autonomous_progress_trend`).
+
+```
+GET /api/autonomous/progress?tag_id=t-ui&since=2026-10-10&until=2026-10-20
+GET /api/autonomous/progress/trend?days=90
+```
+
+| Query | Route | Meaning |
+|---|---|---|
+| `automation_id` | progress | Count only the Automata of this Automation |
+| `tag_id` | progress | Count only the Automata carrying this tag |
+| `since` | progress | First day counted, `YYYY-MM-DD` (default: the configured `autonomous.progress.since`, else the first record's creation date) |
+| `until` | progress | Last day counted, `YYYY-MM-DD`, inclusive (default: now) |
+| `days` | trend | How many days back to read, 1 to 365 (default 30) |
+
+The progress reply carries `groups` (feature, bug and other), `totals`, `throughput`,
+`utilization`, `lead_time`, `inactive`, `remaining`, `completion`, `unfiled_rows`,
+`backlog_available` and `not_measured`. The backlog is read from
+`autonomous.progress.backlog_path`; a missing file gives `backlog_available: false`
+and is not an error. Explicit inactive windows are read from
+`operator-wait-windows.tsv` in the same folder as the backlog file. The trend reply is
+`{"days": N, "points": [...], "direction": "converging|widening|flat|unknown"}`; with no
+saved snapshots `points` is empty and `direction` is `unknown`. A bad date, `until`
+before `since`, or `days` outside 1 to 365 is a 400. Both routes need the autonomous
+read capability when called by a federated peer, and answer 503 when autonomous is off.
 
 The per-node engine cap is a daemon setting, so it goes through `configure`
 rather than an `autonomous` subcommand: `configure autonomous.max_engines_per_node=2`.
@@ -430,6 +2820,444 @@ The reply is the JSON response from the daemon, pretty-printed when
 short.
 
 ---
+
+## Operator question channel
+
+An Automaton (or its session, supervisor or another operator) raises a
+decision to the operator, and the operator answers from whichever surface is
+immediately to hand. There is **one generic question record**; the kind of
+question is the `label`, not a different structure — the shipped labels are
+`decision`, `design review`, `approval` and `information`, but users may add
+their own. Questions are kept forever (no deadline, no TTL) and raise never
+blocks the questioner.
+
+**Off by default.** Every endpoint is gated on the switch
+`autonomous.questions.enabled` (see [operations](../operations.md#operator-questions)).
+While the switch is false, all six endpoints refuse with `503` and name the
+switch: `operator questions are disabled: set autonomous.questions.enabled
+to true`. The switch is read live on every request, so `PUT /api/config`
+turns the channel on or off without a restart. If the daemon cannot open the
+question store it answers `503 operator questions are not available`
+instead of serving an empty channel.
+
+### Endpoints
+
+```
+POST /api/questions               raise a question                     (autonomous:write)
+GET  /api/questions               list, filters newest first           (autonomous:read)
+GET  /api/questions/{id}         one question + answer metadata       (autonomous:read)
+POST /api/questions/{id}/answer  record an answer                     (autonomous:write)
+POST /api/questions/{id}/withdraw  withdraw an open question          (autonomous:write)
+GET  /api/questions/{id}/answers  the answer log, oldest first        (autonomous:read)
+```
+
+Auth and capabilities follow the other `/api/autonomous` routes: the local
+admin caller passes as always; a federation peer needs **`autonomous:read`**
+for the three reads and **`autonomous:write`** for raise, answer and
+withdraw (a missing capability is a `403`). Answering needs only the write
+capability — an operator authorized for the Automaton may answer from
+any communication channel, and there is no separate answering capability.
+
+Common to every endpoint: `405` for a method other than the one shaped for
+the path (the shape is learnable only through its real method), `503` while
+the switch is off, and `404` both for an unknown question id and for any
+path below one that is not one of the three named sub-paths (`/answer`,
+`/withdraw`, `/answers`) — a fixed "not here", the same for every method,
+so no client learns a false endpoint shape.
+
+### Raise — `POST /api/questions`
+
+```bash
+curl -sX POST http://localhost:7433/api/questions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "label": "decision",
+    "context": "task",
+    "task_id": "a1b2c3d4",
+    "text": "Which migration strategy for the users table?",
+    "options": [
+      {"id": "online",  "label": "online migration", "tradeoffs": "slow, zero downtime"},
+      {"id": "offline", "label": "offline migration", "tradeoffs": "fast, 10 min downtime window"}
+    ],
+    "default": "hold",
+    "recommendation": {"option_id": "online", "rationale": "the site is live 24/7"},
+    "asked_by": "session:9f8e",
+    "asker_kind": "session"
+  }'
+```
+
+201 with `{"question": {…}}`. Body caps and rules:
+
+| Field | Rule |
+|---|---|
+| `text` | required, ≤ 8192 bytes; whitespace-only is rejected |
+| `label` | ≤ 64 characters, no control characters; empty defaults to `decision` |
+| `options` | 2 to 20; unique non-empty `id` and `label` (label ≤ 200 bytes); `tradeoffs` ≤ 1000 bytes |
+| `default` | required — either an option id of this question or the word `hold`, so no choice is ever silent |
+| `recommendation` | optional; `option_id` must exist among the options; `rationale` ≤ 1000 bytes |
+| `risk` | `"normal"` (default) or `"low"` |
+| `priority` | `"normal"` (default) or `"high"`; empty accepted and means `normal`. Separate from `risk`: the risk says how dangerous a wrong answer is, the priority says how urgently an operator should act. A `high` raise additionally lands in the alert store (see "Notifications", below); anything else is a `400` naming the field |
+| `return_path` | boolean, default `false`. Opt this one question into the single `DATAWATCH_ANSWER:` line delivered to its `session_id` when the answer is recorded; needs `autonomous.questions.return_path` on. `false` (the default) uses the events-plus-polling path |
+| `session_id` | the session that asked, when `asker_kind` is `session`; required together with `return_path: true` |
+| `context` | one of `none`, `prd`, `task`, `proposal`, `registry_row`; the matching link is required (`prd_id`, `task_id`, `proposal_path`, `registry_row_key`) and `none` must carry none of them. A proposal path, wherever given, must be repository-relative (no leading `/`, no `..` segment) |
+| `asker_kind` | `session`, `supervisor`, `operator` or `system`; empty defaults to `operator` |
+| `asked_by` | the asker of record; empty defaults to the caller (the audit actor) |
+
+The full body is capped at 64 KiB (`413` when exceeded, refused before the
+read runs to the end), and content after the JSON object is a `400` — a
+double-encoded or duplicated body is malformed, not silently ignored.
+Validation refusals are a `400` that names every offending field, and none of
+it is stored.
+
+### List — `GET /api/questions`
+
+200 with `{"count": N, "questions": [ … ]}`, newest first (`questions` is
+`[]`, never null, when nothing matches).
+
+| Parameter | Values |
+|---|---|
+| `state` | `open`, `answered`, `withdrawn`, `expired` or `all` (default: all) |
+| `context` | `none`, `prd`, `task`, `proposal`, `registry_row` or `all` (default: all) |
+| `asker` | exact match on `asked_by` |
+| `text` | case-insensitive substring over the question text, the option labels and tradeoffs, and the answer quotes |
+| `limit` | positive integer; default 100, silently capped at 1000 |
+
+An unknown `state` or `context` is a `400` naming the value; a `limit`
+that is not a positive integer is a `400` (`limit must be a positive
+integer`). Both are plain-text bodies — see the note under **Status codes**.
+
+### One question — `GET /api/questions/{id}`
+
+200 with the question record (state, `priority`, `return_path`, options and
+the asker's recommendation included on the record itself) plus the answer
+path in the same read:
+
+```json
+{
+  "question": { "id": "q1", "state": "answered", "priority": "high", "…": "…" },
+  "answer_count": 3,
+  "current_answer_id": "a3",
+  "answer": {
+    "id": "a3",
+    "chosen_option_id": "online",
+    "quote": "online, and schedule it for the next low-traffic window",
+    "actor": "operator",
+    "surface": "cli",
+    "created_at": "2026-11-01T08:00:00Z"
+  }
+}
+```
+
+`answer_count` is every answer ever recorded — superseded ones included, they
+are decided and never deleted — and `current_answer_id` is the id of the
+answer in force (empty when there is none). While the question has no
+answer, `current_answer_id` is empty and `answer` is `null`; once it does,
+`answer` is the standing answer's summary — id, chosen option, the
+**verbatim quote exactly as stored** (never trimmed or re-encoded), who
+answered, on which surface, and when. An asker that cannot subscribe polls
+this one read for the whole return path. The full answer log, with text,
+is the answers read below. `404` for an unknown id.
+
+### Answer — `POST /api/questions/{id}/answer`
+
+```bash
+curl -sX POST http://localhost:7433/api/questions/q1/answer \
+  -H "Content-Type: application/json" \
+  -d '{"chosen_option_id": "online", "quote": "online, and schedule it for the next low-traffic window", "actor": "operator", "surface": "cli"}'
+```
+
+201 with `{"answer": {…}, "question": {…}}` — the stored answer (including
+`quote_sha256`) and the question's new state.
+
+| Field | Rule |
+|---|---|
+| `chosen_option_id` | must name an option of the question; at least one of this or a non-blank `quote` is required |
+| `quote` | the operator's own words, stored exactly as received — no trimming, normalising or re-encoding; ≤ 16384 bytes; must be valid UTF-8 (a byte string that decodes to nothing is a `400`, `answer quote is not valid UTF-8`, before anything is stored) |
+| `supersedes` | the id of the answer being replaced (see "Changed minds" below) |
+| `surface` | `pwa`, `android`, `ios`, `cli`, `rest`, `mcp` or `comm:<channel name>`; empty defaults to `rest`; anything else (including `system`) is a `400` naming the accepted set |
+| `source_message_id` | the message that carried the answer, when it came over a comm channel |
+| `actor` | the answering party of record; empty defaults to the caller (the audit actor) |
+
+**Quotes and the SHA-256.** The store records the `quote_sha256`, the
+lowercase hex SHA-256 of the exact bytes of the quote, so any later copy of a
+stored quote can be checked against the record. The quote itself is never
+derived, trimmed or altered.
+
+**Secret refusal.** An answer whose text matches a secret pattern (private
+keys, cloud key ids and secret keys, provider tokens, `sk-` keys, bearer
+tokens, `password=/token=/…` assignments, …) is **refused with `422`, never
+stored, and the response never echoes any part of the submitted text** —
+`error` is the fixed phrase `matched: secret pattern` (*not* the name of
+the specific rule that matched) and `suggestion` lists the two safe routes;
+the matched rule's name goes to the audit entry instead:
+
+```json
+{
+  "error": "Your answer was not stored because it looks like a secret (matched: secret pattern). Resend it without the secret. Two safe routes: store the secret in the datawatch secrets store and refer to it by name as ${secret:name}, or save it on the filesystem and point the session to the file.",
+  "reason": "secret_detected",
+  "suggestion": [
+    "store it in the datawatch secrets store and refer to it as ${secret:name}",
+    "save it on the filesystem and point the session to the file"
+  ]
+}
+```
+
+Well-formed `${secret:name}` references are references, not secrets, and pass
+the scan. The refusal is itself audited (event `question_answer_refused`)
+with the matched rule's name only — never with the answer's text, so a
+rejected secret leaves no copy of it in the log.
+
+### Withdraw — `POST /api/questions/{id}/withdraw`
+
+```bash
+curl -sX POST http://localhost:7433/api/questions/q1/withdraw \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "superseded by the new plan", "actor": "operator"}'
+```
+
+200 with `{"question": {…}}` in its new state. `reason` and `actor` are both
+optional; `actor` defaults to the caller. Withdrawing works only while the
+question is still `open`; withdrawing one that has already moved on is a
+`409` (the message names the state).
+
+### Answer log — `GET /api/questions/{id}/answers`
+
+200 with the full log, oldest first, each answer carrying its derived
+superseded state plus the answer in force:
+
+```json
+{
+  "answers": [
+    {"id": "a1", "question_id": "q1", "quote": "offline is fine", "superseded": true, "superseded_by": "a2", "…": "…"},
+    {"id": "a2", "question_id": "q1", "quote": "actually online", "chosen_option_id": "online", "superseded": false, "…": "…"}
+  ],
+  "current_answer_id": "a2"
+}
+```
+
+`superseded` / `superseded_by` are derived on read from the log — the answer
+lines themselves never change (see below). `404` for an unknown id.
+
+### States, immutability and changed minds
+
+A question moves `open` → `answered` or `open` → `withdrawn`; `expired` is
+the fourth state, terminal like the other two. `open` and `answered` are the
+only states that accept answers; a withdrawn question accepts none.
+
+- **Questions and answers are immutable.** The record is append-only (JSON
+  lines in `<data_dir>/questions.jsonl`); superseded answers are derived on
+  read, and nothing is ever edited or deleted. There is no TTL and no
+  expiry job — a question stays until it is answered or withdrawn.
+- **A changed mind is a new answer, not an edit.** An open question accepts
+  only an answer with no `supersedes` (carrying one is a `409` — the open
+  question has no current answer to replace, so the target is wrong), and
+  an answered question accepts only an answer whose `supersedes` names its
+  current answer — a target that is absent or different is a `409` naming
+  the answer ids. The new
+  answer becomes current; the old one stays in the log, marked superseded.
+- **No choice is silent.** A raised question must name a `default` — an
+  option or `hold` — so automation that walks past an unanswered question
+  has one declared default to act on.
+- **Raise never blocks.** Raising records the question and returns; the
+  asking side keeps running until it is answered (or the declared default is
+  honored).
+
+### Notifications: the raise announces, the answer and withdrawal fire events
+
+The channel is not only a store: while `autonomous.questions.enabled` is on,
+each state change reaches operators through the daemon's existing routes,
+and each is gated on its own toggle (all three default on when the key is
+absent; with the switch off, nothing in this section fires at all).
+
+**On raise — three announces, one per route** (fan-out after the raise is
+stored; a refused raise announces nothing):
+
+1. **WebSocket** — every connected client's hub receives `question_raised`
+   in data form `{id, label, text, options, priority, context}`. This is
+   the PWA's live feed; no other client is in the picture for the line.
+2. **Messaging group** — `autonomous.questions.notify_messaging` (on by
+default): one line per active messaging route, the hostname, question id
+   and label, the priority, the text and the numbered option labels, plus
+   the pointer that answers post to `POST /api/questions/{id}/answer` (or
+   the PWA). Refused silently when no comm router backend is configured;
+   WS and alert are unaffected.
+3. **Alert** — `autonomous.questions.notify_alert` (on by default) and
+   **`priority: "high"` only**: one **warning-level** alert in the alert
+   store (`GET /api/alerts`), titled
+   `Operator question raised (high priority): <question-id> — <label>`,
+   with the text and the option labels in the body, broadcast to the same
+   WebSocket hub and surfaced by the PWA's alert dock. Normal-priority
+   raises never alert. One-way: it says nothing back to the asker.
+
+**On answer and on withdrawal — lifecycle events**, on the ordinary
+lifecycle event rails (subscribing on any surface — REST/MCP/CLI/comm,
+every sink type — rides them, and the kinds are in the closed
+`KnownEventKinds` set, so a subscription's `filter.kinds` may name them):
+
+| Kind | Fires when | What the subscriber sees |
+|---|---|---|
+| `question.answered` | an `open` question's state becomes `answered` — first answer or a superseding one | the question id, the answer id, the chosen option, the actor, one-line details (capped at 512 characters, no newlines), and the Automaton/task/session ids when the question named them (the level is `task` when the question carries a `task_id`, else `prd`) |
+| `question.withdrawn` | an `open` question's state becomes `withdrawn` | the question id, the actor, the `reason` (when given), one-line details, the same link ids |
+
+Exactly-once is guaranteed by the event sink, not by the caller: the
+store stamps an emit marker at record time, and a startup reconcile
+re-fires exactly the events that were recorded but never delivered (a
+daemon restart between record and fire loses nothing, and delivers
+nothing twice).
+
+**The opt-in session line** (`return_path` on the raise +
+`autonomous.questions.return_path` on): when an answer is recorded,
+**exactly one line** is delivered to the asking session through its input
+path (the daemon's own operator-input send), the instant it is stored:
+
+```
+DATAWATCH_ANSWER: {"question_id":"q1","answer_id":"a3","chosen_option":"online","quote":"online, and schedule it for the next low-traffic window","actor":"operator","at":"2026-11-01T08:00:00Z"}
+```
+
+It is a single physical line (the quote is JSON-escaped inside it, never
+multi-line), carrying the question id, the answer id, the chosen option
+(empty when the answer was a quote alone), the verbatim quote, who
+answered and when — no other fields. A question is
+**not** re-opened on a re-answer; every one of the above is fire-and-
+forget: a session that has gone away costs the asker one daemon warning
+line (the answer is already stored, nothing is queued for later delivery,
+and there is no retry).
+The default return path — the `question_raised` WebSocket message, the
+`question.answered` event, and polling `GET /api/questions/{id}` for the
+answer summary — is always on and is what every asker gets even when
+it does not opt in.
+
+### Worker questions
+
+A worker session can raise a question by printing a marker line instead of
+calling `POST /api/questions`. The line is `DATAWATCH_QUESTION:` followed by
+one line of JSON; the output scanner recognises it and the daemon raises it
+through the same store path a `POST /api/questions` takes, so the audit entry,
+the decision-log entry and the three raise announcements are the ones a REST
+raise produces. There is no new route and no new MCP tool: a worker question is
+read and answered with the six endpoints above. How-to:
+[howto/operator-questions-workers](../howto/operator-questions-workers.md).
+
+**Off by default.** The marker is acted on only while
+`autonomous.questions.enabled` **and** `autonomous.questions.worker_marker` are
+`true`. Both are read live at each marker line.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `autonomous.questions.worker_marker` | boolean | off when absent | Whether a question marker in a worker's output is raised as a question. It changes nothing while `autonomous.questions.enabled` is off. Set with `PUT /api/config` and `{"autonomous.questions.worker_marker": true}`; no restart. |
+
+**The marker payload.** Unknown keys make the line malformed. The whole line is
+capped at 16384 bytes.
+
+| Key | Rule |
+|---|---|
+| `question` | required, up to 8192 bytes, not blank |
+| `options` | 2 to 20 items `{id, label, tradeoffs}`; unique non-empty `id`; `label` up to 200 bytes; `tradeoffs` up to 1000 bytes |
+| `recommendation` | optional `{option_id, rationale}`; `option_id` must exist; `rationale` up to 1000 bytes |
+| `default` | an option id or `hold`; absent means `hold` |
+| `blocked` | boolean, default `false` |
+| `label` | `decision` (default), `design review`, `approval` or `information` |
+| `risk` | `normal` (default) or `low` |
+
+**Fields of the stored question.** A marker question is asked by
+`worker-<short session id>` (`asker_kind: session`), carries the worker's
+`session_id` and is linked to its task (`context: task`), or to its Automaton
+(`context: prd`) when it has no task, or `none`. It has `priority: normal` and
+`return_path: false`. Three fields are new on the question record and on
+`GET /api/questions` and `GET /api/questions/{id}`; each is left out when empty,
+so a record written before they existed reads as before:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `blocking` | boolean | The asker said it cannot go on until the question is decided (the marker's `blocked`). A REST raise is never blocking. |
+| `source` | string | How the question arrived: `marker` (a worker's marker line) or `rest` (`POST /api/questions`). Empty on a record written before the field existed. A `marker` question must carry a `session_id` and a `source_line_sha256`. |
+| `source_line_sha256` | string | Lowercase hex SHA-256 (64 characters) of the marker line. It is the dedupe key: a second scan of the same line while its question is open raises nothing. Never the line text. |
+
+**The `await_decision` wait reason.** A task with an open blocking question is
+parked: it is waiting with the `wait_reason` `await_decision: <question id>`
+(`cause` `await_decision` on the waiting-task list of the capacity status, a
+new value beside `await_external`). The park returns the capacity lease,
+releases the project-tree lock unless the tree has unpushed work, and counts no
+retry or failure. The coordinator tick resumes the task from the answered and
+withdrawn questions it reads with `GET /api/questions` filters (it never reads a
+terminal), and sends the worker one `[automaton decision] …` line carrying the
+question id, the chosen option, the quote (JSON-encoded) and the answer id. A
+withdrawn question resumes the task with a line saying no default was applied.
+Show an unknown `cause` as plain text.
+
+**Refused lines.** A marker line that fails validation is never stored. It is
+written to the audit log as `question_marker_refused`: subject the session id;
+details `session_id`, `reason` (`malformed`, `too_long`, `empty_question`,
+`too_few_options`, `duplicate_option`, `invalid_label`, `invalid_risk`,
+`invalid_default`, `invalid_recommendation` or `invalid_question`) and
+`line_sha256`. The line text is never in the entry. Read them with
+`GET /api/audit?action=question_marker_refused`.
+
+### Status codes
+
+| Code | When |
+|---|---|
+| 200 | list, by-id get, withdraw, answer log |
+| 201 | raise (`{question}`); answer (`{answer, question}`) |
+| 400 | malformed body (bad JSON, content after the object); a validation rule failed (every offending field named); an unknown `surface` on an answer; an answer that carries neither option nor non-blank quote; an option id the question does not have; a quote that is not valid UTF-8 (`answer quote is not valid UTF-8`); an unknown `state` / `context` filter (the value named); a `limit` that is not a positive integer (`limit must be a positive integer`) |
+| 403 | a federation peer without the capability the action needs |
+| 404 | an unknown question id; any sub-path of a question that is not /answer, /withdraw or /answers |
+| 405 | a method other than the one shaped for the path |
+| 409 | answering a withdrawn or expired question; an answer on an open question that names a supersedes (no current answer to replace); an answer on an answered question whose supersedes is absent or wrong (the answer ids named); withdrawing a question that is not open |
+| 413 | a raise or withdraw body over 64 KiB; an answer body over 64 KiB plus the quote cap; a quote over 16384 bytes |
+| 422 | an answer looks like a secret (see "Secret refusal" above) — never stored, never echoed; the body carries the fixed phrase `matched: secret pattern`, not the rule name, plus the `suggestion` routes |
+| 500 | the store could not append or replay an otherwise-valid write |
+| 503 | the `autonomous.questions.enabled` switch is off (named in the message), or the store is not wired |
+
+**Error body shape — one deliberate split, plan for it.** Raise and list
+failures come back **plain text** — the message only, no JSON wrapper (e.g.
+`limit must be a positive integer`, `options must have 2 to 20 items`).
+Answer, withdraw and the answer-log failures come back as a **JSON object
+with one `error` field** (e.g. `answer carries neither an option nor
+non-blank text`, `answer must name the answer it supersedes`, `answer
+supersedes the wrong target`, `question is not open`). A secret refusal uses that same object with `reason`
+(`secret_detected`) and `suggestion` added. `403`, `404`, `405` and `503`
+are plain text on every endpoint. Parse `Content-Type`, not the path.
+
+### Audit
+
+Each action writes an audit entry with the question's ids, the actor of
+record and the fields needed to reconstruct the decision:
+`question_raised`, `question_answered` (the quote **kept verbatim**, exactly
+as that operator wrote it), `question_withdrawn`, `question_expired`,
+`answer_superseded` when a supersede lands (the replacing answer's quote
+kept), and `question_answer_refused` for a secret refusal — the matched
+rule's name only, never the text.
+A worker marker line that fails validation writes `question_marker_refused`
+(session id, reason category and line hash only; see "Worker questions").
+
+---
+
+### Worker question stats — `GET /api/questions/stats`
+
+Read-only counters for the worker marker. They count since daemon start and
+reset when the daemon restarts; the questions themselves are in the store and
+are not lost.
+
+| Field | Meaning |
+|---|---|
+| `raised` | marker lines stored as new questions |
+| `duplicate` | marker lines that repeated a question still open |
+| `refused` | marker lines that failed validation and stored nothing (each is also audited as `question_marker_refused`) |
+| `parked` | tasks parked on a blocking question |
+| `resumed` | parked tasks resumed after the question was decided |
+| `open_marker_questions` | open questions that came from a marker line, now |
+| `open_blocking_questions` | open questions that hold a task, now |
+| `questions_enabled`, `worker_marker_enabled` | the two live switches |
+
+It answers 200 whether or not the channel is on (the other question routes answer
+503 while it is off), so a monitor can tell off from idle. It needs the autonomous
+read capability; any other method is 405. The same object is the MCP tool
+`question_stats`. The five counters are also in the stats snapshot that feeds the
+Monitor tab (`worker_questions_raised`, `worker_questions_duplicate`,
+`worker_questions_refused`, `worker_questions_parked`, `worker_questions_resumed`, each
+left out while zero) and in the Prometheus metric
+`datawatch_worker_questions_total{outcome="raised|duplicate|refused|parked|resumed"}`.
 
 ## Storage
 
@@ -460,6 +3288,44 @@ cross-cluster orchestration, plugin/external-tool integration, richer
 auto-pause / auto-resume across daemon restarts. Long-form PRD-DAG
 orchestration with guardrail sub-agents is BL117 (Sprint S8 / v3.12.0+).
 
+## Defect queue
+
+Groups defects into batch Automata and routes tiny fixes. Settings live under
+`autonomous.defect_queue.*`. Walkthrough:
+[howto/automata-defect-queue](../howto/automata-defect-queue.md).
+
+```
+POST   /api/autonomous/defects/intake            route one defect (tiny_fix / open_batch / new_batch)
+GET    /api/autonomous/defects/batches           open batches with the story-to-defect map; ?project= filters
+POST   /api/autonomous/defects/batches/{id}/split  move one story to its own Automaton
+POST   /api/autonomous/defects/tiny-fix/check    would this change be a tiny fix? (read-only)
+```
+
+| Endpoint | Body | Answer | Permission |
+|---|---|---|---|
+| `POST .../intake` | `{id, title, project, description?, files?, kind?, area?, priority?}` (`id`, `title`, `project` required) | `{route, batch_id?, reason, tiny_fix_refusal?}`; the decision is also appended to `defect_intake_decisions.jsonl` in the data dir | `autonomous:write` |
+| `GET .../batches` | none | `{batches: [{id, project, area, status, size, stories: [{story_id, defect_id, title}]}], total}` | `autonomous:read` |
+| `POST .../batches/{id}/split` | `{story_id}` | `{automaton_id, batch_id, story_id}` | `autonomous:write` |
+| `POST .../tiny-fix/check` | `{files, kind, project?}` | `{eligible, reason, refused_paths?}` | `autonomous:read` |
+
+Errors: `400` for a missing required field or bad JSON, `404` when the batch
+or story is unknown, `409` when the defect queue is disabled for the project,
+`503` when the queue is not wired.
+
+MCP tools: `autonomous_defect_intake`, `autonomous_defect_batches`,
+`autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`. CLI:
+`datawatch autonomous defect intake|batches|split|tiny-fix-check`. Comm:
+`autonomous defect-intake|defect-batches|defect-split`.
+
+Settings (`PUT /api/config`, one validator for every surface):
+`enabled`, `batch.size_cap`, `batch.grouping_keys`, `batch.allow_unrelated`,
+`batch.priority_rule`, `tiny_fix.enabled`, `tiny_fix.max_files`,
+`tiny_fix.allowed_path_globs`, `tiny_fix.allowed_kinds`,
+`tiny_fix.operator_visible_path_globs`, and per-project overrides under
+`projects.<project>.<batch|tiny_fix key>`.
+
+---
+
 ---
 
 <!-- BL279 see-also footer -->
@@ -470,3 +3336,4 @@ orchestration with guardrail sub-agents is BL117 (Sprint S8 / v3.12.0+).
 - [howto/autonomous-review-approve](../howto/autonomous-review-approve.md)
 - [howto/automata-orchestrator](../howto/automata-orchestrator.md)
 - [howto/guardrail-library](../howto/guardrail-library.md)
+- [howto/automata-defect-queue](../howto/automata-defect-queue.md)

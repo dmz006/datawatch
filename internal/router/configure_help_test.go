@@ -66,6 +66,39 @@ func TestHandleConfigure_HelpAndListMentionMaxEnginesPerNode(t *testing.T) {
 	}
 }
 
+// B165 — the boot-resume age limit (default 3600; 0 = never resume,
+// -1 = no age limit) must be listed on the same surfaces as the
+// concurrency keys so callers know it exists.
+func TestHandleConfigure_HelpAndListMentionResumeMaxAge(t *testing.T) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var sent []string
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(string, string) error { return nil })
+
+	for _, text := range []string{"help", "list"} {
+		wg.Add(1)
+		r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+		wg.Wait()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 2 {
+		t.Fatalf("sent=%q", sent)
+	}
+	for i, s := range sent {
+		if !strings.Contains(s, "autonomous.resume_max_age_seconds") {
+			t.Errorf("reply %d lacks autonomous.resume_max_age_seconds: %q", i, s)
+		}
+	}
+}
+
 func TestHandleConfigure_AcceptsMaxEnginesPerNodeNumeric(t *testing.T) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -93,5 +126,124 @@ func TestHandleConfigure_AcceptsMaxEnginesPerNodeNumeric(t *testing.T) {
 	}
 	if len(sent) != 1 || !strings.Contains(sent[0], "Set autonomous.max_engines_per_node = 2") {
 		t.Fatalf("sent=%q", sent)
+	}
+}
+
+func TestHandleConfigure_HelpAndListMentionGateDisagreement(t *testing.T) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var sent []string
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(string, string) error { return nil })
+
+	for _, text := range []string{"help", "list"} {
+		wg.Add(1)
+		r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+		wg.Wait()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 2 {
+		t.Fatalf("sent=%q", sent)
+	}
+	for i, s := range sent {
+		if !strings.Contains(s, "autonomous.gate_disagreement") {
+			t.Errorf("reply %d lacks autonomous.gate_disagreement: %q", i, s)
+		}
+	}
+}
+
+func TestHandleConfigure_AcceptsGateDisagreement(t *testing.T) {
+	var wg sync.WaitGroup
+	capture := func(s string) { wg.Done() }
+	var gotKey, gotValue string
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(key, value string) error {
+		gotKey, gotValue = key, value
+		return nil
+	})
+
+	wg.Add(1)
+	r.handleConfigure(Command{Type: CmdConfigure, Text: "autonomous.gate_disagreement=block"})
+	wg.Wait()
+	if gotKey != "autonomous.gate_disagreement" || gotValue != "block" {
+		t.Fatalf("configureFn got key=%q value=%q", gotKey, gotValue)
+	}
+}
+
+func TestRateCeilingComm_ConfigureAndHelp(t *testing.T) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var sent []string
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	got := map[string]string{}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(k, v string) error { got[k] = v; return nil })
+
+	for _, kv := range []string{"autonomous.capacity_rate_requests=60", "autonomous.capacity_rate_tokens=2000000", "autonomous.capacity_rate_window_seconds=1800", "help", "list"} {
+		wg.Add(1)
+		r.handleConfigure(Command{Type: CmdConfigure, Text: kv})
+		wg.Wait()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got["autonomous.capacity_rate_requests"] != "60" || got["autonomous.capacity_rate_tokens"] != "2000000" || got["autonomous.capacity_rate_window_seconds"] != "1800" {
+		t.Fatalf("configureFn got %v", got)
+	}
+	for _, s := range sent[3:] {
+		for _, k := range []string{"capacity_rate_requests", "capacity_rate_tokens", "capacity_rate_window_seconds"} {
+			if !strings.Contains(s, "autonomous."+k) {
+				t.Errorf("help/list reply lacks autonomous.%s: %q", k, s)
+			}
+		}
+	}
+}
+
+// The failure escalation keys are set from chat with configure, so both the
+// usage text and the list text must name each of them.
+func TestFailureEscalationConfigureHelpListsKeys(t *testing.T) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var sent []string
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(string, string) error { return nil })
+
+	for _, text := range []string{"help", "list"} {
+		wg.Add(1)
+		r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+		wg.Wait()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 2 {
+		t.Fatalf("sent=%q", sent)
+	}
+	for i, s := range sent {
+		for _, key := range []string{
+			"autonomous.failure_escalation.enabled",
+			"autonomous.failure_escalation.max_failures",
+			"autonomous.failure_escalation.steps",
+		} {
+			if !strings.Contains(s, key) {
+				t.Errorf("reply %d lacks %s: %q", i, key, s)
+			}
+		}
 	}
 }

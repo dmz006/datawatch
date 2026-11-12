@@ -70,7 +70,7 @@ func TestReconcileServiceMode_ReattachesService(t *testing.T) {
 		ProjectProfile: "p-svc",
 		ClusterProfile: "c1",
 		Branch:         "main",
-		Addr:           "10.0.0.1:8080",
+		Addr:           "192.0.2.1:8080",
 	}}
 	res, err := m.ReconcileServiceMode(context.Background())
 	if err != nil {
@@ -86,7 +86,7 @@ func TestReconcileServiceMode_ReattachesService(t *testing.T) {
 	if got.State != StateReady {
 		t.Errorf("state=%s want ready", got.State)
 	}
-	if got.DriverInstance != "fake-cid" || got.ContainerAddr != "10.0.0.1:8080" {
+	if got.DriverInstance != "fake-cid" || got.ContainerAddr != "192.0.2.1:8080" {
 		t.Errorf("driver/addr not populated: %+v", got)
 	}
 }

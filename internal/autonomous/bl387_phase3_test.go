@@ -46,21 +46,6 @@ func bl387Phase3Setup(t *testing.T) (*Manager, *PRD, SpawnFn, VerifyFn) {
 	return m, prd, spawn, verify
 }
 
-// waitForMemoryReport polls PRD.MemoryReport until non-empty or timeout.
-func waitForMemoryReport(t *testing.T, m *Manager, prdID string) *PRD {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		p, ok := m.Store().GetPRD(prdID)
-		if ok && p.MemoryReport != "" {
-			return p
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	p, _ := m.Store().GetPRD(prdID)
-	return p
-}
-
 // TestBL387_AutoReport_CalledOnCompletion verifies that memoryReportFn fires
 // after Run() when all tasks succeed and MemorySeed.Enabled=true.
 func TestBL387_AutoReport_CalledOnCompletion(t *testing.T) {
@@ -78,8 +63,13 @@ func TestBL387_AutoReport_CalledOnCompletion(t *testing.T) {
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	// Report fires in a goroutine — wait briefly.
-	waitForMemoryReport(t, m, prd.ID)
+	// Report fires in a goroutine — wait on that goroutine's own exit (a real
+	// condition), not a wall-clock poll. The previous poll raced the report
+	// goroutine (a known flake: the report could still be writing when the
+	// test ended).
+	if err := m.WaitMemoryReports(5 * time.Second); err != nil {
+		t.Fatalf("WaitMemoryReports: %v", err)
+	}
 
 	mu.Lock()
 	n := len(reportCalls)
@@ -108,7 +98,8 @@ func TestBL387_AutoReport_NotCalledWhenSeedDisabled(t *testing.T) {
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond) // let goroutine fire if it was going to
+	// The report goroutine is only spawned synchronously inside Run when
+	// enabled, so nothing can still be pending here.
 
 	if called {
 		t.Error("memoryReportFn must NOT be called when MemorySeed.Enabled=false")
@@ -147,7 +138,18 @@ func TestBL387_AutoReport_StoredOnPRD(t *testing.T) {
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	p := waitForMemoryReport(t, m, prd.ID)
+	// Wait on the report goroutine's own exit (a real condition) so the PRD
+	// write (MemoryReport + MemoryReportAt) is fully landed before asserting,
+	// then read a snapshot. The previous wall-clock poll raced the report
+	// goroutine (a known flake: the report could still be writing when the
+	// test ended).
+	if err := m.WaitMemoryReports(5 * time.Second); err != nil {
+		t.Fatalf("WaitMemoryReports: %v", err)
+	}
+	p, pOK := m.Store().SnapshotPRD(prd.ID)
+	if !pOK {
+		t.Fatal("PRD missing after completion")
+	}
 
 	if p.MemoryReport == "" {
 		t.Error("expected PRD.MemoryReport to be populated, got empty string")
@@ -164,14 +166,20 @@ func TestBL387_AutoReport_StoredOnPRD(t *testing.T) {
 func TestBL387_AutoReport_ErrorDoesNotAbortCompletion(t *testing.T) {
 	m, prd, spawn, verify := bl387Phase3Setup(t)
 
+	fired := make(chan struct{}, 1)
 	m.SetMemoryReportFn(func(_ context.Context, _, _ string) (string, error) {
+		fired <- struct{}{}
 		return "", context.DeadlineExceeded
 	})
 
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond) // let goroutine settle
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("memoryReportFn was never called")
+	}
 
 	p, _ := m.Store().GetPRD(prd.ID)
 	if p.Status != PRDCompleted {
@@ -187,14 +195,20 @@ func TestBL387_AutoReport_ErrorDoesNotAbortCompletion(t *testing.T) {
 func TestBL387_AutoReport_EmptyStringNotStored(t *testing.T) {
 	m, prd, spawn, verify := bl387Phase3Setup(t)
 
+	fired := make(chan struct{}, 1)
 	m.SetMemoryReportFn(func(_ context.Context, _, _ string) (string, error) {
+		fired <- struct{}{}
 		return "", nil // empty — nothing to store
 	})
 
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond) // let goroutine settle
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("memoryReportFn was never called")
+	}
 
 	p, _ := m.Store().GetPRD(prd.ID)
 	if p.MemoryReport != "" {

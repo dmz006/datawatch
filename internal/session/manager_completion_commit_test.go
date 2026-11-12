@@ -39,10 +39,11 @@ func TestCommitOnCompletion_CommitsWorkWithWorkerSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "abcd", FullID: "testhost-abcd", Hostname: "testhost",
-		State: StateRunning, OneShot: true, ValidateCommands: []string{"true"}, ProjectDir: dir,
+		State: StateRunning, OneShot: true, Git: true, ValidateCommands: []string{"true"}, ProjectDir: dir,
 		LogFile: logFile, Task: "add the widget",
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -106,6 +107,7 @@ func TestCommitOnCompletion_NeverCommitsForInteractiveSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "ab22", FullID: "testhost-ab22", Hostname: "testhost",

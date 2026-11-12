@@ -28,22 +28,26 @@ func (m *Manager) RecordTaskAttemptSnapshot(prdID, taskID, ref string) error {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				recordAttemptSnapshot(&prd.Story[si].Tasks[ti], ref)
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					recordAttemptSnapshot(&prd.Story[si].Tasks[ti], ref)
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
 		if found {
-			break
+			prd.UpdatedAt = time.Now()
 		}
-	}
+	})
 	if !found {
 		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
 }

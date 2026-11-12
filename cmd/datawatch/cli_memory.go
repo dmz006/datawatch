@@ -1,7 +1,7 @@
 // v7.0.0 S5 — CLI for the scope-hierarchy memory model.
 //
-//	datawatch memory scope recall --persona alice --project /home/me/proj --session sess1
-//	datawatch memory scope borrow --scope project-shared --project /home/me/proj
+//	datawatch memory scope recall --persona alice --project /home/<user>/proj --session sess1
+//	datawatch memory scope borrow --scope project-shared --project /home/<user>/proj
 //	datawatch memory scope seed --from-scope project-shared --from-project /a --to-scope session-local --to-project /b --to-session sess2
 //	datawatch memory scope promote --memory-id 42 --from-scope session-local --to-scope project-shared --persona alice
 

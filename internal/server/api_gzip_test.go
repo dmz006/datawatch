@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -511,7 +514,7 @@ func TestFetchRemoteSessions_PeerGzip(t *testing.T) {
 		_, _ = io.WriteString(w, peerBody)
 	})))
 	defer peer.Close()
-	sessions, err := fetchRemoteSessions(peer.URL, "tok")
+	sessions, err := fetchRemoteSessions(http.DefaultClient, peer.URL, "tok")
 	if err != nil {
 		t.Fatalf("fetchRemoteSessions: %v", err)
 	}
@@ -607,3 +610,356 @@ func TestAPIGzipSettings_NilAndNegative(t *testing.T) {
 
 // headerSpy lets a test observe the headers a wrapped handler sent.
 type headerSpy struct{ http.ResponseWriter }
+
+// reflectedPayload is a request value that would execute if the response
+// carrying it were ever rendered as HTML.
+const reflectedPayload = `<html><script>alert(document.domain)</script></html>`
+
+// echoHandler reflects the "q" query value into the body, optionally with
+// no Content-Type (the handler-forgot case) and a body of padLen extra bytes.
+func echoHandler(contentType string, padLen int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
+		_, _ = io.WriteString(w, r.URL.Query().Get("q")+strings.Repeat(" ", padLen))
+	}
+}
+
+func serveEcho(h http.Handler, acceptEncoding string) *httptest.ResponseRecorder {
+	q := url.QueryEscape(reflectedPayload)
+	return serveGzip(h, http.MethodGet, "/api/echo?q="+q, acceptEncoding)
+}
+
+func assertNotHTML(t *testing.T, rr *httptest.ResponseRecorder) {
+	t.Helper()
+	ct := rr.Header().Get("Content-Type")
+	if ct == "" || strings.Contains(strings.ToLower(ct), "html") || strings.Contains(strings.ToLower(ct), "xml") {
+		t.Fatalf("reflected body served with Content-Type %q, want explicit non-HTML", ct)
+	}
+	if got := rr.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+}
+
+func TestAPIGzip_ReflectedValueNonHTMLNosniff(t *testing.T) {
+	cases := []struct {
+		name   string
+		ct     string
+		pad    int
+		min    int
+		accept string
+	}{
+		{"missing type small gzip", "", 0, 4096, "gzip"},
+		{"missing type large gzip", "", 5000, 64, "gzip"},
+		{"missing type no gzip accept", "", 0, 64, ""},
+		{"missing type HEAD-free large no accept", "", 5000, 64, ""},
+		{"json small", "application/json", 0, 4096, "gzip"},
+		{"json large", "application/json", 5000, 64, "gzip"},
+		{"plain large", "text/plain; charset=utf-8", 5000, 64, "gzip"},
+	}
+	// A body the handler gave no type is escaped; typed bodies are never altered.
+	want := func(ct string) string {
+		if ct == "" {
+			return html.EscapeString(reflectedPayload)
+		}
+		return reflectedPayload
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newAPIGzipHandler(fixedGzipSettings(true, tc.min), echoHandler(tc.ct, tc.pad))
+			rr := serveEcho(h, tc.accept)
+			assertNotHTML(t, rr)
+			if tc.ct != "" && rr.Header().Get("Content-Type") != tc.ct {
+				t.Fatalf("Content-Type = %q, want handler's %q preserved", rr.Header().Get("Content-Type"), tc.ct)
+			}
+			body := rr.Body.Bytes()
+			if rr.Header().Get("Content-Encoding") == "gzip" {
+				body = []byte(gunzip(t, body))
+			}
+			if !strings.HasPrefix(string(body), want(tc.ct)) {
+				t.Fatalf("reflected value served as %.80q, want prefix %q", body, want(tc.ct))
+			}
+			if tc.ct == "" && strings.Contains(string(body), "<script") {
+				t.Fatalf("untyped markup body still carries live markup: %.80q", body)
+			}
+		})
+	}
+}
+
+func TestAPIGzip_GzipKeepsContentTypeAndEncoding(t *testing.T) {
+	h := newAPIGzipHandler(fixedGzipSettings(true, 64), echoHandler("application/json", 5000))
+	rr := serveEcho(h, "gzip")
+	if rr.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", rr.Header().Get("Content-Encoding"))
+	}
+	if rr.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json kept", rr.Header().Get("Content-Type"))
+	}
+	assertNotHTML(t, rr)
+}
+
+func TestAPIGzip_HTMLTypedByHandlerNotSniffedHere(t *testing.T) {
+	// A handler that sets its own type keeps it; the middleware only
+	// fills in a missing one and always adds nosniff.
+	h := newAPIGzipHandler(fixedGzipSettings(true, 64), echoHandler("text/event-stream", 0))
+	rr := serveEcho(h, "gzip")
+	if got := rr.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q, want text/event-stream", got)
+	}
+	if rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("missing nosniff")
+	}
+}
+
+func TestAPIGzip_DisabledStillNonHTMLNosniff(t *testing.T) {
+	h := newAPIGzipHandler(fixedGzipSettings(false, 64), echoHandler("", 0))
+	rr := serveEcho(h, "gzip")
+	assertNotHTML(t, rr)
+	if rr.Header().Get("Content-Encoding") != "" {
+		t.Fatalf("disabled middleware must not compress")
+	}
+	if rr.Header().Get("Vary") != "" {
+		t.Fatalf("disabled middleware must not add Vary")
+	}
+}
+
+func TestAPIGzip_ExplicitStatusBeforeBodyStillNonHTML(t *testing.T) {
+	// WriteHeader before Write freezes net/http's header snapshot, so the
+	// type has to be chosen before the status is sent.
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, r.URL.Query().Get("q"))
+	})
+	for _, accept := range []string{"gzip", ""} {
+		h := newAPIGzipHandler(fixedGzipSettings(true, 4096), inner)
+		rr := serveEcho(h, accept)
+		assertNotHTML(t, rr)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", rr.Code)
+		}
+	}
+}
+
+// A JSON body written in several chunks keeps its status, its handler-set
+// Content-Type and its exact bytes, compressed or not; the writes after the
+// first go through the already-committed path.
+func TestAPIGzip_ChunkedJSONKeepsStatusTypeAndBytes(t *testing.T) {
+	want := `{"q":"` + reflectedPayload + `","pad":"` + strings.Repeat("x", 3000) + `"}`
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		for i := 0; i < len(want); i += 700 {
+			end := i + 700
+			if end > len(want) {
+				end = len(want)
+			}
+			_, _ = io.WriteString(w, want[i:end])
+		}
+	})
+	for _, accept := range []string{"gzip", ""} {
+		rr := serveEcho(newAPIGzipHandler(fixedGzipSettings(true, 64), inner), accept)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("accept %q: status = %d, want %d", accept, rr.Code, http.StatusCreated)
+		}
+		if got := rr.Header().Get("Content-Type"); got != "application/json" {
+			t.Fatalf("accept %q: Content-Type = %q, want application/json", accept, got)
+		}
+		assertNotHTML(t, rr)
+		body := rr.Body.Bytes()
+		if accept == "gzip" {
+			if rr.Header().Get("Content-Encoding") != "gzip" {
+				t.Fatalf("Content-Encoding = %q, want gzip", rr.Header().Get("Content-Encoding"))
+			}
+			body = []byte(gunzip(t, body))
+		} else if rr.Header().Get("Content-Encoding") != "" {
+			t.Fatalf("no Accept-Encoding but Content-Encoding = %q", rr.Header().Get("Content-Encoding"))
+		}
+		if string(body) != want {
+			t.Fatalf("accept %q: body changed (got %d bytes, want %d)", accept, len(body), len(want))
+		}
+	}
+}
+
+// Without a handler-set type, a body that starts with markup is served as
+// plain text on every path with its HTML metacharacters escaped, and the
+// gzip output decodes to exactly the escaped bytes. A write split inside the
+// markup is escaped like any other.
+func TestAPIGzip_MarkupBodyWithoutTypeIsEscaped(t *testing.T) {
+	raw := reflectedPayload + strings.Repeat("y", 3000)
+	want := html.EscapeString(raw)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, raw[:10])
+		_, _ = io.WriteString(w, raw[10:])
+	})
+	for _, min := range []int{0, 64, 1 << 20} {
+		rr := serveEcho(newAPIGzipHandler(fixedGzipSettings(true, min), inner), "gzip")
+		assertNotHTML(t, rr)
+		if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+			t.Fatalf("min %d: Content-Type = %q, want text/plain", min, ct)
+		}
+		body := rr.Body.Bytes()
+		if rr.Header().Get("Content-Encoding") == "gzip" {
+			body = []byte(gunzip(t, body))
+		}
+		if string(body) != want {
+			t.Fatalf("min %d: body = %.100q, want the HTML-escaped original", min, body)
+		}
+	}
+}
+
+// The recorder's header map is live, so it cannot show what a client was
+// sent. This serves over a real connection and reads the headers the client
+// received: a handler that sets no Content-Type and reflects markup must
+// reach the client as non-HTML with nosniff and an escaped body, and the
+// gzip output must decode to that body.
+func TestAPIGzip_HeadersOnTheWire(t *testing.T) {
+	raw := reflectedPayload + strings.Repeat("z", 3000)
+	want := html.EscapeString(raw)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, raw[:10])
+		_, _ = io.WriteString(w, raw[10:])
+	})
+	for _, min := range []int{0, 64, 1 << 20} {
+		for _, accept := range []string{"gzip", ""} {
+			srv := httptest.NewServer(newAPIGzipHandler(fixedGzipSettings(true, min), inner))
+			req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/echo", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if accept != "" {
+				req.Header.Set("Accept-Encoding", accept)
+			}
+			client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+			resp, err := client.Do(req)
+			if err != nil {
+				srv.Close()
+				t.Fatal(err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			srv.Close()
+			ct := strings.ToLower(resp.Header.Get("Content-Type"))
+			if !strings.HasPrefix(ct, "text/plain") {
+				t.Fatalf("min %d accept %q: client received Content-Type %q, want text/plain", min, accept, ct)
+			}
+			if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("min %d accept %q: client received X-Content-Type-Options %q, want nosniff", min, accept, got)
+			}
+			body := string(raw)
+			if resp.Header.Get("Content-Encoding") == "gzip" {
+				body = gunzip(t, raw)
+			}
+			if body != want {
+				t.Fatalf("min %d accept %q: body = %.100q, want the HTML-escaped original", min, accept, body)
+			}
+			if strings.Contains(body, "<script") {
+				t.Fatalf("min %d accept %q: client received live markup", min, accept)
+			}
+		}
+	}
+}
+
+// Escaping lengthens the body, so a Content-Length the handler declared for
+// the raw bytes no longer holds. It is dropped when the body is escaped, and
+// the client still gets the whole escaped body.
+func TestAPIGzip_EscapedBodyDropsDeclaredContentLength(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(reflectedPayload)))
+		_, _ = io.WriteString(w, reflectedPayload)
+	})
+	for _, min := range []int{0, 1 << 20} {
+		srv := httptest.NewServer(newAPIGzipHandler(fixedGzipSettings(true, min), inner))
+		resp, err := http.Get(srv.URL + "/api/echo")
+		if err != nil {
+			srv.Close()
+			t.Fatal(err)
+		}
+		raw, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		srv.Close()
+		if err != nil {
+			t.Fatalf("min %d: reading body: %v", min, err)
+		}
+		if want := html.EscapeString(reflectedPayload); string(raw) != want {
+			t.Fatalf("min %d: body = %q, want %q", min, raw, want)
+		}
+	}
+}
+
+// Escaping changes how many bytes go out, but Write owes its caller the
+// length it was given, on the passthrough and the gzip path alike.
+func TestAPIGzip_EscapedWriteReportsCallerLength(t *testing.T) {
+	for _, min := range []int{0, 1 << 20} {
+		var counts []int
+		var errs []error
+		inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for _, chunk := range []string{reflectedPayload, "tail <b>"} {
+				n, err := io.WriteString(w, chunk)
+				counts = append(counts, n)
+				errs = append(errs, err)
+			}
+		})
+		rr := serveEcho(newAPIGzipHandler(fixedGzipSettings(true, min), inner), "gzip")
+		want := []int{len(reflectedPayload), len("tail <b>")}
+		for i := range want {
+			if counts[i] != want[i] || errs[i] != nil {
+				t.Fatalf("min %d: write %d = (%d, %v), want (%d, nil)", min, i, counts[i], errs[i], want[i])
+			}
+		}
+		body := rr.Body.String()
+		if rr.Header().Get("Content-Encoding") == "gzip" {
+			body = gunzip(t, rr.Body.Bytes())
+		}
+		if wantBody := html.EscapeString(reflectedPayload + "tail <b>"); body != wantBody {
+			t.Fatalf("min %d: body = %q, want %q", min, body, wantBody)
+		}
+	}
+}
+
+// The middleware sets nosniff on entry, but a handler can drop it again. The
+// writer restores it before the underlying WriteHeader, so the client still
+// receives it, on the passthrough and the gzip path, and the gzip output
+// decodes to the original body.
+func TestAPIGzip_NoSniffRestoredOnTheWireWhenHandlerDropsIt(t *testing.T) {
+	want := reflectedPayload + strings.Repeat("n", 3000)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Del("X-Content-Type-Options")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, want)
+	})
+	for _, min := range []int{0, 1 << 20} {
+		for _, accept := range []string{"gzip", ""} {
+			srv := httptest.NewServer(newAPIGzipHandler(fixedGzipSettings(true, min), inner))
+			req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/echo", nil)
+			if err != nil {
+				srv.Close()
+				t.Fatal(err)
+			}
+			if accept != "" {
+				req.Header.Set("Accept-Encoding", accept)
+			}
+			resp, err := (&http.Client{Transport: &http.Transport{DisableCompression: true}}).Do(req)
+			if err != nil {
+				srv.Close()
+				t.Fatal(err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			srv.Close()
+			if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("min %d accept %q: client received X-Content-Type-Options %q, want nosniff", min, accept, got)
+			}
+			if got := resp.Header.Get("Content-Type"); got != "application/json" {
+				t.Fatalf("min %d accept %q: Content-Type = %q, want application/json", min, accept, got)
+			}
+			body := string(raw)
+			if resp.Header.Get("Content-Encoding") == "gzip" {
+				body = gunzip(t, raw)
+			}
+			if body != want {
+				t.Fatalf("min %d accept %q: body changed (got %d bytes, want %d)", min, accept, len(body), len(want))
+			}
+		}
+	}
+}

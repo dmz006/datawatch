@@ -59,20 +59,34 @@ jobs:
       - name: internal-ref leak check
         run: bash scripts/check-no-internal-refs.sh
 
+      # Unscoped `tmux kill-server` / `kill-session -a` audit.
+      - name: unscoped tmux kill check
+        run: bash scripts/check-no-unscoped-tmux.sh
+
       # 2026-10-09 — a Dockerfile's exact-pinned ARG GO_VERSION can fall
       # behind go.mod's `go` directive without anything catching it until
       # the actual release workflow runs a container build against a
       # pushed tag (v9.0.0: Dockerfile.agent-base's GO_VERSION=1.26.6 vs.
-      # go.mod's `go 1.26.9` — go mod download failed, cascading into 6
-      # skipped agent-* images). Every push/PR, not just release time.
+      # go.mod's `go 1.26.9` was the directive then — go mod download
+      # failed, cascading into 6 skipped agent-* images). Every push/PR,
+      # not just release time.
       - name: dockerfile GO_VERSION drift check
         run: bash scripts/check-dockerfile-go-versions.sh
 
+      - name: go toolchain pin floor check
+        run: bash scripts/check-go-toolchain-pins.sh && bash scripts/check-go-toolchain-pins.sh --self-test
+
+      - name: trivy single version check
+        run: bash scripts/check-trivy-version-single.sh && bash scripts/tests/check-trivy-version-single_test.sh
+
+      - name: dockerfile certifi floor check
+        run: bash scripts/check-dockerfile-certifi.sh && bash scripts/check-dockerfile-certifi.sh --self-test
+
       - name: go test
-        run: go test ./... -count=1 -timeout 5m
+        run: go test ./... -count=1 -timeout 12m
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
           args: --timeout=5m
@@ -125,7 +139,7 @@ jobs:
             ./cmd/datawatch/
           echo "Built: bin/datawatch-linux-amd64-${STAMPED}"
 
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: datawatch-build-${{ github.run_number }}
           path: bin/datawatch-linux-amd64-*

@@ -1,0 +1,218 @@
+// Comm-channel verbs for the Automata tag registry, per-Automaton and
+// per-session tag assignment, the primary tag, the attention list and the
+// tag sweep: autonomous tags [counts]|tags sweep [dry-run]|tag-create|
+// tag-rename|tag-move|tag-color|tag-delete|set-tags|set-primary|
+// session-tags|attention|tag-registry|tag-registry-dismiss. Each verb
+// proxies the matching REST endpoint.
+
+package router
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+// commTagRequest is the REST call a tag verb translates into. registryOnly
+// means the reply is trimmed to its "registry" object.
+type commTagRequest struct {
+	method       string
+	path         string
+	body         map[string]any
+	registryOnly bool
+}
+
+// parseCommTagList splits a comma-separated tag-ID list; an empty list is
+// valid and clears the assignment.
+func parseCommTagList(arg string) []string {
+	ids := []string{}
+	for _, s := range strings.Split(arg, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			ids = append(ids, s)
+		}
+	}
+	return ids
+}
+
+// buildCommTagRequest validates the args of a tag verb and returns the REST
+// request it maps to. A non-empty usage string means the args were invalid.
+// args[0] is the verb as typed.
+func buildCommTagRequest(verb string, args []string) (req commTagRequest, usage string) {
+	const base = "/api/autonomous/tags"
+	switch strings.ReplaceAll(verb, "_", "-") {
+	case "tags":
+		switch {
+		case len(args) == 1:
+			return commTagRequest{method: http.MethodGet, path: base}, ""
+		case len(args) == 2 && args[1] == "counts":
+			return commTagRequest{method: http.MethodGet, path: base + "?counts=true"}, ""
+		case len(args) == 2 && args[1] == "sweep":
+			// The tag sweep: apply the in-force tag settings to every
+			// existing Automata session and record; POST only, no body.
+			return commTagRequest{method: http.MethodPost, path: base + "/sweep"}, ""
+		case len(args) == 3 && args[1] == "sweep" &&
+			(strings.EqualFold(args[2], "dry-run") || strings.EqualFold(args[2], "dry_run")):
+			return commTagRequest{method: http.MethodPost, path: base + "/sweep?dry_run=true"}, ""
+		}
+		return req, "usage: autonomous tags [counts|sweep [dry-run]]"
+	case "tag-registry":
+		if len(args) != 1 {
+			return req, "usage: autonomous tag-registry"
+		}
+		return commTagRequest{method: http.MethodGet, path: base, registryOnly: true}, ""
+	case "tag-registry-dismiss":
+		if len(args) != 2 {
+			return req, "usage: autonomous tag-registry-dismiss <note-id>"
+		}
+		return commTagRequest{method: http.MethodPost,
+			path: base + "/registry/notes/" + url.PathEscape(args[1]) + "/dismiss"}, ""
+	case "attention":
+		if len(args) != 1 {
+			return req, "usage: autonomous attention"
+		}
+		return commTagRequest{method: http.MethodGet, path: "/api/autonomous/attention"}, ""
+	case "session-tags":
+		if len(args) == 2 && strings.EqualFold(args[1], "list") {
+			return commTagRequest{method: http.MethodGet, path: "/api/sessions/tags"}, ""
+		}
+		if len(args) < 2 || len(args) > 3 {
+			return req, "usage: autonomous session-tags list | session-tags <session-id> [tag-id1,tag-id2,...] (omit the list to clear)"
+		}
+		list := ""
+		if len(args) == 3 {
+			list = args[2]
+		}
+		return commTagRequest{method: http.MethodPost, path: "/api/sessions/tags",
+			body: map[string]any{"id": args[1], "tag_ids": parseCommTagList(list)}}, ""
+	case "set-primary":
+		if len(args) != 3 {
+			return req, "usage: autonomous set-primary <prd-id> <tag-id|none>"
+		}
+		primary := args[2]
+		if strings.EqualFold(primary, "none") {
+			primary = ""
+		}
+		return commTagRequest{method: http.MethodPost,
+			path: "/api/autonomous/prds/" + url.PathEscape(args[1]) + "/set_tags",
+			body: map[string]any{"primary_tag_id": primary}}, ""
+	case "tag-create":
+		usage = "usage: autonomous tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]"
+		if len(args) < 2 {
+			return req, usage
+		}
+		body := map[string]any{"name": args[1]}
+		rest := args[2:]
+		for i := 0; i < len(rest); i++ {
+			switch {
+			case strings.HasPrefix(rest[i], "parent="):
+				body["parent_id"] = strings.TrimPrefix(rest[i], "parent=")
+			case strings.HasPrefix(rest[i], "color="):
+				body["color"] = strings.TrimPrefix(rest[i], "color=")
+			case strings.HasPrefix(rest[i], "description="):
+				// the description runs to the end of the line
+				desc := strings.TrimPrefix(rest[i], "description=")
+				body["description"] = strings.TrimSpace(strings.Join(append([]string{desc}, rest[i+1:]...), " "))
+				i = len(rest)
+			default:
+				return req, usage
+			}
+		}
+		return commTagRequest{method: http.MethodPost, path: base, body: body}, ""
+	case "tag-rename":
+		if len(args) < 3 {
+			return req, "usage: autonomous tag-rename <tag-id> <new-name>"
+		}
+		return commTagRequest{method: http.MethodPatch, path: base + "/" + url.PathEscape(args[1]),
+			body: map[string]any{"name": strings.Join(args[2:], " ")}}, ""
+	case "tag-move":
+		if len(args) != 3 {
+			return req, "usage: autonomous tag-move <tag-id> <parent-id|root>"
+		}
+		parent := args[2]
+		if strings.EqualFold(parent, "root") {
+			parent = ""
+		}
+		return commTagRequest{method: http.MethodPatch, path: base + "/" + url.PathEscape(args[1]),
+			body: map[string]any{"parent_id": parent}}, ""
+	case "tag-color":
+		if len(args) != 3 {
+			return req, "usage: autonomous tag-color <tag-id> <color>"
+		}
+		return commTagRequest{method: http.MethodPatch, path: base + "/" + url.PathEscape(args[1]),
+			body: map[string]any{"color": args[2]}}, ""
+	case "tag-delete":
+		if len(args) != 2 {
+			return req, "usage: autonomous tag-delete <tag-id>"
+		}
+		return commTagRequest{method: http.MethodDelete, path: base + "/" + url.PathEscape(args[1])}, ""
+	case "set-tags":
+		if len(args) < 2 || len(args) > 3 {
+			return req, "usage: autonomous set-tags <prd-id> <tag-id1,tag-id2,...> (omit the list to clear)"
+		}
+		list := ""
+		if len(args) == 3 {
+			list = args[2]
+		}
+		return commTagRequest{method: http.MethodPost,
+			path: "/api/autonomous/prds/" + url.PathEscape(args[1]) + "/set_tags",
+			body: map[string]any{"tag_ids": parseCommTagList(list)}}, ""
+	}
+	return req, "usage: autonomous tags"
+}
+
+// handleAutonomousTagVerb runs one tag verb through the REST loopback.
+func (r *Router) handleAutonomousTagVerb(verb string, args []string) {
+	name := "autonomous " + strings.ReplaceAll(verb, "_", "-")
+	req, usage := buildCommTagRequest(verb, args)
+	if usage != "" {
+		r.reply(name+" failed", usage)
+		return
+	}
+	payload := ""
+	if req.body != nil {
+		b, _ := json.Marshal(req.body)
+		payload = string(b)
+	}
+	out, err := r.commJSON(req.method, req.path, payload)
+	if err != nil {
+		r.reply(name+" failed", err.Error())
+		return
+	}
+	if req.registryOnly {
+		registry, err := registryObjectFromTagsReply([]byte(out))
+		if err != nil {
+			r.reply(name+" failed", err.Error())
+			return
+		}
+		r.reply(name, prettyJSON(string(registry)))
+		return
+	}
+	if strings.TrimSpace(out) == "" {
+		r.reply(name, "ok")
+		return
+	}
+	reply := prettyJSON(out)
+	if strings.ReplaceAll(verb, "_", "-") == "attention" {
+		if lines := rulesReviewOutcomeLines([]byte(out)); len(lines) > 0 {
+			reply += "\n" + strings.Join(lines, "\n")
+		}
+	}
+	r.reply(name, reply)
+}
+
+// registryObjectFromTagsReply extracts the "registry" object from a
+// GET /api/autonomous/tags reply.
+func registryObjectFromTagsReply(body []byte) ([]byte, error) {
+	var reply struct {
+		Registry json.RawMessage `json:"registry"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		return nil, fmt.Errorf("decode tags reply: %w", err)
+	}
+	if len(reply.Registry) == 0 {
+		return nil, fmt.Errorf("tags reply has no registry object")
+	}
+	return reply.Registry, nil
+}

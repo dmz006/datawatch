@@ -34,6 +34,16 @@ func (f *fakeVisioner) Describe(_ context.Context, _ []byte, _, _ string) (strin
 	return f.result, f.err
 }
 
+// blockingVisioner blocks its Describe call until the passed context is cancelled,
+// simulating a backend that ignores its context. Used to exercise the caller-side
+// timeout in expandImageTags.
+type blockingVisioner struct{}
+
+func (b *blockingVisioner) Describe(ctx context.Context, _ []byte, _, _ string) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
 // buildImageRequest constructs a multipart POST with an "image" field.
 func buildImageRequest(t *testing.T, filename, contentType, prompt string, imageData []byte) *http.Request {
 	t.Helper()
@@ -197,14 +207,32 @@ func writeTempImage(t *testing.T, root string, data []byte) string {
 	return p
 }
 
-// TS-v8193-EIT4: expandImageTags — visioner error → tag passes through
+// TS-v8193-EIT4: expandImageTags — visioner error → bare @<path> form
+// (a failed describe falls back to the @ notation rather than leaving the tag)
 func TestExpandImageTags_VisionerError(t *testing.T) {
 	root := t.TempDir()
 	p := writeTempImage(t, root, []byte("fake-image-data"))
 	s := expandImageTagsServer(t, root, &fakeVisioner{err: fmt.Errorf("timeout")})
 	in := "text [image:" + p + "] end"
-	if got := s.expandImageTags(in); got != in {
-		t.Errorf("visioner-error: got %q want %q", got, in)
+	want := "text @" + p + " end"
+	if got := s.expandImageTags(in); got != want {
+		t.Errorf("visioner-error: got %q want %q", got, want)
+	}
+}
+
+// TS-v8193-EIT4b: expandImageTags — describe hangs past the deadline → bare @<path> form
+// (a backend that ignores its context must not block the caller)
+func TestExpandImageTags_DescribeTimeout(t *testing.T) {
+	root := t.TempDir()
+	p := writeTempImage(t, root, []byte("fake-image-data"))
+	s := expandImageTagsServer(t, root, &blockingVisioner{})
+	// 1s deadline: the fake Describe blocks until its context is cancelled.
+	s.cfg.Vision.DescribeTimeoutSeconds = 1
+	in := "[image:" + p + "]"
+	// The lone tag ends at the end of the input, so the bare @-ref gets a trailing space.
+	want := "@" + p + " "
+	if got := s.expandImageTags(in); got != want {
+		t.Errorf("timeout: got %q want %q", got, want)
 	}
 }
 
@@ -221,14 +249,16 @@ func TestExpandImageTags_HappyPath(t *testing.T) {
 	}
 }
 
-// TS-v8193-EIT6: expandImageTags — empty description → tag passes through
+// TS-v8193-EIT6: expandImageTags — empty description → bare @<path> form
 func TestExpandImageTags_EmptyDescription(t *testing.T) {
 	root := t.TempDir()
 	p := writeTempImage(t, root, []byte("fake-image-data"))
 	s := expandImageTagsServer(t, root, &fakeVisioner{result: ""})
 	in := "[image:" + p + "]"
-	if got := s.expandImageTags(in); got != in {
-		t.Errorf("empty-desc: got %q want %q", got, in)
+	// The lone tag ends at the end of the input, so the bare @-ref gets a trailing space.
+	want := "@" + p + " "
+	if got := s.expandImageTags(in); got != want {
+		t.Errorf("empty-desc: got %q want %q", got, want)
 	}
 }
 

@@ -55,7 +55,7 @@ func newGuardrailProfileCmd() *cobra.Command {
 		Use:   "profile",
 		Short: "Manage guardrail profiles",
 	}
-	var name, description, guardrailsCSV string
+	var name, description, guardrailsCSV, notifyEventsCSV string
 	var blockOnFileDrift bool
 
 	listCmd := &cobra.Command{
@@ -75,6 +75,9 @@ func newGuardrailProfileCmd() *cobra.Command {
 			if cmd.Flags().Changed("block-on-file-drift") {
 				body["block_on_file_drift"] = blockOnFileDrift
 			}
+			if cmd.Flags().Changed("notify-events") {
+				body["notify_events"] = notifyEventsFlagValue(notifyEventsCSV)
+			}
 			return guardrailAPIPost("/api/autonomous/guardrail_profiles", body)
 		},
 	}
@@ -82,6 +85,7 @@ func newGuardrailProfileCmd() *cobra.Command {
 	createCmd.Flags().StringVar(&description, "description", "", "Optional description")
 	createCmd.Flags().StringVar(&guardrailsCSV, "guardrails", "", "Comma-separated guardrail names")
 	createCmd.Flags().BoolVar(&blockOnFileDrift, "block-on-file-drift", false, "Block a task whose commit swept in files that were already uncommitted before it started (omit to inherit autonomous.block_on_file_drift)")
+	createCmd.Flags().StringVar(&notifyEventsCSV, "notify-events", "", "Comma-separated notify event kinds (e.g. prd.blocked,task.session_started; inherit = clear so the global default applies)")
 	_ = createCmd.MarkFlagRequired("name")
 
 	getCmd := &cobra.Command{
@@ -103,6 +107,9 @@ func newGuardrailProfileCmd() *cobra.Command {
 			if cmd.Flags().Changed("block-on-file-drift") {
 				body["block_on_file_drift"] = blockOnFileDrift
 			}
+			if cmd.Flags().Changed("notify-events") {
+				body["notify_events"] = notifyEventsFlagValue(notifyEventsCSV)
+			}
 			return guardrailAPIPut("/api/autonomous/guardrail_profiles/"+args[0], body)
 		},
 	}
@@ -110,6 +117,7 @@ func newGuardrailProfileCmd() *cobra.Command {
 	updateCmd.Flags().StringVar(&description, "description", "", "New description")
 	updateCmd.Flags().StringVar(&guardrailsCSV, "guardrails", "", "New guardrail list (comma-separated)")
 	updateCmd.Flags().BoolVar(&blockOnFileDrift, "block-on-file-drift", false, "Block a task whose commit swept in files that were already uncommitted before it started (omit to leave unchanged)")
+	updateCmd.Flags().StringVar(&notifyEventsCSV, "notify-events", "", "Comma-separated notify event kinds (inherit = clear so the global default applies; omit to leave unchanged)")
 
 	deleteCmd := &cobra.Command{
 		Use:   "delete <id>",
@@ -215,6 +223,17 @@ func guardrailBodyRequest(method, path string, body any) error {
 	rb, _ := io.ReadAll(resp.Body)
 	fmt.Println(string(rb))
 	return nil
+}
+
+// notifyEventsFlagValue maps the --notify-events flag value to a list:
+// "inherit" (any case) yields an empty list, which on the daemon side
+// clears the profile's list (fall back to the global default); anything
+// else is the comma-separated split of csvToSlice.
+func notifyEventsFlagValue(csv string) []string {
+	if strings.EqualFold(strings.TrimSpace(csv), "inherit") {
+		return []string{}
+	}
+	return csvToSlice(csv)
 }
 
 func csvToSlice(s string) []string {

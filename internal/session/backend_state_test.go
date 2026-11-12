@@ -8,8 +8,8 @@ import (
 func TestSaveAndLoadBackendState(t *testing.T) {
 	dir := t.TempDir()
 	state := &BackendState{
-		Backend:    "ollama",
-		OllamaHost: "http://localhost:11434",
+		Backend:     "ollama",
+		OllamaHost:  "http://localhost:11434",
 		OllamaModel: "llama3",
 		ConversationHistory: []ChatMessage{
 			{Role: "user", Content: "hello"},

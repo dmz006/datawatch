@@ -1,0 +1,25 @@
+{
+  "_fixture": "SYNTHETIC. Hand-authored OpenAI-compatible chat completion with logprobs for max_tokens=1. Not recorded from a live endpoint.",
+  "prompt_ref": "prompt.json",
+  "model": "example-chat-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "A"},
+      "finish_reason": "length",
+      "logprobs": {
+        "content": [
+          {
+            "token": "A",
+            "logprob": -0.0712,
+            "top_logprobs": [
+              {"token": "A", "logprob": -0.0712},
+              {"token": "B", "logprob": -2.6741}
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {"prompt_tokens": 87, "completion_tokens": 1}
+}

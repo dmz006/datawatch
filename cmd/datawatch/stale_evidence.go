@@ -112,3 +112,42 @@ func newestWorkDirFileMtime(workDir string, now time.Time, threshold time.Durati
 	})
 	return newest, recent
 }
+
+// newestWorkDirMtime walks workDir and returns the newest regular file's mtime.
+// Like newestWorkDirFileMtime it skips .git directories and stops after
+// staleEvidenceMaxEntries entries, except that it has no recency verdict to
+// short-circuit on: the caller needs the actual newest timestamp, not a
+// within-threshold yes/no. An unreadable tree or one with no files yields the
+// zero time, which the caller must treat as "no such evidence" — never as a
+// timestamp newer than anything real.
+func newestWorkDirMtime(workDir string) time.Time {
+	var newest time.Time
+	entries := 0
+	_ = filepath.WalkDir(workDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if entries >= staleEvidenceMaxEntries {
+			return fs.SkipAll
+		}
+		entries++
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		fi, infoErr := d.Info()
+		if infoErr != nil {
+			return nil
+		}
+		if fi.ModTime().After(newest) {
+			newest = fi.ModTime()
+		}
+		return nil
+	})
+	return newest
+}

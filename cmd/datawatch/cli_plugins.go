@@ -32,7 +32,19 @@ Subcommands:
   install <registry> <name>
                        Install a plugin from a connected skill registry
   browse-registry <name>
-                       List plugins available in a connected registry`,
+                       List plugins available in a connected registry
+  service status <name>
+                       Show a plugin's service status (managed or attach-only)
+  service start <name>
+                       Start the managed service (refused when attach-only)
+  service stop <name>
+                       Stop the managed service (refused when attach-only)
+  service restart <name>
+                       Restart the managed service (refused when attach-only)
+  widgets list <name>
+                       List a plugin's widgets + latest values
+  widgets get <name> <widget-id>
+                       Show one widget and its latest value`,
 	}
 	cmd.AddCommand(
 		newPluginsListCmd(),
@@ -45,6 +57,8 @@ Subcommands:
 		newPluginMobileIssueCmd(),
 		newPluginInstallCmd(),
 		newPluginBrowseRegistryCmd(),
+		newPluginServiceCmd(),
+		newPluginWidgetsCmd(),
 	)
 	return cmd
 }

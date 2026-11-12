@@ -1,0 +1,1189 @@
+{
+  "daemon": "https://127.0.0.1:46541",
+  "chrome": "/usr/bin/google-chrome",
+  "viewports": [
+    {
+      "name": "320x568",
+      "tabs": [
+        {
+          "tab": "sessions",
+          "tapped": {
+            "x": 27,
+            "y": 539
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 320,
+              "height": 568
+            },
+            "bar": {
+              "left": 0,
+              "right": 320,
+              "top": 508,
+              "bottom": 568,
+              "scrollWidth": 320,
+              "clientWidth": 320,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "sessions",
+            "activeCount": 1,
+            "viewChildren": 1,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": true,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              },
+              {
+                "view": "autonomous",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "alerts",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "observer",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": true,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/320x568-sessions.png"
+        },
+        {
+          "tab": "autonomous",
+          "tapped": {
+            "x": 80,
+            "y": 539
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 320,
+              "height": 568
+            },
+            "bar": {
+              "left": 0,
+              "right": 320,
+              "top": 508,
+              "bottom": 568,
+              "scrollWidth": 320,
+              "clientWidth": 320,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "autonomous",
+            "activeCount": 1,
+            "viewChildren": 2,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "autonomous",
+                "active": true,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              },
+              {
+                "view": "alerts",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "observer",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": true,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/320x568-autonomous.png"
+        },
+        {
+          "tab": "alerts",
+          "tapped": {
+            "x": 133,
+            "y": 539
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 320,
+              "height": 568
+            },
+            "bar": {
+              "left": 0,
+              "right": 320,
+              "top": 508,
+              "bottom": 568,
+              "scrollWidth": 320,
+              "clientWidth": 320,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "alerts",
+            "activeCount": 1,
+            "viewChildren": 1,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "autonomous",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "alerts",
+                "active": true,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              },
+              {
+                "view": "observer",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": true,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/320x568-alerts.png"
+        },
+        {
+          "tab": "observer",
+          "tapped": {
+            "x": 187,
+            "y": 539
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 320,
+              "height": 568
+            },
+            "bar": {
+              "left": 0,
+              "right": 320,
+              "top": 508,
+              "bottom": 568,
+              "scrollWidth": 320,
+              "clientWidth": 320,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "observer",
+            "activeCount": 1,
+            "viewChildren": 1,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "autonomous",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "alerts",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "observer",
+                "active": true,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": true,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/320x568-observer.png"
+        },
+        {
+          "tab": "settings",
+          "tapped": {
+            "x": 293,
+            "y": 539
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 320,
+              "height": 568
+            },
+            "bar": {
+              "left": 0,
+              "right": 320,
+              "top": 508,
+              "bottom": 568,
+              "scrollWidth": 320,
+              "clientWidth": 320,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "settings",
+            "activeCount": 1,
+            "viewChildren": 1,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "autonomous",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "alerts",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "observer",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": true,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": true,
+                "w": 53.3,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/320x568-settings.png"
+        }
+      ]
+    },
+    {
+      "name": "1280x800",
+      "tabs": [
+        {
+          "tab": "sessions",
+          "tapped": {
+            "x": 441,
+            "y": 771
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 1280,
+              "height": 800
+            },
+            "bar": {
+              "left": 400,
+              "right": 880,
+              "top": 740,
+              "bottom": 800,
+              "scrollWidth": 478,
+              "clientWidth": 478,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "sessions",
+            "activeCount": 1,
+            "viewChildren": 1,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": true,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              },
+              {
+                "view": "autonomous",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "alerts",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "observer",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/1280x800-sessions.png"
+        },
+        {
+          "tab": "autonomous",
+          "tapped": {
+            "x": 520,
+            "y": 771
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 1280,
+              "height": 800
+            },
+            "bar": {
+              "left": 400,
+              "right": 880,
+              "top": 740,
+              "bottom": 800,
+              "scrollWidth": 478,
+              "clientWidth": 478,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "autonomous",
+            "activeCount": 1,
+            "viewChildren": 2,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "autonomous",
+                "active": true,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              },
+              {
+                "view": "alerts",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "observer",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/1280x800-autonomous.png"
+        },
+        {
+          "tab": "alerts",
+          "tapped": {
+            "x": 600,
+            "y": 771
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 1280,
+              "height": 800
+            },
+            "bar": {
+              "left": 400,
+              "right": 880,
+              "top": 740,
+              "bottom": 800,
+              "scrollWidth": 478,
+              "clientWidth": 478,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "alerts",
+            "activeCount": 1,
+            "viewChildren": 1,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "autonomous",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "alerts",
+                "active": true,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              },
+              {
+                "view": "observer",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/1280x800-alerts.png"
+        },
+        {
+          "tab": "observer",
+          "tapped": {
+            "x": 680,
+            "y": 771
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 1280,
+              "height": 800
+            },
+            "bar": {
+              "left": 400,
+              "right": 880,
+              "top": 740,
+              "bottom": 800,
+              "scrollWidth": 478,
+              "clientWidth": 478,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "observer",
+            "activeCount": 1,
+            "viewChildren": 1,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "autonomous",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "alerts",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "observer",
+                "active": true,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/1280x800-observer.png"
+        },
+        {
+          "tab": "settings",
+          "tapped": {
+            "x": 839,
+            "y": 771
+          },
+          "fallbackClick": false,
+          "problems": [],
+          "measure": {
+            "viewport": {
+              "width": 1280,
+              "height": 800
+            },
+            "bar": {
+              "left": 400,
+              "right": 880,
+              "top": 740,
+              "bottom": 800,
+              "scrollWidth": 478,
+              "clientWidth": 478,
+              "visible": true,
+              "fits": true
+            },
+            "pageOverflowX": 0,
+            "activeView": "settings",
+            "activeCount": 1,
+            "viewChildren": 1,
+            "buttons": [
+              {
+                "view": "sessions",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Sessions",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Sessions",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "autonomous",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Automata",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Automata",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "alerts",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Alerts",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Alerts",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "observer",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Observer",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Observer",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "dashboard",
+                "active": false,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Dashboard",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Dashboard",
+                "borderTop": "rgba(0, 0, 0, 0)",
+                "color": "rgb(148, 163, 184)"
+              },
+              {
+                "view": "settings",
+                "active": true,
+                "w": 79.7,
+                "h": 59,
+                "tapOK": true,
+                "inBar": true,
+                "label": "Settings",
+                "labelTruncated": false,
+                "textOverflow": "ellipsis",
+                "title": "Settings",
+                "borderTop": "rgb(168, 85, 247)",
+                "color": "rgb(168, 85, 247)"
+              }
+            ]
+          },
+          "pass": true,
+          "screenshot": "screens/1280x800-settings.png"
+        }
+      ]
+    }
+  ],
+  "overall": "PASS",
+  "consoleErrors": [],
+  "consoleErrorCount": 0
+}

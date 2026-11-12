@@ -24,25 +24,39 @@ const automatonDecisionLimit = 10
 // SessionAutomatonDetail is the `automaton` block on SessionStatusBoard.
 // Nil (omitted) for sessions that aren't linked to an autonomous task.
 type SessionAutomatonDetail struct {
-	PRDID             string                        `json:"prd_id"`
-	PRDTitle          string                        `json:"prd_title,omitempty"`
-	PRDStatus         string                        `json:"prd_status,omitempty"`
-	StoryID           string                        `json:"story_id,omitempty"`
-	StoryTitle        string                        `json:"story_title,omitempty"`
-	TaskID            string                        `json:"task_id,omitempty"`
-	TaskTitle         string                        `json:"task_title,omitempty"`
-	TaskSpec          string                        `json:"task_spec,omitempty"`
-	TaskSpecTruncated bool                          `json:"task_spec_truncated,omitempty"`
-	TaskStatus        string                        `json:"task_status,omitempty"`
-	WaitReason        string                        `json:"wait_reason,omitempty"`
-	StartedAt         *time.Time                    `json:"started_at,omitempty"`
-	CompletedAt       *time.Time                    `json:"completed_at,omitempty"`
-	RetryCount        int                           `json:"retry_count,omitempty"`
-	Error             string                        `json:"error,omitempty"`
-	Verification      *SessionAutomatonVerification `json:"verification,omitempty"`
-	Git               *SessionAutomatonGit          `json:"git,omitempty"`
-	Decisions         []SessionAutomatonDecision    `json:"decisions,omitempty"`
-	Cost              SessionAutomatonCost          `json:"cost"`
+	PRDID             string `json:"prd_id"`
+	PRDTitle          string `json:"prd_title,omitempty"`
+	PRDStatus         string `json:"prd_status,omitempty"`
+	StoryID           string `json:"story_id,omitempty"`
+	StoryTitle        string `json:"story_title,omitempty"`
+	TaskID            string `json:"task_id,omitempty"`
+	TaskTitle         string `json:"task_title,omitempty"`
+	TaskSpec          string `json:"task_spec,omitempty"`
+	TaskSpecTruncated bool   `json:"task_spec_truncated,omitempty"`
+	TaskStatus        string `json:"task_status,omitempty"`
+	WaitReason        string `json:"wait_reason,omitempty"`
+	// WaitReasonReadable is the same wait reason with the holders it names
+	// shown as operator-readable names ("pool <p> full (u/l), held by
+	// <PRD title> / <task title> (<short id>) and …"). wait_reason keeps the
+	// raw text; this is beside it, not a replacement, and is empty when the
+	// reason names no holders.
+	WaitReasonReadable string `json:"wait_reason_readable,omitempty"`
+	// WaitCause / WaitResetsAt classify the wait (pool_full, backoff, ...)
+	// and say when it ends, when known. Holds lists the pools and tree lock
+	// the task holds; HoldsNote is the sentence for a parked task.
+	WaitCause      string                        `json:"wait_cause,omitempty"`
+	WaitResetsAt   *time.Time                    `json:"wait_resets_at,omitempty"`
+	Holds          []string                      `json:"holds,omitempty"`
+	HoldsNote      string                        `json:"holds_note,omitempty"`
+	StartedAt      *time.Time                    `json:"started_at,omitempty"`
+	CompletedAt    *time.Time                    `json:"completed_at,omitempty"`
+	RetryCount     int                           `json:"retry_count,omitempty"`
+	ExecutorSource string                        `json:"executor_source,omitempty"`
+	Error          string                        `json:"error,omitempty"`
+	Verification   *SessionAutomatonVerification `json:"verification,omitempty"`
+	Git            *SessionAutomatonGit          `json:"git,omitempty"`
+	Decisions      []SessionAutomatonDecision    `json:"decisions,omitempty"`
+	Cost           SessionAutomatonCost          `json:"cost"`
 }
 
 // SessionAutomatonVerification mirrors the task's verifier verdict.
@@ -64,6 +78,20 @@ type SessionAutomatonGit struct {
 	FilesPlanned      []string `json:"files_planned,omitempty"`
 	FilesTouched      []string `json:"files_touched,omitempty"`
 	ForeignFileDrift  []string `json:"foreign_file_drift,omitempty"`
+	// SkippedSnapshotPaths lists the paths the session staging guard left
+	// unstaged in the task snapshot, with the guard's per-skip reason —
+	// same shape as the task's raw skipped_snapshot_paths field.
+	SkippedSnapshotPaths []SessionAutomatonSnapshotSkippedPath `json:"skipped_snapshot_paths,omitempty"`
+}
+
+// SessionAutomatonSnapshotSkippedPath is one entry of a task's
+// skipped_snapshot_paths: a file the staging guard refused to stage into
+// the task snapshot, with the guard's per-skip reason
+// (autonomous.SnapshotSkippedPath, mirrored here so this package stays free
+// of an internal/autonomous import).
+type SessionAutomatonSnapshotSkippedPath struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // SessionAutomatonDecision is one entry of the PRD decision log.
@@ -87,11 +115,12 @@ type SessionAutomatonCost struct {
 // GetPRD returns `any`; decoding through JSON keeps this package free of
 // an import on internal/autonomous (and works with test fakes that return maps).
 type automatonPRDView struct {
-	ID        string                     `json:"id"`
-	Title     string                     `json:"title"`
-	Status    string                     `json:"status"`
-	Stories   []automatonStoryView       `json:"stories"`
-	Decisions []SessionAutomatonDecision `json:"decisions"`
+	ID         string                     `json:"id"`
+	Title      string                     `json:"title"`
+	Status     string                     `json:"status"`
+	WaitReason string                     `json:"wait_reason"`
+	Stories    []automatonStoryView       `json:"stories"`
+	Decisions  []SessionAutomatonDecision `json:"decisions"`
 }
 
 type automatonStoryView struct {
@@ -102,24 +131,26 @@ type automatonStoryView struct {
 }
 
 type automatonTaskView struct {
-	ID                string                        `json:"id"`
-	StoryID           string                        `json:"story_id"`
-	Title             string                        `json:"title"`
-	Spec              string                        `json:"spec"`
-	Status            string                        `json:"status"`
-	SessionID         string                        `json:"session_id"`
-	WaitReason        string                        `json:"wait_reason"`
-	StartedAt         *time.Time                    `json:"started_at"`
-	CompletedAt       *time.Time                    `json:"completed_at"`
-	Error             string                        `json:"error"`
-	RetryCount        int                           `json:"retry_count"`
-	Verification      *SessionAutomatonVerification `json:"verification"`
-	PreTaskSHA        string                        `json:"pre_task_sha"`
-	BaseSHA           string                        `json:"base_sha"`
-	AttemptCommitSHAs []string                      `json:"attempt_commit_shas"`
-	FilesPlanned      []string                      `json:"files"`
-	FilesTouched      []string                      `json:"files_touched"`
-	ForeignFileDrift  []string                      `json:"foreign_file_drift"`
+	ID                   string                                `json:"id"`
+	StoryID              string                                `json:"story_id"`
+	Title                string                                `json:"title"`
+	Spec                 string                                `json:"spec"`
+	Status               string                                `json:"status"`
+	SessionID            string                                `json:"session_id"`
+	WaitReason           string                                `json:"wait_reason"`
+	StartedAt            *time.Time                            `json:"started_at"`
+	CompletedAt          *time.Time                            `json:"completed_at"`
+	Error                string                                `json:"error"`
+	RetryCount           int                                   `json:"retry_count"`
+	ExecutorSource       string                                `json:"executor_source"`
+	Verification         *SessionAutomatonVerification         `json:"verification"`
+	PreTaskSHA           string                                `json:"pre_task_sha"`
+	BaseSHA              string                                `json:"base_sha"`
+	AttemptCommitSHAs    []string                              `json:"attempt_commit_shas"`
+	FilesPlanned         []string                              `json:"files"`
+	FilesTouched         []string                              `json:"files_touched"`
+	ForeignFileDrift     []string                              `json:"foreign_file_drift"`
+	SkippedSnapshotPaths []SessionAutomatonSnapshotSkippedPath `json:"skipped_snapshot_paths,omitempty"`
 }
 
 // taskBySessionFinder is the optional autonomous-manager capability used
@@ -192,22 +223,36 @@ func (s *Server) buildSessionAutomatonDetail(sess *session.Session) *SessionAuto
 		d.StartedAt = task.StartedAt
 		d.CompletedAt = task.CompletedAt
 		d.RetryCount = task.RetryCount
+		d.ExecutorSource = task.ExecutorSource
 		d.Error = task.Error
 		d.Verification = task.Verification
 		planned := task.FilesPlanned
 		if len(planned) == 0 && story != nil {
 			planned = story.FilesPlanned
 		}
-		if task.PreTaskSHA != "" || task.BaseSHA != "" || len(task.AttemptCommitSHAs) > 0 || len(planned) > 0 || len(task.FilesTouched) > 0 || len(task.ForeignFileDrift) > 0 {
+		if task.PreTaskSHA != "" || task.BaseSHA != "" || len(task.AttemptCommitSHAs) > 0 || len(planned) > 0 || len(task.FilesTouched) > 0 || len(task.ForeignFileDrift) > 0 || len(task.SkippedSnapshotPaths) > 0 {
 			d.Git = &SessionAutomatonGit{
-				PreTaskSHA:        task.PreTaskSHA,
-				BaseSHA:           task.BaseSHA,
-				AttemptCommitSHAs: task.AttemptCommitSHAs,
-				FilesPlanned:      planned,
-				FilesTouched:      task.FilesTouched,
-				ForeignFileDrift:  task.ForeignFileDrift,
+				PreTaskSHA:           task.PreTaskSHA,
+				BaseSHA:              task.BaseSHA,
+				AttemptCommitSHAs:    task.AttemptCommitSHAs,
+				FilesPlanned:         planned,
+				FilesTouched:         task.FilesTouched,
+				ForeignFileDrift:     task.ForeignFileDrift,
+				SkippedSnapshotPaths: task.SkippedSnapshotPaths,
 			}
 		}
+	}
+	if taskID != "" {
+		s.fillAutomatonVisibility(d, taskID)
+	}
+	// Planning (decompose) sessions have no linked task — surface the
+	// PRD-level planner wait reason (why the decompose is queued on
+	// capacity) in the same `wait_reason` slot a waiting task already uses.
+	if d.WaitReason == "" {
+		d.WaitReason = prd.WaitReason
+	}
+	if d.WaitReason != "" {
+		d.WaitReasonReadable = readableWaitSentence(s.autonomousMgr, d.WaitReason)
 	}
 	// Decisions carry no story/task id, so the block shows the most recent
 	// PRD-level entries.
@@ -219,6 +264,33 @@ func (s *Server) buildSessionAutomatonDetail(sess *session.Session) *SessionAuto
 		d.Decisions = append([]SessionAutomatonDecision(nil), prd.Decisions[start:]...)
 	}
 	return d
+}
+
+// fillAutomatonVisibility adds the wait cause, its reset time and the task's
+// holdings from the autonomous per-task views, when the manager supplies them.
+func (s *Server) fillAutomatonVisibility(d *SessionAutomatonDetail, taskID string) {
+	p, ok := s.autonomousMgr.(taskVisibilityProvider)
+	if !ok {
+		return
+	}
+	waiting, running := p.TaskVisibility()
+	for _, w := range waiting {
+		if w.TaskID == taskID {
+			d.WaitCause = string(w.Cause)
+			d.WaitResetsAt = w.ResetsAt
+			if d.WaitReason == "" {
+				d.WaitReason = w.Reason
+			}
+			break
+		}
+	}
+	for _, h := range running {
+		if h.TaskID == taskID {
+			d.Holds = h.Pools
+			d.HoldsNote = h.Note
+			break
+		}
+	}
 }
 
 // findAutomatonStoryTask locates the task by id (and its parent story);

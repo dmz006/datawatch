@@ -55,14 +55,17 @@ Add an Ollama node at a static address:
 compute_nodes:
   - name: gpu-1
     kind: ollama
-    address: http://10.0.0.10:11434
+    address: http://192.0.2.10:11434
     # routing: direct   ← implicit default
 ```
+
+(Example address only; the real node URL lives in your operator config and
+is not committed to this repository.)
 
 Or via CLI:
 
 ```
-datawatch compute node add gpu-1 kind=ollama address=http://10.0.0.10:11434
+datawatch compute node add gpu-1 kind=ollama address=http://192.0.2.10:11434
 ```
 
 Or REST:
@@ -70,7 +73,7 @@ Or REST:
 ```bash
 curl -X POST $DW/api/compute/nodes \
   -H "Content-Type: application/json" \
-  -d '{"name":"gpu-1","kind":"ollama","address":"http://10.0.0.10:11434"}'
+  -d '{"name":"gpu-1","kind":"ollama","address":"http://192.0.2.10:11434"}'
 ```
 
 **Probe:** the daemon pings the address on create/update. Use `?probe=skip` if the node is temporarily unreachable.
@@ -279,14 +282,17 @@ llms:
 
 ## 6. Routing fallback chain
 
-Nodes with different routing modes can co-exist in a single LLM's failover chain:
+Nodes with different routing modes can co-exist in a single LLM's `compute_nodes` list:
 
 ```yaml
 llms:
   - name: llama3
     compute_nodes: [local-gpu, dc2-ollama, backup-direct]
-    # dispatcher tries nodes in order; docker-network nodes auto-start their container
+    # a pi-family worker goes to the least-loaded healthy node; a node that is
+    # full or unhealthy is passed over; docker-network nodes auto-start their container
 ```
+
+For local-model workers, verifiers and judges the list decides which nodes may run the work, and the node is not simply the first one listed: each listed node that is known and serves the model is a candidate, the least-loaded healthy candidate wins, `scheduling_priority` breaks a tie between equally loaded nodes, and list order breaks a remaining tie. See [How a pi-family worker picks its node](compute-nodes.md#how-a-pi-family-worker-picks-its-node).
 
 ---
 

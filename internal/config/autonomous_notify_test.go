@@ -14,9 +14,9 @@ import (
 // config.go): a non-empty event list must survive a YAML and JSON
 // round-trip unchanged, an EXPLICIT empty list must round-trip as a
 // non-nil empty slice (no-omitempty: clearing the key must really
-// clear it), and a fresh DefaultConfig() must start with an empty
-// (not nil-misread) event set, meaning the built-in lifecycle sinks
-// subscribe to nothing by default.
+// clear it), and a fresh DefaultConfig() must start with the
+// five-kind baseline (non-nil), which is the global-tier value the
+// resolver falls back to.
 func TestAutonomousNotifyConfigRoundTrip(t *testing.T) {
 	want := []string{"prd.updated", "prd.completed"}
 
@@ -91,10 +91,65 @@ func TestAutonomousNotifyConfigRoundTrip(t *testing.T) {
 		t.Fatalf("after JSON round trip default_events = %v, want empty", viaJSONEmpty.Autonomous.Notify.DefaultEvents)
 	}
 
-	// A fresh default config must have an empty event set (current
-	// behavior: no built-in lifecycle comm messages by default).
+	// A fresh default config starts with the five-kind baseline (the
+	// built-in default notify set), non-nil: the global resolution tier
+	// resolves to these unless the operator overrides the list.
 	fresh := DefaultConfig()
-	if got := len(fresh.Autonomous.Notify.DefaultEvents); got != 0 {
-		t.Fatalf("fresh DefaultConfig default_events = %v (len %d), want empty", fresh.Autonomous.Notify.DefaultEvents, got)
+	if fresh.Autonomous.Notify.DefaultEvents == nil {
+		t.Fatalf("fresh DefaultConfig default_events is nil, want the five-kind baseline")
+	}
+	wantFresh := []string{"prd.needs_review", "prd.blocked", "prd.failed", "prd.completed", "prd.cancelled"}
+	if got := fresh.Autonomous.Notify.DefaultEvents; !slices.Equal(got, wantFresh) {
+		t.Fatalf("fresh DefaultConfig default_events = %v, want baseline %v", got, wantFresh)
+	}
+}
+
+// TestAutonomousNotifyDefaultEventsYAML — Load semantics for
+// autonomous.notify.default_events: a YAML file that omits the key keeps
+// the five-kind baseline (config.Load merges over DefaultConfig()), an
+// explicit `default_events: []` is the operator opt-out and loads as a
+// non-nil empty list, and an explicit list loads verbatim.
+func TestAutonomousNotifyDefaultEventsYAML(t *testing.T) {
+	write := func(t *testing.T, body string) string {
+		t.Helper()
+		p := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatalf("write yaml: %v", err)
+		}
+		return p
+	}
+
+	// Omitted key → the DefaultConfig() baseline survives the merge.
+	cfg, err := Load(write(t, "autonomous:\n  enabled: false\n"))
+	if err != nil {
+		t.Fatalf("Load omitted-key config: %v", err)
+	}
+	if cfg.Autonomous.Notify.DefaultEvents == nil {
+		t.Fatalf("omitted default_events loaded as nil, want the baseline list")
+	}
+	wantBaseline := []string{"prd.needs_review", "prd.blocked", "prd.failed", "prd.completed", "prd.cancelled"}
+	if got := cfg.Autonomous.Notify.DefaultEvents; !slices.Equal(got, wantBaseline) {
+		t.Fatalf("omitted default_events = %v, want baseline %v", got, wantBaseline)
+	}
+
+	// Explicit empty list → the operator opt-out: empty and non-nil.
+	cfg, err = Load(write(t, "autonomous:\n  notify:\n    default_events: []\n"))
+	if err != nil {
+		t.Fatalf("Load explicit-empty config: %v", err)
+	}
+	if cfg.Autonomous.Notify.DefaultEvents == nil {
+		t.Fatalf("explicit empty default_events loaded as nil, want non-nil empty")
+	}
+	if got := len(cfg.Autonomous.Notify.DefaultEvents); got != 0 {
+		t.Fatalf("explicit empty default_events = %v, want empty", cfg.Autonomous.Notify.DefaultEvents)
+	}
+
+	// Explicit list → exactly that list.
+	cfg, err = Load(write(t, "autonomous:\n  notify:\n    default_events:\n      - prd.failed\n"))
+	if err != nil {
+		t.Fatalf("Load explicit-list config: %v", err)
+	}
+	if got := cfg.Autonomous.Notify.DefaultEvents; !slices.Equal(got, []string{"prd.failed"}) {
+		t.Fatalf("explicit list default_events = %v, want [prd.failed]", got)
 	}
 }

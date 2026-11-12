@@ -454,7 +454,7 @@ operator nothing. The draft's `Mode` / `AdvancePolicy` collapse into the edges.
 an Automation has exactly one current member at a time. It is sequential, with
 conditional branches. **Parallelism is expressed by running several Automations
 concurrently**, not by fan-out inside one. That keeps the advance rule trivially
-deterministic. A parallel "fork/join" inside one Automation is Open question 10.
+deterministic. A parallel "fork/join" inside one Automation was Open question 10 and is now Phase 3a. The single-cursor rule above holds for linear Automations only; Phase 3a replaces it with a set of active cursors (see the Phase 3a section).
 
 ### Mapping PRD statuses onto the three edges
 
@@ -609,17 +609,19 @@ needs its own approval, because the existing gate is kept.
 | From | To | Trigger | PRD-state analogue |
 |---|---|---|---|
 | — | `draft` | `create` | `PRDDraft` |
-| `draft` | `active` | `activate` (validation passes). The coordinator starts the entry member if it is approved, otherwise the Automation goes straight to `blocked`. | `approved → running` |
+| `draft` | `active` | `activate` (validation passes) — the entry member enters by kind: a plain entry through its own approval gate (refused = straight to `blocked`, a decision note names the PRD, one alert); a fork entry firing every branch in sorted order, each through its own gate (a refused branch fails in place as `gate-denied`, its siblings still start, the Automation stays `active`); a nested entry through the nested starter (a child it cannot activate blocks the parent, the reason in the decision note). | `approved → running` |
 | `active` | `paused` | `pause_automation`. Auto-advance is suspended, **and the current member is allowed to finish**. Its terminal event is recorded and `CurrentMemberID` moves to the next member, but that member is not started. | `PRDPaused` (in-progress tasks finish, no new dispatch) |
 | `paused` | `active` | `resume_automation`. If the cursor is on a not-started member, start it now (same approval gate). | `paused → running` (`Manager.Resume`) |
 | `active` | `completed` | A terminal member completes with an empty `OnComplete`. | `PRDCompleted` |
 | `active` | `blocked` | Needs a judgment call: the member reached `blocked` / `failed` with an empty edge; the member was cancelled, archived or rejected outside the Automation; the next member is not approved (`needs_review`, `draft`, …); a member Run errored; or a **BudgetPolicy** breach when `on_breach: block`. | `PRDBlocked` |
 | `blocked` | `active` | `skip_member` (choose an edge), `resume_automation` after the operator fixes the cause (e.g. approves the next member), or an `insert_member` that gives the cursor a runnable member. | operator action |
+| `blocked` | `draft` | `return_to_draft` — only a blocked Automation that never started a member (no `StartedAt` on any member, no `CurrentMemberID`, empty `ActiveCursors`). Clears `IdleSince`, the cursors, `StartedAt` and the budget episode; every member back to `pending` with no timestamps, so the Automation can be re-activated as if it had never run. 409 when it is not blocked (its status is named), has a started member, has a cursor, or `expected_version` is stale. | operator action |
 | `draft` / `active` / `paused` / `blocked` | `cancelled` | `cancel_automation` | `PRDCancelled` |
 | `completed` / `cancelled` | — | terminal. Members' `PRD.AutomationID` is cleared. | — |
 
 `Decisions` on the Automation record `activate`, `advance`, `pause`, `resume`,
-`cancel`, `skip`, `insert`, `remove`, `reorder`, `budget_breach` and `blocked`,
+`cancel`, `skip`, `insert`, `remove`, `reorder`, `budget_breach`, `return_to_draft`
+and `blocked`,
 each with `Actor` and `Note`. The member PRD also gets one Decision,
 `Kind: "automation_advance"`, when the coordinator starts it, so the Automaton's own
 timeline shows *why* it started.
@@ -645,6 +647,7 @@ exactly:
 | `insert_member` | not terminal | Mid-flight rules 1-3. Reason required unless `draft`. |
 | `remove_member` | not terminal; the member has not started | Rule 5. |
 | `reorder_edges` | not terminal; the member is pending, or is the running member (its own outgoing edges only) | `{member_id, on_complete?, on_blocked?, on_failed?, reason}`. |
+| `return_to_draft` | `blocked`, no member started, no cursor | Back to `draft`: clears `IdleSince`, `ActiveCursors`, `CurrentMemberID`, `StartedAt` and the budget episode, every member `pending` with no started/finished timestamps. 409 when not blocked (status named), a member started, a cursor sat, or `expected_version` mismatched. Audit action `automation_return_to_draft`, Decision kind `return_to_draft`. |
 
 **`cancel_automation` semantics (unambiguous).** The default is to **halt future
 auto-advance only**.
@@ -1176,8 +1179,9 @@ works unchanged, as in `renderAutomataCard` (`app.js:19150-19224`). A card shows
 - The optional BudgetPolicy fields are: type, value, window, pacing, on-breach.
 - The optional execution and verification model-default rows reuse the existing
   Verification LLM row components from the Automaton detail page.
-- Every edit sends `expected_version`. A `409` reloads the strip and shows a
-  "changed by <actor>" toast.
+- Every edit sends `expected_version`. A `409` shows a stale-version prompt with
+  the server's message and a reload button; nothing is retried, and the page
+  reloads only when the user chooses to.
 
 A **drag-and-drop graph canvas is explicitly NOT v1.** It is a possible v2
 enhancement once the edge model has been proven in use.
@@ -1247,7 +1251,7 @@ implementations:**
    today: tasks/stories/files/time/cost per Automation, and per-member
    status. Pulls from the same task/story/PRD/Decision/`cost_summary`
    fields named in BL440's "already-available data" map (see
-   docs/plans/2026-10-14-status-tab-session-detail-gap.md once it lands) —
+   docs/plans/historical-plans/2026-10-14-status-tab-session-detail-gap.md once it lands) —
    reuse that data path, don't build a second one.
 2. **Observer rollup by Automation.** Given an Automation's member PRD
    IDs → their tasks' `SessionID`s → the matching `session:<id>` envelopes
@@ -1283,21 +1287,140 @@ manually this session for exactly this kind of check.
 
 ---
 
+## Progress, estimates and the running dashboard (operator-raised 2026-10-21)
+
+**Requirement.** Everything the supervisor prints in the `scripts/v10-status.py` table is a product
+feature of the Automation, not a supervisor script. As the Automation builds, it keeps these numbers
+current from the data it already owns, and as PRDs and tasks are added the averages and estimates
+move on their own. The operator should see one running dashboard (PWA card, MCP, REST, CLI, comm
+verb), not a report that someone regenerates. The script is the reference oracle: the server's output
+for a fixture store must equal the script's.
+
+**What it computes, per Automation and for the whole store (scope selectable: an Automation, a
+label or tag, a date range, or "everything since date X")**
+
+1. **Counts.** PRDs and tasks, each split by kind (feature, bug, other) and by state (done, running,
+   waiting, blocked). Tasks done and tasks left. A cancelled PRD whose tasks all completed is merged
+   work whose record was closed: it counts as done. Other cancelled, rejected and archived PRDs are
+   not counted.
+2. **Kind.** An explicit `kind` field on the PRD (feature, bug, other), set at create time and
+   editable. The keyword heuristic in the script is only the migration default for old PRDs.
+3. **Two clocks, kept apart (operator, 2026-10-21).**
+   - **Lead time (state tracking):** created, approved, first task start, last task complete, merged
+     or delivered. Per-stage durations (approval wait, queue wait, run time, merge wait) are shown for
+     every PRD and as medians. This is useful as a state to track from created or approved to
+     delivery, and it is where waiting and hand-offs show up.
+   - **Queue time (the running queue):** only the start and stop of each task counts. Time to
+     completion is estimated from task service time and real, observed completion rates, not from lead
+     time. Lead time never feeds the completion estimate; waits are reported as their own stage.
+   Details of the second clock:
+   - Task time: `started_at` to `completed_at`. Per-PRD work is the sum of its tasks.
+   - PRD time: first task start to last task completion. **Not** `approved_at` to `updated_at`:
+     that includes weeks of waiting and every later edit, cancel or registry cleanup, and
+     inflated the first version of the estimate about 15x.
+   - Report medians next to means; a few outliers dominate the means.
+4. **Throughput.** PRDs and tasks completed per day, taken from the completion timestamps of the
+   last task (never from record update times), over windows of 24 hours, 3 days and the whole period.
+5. **Utilization.** Worker-hours done per day divided by lane capacity (lanes x 24). This is the
+   number that explains why the lanes' raw speed is not the limit.
+6. **Remaining work, without double counting.**
+   - Known: tasks still open in PRDs that exist and are decomposed (an exact count).
+   - Estimated: PRDs not yet decomposed, and backlog items that have no PRD yet, each at the
+     measured tasks-per-PRD for its kind (mean and median, with a spread).
+   - The two are shown separately and never summed into one unlabelled number. A backlog item that
+     already has a PRD is counted once, through the PRD.
+   - Needs a machine-readable backlog: each backlog row carries an id, kind, linked PRD ids and a
+     phase count, so the dashboard does not parse prose.
+7. **Estimated time to completion as a range, with its method shown.** By PRD rate, by task rate
+   (overall and last 24 hours) and by worker-hours at current utilization. The dashboard shows the
+   range and which assumption moves it (utilization, mix of large PRDs, undecomposed backlog).
+8. **History.** A snapshot is stored daily and on each milestone so the estimate has a trend line
+   and the operator can see whether it is converging.
+
+**Stage ledger: every stage is timed, not just the build (operator, 2026-10-21).** Each PRD and
+each task carries start and end timestamps for every stage, so the dashboard can show where time
+goes and the optimizer can act on it. Stages, with what exists today and what must be added:
+
+| Stage | Start event | End event | Today |
+|---|---|---|---|
+| Created and spec written | `created_at` | decompose requested | `created_at`; request time not stored |
+| Decompose | planning mark (status planning) | `decompose` decision | end only; add planning-start timestamp and session id |
+| Plan validation | decompose done | `approve` decision | `plan_coverage_ack` and `approve` decisions exist; supervisor validation start/end and plan-review result must be added |
+| Approval wait | plan ready (needs_review) | `approve` | derivable |
+| Queue wait | `approve`/`run` | first task spawn | `run` decision and task `started_at` |
+| Per task: spawn and delivery | session created | task text delivered | `session.json` has `task_delivered_at`; copy onto the task |
+| Per task: work | delivered | worker turn ends | add: first output time, turn-end time, idle dwell after turn end |
+| Per task: nudge or stall handling | turn end without completion marker | marker seen or nudged or killed | add: nudge count and time |
+| Per task: verification | verifier spawn | `verification.verified_at` | end only; add verifier start and session id |
+| Per task: retries | each failed attempt | next attempt | `retry_count`, `prior_attempt_count`; add per-attempt durations and failure reason |
+| PRD completion review | last task done | PRD guardrail verdict | add timestamps |
+| Merge wait and merge | PRD completed | branch merged | not in the store; add `merged_at` and merge duration from the merge event |
+| CI and release | tag pushed | release workflow green | not in the store; add from `ci_watch` events |
+| Deployed | release green | daemon running that version | add: daemon version change event |
+
+| Operator wait (whole system) | an explicit `operator_wait_start` event: the supervisor or a PRD asks the operator and stops | `operator_wait_end` when the answer arrives | not recorded; the status script infers it from 3 h or longer gaps with no task activity (15 such gaps, 137 h, about half of calendar time since 2026-10-10) |
+
+**Operator waits are tracked, not zeroed (operator, 2026-10-21).** Each wait carries a `kind`:
+`design` (a design decision only the operator can make) or `build` (a build, release or merge
+decision that is the supervisor's to make). Rates, throughput and utilization are computed on active
+time, so one overnight wait does not make the lanes look slow. The dashboard also shows the waits
+themselves, the share of calendar time they took, and a calendar estimate that includes that share.
+A `build` wait is a supervisor defect and is reported as one; `design` waits are expected. Until the
+events exist, inactive windows are inferred from task activity and labelled as inferred.
+
+The dashboard shows each stage's median and p90 per kind, the share of lead time each stage takes,
+and the slowest stage. Anything that cannot be timed yet is shown as "not measured", never as zero.
+
+**Optimization inputs (so queue and lane decisions can be made from live data, not guesses).**
+Per lane: busy, idle, waiting-on-nudge and blocked time, split by lane type. Per task: work time
+against idle dwell after turn end, nudge count, retry count and wasted attempt time. Per PRD:
+critical-path length against task count (potential parallel speedup), and which tasks are
+independent. Queue: number of validated, approved PRDs waiting per lane type (decompose-ahead
+depth), blocked-reason histogram, time from "completed" to "merged". Capacity: GPU engines in use
+against the limit, model load events, Claude session and weekly usage against pace. Quality: first-
+pass verification success rate per backend and model, retry rate per backend.
+
+**Lessons recorded from the script (2026-10-21), to become tests**
+- Measuring PRD time from approval to last update overstated it by an order of magnitude.
+- Counting PRDs touched in the last 24 hours as throughput counted the cleanup actions themselves.
+- Adding open backlog rows to PRDs that already exist double counted them (59 vs the real 78 total
+  was wrong in both directions).
+- Existing-but-undecomposed PRDs have no tasks yet; their size is an estimate and must be labelled so.
+
+**Phasing.** The data comes from the Automation member list and the lifecycle events, so it follows
+Phase 2 (coordinator). Compute and REST/MCP/CLI/comm in one phase, PWA dashboard card with the
+Phase 6 PWA work, daily snapshots with Phase 5 BudgetPolicy (it shares the cost rollup). Filed as
+BL553 (docs/plans/README.md row 134).
+
 ## Parity surface
 
-None of these is implemented in this design phase. Every surface follows AGENT.md's
+Phase 2 (development build) has shipped part of this table: activate on REST, MCP,
+CLI and comm channel; the `automations[]` array on `autonomous_status` (REST and MCP);
+and the `autonomous.automation.idle_alert_minutes` key on every config surface including
+the PWA Settings field. Phase 5 (development build) has shipped the budget slice: REST
+`set_budget`, MCP `automation_set_budget`, CLI `automation set-budget`, comm `automation
+set-budget` and the budget lines of `automation status`, and the `budget` view on the Automation
+read and on the status rows; it added no config key (see the YAML/config row). Phase 3a has
+shipped the multi-cursor slice: the fork/join and nested members, so the entry member may
+be a `fork` or a nested Automation and activation now enters the entry by kind as the
+lifecycle table shows. The unreleased **return-to-draft** adds the same operation on all
+four control surfaces (row updates in the table): REST `POST /api/automations/{id}/return_to_draft`,
+MCP `automation_return_to_draft`, CLI `automation return-to-draft <id>`, comm
+`automation return-to-draft <id>`; entry-kind activation changes no surface at all, because every surface already calls the same activate endpoint and only the coordinator's entry handling differs. The four remaining surfaces are intentionally excluded for this change, for a stated reason each: **PWA** — the Automation tab lists, shows the pipeline-strip detail and offers create/edit, but it has no return-to-draft control, and adding one means new PWA UI plus locale keys in all five bundles, which is PWA work planned in a later PWA phase, not part of this docs/API change (the PWA row below is unchanged for this operation). **Android** — it consumes return-to-draft only through the REST endpoint, so this change needs no Android code; surfacing the operation in the app UI is tracked separately as the companion-app parity issue on the row. **iPhone/iOS** — the same: it reaches the operation through REST, needs no app-side change here, and its UI surfacing is tracked as the companion-app parity issue on the row. **YAML/config** — entry-kind activation and return-to-draft are runtime control operations on an Automation record, not settings, so they add no config surface; Automation objects remain runtime data in `automations.jsonl`, consistent with this row. The rest of the
+table is still the plan for Phases 3-7, and the table below remains accurate as written, with the
+corrections in the rows themselves. Every surface follows AGENT.md's
 Configuration Accessibility Rule and the full parity-surface set.
 
 | Surface | Included? | Concrete design |
 |---|---|---|
-| **REST** | Yes | `GET/POST /api/automations`; `GET/PUT/DELETE /api/automations/{id}` (delete only in `draft` / terminal); `POST /api/automations/{id}/{activate\|pause\|resume\|cancel\|skip_member\|insert_member\|remove_member\|reorder_edges\|set_llm\|set_verification_llm\|set_budget}`; `POST /api/automations/import-graph/{graph_id}`. Same `fedCap` gating as the autonomous handlers (`CapAutonomousRead` / `Write` / `Run`). `409` on invalid state or version mismatch. Documented in `openapi.yaml`. |
-| **MCP** | Yes | `automation_list`, `automation_get`, `automation_create`, `automation_update`, `automation_activate`, `automation_pause`, `automation_resume`, `automation_cancel` (`cancel_in_flight` flag), `automation_skip_member`, `automation_insert_member`, `automation_remove_member`, `automation_reorder_edges`, `automation_set_llm`, `automation_set_verification_llm`, `automation_set_budget`, `automation_import_graph`. Each is added to `internal/federation/mcp_tool_caps.go`. `autonomous_status` is extended with `automations[]`. The `orchestrator_graph_*` tools are deprecated (see the BL117 recommendation). |
-| **CLI** | Yes | `datawatch automation list\|get\|create\|activate\|pause\|resume\|cancel [--cancel-in-flight]\|skip <member> --via on_failed --reason …\|insert <id> --after <member> --prd <id>[,<id>…] --reason …\|remove\|edges\|set-llm\|set-verification-llm\|set-budget\|import-graph`. |
-| **Comm channel** | Yes (control + status) | `automation list`, `automation status <id>`, `automation pause\|resume\|cancel <id> [reason]`, `automation skip <id> <member> <edge> <reason>`, `automation insert <id> after <member> <prd> <reason>`. Create and edge rewiring are excluded from comm because they are graph editing and do not fit one line; use the PWA, CLI or MCP. Advance, blocked and budget-breach notifications go through BL427's comm fan-out, not a separate path. |
-| **YAML/config** | Yes | Provisional keys under `autonomous.automation`: `enabled` (bool); `idle_alert_minutes` (int); `empty_edge_action` (`block`\|`pause`, Open question 6); `agent_insert_policy` (`allow`\|`require_operator`, Open question 8); `default_budget_on_breach` (`pause`\|`block`). Each is in `handleGetConfig` / `handlePutConfig`, `docs/config-reference.yaml`, `configure <key>=<value>` and `datawatch config set`. Automation objects themselves are runtime data in `automations.jsonl`, not YAML. |
+| **REST** | Yes | `GET/POST /api/automations`; `GET/PUT/DELETE /api/automations/{id}` (delete only in `draft` / terminal); `POST /api/automations/{id}/{activate\|pause\|resume\|cancel\|skip_member\|insert_member\|remove_member\|reorder_edges\|set_llm\|set_verification_llm\|set_budget\|return_to_draft}`; `POST /api/automations/import-graph/{graph_id}`. Same `fedCap` gating as the autonomous handlers (`CapAutonomousRead` / `Write` / `Run`). `409` on invalid state or version mismatch. Documented in `openapi.yaml`. |
+| **MCP** | Yes | `automation_list`, `automation_get`, `automation_create`, `automation_update`, `automation_activate`, `automation_return_to_draft`, `automation_pause`, `automation_resume`, `automation_cancel` (`cancel_in_flight` flag), `automation_skip_member`, `automation_insert_member`, `automation_remove_member`, `automation_reorder_edges`, `automation_set_llm`, `automation_set_verification_llm`, `automation_set_budget`, `automation_import_graph`. Each is added to `internal/federation/mcp_tool_caps.go`. `autonomous_status` is extended with `automations[]`. The `orchestrator_graph_*` tools are deprecated (see the BL117 recommendation). |
+| **CLI** | Yes | `datawatch automation list\|get\|create\|activate\|return-to-draft\|pause\|resume\|cancel [--cancel-in-flight]\|skip <member> --via on_failed --reason …\|insert <id> --after <member> --prd <id>[,<id>…] --reason …\|remove\|edges\|set-llm\|set-verification-llm\|set-budget\|import-graph`. |
+| **Comm channel** | Yes (control + status) | `automation list`, `automation status <id>`, `automation return-to-draft <id>`, `automation pause\|resume\|cancel <id> [reason]`, `automation skip <id> <member> <edge> <reason>`, `automation insert <id> after <member> <prd> <reason>`, `automation set-budget <id> key=value...` (built in Phase 5; `clear=true` removes the policy; the arguments are the REST fields). Create and edge rewiring are excluded from comm because they are graph editing and do not fit one line; use the PWA, CLI or MCP. Advance, blocked and budget-breach notifications go through BL427's comm fan-out, not a separate path. |
+| **YAML/config** | Yes | Provisional keys under `autonomous.automation`: `enabled` (bool); `idle_alert_minutes` (int); `empty_edge_action` (`block`\|`pause`, Open question 6); `agent_insert_policy` (`allow`\|`require_operator`, Open question 8); ~~`default_budget_on_breach` (`pause`\|`block`)~~ (not built: Phase 5 added no config key, and `on_breach` defaults to `pause` on the policy itself). Each is in `handleGetConfig` / `handlePutConfig`, `docs/config-reference.yaml`, `configure <key>=<value>` and `datawatch config set`. Automation objects themselves are runtime data in `automations.jsonl`, not YAML. |
 | **PWA** | Yes | The Automation tab left of Automata; list, pipeline-strip detail and create/edit (see **PWA**); the config fields in Settings → General (autonomous section); locale keys in all bundles. |
-| **Android** | Yes, via a parity issue | A `datawatch-app` issue: Automation list + strip detail + pause/resume/cancel/skip; create/edit may lag one release. Filed in the companion app repo by the implementation PRD, not here. |
-| **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app repo's iOS track. Advance and blocked push notifications ride on BL427's mobile topic sink (`PublishToTopic`), so APNs/FCM need no Automation-specific delivery. |
+| **Android** | Yes, via a parity issue | A `datawatch-app` issue: Automation list + strip detail + pause/resume/cancel/skip; create/edit may lag one release. Filed in the companion app repo by the implementation PRD, not here. Phase 5 adds: parse the `budget_policy` fields, the `budget` view, the status `budget` / `spent_usd` / `ceiling_display` fields and the paused or blocked budget reason. **Not filed yet** (cannot be filed from the implementing session). Phase 7: the ready-to-file text is under `### Phase 7 companion apps` (Android issue); still **not filed**. Phase 8 (progress card and Automaton kind): the ready-to-file text is under `### Phase 8 companion apps` (Android issue); **not filed**. |
+| **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app repo's iOS track; the Phase 5 budget fields above are not filed yet either. Advance and blocked push notifications ride on BL427's mobile topic sink (`PublishToTopic`), so APNs/FCM need no Automation-specific delivery. Phase 7: the ready-to-file text is under `### Phase 7 companion apps` (iOS issue); still **not filed**. Phase 8: the ready-to-file text is under `### Phase 8 companion apps` (iOS issue); **not filed**. |
 
 ---
 
@@ -1316,36 +1439,698 @@ howto, and the `datawatch-app` issue where applicable.
    - Cycle, reachability and ownership validation.
    - REST + MCP CRUD.
    - Audit of create, update and delete.
-2. **Phase 2 — Coordinator.** Status: Planned.
+2. **Phase 2 — Coordinator.** Status: Done (development build; released with the next release).
    - The BL427 dispatcher subscriber, or the temporary hook.
    - The advance with compare-and-set, `API.Run` / `API.Resume` in-process, the
      approval gate and blocked alerts.
    - Restart reconciliation after `resumeRunningPRDs`.
    - The `autonomous_status` extension and idle alert.
-3. **Phase 3 — Control ops and mid-flight editing.** Status: Planned.
-   - The pause / resume / cancel (+`cancel_in_flight`) / skip / insert / remove /
-     reorder ops.
+3a. **Phase 3a — Multi-cursor: fork/join branches + nested Automations.** Status: Planned (full design in the **Phase 3a** section below; the build follows that design).
+   - The multi-cursor data model (`ActiveCursors` replacing the single cursor, load-time migration).
+   - Member kinds `prd` (default) / `automation` / `fork` / `join`; fork/join pairing validation, including the rule that branch members carry no outcome edges.
+   - Per-join `on_branch_failure` rule (`all_must_succeed` default) and join firing/blocking.
+   - Nested Automation members: ownership, cross-level cycle rejection, terminal-event routing.
+   - The multi-cursor advance rule, mid-fork restart reconciliation, the `autonomous_status` extension (`active_cursors`, `join_wait`), and the new audit entries (`automation_fork`, `automation_join`, `automation_join_blocked`, `automation_nested_activate`).
+   - Branch naming convention that Phase 3b control ops build on (member ID = the stable branch name).
+3b. **Phase 3b — Control ops and mid-flight editing (branch-named).** Status: Planned.
+   - The pause / resume / cancel (`cancel_in_flight` is **required, no default** — Open question 3) / skip / insert / remove / reorder ops.
+   - Every op names the branch (member ID) it acts on, per the Phase 3a naming convention.
    - The shared per-Automation lock, the `Version` check and `409`s.
    - Decisions and audit.
-4. **Phase 4 — Model-tier defaults.** Status: Planned.
+4. **Phase 4 — Model-tier defaults.** Status: Done (development build; released with the next release).
    - The Automation tier in `resolveTaskBackendModel`, the executor effort chain
      and `resolveVerificationLLM`.
    - `VerifierSourceAutomation`.
    - `automation_set_llm` / `_set_verification_llm`.
-5. **Phase 5 — BudgetPolicy.** Status: Planned.
+   - Shipped notes:
+     - `executor_source` (`task` | `story` | `prd` | `automation` | `global`) is
+       recorded on the task run record beside `verifier_source`. It names the level
+       that supplied the execution backend for the latest attempt, is overwritten by
+       each later attempt, and `global` means no level named a backend. The session
+       status block and the PWA show it (an **Executor** line).
+     - `expected_version` is optional on both set operations (omitted or `0` skips
+       the check, a stale positive value is a `409`), unlike the Phase 3b control
+       operations where it is required. The fields are presence-aware (omitted keeps,
+       empty clears), and the operations are allowed while the Automation is
+       `draft`, `active`, `paused` or `blocked`.
+     - The planning pair (`planning_backend`, `planning_model`) is used for decompose
+       only: unset means the global planning backend, and it never changes the run
+       or verify default (and the run and verify defaults never change who plans).
+       `set_verification_llm` rejects the planning fields.
+     - Operator-facing docs: the model-tier section of `docs/api/autonomous.md`, the
+       Automation tools in `docs/mcp.md`, and the "Give an Automation its own model
+       defaults" section of `docs/howto/automation-queue-advance.md`. The Automation
+       defaults are runtime data on each Automation, not config keys, so
+       `docs/config-reference.yaml` carries a comment block only.
+     - The live smoke row is opt-in and still owed: see the Phase 4 section of
+       `docs/testing-tracker.md`.
+5. **Phase 5 — BudgetPolicy.** Status: Done (development build; released with the next release).
    - The shared `PRDCostUSD` rollup (with BL414 / BL428 Phase 5).
    - The advance gate and the `admit` hook.
    - Pacing, on-breach handling and the estimated `allocation_pct`.
+
+   **Phase 5 status note.** Built on the existing per-LLM spend ledger (no second ledger).
+   - Rollup and ledger: `internal/autonomous/automation_cost.go` (`PRDSessionIDs`, `PRDCostUSD`,
+     `AutomationSpendUSD`, `SetCostSources`); `internal/autonomous/budget.go` attributes each
+     ledger entry to its session (`SpendBySessions`); `cmd/datawatch/capacity_wiring.go` passes the
+     session ID and wires the evaluator and cost sources.
+   - Model: `internal/autonomous/automation.go` (`BudgetPolicy` gains `allocation_estimate`,
+     `peer_window`, `reset_time`, `reset_weekday`, `reset_day`, `reset_zone`; `AutomationMember`
+     gains `estimated_cost_usd`; `Automation.BudgetState` is the current breach episode).
+   - Evaluator: `automation_budget.go` (`AutomationBudget.Evaluate`: tightest of the Automation and
+     member policy, windows and anchors, even pacing, declared or prior-spend start estimate),
+     `automation_budget_reset.go` (reset known for day/week/month windows and for a parsed
+     rate-limit reset on the lifetime window), `peer_budget_spend.go` (`SpendForPeers`, opt-in
+     peers only, fails open), `automation_budget_view.go` (the computed `budget` view).
+   - Gate: `automation_budget_gate.go` and `automation_advance.go` / `automation_coordinator.go` /
+     `automation_control.go` / `automation_reconcile.go` (advance, activation entry and fork gates;
+     pause with automatic resume at a known reset; block at an unknown reset or `on_breach: block`;
+     one alert and one audit record per episode; the periodic budget pass; the operator resume
+     re-checks the ceiling and is refused with a 409 while it is reached).
+   - Admit hook: `automation_budget_admit.go` (a new member task waits at the dollar ceiling; tasks
+     in progress are never interrupted).
+   - Surfaces: REST `POST /api/automations/{id}/set_budget` and the `budget` view on the Automation
+     read and on each `automations[]` row of `GET /api/autonomous/status`
+     (`internal/server/autonomous.go`, `internal/autonomous/automation_status.go`); MCP `automation_set_budget`
+     (`internal/mcp/automation_tools.go`, `internal/federation/mcp_tool_caps.go`); CLI
+     `datawatch automation set-budget` (`cmd/datawatch/cli_automation.go`); comm
+     `automation set-budget` and the budget lines of `automation status`
+     (`internal/router/automation_cmd.go`, text from `budget_format.go`); audit events
+     `automation_set_budget`, `automation_budget_breach`, `automation_budget_resumed`
+     (`internal/audit/events.go`, `cef.go`); `docs/api/openapi.yaml`.
+   - Operator decisions applied: (1) on a breach the Automation pauses and resumes by itself at the
+     window rollover only when the reset time is known (a day, week or month window the daemon
+     defines itself, anchored at the declared reset or the calendar default, or a reset time parsed
+     from a rate-limit message); when it is unknown it goes to blocked and waits for the operator;
+     an alert is raised either way. (2) `allocation_pct` is an optional estimate, off by default,
+     always labelled estimated, and never pauses or blocks. (3) Another daemon's usage counts only
+     for peers explicitly opted in (`peer_window`), off by default; the resource fingerprint
+     exchange that would confirm a shared account does not exist yet, so peer counting has no
+     automatic confirmation and the status text says so.
+   - No new daemon config key: the policy is Automation data. `default_budget_on_breach` (listed as
+     provisional in the Parity surface table) was not built; `on_breach` defaults to `pause` on the
+     policy itself. The `budget_policy` object is documented in `docs/config-reference.yaml`.
+   - Not in this phase: the PWA display of the policy (Phase 6).
+   - Docs: `docs/howto/automata-capacity.md` and `docs/operations.md` (`Automation spending limit`),
+     `docs/commands.md`, `docs/api/autonomous.md`, `docs/api-mcp-mapping.md`, `docs/mcp.md`,
+     `docs/testing-tracker.md` (`BL431 Phase 5: Automation BudgetPolicy`).
+   - Live smoke against a real daemon: **No**, not run. Every Validated cell of the tracker section
+     stays No until a sandbox daemon run exercises the pause, the automatic resume and the block.
+   - `datawatch-app` parity: **not filed yet.** A companion-app issue is needed so Android and iOS
+     parse the `budget_policy` fields, the `budget` view, the `budget`, `spent_usd` and
+     `ceiling_display` status fields, and the paused or blocked budget reason. It cannot be filed
+     from the implementing session; the supervisor files it, and this note is updated with the
+     issue numbers when it is.
 6. **Phase 6 — PWA.** Status: Planned.
+
+6. **Phase 6 — PWA.** Status: Done (development build; released with the next release).
+   - The tab, list, pipeline strip, controls and forms are built in `internal/server/web` with node tests.
+   - The live browser smoke row is owed: see the Automation tab section of `docs/testing-tracker.md`.
    - The nav tab, list, pipeline strip and v1 create/edit.
    - Locale keys in all bundles.
    - The Terminology Rule addendum.
-7. **Phase 7 — Remaining parity, BL117 migration, close-out.** Status: Planned.
-   - CLI and comm verbs, plus config keys on every surface.
-   - `import-graph`, and deprecation notices on `orchestrator_graph_create/plan/run`.
-   - The howto (`docs/howto/automation-*.md`, no BL ids).
-   - The release-smoke section.
-   - The `datawatch-app` Android and iOS issues.
+7. **Phase 7 — Remaining parity, BL117 migration, close-out.** Status: Done (development build; released with the next release).
+   - The parity audit table and `TestAutomationParity`; the verb, web control, audit event and config key gaps are closed on every surface.
+   - `import-graph` on REST, MCP, CLI and comm, with the converter that turns an orchestrator graph into a draft Automation.
+   - Deprecation notices on `orchestrator_graph_create/plan/run` (REST, MCP, CLI and comm), with a once-per-process daemon warning.
+   - The howto `docs/howto/automation-chains.md` (no BL ids).
+   - The release-smoke section 78.
+   - The `datawatch-app` Android and iOS issues are written as ready-to-file text (see Phase 7 companion apps); **not filed yet**.
+
+### Phase 7 status note
+
+   **Phase 7 status note.** What shipped:
+   - Parity audit: the table is the `Phase 7 parity audit` section near the end of this file;
+     `TestAutomationParity` (`cmd/datawatch/automation_parity_test.go`) enforces the REST, MCP, CLI and comm columns.
+   - import-graph: REST `POST /api/automations/import-graph/{graph_id}` (`internal/server/automation_import_graph.go`,
+     body `{"dry_run": bool}`; 422 carries the refusal reason); MCP tool `automation_import_graph`
+     (`internal/mcp/automation_tools.go`); CLI `datawatch automation import-graph <graph-id> [--dry-run]`
+     (`cmd/datawatch/cli_automation.go`); comm `automation import-graph <graph-id> [dry-run]`
+     (`internal/router/automation_cmd.go`); audit event `automation_import_graph` on a real import.
+   - Converter: `internal/autonomous/automation_import_graph.go` (`ImportGraphToInput`).
+   - Deprecation helper: `internal/orchestrator/deprecation.go` (`DeprecationNotice`, `WarnDeprecatedOnce`) on the
+     three tools `orchestrator_graph_create`, `orchestrator_graph_plan` and `orchestrator_graph_run` and their REST,
+     CLI and comm equivalents; responses carry a `Deprecation: true` header and a `deprecation` field.
+   - Howto: `docs/howto/automation-chains.md`.
+   - Tracker section: `Automation parity, import-graph and deprecation — unreleased` in `docs/testing-tracker.md`.
+   - Release smoke: section 78 of `scripts/release-smoke.sh`.
+
+   Still owed:
+   - The live smoke result: section 78 and the tracker section have not been run against a real daemon, so every
+     Validated cell of the tracker section stays No until a sandbox run exercises them.
+   - The mobile apps: no mobile code is in this phase; see Phase 7 companion apps.
+
+### Phase 7 companion apps
+
+   **`datawatch-app` parity: not filed yet.** The two issues below are ready to file in `dmz006/datawatch-app`.
+   They cannot be filed from the implementing session; the supervisor files them and this note is updated
+   with the issue numbers. No mobile code is in this phase.
+
+   **Issue 1 — Android: Automation tab and Phase 7 fields**
+   - Scope: an Automation tab with the list; the pipeline strip detail for one Automation; the controls pause,
+     resume, cancel (with the `cancel_in_flight` option), skip and insert. Add the new verbs. Show the
+     import-graph dry-run result (the preview input and the warnings) and, on a refusal (HTTP 422), the refusal
+     reason. Render the `fork` and `join` member kinds in the strip. Parse the budget fields (`budget_policy`,
+     the `budget` view, `spent_usd`, `ceiling_display`, and the paused or blocked budget reason) and the
+     `deprecated` and `deprecation` fields now present on old orchestrator graph responses, showing the notice.
+   - Acceptance criteria:
+     1. The tab lists Automations and opens a pipeline strip detail with the current state of each member.
+     2. Pause, resume, cancel (with and without cancel-in-flight), skip and insert each call the REST route and show the result or the error.
+     3. import-graph with dry run shows the previewed Automation and warnings and stores nothing; a refused graph shows the reason text.
+     4. Fork and join members draw as parallel branches without breaking the strip.
+     5. Budget fields parse and display, and a response missing them does not crash the screen.
+     6. A graph response with `deprecated` and `deprecation` shows the notice; one without them is unchanged.
+
+   **Issue 2 — iOS: Automation tab and Phase 7 fields**
+   - Scope: the same as the Android issue, in the companion app repo's iOS track: the Automation tab (list,
+     pipeline strip detail, pause, resume, cancel with cancel-in-flight, skip, insert), the new verbs,
+     import-graph (dry run result display and the refusal reason), the `fork` and `join` member kinds, the budget
+     fields, and the `deprecated` and `deprecation` fields on old orchestrator graph responses.
+   - Acceptance criteria: 1 to 6 of the Android issue, verified on iOS.
+   - Advance and blocked push notifications ride on BL427's mobile topic sink, so no Automation-specific APNs work is needed.
+8. **Phase 8 — Progress, estimates and running dashboard (BL553).** Status: Done (development build; released with the next release).
+   - The metrics engine (counts by kind and state, correct time and throughput, utilization,
+     remaining work split known vs estimated, completion range) with REST, MCP, CLI and comm verb.
+   - The explicit PRD `kind` field and a machine-readable backlog.
+   - Daily snapshots and trend; the PWA dashboard card; `scripts/v10-status.py` kept as the oracle
+     and as a golden test.
+   - Operator guide `docs/howto/automata-progress.md`, tracker section `Automata progress dashboard — unreleased`
+     in `docs/testing-tracker.md`; the `datawatch-app` Android and iOS issues are written as ready-to-file text
+     (see Phase 8 companion apps); **not filed yet**.
+
+### Phase 8 status note
+
+   **Phase 8 status note.** What shipped:
+   - Engine: `internal/autonomous/progress_engine.go` (counts, throughput, utilization, lead time),
+     `progress_time.go` (inactive windows, active hours, median), `progress_remaining.go` (known and estimated
+     work, completion range and drivers), `progress_kind.go` (kind resolution), `progress_backlog.go` (backlog
+     reader and the `{kind=...}` and `{phases=N}` markers), `progress_text.go` (the one text renderer).
+   - Surfaces: REST `GET /api/autonomous/progress` and `GET /api/autonomous/progress/trend`
+     (`internal/server/progress.go`, read capability); MCP `autonomous_progress` and `autonomous_progress_trend`
+     (read-only) and `autonomous_prd_set_kind`; CLI `datawatch autonomous progress`, `progress-trend`,
+     `prd-set-kind` and `prd-create --kind`; comm `progress`, `progress trend [days]` and `autonomous set-kind`;
+     REST `POST /api/autonomous/prds/{id}/set_kind`.
+   - Snapshots: `progress-snapshots.jsonl` next to the Automata store, one per UTC day plus one per completed
+     Automaton, pruned at `autonomous.progress.snapshot_retention_days`; trend direction converging, widening,
+     flat or unknown (10% tolerance on the width of the range).
+   - Config: `autonomous.progress.lanes`, `inactive_gap_hours`, `backlog_path`, `since`, `snapshot_retention_days`
+     on YAML, CLI, web UI, REST, MCP and comm, applied live.
+   - PWA: the Progress card on the Automata tab (`progressCardHtml`, `loadProgressCard`), the *Kind* select in
+     Automaton settings, the five settings fields; locale keys `progress_card_*` and `settings_progress_*` in
+     all five bundles.
+   - Oracle and golden test: `internal/autonomous/progress_golden_test.go` runs the engine and
+     `scripts/v10-status.py` on the fixture in `internal/autonomous/testdata/progress/` and compares every number.
+   - Howto: `docs/howto/automata-progress.md`. Tracker section: `Automata progress dashboard — unreleased`.
+
+   The four documented oracle changes (made in `scripts/v10-status.py` and the engine together, so they still agree):
+   - (a) Overlapping or touching inactive windows are merged before hours are summed, so no stretch is excluded twice.
+   - (b) A multi-phase backlog row is read from its `{phases=N}` marker instead of the names of two particular
+     rows: an unfiled row adds max(N, 1) new Automata, a filed row adds max(N minus its linked ids, 0).
+   - (c) Tasks per Automaton divides by the Automata that have at least one task, not by every Automaton.
+   - (d) Records whose `is_template` field is true are skipped.
+
+   Still owed:
+   - The live smoke result: the tracker rows are Tested by unit and golden tests with fakes and fixtures only, so
+     every Validated cell stays No until a sandbox run covers the end-to-end story (real finished Automata, a real
+     backlog and waits file, a day boundary for the snapshot, the card in a browser).
+   - Deferred, not built: the stage ledger timestamps (lead time uses the existing created, approved and task
+     start and completion times, so a stage that is not recorded reads not measured); per-lane optimization
+     inputs (utilization is one figure against a configured lane count, not a per-lane or per-backend view);
+     and critical-path figures (the completion range divides total work by a rate; it does not model task
+     dependencies or which Automaton gates the finish).
+   - The mobile apps: no mobile code is in this phase; see Phase 8 companion apps.
+
+### Phase 8 companion apps
+
+   **`datawatch-app` parity: not filed yet.** The two issues below are ready to file in `dmz006/datawatch-app`.
+   They cannot be filed from the implementing session; the supervisor files them and this note is updated
+   with the issue numbers. No mobile code is in this phase.
+
+   **Issue 1 — Android: Automata progress card and Automaton kind**
+   - Scope: an Automata progress card and a kind field. Read `GET /api/autonomous/progress` (optional
+     `automation_id`, `tag_id`, `since`, `until`) and `GET /api/autonomous/progress/trend?days=N` (1 to 365,
+     default 30). Parse the metrics object: `generated_at`, `since`, `scope`, `calendar_days`, `active_days`,
+     `lanes`; `groups` (`feature`, `bug`, `other`, always all three) and `totals`, each with `prds`, `done`,
+     `running`, `waiting`, `blocked`, `tasks`, `tasks_done`, `tasks_left`, `work_hours` and the nullable
+     `median_prd_wall_hours`, `mean_prd_wall_hours`, `mean_task_hours`, `median_task_hours`; `throughput`;
+     `utilization`; `lead_time` (every stage nullable); `inactive` (`windows` with `start`, `end`, `kind`,
+     `reason`, `inferred`, plus `excluded_hours`, `share_of_calendar`, `calendar_estimate_days`); `remaining`
+     (`known`, `estimated`, `combined`); `completion` (`low_days`, `high_days`, the four `by_*_days` figures,
+     `calendar_days`, `drivers`, `method`); `unfiled_rows`; `backlog_available`; `not_measured`. From the trend
+     object read `days`, `direction` and `points` (`date`, `reason`, `completion_low_days`,
+     `completion_high_days`, `known_tasks`, `estimated_tasks`, `throughput_3d`, `utilization`,
+     `completed_prds`). Treat every nullable number as not measured; never show a missing value as 0. Add a
+     Kind picker (feature, bug, other, or derived) that calls `POST /api/autonomous/prds/{id}/set_kind` with
+     `{"kind": ...}` (an empty kind derives it again), and send `kind` when creating an Automaton. Never show
+     the `id` or `number` of an `unfiled_rows` entry; show its `item` text only.
+   - Card contents, in this order: the kind table (one row each for feature, bug and, when non-zero, other, plus
+     a total: Automata, done, running, waiting, blocked, tasks, tasks done, tasks left, work time, median per
+     Automaton, mean per task); the work-remaining block with the known part (Automata not done, tasks still
+     open, not decomposed yet) and the estimated part (new items not filed yet, Automata with no tasks yet,
+     estimated tasks, tasks per Automaton mean and median) kept apart, then the combined estimate; the
+     completion range with the four method lines and their sentences, the calendar view and the drivers; the
+     throughput, utilization and inactive-windows summaries (inferred windows marked); the unfiled-row count
+     and the trend direction. Show a stale notice when the last refresh failed or the data is older than five
+     minutes, keep the last good data on screen, and show a retry control when the first load fails.
+   - Locale keys: add all `progress_card_*` keys (title, loading, stale, failed, retry, not measured, inferred,
+     the units, the `col_*` headings, the `kind_*` labels, the remaining, completion, method, driver,
+     throughput, utilization, windows, backlog and trend keys) and the five `settings_progress_*` keys
+     (`lanes`, `inactive_gap_hours`, `backlog_path`, `since`, `snapshot_retention_days`) from the five server
+     locale bundles under `internal/server/web/locales/`, in the five languages (en, de, es, fr, ja). Map the
+     API `drivers` values `utilization`, `large_prd_mix`, `undecomposed_backlog` and `sparse_history` to the
+     `progress_card_driver_*` keys, and the `method` keys `prd_rate`, `task_rate`, `task_rate_24h` and
+     `worker_hours` to the `progress_card_method_*` keys; an unknown value must not break the screen.
+   - Acceptance criteria:
+     1. The card lists a row per kind and a total, and the *other* row appears only when it has Automata.
+     2. Known and estimated remaining work are shown separately and the combined figure is labelled an estimate.
+     3. A null number shows the localized *not measured* text, never 0, and a response missing a field does not crash the screen.
+     4. The completion range shows low to high active days, each method with its sentence, and the drivers as localized text.
+     5. Inactive windows list with the inferred mark; the stale notice and the retry control behave as described.
+     6. The trend direction shows converging, widening or flat, and nothing when it is unknown or no snapshot exists.
+     7. Setting the kind calls the route, shows an error on a 400 or 404, and an empty kind clears it.
+     8. No tracker id, internal term or `unfiled_rows` id appears anywhere on screen; hostile text in a row is shown as plain text.
+
+   **Issue 2 — iOS: Automata progress card and Automaton kind**
+   - Scope: the same as the Android issue, in the companion app repo's iOS track: the progress and trend reads,
+     the metrics parsing with nullable numbers, the kind picker and create-time kind, the card contents and
+     states, and the `progress_card_*` and `settings_progress_*` locale keys in the five languages.
+   - Acceptance criteria: 1 to 8 of the Android issue, verified on iOS.
+   - No push or APNs work is needed: the progress figures are read on demand and carry no notification.
+
+---
+
+## Phase 3a — multi-cursor: fork/join branches and nested Automations
+
+Phase 3a extends the Automation graph from a single linear cursor to **parallel
+branches** (fork/join members) and **nested Automations** (a member that is
+another Automation), plus the multi-cursor machinery (advance rule, restart
+reconciliation, status, audit) both need. It is the operator-decided 3a/3b
+split from Open question 10: **3a designs and builds the multi-cursor
+coordinator first; 3b then builds the control ops on top, and every control op
+names the branch it acts on** using the branch naming fixed in this section.
+
+Operator decision record (2026-10-22, recorded in this doc's Open questions
+and in the task notes):
+
+- **Nesting (OQ 2):** allowed (operator decision 2026-10-22) — an Automation may contain another
+  Automation as a member, with cycle detection across levels and clear
+  ownership.
+- **Fork/join (OQ 10):** build it — a fork starts several member Automata at
+  the same time; a join waits for all of them, then continues, with a
+  per-join rule for what happens if a branch fails or is skipped.
+- **Join failure rule (OQ 10):** per join — `on_branch_failure`:
+  `all_must_succeed` (default: wait for the other branches, then the
+  Automation goes `blocked` and alerts naming the failed branch),
+  `any_one_is_enough`, or `continue_anyway`.
+
+### Multi-cursor model
+
+The single cursor becomes a **set of active cursors**:
+
+- `Automation` gains `ActiveCursors []string` (member IDs currently in
+  flight, kept sorted and unique for determinism). The existing
+  `CurrentMemberID` keeps its JSON field (`current_member_id`) as a
+  **deprecated input only for load-time migration**: on load, if
+  `active_cursors` is absent or empty and `current_member_id` is non-empty,
+  `ActiveCursors` is seeded from it. It is never written again after a 3a
+  write. (The feature is new and unreleased; no operator data migration is
+  needed beyond this load path.)
+- A linear Automation is exactly the existing model: no `fork`/`join`
+  members and at most one active cursor at a time. All existing advance,
+  blocking, alerting and idle behaviour for linear Automations is unchanged.
+- Every write (advance, fork fire, join fire, reconcile) still goes through
+  the existing optimistic-concurrency `UpdateAutomation(id, expectedVersion, …)`
+  payload; `ActiveCursors` is part of that payload, and a stale-version apply
+  re-reads the record, re-evaluates, and no-ops if the state has already
+  moved (the existing `coordinatorCASRetries` bounded retry applies per
+  cursor). This is the stale-version rule the required test set exercises.
+
+### Active cursor set and advance rule
+
+On each terminal event for a member in `ActiveCursors` (a live PRD or child
+Automation reaching a terminal status, or a reconcile replay of one):
+
+1. Remove the member from `ActiveCursors`. Record its outcome on the member
+   (`Outcome`, `EdgeTaken`, `FinishedAt`).
+2. If the member is a **branch** (listed in a fork's `fork_members`), record its
+   success or non-success outcome on the paired join and evaluate the join rule.
+   Do **not** follow an edge: a branch has none.
+3. Otherwise follow the member's single outcome edge, per the edge mapping for
+   `prd` members and per the nested outcome mapping for `automation` members. An
+   edge to a `prd` or `automation` member starts it through the start gate and
+   adds it to `ActiveCursors`. An edge to a `fork` fires that fork. An empty edge
+   completes or blocks the Automation as the mapping says.
+4. A join that fires follows its `on_complete` exactly as step 3 does.
+5. Persist once with `UpdateAutomation(id, expectedVersion, …)`. A stale version
+   re-reads the record and re-evaluates, and it is a no-op if the state has
+   already moved. The `coordinatorCASRetries` bound applies per cursor.
+6. The Automation stays `active` while `ActiveCursors` is non-empty or a join is
+   waiting. It completes when `ActiveCursors` is empty, no join is waiting, and
+   every cursor's forward path ended in an empty `on_complete`. It blocks as
+   described under **Fork/join semantics**.
+
+A linear Automation takes steps 1, 3 and 5 with at most one cursor. Its behaviour
+is unchanged.
+
+### Member kinds (fork/join + nested)
+
+`AutomationMember` gains a `kind` discriminator (JSON `kind`, omit defaults
+to `prd`):
+
+| `kind` | Meaning | New fields |
+|---|---|---|
+| `prd` (default) | Run one member Automaton (PRD), then follow an outcome edge | `prd_id` (as today), `on_complete/on_blocked/on_failed` |
+| `automation` | Run another whole Automation, nested: start it and wait for its terminal state | `automation_id` (the child Automation); edges as today |
+| `fork` | Control node reached like any other next member: on arrival it starts **all** its branch members at once | `fork_members: []string` — branch member IDs (≥ 2) |
+| `join` | Control node: collects its paired fork's branches, applies the rule, then continues | `join_members: []string` — mirrors the paired fork's `fork_members`; `on_branch_failure`; `on_complete` |
+
+New member fields (all omitempty on the wire; member-ID-named, matching the
+existing validation error style):
+
+- `kind` — `prd` | `automation` | `fork` | `join`; omit = `prd`.
+- `automation_id` — `kind=automation`: the child Automation ID.
+- `fork_members` — `kind=fork`: the branch member IDs to start simultaneously.
+- `join_members` — `kind=join`: the branch member IDs this join collects.
+- `on_branch_failure` — `kind=join` only: `all_must_succeed` (default when
+  omit) | `any_one_is_enough` | `continue_anyway`.
+
+Control-node bookkeeping: a fired `fork` member is recorded `completed` with
+outcome `forked`; a fired `join` member is recorded `completed` with outcome
+`joined`. Neither starts a PRD, so their start gate never runs.
+
+**Nested outcome mapping** — the child Automation's terminal status maps to
+the nested member's outcome and edge:
+
+| Child ends | Nested member outcome | Edge taken |
+|---|---|---|
+| `completed` | success | `on_complete` |
+| `blocked` | blocked | `on_blocked` |
+| `cancelled` | failed | `on_failed` |
+
+The parent's coordinator learns child terminal states through the existing
+lifecycle dispatcher at a **new level** `LevelAutomation` (`"automation"`),
+kinds `automation.completed` / `automation.blocked` /
+`automation.cancelled`, emitted by the Manager on the child's transition to
+that status. `LifecycleEvent.AutomationID` (already present) routes it, and
+the coordinator's existing LevelPRD subscription shape is reused for
+LevelAutomation; the filter validation in `lifecycle_subscription.go` gains
+`LevelAutomation` as an accepted level. A `fork` branch of kind `automation`
+therefore terminates via `automation.*` events into the join exactly like a
+`prd` branch terminates via PRD events.
+
+### Fork/join semantics
+
+- A **fork** is reached as a next member (via an incoming outcome edge, or as
+  the entry member — a `fork` may be the entry member). On arrival the
+  coordinator marks it `completed` (outcome `forked`) and attempts each branch
+  in deterministic (sorted) order, each under the standard per-cursor start
+  gate (approval state, resume-vs-run, deferred-before-recovery, the
+  `beginStart` in-flight guard). `ActiveCursors` becomes the set of branches
+  that started. A branch that fails its gate or whose start errors is
+  recorded immediately as a **failed branch** (decision + audit) — the
+  fork/join contract treats it like a branch that ended in failure; it does
+  not block sibling branches. This is the only place a single branch's start
+  failure does not block the Automation: the join rule is the decider.
+- **Branches carry no outcome edges; the fork/join pairing is the only link.**
+  Every member listed in a fork's `fork_members` must be a `prd` or
+  `automation` member (control nodes may not be branches), and its
+  `on_complete`, `on_blocked` and `on_failed` must all be empty. The fork
+  itself carries no outcome edges: its forward path is its paired join. A
+  branch's terminal outcome reaches the join through the pairing (the join's
+  `join_members` set equal to the fork's `fork_members`), not through an edge.
+  So a join's only incoming link is its fork, and no branch can stall a join,
+  because every branch's terminal outcome is always delivered to it.
+- **Branch outcome mapping.** A branch's terminal status is recorded on the
+  join as success or non-success: `completed` (or `automation.completed` for a
+  nested branch) is success; `blocked`, `failed`, `cancelled` and `skipped` are
+  non-success. The data-model edge table (Mapping PRD statuses onto the three
+  edges) applies to linear members only. For a branch, the join rule, not an
+  edge, decides whether the Automation blocks, so a cancelled branch is named
+  in the join's block reason rather than blocking the Automation directly.
+- A **join** fires when its rule is satisfied by the branches' terminal
+  outcomes. Rule evaluation is derived from branch member statuses (not event
+  order), so it is replay-safe:
+  - `all_must_succeed` (default): fires the `on_complete` edge only when
+    **every** branch ended successful. When all branches are terminal and
+    any ended non-successfully, the Automation goes `blocked` with reason
+    `join <id>: not all branches succeeded (non-success: <member IDs>)`,
+    plus a decision and the `automation_join_blocked` audit entry (and the
+    existing block alert).
+  - `any_one_is_enough`: fires the moment **any** branch ends successful.
+    Still-running branches are allowed to finish naturally; their late
+    events are recorded as decisions and never re-fire the join. If every
+    branch ends without one succeeding, the Automation goes `blocked` with
+    reason `join <id>: no branch succeeded`.
+  - `continue_anyway`: fires the moment **all** branches are terminal,
+    whatever their outcomes; non-success branches are named in the join
+    decision and audit.
+- After a join fires: the join member is recorded `completed` (outcome
+  `joined`) and its `on_complete` edge is followed exactly like any other
+  advance (gate, CAS, audit — or complete the Automation if the edge is
+  empty).
+- The **Automation completes** when the last live cursor's forward path
+  resolves to an empty `on_complete` (or join `on_complete`) and no live
+  cursor remains. It goes **blocked** when the last live cursor's forward
+  path is a non-success edge with empty target, a last remaining branch's
+  start fails at the gate or in the start, or a join's rule is unsatisfied
+  with all branches terminal. Late branches of an already-fired join never
+  block completion (they finish naturally; their events are recorded).
+
+### Nested Automation semantics
+
+- **Ownership:** the child's PRDs belong to the **child Automation** under
+  the existing single-ownership rule. The child Automation itself may be a
+  member of **at most one other** non-terminal Automation — enforced at
+  create/update of the referencing Automation by scanning non-terminal
+  Automations' membership, the same mechanism PRD ownership validation uses.
+  There is no parent pointer on the child; parentship lives only in the
+  parent's member list (no second source of truth to keep in sync).
+- **Start:** starting a `kind=automation` member activates the child (via
+  `Manager.ActivateAutomation`'s existing semantics, which starts the
+  child's entry member through the normal gate). The coordinator takes this
+  through a **new interface** (`ActivateAutomation(id, actor string) error`,
+  checked by type-assertion on the starter, so existing `AutomationStarter`
+  test fakes keep compiling). Starting a child that is already active is the
+  existing `409` path and is recorded as a failed start of that branch.
+- **Cycle rejection across levels:** validation walks parent→child edges
+  (from `kind=automation` members) and rejects any create/update where the
+  parent can reach itself transitively — including the trivial self-reference
+  (a member naming its own Automation) and the two-cycle (A ↔ B). A child may
+  not be a member of two Automations (uniqueness above), and a PRD that is a
+  member of the child may not also be a member of the parent (existing PRD
+  ownership rule). Depth is therefore arbitrary but acyclic; typical nesting
+  is one level.
+- **Budgets:** the child keeps its own `BudgetPolicy`; a parent does not gate
+  or cap the child's internal starts, and 3a does no cross-level budget
+  rollup (OQ 9 stays as recorded).
+
+### Validation addenda (on every create/update, under the same lock)
+
+Existing invariants are unchanged (unique member IDs, edges naming existing
+members, reachability from the entry member, no in-Automation cycles, single
+PRD ownership). 3a adds:
+
+1. `fork_members` ≥ 2, all exist, distinct, each a `prd` or `automation`
+   member; no member appears in two forks' `fork_members`.
+2. A `join` pairs with **exactly one** `fork` of the same Automation whose
+   `fork_members` equal its `join_members` (set equality), and no second
+   join may share that branch set.
+3. Every branch's `on_complete`, `on_blocked` and `on_failed` are empty, and
+   the fork itself carries no outcome edges (see **Fork/join semantics**). A
+   `join` carries only `on_complete`; its `on_blocked` and `on_failed` must be
+   empty, because a join's rule failure blocks the Automation rather than
+   routing along an edge.
+4. No outcome edge may name a `join`. A join is reached only through the
+   pairing in rule 2, so its only incoming link is its fork. Outcome edges may
+   name `fork`s. A `join` may not be the entry member; a `fork` may be.
+5. `kind=automation`: the child exists, is not itself (no self-nesting), is
+   not referenced by any other non-terminal Automation, and the parent does
+   not reach itself through it (transitively).
+6. `on_branch_failure` appears only on `join` members and is one of the
+   three rule values. `kind` values are one of the four.
+7. All errors are member-ID named, in the existing `validateAutomation`
+   error style. Fork/join members may not carry `prd_id`; `prd` members may
+   not carry `fork_members`/`join_members`/`on_branch_failure`.
+8. **Cycle detection covers the pairing.** The three-colour DFS (see **Data
+   model › Validation**) also walks the fork/join pairing: an edge from each
+   fork to each of its branches, and from each branch to its paired join. A
+   cycle that passes through a fork is therefore rejected with the member IDs
+   named, even though the branches carry no outcome edges.
+
+### Restart reconciliation (multi-cursor)
+
+`reconcile()` generalizes from the single cursor to the cursor set, with the
+existing guarantees (nil-safe, idempotent, runs once after boot-resume before
+the coordinator becomes ready):
+
+- For each active/paused Automation: for every member in `ActiveCursors`
+  whose PRD (or child Automation) has reached a terminal state while the
+  daemon was down → replay through the standard event path as a terminal
+  event (outcome recorded, branch → join evaluation, edge or join rule
+  applied). Existing behaviour, now per cursor.
+- For every not-yet-fired `fork` whose branches are (partly) already in
+  flight or terminal → re-fire the fork: started/terminal branches are
+  untouched (the `beginStart` guard and PRD status checks make this
+  idempotent), and each unstarted branch gets its one retry. This is the
+  **restart-mid-fork** case the required test set covers: branches already
+  running at crash time keep running; the rest start; the join still sees
+  every branch exactly once.
+- For every pending `join` whose branches are all already terminal →
+  re-derive the rule and fire or block, idempotently (same inputs → same
+  decision, so a replay never double-fires or double-blocks).
+- For every pending `kind=automation` member whose child is still `draft`
+  (its start never landed) → retry the child activation once, through the
+  normal gate path.
+
+### `autonomous_status` extension
+
+Each `automations[]` entry gains two fields (existing scalar fields kept for
+back-compat):
+
+- `active_cursors: [{ member_id, prd_id?, automation_id?, status }]` — one
+  entry per in-flight member; `prd_id` for kind `prd`, `automation_id` for
+  kind `automation`; `status` the member status. Sorted by member ID.
+- `join_wait: { join_member_id, rule, pending_branches: [member_id], failed_branches: [member_id] }` —
+  present (and non-null) while a join is waiting on branches: the join
+  member, the applied rule, the branches still live, the branches ended
+  non-successfully. Absent otherwise.
+- Back-compat: `current_member_id` / `current_prd_id` /
+  `current_prd_title` are derived from the first active cursor (sorted);
+  empty when none. Existing fields (`pending_members`, `idle_since`,
+  `idle_seconds`, `blocked_reason`) keep their semantics, with
+  `blocked_reason` additionally carrying the join-block reasons above.
+
+### Audit entries (Audit Logging Rule)
+
+New actions, all through the existing `s.audit(…, "automation", id, …)` /
+`SetAuditFn` paths in JSON-lines and CEF, each carrying **actor** and
+**reason** where applicable:
+
+| Action | When | Payload includes |
+|---|---|---|
+| `automation_fork` | A fork fires | fork member ID, branch member IDs, per-branch start result (started / gate-denied / start-error) |
+| `automation_join` | A join fires (rule satisfied) | join member ID, rule, per-branch outcomes, the edge taken |
+| `automation_join_blocked` | A join's rule is unsatisfied and the Automation blocks | join member ID, rule, non-success branch IDs, the block reason |
+| `automation_nested_activate` | A `kind=automation` member starts | parent Automation ID, parent member ID, child Automation ID, start result |
+
+Existing `automation_advance` / `automation_blocked` /
+`automation_activate` entries keep their shape; an advance whose target is a
+`fork` or `join` member adds `fork_members` / `join_members` to the payload.
+
+### Branch naming (what Phase 3b builds on)
+
+Phase 3b control ops (pause / resume / cancel / skip / insert / remove /
+reorder) address work by **stable member IDs** inside their Automation:
+
+- A **branch** is named by its member ID: `automation <id> <op> member=<member_id> …`.
+  Member IDs are stable for the Automation's lifetime (`8-hex, stable across
+  edits`) and across daemon restarts, so a branch name is unambiguous within
+  its Automation and survives restarts. In-flight cursors and join-waiting
+  branches are both addressable this way.
+- **Nested scope:** ops on a member inside a child name the nesting path
+  `<parent_member_id>/<child_member_id>` (parent member = the
+  `kind=automation` member); the REST address for 3b is
+  `/api/automations/{parent}/members/{parent_member}/…` — the concrete 3b
+  endpoint set is 3b's design, but this naming is fixed here so 3a and 3b
+  cannot diverge.
+- **Joins** are addressable by their member ID too (3b can pause at a join —
+  hold its firing — or mark it consumed on skip).
+- `cancel` inherits the OQ 3 decision: `cancel_in_flight` is a **required
+  argument on every surface with no default**; 3a's per-branch semantics
+  (a cancelled Automation stops future starts per branch; in-flight branches
+  finish) is what 3b exposes.
+- **Urgent insertion (OQ 17):** the cap — at most one urgent member at a
+  time per Automation, a new urgent insert allowed only after the previous
+  urgent member has finished — applies per Automation in 3a exactly as
+  recorded, branch-aware in 3b.
+
+### Operator open-question status (effect on this phase)
+
+The decisions themselves are recorded verbatim in the Open questions section
+(2026-10-22); this table is their status with respect to 3a/3b:
+
+| OQ | Decision | Status w.r.t. 3a |
+|---|---|---|
+| 2 — nested Automations | **Allowed** (operator decision 2026-10-22) | **Implemented in 3a**: member kind `automation`, ownership + cross-level cycle rejection above; "same control ops" and PWA visible nested levels land in 3b / Phase 6 |
+| 3 — `cancel_in_flight` | **No default — required, ask each time** | 3a fixes per-branch cancel semantics; **3b** makes the argument required on REST/MCP/CLI/comm and the PWA confirm dialog |
+| 8 — agent insert + budget-on-breach | `agent_insert_policy` per Automation (default `allow`); pause only when a reset time is known, else block | **3b** (insert ops + budget `OnBreach`); 3a records the names and default so the branch-aware ops can key off them |
+| 10 — fork/join + per-join rule | **Build now; `on_branch_failure` per join, default `all_must_succeed` wait-then-block** | **Core of 3a** — fully this phase (data model, semantics, rules, reconciliation, status, audit); PWA branch drawing in Phase 6 |
+| 11 — planning setting | Separate optional per-Automation planning field, unset = global | Not 3a scope (Phase 4 tier work); a nested child carries its own field independently — no inheritance added by 3a |
+| 12 — `executor_source` | Yes, run records gain `executor_source` | Not 3a scope (run-record schema); 3a audit entries already carry actor |
+| 17 — advance gate + urgent lane | Diff-aware test check (BL413) is in scope; urgent lane per the recorded cap | 3a keeps the existing per-branch start gate unchanged (approval/defer/start-failure per cursor); the BL413 gate hook and the 1-urgent-member cap land with their own work and are branch-aware under the naming above |
+
+### Phase 3a parity surface
+
+The table below is the Phase 3a slice of the **Parity surface** table above,
+for the surfaces the operator requires: REST, MCP, CLI, comm channel, PWA and
+the companion app. "In 3a" means the build ships it; "deferred" names the phase
+that does.
+
+| Surface | In 3a? | What 3a ships |
+|---|---|---|
+| **REST** | Yes | The existing `/api/automations` CRUD accepts the new member fields; `GET /api/autonomous/status` returns `active_cursors` and `join_wait`. No new endpoints. |
+| **MCP** | Yes | `automation_create` / `automation_update` forward the new member fields; `autonomous_status` carries the new fields. No new tools. |
+| **CLI** | Yes | `datawatch automation create` / `update` accept member JSON; `list` / `get` print `active_cursors`. |
+| **Comm channel** | Yes (read-only) | `automation list` and `automation get <id>`. Graph building stays off comm. |
+| **PWA** | Deferred to Phase 6 | No PWA view in 3a. The pipeline strip must draw parallel branches and nested levels (Open question 10). |
+| **datawatch-app (Android, iOS)** | Owed, filed at merge | Issue on `dmz006/datawatch-app`, filed when the 3a branch merges. Not filed in this build. |
+
+### Phase 3a parity deltas
+
+The Parity surface table above remains the plan of record. 3a's deltas:
+
+- **REST:** no new endpoints — the existing `GET/POST /api/automations` and
+  `GET/PUT/DELETE /api/automations/{id}` accept the new member fields
+  (`kind`, `automation_id`, `fork_members`, `join_members`,
+  `on_branch_failure`) with the validation addenda above, and
+  `GET /api/autonomous/status` returns `active_cursors` / `join_wait`.
+  `openapi.yaml` documents the new member fields. Invalid fork/join/nested
+  shapes are `400` with member-ID-named messages; version conflicts stay
+  `409`.
+- **MCP:** `automation_create` / `automation_update` forward the new member
+  fields through the unchanged `members_json` shape (their description text
+  updated); `automations[]` on `autonomous_status` carries the new fields;
+  no new tools. All follow the existing `internal/mcp` tool pattern.
+- **CLI:** `datawatch automation create` / `update` (new subcommands, sibling
+  of the existing `activate`, calling the same REST endpoints) accept the
+  member JSON so an operator can build a fork/join or nested graph from the
+  shell; `list` / `get` print `active_cursors` when present.
+- **Comm channel:** `automation list` and `automation get <id>` verbs join
+  the existing `activate` verb (graph building over one comm line is excluded
+  from comm, per the table: create and edge rewiring stay on REST/MCP/CLI/PWA).
+- **YAML/config:** no new keys in 3a (3b's `empty_edge_action` / insert
+  policy keys are Phase 3b/5 territory with the table above).
+- **PWA / datawatch-app (mobile parity rule):** 3a ships **no PWA view** —
+  the pipeline strip must draw parallel branches and nested levels, which is
+  Phase 6 scope per Open question 10. The `datawatch-app` parity issue for
+  Automation (Android + iOS tracks) must explicitly include **parallel
+  branches and nested levels in the pipeline strip**, the `active_cursors`
+  / `join_wait` status fields, and no client-side assumptions about
+  `current_member_id` alone. **Mobile parity: owed — file an issue on
+  `dmz006/datawatch-app` when the 3a branch merges.** It is not filed in this
+  build.
+
+### Phase Completion Checklist (3a build)
+
+Per AGENT.md's Phase Completion Checklist, the 3a build includes the functionality
+and the **required test set** below, `go test ./...` green, a `docs/testing-tracker.md`
+section for 3a, `docs/api/autonomous.md` and `docs/mcp.md` updates, and `openapi.yaml`
+member fields. The datawatch-app issue is owed at merge (see **Phase 3a parity deltas**).
+CHANGELOG and the version bump are release-pipeline work and are **out of scope for
+this build** (the build must not edit CHANGELOG.md).
+
+**Required test set (3a build).** Each item is a named test; each must pass in the build:
+
+1. **Fork starts.** A fork fires every branch in sorted order. Each branch passes its own gate. A gate-denied or start-failed branch is recorded as a failed branch and does not block its siblings.
+2. **Join rules.** One test per rule: `all_must_succeed` (also the default when `on_branch_failure` is omitted), `any_one_is_enough`, and `continue_anyway`. Each asserts the fire condition, the edge taken and the join decision.
+3. **Join waits, then blocks.** With a non-success branch under `all_must_succeed`, the join does not fire while any branch is live. Once all branches are terminal it blocks with the named reason and emits `automation_join_blocked`.
+4. **Nested outcome mapping.** A child that ends `completed` takes `on_complete`, `blocked` takes `on_blocked`, and `cancelled` takes `on_failed`.
+5. **Nested cycle rejection.** Rejects direct self-reference, the two-cycle A → B → A, and a child that is already a member of another non-terminal Automation. Each error names the member ID.
+6. **Restart mid-fork.** Branches already running keep running, unstarted branches start, and the join is fed exactly once.
+7. **Restart mid-join.** Every branch is terminal before the crash. On replay the join fires or blocks exactly once, with the same decision as before the crash.
+8. **Stale-version no-op.** A stale-version apply re-reads the record, re-evaluates, and changes nothing if the state has already moved.
+9. **Status shape.** `active_cursors` lists in-flight members sorted by member ID. `join_wait` is present only while a join waits. The back-compat `current_member_id`, `current_prd_id` and `current_prd_title` derive from the first active cursor.
+10. **Validation shape.** A branch carrying any outcome edge is rejected. A join carrying `on_blocked` or `on_failed` is rejected. A `join` that is not paired with exactly one fork is rejected. Each error names the member ID.
 
 ---
 
@@ -1411,7 +2196,21 @@ howto, and the `datawatch-app` issue where applicable.
     - `cancel_automation` default versus `cancel_in_flight`;
     - precedence tables for both chains with the Automation tier (same-level
       model, independent effort, `pool` bypass, source `automation`);
-    - BudgetPolicy tightest-wins, pacing and on-breach.
+    - BudgetPolicy tightest-wins, pacing and on-breach;
+    - **Phase 3a required set** (see the Phase 3a section): fork fires every
+      branch (independent gates); the three join rules plus the default
+      (`all_must_succeed`); join blocks with a named reason when its rule is
+      unsatisfied; a fork branch that fails its start does not block siblings
+      and counts as a failed branch; nested member starts the child and
+      advances on `automation.completed` / blocks on `automation.blocked` /
+      fails on `automation.cancelled`; cross-level cycle rejection (A → B → A
+      and self-reference) and one-child-of-one-parent ownership; restart
+      mid-fork (started branches untouched, unstarted branches started, join
+      still fed once); restart mid-join (all branches terminal before the crash;
+      the join fires or blocks exactly once on replay); a stale-version advance apply re-reads and no-ops;
+      `active_cursors` and `join_wait` on the status shape, back-compat
+      fields derived from the first active cursor; fork/join pairing and
+      pairing validation (including branches that carry outcome edges) errors name the member.
   - E2E story ideas (sandbox daemon, per the E2E rules):
     - **(1) Advance with zero LLM or chat involvement.** Two trivial approved
       Automata in a linear Automation. Assert the second reaches `running` within
@@ -1459,17 +2258,21 @@ howto, and the `datawatch-app` issue where applicable.
 1. **PWA tab ordering.** Should the Automation tab sit to the **left of**
    Automata (working assumption: larger scale first)? Or should it sit to the
    right, or be a sub-tab inside the Automata view (next to Automata / Templates)?
+   **Decided by the operator 2026-10-22: left of Automata.**
 2. **Nested Automations / an Initiative object.** Should an Automation be able to
    contain Automations (an "Automation of Automations", or a separate
    "Initiative")? This is **not decided either way**. Today's model allows only
    Automata as members, and adding a `MemberKind` later would be additive.
+   **Decided by the operator 2026-10-22: allow nesting, in 10.0.0.** An Automation can contain another Automation as a member (a new `MemberKind`), with cycle detection across levels, clear ownership, and the same control ops. It is designed together with fork/join in Phase 3a, and the PWA pipeline strip must show nested levels.
 3. **The cancel_automation default.** Recommended: halt future auto-advance only,
    and leave the in-flight member running; `cancel_in_flight: true` is opt-in.
    Should the default be reversed?
+   **Decided by the operator 2026-10-22: ask each time.** There is no default. `cancel_in_flight` is a required argument on every surface (REST, MCP, CLI, comm channel); a call that omits it is rejected with a message naming the two choices, and the PWA shows a confirm dialog that asks the same thing.
 4. **BL117 orchestrator.** Recommended: supersede, with a single-chain
    `import-graph`, read-only history, and the create/plan/run tools deprecated then
    removed after one minor. Alternatives: extend BL117's Graph in place, or keep
    both permanently.
+   **Decided by the operator 2026-10-22: supersede.** Single-chain `import-graph`, read-only history, `orchestrator_graph_create/plan/run` deprecated then removed after one minor.
 5. **One implementation PRD or several, and in what order.** Should BL427's
    dispatcher, BL428's mechanics and this coordinator be separate implementation
    PRDs in the confirmed order BL427 → BL428 → BL431? Or should BL431 Phases 1-3
@@ -1485,6 +2288,7 @@ howto, and the `datawatch-app` issue where applicable.
    (`fab_launch_auto`) launches an Automaton. Approve: (a) a Terminology Rule
    addendum that defines Automation as this object, with per-locale translations;
    (b) relabelling that FAB "Launch Automaton".
+   **Decided by the operator 2026-10-22: define both and relabel the button.** AGENT.md's Terminology Rule gets an addendum defining Automation (the chain object) and Automaton (one PRD) with per-locale translations; the `fab_launch_auto` button is relabelled "Launch Automaton" in all locales.
 8. **Agent and session inserts, and budget breach action.** May an agent or session
    (`AddedBy: session:<id>`) insert members without operator approval?
    Recommended: yes, because the inserted Automaton still has to pass its own
@@ -1492,19 +2296,25 @@ howto, and the `datawatch-app` issue where applicable.
    The alternative is `agent_insert_policy: require_operator`. Separately, should a
    breached BudgetPolicy **pause** (recommended default; auto-resumes on window
    rollover) or **block** (needs an operator decision)?
+   **Part one decided by the operator 2026-10-22: per-Automation setting.** Each Automation carries `agent_insert_policy` (`allow` | `require_operator`), with a global default of `allow` (config key, settable on every surface). An insert from an agent or session under `require_operator` is held pending until the operator approves it; under `allow` the inserted Automaton still passes its own `approved` gate and the insert is audited. **Part two decided by the operator 2026-10-22: pause only when the reset time is known, otherwise block.** A breached BudgetPolicy pauses and auto-resumes at the window rollover when datawatch knows the reset time (a dollar window it defines itself, anchored at the operator-declared reset, or a reset time parsed from Claude's own limit message); if the reset time is unknown the Automation goes `blocked` and waits for the operator. An alert is raised either way.
 9. **`allocation_pct` estimation.** Is an "estimated" allocation share acceptable,
    given that the subscription meter cannot be read (BL428 §4a)? It would be token
    usage priced at API rates against an operator-declared notional allocation per
    `plan_tier`. The alternative is to ship `dollar` only and defer `allocation_pct`.
+    **Decided by the operator 2026-10-22: ship both, estimate off by default.** The `dollar` ceiling is the real mechanism. `allocation_pct` also ships, opt-in per Automation, always labelled `estimated`, computed from token usage priced at API rates against an operator-declared notional allocation per `plan_tier`.
 10. **Fork/join inside one Automation.** Parallel work is currently expressed as
     separate concurrent Automations. Is a true parallel fork with a join member
     needed inside one Automation? That would need a multi-cursor model.
+    **Decided by the operator 2026-10-22: build fork/join now (in 10.0.0).** One Automation can contain a fork (start several member Automata at the same time) and a join (wait for all of them, with a per-join rule for what happens if one branch fails or is skipped) before continuing. This replaces the single cursor with a set of active cursors, so it lands as its own phase *before* the control operations: Phase 3a designs and builds the multi-cursor coordinator (data model, advance rule, restart reconciliation, `autonomous_status`, audit), then Phase 3b builds the control ops on top and every op names the branch it acts on. The PWA pipeline strip must draw parallel branches (Phase 6).
+    **Join failure rule decided by the operator 2026-10-22: set per join.** Each join member carries `on_branch_failure`: `all_must_succeed`, `any_one_is_enough` or `continue_anyway`. The default for a join that does not set it is `all_must_succeed` with wait-then-block: the join waits for the other branches to finish, then the Automation goes `blocked`, alerts, and names the failed branch.
 11. **Decompose tier.** Should the Automation-level model default also cover
     decomposition (`PRD.DecompositionModel` / the decompose backend), or only
     execution and verification?
+    **Decided by the operator 2026-10-22: separate planning setting.** The Automation model default covers execution and verification. Planning has its own optional field on the Automation (unset = the global planning backend); it does not change the run/verify default. Exposed on every surface like the other tier fields.
 12. **Execution provenance.** Should task run records gain an `executor_source`
     (`task|story|prd|automation|global`) mirroring `verifier_source`, so the
     Automation tier's effect is visible on execution too?
+    **Decided by the operator 2026-10-22: yes.** Task run records gain `executor_source` (`task|story|prd|automation|global`) beside `verifier_source`.
 13. **Record `c187962a`'s title.** It says "BL430 — Automation…" while the backlog
     number is BL431. Should it be retitled, or left alone with this doc and the
     BL428 doc noting the collision?
@@ -1514,6 +2324,7 @@ howto, and the `datawatch-app` issue where applicable.
     should `BudgetPolicy`'s ceiling check read that peer's usage into the
     same `tightest-wins` math by default, or stay per-daemon unless the
     operator explicitly opts an Automation into federation-wide ceilings?
+    **Decided by the operator 2026-10-22: opt-in per peer.** A daemon counts only its own usage by default; shared counting is switched on per peer (and per Automation) after fingerprint-sync has confirmed the peer shares the billing account or node.
 15. **Local-model decision assistant (operator-raised 2026-10-14, see the
     section above).** Is the four-hook-point scope (empty-edge resolution,
     skip_member pre-screening, mid-flight insert triage, budget-breach
@@ -1524,6 +2335,8 @@ howto, and the `datawatch-app` issue where applicable.
     per-hook-point? Does this ship in BL431's own follow-up implementation
     PRD, or as its own later PRD once the Automation coordinator exists to
     attach it to?
+    **Decided by the operator 2026-10-22:** all four hook points (empty-edge resolution, skip_member pre-screening, mid-flight insert triage, budget-breach response) are in scope for the first version; the escalation confidence threshold is set per hook point with a conservative (high) default, all editable; it ships as its own PRD after Phase 3a/3b exist, and must be in 10.0.0.
+    **Status 2026-10-23:** the assistant is built: all four hook points, per-hook thresholds, shadow and live modes, the hard-requirement guard, and the REST, MCP, CLI, comm and web surfaces. See [automation-decision-assistant](../howto/automation-decision-assistant.md). Which model judges these decisions well is the BL437 evaluation sweep's question; that is out of scope here and no default model is chosen.
 16. **Dashboard/Observer integration (operator-raised 2026-10-14, see the
     section above).** Should the `automation-summary` dashboard card and
     the Observer per-Automation rollup ship as part of BL431's own
@@ -1534,6 +2347,7 @@ howto, and the `datawatch-app` issue where applicable.
     in scope for v1 given it would have caught today's two silently-dropped
     PRDs, or is that premature before BL427's event dispatch can push the
     alert instead of requiring a poll?
+    **Decided by the operator 2026-10-22:** ship the `automation-summary` card and the Observer per-Automation rollup with the first Automation surfaces; idle/staleness alerting on the card is left until event push exists.
 17. **The coordinator as a real quality/regression gate, not just a status
     poll (operator-raised 2026-10-15, live incident: two PRD tasks failed
     and sat silently blocked for ~50 minutes before the operator noticed,
@@ -1574,6 +2388,8 @@ howto, and the `datawatch-app` issue where applicable.
     exists), BL413 (diff-aware rules — not yet built), and a concrete
     surface→test-suite mapping that doesn't exist anywhere today? Scoping
     this precisely is itself real design work, not a one-line addition.
+    **Decided by the operator 2026-10-22 (advance gate): add the diff-aware test check, in 10.0.0.** Before advancing, the coordinator verifies the member's terminal status is trustworthy: guardrails and verification passed, loud alerts on any blocked or failed member, and new functionality must come with a specific new test. That check is BL413 (diff-aware project-rules enforcement), which is now in the 10.0.0 scope and needs its own design pass first.
+    **Decided by the operator 2026-10-22 (bug reprioritization), as recorded from the operator's free-text answer:** an arriving bug goes to a dedicated urgent lane (a separate Automation running alongside the main one) when that lane is available. If the urgent lane is not available and the bug is blocking the running Automation, it may be inserted ahead with `urgent` severity (audited). Otherwise it joins the regular queue, placed before the members it could block. Cap on automatic urgent inserts, decided by the operator 2026-10-22: only one urgent member at a time per Automation; a new urgent insert is allowed after the previous urgent member has finished.
 18. **Tree-conflict assessment is BL428 §3a's scope, not this doc's — the
     coordinator just has to consume it faithfully (operator-raised
     2026-10-15, see BL428's own open question 14 for the full write-up).**
@@ -1790,3 +2606,211 @@ session (bounded), and only a pass commits and completes it.
 work through datawatch's completion path without running validation,
 and a broken build went into history. Completion commits must be gated
 by validation, not by the session finishing.
+
+## Phase 7 parity audit
+
+Audit of every Automation operation and every `autonomous.automation` config key
+against each parity surface. `TestAutomationParity` in
+`cmd/datawatch/automation_parity_test.go` enforces the REST, MCP, CLI and comm
+columns; the web and audit columns are audited by hand. The REST operation list is
+`AutomationRESTOperations()` in `internal/server/automation_ops.go`, and the control
+router uses the same list. Create, update and delete are kept off the comm channel by
+design (the test's `commExempt` map holds the reasons), so the comm cell for those is
+`Exempt`.
+
+### Operations
+
+| Operation | REST | MCP | CLI | Comm | Web | Audit |
+|---|---|---|---|---|---|---|
+| list | Present: `internal/server/autonomous.go` | Present: `internal/mcp/automation_tools.go` | Present: `cmd/datawatch/cli_automation.go` | Present: `internal/router/automation_cmd.go` | Present: `app.js` automation list | Exempt: read-only, changes nothing, so no audit event |
+| get | Present: `internal/server/autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` member drawer | Exempt: read-only, changes nothing, so no audit event |
+| create | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Exempt: member list does not fit a chat message | Present: `app.js` create form | Present: `automation_create` |
+| update | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (update) | Exempt: member list does not fit a chat message | Present: `app.js` edit form | Present: `automation_update` |
+| delete | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (delete) | Exempt: destructive, not offered from chat | Present: `app.js` remove control | Present: `automation_delete` |
+| activate | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` automation_activate | Present: `automation_activate` |
+| pause | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` automation_pause | Present: `automation_pause` |
+| resume | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` automation_resume | Present: `automation_resume` |
+| cancel | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` automation_cancel | Present: `automation_cancel` |
+| skip_member | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (skip) | Present: `automation_cmd.go` (skip) | Present: `app.js` automation_skip_member | Present: `automation_skip_member` |
+| insert_member | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (insert) | Present: `automation_cmd.go` (insert) | Present: `app.js` insert dialog | Present: `automation_insert_member` |
+| remove_member | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (remove) | Present: `automation_cmd.go` (remove) | Present: `app.js` automation_remove_member | Present: `automation_remove_member` |
+| reorder_edges | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (edges) | Present: `automation_cmd.go` (edges) | Present: `app.js` automation_reorder_edges | Present: `automation_reorder_edges` |
+| approve_insert | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (approve) | Present: `automation_cmd.go` (approve) | Present: `app.js` automation_approve_insert | Present: `automation_approve_insert` |
+| set_llm | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (set-llm) | Present: `automation_cmd.go` (set-llm) | Present: `app.js` planning pair saved through set_llm | Present: `automation_set_llm` |
+| set_verification_llm | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (set-verification-llm) | Present: `automation_cmd.go` (set-verification-llm) | Present: `app.js` openAutomationVerificationLLMDialog | Present: `automation_set_verification_llm` |
+| set_budget | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (set-budget) | Present: `automation_cmd.go` (set-budget) | Present: `app.js` openAutomationBudgetDialog | Present: `automation_set_budget` |
+| status | Present: `GET /api/autonomous/status` automations[] | Present: `internal/mcp/autonomous.go` (autonomous_status) | Present: `cli_automation.go` (status) | Present: `automation_cmd.go` (status) | Present: `app.js` loadAutomationLiveStatus | Exempt: read-only, changes nothing, so no audit event |
+| import-graph | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks |
+
+### Config keys under `autonomous.automation`
+
+| Key | Config file | REST config | MCP config | CLI `config set` | Comm `configure` | Web Settings field | en | de | es | fr | ja |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| idle_alert_minutes | Present: `internal/config/config.go`, `docs/config-reference.yaml` | Present: `internal/server/api.go` | Present: `autonomous_config_set` (automation_idle_alert_minutes) and `config_set` | Present: generic `datawatch config set` | Present: `internal/router/router.go` | Present: `app.js` settings_automation_idle_alert_minutes | Present: `locales/en.json` | Present: `locales/de.json` | Present: `locales/es.json` | Present: `locales/fr.json` | Present: `locales/ja.json` |
+| agent_insert_policy | Present: `internal/config/config.go` | Present: `internal/server/api.go` | Present: `autonomous_config_set` (automation_agent_insert_policy) and `config_set` | Present: generic `datawatch config set` | Present: `internal/router/router.go` | Present: `app.js` settings_automation_agent_insert_policy | Present: `locales/en.json` | Present: `locales/de.json` | Present: `locales/es.json` | Present: `locales/fr.json` | Present: `locales/ja.json` |
+
+### Gaps for the next tasks
+
+The verb-surface and web gaps of the operations table are closed. The test's
+`knownParityGaps` map now holds only the four `import-graph` entries, which the
+import-graph tasks remove when they build that operation. The audit column found no
+gap for the read operations (list, get, status): they change nothing, so they emit
+no audit event. The config rows are all Present, and
+`TestAutomationConfigKeysEverySurface` in `internal/server/automation_config_surfaces_test.go`
+covers the REST and comm `configure` round trips for both keys.
+
+The design's provisional keys `enabled` and `empty_edge_action` were not built; they are
+not built, no surface owed.
+
+## Supervisor duties the Automation coordinator must absorb (added 2026-10-24)
+
+These came out of 2026-10-24 incidents, where the human supervisor loop missed them. Each is a requirement on the coordinator, written as behaviour; the numbers (times, counts) are configurable policy settings whose defaults the operator decides.
+
+1. **Watch CI for every workflow, not only the release one.** After a push or a tag the coordinator lists the result of every workflow on the head of main and on the tag (release, security scan, docs sync, secret scan, CI summary). A failed or stuck run is read, classified and either fixed through a fix PRD or reported with its failing job and log excerpt. A hung step is rerun once. A red workflow is never shown as running. Failed runs are deleted after a confirmed green fix. (Security scan sat red for a day while the loop only watched the release workflow.)
+2. **Security-failure exception.** A dependency or CVE failure from a security workflow for an advisory older than 72 hours that the project already suppresses is never fixed or documented by the coordinator: it stops and sends the operator the dependency, advisory id, publication date, allowlist entry and an upgrade-or-keep recommendation. Suppressions are written only to the accepted-risks registry, with the real first-added date and a real trace, never to the generated ignore file.
+3. **Merge pending is visible and alerting.** A completed PRD whose commits are not on main, compared by commit content and not by commit count, shows as merge pending in the Automation view and raises an alert after a configurable time. A branch whose commits are all on main is reported as safe to delete. (A finished lane-fill PRD sat unmerged for five days and the feature was built a second time.)
+4. **Search before create.** Creating a PRD warns, without blocking, when its title or spec overlaps an existing PRD of any status, a registry row, or an unmerged branch, and names what it found.
+5. **Failed and blocked PRDs are triaged every poll.** A PRD that moves to failed or blocked is reported with the failed task, its error and the recorded session end reason, and the coordinator applies the retry policy before it waits for a person. (A PRD sat failed for hours with an idle lane behind it.)
+6. **A lane whose PRDs all wait on verifiers is idle.** Lane fill counts a Claude lane as available when every PRD on it is waiting for a verifier slot, and starts another PRD there, under the operator's lane count and usage policy.
+7. **Gate implementation on open design points.** A task that depends on an operator decision starts only when the decision is recorded; otherwise it stops and reports the missing decision.
+8. **Gate on a task that mentions an error phrase.** Stall and failure detectors match the tool's own error line for the backend they were built for, never ordinary output text.
+
+Open for the operator: the default alert times and the retry count for items 1, 3 and 5, and whether item 1 may rerun a hung step without asking.
+
+## Operator decision channel: questions, decisions and design through datawatch (requested 2026-10-25)
+
+**Operator request, quoted (2026-10-25 07:28):** "It would be good if supervisor communicated with datawatch in json or something and questions and decisions and design were through datawatch interface and not in claude terminal, stored up things, track input and quotations, add to design"
+
+**Why now.** On 2026-10-24 a blocking multiple-choice question in the supervisor's terminal stopped the 30-minute ticks for 16 hours because the ticks only run while the session is idle; the lanes sat idle overnight. Decisions given in a terminal are also lost to everything else: they are recorded by hand in plan docs, the exact words of the operator are paraphrased, and nothing links an answer to the PRD, task or proposal that asked for it.
+
+**What exists today (read, not assumed).**
+- The Decision Interview Protocol in AGENT.md (context, options, recommendation, one question, wait): defined for the agent, answered in the terminal.
+- A session that prints `DATAWATCH_NEEDS_INPUT: <question>` is detected and shown as needing input; the operator answers by sending text to the session.
+- PRD records carry a `decisions` list (approve, run, coverage acknowledgements, set LLM, requeue) with actor, time and note.
+- Lifecycle events (notify only) can tell a channel that a PRD needs review or is blocked; they carry no question and take no answer.
+- Memory discussions (`memory_discussion_write`/`recall`, `reply_to_parent`) carry messages between sessions, federation-aware and audited.
+
+**Requirements, as behaviour.**
+1. **A structured question.** A supervisor or a worker raises a question as data, not terminal text: an id, who asked, the context (PRD, task, proposal, or none), the text, the options with their trade-offs, the recommendation, an optional deadline and a default that applies if none is given (never a silent choice), and a state (open, answered, withdrawn, expired).
+2. **A question queue in datawatch.** Open questions are stored by the daemon, listed in the Automation view and the mobile apps, in the CLI, the comm channels and over REST and MCP, and surface as notifications. Many can be open at once; none blocks the asker's other work or the ticks.
+3. **Answers are recorded with the operator's own words.** An answer stores the chosen option and the operator's free text verbatim, who gave it, from which surface and when. Answers are immutable; a changed mind is a new answer that supersedes the old one.
+4. **Return path as data.** The asker receives the answer as structured data (a JSON message to the session, a polled endpoint, or a lifecycle event) and continues; a session that asked is not required to stay idle.
+5. **Decisions link to what they decide.** An answer links to the PRD, task, proposal file or registry row, and a proposal file's `Confirmed:` line can be set from the answer instead of by hand. The PRD `decisions` list references the answer id.
+6. **Design stays in datawatch.** A design question (options, mockups, recommendation) is a record the operator reviews in the interface; the accepted design is written back to the design document with the quotation and a link to the answer, so the design doc, the registry and the decision log agree.
+7. **Search and audit.** All questions and answers are searchable, exported with the audit log, and kept across restarts. Every answer shows its quotation wherever the decision is cited.
+8. **Parity.** Every surface in the Configuration Accessibility Rule and the Mobile-Parity Rule (config, REST, MCP, CLI, comm channel, PWA, mobile apps).
+
+**Open for the operator (not decided here).** Where the queue is shown first (Automation view or a new tab); whether a question may carry a deadline and what happens at expiry; who may answer when several operators exist; whether the supervisor's own tick may keep working with a default for low-risk questions; the retention of answered questions; how the Decision Interview Protocol in AGENT.md changes (ask through the queue first, terminal only as fallback).
+
+**Operator decisions, 2026-10-25 (quoted):** "Queues are a part of automation.  No expiring, unless operator says to slip out use supervisor decision,  low risk would be an option set in automation,  any other questions"
+
+1. **The question queue belongs to Automation.** It is part of the Automation subsystem and its view, not a separate tab or a separate subsystem.
+2. **Questions never expire.** An open question stays open until answered or withdrawn. The one exception is when the operator says to skip it ("slip out": read as skip); then the supervisor decides, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
+3. **Low-risk handling is an Automation setting.** Whether a low-risk question may be answered by the supervisor's default is an option set in Automation, not a built-in behaviour and not a per-question deadline.
+4. The earlier open points about a deadline and its expiry behaviour are closed by items 2 and 3.
+
+**Operator decisions, 2026-10-25 later (quoted):** "Skip would be specific or all, should be an option. We are not multi operator yet but any operator authorized for the automation.  All comms are parity so valid,  what else?"
+
+5. **Skip is an option with two scopes:** skip one specific question, or skip all open questions. The operator picks when skipping.
+
+**Operator clarification, 2026-10-25 (quoted):** "Skip is based on question,  not entire automation,  unless that was the option enable,  by default it is specific, but can apply wide."
+
+5a. **Skip is per question by default.** A skip applies to the one question it is given on, never to the whole Automation. Skipping wide (all open questions) is available only when that option is enabled in Automation; it is off by default. This replaces the reading of item 5 as a free choice of scope at skip time.
+6. **Who answers:** the system is not multi-operator yet; any operator authorized for the Automation may answer its questions.
+7. **Every communication channel is valid for answering,** by the parity rule: PWA, mobile apps, CLI, REST, MCP and every messaging channel.
+
+
+**Operator answers, one question at a time, 2026-10-25.**
+
+8. **Low risk is defined by both a type list and a per-question level (quoted: "3 both,  sometimes a list is easier,  don't know what will be quantifiable low sometimes and that will help").** The operator keeps a list of question types in Automation that count as low risk, because a list is sometimes easier and not every low-risk case can be defined in advance. Each type gives a default risk level; the asker may raise the level of a single question and never lower it. The Automation setting that lets the supervisor answer by default applies to questions whose resulting level is low.
+
+9. **A low-risk default never covers a design question (quoted: "1, maybe 3, keep track of that for future possibility").** Defaults cover operational questions only (retry counts, ordering, which lane, wording); design questions always wait for the operator or the operator's skip. **Future possibility, tracked and not built:** a repeated design question the operator has already answered may take the earlier answer as its default. The proposal must keep room for it: an answer record that can be matched to a later question by type and subject, with the match shown to the operator and never applied silently.
+
+10. **What stays the operator's on a skip (answer: "1").** Three things stay with the operator even when a question is skipped: the 10.0 tag, releasing something the operator has not reviewed, and spending Claude usage beyond the operator's lane count. On a skip the supervisor decides everything else, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
+
+11. **Reminders and visibility (answer: "1", updated 2026-10-25: "But if we are putting details in datawatch it should be visible in automation and notifications").** An open question is mentioned once in the next report, with no repeated messages and no expiry. Because the details live in datawatch, an open question is also visible in the Automation view, with its full details and not only a count, and it raises a notification through the existing notification channels when it is asked and when it is answered or skipped.
+12. **While a question is open (answer: "5 answer is 1").** The asker keeps working on everything else. Only the one task or PRD that depends on the answer waits, and it shows which question it is waiting on. The ticks and all other lanes carry on.
+
+13. **Retention (answer: "1").** Answered questions and their quotations are decisions of record and are kept forever in the audit log, never deleted. The Automation view shows recent ones and searches older ones.
+
+14. **Changing an answer (answer: "1").** An answer is never edited. A changed mind is a new answer that supersedes the old one; both stay on the record, each with its quotation, and the decision log shows which one is current.
+
+15. **The AGENT.md Decision Interview Protocol (answer: "2").** The terminal protocol stays and the queue is added beside it. An agent may use either. Answers given in the terminal are copied into the queue afterwards by the supervisor, with the operator's quotation, so the decision record is complete either way. The proposal must say how that copy is made and checked.
+
+16. **Question types (answer: "2 generic since we don't know what users of datawatch will use it for,  but default set based on 1").** There is one generic question record, with options, a recommendation, a risk level and links; the type is a label, not a different structure, because other users will use the queue for purposes we cannot predict. The default set of labels ships as decision, design review, approval and information (the four from the proposal), and a user may add or change labels. The low-risk type list from item 8 uses these labels.
+
+17. **Proposal files (answer: "1").** When the operator answers a proposal's questions through the queue, the answers set the proposal file's `Confirmed:` line to yes and write the operator's quotations into the file's decisions section, automatically. The PRD's gated tasks then proceed without a manual edit. (Done by hand for two proposals on 2026-10-24 and 2026-10-25.)
+
+**Status of the interview, 2026-10-25:** all ten open points are answered and recorded above (items 1 to 17). The proposal PRD (BL610) turns them into the data model, the order of PRD-sized steps and the parity surface; anything it finds that these answers do not cover goes back to the operator as a question.
+
+18. **The question feature works with every LLM (operator, 2026-10-25: "also make sure question feature works with all llm").** Raising a question and receiving its answer must not depend on one backend's features. Every backend datawatch supports (claude-code, opencode, pi and pi-prompt, goose, gemini, aider, ollama, openwebui, shell, and any added later) can ask a question and get the answer back, by whichever route the backend supports. The proposal must give a route for each class of backend (those with MCP tools, those that only print text, and one-shot print-mode backends that have no input once started), and a conformance test with a fake backend of each class that raises a question, leaves it open while other work continues, and resumes with the answer.
+
+19. **Marker route and one-shot backends (answers: "1 marker with options, 2 daemon asks on its behalf").** The text marker route carries options: a small structured block after the marker line gives the options, the recommendation and the risk label, with the same length caps and untrusted-text rules as free text. A one-shot print-mode backend never asks for itself: when its task ends needing a decision, the daemon raises the question on its behalf, with the task and the backend named as the asker, and holds the task until the answer arrives.
+
+20. **Mobile work (proposal 6.g, answer: "1").** The Android and iOS work for questions is tracked as datawatch-app issues that carry the API contract, following the Mobile App Sync Rule. The issues are filed once the first two steps (storage with REST, then notifications and the return path) have shipped, because that is when the contract is stable. No native code is added to this repository.
+
+21. **Secrets in an answer (proposal 6.h, answer: "1, encourage saving secrets on fs and pointing session to it or coordinate with datawatch secrets").** An answer whose text matches a secret pattern is not stored. The operator is told to resend it without the secret, and the refusal is audited without the text, so every stored quotation stays verbatim and no secret is ever stored. The refusal message encourages the two safe routes: put the secret in the datawatch secrets store and refer to it by name (`${secret:name}`), or save it on the filesystem and point the session to the file. The question flow must coordinate with the datawatch secrets store so the asker can be given the secret's name, never its value.
+
+22. **Return path (proposal 6.j, answer: "1").** The answer reaches the asker as a lifecycle event on the existing event queue plus a polled GET endpoint, which needs no change to the asker's session. A question can opt in to a JSON line sent into the asking session, for askers that cannot poll, so answers stay out of the terminal unless asked for.
+
+23. **Replying from a chat channel (proposal 6.k, answer: "1").** Each notification carries the question id and numbered options. A bare reply is accepted only when exactly one question is open for that channel; with several open it is refused and the list is sent back. Free text is accepted with the option, so the operator's exact words are kept as the quotation.
+
+**Status 2026-10-25:** every open point in the decision channel proposal (6.a to 6.k) is now answered, except the proposal's own remaining parts noted in its sections. The next step is to turn it into the first implementation PRD (storage and REST), gated on the proposal's `Confirmed:` line, which the operator flips.
+
+24. **Who writes a decision into the repository documents (proposal 6.i, answer: "2 but others may want to edit by hand so leave that as an option,  keep full editing as a future idea to examine").** The daemon records the link and the operator's exact words, and a docs-only change applies them through the normal repository path (the supervisor or the Automation makes it); the daemon never writes repository files on its own. Editing the document by hand stays available as an option for users who prefer it, and the record is the same either way. **Future idea to examine, not built:** letting the daemon edit and commit the documents itself (full editing), with its safety and review implications to be worked out first.
+
+**Status 2026-10-25:** all points of the decision channel proposal (6.a to 6.k) are decided. The proposal's `Confirmed:` line is still `no` until the operator flips it; the first implementation PRD (storage and REST) can be filed and gated on it.
+
+25. **Default alert times for the Automation duties (supervisor duties proposal Q1, answer: "1, 30 minutes").** One shared default of 30 minutes for CI failures, merge pending and failed or blocked PRDs, the same as the lane-fill idle alert; each value stays configurable.
+
+26. **Retry count for the Automation duties (supervisor duties proposal Q2, answer: "2 existing but leave open for future examination").** The coordinator reuses the existing per-category retry budgets (infra, content, scope, policy) and adds no new count. **Kept open for later examination:** whether the coordinator needs its own retry count once it has run for a while.
+
+27. **Rerunning a hung CI step (supervisor duties proposal Q3, answer: "1").** The coordinator may rerun a hung or infrastructure-classified CI run once without asking, and logs the rerun. It never reruns security workflow runs and never reruns a run whose judge verdict is policy.
+
+28. **Surfaces for the Automation duties (supervisor duties proposal Q4, answer: "2").** Every one of the eight duties gets the full parity set: config, REST, MCP, CLI, comm channel, PWA, and a mobile parity issue wherever a REST or WebSocket contract changes. The proposal's recommended mix is not used.
+
+29. **Security rule changed (2026-10-25, quoted: "The world has changed,  the 3 day goal was to miss or try to exclude malicious account injection but now with ai security let's consume security patches when they are available,  change the rule until i find a better way to monitor upstream,  future project monitoring all upstream but for now consume patches when available").** The 72-hour disclosure-grace rule is withdrawn; security patches are consumed as soon as they are available (AGENT.md Security-failure rule). The supervisor-duties proposal's duty 2 and its question about the 72-hour clock are closed by this. A future project to monitor all upstream is registry row 198.
+30. **Where decisions are recorded (supervisor duties proposal Q6, answer: "1").** In the decision channel's answer records, linked from the PRD decisions list; until the queue exists, the design and decisions documents.
+
+31. **How merge pending compares commits (supervisor duties proposal Q7, answer: "1, git cherry").** `git cherry` against main, comparing patch ids. Caveat from 2026-10-24 measurements: a commit whose patch changed while it was merged (conflict resolution, a renumbered version) shows as not on main although its work landed, so a second content check (subjects on main) accompanies it and a disagreement is shown to the operator as 'needs a look' and not as merge pending.
+
+32. **Deleting superseded failed CI runs (supervisor duties proposal Q8, answer: "1").** Failed runs of a workflow are deleted after a green run of the same workflow on a later commit, and only after the triage record has named them.
+
+**Status 2026-10-25:** every question of the supervisor duties proposal (Q1 to Q8) is answered or closed (items 25 to 32). The proposal's own `Confirmed:` line is still `no` until the operator flips it.
+
+This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
+
+## Planning routing and retry ladder
+
+**Status:** Built and documented, not released: the router, retry ladder, scorecard, REST, MCP, CLI, comm channel and Settings card are merged on the working branch; this task adds the operator docs. Off by default with no rules; no version bump. Operator how-to: `docs/howto/automata-planning-routing.md`.
+
+Planning routing picks the planner (backend and model) for each Automaton decompose by ordered rule (first match wins), under `autonomous.planning_routing`. A rule's retry ladder spends touch-up passes and replans, then escalates to the next planner in the rule. Shadow mode records the would-route decision without changing the planner, and a counts-only scorecard and gate report summarise the results. The example rules (security and design) are documentation only and not active.
+
+### Parity surface
+
+| Surface | Status | Where |
+|---|---|---|
+| REST | Present | `GET`/`PUT /api/autonomous/planning-routing`, `POST .../test`, `GET .../scorecard` |
+| MCP | Present | `planning_routing_get`, `planning_routing_set`, `planning_routing_test`, `planning_scorecard` |
+| CLI | Present | `datawatch autonomous planning-routing get \| set \| test \| scorecard` |
+| Comm channel | Present | `autonomous planning-routing show \| test \| scorecard` |
+| YAML/config | Present | `autonomous.planning_routing` in `docs/config-reference.yaml` |
+| PWA | Present | Settings, Automata section, planning routing card (`planning_routing_*` locale keys in en, de, es, fr, ja) |
+| Android | Not yet built | Needs the datawatch-app parity issue below, filed by the operator |
+| iPhone | Not yet built | Needs the same parity issue; no separate iPhone surface is excluded by design |
+
+No surface is excluded by design. Android and iPhone are open only because they live in the datawatch-app repository, which this repository cannot change.
+
+### Drafted datawatch-app parity issue (not yet filed — the operator files it)
+
+**Title:** Parity: Automata planning routing and retry ladder (planning_routing_* strings and card)
+
+**Body:**
+
+The datawatch daemon added planning routing and retry ladder, the parent feature: choose the planner per Automaton by rule, with a retry ladder, shadow mode and a counts-only scorecard. It is off by default. Please add the matching Android and iPhone views: the rules, ladders and risk classes, a test-routing form, and the scorecard with would-route counts, using the daemon's REST routes under `/api/autonomous/planning-routing`.
+
+New locale keys (all prefixed `planning_routing_`, from `internal/server/web/locales/en.json`): `planning_routing_title`, `planning_routing_desc`, `planning_routing_enabled`, `planning_routing_shadow`, `planning_routing_field_enabled`, `planning_routing_field_shadow`, `planning_routing_rules_title`, `planning_routing_rules_empty`, `planning_routing_match_any`, `planning_routing_ladder_default`, `planning_routing_none`, `planning_routing_yes`, `planning_routing_no`, `planning_routing_col_order`, `planning_routing_col_name`, `planning_routing_col_match`, `planning_routing_col_planners`, `planning_routing_col_ladder`, `planning_routing_ladders_title`, `planning_routing_classes_title`, `planning_routing_ladder_line`, `planning_routing_json_title`, `planning_routing_json_save`, `planning_routing_json_invalid`, `planning_routing_saved`, `planning_routing_save_failed`, `planning_routing_failed`, `planning_routing_invalid`, `planning_routing_test_title`, `planning_routing_test_kind`, `planning_routing_test_tags`, `planning_routing_test_project`, `planning_routing_test_spec_bytes`, `planning_routing_test_override`, `planning_routing_test_run`, `planning_routing_test_failed`, `planning_routing_result_rule`, `planning_routing_result_planners`, `planning_routing_result_ladder`, `planning_routing_result_classes`, `planning_routing_result_shadow`, `planning_routing_result_fallback`, `planning_routing_result_reason`, `planning_routing_scorecard_title`, `planning_routing_scorecard_empty`, `planning_routing_window`, `planning_routing_gate_line`, `planning_routing_col_planner`, `planning_routing_col_class`, `planning_routing_col_decomposes`, `planning_routing_col_first`, `planning_routing_col_touch_up`, `planning_routing_col_replan`, `planning_routing_col_escalations`, `planning_routing_col_errors`, `planning_routing_would_route_title`, `planning_routing_would_route_line`.
+
+Please provide translations for DE, ES, FR and JA (the daemon already ships all four in its web locales, which can be reused).
+
+**Not yet filed.** The operator files this issue; this task does not run `gh`.

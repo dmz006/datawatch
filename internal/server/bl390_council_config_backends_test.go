@@ -16,7 +16,7 @@ import (
 func TestBL390_CouncilConfig_BackendsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	cfg := &config.Config{}
+	cfg := &config.Config{Git: config.GitConfig{ReleaseCIWindowMinutes: 60}}
 	if err := config.Save(cfg, cfgPath); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}

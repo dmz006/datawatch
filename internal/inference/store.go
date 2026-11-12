@@ -35,6 +35,12 @@ func newRegistryFromFile(path string, key []byte) (*Registry, error) {
 		if err := json.Unmarshal(b, &stored); err != nil {
 			return nil, fmt.Errorf("llm registry: parse: %w", err)
 		}
+		for i := range stored {
+			if !ValidVerificationMode(stored[i].VerificationMode) {
+				return nil, fmt.Errorf("llm registry: entry %q: unknown verification_mode %q (allowed: classify, generate)",
+					stored[i].Name, string(stored[i].VerificationMode))
+			}
+		}
 		r.LoadSnapshot(stored)
 	} else if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("llm registry: read: %w", err)
@@ -178,13 +184,13 @@ func EnsureClaudeCode(reg *Registry, binary string) {
 		return // already present
 	}
 	_ = reg.Add(&LLM{
-		Name:                 "claude-code",
-		Kind:                 KindClaudeCode,
-		Binary:               binary,
-		ChannelEnabled:       true,
-		SkipPermissions:      true,
-		DefaultEffort:        "normal",
-		AutoCreated:          true,
+		Name:            "claude-code",
+		Kind:            KindClaudeCode,
+		Binary:          binary,
+		ChannelEnabled:  true,
+		SkipPermissions: true,
+		DefaultEffort:   "normal",
+		AutoCreated:     true,
 	})
 }
 

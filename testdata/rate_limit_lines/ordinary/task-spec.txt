@@ -1,0 +1,2 @@
+Task spec: sessions marked stale when the pane prints "Hit weekly limit" with no reset time shown.
+⎿  the "hit weekly limit" capture is quoted here because it describes the throttle bug

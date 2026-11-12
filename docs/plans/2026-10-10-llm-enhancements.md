@@ -2,11 +2,28 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.10
-- **Status**: Planned — not started
+- **Status**: Audited 2026-10-23: see Phase status
+
+## Phase status
+
+| Phase | Status | Evidence |
+|---|---|---|
+| 0 | not started | no roles field on LLM entries in `internal/llm/registry.go`; `llm_add` / `llm_update` only extend the budget object (`internal/mcp/budget.go`); no "Workload Roles" card in `internal/server/web/app.js` or `internal/server/web/locales/en.json`; no contention-check code in `internal/llm` or `cmd/datawatch` |
+| 1 | not started | no `Priority` field on `Session` (`internal/session/store.go`); admission requests in `cmd/datawatch/capacity_wiring.go` (e.g. line 456) never set `Priority`, while the autonomous path does set `prd.Priority` (`internal/autonomous/capacity.go:213`) |
+| 2 | done | rate-ceiling dimension `internal/capacity/rate_ceiling.go`; `Decision` enum and non-blocking `Ledger.Check` in `internal/capacity/decision.go`; REST `GET /api/capacity/admission` and the rate fields in `internal/server/capacity.go`; MCP `capacity_admission` (`internal/mcp/bl221_types.go`; the plan's `capacity_admission.go` name was not used); CLI `datawatch capacity admission` in `cmd/datawatch/cli_capacity.go`; the windowed dollar budget landed earlier (`internal/autonomous/budget.go`). Next patch above main (unreleased development build) |
+| 3 | not started | `KnownStates()` in `internal/session/store.go` has no preempted state; `internal/capacity/ledger.go` has no preemption path; `internal/autonomous/manager.go` `Pause`/`Resume` remain soft pauses, no checkpoint-driven preemption resume |
+| 4 | not started | no per-call usage record store in `internal/session`, `internal/llm`, or `internal/stats` (no `ttft` / `queue_wait` / `usageRecord`); the ollama `usageFn` still feeds only the session aggregate (`internal/llm/backends/ollama/conversation.go:239-240`) |
+| 5 | partly done | flat per-hour node field exists: `internal/compute/node.go:221` (`cost_per_hour`), `internal/config/config.go:549`; but local backends are still zero-cost in `DefaultCostRates()` (`internal/session/cost.go`) and `CostPerHour` is copied, never multiplied into a call cost |
+
+| 6 | not started | no `internal/server/scheduler.go` and no `/api/scheduler*` routes in `internal/server`; no `scheduler_*` tools in `internal/mcp`; no `datawatch scheduler` subcommand in `cmd/datawatch/main.go`; no top-level Scheduler nav entry or session-creation play-well dialog in `internal/server/web/app.js` (only capacity UI is the per-task `waiting_capacity` badge near `internal/server/web/app.js:13131`); the budget work (BL428) landed as Phase 2 surfaces (`internal/server/budget.go`, `internal/mcp/budget.go`, `cmd/datawatch/cli_budget.go`), not a Scheduler surface; BL431 automation (`internal/autonomous/automation_*.go`) delivered PRD automation only, no scheduler item under another name |
+| 7 | not started | no `CapCapacity` constant anywhere in `internal/federation/capabilities.go` and none in `allCaps`; `internal/federation/mcp_tool_caps.go` (line 137) maps only the pre-existing `capacity_status` tool to `CapAutonomousRead`; `internal/capacity/ledger.go` has no peer-pool representation and no hop-chain integration; the only peer-facing capacity-adjacent item is the opt-in BL428 per-peer spend count in `internal/autonomous/peer_budget.go`, which is budget accounting, not pool sharing |
+| 8 | not started | no `type CouncilProfile` anywhere in `internal/` or `cmd/` — only a placeholder comment at `internal/autonomous/models.go:318` and the fallback log at `internal/autonomous/guided_mode.go:43` ("BL405 Phase 8 not yet shipped", falling back to operator approval); `internal/mcp/council.go` exposes only personas/run/draft tools (`toolCouncilRun` et al.), no `council_profile_*`; no `EngagementMode`/`EngagementChain` in `internal/council/council.go`; `alert_triage`/`anomaly_analysis`/`morning_briefing` remain the disabled triggers in `internal/mcp/triggers.go` |
+| 9 | not started | `internal/alertrules/types.go` still documents `Condition.Metric` as resource telemetry only (cpu/mem/gpu/rss, lines 16-18) and `Action.Kind` as alert/scale_up/scale_down only (lines 29-30); no `queue_wait_seconds`/`cost_burn_rate`/`token_budget_remaining`/`model_error_rate` metric and no `switch_model`/`escalate_priority` action anywhere in `internal/` or `cmd/` |
+| 10 | not started | `docs/plans/2026-10-09-plugin-extension-surfaces.md` has no cross-reference section to this plan (no bl405/scorecard/LLM-enhancements matches in it); no first-party widget-`Kind` dashboards exist yet since Phases 6-9 ship nothing to reference |
 
 ## Context
 
-Source: `/home/dmz/workspace/llm-research/docs/07-datawatch-improvements.md`
+Source: `llm-research/docs/07-datawatch-improvements.md` (outside this repo)
 (dated 2026-09-30, pre-v9.0.0) — Part A (7 routing/tiering/compute-balancing
 proposals) and Part B (5 usage/cost/performance-tracking proposals). The
 source doc is stale against the live system in both directions: some of
@@ -168,7 +185,7 @@ re-derived from the source doc.
    usage, where token economics matter.
 3. **Node selection / failover ordering** (Proposal 4/7): reuse compute
    node `scheduling_priority` (already exists; confirmed live:
-   `datawatch`/`datawatch-openai` = 90, `johnnyjohnny` = 70) as the
+   `datawatch`/`remote-node` = 90, `local-node` = 70) as the
    ordering signal among same-role-tagged LLM entries. No new priority
    concept invented.
 4. **Priority, preemption, resume** (new cross-cutting scope): "interrupt"
@@ -252,7 +269,7 @@ failover ordering; the rate-ceiling pool type and informative-admission
 API before any UI can show it; per-call usage records before any
 dashboard/alert/scorecard has real data to show).
 
-### Phase 0 — Role tags on LLM registry entries (Decision 1)
+### Phase 0 — Role tags on LLM registry entries (Decision 1) [done]
 - `internal/llm` registry entry struct: new open-string `Roles []string`
   field (or per-call-site role key — see Decision 1's "tag existing
   entries" framing). `llm_add`/`llm_update` MCP tools + REST + CLI gain a
@@ -264,7 +281,13 @@ dashboard/alert/scorecard has real data to show).
   config-write time.
 - PWA: new "Workload Roles" card, Settings → Automate.
 
-### Phase 1 — Session priority wiring (Decision 5, mechanics only)
+**Audit evidence** (audited against the current tree):
+- `Roles []string` registry field + `llm_add`/`llm_update`/REST/CLI/comm role param — **done**: `Roles` on the entry in `internal/inference/llm.go`, normalised by `NormalizeRoles` in `internal/inference/role_resolve.go`; `roles` on `llm_add`/`llm_update` in `internal/mcp/roles.go`, on `POST /api/llms` and `PUT /api/llms/{name}` in `internal/server/inference.go`, `--role` in `cmd/datawatch/cli_llm.go`, `roles=` in `internal/router/inference.go`. Omitting keeps, an empty list clears.
+- Resolution order (explicit per-call-site override wins over role lookup) — **done**: `ResolveRole` in `internal/inference/role_resolve.go`; an explicit backend or model skips the lookup, several enabled claimants pick the first by name and return an ambiguity warning.
+- Contention check (periodic reactive scan + config-write trigger) — **done**: `CheckRoleContention` and `RoleContentionMonitor` in `internal/inference/role_contention.go`; `autonomous.role_scan_interval_seconds` (default 300) drives `startRoleContentionScan` in `cmd/datawatch/main.go`; every llms write runs `Server.CheckRoleContention`, which audits each warning. `GET /api/llm-roles` returns the table and warnings.
+- PWA "Workload Roles" card under Settings → Automate — **done**: the card and the roles editor in `internal/server/web/app.js`, strings in all five locale files; tests `internal/server/web/app-llm-roles.test.js`, `internal/server/inference_roles_table_test.go`.
+
+### Phase 1 — Session priority wiring (Decision 5, mechanics only) [done]
 - `session.Session` struct: new `Priority int` field (mirrors
   `autonomous.PRD.Priority`'s shape exactly).
 - Wire into the 4 untouched admission call sites in
@@ -274,7 +297,18 @@ dashboard/alert/scorecard has real data to show).
 - Default value and the active "play well" computation are Phase 6 (needs
   the Scheduler UI to surface the operator warning/choice).
 
-### Phase 2 — Ledger: rate-ceiling pools + informative admission (Decisions 2, 7)
+**Audit evidence** (audited against the current tree):
+- `Session.Priority int` field — **done**: `Priority` on the session record in `internal/session/store.go`, validated by `ParsePriority` in `internal/session/priority.go` and set through `Manager.SetPriority`. Start accepts `priority`; `POST /api/sessions/set_priority` changes it; MCP (`set_session_priority`), CLI (`session new --priority`, `session priority`) and the comm channel carry it too, and the PWA session card shows a non-zero value.
+- Wire session priority into the admission call sites — **done**: the `ledger.Request` values in `cmd/datawatch/capacity_wiring.go` and the interactive start in `internal/server/api.go` now set `Priority` from the session; test `cmd/datawatch/capacity_priority_test.go`.
+- Default value + active "play well" computation — **remaining** (owned by Phase 6): no priority default, load-based computation, or operator warning exists in `internal/session` or `internal/server`.
+
+### Phase 2 — Ledger: rate-ceiling pools + informative admission (Decisions 2, 7) [done]
+
+> **Done 2026-10-23:** the rate-ceiling dimension, the `Decision` shape and the
+> non-blocking query are implemented on all surfaces (next patch above main,
+> unreleased development build). The earlier dollar-window budget landed first
+> (BL428 Phase 5). Live contended-queue validation is still owed.
+
 - `internal/capacity/ledger.go`: new optional rate-ceiling dimension per
   pool (requests/tokens over a rolling window), alongside the existing
   concurrency `Limit`. Admission checks both dimensions when a ceiling is
@@ -291,7 +325,12 @@ dashboard/alert/scorecard has real data to show).
   existing `verifierCapacityTryAdmit` precedent (v8.36.9) but returning the
   richer `Decision` instead of a bare bool.
 
-### Phase 3 — Preemption + resume (Decision 4)
+**Audit evidence** (audited against the current tree):
+- Rate-ceiling dimension per pool — **done**: requests/tokens over a rolling window per pool in `internal/capacity/rate_ceiling.go` (`SetRate`, `RecordTokens`, `RateResetAt`), checked beside the concurrency `Limit`; unset keeps concurrency-only behavior. Config keys `capacity_rate_requests`, `capacity_rate_tokens`, `capacity_rate_window_seconds`; the wait carries cause `rate_ceiling` and a reset time through `internal/server/capacity.go`. The dollar-window budget (`internal/autonomous/budget.go`) landed earlier and stays separate.
+- `Decision` enum (`admit`/`queued`/`alternate_available`) + `QueuePosition` + `Alternates` — **done**: `internal/capacity/decision.go` (`Decision`, `Alternate`, `FormatDecision`); queue position reuses the existing waiter ordering.
+- Non-blocking informative admission query beside blocking `Acquire` — **done**: `Ledger.Check(req) Decision` in `internal/capacity/decision.go`; REST `GET /api/capacity/admission` (`internal/server/capacity_admission.go`, wired with `internal/server/capacity.go`), MCP `capacity_admission` (defined in `internal/mcp/bl221_types.go`), CLI `datawatch capacity admission` (`cmd/datawatch/cli_capacity.go`), comm `capacity admission` (`internal/router/commands.go`).
+
+### Phase 3 — Preemption + resume (Decision 4) [not started]
 - New `StatePreempted` session state, same trigger/resume shape as
   `StateRateLimited` (`schedStore`-driven auto-resume).
 - Reactive preemption: fairness ordering alone decides who yields when a
@@ -303,7 +342,13 @@ dashboard/alert/scorecard has real data to show).
   (read `CHECKPOINT.md`, relocate, fold into the next attempt's retry hint)
   rather than inventing a new resume primitive.
 
-### Phase 4 — Per-call usage record store (B1, richer record)
+**Audit evidence** (audited against the current tree):
+- `StatePreempted` session state (same shape as `StateRateLimited`) — **remaining**: `KnownStates()` in `internal/session/store.go` lists only `StateRunning`, `StateWaitingInput`, `StateComplete`, `StateFailed`, `StateKilled`, `StateRateLimited`; `grep -ri preempt internal/` yields only unrelated kernel headers under `internal/observer/ebpf` and the native-bridge test `internal/channel/probe_test.go`.
+- Reactive preemption (fairness ordering decides who yields) — **remaining**: `internal/capacity/ledger.go` only ever grants or blocks; release paths (`Release`, `Reap`) never displace a live lease for a higher-priority waiter.
+- Active preemption with operator confirmation/notification — **remaining**: no operator-triggered preemption path or confirmation flow in `internal/autonomous`, `internal/session`, `internal/server`, or `internal/mcp`.
+- Autonomous-task resume via the checkpoint precedent — **remaining**: `Pause`/`Resume` in `internal/autonomous/manager.go` remain soft pauses (no in-flight task is yielded); nothing reads `CHECKPOINT.md` into a next-attempt retry hint on preemption.
+
+### Phase 4 — Per-call usage record store (B1, richer record) [not started]
 - New record shape (role, node, model, backend, ttft_ms,
   decode_tokens_per_sec, queue_wait_ms, success/retry, tokens in/out, est.
   cost) appended per LLM call, distinct from the existing session-level
@@ -323,7 +368,12 @@ dashboard/alert/scorecard has real data to show).
   (local-compute cost), Phase 8 (B5 scorecard), and Phase 9 (alert
   metrics) — built once, consumed by all four.
 
-### Phase 5 — Local-compute cost model (B2)
+**Audit evidence** (audited against the current tree):
+- Rich per-call record shape (role, node, model, backend, ttft_ms, decode_tokens_per_sec, queue_wait_ms, success/retry, tokens in/out, est. cost) — **remaining**: no per-call usage record type or store exists in `internal/session`, `internal/llm`, or `internal/stats` (no `usageRecord`, `ttft`, or `queue_wait` anywhere); the only token data that persists is the session-level aggregate (`TokensIn`/`TokensOut`/`EstCostUSD`) in `internal/session/store.go` / `internal/session/cost.go`, plus the per-backend parser helpers (`internal/session/claude_usage.go`, `internal/session/aider_usage.go`).
+- Wire the existing `usageFn` token callbacks into the record for every backend — **remaining**: the ollama backend still reports per-turn `prompt_eval_count`/`eval_count` straight to the session aggregate via `usageFn` (`internal/llm/backends/ollama/conversation.go:239-240`); the openwebui (`internal/llm/backends/openwebui/conversation.go`) and gemini backends have the same shape, and no record store consumes any of them.
+- Shared data feed for the Scheduler dashboards, local-compute cost, B5 scorecard, and alert metrics — **remaining**: all four consumers are unbuilt, so there is nothing to feed them (depends on the two items above).
+
+### Phase 5 — Local-compute cost model (B2) [partly done]
 - New compute-node field: flat `$/GPU-hour` rate, operator-set.
 - Cost computation for a local LLM call = node rate × wall-clock duration
   of the call (from Phase 4's record), joined the same way cloud $/token
@@ -337,7 +387,12 @@ dashboard/alert/scorecard has real data to show).
   scorecard real throughput numbers for local models, not just cloud
   ones.
 
-### Phase 6 — New top-level Scheduler surface (Decision 7, UI half)
+**Audit evidence** (audited against the current tree):
+- Flat per-hour operator-set compute-node field — **done**: `CostPerHour float64` (`yaml:"cost_per_hour,omitempty"`) exists on the compute node at `internal/compute/node.go:221` and in the config type at `internal/config/config.go:549`. A partial item, not a full phase win — see the remaining two bullets.
+- Local-call cost = node rate × wall-clock duration — **remaining**: `CostPerHour` is only copied from config into the node (`cmd/datawatch/main.go:3325`); no code multiplies it by call duration, and local/open backends are still hardwired to zero in `DefaultCostRates()` at `internal/session/cost.go` (`ollama`, `shell`, `openwebui` → `{InPerK: 0, OutPerK: 0}`).
+- Side-by-side $ cost and token-throughput view for local vs. cloud — **remaining**: no such view in `internal/server`, `internal/mcp`, or `internal/server/web`; `internal/session/cost.go`'s `CostSummary` is tokens/dollars from `$`/1K-token rates only.
+
+### Phase 6 — New top-level Scheduler surface (Decision 7, UI half) [not started]
 - New top-level nav surface (own entry, not nested under Automaton or
   Settings): live view across every pool — local compute nodes, every
   LLM-registry entry/model, current priorities, rate-ceiling state (Phase
@@ -349,7 +404,13 @@ dashboard/alert/scorecard has real data to show).
 - Full parity set: REST, MCP, CLI, comm, YAML, PWA (see Parity surface
   below).
 
-### Phase 7 — Federation-aware capacity (Decision 6)
+**Audit evidence** (audited against the current tree):
+- Top-level Scheduler nav surface (own entry, live pool view) — **remaining**: no `internal/server/scheduler.go` file, no `/api/scheduler` route register in `internal/server`, and no Scheduler nav entry in `internal/server/web/app.js` or `internal/server/web/locales/en.json`; the only capacity UI is the buried per-task `waiting_capacity` badge (`internal/server/web/app.js:13131`).
+- Live queue with computed positions and rate-ceiling state (Phase 2's `Decision`) — **remaining**: the upstream data now exists (`Ledger.Check`, `GET /api/capacity/admission`, the rate fields on `GET /api/capacity`); the Scheduler view that renders it is not built.
+- Session-creation "play well" warning/choice (Decision 5c) — **remaining**: no priority default, load check, or warning/choice dialog anywhere in `internal/session`, `internal/server`, or `internal/server/web/app.js` (the only `priority` UI in `app.js` is the compute-node `scheduling_priority` field and the PRD wizard's `prd.priority`).
+- Full parity set (REST/MCP/CLI/comm/YAML/PWA) — **remaining**: none of the Parity-surface-table Phase 6 cells exist; the closest shipped work is the BL428 budget surfaces (`internal/server/budget.go`, `internal/mcp/budget.go`, `cmd/datawatch/cli_budget.go`), which are Phase 2 items, and the BL431 automation files (`internal/autonomous/automation_advance.go`, `internal/autonomous/automation_control.go`, `internal/autonomous/automation_insert.go`) contain no scheduler/priority/session-creation surface under another name.
+
+### Phase 7 — Federation-aware capacity (Decision 6) [not started]
 - New `CapCapacity` (read) federation capability in
   `internal/federation/capabilities.go` + `allCaps` + `mcp_tool_caps.go`
   entries for any new capacity/scheduler MCP tools — same least-privilege
@@ -359,7 +420,12 @@ dashboard/alert/scorecard has real data to show).
   "capacity on host X (federation)", carried through the existing
   hop-chain — no new hop/nesting mechanism, per Decision 6.
 
-### Phase 8 — Council Profiles: implement BL390 Phase 2/3, then extend (Decision 8)
+**Audit evidence** (audited against the current tree):
+- `CapCapacity` (read) capability + `allCaps` entry — **remaining**: no `CapCapacity` constant in `internal/federation/capabilities.go` and no capacity entry in `allCaps` (list at line 167); capabilities there cover llms/compute/autonomous/etc. but not the capacity/scheduler resource.
+- `mcp_tool_caps.go` entries for new capacity/scheduler MCP tools — **remaining**: `internal/federation/mcp_tool_caps.go` line 137 maps only the pre-existing `capacity_status` tool to `CapAutonomousRead`; no scheduler/capacity-read tool exists to gate.
+- Peer pools surfaced via the hop-chain in the Phase 6 Scheduler — **remaining**: `internal/capacity/ledger.go` is purely local-instance-scoped (no peer/pool-from-host representation, no `internal/federation/hopchain.go` integration on the capacity path); the nearest peer-facing thing is the opt-in BL428 per-peer spend count in `internal/autonomous/peer_budget.go`, which is dollar accounting, not reported pools.
+
+### Phase 8 — Council Profiles: implement BL390 Phase 2/3, then extend (Decision 8) [not started]
 - **Sub-phase 8a** — implement BL390 Phase 2 and Phase 3 exactly as
   already designed in `docs/plans/historical-plans/
   2026-09-30-council-llm-model-assignment.md` (status: Planned, never
@@ -385,7 +451,12 @@ dashboard/alert/scorecard has real data to show).
   3's deliberate "not in scope: council as a PRD's execution backend"
   line, not just a sequencing continuation of it.
 
-### Phase 9 — Alerting hooks (B4)
+**Audit evidence** (audited against the current tree):
+- 8a: `CouncilProfile` CRUD + `PRD.CouncilProfile`/`VerificationCouncilProfile` wiring — **remaining**: no `type CouncilProfile` anywhere in `internal/` or `cmd/` (only placeholder comments at `internal/autonomous/models.go:318`, `internal/autonomous/manager.go:677-681`, and `internal/autonomous/guided_mode.go:6`); no `/api/council/profiles*` route in `internal/server`; `internal/mcp/council.go` exposes only the shipped personas/run/draft tools (`toolCouncilPersonas`, `toolCouncilRun`, `toolCouncilPersonaOneShot`, draft tools), no `council_profile_list`/`get`/`create`/`update`/`delete`; no `CouncilConfig.Profiles` in `internal/config/config.go`.
+- 8b: sequential pipeline-handoff `EngagementMode` (e.g. `EngagementChain`) — **remaining**: no `EngagementMode` or chaining implementation in `internal/council/council.go`; the only "RoundRobin" hit in `internal/` is the unrelated ledger fairness test `TestFairRoundRobinAcrossPRDs` (`internal/capacity/ledger_test.go:76`).
+- 8c: extended selection points (verification council, sampling triggers, B5 scorecard, session-with-council mode) — **remaining**: `alert_triage`/`anomaly_analysis`/`morning_briefing` remain the currently-disabled triggers in `internal/mcp/triggers.go`; no evaluation fan-out across backends wired to `internal/evals`; the "council" guided session mode in `internal/autonomous/guided_mode.go` is a stub that logs at line 43 that "BL405 Phase 8 [is] not yet shipped" and falls back to operator approval. Per the plan, 8b/8c additionally need explicit operator go-ahead before implementation.
+
+### Phase 9 — Alerting hooks (B4) [not started]
 - `internal/alertrules/types.go`: new `Condition.Metric` values
   (`queue_wait_seconds`, `cost_burn_rate`, `token_budget_remaining`,
   `model_error_rate`), fed by Phase 4's per-call records and Phase 6's
@@ -394,7 +465,11 @@ dashboard/alert/scorecard has real data to show).
   firing alert can act on the scheduler (e.g. auto-failover via Decision
   3's ordering, or bump a PRD's priority) rather than only notify.
 
-### Phase 10 — Dashboard-artifact cross-reference into BL403
+**Audit evidence** (audited against the current tree):
+- New `Condition.Metric` values (`queue_wait_seconds`/`cost_burn_rate`/`token_budget_remaining`/`model_error_rate`) — **remaining**: `internal/alertrules/types.go` still documents `Metric` (lines 16-18) as resource telemetry only (cpu/mem/gpu/rss et al.); grep for the four new metric names across `internal/` and `cmd/` finds nothing, and their upstream feeds (Phase 4 records, Phase 6 Scheduler state) are themselves unbuilt.
+- New `Action.Kind` values (`switch_model`/`escalate_priority`) — **remaining**: `internal/alertrules/types.go` lines 29-30 still document `Kind` as alert/scale_up/scale_down only, with the action set wired to `alerts.Store` and the `ScaleNode` stub (package doc, lines 6-8); no scheduler-acting handler exists in `internal/alertrules`.
+
+### Phase 10 — Dashboard-artifact cross-reference into BL403 [not started]
 - Any new dashboard/observer card from Phases 6-9 (Scheduler queue view,
   node/model health, cost/scorecard tiles) is built using BL403's existing
   generic widget `Kind` taxonomy (`stat_tile | table | list | sparkline |
@@ -406,6 +481,10 @@ dashboard/alert/scorecard has real data to show).
   that plan the living index of what the widget surface can do, useful to
   a future plugin author considering a similar card (e.g. a plugin-
   contributed scorecard-style table next to the first-party one).
+
+**Audit evidence** (audited against the current tree):
+- First-party dashboard cards built on the BL403 widget `Kind` taxonomy — **remaining**: no such cards exist because the Phase 6-9 surfaces that would ship them (Scheduler queue view, cost/scorecard tiles) are all unbuilt (see the Phase 6-9 rows above); the only `scheduler`-named artifact in `internal/server/web` is the unrelated plugin pull scheduler referenced in `docs/plans/2026-10-09-plugin-extension-surfaces.md:236`.
+- Cross-reference section in `docs/plans/2026-10-09-plugin-extension-surfaces.md` — **remaining**: that file has no match for bl405, llm-enhancements, scorecard, or any first-party `Kind` usage from this plan; its widget `Kind` taxonomy example list was not extended.
 
 ## Parity surface
 

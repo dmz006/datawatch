@@ -10,9 +10,11 @@ write-ahead log.
 ## What discussion scopes are and when to use them
 
 A discussion scope is a named memory partition keyed by a discussion ID (a short string
-you choose). Each scope stores an ordered list of entries, a WAL at
+you choose: 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected)). Each scope stores an ordered list of entries, a WAL at
 `~/.datawatch/discussions/<id>/wal.jsonl`, and an optional set of participant peers that
-automatically receive a copy of every new write.
+automatically receive a copy of every new write. Every id is checked at the point of use,
+and the cleaned folder path it names is verified to stay inside the discussions folder,
+so an id can never point at a file outside it.
 
 Use discussion scopes when:
 - You want multiple datawatch peers to share a memory thread about a topic or project.
@@ -51,6 +53,8 @@ addressable only by their discussion ID.
 
 Every write to a new discussion ID automatically creates the scope and the WAL file. There
 is no explicit create step.
+
+**ID rules:** an ID must be 1 to 128 characters, using only ASCII letters, digits, dot, underscore and hyphen (`.` and `..` alone are rejected). Any other ID — an empty one, or one containing `/`, `\`, a space, or any other character — is refused with HTTP 400 and the body `invalid discussion id`, before any file is opened or created. The full rule, the list of routes it applies to (and the one route it does not), and how the check is enforced in the code are all in the [Discussion id rule](#discussion-id-rule) section below.
 
 ### REST
 
@@ -266,6 +270,74 @@ curl -sk -H "Authorization: Bearer $DW_TOKEN" \
   "$DW_HOST/api/mcp/docs" | jq '[.tools[] | select(.name | startswith("memory_discussion"))] | map(.name)'
 # ["memory_discussion_participants","memory_discussion_recall","memory_discussion_wal","memory_discussion_write"]
 ```
+
+---
+
+## Discussion id rule
+
+A discussion id is a whole name of 1 to 128 characters from
+letters, digits, dot, underscore and hyphen. The whole id must match; a name that merely
+contains valid characters plus anything else is not accepted. The names `.` and `..` are never
+accepted, even though they use only allowed characters.
+
+Any other id answers HTTP 400 with the plain text `invalid discussion id` before anything is
+written, so a rejected request never creates a scope, a WAL file or a participant list.
+
+The rule applies to every discussion route that carries an id in the path:
+
+- scope (write, recall, delete)
+- WAL
+- participants
+- conflicts (list and resolve)
+- receive (entries arriving from a federation peer)
+- file service, `GET /api/files/discussions/{id}` (see [file-service.md](file-service.md))
+
+The list-all route, `GET /api/memory/discussion`, has no id in its path: it simply reports
+the names of the discussion folders it finds under the base directory, so it is not itself
+subject to this rule. That is why a legacy, invalid folder name can still show up in a
+list-all response even though every id-bearing route above refuses it — see the operator
+review note below.
+
+**How the check is enforced:** every id-bearing route builds its folder path through a shared
+helper in `internal/server/discussion_folder.go`, never by joining the id into a path inline.
+The discussion memory routes (scope, WAL, participants, conflicts, receive) use the server
+method `discussionFolderForID`, which pins the base folder to `<data dir>/discussions`; the
+file-service discussion folder route uses the plain helper `discussionFolderPath` with its
+base set to `<file_service_root>/discussions`. Both run the same core check: they validate
+the id, refuse an id that carries `/`, `\`, or exactly `.`/`..`, and — only after joining the
+id into the base folder and cleaning the result — refuse the path unless it is still a direct
+child of that base folder. As a second barrier form, `discussionFolderForID` additionally
+requires the id to be a local name (`filepath.IsLocal`) and that the cleaned join stays
+reachable from the base without a hop out of it, so a cleaned id cannot name a sibling or
+ancestor folder even in principle. Because a valid id can never carry a path separator, an id
+can never be used to name a file outside its own discussion folder (the WAL under
+`<data dir>/discussions/<id>/`, or the matching file-service folder under
+`<file_service_root>/discussions/<id>/`), and a refused id never opens or creates a file.
+Behavior for valid ids is unchanged; the shared containment check sitting visibly at the join,
+in both helpers and unit-tested against traversal ids, is what makes the guard visible on the
+data flow in the code.
+
+```sh
+# An id with a slash is rejected.
+curl -sk -i -X POST \
+  -H "Authorization: Bearer $DW_TOKEN" \
+  -H 'Content-Type: application/json' \
+  $DW_HOST/api/memory/discussion/bad%2Fid \
+  -d '{"content":"hello"}'
+# HTTP 400
+# invalid discussion id
+```
+
+**Operator review:** discussion ids created before this rule with other characters (spaces, `/`,
+non-ASCII) stay on disk. They are refused with HTTP 400 by every id-bearing route (write, recall,
+delete, WAL, participants, conflicts, receive, and the file-service discussion route), but they
+can still appear in a list-all response, because that route reports the folder names it finds on
+disk rather than opening them. List the folders with `ls ~/.datawatch/discussions` (memory scopes)
+and `ls <file_service_root>/discussions` (file folders — by default
+`~/.datawatch/files/discussions`; the effective root is shown by `GET /api/files/meta`), and
+rename or migrate any such folder to a valid id (or delete it) so it stops showing up in
+listings.
+See also [file-service.md](file-service.md) for the same rule on the file routes.
 
 ---
 

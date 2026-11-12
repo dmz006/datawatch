@@ -4,7 +4,7 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Depends: default-jre-headless | java17-runtime-headless, tmux (>= 3.0)
-Maintainer: dmz006 <dmz006@github.com>
+Maintainer: datawatch <datawatch@example.com>
 Homepage: https://github.com/dmz006/datawatch
 Description: Multi-backend AI coding session daemon
  datawatch bridges messaging platforms to AI coding sessions running in tmux.

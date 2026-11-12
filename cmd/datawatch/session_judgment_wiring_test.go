@@ -18,8 +18,11 @@ func TestB124_AutonomousVerify_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		{"passes project dir + session-kind check", "ProjectDir:     taskDir,"},
 		{"passes session-kind check", "verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)"},
 		{"branches on useSession", "if useSession {"},
-		{"spawns a real session", "runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,"},
-		{"reuses the same judgment prompt", "sessionJudgmentTask(prompt, taskDir, outputFile)"},
+		{"enforces the pi-family pinned-model guard (v9.10.19)", "guardPiFamilyVerifyModel(vbackend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)"},
+		{"spawns a real session", "runOneShotJSONSessionWithEffortAttr(verifyAttr(prd.ID, task.ID), cfg, prd.ID, taskDir, backend, model,"},
+		{"retries a run-cap end once through the retry helper", "runVerifierSessionWithRunCapHook("},
+		{"releases the lease and records the decision on a run-cap end", "verifierRunCapDecision(autonomousMgrRef, prd.ID, task.ID, capEnd)"},
+		{"reuses the same judgment prompt", "sessionJudgmentTask(deliverPrompt, taskDir, outputFile)"},
 	}
 	for _, c := range checks {
 		if !contains(src, c.want) {
@@ -35,16 +38,21 @@ func TestB124_AutonomousGuardrail_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		want string
 	}{
 		{"checks needsSessionJudgment before downgrading", "if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {"},
-		{"spawns a real session", "runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,"},
-		{"reuses the same judgment prompt", "sessionJudgmentTask(prompt, req.ProjectDir, outputFile)"},
+		{"spawns a real session and captures its id", "runOneShotJudgeSessionCaptureIDAttr(guardrailAttr(req), cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,"},
+		{"stamps the judge session onto its verdicts", "judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{"},
+		{"reuses the same judgment prompt", "sessionJudgmentTask(deliverPrompt, req.ProjectDir, outputFile)"},
 		// The old unconditional downgrade must still exist as the
 		// no-project-dir fallback, just gated behind the session check
 		// now rather than applying unconditionally.
 		{"still has the ollama fallback for the no-project-dir case", `gkind = "ollama"`},
 		// B124 follow-up (v9.0.45) — the session path must never carry
-		// the flat ask-compatible VerificationModel default through to
-		// a session call; only a genuine per-unit override may.
-		{"session model comes from the per-unit override, not the merged ask-model fallback", "sessionModel := req.GuardrailModel"},
+		// the flat ask-compatible VerificationModel default through to a
+		// session call; only a genuine per-unit override may. v9.10.19 —
+		// for pi / pi-prompt, guardPiFamilySessionModel enforces the
+		// pinning invariant: explicit model or a loud infra block, never
+		// the harness's built-in default; non-pi backends keep the
+		// registry-default fallback (still passed as the last argument).
+		{"resolves the pinned session model before spawning (v9.10.19)", "guardPiFamilySessionModel("},
 	}
 	for _, c := range checks {
 		if !contains(src, c.want) {

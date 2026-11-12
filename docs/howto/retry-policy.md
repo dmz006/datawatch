@@ -106,6 +106,10 @@ Same shape as guardrail resolution ([guardrail-library.md](guardrail-library.md)
   never applies to decompose at all: there is no judgment verdict at
   this stage, only a mechanism succeeding or failing.
 
+## Memory ceiling failures
+
+An attempt that is stopped for passing its memory ceiling is retried like any other failure. If the next attempt is also stopped for it, the Automaton task is not retried a third time: it moves to review with the reason "the process used more memory than the limit", and an alert is raised. Raise the ceiling (or set `memory_limit` for the project or task kind), then resume the task. See [Memory ceiling](../operations.md#memory-ceiling).
+
 ## When a retry budget is finally exhausted
 
 A failure that genuinely never gets fixed — not one that self-heals
@@ -234,4 +238,5 @@ precedence rule in practice).
 
 - [guardrail-library.md](guardrail-library.md) — the sibling guardrail-resolution mechanism this mirrors
 - [autonomous-planning.md](autonomous-planning.md) — Automaton lifecycle
+- [failed-attempt-cost.md](failed-attempt-cost.md) — what a failed attempt costs, the first-attempt worker, resuming a retry and the attempt-cost settings
 - [api/autonomous.md](../api/autonomous.md) — REST reference

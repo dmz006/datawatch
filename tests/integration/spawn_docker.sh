@@ -46,14 +46,30 @@ AGENT_ID=""
 pass() { echo "✓ $*"; }
 fail() { echo "✗ $*" >&2; exit 1; }
 
-cleanup() {
-    local rc=$?
+# Teardown — every exit path (normal end, failure, interrupt) removes this
+# run's own records (agent, project and cluster profiles, the locally
+# re-tagged image alias) through the daemon's API, and keeps everything
+# when KEEP_ON_FAIL=1 and the run failed. The daemon under test belongs to
+# the caller and is never stopped — tracked resources are deleted by id via
+# the API, not by signal. scripts/test-daemon-lib.sh routes EXIT/INT/TERM/
+# HUP to the hook below (TD_PRE_STOP_CLEANUP — runs while the daemon is
+# alive) exactly once, preserving the script's own pending status.
+TD_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../scripts" && pwd)/test-daemon-lib.sh"
+[[ -f "$TD_LIB" ]] || { echo "FAIL missing shared daemon lifecycle helper: $TD_LIB" >&2; exit 77; }
+# shellcheck source=/dev/null
+. "$TD_LIB"
+
+# Preserve-or-cleanup (KEEP_ON_FAIL). Runs in its own subshell off the
+# lifecycle library's trap handler; TD_EXIT_STATUS carries the pending
+# status, so this hook cannot change it.
+smoke_preserve_or_cleanup() {
+    local rc="${TD_EXIT_STATUS:-0}"
     if [ "${KEEP_ON_FAIL:-}" = "1" ] && [ "$rc" -ne 0 ]; then
         echo "⚠ preserving state on failure (KEEP_ON_FAIL=1)"
         echo "  project=$PROJECT_NAME"
         echo "  cluster=$CLUSTER_NAME"
         echo "  agent=$AGENT_ID"
-        exit "$rc"
+        return 0
     fi
     echo "→ cleanup"
     if [ -n "$AGENT_ID" ]; then
@@ -62,9 +78,11 @@ cleanup() {
     curl -sf -X DELETE "$BASE_URL/api/profiles/projects/$PROJECT_NAME" >/dev/null 2>&1 || true
     curl -sf -X DELETE "$BASE_URL/api/profiles/clusters/$CLUSTER_NAME" >/dev/null 2>&1 || true
     [ -n "${DAEMON_VERSION:-}" ] && docker rmi "agent-claude:v${DAEMON_VERSION}" >/dev/null 2>&1 || true
-    exit "$rc"
+    return 0
 }
-trap cleanup EXIT
+
+TD_PRE_STOP_CLEANUP="smoke_preserve_or_cleanup"
+td_install_traps "$@" # EXIT / INT / TERM / HUP — the hook above, exactly once
 
 require() {
     command -v "$1" >/dev/null 2>&1 || fail "prereq missing: $1"

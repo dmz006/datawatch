@@ -105,7 +105,7 @@ Wave 3 (v5.28.3): Language picker promoted to top of Settings → About. PWA UI 
 
 ### v5.28.2 — BL173 federated-observer end-to-end verification
 
-Verified cross-host cluster→parent push end-to-end in the operator's `testing` cluster (3-node Ubuntu 22.04, 10.8.2.0/24 overlay). Deployed parent in-cluster as a Deployment + ClusterIP Service; peer Pod round-tripped: register → push snapshot → aggregator shows peer envelope → cleanup. Runbook in `docs/howto/federated-observer.md`.
+Verified cross-host cluster→parent push end-to-end in the operator's `testing` cluster (3-node Ubuntu 22.04, 192.0.2.82/24 overlay). Deployed parent in-cluster as a Deployment + ClusterIP Service; peer Pod round-tripped: register → push snapshot → aggregator shows peer envelope → cleanup. Runbook in `docs/howto/federated-observer.md`.
 
 ### v5.28.4 — BL215 + BL211
 

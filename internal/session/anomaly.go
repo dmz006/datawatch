@@ -17,8 +17,8 @@ import (
 type AnomalyKind string
 
 const (
-	AnomalyStuckLoop      AnomalyKind = "stuck_loop"
-	AnomalyLongInputWait  AnomalyKind = "long_input_wait"
+	AnomalyStuckLoop       AnomalyKind = "stuck_loop"
+	AnomalyLongInputWait   AnomalyKind = "long_input_wait"
 	AnomalyDurationOutlier AnomalyKind = "duration_outlier"
 )
 
@@ -69,7 +69,9 @@ func DetectStuckLoop(sessionID, output string, threshold int) *Anomaly {
 }
 
 // DetectLongInputWait flags sessions that have been in StateWaitingInput
-// longer than threshold seconds.
+// longer than threshold seconds. Stalled sessions are deliberately excluded:
+// StateStalled is non-terminal but must not be counted as waiting-for-input
+// in any waiting-time alert or counter.
 func DetectLongInputWait(sess *Session, thresholdSeconds int) *Anomaly {
 	if sess == nil || sess.State != StateWaitingInput || thresholdSeconds <= 0 {
 		return nil
@@ -99,9 +101,9 @@ func DetectDurationOutlier(sess *Session, historicalAvg time.Duration, multiplie
 		return nil
 	}
 	return &Anomaly{
-		Kind:       AnomalyDurationOutlier,
-		SessionID:  sess.FullID,
-		Detail:     "running for " + current.Truncate(time.Second).String() +
+		Kind:      AnomalyDurationOutlier,
+		SessionID: sess.FullID,
+		Detail: "running for " + current.Truncate(time.Second).String() +
 			" (avg=" + historicalAvg.Truncate(time.Second).String() +
 			", threshold=" + threshold.Truncate(time.Second).String() + ")",
 		DetectedAt: time.Now(),

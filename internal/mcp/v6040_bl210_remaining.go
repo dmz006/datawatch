@@ -34,7 +34,7 @@ func (s *Server) toolFilterList() mcpsdk.Tool {
 func (s *Server) handleFilterList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/filters", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("filter_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -55,7 +55,7 @@ func (s *Server) handleFilterAdd(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/filters", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("filter_add", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -69,11 +69,11 @@ func (s *Server) toolFilterDelete() mcpsdk.Tool {
 func (s *Server) handleFilterDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	if id == "" {
-		return textOK("Error: id is required"), nil
+		return toolErrorf("filter_delete", "id is required"), nil
 	}
 	out, err := s.proxyJSON(http.MethodDelete, fmt.Sprintf("/api/filters?id=%s", url.QueryEscape(id)), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("filter_delete", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -93,7 +93,7 @@ func (s *Server) handleFilterToggle(_ context.Context, req mcpsdk.CallToolReques
 	}
 	out, err := s.proxyJSON(http.MethodPatch, "/api/filters", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("filter_toggle", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -108,7 +108,7 @@ func (s *Server) toolBackendsList() mcpsdk.Tool {
 func (s *Server) handleBackendsList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/backends", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("backends_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -121,7 +121,7 @@ func (s *Server) toolBackendsActive() mcpsdk.Tool {
 func (s *Server) handleBackendsActive(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/backends/active", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("backends_active", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -142,7 +142,7 @@ func (s *Server) handleSessionSetState(_ context.Context, req mcpsdk.CallToolReq
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/sessions/state", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("session_set_state", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -170,7 +170,7 @@ func (s *Server) handleFederationSessions(_ context.Context, req mcpsdk.CallTool
 	}
 	out, err := s.proxyJSON(http.MethodGet, path, nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("federation_sessions", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -193,7 +193,7 @@ func (s *Server) handleDeviceRegister(_ context.Context, req mcpsdk.CallToolRequ
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/devices/register", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_register", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -206,7 +206,7 @@ func (s *Server) toolDeviceList() mcpsdk.Tool {
 func (s *Server) handleDeviceList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/devices", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -220,11 +220,11 @@ func (s *Server) toolDeviceDelete() mcpsdk.Tool {
 func (s *Server) handleDeviceDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	if id == "" {
-		return textOK("Error: id is required"), nil
+		return toolErrorf("device_delete", "id is required"), nil
 	}
 	out, err := s.proxyJSON(http.MethodDelete, fmt.Sprintf("/api/devices/%s", url.PathEscape(id)), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_delete", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -252,7 +252,7 @@ func (s *Server) handleFilesList(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	out, err := s.proxyJSON(http.MethodGet, path, nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("files_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -273,7 +273,7 @@ func (s *Server) handleFilesUpload(_ context.Context, req mcpsdk.CallToolRequest
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/files/upload", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("files_upload", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -289,11 +289,11 @@ func (s *Server) toolFilesDelete() mcpsdk.Tool {
 func (s *Server) handleFilesDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	p := req.GetString("path", "")
 	if p == "" {
-		return textOK("Error: path is required"), nil
+		return toolErrorf("files_delete", "path is required"), nil
 	}
 	out, err := s.proxyJSON(http.MethodDelete, "/api/files", map[string]string{"path": p})
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("files_delete", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -308,7 +308,7 @@ func (s *Server) toolFilesMeta() mcpsdk.Tool {
 func (s *Server) handleFilesMeta(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/files/meta", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("files_meta", err), nil
 	}
 	return textOK(string(out)), nil
 }

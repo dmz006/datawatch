@@ -1,10 +1,10 @@
 ---
 docs:
   index: true
-  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy]
+  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "per-tab picker", "switching servers", "Showing:"]
 exec_params:
   - {name: server_name, required: false, description: "Short name for the remote server (e.g. nas, prod)"}
-  - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.168.1.100:8080)"}
+  - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.0.2.136:8080)"}
 exec_steps:
   - tool: mcp__datawatch__get_version
     description: Check local daemon version
@@ -62,7 +62,9 @@ configure it as a federated peer for push stats.
 1. Open **Settings → Comms → Servers**.
 2. Click **+ Add server**.
 3. Fill in **Name** (short slug, e.g. `nas`), **URL** (base URL including port,
-   e.g. `http://192.168.1.100:8080`), and **Bearer token**.
+   e.g. `http://192.0.2.136:8080`), and **Bearer token**.
+   The example URL is a placeholder; the real URL for a given server lives in
+   your operator config and is not committed to this repository.
 4. Click **Test** to verify connectivity — a green toast confirms the version.
 5. Click **Save**.
 
@@ -76,7 +78,7 @@ picker on all views.
 curl -X POST https://localhost:8443/api/servers \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"nas","url":"http://192.168.1.100:8080","token":"remote-token","enabled":true}'
+  -d '{"name":"nas","url":"http://192.0.2.136:8080","token":"remote-token","enabled":true}'
 
 # List
 curl https://localhost:8443/api/servers -H "Authorization: Bearer $TOKEN"
@@ -88,7 +90,7 @@ curl https://localhost:8443/api/servers/nas -H "Authorization: Bearer $TOKEN"
 curl -X PUT https://localhost:8443/api/servers/nas \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"nas","url":"http://192.168.1.100:8080","token":"new-token","enabled":true}'
+  -d '{"name":"nas","url":"http://192.0.2.136:8080","token":"new-token","enabled":true}'
 
 # Test connectivity
 curl -X POST https://localhost:8443/api/servers/nas/test \
@@ -112,7 +114,7 @@ server_delete name=nas
 
 ```bash
 datawatch server list
-datawatch server add --name nas --url http://192.168.1.100:8080 --token xxx
+datawatch server add --name nas --url http://192.0.2.136:8080 --token xxx
 datawatch server test nas
 datawatch server delete nas
 ```
@@ -125,7 +127,7 @@ them to seed servers at deploy time:
 ```yaml
 servers:
   - name: nas
-    url: http://192.168.1.100:8080
+    url: http://192.0.2.136:8080
     token: ${secret:nas-token}
     enabled: true
 ```
@@ -135,16 +137,77 @@ store raw tokens in config files.
 
 ## Switch between servers (per-tab picker)
 
-Every main view (Sessions, Alerts, Automata, Observer, Dashboard) has a
-**server chip bar** injected at the top. The chips are:
+Every main view (Sessions, Alerts, Automata, Observer, Settings, Dashboard)
+has a **server chip bar** injected at the top. The chips are:
 
 | Chip | Behaviour |
 |------|-----------|
 | **All** | Fetch from all servers via aggregated endpoints; WebSocket stays on local |
-| **Local** | Show only this daemon's data (default) |
+| **Local** (labelled with this daemon's hostname — never the word "Local") | Show only this daemon's data (default) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
 
-The active chip persists in `state.activeServer` for the duration of the session.
+Observer and Settings are the two tabs whose picker offers no **All** chip
+at all — only the local and federated chips.
+
+The active chip persists in `state.activeServer` for the duration of the
+session.
+
+**Selecting a chip acts on the page you are on, immediately.** Choosing a
+federated host re-renders the tab you are currently looking at — Sessions,
+Alerts, Automata, Observer, Settings or Dashboard — in place, against that
+server:
+the **Showing: \<name\>** line above the view updates to the host you
+picked and the list/content becomes that host's data, without you leaving
+and re-opening the view. Picking **Local** or **All** takes the same page
+back to that view the same way.
+
+On the **Dashboard** the switch is per panel rather than one list: each
+panel re-fetches for the active host. Only the **Automata** and **Cost**
+panels aggregate under **All** (`/api/autonomous/prds/aggregated`,
+`/api/cost/aggregated`); the other panels have no aggregated variant.
+
+> **Confirm this on your setup before relying on it.** The in-place switch
+> is recorded under **[Unreleased] → Fixed** in the
+> [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry records
+> that no live verification had been run when it was recorded. It is
+> implemented in this tree's `internal/server/web/app.js` — `selectServer`
+> re-renders the tab you're on, and the **Automata** re-render spans the
+> whole tab, **Automation** sub-tab included — with PWA tests for the
+> re-render. Confirm it live on a two-host setup; the full checklist is in
+> [operations.md](../operations.md), under "Still to review (operator)"
+> in the multi-server section.
+
+Behaviours worth knowing:
+
+- **Re-selecting the active server is a no-op.** Tapping the chip that is
+  already active does not reload the view, refetch data or reset scroll
+  position and filters.
+- **A real switch clears the previous server's data first.** On any
+  genuine picker switch (not a no-op re-selection), the old server's
+  session list is dropped before the view redraws — the tab cannot keep
+  showing the previous server's sessions. Sub-pages that carry no chip
+  bar at all (session detail, the New session form) are not re-rendered
+  by a switch; they keep their contents until you leave them.
+- **Back to \<hostname\>.** Extra one-tap ways to return to local data
+  (where \<hostname\> is this daemon's own name), in addition to the
+  always-present **Local** chip — they all perform the same "go back to
+  local" action:
+  - the error panel, when a remote server cannot be reached and no
+    sessions are loaded, offers an explicit **Back to \<hostname\>**
+    button;
+  - a clickable **🌐 \<name\>** indicator on the **Sessions toolbar** —
+    it appears while a remote server is the active one and clicking it
+    returns you to local data; it is the `.server-indicator` chip in
+    `renderSessionsView` in `internal/server/web/app.js`
+    (`onclick="selectServer(null)"`), covered by the PWA test
+    `internal/server/web/app-select-server-controls.test.js`;
+  - on the **Servers card** under Settings → Comms → Remote Servers, the
+    row for the active remote server carries a **Back to \<hostname\>**
+    button next to its Select/Connected button.
+- **Showing: \<name\> header line.** Every page carries a
+  **Showing: \<name\>** line above the view naming the server whose data
+  is on screen: the server's hostname, or **All servers** in all-servers
+  mode.
 
 ## All-servers (aggregated) mode
 
@@ -159,8 +222,12 @@ Selecting **All** uses two dedicated endpoints that fan out in parallel:
 Each item in the response carries a `server` field (e.g. `"server":"nas"`)
 identifying its origin. The PWA renders a **[nas]** tag on each card.
 
-Observer and Dashboard views use the picker to switch — they don't have a
-separate "All" aggregation; "All" falls back to local data on those views.
+The Observer and Settings pickers offer no **All** chip at all (only the
+local and federated chips). On the Dashboard, **All** aggregates per panel:
+the Automata and Cost panels use the aggregated endpoints above
+(`/api/autonomous/prds/aggregated`, `/api/cost/aggregated`); the other
+Dashboard panels have no aggregated variant and show the selected server's
+data.
 
 ## Proxy mode (specific server)
 
@@ -177,6 +244,49 @@ you never expose the remote token to the browser directly.
 
 Runtime-registered servers (added via REST/MCP/CLI) are available for proxy
 routing immediately. YAML-seeded servers are also proxy-reachable.
+
+## Version skew between a primary and its peers
+
+A federated peer's daemon can run a different release than the daemon
+serving this page (the primary). The PWA makes that difference visible
+without changing behavior:
+
+- **Version-skew note on the About page.** While a peer is selected,
+  **Settings → About** reads the version from the *peer's* daemon (through
+  the local proxy). If the peer reports a different build than the primary,
+  an informational note appears under the version line: "This server is
+  running vX, a different release than vY, the one serving this page.
+  Behavior is unchanged and no reload is needed." The note is hidden while
+  the two builds match or while you are looking at the local server.
+- **Switching servers never reloads the page.** Each server's reported
+  version is recorded under that server's own key. A version seen for the
+  first time on a given server is only recorded — it is never read as an
+  update. So selecting a peer whose build differs from the primary's, and
+  switching back to local, fire no reload and no prompt (the page itself is
+  only ever served by the primary; nothing about the switch reloads it).
+- **When the update prompt appears.** The "Update available — tap to
+  reload" banner (and the automatic reload that follows once you are
+  idle), shown at most once per version change, fires when the selected
+  server reports a *different* build than the one last recorded for *that
+  server*. That can be the primary reporting a newer build while you are
+  on it, or a selected peer whose own daemon changed builds while that
+  peer was the active server. A peer that merely runs a different release
+  from the primary does not trigger it: only a version change attributed
+  to that server does.
+- **What the `Showing: <server>` line means.** The About, General,
+  Plugins, Comms, Compute and Automata settings tabs each carry a
+  "Showing:" line. It names the daemon whose data those tabs actually
+  display: the peer's name when a peer is selected, the local hostname when
+  you are viewing the local server. When it shows a peer's name, the rows
+  below it — version, plugins, config, comms, compute, automata — describe
+  *that* peer, not your local daemon.
+
+What to do: keep the status quo and align the versions on your own
+schedule. Both daemons keep working across the release difference, so the
+skew note is informational rather than an error. When it suits your
+rollout, upgrade whichever side is older — the peer to the primary's
+release, or the primary forward — and the note disappears the next time
+the About tab sees two matching builds.
 
 ## Troubleshooting
 

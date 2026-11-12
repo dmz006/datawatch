@@ -1,57 +1,44 @@
-// BL110 — audit sink for AI-initiated self-modify config writes.
+// BL412 — self_config_audit: the read-only MCP view over the self-config
+// audit trail.
+//
+// Every attempt that went through the self-config path — a config-write
+// MCP tool, a session/peer REST config PUT, or a comm `configure` command
+// — leaves exactly one record in the shared audit sink
+// (federation.ConfigAuditor). This tool wraps the in-process REST view
+// GET /api/audit/self-config, same loopback pattern as audit_query.
 
 package mcp
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"sync"
-	"time"
+	"context"
+	"net/url"
+	"strconv"
+
+	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
-// SelfConfigAudit captures the operator-visible record of one
-// AI-initiated config_set call. Written to stderr (always) + the
-// JSON-lines file at MCPConfig.SelfConfigAuditPath (when non-empty).
-type SelfConfigAudit struct {
-	At    time.Time `json:"at"`
-	Key   string    `json:"key"`
-	Value string    `json:"value"`
-	Note  string    `json:"note,omitempty"`
+// toolSelfConfigAudit declares the read-only self-config audit view.
+func (s *Server) toolSelfConfigAudit() mcpsdk.Tool {
+	return mcpsdk.NewTool("self_config_audit",
+		mcpsdk.WithDescription("Read the self-config audit log: one record per attempt through the "+
+			"self-config path on this daemon (config-write MCP tools, session/peer REST config PUTs, comm "+
+			"configure), allowed AND (by default) denied, newest-first. Each record names the time, surface "+
+			"(mcp/rest/comm), tool or route, the changed key(s) with secret values redacted, the caller "+
+			"(session or peer), whether the write was allowed, and the denial reason. "+
+			"Use it to answer 'what config did the agent change, and what was it refused to change'."),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Max entries (default 100, max 1000)")),
+	)
 }
 
-var selfConfigMu sync.Mutex
-
-// auditSelfConfig logs the mutation. Failure to write the file is
-// logged to stderr but never returned — the audit is a record, not a
-// blocking dependency.
-func (s *Server) auditSelfConfig(key, value string) {
-	ev := SelfConfigAudit{
-		At:    time.Now().UTC(),
-		Key:   key,
-		Value: value,
-		Note:  "AI-initiated via MCP config_set (mcp.allow_self_config=true)",
+// handleSelfConfigAudit proxies GET /api/audit/self-config.
+func (s *Server) handleSelfConfigAudit(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	q := url.Values{}
+	if n := int(req.GetFloat("limit", 0)); n > 0 {
+		q.Set("limit", strconv.Itoa(n))
 	}
-	raw, _ := json.Marshal(ev)
-	fmt.Fprintf(os.Stderr, "[mcp/self-config] %s\n", raw)
-
-	if s.cfg == nil || s.cfg.SelfConfigAuditPath == "" {
-		return
-	}
-	selfConfigMu.Lock()
-	defer selfConfigMu.Unlock()
-
-	if err := os.MkdirAll(filepath.Dir(s.cfg.SelfConfigAuditPath), 0700); err != nil {
-		fmt.Fprintf(os.Stderr, "[mcp/self-config] mkdir: %v\n", err)
-		return
-	}
-	f, err := os.OpenFile(s.cfg.SelfConfigAuditPath,
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	out, err := s.proxyGet("/api/audit/self-config", q)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[mcp/self-config] open: %v\n", err)
-		return
+		return toolError("self_config_audit", err), nil
 	}
-	defer f.Close() //nolint:errcheck
-	_, _ = f.Write(append(raw, '\n'))
+	return textOK(string(out)), nil
 }

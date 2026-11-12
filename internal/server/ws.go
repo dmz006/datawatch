@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/gorilla/websocket"
@@ -23,6 +25,7 @@ const (
 	MsgSessionState   MessageType = "session_state"   // one session updated
 	MsgOutput         MessageType = "output"          // new output lines
 	MsgNeedsInput     MessageType = "needs_input"     // session waiting for input
+	MsgQuestionRaised MessageType = "question_raised" // operator question channel: a question was raised (return-path event for POST /api/questions)
 	MsgNotification   MessageType = "notification"    // general text notification
 	MsgError          MessageType = "error"           // error message
 	MsgAlert          MessageType = "alert"           // system alert from filter engine
@@ -34,6 +37,7 @@ const (
 	MsgSessionAware   MessageType = "session_aware"   // session awareness broadcast (BL76)
 	MsgUpdateProgress MessageType = "update_progress" // v4.0.6 — self-update download progress {version, downloaded, total, phase}
 	MsgPRDUpdate      MessageType = "prd_update"      // v5.24.0 — autonomous PRD save broadcast {prd_id, status} so PWA Autonomous tab refreshes without manual reload
+	MsgTagUpdate      MessageType = "tag_update"      // autonomous tag registry or assignment change {kind, tag_id?, prd_id?, session_id?}; all clients, id-only, so open tag browsers refresh their counts
 	MsgHookUpdate     MessageType = "hook_update"     // BL303 S3 — session hook state changed {session_id, board} so Status tab refreshes in real-time
 	MsgAlertsRead     MessageType = "alerts_read"     // BL432 — alerts marked read {ids:[...]} or {all:true}, plus unread_count, so badges sync without polling
 	MsgSessionRemoved MessageType = "session_removed" // BL432 / GH#242 — delta session-list clients: {session_id} left the list
@@ -60,6 +64,13 @@ type WSMessage struct {
 type SessionsData struct {
 	Sessions []*session.Session `json:"sessions"`
 	Version  string             `json:"version,omitempty"`
+	// WindowMinutes, Total and More describe the default-view window (see
+	// ws_session_window.go): the window length, how many sessions the daemon
+	// holds, and whether the frame omits some of them. Zero when the frame
+	// is not window-bounded.
+	WindowMinutes int  `json:"window_minutes,omitempty"`
+	Total         int  `json:"total,omitempty"`
+	More          bool `json:"more,omitempty"`
 }
 
 // SessionStateData carries a single updated session for the lighter-weight
@@ -76,6 +87,19 @@ type OutputData struct {
 type NeedsInputData struct {
 	SessionID string `json:"session_id"`
 	Prompt    string `json:"prompt"`
+}
+
+// QuestionRaisedData carries a successful operator question raise to
+// connected clients. It is the return-path event for POST
+// /api/questions: the polled GET still exists, this only removes the
+// need to wait on it.
+type QuestionRaisedData struct {
+	ID       string                      `json:"id"`
+	Label    string                      `json:"label,omitempty"`
+	Text     string                      `json:"text"`
+	Options  []autonomous.QuestionOption `json:"options,omitempty"`
+	Priority string                      `json:"priority,omitempty"`
+	Context  string                      `json:"context,omitempty"`
 }
 
 // ChatMessageData carries a structured chat message for chat-mode sessions.
@@ -112,6 +136,16 @@ type SubscribeData struct {
 	SessionID string `json:"session_id"`
 }
 
+// inputJob is one queued input delivery (see client.enqueueInput): run by
+// the connection's input worker in FIFO order. session names the session
+// the input belongs to ("" = none); the synchronous path waits on it via
+// awaitInputForSession so a later plain input cannot overtake an earlier,
+// still-expanding one.
+type inputJob struct {
+	session string
+	fn      func()
+}
+
 // client represents one WebSocket connection
 type client struct {
 	hub            *Hub
@@ -120,6 +154,15 @@ type client struct {
 	closed         bool                          // true after send channel is closed
 	subscribed     map[string]bool               // session IDs this client is subscribed to
 	captureCancels map[string]context.CancelFunc // per-session screen capture cancel funcs
+	// inputMux guards the field group below: the per-connection FIFO queue
+	// that runs slow input work (expandImageTags) on a worker goroutine so
+	// the connection read loop keeps reading (see handleWS in api.go).
+	inputMux     sync.Mutex
+	inputCond    *sync.Cond
+	inputQueue   chan inputJob     // nil until the first enqueue
+	inputPending map[string]int    // per-session jobs enqueued but not yet completed
+	inputClosed  bool              // set by stopInputWorker; enqueues after this are dropped
+	inputDone    chan struct{}     // closed when the worker has drained the queue and exited
 	// sessionList / sessionView are the modes negotiated by hello (see
 	// ws_session_stream.go). "" means the client never chose: sessionList
 	// then follows server.ws_session_list_default, sessionView is "full".
@@ -129,6 +172,86 @@ type client struct {
 	// follows server.ws_output_scope_default.
 	outputScope string
 	mu          sync.Mutex
+}
+
+// enqueueInput queues job fn on the client's input worker. The worker
+// processes the queue in FIFO order, so a job enqueued here always runs
+// before any later enqueued job. Returns false (job not started) only if
+// the connection is already being torn down.
+func (c *client) enqueueInput(session string, fn func()) bool {
+	c.inputMux.Lock()
+	defer c.inputMux.Unlock()
+	if c.inputClosed {
+		return false
+	}
+	if c.inputQueue == nil {
+		c.inputQueue = make(chan inputJob, 64)
+		c.inputPending = make(map[string]int)
+		c.inputDone = make(chan struct{})
+		c.inputCond = sync.NewCond(&c.inputMux)
+		go c.runInputWorker(c.inputQueue)
+	}
+	c.inputPending[session]++
+	// Blocking while holding inputMux is safe: the worker only ever needs
+	// inputMux for the brief per-job bookkeeping after finishing a job's
+	// fn, which itself never takes inputMux — so a full queue always
+	// drains as the worker runs jobs, and stopInputWorker (which closes
+	// the queue) only runs after the read loop that enqueues has exited.
+	c.inputQueue <- inputJob{session: session, fn: fn}
+	return true
+}
+
+// runInputWorker drains the input queue in FIFO order until it is closed
+// by stopInputWorker, then exits. The queue is passed by value, not read
+// back off the struct: stopInputWorker may nil the field (idempotent
+// teardown) before the worker's first range, and a range over a nil
+// channel would block forever.
+func (c *client) runInputWorker(queue chan inputJob) {
+	for job := range queue {
+		job.fn()
+		c.inputMux.Lock()
+		if c.inputPending[job.session] > 0 {
+			c.inputPending[job.session]--
+		}
+		c.inputCond.Broadcast()
+		c.inputMux.Unlock()
+	}
+	c.inputMux.Lock()
+	close(c.inputDone)
+	c.inputMux.Unlock()
+}
+
+// awaitInputForSession blocks the caller until every queued input job for
+// the session has completed, so a synchronously delivered input cannot
+// overtake an earlier (still-expanding) image input for the same session.
+// No-op if nothing has ever been queued. Always terminates: a closed
+// connection stops only after its queue has drained.
+func (c *client) awaitInputForSession(session string) {
+	c.inputMux.Lock()
+	defer c.inputMux.Unlock()
+	for c.inputQueue != nil && c.inputPending[session] > 0 {
+		c.inputCond.Wait()
+	}
+}
+
+// stopInputWorker marks the queue closed for new jobs, then waits for the
+// worker to deliver whatever is already queued and exit, so accepted image
+// inputs are still delivered but the worker never outlives the connection
+// teardown. No-op if the worker was never started.
+func (c *client) stopInputWorker() {
+	c.inputMux.Lock()
+	if c.inputQueue == nil {
+		c.inputMux.Unlock()
+		return
+	}
+	queue := c.inputQueue
+	done := c.inputDone
+	c.inputQueue = nil // idempotent: a second stop is a no-op
+	c.inputClosed = true
+	c.inputCond.Broadcast()
+	close(queue)
+	c.inputMux.Unlock()
+	<-done
 }
 
 // safeSend sends a message to the client's send channel without panicking
@@ -150,9 +273,14 @@ func (c *client) safeSend(msg []byte) {
 // nil means every connected client (the behavior of plain Broadcast).
 // want runs on the Hub.Run goroutine while it holds h.mu, so it must not
 // take h.mu itself; locking the client's own mutex is fine.
+//
+// build, when set, replaces payload: the Hub.Run goroutine calls it only if
+// at least one client matches want, so a frame nobody needs is never
+// marshalled (see broadcastLazy).
 type hubMessage struct {
 	payload []byte
 	want    func(*client) bool
+	build   func() []byte
 }
 
 // Hub manages all WebSocket clients
@@ -170,12 +298,29 @@ type Hub struct {
 	// snapMu because BroadcastSessions runs on many goroutines.
 	snapMu   sync.Mutex
 	snapshot map[string]uint64
+	// heldPrev is the set of session IDs the manager held at the last
+	// list pass; a session in it that is no longer held was deleted (as
+	// opposed to aged out of the default view). nil until a pass has run
+	// with clients connected. Guarded by snapMu.
+	heldPrev map[string]struct{}
 
 	// Live-config hooks wired by NewServer before Run starts; nil in
 	// bare-hub tests, which then get the built-in defaults.
 	sessionListDefaultFn func() string
 	summaryTextCharsFn   func() int
 	outputScopeDefaultFn func() string
+
+	// Default-view window hooks (ws_session_window.go); same nil-means-
+	// built-in-defaults rule.
+	recentWindowFn func() time.Duration
+	sessionRowFn   func(*session.Session, int) sessionSummaryRow
+	// viewSourceFn snapshots the default-view sessions and the set of every
+	// held session ID in one store pass (ws_session_broadcast.go).
+	viewSourceFn func(keep func(session.State, time.Time) bool) ([]*session.Session, map[string]struct{})
+	// legacyFrameBuilds counts bounded legacy `sessions` frames actually
+	// marshalled; it stays zero while only window and delta clients are
+	// connected (tests assert on it).
+	legacyFrameBuilds atomic.Int64
 }
 
 var upgrader = websocket.Upgrader{
@@ -231,6 +376,15 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 		case m := <-h.broadcast:
+			if m.build != nil {
+				if !h.anyClientWants(m.want) {
+					continue
+				}
+				m.payload = m.build()
+				if h.chanStats != nil {
+					h.chanStats.RecordSent(len(m.payload))
+				}
+			}
 			// Write lock: a slow client is deleted from h.clients below.
 			h.mu.Lock()
 			for c := range h.clients {
@@ -308,6 +462,15 @@ func (h *Hub) BroadcastRawOutput(sessionID string, lines []string) {
 // BroadcastNeedsInput notifies clients that a session needs input
 func (h *Hub) BroadcastNeedsInput(sessionID, prompt string) {
 	h.Broadcast(MsgNeedsInput, NeedsInputData{SessionID: sessionID, Prompt: prompt})
+}
+
+// BroadcastQuestionRaised sends a question_raised message to all
+// connected clients for one successful POST /api/questions (the
+// return-path event). Non-blocking: it enqueues on the hub broadcast
+// channel and drops if that channel is full, so a slow client can never
+// wedge the raise.
+func (h *Hub) BroadcastQuestionRaised(data QuestionRaisedData) {
+	h.Broadcast(MsgQuestionRaised, data)
 }
 
 // BroadcastChatMessage sends a structured chat message for chat-mode

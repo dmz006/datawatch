@@ -1,0 +1,2 @@
+$ echo "You've hit your limit — retry after the reset time passes"
+⎿  the echoed "you've hit your limit" phrase is only shell transcript text

@@ -15,7 +15,7 @@ without re-reading all 8 source documents.
   not a restatement — the 09-29 research and the 10-15 live testing never
   referenced each other.
 - **Ollama version skew flagged as a real risk** ("0.33.2 on `datawatch` vs
-  0.24.0 on `johnnyjohnny`... could silently affect quantization-format
+  0.24.0 on `local-node`... could silently affect quantization-format
   support if models move between hosts") — this exact problem caused
   Swift's capability-detection failure and was fixed 2026-10-15 (local
   upgraded to 0.40.5). The research predicted this two weeks before it was
@@ -26,16 +26,16 @@ without re-reading all 8 source documents.
 1. **Verifier/guardrail model swap.** The verifier has drifted onto
    `qwen3.8:27b`@`datawatch`, contending with the planner/worker for that
    node's single session slot. Recommendation: a smaller fast model
-   (Qwen3-4B-Instruct-2507 or Phi-4-mini) on `johnnyjohnny` instead — frees
+   (Qwen3-4B-Instruct-2507 or Phi-4-mini) on `local-node` instead — frees
    the contention, and a verifier doesn't need frontier-tier capability.
 2. **Council persona model upgrade.** Personas currently fall back to
    `qwen3:1.7b` (the fleet's smallest model) including adversarial personas
    (`hacker`/`app-hacker`/`security-skeptic`) that would benefit from more
    capability. Recommendation: Gemma3:12b — already installed and loaded on
-   `johnnyjohnny`, the research's own words were "zero-effort quick win."
+   `local-node`, the research's own words were "zero-effort quick win."
 3. **CPU-node isolation for voice/embedding.** Whisper STT and
    `nomic-embed-text` currently share GPU residency with Ollama traffic on
-   `johnnyjohnny`; moving them to a CPU-pinned path frees that GPU headroom
+   `local-node`; moving them to a CPU-pinned path frees that GPU headroom
    for the balanced-tier models above. Note: a CPU-only Ollama instance
    existed for exactly this reason and was removed 2026-10-15 as redundant
    once the main instance got its config restored — if this is picked up,

@@ -1,0 +1,389 @@
+// Every usage.calculator key must be settable and readable on each server-side
+// config surface a unit test can reach: PUT and GET /api/config, the chat
+// `configure` command and the generic config_set tool, which both funnel into
+// PUT /api/config. Invalid values are a 400 and change nothing.
+
+package server
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	_ "time/tzdata"
+
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/router"
+)
+
+const usageCalcPrefix = "usage.calculator."
+
+// usageCalcGet returns usage.calculator from GET /api/config.
+func usageCalcGet(t *testing.T, s *Server) map[string]any {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /api/config = %d", rr.Code)
+	}
+	var top struct {
+		Usage struct {
+			Calculator map[string]any `json:"calculator"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &top); err != nil {
+		t.Fatalf("decode GET /api/config: %v", err)
+	}
+	if top.Usage.Calculator == nil {
+		t.Fatalf("GET /api/config has no usage.calculator block")
+	}
+	return top.Usage.Calculator
+}
+
+func usageCalcPutRaw(s *Server, body []byte) *httptest.ResponseRecorder {
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(body)))
+	return rr
+}
+
+func usageCalcRows() []struct {
+	field string
+	value any
+	want  any
+} {
+	return []struct {
+		field string
+		value any
+		want  any
+	}{
+		{"variant", "lane-planner", "lane-planner"},
+		{"variant", "burn-ledger", "burn-ledger"},
+		{"variant", "pace-gauge", "pace-gauge"},
+		{"variant", "all", "all"},
+		{"policy", "finish-early", "finish-early"},
+		{"policy", "pace", "pace"},
+		{"safety_points", 0, float64(0)},
+		{"safety_points", 12.5, 12.5},
+		{"safety_points", 50, float64(50)},
+		{"cost_per_task_points", 0.25, 0.25},
+		{"baseline_per_24h", 0, float64(0)},
+		{"baseline_per_24h", 20, float64(20)},
+		{"max_lanes", 1, float64(1)},
+		{"max_lanes", 8, float64(8)},
+		{"auto_lanes", true, true},
+		{"auto_lanes", false, false},
+		{"auto_lanes_max", 1, float64(1)},
+		{"auto_lanes_max", 8, float64(8)},
+		{"auto_lanes_special_priority", 0, float64(0)},
+		{"auto_lanes_special_priority", 3, float64(3)},
+		{"reset_weekday", "friday", "friday"},
+		{"reset_weekday", "Saturday", "saturday"},
+		{"reset_time", "19:30", "19:30"},
+		{"reset_zone", "America/New_York", "America/New_York"},
+		{"keeper", "gpu-box", "gpu-box"},
+		{"keeper", "", ""},
+	}
+}
+
+func TestUsageCalcConfigDefaultsOnGet(t *testing.T) {
+	s, _, _ := newMaxConcurrentTasksServer(t)
+	got := usageCalcGet(t, s)
+	// An unset reset zone follows the server's local zone, so expect the
+	// resolved effective zone rather than a fixed value.
+	want := map[string]any{
+		"variant": "all", "policy": "use-all", "safety_points": float64(5), "cost_per_task_points": 0.1,
+		"baseline_per_24h": float64(3), "max_lanes": float64(3),
+		"auto_lanes": false, "auto_lanes_max": float64(2), "auto_lanes_special_priority": float64(1),
+		"reset_weekday": "sunday",
+		"reset_time":    "08:00", "reset_zone": config.EffectiveUsageCalculator(config.DefaultConfig().Usage.Calculator).ResetZone, "keeper": "",
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("default %s%s = %#v, want %#v", usageCalcPrefix, k, got[k], w)
+		}
+	}
+}
+
+func TestUsageCalcConfigPutEveryKey(t *testing.T) {
+	for _, row := range usageCalcRows() {
+		key := usageCalcPrefix + row.field
+		t.Run(fmt.Sprintf("%s=%v", row.field, row.value), func(t *testing.T) {
+			s, _, cfgPath := newMaxConcurrentTasksServer(t)
+			putJSON(t, s.handlePutConfig, "/api/config", map[string]any{key: row.value})
+			if got := usageCalcGet(t, s)[row.field]; got != row.want {
+				t.Fatalf("GET after PUT %s = %#v, want %#v", key, got, row.want)
+			}
+			raw, err := os.ReadFile(cfgPath)
+			if err != nil {
+				t.Fatalf("config not saved: %v", err)
+			}
+			if !strings.Contains(string(raw), "usage:") || !strings.Contains(string(raw), "calculator:") {
+				t.Fatalf("config.yaml lacks the usage.calculator block:\n%s", raw)
+			}
+		})
+	}
+}
+
+func TestUsageCalcConfigPutAllKeysTogetherKeepsOthers(t *testing.T) {
+	s, _, _ := newMaxConcurrentTasksServer(t)
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{
+		usageCalcPrefix + "variant": "burn-ledger", usageCalcPrefix + "max_lanes": 6, usageCalcPrefix + "reset_zone": "Europe/London",
+	})
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{usageCalcPrefix + "policy": "pace"})
+	got := usageCalcGet(t, s)
+	if got["variant"] != "burn-ledger" || got["max_lanes"] != float64(6) || got["reset_zone"] != "Europe/London" || got["policy"] != "pace" {
+		t.Fatalf("settings not kept across PUTs: %#v", got)
+	}
+	if got["safety_points"] != float64(5) {
+		t.Fatalf("untouched key changed: %#v", got["safety_points"])
+	}
+}
+
+func TestUsageCalcConfigRejectsInvalidValues(t *testing.T) {
+	bad := []struct {
+		field string
+		value any
+	}{
+		{"variant", "radar-dial"}, {"variant", true}, {"variant", 3},
+		{"policy", "burn"}, {"policy", false},
+		{"safety_points", -1}, {"safety_points", 51}, {"safety_points", "lots"}, {"safety_points", true},
+		{"cost_per_task_points", 0}, {"cost_per_task_points", -0.5}, {"cost_per_task_points", "free"},
+		{"baseline_per_24h", -1}, {"baseline_per_24h", 20.5}, {"baseline_per_24h", []int{1}},
+		{"max_lanes", 0}, {"max_lanes", 9}, {"max_lanes", 2.5}, {"max_lanes", "many"}, {"max_lanes", 1e12},
+		{"auto_lanes", "on"}, {"auto_lanes", 1}, {"auto_lanes", "true"},
+		{"auto_lanes_max", 0}, {"auto_lanes_max", 9}, {"auto_lanes_max", 2.5}, {"auto_lanes_max", "many"}, {"auto_lanes_max", true},
+		{"auto_lanes_special_priority", -1}, {"auto_lanes_special_priority", 0.5}, {"auto_lanes_special_priority", "high"},
+		{"reset_weekday", "someday"}, {"reset_weekday", 1},
+		{"reset_time", "24:00"}, {"reset_time", "8:00"}, {"reset_time", "08:61"}, {"reset_time", 800},
+		{"reset_zone", "Mars/Olympus"}, {"reset_zone", "+05:00"}, {"reset_zone", "UTC+5"}, {"reset_zone", "Etc/GMT-3"}, {"reset_zone", "Local"}, {"reset_zone", 5},
+		{"keeper", "has space"}, {"keeper", true},
+	}
+	s, _, _ := newMaxConcurrentTasksServer(t)
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{usageCalcPrefix + "variant": "lane-planner"})
+	before := usageCalcGet(t, s)
+	for _, b := range bad {
+		body, _ := json.Marshal(map[string]any{usageCalcPrefix + b.field: b.value})
+		if rr := usageCalcPutRaw(s, body); rr.Code != http.StatusBadRequest {
+			t.Errorf("PUT %s: want 400, got %d body=%s", body, rr.Code, rr.Body.String())
+		}
+	}
+	after := usageCalcGet(t, s)
+	for k, v := range before {
+		if after[k] != v {
+			t.Errorf("rejected PUTs changed %s: %#v -> %#v", k, v, after[k])
+		}
+	}
+}
+
+func TestUsageCalcConfigInvalidKeyRejectsWholePut(t *testing.T) {
+	s, _, _ := newMaxConcurrentTasksServer(t)
+	body, _ := json.Marshal(map[string]any{usageCalcPrefix + "variant": "burn-ledger", usageCalcPrefix + "max_lanes": 99})
+	if rr := usageCalcPutRaw(s, body); rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rr.Code)
+	}
+	if got := usageCalcGet(t, s)["variant"]; got != "all" {
+		t.Fatalf("the valid key was applied despite the rejected PUT: variant = %#v", got)
+	}
+}
+
+// TestUsageCalcConfigCommConfigure drives the chat `configure <key>=<value>`
+// command, which passes the value to PUT /api/config as a number when it
+// parses as one and as a string otherwise (the shape main.go uses).
+func TestUsageCalcConfigCommConfigure(t *testing.T) {
+	for _, row := range usageCalcRows() {
+		if row.value == "" {
+			continue // `configure key=` carries no value
+		}
+		key := usageCalcPrefix + row.field
+		value := fmt.Sprint(row.value)
+		t.Run(row.field+"="+value, func(t *testing.T) {
+			s, _, _ := newMaxConcurrentTasksServer(t)
+			r := router.NewRouter("h", "", nil, nil, 0, nil)
+			r.SetConfigureFunc(func(k, v string) error {
+				// Mirror cmd/datawatch/configureRequestBody: true/false and
+				// whole values go out as JSON literals, the rest as strings.
+				var val any = v
+				if v == "true" || v == "false" {
+					val = json.RawMessage(v)
+				} else {
+					var n json.Number
+					if json.Unmarshal([]byte(v), &n) == nil {
+						val = n
+					}
+				}
+				b, _ := json.Marshal(map[string]any{k: val})
+				if rr := usageCalcPutRaw(s, b); rr.Code != http.StatusOK {
+					return &configureErr{rr.Body.String()}
+				}
+				return nil
+			})
+			resp := r.HandleTestMessage("configure " + key + "=" + value)
+			if len(resp) == 0 || !strings.Contains(resp[0], "Set "+key) {
+				t.Fatalf("configure response = %v", resp)
+			}
+			if got := usageCalcGet(t, s)[row.field]; got != row.want {
+				t.Fatalf("GET after configure = %#v, want %#v", got, row.want)
+			}
+		})
+	}
+	t.Run("invalid value is refused", func(t *testing.T) {
+		s, _, _ := newMaxConcurrentTasksServer(t)
+		r := router.NewRouter("h", "", nil, nil, 0, nil)
+		r.SetConfigureFunc(func(k, v string) error {
+			b, _ := json.Marshal(map[string]any{k: v})
+			if rr := usageCalcPutRaw(s, b); rr.Code != http.StatusOK {
+				return &configureErr{rr.Body.String()}
+			}
+			return nil
+		})
+		resp := r.HandleTestMessage("configure " + usageCalcPrefix + "variant=radar-dial")
+		if len(resp) == 0 || strings.Contains(resp[0], "Set ") {
+			t.Fatalf("configure of an invalid variant answered %v", resp)
+		}
+		if got := usageCalcGet(t, s)["variant"]; got != "all" {
+			t.Fatalf("variant changed to %#v", got)
+		}
+	})
+}
+
+// usageCalcConfigSetTool sends one key and value the way the generic
+// config_set MCP tool does (internal/mcp/memory_tools.go handleConfigSet): the
+// value spliced raw into the JSON body, then, when that is rejected, quoted.
+func usageCalcConfigSetTool(s *Server, key, value string) int {
+	rr := usageCalcPutRaw(s, []byte(fmt.Sprintf(`{"%s": %s}`, key, value)))
+	if rr.Code == http.StatusBadRequest {
+		rr = usageCalcPutRaw(s, []byte(fmt.Sprintf(`{"%s": "%s"}`, key, value)))
+	}
+	return rr.Code
+}
+
+// TestUsageCalcConfigToolPath drives usage.calculator.variant (and the other
+// keys) through the config_set tool's request shape. The tool is generic, so
+// no key needs its own tool.
+func TestUsageCalcConfigToolPath(t *testing.T) {
+	s, _, _ := newMaxConcurrentTasksServer(t)
+	for _, v := range []string{"pace-gauge", "lane-planner", "burn-ledger", "all"} {
+		if code := usageCalcConfigSetTool(s, usageCalcPrefix+"variant", v); code != http.StatusOK {
+			t.Fatalf("config_set variant=%s: HTTP %d", v, code)
+		}
+		if got := usageCalcGet(t, s)["variant"]; got != v {
+			t.Fatalf("variant after config_set %s = %#v", v, got)
+		}
+	}
+	if code := usageCalcConfigSetTool(s, usageCalcPrefix+"variant", "radar-dial"); code != http.StatusBadRequest {
+		t.Fatalf("config_set of a retired variant: HTTP %d, want 400", code)
+	}
+	if got := usageCalcGet(t, s)["variant"]; got != "all" {
+		t.Fatalf("variant after a refused config_set = %#v, want all", got)
+	}
+	for _, c := range []struct {
+		key, value string
+		want       any
+	}{
+		{"max_lanes", "5", float64(5)},
+		{"cost_per_task_points", "0.4", 0.4},
+		{"reset_time", "06:45", "06:45"},
+		{"reset_zone", "Asia/Tokyo", "Asia/Tokyo"},
+		{"policy", "finish-early", "finish-early"},
+	} {
+		if code := usageCalcConfigSetTool(s, usageCalcPrefix+c.key, c.value); code != http.StatusOK {
+			t.Fatalf("config_set %s=%s: HTTP %d", c.key, c.value, code)
+		}
+		if got := usageCalcGet(t, s)[c.key]; got != c.want {
+			t.Fatalf("%s after config_set = %#v, want %#v", c.key, got, c.want)
+		}
+	}
+}
+
+// TestUsageCalcConfigResetZoneServerSource pins part (b): with the zone left
+// unset, GET reports the daemon's effective zone marked as server-sourced;
+// an explicit zone (an explicit UTC included) reads back exactly as saved and
+// marked configured; resetting the key to "" clears it and it follows the
+// server again — nothing is ever rewritten to a stored default.
+func TestUsageCalcConfigResetZoneServerSource(t *testing.T) {
+	t.Setenv("TZ", "America/New_York")
+	s, _, cfgPath := newMaxConcurrentTasksServer(t)
+
+	check := func(source, zone any, fellBack bool) {
+		t.Helper()
+		got := usageCalcGet(t, s)
+		if got["reset_zone"] != zone || got["reset_zone_source"] != source || got["reset_zone_fell_back"] != fellBack {
+			t.Fatalf("reset_zone block = %#v, want zone=%v source=%v fell_back=%v", got, zone, source, fellBack)
+		}
+	}
+
+	z, _, _ := config.EffectiveUsageResetZone(config.UsageCalculatorConfig{})
+	check("server", z, false)
+
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{usageCalcPrefix + "reset_zone": "UTC"})
+	check("configured", "UTC", false)
+	if raw, err := os.ReadFile(cfgPath); err != nil {
+		t.Fatalf("config not saved: %v", err)
+	} else if !strings.Contains(string(raw), "reset_zone: UTC") {
+		t.Fatalf("config.yaml did not pin the explicit UTC:\n%s", raw)
+	}
+
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{usageCalcPrefix + "reset_zone": ""})
+	check("server", z, false)
+	if raw, err := os.ReadFile(cfgPath); err != nil {
+		t.Fatalf("config not saved: %v", err)
+	} else if strings.Contains(string(raw), "reset_zone: UTC") {
+		t.Fatalf("resetting the zone to empty kept the old value:\n%s", raw)
+	}
+}
+
+// TestUsageCalcConfigAutoLanes pins the three auto-lanes keys on the full
+// HTTP/comm/tool surface: PUT → GET round-trip, the config_set tool shape,
+// and invalid values refused with a 400 that changes nothing.
+func TestUsageCalcConfigAutoLanes(t *testing.T) {
+	s, _, cfgPath := newMaxConcurrentTasksServer(t)
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{
+		usageCalcPrefix + "auto_lanes":                  true,
+		usageCalcPrefix + "auto_lanes_max":              4,
+		usageCalcPrefix + "auto_lanes_special_priority": 2,
+	})
+	if got := usageCalcGet(t, s); got["auto_lanes"] != true || got["auto_lanes_max"] != float64(4) || got["auto_lanes_special_priority"] != float64(2) {
+		t.Fatalf("GET after PUT = %#v", got)
+	}
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("config not saved: %v", err)
+	}
+	for _, want := range []string{"auto_lanes: true", "auto_lanes_max: 4", "auto_lanes_special_priority: 2"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("config.yaml lacks %s:\n%s", want, raw)
+		}
+	}
+	// The generic config_set tool shape: raw value, quoted on refusal.
+	if code := usageCalcConfigSetTool(s, usageCalcPrefix+"auto_lanes", "false"); code != http.StatusOK {
+		t.Fatalf("config_set auto_lanes=false: HTTP %d", code)
+	}
+	if got := usageCalcGet(t, s)["auto_lanes"]; got != false {
+		t.Fatalf("auto_lanes after config_set = %#v, want false", got)
+	}
+	if code := usageCalcConfigSetTool(s, usageCalcPrefix+"auto_lanes_max", "6"); code != http.StatusOK {
+		t.Fatalf("config_set auto_lanes_max=6: HTTP %d", code)
+	}
+	if got := usageCalcGet(t, s)["auto_lanes_max"]; got != float64(6) {
+		t.Fatalf("auto_lanes_max after config_set = %#v, want 6", got)
+	}
+	// Refusals change nothing.
+	for _, c := range []struct{ key, value string }{{"auto_lanes", "yes"}, {"auto_lanes_max", "0"}, {"auto_lanes_max", "9"}, {"auto_lanes_special_priority", "-3"}} {
+		if code := usageCalcConfigSetTool(s, usageCalcPrefix+c.key, c.value); code != http.StatusBadRequest {
+			t.Fatalf("config_set %s=%s: HTTP %d, want 400", c.key, c.value, code)
+		}
+	}
+	if got := usageCalcGet(t, s); got["auto_lanes"] != false || got["auto_lanes_max"] != float64(6) {
+		t.Fatalf("refused config_sets changed settings: %#v", got)
+	}
+}
+
+// The fell-back-to-UTC path (no zone candidate resolves) is pinned where the
+// fakes live rather than on this host: config.TestEffectiveUsageResetZoneInvalidTZFallsBack
+// (UTC + fellBack) and usagecalc.TestResetZoneFellBackNote (the advice note).
+// The display field is a plain passthrough of EffectiveUsageResetZone, as
+// exercised by TestUsageCalcConfigResetZoneServerSource above.

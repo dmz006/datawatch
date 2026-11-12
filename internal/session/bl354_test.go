@@ -50,7 +50,7 @@ func TestBL354_FindSessionByName_OldestAmongActive(t *testing.T) {
 	}{
 		{"r02", now.Add(-5 * time.Minute)},  // second oldest
 		{"r01", now.Add(-10 * time.Minute)}, // oldest — should win
-		{"r03", now},                          // newest
+		{"r03", now},                        // newest
 	} {
 		mgr.store.Save(&Session{ //nolint:errcheck
 			ID: tc.id, FullID: "testhost-" + tc.id, Hostname: "testhost",

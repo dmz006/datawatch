@@ -389,7 +389,7 @@ test('integration: _dashCardHTML plugin id builds a card shell without DASH_CARD
 test('integration: built-in guardrails card keeps its structure', () => {
   const { run } = integration();
   const html = run(`_dashCardHTML({ id: 'guardrails', cs: 3, rs: 1 })`);
-  const body = run(`DASH_CARD_DEFS.find(d => d.id === 'guardrails').body()`);
+  const body = run(`_dashCardBodySafe(DASH_CARD_DEFS.find(d => d.id === 'guardrails'))`);
   assert.ok(html.startsWith('<div class="dboard-card"'));
   assert.ok(html.includes('data-card-id="guardrails"') && html.includes('data-cs="3"') && html.includes('data-rs="1"'));
   assert.ok(html.includes('<span class="dboard-card-title">🛡 Guardrails</span>'));

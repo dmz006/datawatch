@@ -125,19 +125,19 @@ func TestBL220_LoopbackUnconfigured(t *testing.T) {
 	}
 }
 
-// ── allowSelfConfigCheck gate ─────────────────────────────────────────────────
+// ── selfConfigGate gate ─────────────────────────────────────────────────
 
 func TestBL220_AllowSelfConfigCheck_Denied(t *testing.T) {
-	s := &Server{cfg: &config.MCPConfig{AllowSelfConfig: false}}
-	res := s.allowSelfConfigCheck()
+	s := &Server{cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(false)}}
+	res := s.selfConfigGate()
 	if res == nil {
 		t.Fatal("expected denied result, got nil")
 	}
 }
 
 func TestBL220_AllowSelfConfigCheck_Allowed(t *testing.T) {
-	s := &Server{cfg: &config.MCPConfig{AllowSelfConfig: true}}
-	res := s.allowSelfConfigCheck()
+	s := &Server{cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
+	res := s.selfConfigGate()
 	if res != nil {
 		t.Fatalf("expected nil (allowed), got %+v", res)
 	}
@@ -145,7 +145,7 @@ func TestBL220_AllowSelfConfigCheck_Allowed(t *testing.T) {
 
 func TestBL220_AllowSelfConfigCheck_NilCfg(t *testing.T) {
 	s := &Server{cfg: nil}
-	res := s.allowSelfConfigCheck()
+	res := s.selfConfigGate()
 	if res == nil {
 		t.Fatal("expected denied result with nil cfg")
 	}
@@ -167,7 +167,7 @@ func TestBL220_DetectionConfigSet_PatchesCorrectKeys(t *testing.T) {
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{
 		webPort: port,
-		cfg:     &config.MCPConfig{AllowSelfConfig: true},
+		cfg:     &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)},
 	}
 
 	req := mcpsdk.CallToolRequest{}
@@ -207,7 +207,7 @@ func TestBL220_ProxyConfigSet_PatchesCorrectKeys(t *testing.T) {
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{
 		webPort: port,
-		cfg:     &config.MCPConfig{AllowSelfConfig: true},
+		cfg:     &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)},
 	}
 
 	req := mcpsdk.CallToolRequest{}
@@ -240,7 +240,7 @@ func TestBL220_DetectionConfigSet_NoFields_NoOp(t *testing.T) {
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
 	s := &Server{
 		webPort: port,
-		cfg:     &config.MCPConfig{AllowSelfConfig: true},
+		cfg:     &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)},
 	}
 
 	req := mcpsdk.CallToolRequest{}

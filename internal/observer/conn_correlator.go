@@ -305,7 +305,7 @@ func parseTCPLine(line string) (connRow, bool) {
 	}, true
 }
 
-// parseHexEndpoint decodes "C0A80101:1F90" → (192.168.1.1, 8080) for v4
+// parseHexEndpoint decodes "010200C0:1F90" → (192.0.2.1, 8080) for v4
 // or the 32-hex-char v6 form. The IP bytes are little-endian per word.
 func parseHexEndpoint(s string) (net.IP, uint16, bool) {
 	c := strings.IndexByte(s, ':')

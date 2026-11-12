@@ -1,0 +1,433 @@
+package session
+
+// BL406 Phase 1 — tests for the built-in per-backend rate-limit line table
+// (rate_limit_lines.go) and the flat list it contributes to the
+// patterns_version fingerprint.
+//
+// Coverage:
+//   - TestBuiltinRateLimitFixtureDetection pins provenance bidirectionally:
+//     every verbatim line in testdata/rate_limit_lines/<family>.txt is
+//     detected, and every table phrase appears verbatim in the recorded
+//     lines of that fixture. The fixture (and its README) is the source
+//     of truth.
+//   - TestBuiltinRateLimitAnchoredMatching pins the line-start (anchored)
+//     matching rules, the shared marker (every backend), per-backend
+//     scoping, and the leading-whitespace trim.
+//   - TestBuiltinFlatFingerprintEncodesBackend pins issue: moving a phrase
+//     between backends must change the patterns_version digest, because
+//     writePatterns sorts and de-duplicates the flat list and would
+//     otherwise erase the association.
+//   - TestRateLimitDefaultWiringAndScoping drives processOutputLine with
+//     the config package's own defaults (DefaultConfig.GetDetection) so
+//     the detection assertion runs against the real wiring, end to end.
+//   - TestRateLimitOperatorFlatListKeepsSubstringBehavior pins the
+//     operator-configured list's classic flat-substring semantics (all
+//     backends, anywhere on the line), including legacy phrasings that no
+//     captured line leads and therefore are not built in.
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/dmz006/datawatch/internal/config"
+)
+
+// fixtureDir is the canonical captured-line fixture. Paths are relative to
+// the test's working directory (this package's directory).
+const fixtureDir = "../../testdata/rate_limit_lines"
+
+// readFixtureLines returns the non-empty lines of a captured-line fixture,
+// exactly as recorded (surrounding whitespace preserved per line so the
+// trim behavior under test stays visible).
+func readFixtureLines(t *testing.T, name string) []string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(fixtureDir, name))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	var lines []string
+	for _, l := range strings.Split(string(data), "\n") {
+		if l == "" || l == "\r" {
+			continue
+		}
+		lines = append(lines, l)
+	}
+	if len(lines) == 0 {
+		t.Fatalf("fixture %s contains no lines", name)
+	}
+	return lines
+}
+
+func TestBuiltinRateLimitFixtureDetection(t *testing.T) {
+	entries, err := os.ReadDir(fixtureDir)
+	if err != nil {
+		t.Fatalf("read fixture dir: %v", err)
+	}
+	fixtureFamilies := map[string][]string{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		family := strings.TrimSuffix(e.Name(), ".txt")
+		fixtureFamilies[family] = readFixtureLines(t, e.Name())
+	}
+	if _, ok := fixtureFamilies["claude-code"]; !ok {
+		t.Fatal("expected testdata/rate_limit_lines/claude-code.txt to exist")
+	}
+
+	for family, lines := range fixtureFamilies {
+		phrases := builtinRateLimitPhrases[family]
+		if len(phrases) == 0 {
+			t.Fatalf("family %s has a fixture but no built-in phrases", family)
+		}
+
+		// Forward: every recorded line is a detection for its family.
+		for _, line := range lines {
+			if !matchesBuiltinRateLimitLines(family, line) {
+				t.Errorf("%s: recorded fixture line must be detected, got miss on %q", family, line)
+			}
+		}
+
+		// Reverse: every table phrase must appear verbatim (case-
+		// insensitively) in the recorded lines — the fixture is the
+		// provenance source, the table the derived detection input.
+		text := strings.ToLower(strings.Join(lines, "\n"))
+		for _, phrase := range phrases {
+			if !strings.Contains(text, strings.ToLower(phrase)) {
+				t.Errorf("%s: table phrase %q has no recorded fixture line containing it (provenance gap)", family, phrase)
+			}
+		}
+	}
+
+	// Every non-empty table family must have a fixture file; a family with
+	// recorded lines but no fixture entries is an inconsistency either way.
+	for family := range builtinRateLimitPhrases {
+		if _, ok := fixtureFamilies[family]; !ok && len(builtinRateLimitPhrases[family]) > 0 {
+			t.Errorf("family %s has table phrases but no fixture file under testdata/rate_limit_lines/", family)
+		}
+	}
+}
+
+func TestBuiltinRateLimitAnchoredMatching(t *testing.T) {
+	hits := []struct {
+		family string
+		line   string
+	}{
+		{"claude-code", "You've hit your limit"},
+		{"claude-code", "⎿  You've hit your limit · resets 10pm (America/New_York)"},
+		{"claude-code", "5-hour limit reached ∙ resets 2pm"},
+		{"claude-code", "Weekly limit reached"},
+		{"claude-code", "Hit weekly limit"},
+		{"claude-code", "Opus limit reached"},
+		{"claude-code", "Sonnet limit reached"},
+		{"claude-code", "You're out of extra usage · resets 11:50am (America/New_York)"},
+		{"claude-code", "datawatch_rate_limited: resets 2026-10-28T16:00:00Z"},
+		// The shared marker and a real notice are both indented in
+		// operator-reported renders; surrounding whitespace must be ignored
+		// before the line-start check.
+		{"claude-code", "  DATAWATCH_RATE_LIMITED: resets in 2h"},
+		{"claude-code", "  You've hit your limit · resets 10pm"},
+	}
+	for _, tc := range hits {
+		if !matchesBuiltinRateLimitLines(tc.family, tc.line) {
+			t.Errorf("%s: expected detection on %q", tc.family, tc.line)
+		}
+	}
+
+	// The protocol marker is a rule for EVERY backend, including families
+	// with no built-in phrases yet.
+	for _, family := range []string{"pi-prompt", "opencode", "opencode-acp", "opencode-prompt", "ollama"} {
+		if !matchesBuiltinRateLimitLines(family, "  DATAWATCH_RATE_LIMITED: resets in 2h") {
+			t.Errorf("%s: shared protocol marker must fire for every backend", family)
+		}
+	}
+
+	misses := []struct {
+		family string
+		line   string
+	}{
+		// Phrases quoted mid-sentence are never a detection, for any
+		// backend.
+		{"claude-code", "I checked what the security workflow prints; it outputs You've hit your limit and then sleeps"},
+		{"claude-code", "task says: 'you've hit your limit' is logged to notes.md"},
+		{"claude-code", "quota: 42 requests remaining"},
+		// Per-backend scoping: a claude-code phrase must not fire for a
+		// backend whose table is empty.
+		{"pi-prompt", "You've hit your limit"},
+		{"opencode", "5-hour limit reached ∙ resets 2pm"},
+		// Similar-sounding lines that no table phrase leads.
+		{"claude-code", "Your limit resets in a few days"},
+		{"claude-code", "The DATAWATCH_RATE_LIMITED marker is documented in templates"},
+	}
+	for _, tc := range misses {
+		if matchesBuiltinRateLimitLines(tc.family, tc.line) {
+			t.Errorf("%s: expected no detection on %q", tc.family, tc.line)
+		}
+	}
+}
+
+// TestRateLimitClaudeDialogEntries pins both directions for the claude-code
+// usage-dialog entries that the anchored matcher once dropped: the lines
+// the old suite asserted as true (the strings are the old test strings and
+// the recorded dialog lines in testdata/rate_limit_lines/claude-code.txt)
+// must detect for claude-code, and ordinary text using the same words must
+// not detect for any backend, nor may the claude-code lines detect for a
+// backend that does not print them.
+func TestRateLimitClaudeDialogEntries(t *testing.T) {
+	cases := []struct {
+		name   string
+		family string
+		line   string
+		want   bool
+	}{
+		// True: dialog lines, bare and indented, for claude-code.
+		{"warn-tier", "claude-code", "Approaching usage limit", true},
+		{"warn-tier-indented", "claude-code", "   Approaching usage limit", true},
+		{"prose-form", "claude-code", "Your usage limit will reset at 9pm (America/Los_Angeles).", true},
+		{"usage-limit-will-reset", "claude-code", "usage limit will reset at 9pm", true},
+		{"limit-will-reset-at", "claude-code", "limit will reset at 9pm", true},
+		{"weekly-usage-limit", "claude-code", "Weekly usage limit reached. Resets in 2 days.", true},
+		{"menu-selected-row", "claude-code", "❯ 1. Stop and wait for limit to reset", true},
+		{"menu-plain-row", "claude-code", "  1. Stop and wait for limit to reset", true},
+		{"menu-bare-option", "claude-code", "Stop and wait for limit to reset", true},
+		{"menu-wrapped-tail", "claude-code", "wait for limit to reset", true},
+		{"reset-announcement", "claude-code", "Resets at 2pm", true},
+		{"gutter-form", "claude-code", "⎿  Resets at 2pm", true},
+
+		// False: the same words inside ordinary text.
+		{"quoted-warn", "claude-code", "The dashboard shows Approaching usage limit in amber when a seat passes 80% of its quota.", false},
+		{"quoted-prose", "claude-code", "Release notes: the parser also reads \"your usage limit will reset at 9pm\"", false},
+		{"quoted-weekly", "claude-code", "The weekly usage limit page lists plan reset details", false},
+		{"quoted-menu", "claude-code", "Reviewer comment: choose \"stop and wait\" only if the schedule allows", false},
+		{"quoted-wrapped", "claude-code", "otherwise \"wait for limit to reset\" costs a day", false},
+		{"stop-and-think", "claude-code", "Stop and think about the plan before editing the matcher.", false},
+		{"resets-the-counter", "claude-code", "Resets the counter at midnight, so a retry loop never sees a stale value.", false},
+		{"model-prose-line", "claude-code", "● The dialog prints Approaching usage limit before the hard stop", false},
+		{"numbered-list-prose", "claude-code", "2. Stop and wait", false},
+
+		// False: the claude-code dialog lines do not detect for a backend
+		// that does not print them.
+		{"pi-warn", "pi-prompt", "Approaching usage limit", false},
+		{"pi-menu", "pi-prompt", "❯ 1. Stop and wait for limit to reset", false},
+		{"opencode-reset", "opencode", "Resets at 2pm", false},
+		{"ollama-weekly", "ollama", "Weekly usage limit reached. Resets in 2 days.", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matchesBuiltinRateLimitLines(tc.family, tc.line); got != tc.want {
+				t.Errorf("matchesBuiltinRateLimitLines(%q, %q) = %v, want %v", tc.family, tc.line, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRateLimitLineFixturesMatchPerBackend reads every backend fixture file
+// in testdata/rate_limit_lines (one file per backend, named
+// <backend>.txt as the README lists them), runs each captured line through
+// the same normalisation the detector applies in processOutputLine (trim of
+// surrounding whitespace + lowercase, exactly as manager.go does before the
+// line-start check), and then through the per-backend matcher for that
+// backend family. Every captured line must match for its own backend.
+func TestRateLimitLineFixturesMatchPerBackend(t *testing.T) {
+	entries, err := os.ReadDir(fixtureDir)
+	if err != nil {
+		t.Fatalf("read fixture dir: %v", err)
+	}
+	backendFixtures := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue // ordinary/ holds the negative fixtures, not a backend
+		}
+		family := strings.TrimSuffix(e.Name(), ".txt")
+		backendFixtures++
+		lines := readFixtureLines(t, e.Name())
+		for _, line := range lines {
+			// Detector normalisation (manager.go processOutputLine): the
+			// trimmed, lowercased line is what reaches the matcher.
+			lineLower := strings.ToLower(strings.TrimSpace(line))
+			if !matchesBuiltinRateLimitLines(family, lineLower) {
+				t.Errorf("%s: captured line must match for its own backend, got miss: %q", family, line)
+			}
+		}
+	}
+	if backendFixtures == 0 {
+		t.Fatal("no backend fixture files (*.txt) found under testdata/rate_limit_lines/")
+	}
+}
+
+// TestRateLimitOrdinaryTextDoesNotMatch reads every file in
+// testdata/rate_limit_lines/ordinary/ and asserts that no line in those
+// files matches the per-backend matcher for any backend family, and that
+// none matches the protocol marker rule (no trimmed line starts with the
+// shared DATAWATCH_RATE_LIMITED marker). These are ordinary-text negative
+// cases: quotes of the list entries mid-sentence — in directory listings,
+// diffs, docs, shell transcripts, and task specs — must never fire, for
+// any backend.
+func TestRateLimitOrdinaryTextDoesNotMatch(t *testing.T) {
+	ordinaryDir := filepath.Join(fixtureDir, "ordinary")
+	entries, err := os.ReadDir(ordinaryDir)
+	if err != nil {
+		t.Fatalf("read ordinary dir: %v", err)
+	}
+	families := make([]string, 0, len(builtinRateLimitPhrases))
+	for family := range builtinRateLimitPhrases {
+		families = append(families, family)
+	}
+	ordinaryFiles := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		ordinaryFiles++
+		data, err := os.ReadFile(filepath.Join(ordinaryDir, e.Name()))
+		if err != nil {
+			t.Fatalf("read ordinary fixture %s: %v", e.Name(), err)
+		}
+		for _, raw := range strings.Split(string(data), "\n") {
+			line := raw
+			if line == "" || line == "\r" {
+				continue
+			}
+			lineLower := strings.ToLower(strings.TrimSpace(line))
+			for _, family := range families {
+				if matchesBuiltinRateLimitLines(family, lineLower) {
+					t.Errorf("%s: ordinary line must not match backend %s, but it did: %q", e.Name(), family, line)
+				}
+			}
+			if strings.HasPrefix(lineLower, builtinRateLimitMarkerLower) {
+				t.Errorf("%s: ordinary line must not match the protocol marker rule: %q", e.Name(), line)
+			}
+		}
+	}
+	if ordinaryFiles == 0 {
+		t.Fatal("no ordinary fixtures found under testdata/rate_limit_lines/ordinary/")
+	}
+}
+
+// TestBuiltinFlatFingerprintEncodesBackend guards the patterns_version
+// contract: writePatterns sorts and de-duplicates, so the flat list must
+// encode each entry's backend family — reassigning a phrase between
+// backends changes the digest even though the multiset of bare phrases
+// and families is unchanged.
+func TestBuiltinFlatFingerprintEncodesBackend(t *testing.T) {
+	base := fingerprintPatterns(builtinRateLimitPatternsFlat())
+	if base == "" {
+		t.Fatal("base digest empty")
+	}
+
+	// Move the last claude-code phrase to another backend.
+	family := "claude-code"
+	src := builtinRateLimitPhrases[family]
+	dst := "opencode"
+	if len(src) == 0 || len(builtinRateLimitPhrases[dst]) != 0 {
+		t.Fatal("test precondition: claude-code phrases non-empty and opencode empty")
+	}
+	moved := src[len(src)-1]
+	orig := make([]string, len(src))
+	copy(orig, src)
+	defer func() {
+		restored := make([]string, len(orig))
+		copy(restored, orig)
+		builtinRateLimitPhrases[family] = restored
+		builtinRateLimitPhrases[dst] = nil
+	}()
+	builtinRateLimitPhrases[family] = src[:len(src)-1]
+	builtinRateLimitPhrases[dst] = []string{moved}
+	if got := fingerprintPatterns(builtinRateLimitPatternsFlat()); got == base {
+		t.Error("moving a phrase between backends must change the flat fingerprint")
+	}
+
+	// Add a new phrase for some backend.
+	builtinRateLimitPhrases["ollama"] = []string{"slot full — all busy"}
+	if got := fingerprintPatterns(builtinRateLimitPatternsFlat()); got == base {
+		t.Error("adding a phrase must change the flat fingerprint")
+	}
+
+	// Removing it again restores the digest of the moved-phrase state.
+	withOllama := fingerprintPatterns(builtinRateLimitPatternsFlat())
+	builtinRateLimitPhrases["ollama"] = nil
+	if got := fingerprintPatterns(builtinRateLimitPatternsFlat()); got == withOllama {
+		t.Error("removing a phrase must change the flat fingerprint")
+	}
+	if len(builtinRateLimitLinePrefixes["claude-code"]) == 0 {
+		t.Fatal("test precondition: claude-code gutter prefix present")
+	}
+}
+
+// TestRateLimitDefaultWiringAndScoping drives processOutputLine with the
+// config package's own defaults (DefaultConfig().GetDetection), i.e. the
+// real detection wiring an unset operator config produces. It uses a
+// terminal (no-structured-channel) backend: sessions with a structured
+// channel (claude-code's MCP, opencode-acp) are routed by the first
+// branch of processOutputLine and terminate before the line-based
+// rate-limit check — so this test pins what the line path actually does
+// for the backends it serves.
+func TestRateLimitDefaultWiringAndScoping(t *testing.T) {
+	mgr, _ := newTestManagerWithFake(t)
+	// The config package's own defaults: no operator rate-limit list, so
+	// detection must come from the built-in per-backend table.
+	mgr.detection = config.DefaultConfig().GetDetection("pi-prompt")
+
+	// The shared protocol marker flips a running pi-prompt session, even
+	// indented (trim before the line-start check) — the one built-in
+	// rule that applies to backends with no captured phrases.
+	marker := newRateLimitTestSession(t, mgr, "rlfl01", "pi-prompt")
+	driveRateLimitLine(t, mgr, marker, "  DATAWATCH_RATE_LIMITED: resets in 2h")
+	if got, ok := mgr.store.Get(marker.FullID); !ok || got.State != StateRateLimited {
+		t.Fatalf("pi-prompt session must detect the shared marker, got ok=%v state=%v", ok, got.State)
+	}
+
+	// A claude-code phrase must NOT flip a pi-prompt session under the
+	// defaults (per-backend scoping: that table is claude-code's).
+	scoped := newRateLimitTestSession(t, mgr, "rlfl02", "pi-prompt")
+	driveRateLimitLine(t, mgr, scoped, "You've hit your limit · resets 10pm")
+	if got, ok := mgr.store.Get(scoped.FullID); !ok || got.State != StateRunning {
+		t.Fatalf("pi-prompt session must stay StateRunning on a claude-code-only phrase, got ok=%v state=%v", ok, got.State)
+	}
+
+	// A mid-sentence quote of the marker stays a miss (line-start only).
+	quoted := newRateLimitTestSession(t, mgr, "rlfl03", "pi-prompt")
+	driveRateLimitLine(t, mgr, quoted, "the marker DATAWATCH_RATE_LIMITED: documented above means throttling")
+	if got, ok := mgr.store.Get(quoted.FullID); !ok || got.State != StateRunning {
+		t.Fatalf("quoted-marker line must not detect, got ok=%v state=%v", ok, got.State)
+	}
+}
+
+// TestRateLimitOperatorFlatListKeepsSubstringBehavior pins that an
+// operator-configured list keeps the classic flat-substring semantics:
+// matched anywhere on the line, for every backend, including phrasings
+// that no recorded line leads (and therefore are not in the built-in
+// table). Driven on a terminal backend, the one the line path serves.
+func TestRateLimitOperatorFlatListKeepsSubstringBehavior(t *testing.T) {
+	mgr, _ := newTestManagerWithFake(t)
+	// Classic operator-configured flat list (global or per-LLM): classic
+	// substring-anywhere semantics, every backend.
+	det := config.DefaultConfig().GetDetection("pi-prompt")
+	det.RateLimitPatterns = []string{
+		"rate limit exceeded",
+		"quota exceeded",
+		"Approaching usage limit",
+	}
+	mgr.detection = det
+
+	// Mid-sentence legacy phrasing must still detect (the old seeded
+	// defaults, kept only through operator config).
+	legacy := newRateLimitTestSession(t, mgr, "rlfp01", "pi-prompt")
+	driveRateLimitLine(t, mgr, legacy, "warning: rate limit exceeded, quota reset in 5m")
+	if got, ok := mgr.store.Get(legacy.FullID); !ok || got.State != StateRateLimited {
+		t.Fatalf("operator flat list must detect legacy phrasing (substring), got ok=%v state=%v", ok, got.State)
+	}
+
+	// A phrase from a claude-code capture applies to every backend under
+	// an operator list — the flat path is not backend-scoped.
+	cross := newRateLimitTestSession(t, mgr, "rlfp02", "pi-prompt")
+	detCross := config.DefaultConfig().GetDetection("pi-prompt")
+	detCross.RateLimitPatterns = []string{"You've hit your limit"}
+	mgr.detection = detCross
+	driveRateLimitLine(t, mgr, cross, "api error: You've hit your limit — retry later")
+	if got, ok := mgr.store.Get(cross.FullID); !ok || got.State != StateRateLimited {
+		t.Fatalf("operator list applies across backends, got ok=%v state=%v", ok, got.State)
+	}
+}

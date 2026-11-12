@@ -31,12 +31,24 @@ func gh201Phase4Server(t *testing.T) (*Server, *audit.Log) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(sm)
+	trackSessionManager(t, sm)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer server, so no tmux panes can leak on this host.
+	sm.WithFakeTmux()
 	srv := NewServer(NewHub(), sm, "h", "", nil, nil, "")
 	al, err := audit.NewAt(t.TempDir() + "/audit.log")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = al.Close() })
+	// Registered after both TempDirs, so it runs before their removal:
+	// stop the manager's background writers, then close the audit log
+	// (Close takes the write mutex, so it waits for in-flight Writes).
+	t.Cleanup(func() {
+		srv.broadcastWG.Wait()
+		sm.WaitBackground()
+		_ = al.Close()
+	})
 	srv.auditLog = al
 	return srv, al
 }
@@ -64,10 +76,11 @@ func TestGH201Phase4_SessionStart_Audited(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
-	// This is a real tmux-backed session (handleStartSession isn't
-	// mocked) — found 2026-10-09 leaking 54 real orphaned tmux panes
-	// onto the production tmux server over a day of `go test` runs,
-	// because this host's TMUX_TMPDIR isn't test-isolated. Kill it.
+	// handleStartSession runs the full manager path; the tmux layer is
+	// the in-memory FakeTmux (see gh201Phase4Server), so nothing really
+	// to leak — but Kill still stops the manager's monitor goroutine,
+	// which must not outlive the test. Kill it.
+	srv.broadcastWG.Wait() // see startTestSession
 	var startResp struct {
 		FullID string `json:"full_id"`
 		ID     string `json:"id"`
@@ -77,7 +90,7 @@ func TestGH201Phase4_SessionStart_Audited(t *testing.T) {
 	if fullID == "" {
 		fullID = startResp.ID
 	}
-	t.Cleanup(func() { srv.manager.KillTmuxSession(fullID) })
+	t.Cleanup(func() { stopTestSession(t, srv, fullID) })
 	e := gh201Phase4LastAction(t, al)
 	if e.Action != "start" {
 		t.Errorf("action = %q, want start", e.Action)
@@ -425,6 +438,9 @@ func (f *gh201FakeAutonomousForAudit) GetPRD(id string) (any, bool) {
 func (f *gh201FakeAutonomousForAudit) Approve(id, actor, note string) (any, error) {
 	return map[string]any{"id": id}, nil
 }
+func (f *gh201FakeAutonomousForAudit) ResumeParked(id, actor, note string) (any, error) {
+	return map[string]any{"id": id}, nil
+}
 func (f *gh201FakeAutonomousForAudit) DeletePRD(string) error { return nil }
 
 func TestGH201Phase4_Automaton_CreateApproveDelete_Audited(t *testing.T) {
@@ -461,6 +477,11 @@ func TestGH201Phase4_Automaton_CreateApproveDelete_Audited(t *testing.T) {
 	}
 	var gotActions []string
 	for i := len(entries) - 1; i >= 0; i-- {
+		// The shadow search-before-create entry is a side record the default
+		// create mode writes; this test covers the create/approve/delete trail.
+		if entries[i].Action == "automaton_create_search" {
+			continue
+		}
 		gotActions = append(gotActions, entries[i].Action)
 	}
 	want := []string{"create", "approve", "delete"}

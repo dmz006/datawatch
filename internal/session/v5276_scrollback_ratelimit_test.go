@@ -62,13 +62,16 @@ func TestBL211_CapturePaneLiveTailFakeBehavior(t *testing.T) {
 }
 
 func TestBL215_LongRateLimitLineMatches(t *testing.T) {
-	// v5.27.4 raised the rate-limit pattern set; v5.27.6 raises
-	// the per-line length gate from 200 → 1024 because modern
-	// claude-code rate-limit dialogs are paragraph-length.
-	// Build a 600-char rate-limit message that includes the
-	// "limit reached" substring v5.27.4 added.
-	body := strings.Repeat("Some context describing why the limit hit and what the operator should do next. ", 7)
-	line := body + "5-hour limit reached. Resets at 2pm. Reach out to support if blocked."
+	// v5.27.4 raised the rate-limit pattern set; the per-line length gate
+	// was raised 200 → 1024 (and production now gates at 2048) because
+	// modern claude-code rate-limit dialogs are paragraph-length.
+	// Build a 600+ char dialog line that starts with the v5.27.4
+	// "5-hour limit reached" phrasing, anchored on claude-code's own
+	// "⎿  " gutter prefix (the captured form) — the anchored table must
+	// still detect it, with context trailing the phrase.
+	line := "⎿  5-hour limit reached. " +
+		strings.Repeat("Some context describing why the limit hit and what the operator should do next. ", 7) +
+		"Reach out to support if blocked."
 	if len(line) <= 200 {
 		t.Fatalf("test setup error: line is only %d chars, won't exercise the gate", len(line))
 	}
@@ -91,49 +94,45 @@ func TestBL215_NoResetTimeFallsThroughTo60min(t *testing.T) {
 }
 
 func TestBL215_LengthGateUpperBoundStillRejects(t *testing.T) {
-	// 1024 chars is the new ceiling; anything beyond should still
+	// The production ceiling is 2048 chars; anything beyond should still
 	// be ignored to avoid false positives from giant log dumps.
-	line := strings.Repeat("limit reached ", 80) // ~14 chars × 80 = 1120 chars
-	if len(line) < 1024 {
-		t.Fatalf("test setup: line is only %d chars; need ≥ 1024", len(line))
+	line := strings.Repeat("limit reached ", 200) // 14 chars × 200 = 2800 chars
+	if len(line) < 2048 {
+		t.Fatalf("test setup: line is only %d chars; need ≥ 2048", len(line))
 	}
 	if matchesRateLimit(line) {
-		t.Errorf("expected miss for %d-char line (above 1024 ceiling), got match", len(line))
+		t.Errorf("expected miss for %d-char line (above 2048 ceiling), got match", len(line))
 	}
 }
 
-// matchesRateLimit replicates the in-flight check at manager.go:3787+
+// matchesRateLimitV5276 replicates the in-flight check at the
+// rate-limit site in processOutputLine (anchored table, 2048 gate)
 // so the test can verify the gate without spinning up a Manager.
-// Mirrors the exact branching the production code uses.
+// Mirrors the exact branching the production code uses for the
+// claude-code family.
 func matchesRateLimitV5276(line string) bool {
-	if strings.Contains(line, "DATAWATCH_RATE_LIMITED:") {
+	low := strings.ToLower(line)
+	if strings.HasPrefix(low, builtinRateLimitMarkerLower) {
 		return true
 	}
-	if len(line) >= 1024 {
+	if len(line) >= 2048 {
 		return false
 	}
-	low := strings.ToLower(line)
-	for _, pat := range rateLimitPatterns {
-		if pat == "DATAWATCH_RATE_LIMITED:" {
-			continue
-		}
-		if strings.Contains(low, strings.ToLower(pat)) {
-			return true
-		}
-	}
-	return false
+	return matchesBuiltinRateLimitLines("claude-code", low)
 }
 
-// Test-helper sanity: the v5.27.4 helper still uses the 200-char
-// gate (its tests still pass), and the new helper above models the
-// 1024 gate. We keep both to make the v5.27.6 change auditable.
+// Test-helper sanity: both helpers model the production 2048-char gate
+// and the anchored per-backend table, so an over-200-char line that
+// starts with a recorded phrase still matches.
 func TestBL215_HelperUsesNewGate(t *testing.T) {
-	// 800-char line with "limit reached" — old helper rejects
-	// (>200), new helper accepts (<1024).
-	body := strings.Repeat("a ", 400)
-	line := body + " limit reached"
+	// 800+ char line starting with a recorded phrase — the gate used to
+	// be 200, production is 2048, so this must still match.
+	line := "5-hour limit reached. " + strings.Repeat("operator guidance details. ", 57)
 	if !matchesRateLimitV5276(line) {
-		t.Errorf("v5.27.6 helper must match 800-char limit-reached line")
+		t.Errorf("helper must match %d-char limit-reached line", len(line))
+	}
+	if !matchesRateLimit(line) {
+		t.Errorf("v5.27.4 helper must match the same %d-char line", len(line))
 	}
 }
 

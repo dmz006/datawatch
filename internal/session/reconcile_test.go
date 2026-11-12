@@ -19,6 +19,7 @@ func newReconcileManager(t *testing.T, dataDir string) *Manager {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	return &Manager{
 		hostname:          "host",
 		dataDir:           dataDir,
@@ -90,6 +91,7 @@ func TestReconcile_AutoImport_AddsToStore(t *testing.T) {
 	// Re-open store from disk — the registry must show the session
 	// because Save is write-through (BL92).
 	store2, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = store2.Close() })
 	if _, ok := store2.Get("host-auto1"); !ok {
 		t.Error("imported session missing from on-disk registry")
 	}
@@ -282,5 +284,6 @@ func mustStore(t *testing.T, dir string) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }

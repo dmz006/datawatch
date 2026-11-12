@@ -27,6 +27,9 @@ func bl90Server(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
+	t.Cleanup(mgr.WaitBackground)
 	mgr.WithFakeTmux()
 	devStore, err := devices.NewStore(dir + "/devices.json")
 	if err != nil {
@@ -42,6 +45,7 @@ func bl90Server(t *testing.T) *Server {
 				TailLines:        20,
 			},
 			Server: config.ServerConfig{Host: "127.0.0.1", Port: 8080},
+			Git:    config.GitConfig{ReleaseCIWindowMinutes: 60},
 		},
 		cfgPath:     dir + "/cfg.yaml",
 		deviceStore: devStore,

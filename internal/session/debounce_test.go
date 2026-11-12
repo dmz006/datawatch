@@ -14,16 +14,17 @@ func TestPromptDebounce_SuppressesFalsePositives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	sess := &Session{FullID: "test-session", ID: "test", State: StateRunning}
 	_ = store.Save(sess)
 
 	m := &Manager{
-		store:            store,
+		store:             store,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
 		promptOscillation: make(map[string][]time.Time),
-		monitors:         make(map[string]context.CancelFunc),
-		trackers:         make(map[string]*Tracker),
+		monitors:          make(map[string]context.CancelFunc),
+		trackers:          make(map[string]*Tracker),
 		detection: config.DetectionConfig{
 			PromptDebounce: 1, // 1 second debounce for fast test
 			NotifyCooldown: 1,
@@ -49,16 +50,17 @@ func TestPromptDebounce_ResetOnNewOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	sess := &Session{FullID: "test-session", ID: "test", State: StateRunning}
 	_ = store.Save(sess)
 
 	m := &Manager{
-		store:            store,
+		store:             store,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
 		promptOscillation: make(map[string][]time.Time),
-		monitors:         make(map[string]context.CancelFunc),
-		trackers:         make(map[string]*Tracker),
+		monitors:          make(map[string]context.CancelFunc),
+		trackers:          make(map[string]*Tracker),
 		detection: config.DetectionConfig{
 			PromptDebounce: 1,
 			NotifyCooldown: 1,
@@ -86,17 +88,18 @@ func TestPromptDebounce_SkipDebounce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	sess := &Session{FullID: "test-skip", ID: "skip", State: StateRunning}
 	_ = store.Save(sess)
 
 	var stateChanged bool
 	m := &Manager{
-		store:            store,
+		store:             store,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
 		promptOscillation: make(map[string][]time.Time),
-		monitors:         make(map[string]context.CancelFunc),
-		trackers:         make(map[string]*Tracker),
+		monitors:          make(map[string]context.CancelFunc),
+		trackers:          make(map[string]*Tracker),
 		detection: config.DetectionConfig{
 			PromptDebounce: 10, // long debounce
 			NotifyCooldown: 1,
@@ -120,17 +123,18 @@ func TestNotifyCooldown_SuppressesDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 
 	notifyCount := 0
 	m := &Manager{
-		store:            store,
+		store:             store,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
 		promptOscillation: make(map[string][]time.Time),
-		monitors:         make(map[string]context.CancelFunc),
-		trackers:         make(map[string]*Tracker),
+		monitors:          make(map[string]context.CancelFunc),
+		trackers:          make(map[string]*Tracker),
 		detection: config.DetectionConfig{
-			PromptDebounce: 0, // disabled for this test
+			PromptDebounce: 0,  // disabled for this test
 			NotifyCooldown: 60, // long cooldown
 		},
 		onNeedsInput:  func(s *Session, p string) { notifyCount++ },

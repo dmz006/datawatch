@@ -1,0 +1,2 @@
+4d48a5826df4fbb4d4331df4e6b255946dfa0f393653ea2777fd0ce2d43dccae  internal/server/web/app.js
+5f7fcda1d4a23fc4052b231b82fc9d427caac14a1a684ae64644981e0613c41b  internal/server/web/style.css

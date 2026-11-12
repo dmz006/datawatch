@@ -18,9 +18,13 @@
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
+# Inherited non-root user name (see agent-base); home under /home/${DW_USER}.
+ARG DW_USER=datawatch
 ARG GOOSE_VERSION=1.43.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG GOOSE_VERSION
 ARG TARGETARCH
 
@@ -44,8 +48,8 @@ RUN ARCH="$TARGETARCH"; case "$ARCH" in \
     # Aggressive cleanup — bzip2's apt artifacts + any stale caches
     rm -rf /var/cache/apt/* /tmp/* /root/.cache
 
-RUN mkdir -p /home/datawatch/.config/goose && \
-    chown -R datawatch:datawatch /home/datawatch/.config
+RUN mkdir -p /home/${DW_USER}/.config/goose && \
+    chown -R datawatch:datawatch /home/${DW_USER}/.config
 
 USER datawatch
 

@@ -120,15 +120,13 @@ func (b *fakeDiscussionBackend) Import(r io.Reader) (int, error)                
 // Compile-time check: fakeDiscussionBackend must implement memory.Backend.
 var _ memory.Backend = (*fakeDiscussionBackend)(nil)
 
-// newDiscussionTestServer creates a test Server pointed at a temp .datawatch dir.
+// newDiscussionTestServer creates a test Server pointed at a temp data directory.
 func newDiscussionTestServer(t *testing.T, backend memory.Backend) *Server {
 	t.Helper()
 
-	// Override HOME so WAL/discussion paths resolve inside the temp dir.
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-
-	return &Server{memoryBackend: backend}
+	// Point the server at a temp data directory so WAL/discussion paths
+	// resolve inside it (statePath never consults HOME in this case).
+	return &Server{memoryBackend: backend, dataDir: t.TempDir()}
 }
 
 // TestDiscussionScope_ListEmpty — GET /api/memory/discussion with no discussions

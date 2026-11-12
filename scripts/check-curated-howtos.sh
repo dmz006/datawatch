@@ -2,7 +2,7 @@
 # scripts/check-curated-howtos.sh — enforces the
 # "Docs-as-MCP Currency" rule (BL274 closure, AGENT.md).
 #
-# The 22 curated howtos under docs/howto/ MUST carry a YAML front-matter
+# The curated howtos under docs/howto/ MUST carry a YAML front-matter
 # `exec_steps:` block whose every `tool:` references a real registered MCP
 # tool. Drift = silent breakage of `docs_apply` execute mode (see the
 # v6.18.0 chunker bug for the kind of leak this category produces).
@@ -14,7 +14,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-# Curated set per the BL274 plan doc (Sprint 1+2+3 = 22 howtos).
+# Curated set per the BL274 plan doc (Sprint 1+2+3), plus new curated howtos.
+# Newer additions (automaton-held-state-questions) join the audited set.
 CURATED=(
     setup-and-install identity-and-telos secrets-manager council-mode
     daemon-operations profiles comm-channels autonomous-planning
@@ -22,6 +23,10 @@ CURATED=(
     tailscale-mesh skills-sync federated-observer sessions-deep-dive
     cross-agent-memory chat-and-llm-quickstart voice-input mcp-tools
     pipeline-chaining automata-orchestrator evals
+    automaton-held-state-questions automaton-decompose-lint
+    automaton-daemon-task-modes
+    imap-mcp-service
+    compute-placement-ask
 )
 
 ERRORS=0

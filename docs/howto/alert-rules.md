@@ -23,6 +23,14 @@ it down — automatically, without writing a custom script.
 Rules are evaluated every 30 seconds. The last 100 firings are kept in
 a ring buffer you can query at any time.
 
+> **Rules vs. results** — an alert rule answers *"does the operator
+> need to act now"* and fires automatically. A scheduled job's
+> **result** answers *"what did this run produce"* — the job itself
+> posts a status, summary, and metrics when it finishes, and the
+> operator reviews them afterwards. Rules can raise alerts about job
+> outcomes (e.g. via a `warn`/`error` result), but the result panel
+> is not an alert mechanism. See [result panel](result-panel.md).
+
 ## What it is
 
 Each `AlertRule` has:
@@ -405,5 +413,6 @@ datawatch alert-rules firings
 - [howto/federated-observer](federated-observer.md) — observer peers and envelope delivery.
 - [howto/compute-nodes](compute-nodes.md) — compute node registration; required for `scale_up`/`scale_down` actions.
 - [howto/alerts-and-notifications](alerts-and-notifications.md) — the alert dock that receives `action=alert` firings, and the separate one-shot `create_alert` action.
+- [howto/result-panel](result-panel.md) — scheduled-job results: the complement to alerts (what a run produced, not what the operator should be paged about).
 - [plans/2026-10-09-alerts-conditions-and-filtering](../plans/2026-10-09-alerts-conditions-and-filtering.md) — planned work extending condition-based filtering/richer config to manually- and system-raised alerts, not just rule firings.
 - [datawatch-definitions](../datawatch-definitions.md) — glossary of system terms.

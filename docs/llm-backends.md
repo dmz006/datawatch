@@ -110,6 +110,160 @@ task and exit when complete. For these:
 - Output filters and scheduled commands still fire normally
 - You can still view output with `status <id>` and `tail <id> [n]`
 
+### Shell tasks longer than the send-keys limit
+
+A script-form shell task that is longer than the tmux send-keys limit is not typed into the pane. It is written to a file named `shell-task-<session>.txt` in the project directory's `.datawatch` folder. That folder is gitignored, and the file is created with owner-only permissions. The script receives the absolute path of that file as its first argument, `$1`, and the project directory as its second argument, `$2`. The file holds the whole task text exactly.
+
+The command line removes the file after the script exits. If the daemon crashes first, the file is left behind, and the next daemon start removes it.
+
+The interactive form is unchanged: its input still goes through send-keys, and an oversize interactive task is still refused.
+
+### One-shot (`one_shot`) sessions
+
+All backends named `*-prompt` (`pi-prompt`, `goose-prompt`, `opencode-prompt`, …)
+are one-shot: the `one_shot` flag is recorded on the session at creation, even
+when the session is started by hand (PWA, REST, MCP) without a `one_shot` field
+in the request. Interactive backends (`claude-code`, `pi`, `aider`, `goose` TUI,
+`gemini`, `opencode`, `opencode-acp`, `shell`, chat-mode backends) are **not**
+flagged one-shot by default — `one_shot` only appears if a start request
+explicitly asks for it. The decision is made once, at session creation; existing
+session records are never rewritten retroactively.
+
+The PWA session list and detail views do not read the `one_shot` flag on a
+session: input boxes, reply prompts, and waiting-for-input affordances are
+offered only while the session is in a running or waiting state, so a finished
+prompt-style session renders as any other completed session (state badge,
+output viewable, no input affordances).
+
+---
+
+## Model/backend pairing
+
+A model name must be one the chosen backend can serve. datawatch checks each
+model against its backend when the model is set, and refuses a mismatched
+pair. The refusal names the model and the backend.
+
+### The pairing rule
+
+- A bare Claude alias such as `claude-haiku-5-5` is refused on the `pi` and
+  `pi-prompt` backends. pi resolves a bare alias across providers and exits
+  with no output. Use a provider-qualified name such as
+  `anthropic/claude-haiku-5-5` on pi, or use the `claude-code` backend with a
+  bare name.
+- A provider-tagged model such as `ollama/qwen3.8:27b` is refused on
+  `claude-code`, which takes only bare Claude model names. Use a bare name on
+  `claude-code`.
+
+The check runs when a PRD, story, task, or verification or guardrail model is
+set. It applies to REST, MCP, and the comm channel alike. A refused set leaves
+the record unchanged; REST returns `400` with the mismatch text, and MCP returns
+a tool error.
+
+The check runs again before a PRD runs. A PRD that contains a mismatched task is
+not started, and the error names each offending task. This means records written
+before the check existed are also refused, instead of spawning a session that
+exits with no output.
+
+### pi-prompt failure marker
+
+On the `pi-prompt` backend, a run that fails no longer reports success. A
+non-zero exit from pi, or a run that produces no output, prints
+`DATAWATCH_PI_FAILED` and does not print `DATAWATCH_COMPLETE`. The failure line
+names the exit status and the model, for example:
+
+```
+DATAWATCH_PI_FAILED: pi exited with status 3 (model ollama/qwen3.8:27b)
+DATAWATCH_PI_FAILED: pi produced no output
+```
+
+When you see `DATAWATCH_PI_FAILED`, check these two things:
+
+1. **The model name.** Confirm it is provider-qualified (`provider/model`) and
+   matches the `pi_prompt.model` setting, or the model set on the PRD, story,
+   or task.
+2. **The pi provider.** Run `pi` by hand in the project directory with the same
+   model. Confirm the provider is configured (`pi auth`, or pi's
+   `~/.pi/agent/models.json`) and that its endpoint is reachable. For Ollama,
+   check that the server is running and has the model pulled.
+
+Fix the cause, then run the task again.
+
+## Judge and planning model resolution (Automata)
+
+Every guardrail **judge** session and every decompose (planning) session
+launched by the autonomous runner must carry a model **you configured**.
+datawatch never falls back to `pi`'s — or any other backend's — built-in
+default model for these sessions: a judge running on an unpinned model would
+evict the model you pinned on the node, and a decompose session would spend
+its whole run on a model you may not want or pay for.
+
+### Guardrail judge resolution order
+
+Every guardrail judge — `rules-review`, `ci-watch`, the per-task and
+per-story guardrail verdicts (what the verify step judges), and the rejudge
+action — resolves its model through a single resolver with a five-tier
+precedence chain. The first tier that is set **and** that the judge's
+backend can serve wins:
+
+| Tier | Source | What it is |
+|---|---|---|
+| 1 | PRD `guardrail_model` | the Automaton's own guardrail judge pin |
+| 2 | task `guardrail_model` | the override on the specific task being judged |
+| 3 | `autonomous.guardrail_model` | the global guardrail judge model |
+| 4 | `autonomous.verification_model` | the global verification model |
+| 5 | `autonomous.planning_model` | the global planning model |
+
+Tiers 1–2 are explicit pins for the resolved judge backend.
+Tiers 3–5 are global defaults configured for the global pi-family backend;
+when a judge resolves to the `claude-code` backend they are skipped (they
+are pi-style model names that backend would reject), and only the explicit
+PRD/task pins may win. Every tier is validated against the judge's resolved
+backend with the [pairing rule](#the-pairing-rule) above — a provider-tagged
+model is refused on `claude-code`, a bare Claude alias is refused on `pi`
+and `pi-prompt` — so a tier that the backend cannot serve is skipped with a
+recorded reason, never launched.
+
+### Loud failure when no tier resolves
+
+If no tier yields a model the backend can serve — either nothing is
+configured, or every configured tier is unpairable for the judge's backend —
+the judge is **not launched at all**. The guardrail record gets a loud,
+non-retried infrastructure-category block instead, and the message names
+exactly which keys to set:
+
+- the PRD's `guardrail_model` pin, or
+- the task's `guardrail_model` override, or
+- `autonomous.guardrail_model`, or
+- `autonomous.verification_model`, or
+- `autonomous.planning_model`.
+
+`pi`'s built-in default model is never used, and the model handed to `pi`
+is never empty. The guardrail model setters (`set_prd_guardrail_llm` /
+`set_task_guardrail_llm`, on REST, MCP and the comm channel) validate the
+model/backend pair — and, when a model is pinned, the full resolution —
+before accepting the change, so a pin that would leave the unit with no
+resolvable model is refused at set time rather than failing at judge time.
+
+### Decompose (planning) sessions
+
+Decompose sessions follow the same no-built-in-default rule. Their model
+resolves as the PRD's `decomposition_model`, then `autonomous.planning_model`
+(when it belongs to the resolved planning backend), then the PRD's own
+model, then `autonomous.verification_model` — with each tier checked against
+the resolved backend. When no tier resolves and the backend is pi-family,
+the decompose attempt fails immediately (without consuming infrastructure
+retry budget) with a message naming the same set of keys. A decompose
+session is therefore never launched on the backend's built-in default.
+
+### Coverage
+
+This rule covers the `rules-review` judgment, the `ci-watch` guardrail, the
+per-task and per-story guardrail verdicts, the rejudge action, and the
+decompose (planning) session. The verifier's own model is a separate pin
+(task → story → PRD → `autonomous.verification_model`), but a guardrail
+judge that cannot resolve one of the tiers above always fails loudly
+rather than borrowing the backend default.
+
 ---
 
 ## claude-code (default)
@@ -181,6 +335,35 @@ form (web UI), or pass it via API. The session is launched with `--resume <ID>`.
 
 The web UI **Restart** button automatically pre-fills the form with the finished
 session's details (name, task, directory, backend) and selects it in the resume dropdown.
+
+### Rate limit detection
+
+claude-code is the only backend with captured throttle lines. The built-in
+phrases are the usage-limit lines of its own limit messages and usage dialog
+(the hard-limit lines, the extra-usage line, the approaching-limit warning, the
+reset-time announcements and the stop-and-wait menu option). Every one is
+recorded verbatim, with its in-tree source, in the fixtures under
+`testdata/rate_limit_lines/` and the directory README.
+
+Before a line is matched, the detector trims surrounding whitespace and
+lowercases it, and strips ANSI cursor escapes it would otherwise misread; all
+matches are line-start anchored, so a line that merely quotes one of these
+phrases inside ordinary output does not match. The `⎿` gutter glyph plus two
+spaces that claude-code prints before secondary lines, and the numbered menu
+rows of its usage dialog (with or without the `❯` cursor), are tolerated as
+that family's own prefixes. Table phrases are only checked on lines under 2048
+characters; the shared protocol line is not subject to that length gate.
+
+On top of the tool's own lines, the session carries two plain protocol lines
+the detector recognizes line-start on every backend: `DATAWATCH_RATE_LIMITED:`
+when the session reports a throttle (claude-code also writes `PAUSED.md` with
+a progress summary while paused), and `DATAWATCH_COMPLETE:` when it finishes.
+A rate-limited claude-code session is held in a paused `rate_limited` state and
+resumed on retry, not failed — it still completes normally.
+
+If you set `detection.rate_limit_patterns`, your list replaces these built-in
+matches and is applied as before: a flat substring, anywhere on the line, for
+all backends.
 
 ---
 
@@ -272,7 +455,9 @@ goose:
   provider: anthropic         # e.g. anthropic, openai, google
   model: claude-sonnet-5    # model name accepted by the provider
 
-  # API key — literal value or ${secret:name} resolved from secrets store.
+  # API key — prefer a ${secret:name} reference, resolved from the secrets
+  # store on every session start (see howto/secrets-manager.md); a literal
+  # value still works but the reference form is preferred.
   # Injected as the provider-specific key env var (ANTHROPIC_API_KEY,
   # OPENAI_API_KEY, GOOGLE_API_KEY, or GOOSE_API_KEY for others).
   # Never logged. Omit if the key is already in the environment.
@@ -311,8 +496,7 @@ cd <project_dir> && GOOSE_CLI_THEME=plain GOOSE_PROVIDER=anthropic ... goose run
 [pi](https://pi.dev) ([earendil-works/pi](https://github.com/earendil-works/pi)) is a
 minimal open-source coding agent harness that calls provider SDKs (Anthropic,
 OpenAI, Google, Ollama, and more) directly rather than through a compatibility
-shim. Added 2026-10-16 (BL466) as a lower-risk alternative to opencode for
-open-model execution.
+shim. It is a lower-risk alternative to opencode for open-model execution.
 
 ### Prerequisites
 
@@ -356,6 +540,71 @@ cd <project_dir> && pi --approve --session-id '<id>' '<task>'
 cd <project_dir> && pi --print --mode text --approve '<task>'
 ```
 
+### Which node a pi worker uses
+
+A pi or pi-prompt worker runs on the compute node its capacity lease holds.
+When the node is known, the daemon points pi at that node for the launch. The
+node is the one the entry's pool chose, or the entry's only node (see
+[Compute-node pools and slots](howto/automata-capacity.md#compute-node-pools-and-slots)).
+
+- The daemon writes a per-session pi configuration directory. Every entry of
+  the source directory is linked into it, so credentials and sessions stay the
+  source's own. Only `models.json` is rewritten: the `baseUrl` of the model's
+  provider becomes the node's address with `/v1` appended. An address with no
+  `http://` or `https://` scheme gets `http://` first.
+- The launch command sets `PI_CODING_AGENT_DIR` to that directory for the pi
+  process alone. The directory is removed when pi exits, or at once when the
+  launch fails.
+- The source directory is the daemon's own `PI_CODING_AGENT_DIR` when that is
+  set, otherwise `~/.pi/agent`. Every other provider keeps the value the source
+  wrote.
+- A session keeps the node address it started on, so a resume reuses the same
+  host.
+
+A queued request picks its node again on each admission pass and whenever any
+node frees an engine. A waiting request therefore moves to a node with a free
+engine, least loaded first and then by node priority, rather than staying on the
+node it first tried. A change to an LLM entry's `compute_nodes` list reaches
+waiting work without a daemon restart. The limit of one engine per node still
+applies.
+
+The entry's `compute_nodes` list decides which nodes a local-model worker,
+verifier and judge may run on. Each listed node that is known and serves the
+model is a candidate. The request goes to the least loaded candidate;
+`scheduling_priority` only breaks a tie, then list order. A node that does not
+serve the model is skipped, and a one-entry list behaves as before.
+
+The provider is the part of the model name before the first `/`; for
+`ollama/qwen3.8:27b` it is `ollama`. The launch fails with an error, and nothing
+starts, when the model has no provider prefix, or when the source `models.json`
+has no entry for that provider or the entry is not a full provider object. A
+bare `baseUrl` is not enough: pi needs the entry's api, key and models. A node
+with an empty address gets no override at all.
+
+#### When a worker connects to the wrong host
+
+Check these in order:
+
+1. **The node it holds.** `datawatch capacity` prints the node beside each
+   holder when the pool spans two or more nodes. If that node is not the one
+   you expect, the problem is placement, not pi. See
+   [automata capacity](howto/automata-capacity.md).
+2. **The node's address.** `datawatch compute node get <name>` must show the
+   address the daemon can reach. An empty address means no override, and pi
+   uses its own provider table, which is usually the local host.
+3. **The provider entry.** The model must be written `<provider>/<model>`, and
+   that provider must be a full entry in the source `models.json`. Look at the
+   source the daemon reads: its own `PI_CODING_AGENT_DIR`, or `~/.pi/agent`. A
+   daemon started by a service manager may not have the variable you set in an
+   interactive shell.
+4. **The node answers at the override address.** The provider's `baseUrl` is
+   `<address>/v1`. The node must answer there; an Ollama node serves its model
+   list at `/v1/models`, so `curl http://<address>/v1/models` should list the
+   models it holds.
+5. **The directory was not left behind.** The per-session directory is removed
+   when pi exits, so check the source table and the node address rather than
+   looking for the directory.
+
 ### Notes
 
 - `pi` backend is interactive (real TUI, stays open for follow-up input);
@@ -367,15 +616,24 @@ cd <project_dir> && pi --print --mode text --approve '<task>'
   datawatch's session IDs and pi's.
 - A third variant analogous to `opencode-acp` (pi's own `--mode rpc`) is
   planned but not yet implemented — see
-  `docs/plans/2026-10-16-pi-opencode-evaluation.md` (BL466). Building it now
-  would reintroduce the exact async completion-detection race class fixed in
-  `opencode-acp` the same night this backend was added (v9.1.20).
+  `docs/plans/2026-10-16-pi-opencode-evaluation.md`. Building it now would
+  reintroduce the async completion-detection race class that `opencode-acp`
+  had to fix when it was added.
 - Known upstream caveat: pi issue [#9216](https://github.com/earendil-works/pi/issues/9216)
   describes Ollama + `qwen3.8:27b` stream-termination errors under heavy
   tool use — confirmed on datawatch's own exact model/stack. Live-tested
   tasks (3- and 4-tool-call chains, both one-shot and via a standalone
   smoke test with a real git commit) completed cleanly; a full multi-task
   PRD pilot under sustained heavy tool use has not yet been run.
+
+### Rate limit detection
+
+There is no captured pi throttle line in `testdata/rate_limit_lines/` — no
+in-tree source quotes one, so no fixture exists for this family. The only
+built-in detection for `pi` and `pi-prompt` is the shared `DATAWATCH_RATE_LIMITED:`
+protocol line the session itself prints, matched line-start after trimming.
+An operator-configured `detection.rate_limit_patterns` (flat substring, all
+backends) is the escape hatch if pi starts printing a specific throttle line.
 
 ---
 
@@ -515,7 +773,7 @@ Large local models (30B+ params, or "thinking"/reasoning-enabled models like qwe
 Two layers of defense:
 
 1. **Prevention** — `opencode.ollama_chunk_timeout_sec` / `opencode.ollama_header_timeout_sec` (config-accessible via YAML/REST/MCP/comm/PWA per the Configuration Accessibility Rule) raise opencode's own timeouts past the pauses observed on locally-hosted models, so the request doesn't get killed in the first place.
-2. **Detection fallback** — the autonomous PRD executor's built-in stall watchdog (`cmd/datawatch/sse_stall.go` `matchSSEStallPattern`) scans one-shot opencode session scrollback every ~30-60s for known stall phrasings and kills+retries the session if a stall is detected anyway (e.g. a genuine network/provider outage). The pattern list is matched case-insensitively; if opencode ever prints a stall message not on the list, it will not be caught automatically — check `docs/plans/README.md` for the current bug if you hit this.
+2. **Detection fallback** — the autonomous PRD executor's built-in stall detectors (`cmd/datawatch/sse_stall.go`): the verifier wait loop scans one-shot opencode session scrollback every ~30s and the automata watchdog every 60s, both through the one shared scan in that file. The scan applies only to the opencode family (decided from the session's backend — claude-code, pi, openwebui, ollama and the rest are never scanned for this and keep their own silence and activity detectors), and counts only a line that IS a known provider error as opencode prints it: a short line beginning with the phrase (optionally after an `Error:` or `AI_APICallError:` prefix), compared case-insensitively, that is new relative to the session's previous scan, and not inside a tool result or code block. On a match the session is ended so the executor's retry path fires (e.g. a genuine network/provider outage), with the matched line, the backend family and the scan source (verifier wait loop or automata watchdog) recorded in the end reason. If opencode ever prints a stall message not on the list, it will not be caught automatically — check `docs/plans/README.md` for the current bug if you hit this.
 
 ### Language Server Protocol — LSP (v8.7.0)
 
@@ -562,6 +820,15 @@ lsp:
 
 - Uses the `-p`/`--print` flag for non-interactive execution
 - For interactive mode with follow-up input, use `opencode-acp` instead (see below)
+- **Rate limit detection** — there is no captured opencode throttle line in
+  `testdata/rate_limit_lines/` (this covers `opencode`, `opencode-acp` and
+  `opencode-prompt`). The opencode-specific lines recorded in-tree
+  (`SSE read timed out`, `SSE error`, …) are network/SSE stall diagnostics,
+  not throttle messages, so they are not fixtures. The only built-in
+  detection for this family is the shared `DATAWATCH_RATE_LIMITED:` protocol
+  line the session prints, matched line-start after trimming, with the same
+  quoted-phrase rule: a line that only mentions a throttle phrase in ordinary
+  output does not pause the backend.
 
 ---
 
@@ -701,6 +968,16 @@ cd <project_dir> && ollama run <model> '<task>'
 | `codellama` | 3.8 GB | Code generation |
 | `deepseek-coder` | 776 MB | Code-focused, lightweight |
 | `qwen2.5-coder` | 4.7 GB | Strong coding performance |
+
+### Rate limit detection
+
+There is no captured Ollama throttle line in `testdata/rate_limit_lines/` —
+nothing in-tree quotes one, and Ollama serves local models, so it rarely
+rate-limits at all. The only built-in detection for `ollama` is the shared
+`DATAWATCH_RATE_LIMITED:` protocol line the session prints, matched line-start
+after trimming; a line that only quotes a throttle phrase in ordinary output
+does not pause the backend. An operator-configured `detection.rate_limit_patterns`
+(flat substring, all backends) is the escape hatch.
 
 ---
 

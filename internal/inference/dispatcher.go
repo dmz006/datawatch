@@ -27,10 +27,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/secrets"
 )
 
 // Request is the inference call shape (kind-agnostic).
@@ -47,6 +49,9 @@ type Request struct {
 	// Consumer names the calling subsystem (council|ask|agent_spawn|
 	// session_spawn|wizard) for ComputeNode RBAC enforcement.
 	Consumer string
+	// Node pins the call to one ComputeNode of the LLM. A judge sends the node
+	// its capacity lease holds. Empty walks the LLM's compute_nodes in order.
+	Node string
 }
 
 // Response from one inference call.
@@ -94,6 +99,13 @@ type Dispatcher struct {
 	computeFn   func(name string) (*compute.Node, error)
 	adapters    map[Kind]Adapter
 	serverStore ServerStoreIface
+	// Call-time API key secret resolution. secretsStore + secretReporter
+	// are wired after construction via SetSecretsStore (the secrets store
+	// typically does not exist yet when the dispatcher is built). When
+	// secretsStore is nil, ${secret:name} references fail resolution and
+	// literal keys pass through unchanged.
+	secretsStore   secrets.Store
+	secretReporter func(llmName, secretName, outcome string)
 }
 
 // NewDispatcher wires the LLM registry + a ComputeNode lookup
@@ -114,6 +126,59 @@ func (d *Dispatcher) RegisterAdapter(a Adapter) { d.adapters[a.Kind()] = a }
 // SetServerStore wires the multiserver store so the dispatcher can resolve
 // peer URLs for datawatch-proxy routing (BL320).
 func (d *Dispatcher) SetServerStore(s ServerStoreIface) { d.serverStore = s }
+
+// SetSecretsStore wires the centralized secrets store and the per-resolution
+// audit callback. The callback is the plain three-string reporter the audit
+// package exposes as SecretAccessReporter (llm entry name, secret name,
+// outcome) — a compatible value is directly assignable to this plain
+// function type. When store is nil, ${secret:name} references are refused
+// (final) and literal keys pass through unchanged.
+func (d *Dispatcher) SetSecretsStore(store secrets.Store, report func(llmName, secretName, outcome string)) {
+	d.secretsStore = store
+	d.secretReporter = report
+}
+
+// usesAPIKeyRefKind reports whether the kind's adapter reads llm.APIKeyRef
+// as the wire credential: claude, gemini-api, opencode-api and openwebui.
+// The dispatcher resolves a ${secret:name} reference at call time for
+// exactly these kinds; every other kind never carries one.
+func usesAPIKeyRefKind(k Kind) bool {
+	switch k {
+	case KindClaude, KindGeminiAPI, KindOpenCodeAPI, KindOpenWebUI:
+		return true
+	}
+	return false
+}
+
+// secretNameOf extracts the name from the single ${secret:name} reference
+// ref carries. Empty string when ref is not a valid reference — a report
+// without a name carries no information the audit entry could hold, so the
+// dispatcher skips reporting in that case.
+func secretNameOf(ref string) string {
+	if !secrets.IsRef(ref) {
+		return ""
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(ref, "${secret:"), "}")
+}
+
+// secretOutcomeFor maps a resolution error to the audit outcome: store
+// misses (unreadable or empty secret) are "missing"; malformed references
+// and values that themselves re-reference a secret are "refused".
+func secretOutcomeFor(err error) string {
+	msg := err.Error()
+	if strings.Contains(msg, "not found") || strings.Contains(msg, "is empty") {
+		return "missing"
+	}
+	return "refused"
+}
+
+// reportSecretAccess reports one call-time resolution through the wired
+// reporter, when one is set and a secret name is available.
+func (d *Dispatcher) reportSecretAccess(llmName, secretName, outcome string) {
+	if d.secretReporter != nil && secretName != "" {
+		d.secretReporter(llmName, secretName, outcome)
+	}
+}
 
 // Call resolves the LLM, walks ordered ComputeNodes, and dispatches
 // to the kind adapter. ErrNoBackend when all Nodes refuse / fail.
@@ -138,8 +203,15 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 	if len(llm.ComputeNodes) == 0 {
 		return Response{}, fmt.Errorf("%w: llm %q has no ComputeNodes configured", ErrNoBackend, llmName)
 	}
+	nodes := llm.ComputeNodes
+	if req.Node != "" {
+		if !slices.Contains(nodes, req.Node) {
+			return Response{}, fmt.Errorf("%w: compute node %q is not in llm %q compute_nodes", ErrNoBackend, req.Node, llmName)
+		}
+		nodes = []string{req.Node}
+	}
 	var lastErr error
-	for _, nodeName := range llm.ComputeNodes {
+	for _, nodeName := range nodes {
 		node, err := d.computeFn(nodeName)
 		if err != nil {
 			lastErr = fmt.Errorf("compute node %q: %w", nodeName, err)
@@ -164,6 +236,18 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 		if req.Consumer != "" && !node.AllowsConsumer(req.Consumer) {
 			lastErr = fmt.Errorf("compute node %q: consumer %q denied", nodeName, req.Consumer)
 			continue
+		}
+		// Apply the node's model pin before anything is started or sent. An
+		// implicit call runs on the pinned model; an explicit call for another
+		// model is refused here and is final, not failed over. A datawatch-proxy
+		// node leaves the pin to the peer, so its request is passed on unchanged.
+		localReq := req
+		if node.Routing != compute.RoutingDatawatchProxy {
+			model, pinErr := pinnedModel(node, nodeName, llm.Model, req.ModelOverride)
+			if pinErr != nil {
+				return Response{}, fmt.Errorf("compute node %q: %w", nodeName, pinErr)
+			}
+			localReq.ModelOverride = model
 		}
 		// v8.0 BL319 — docker-network routing: ensure container is running
 		// and rewrite Address to the container's IP before dispatch.
@@ -201,7 +285,7 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 			return proxyResp, nil
 		}
 
-		resp, err := d.callOnce(ctx, adapter, node, llm, req)
+		resp, err := d.callOnce(ctx, adapter, node, llm, localReq)
 		if err == nil {
 			return resp, nil
 		}
@@ -227,6 +311,29 @@ func (d *Dispatcher) callOnce(ctx context.Context, adapter Adapter, node *comput
 			ctx, cancel = context.WithTimeout(ctx, to)
 			defer cancel()
 		}
+	}
+	// Call-time API key secret resolution: for the kinds whose adapters
+	// send APIKeyRef as the credential, resolve a ${secret:name} reference
+	// through the secrets store before the adapter call. The resolved key
+	// goes into a shallow copy of the entry that it passes to the adapter and never keeps — the registry
+	// entry is untouched, so a resolved key has no path back into config,
+	// snapshot or persistence. A resolution error is FINAL (not
+	// ErrTransient): a missing or refused secret must not silently fail over
+	// to another backend, and the error names the secret. Every resolved
+	// outcome is reported through the audit callback when one is set.
+	// Literal keys (no ${secret: token) pass through unchanged and name no
+	// secret, so they are never reported.
+	if usesAPIKeyRefKind(llm.Kind) && strings.Contains(llm.APIKeyRef, "${secret:") {
+		ref := llm.APIKeyRef
+		key, err := ResolveAPIKey(llm, d.secretsStore)
+		if err != nil {
+			d.reportSecretAccess(llm.Name, secretNameOf(ref), secretOutcomeFor(err))
+			return Response{}, err
+		}
+		cp := *llm
+		cp.APIKeyRef = key
+		llm = &cp
+		d.reportSecretAccess(llm.Name, secretNameOf(ref), "ok")
 	}
 	start := time.Now()
 	resp, err := adapter.Infer(ctx, node, llm, req)

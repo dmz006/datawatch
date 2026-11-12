@@ -113,7 +113,7 @@ kg query datawatch
   #4 datawatch uses PostgreSQL (from 2026-04-10)
   #5 datawatch written_in Go (from 2026-04-10)
   #6 datawatch uses Ollama (from 2026-04-10)
-  #12 datawatch deployed_on ralfthewise (from 2026-04-10)
+  #12 datawatch deployed_on peer-d (from 2026-04-10)
 ```
 
 ### View timeline
@@ -305,7 +305,7 @@ curl -X POST http://localhost:8080/api/memory/import -d @backup.json
   4 | datawatch | uses        | PostgreSQL
   5 | datawatch | written_in  | Go
   6 | datawatch | uses        | Ollama
- 12 | datawatch | deployed_on | ralfthewise
+ 12 | datawatch | deployed_on | peer-d
 (9 rows)
 ```
 

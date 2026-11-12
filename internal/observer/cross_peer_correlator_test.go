@@ -17,16 +17,16 @@ func TestCorrelateAcrossPeers_HappyPath(t *testing.T) {
 		Kind:  EnvelopeSession,
 		Label: "opencode",
 		OutboundEdges: []OutboundEdge{
-			{TargetIP: "10.0.0.7", TargetPort: 11434, PID: 1234, Conns: 3},
+			{TargetIP: "192.0.2.7", TargetPort: 11434, PID: 1234, Conns: 3},
 		},
 	}}
-	// Host B: an ollama backend envelope listening on 10.0.0.7:11434.
+	// Host B: an ollama backend envelope listening on 192.0.2.7:11434.
 	hostB := []Envelope{{
 		ID:    "backend:ollama",
 		Kind:  EnvelopeBackend,
 		Label: "ollama",
 		ListenAddrs: []ListenAddr{
-			{IP: "10.0.0.7", Port: 11434},
+			{IP: "192.0.2.7", Port: 11434},
 		},
 	}}
 
@@ -60,7 +60,7 @@ func TestCorrelateAcrossPeers_WildcardListener(t *testing.T) {
 		ID:   "session:s1",
 		Kind: EnvelopeSession,
 		OutboundEdges: []OutboundEdge{
-			{TargetIP: "10.0.0.42", TargetPort: 8080, PID: 1, Conns: 1},
+			{TargetIP: "192.0.2.142", TargetPort: 8080, PID: 1, Conns: 1},
 		},
 	}}
 	// Listener on 0.0.0.0:8080 — should still match.
@@ -112,7 +112,7 @@ func TestCorrelateAcrossPeers_NoOpWithSinglePeer(t *testing.T) {
 		ID:   "session:s1",
 		Kind: EnvelopeSession,
 		OutboundEdges: []OutboundEdge{
-			{TargetIP: "10.0.0.7", TargetPort: 11434, Conns: 1},
+			{TargetIP: "192.0.2.7", TargetPort: 11434, Conns: 1},
 		},
 	}}
 	byPeer := map[string][]Envelope{"only-peer": envs}
@@ -128,14 +128,14 @@ func TestCorrelateAcrossPeers_CallersSortedByConnsDesc(t *testing.T) {
 			ID:   "session:loud",
 			Kind: EnvelopeSession,
 			OutboundEdges: []OutboundEdge{
-				{TargetIP: "10.0.0.1", TargetPort: 80, Conns: 10},
+				{TargetIP: "192.0.2.1", TargetPort: 80, Conns: 10},
 			},
 		},
 		{
 			ID:   "session:quiet",
 			Kind: EnvelopeSession,
 			OutboundEdges: []OutboundEdge{
-				{TargetIP: "10.0.0.1", TargetPort: 80, Conns: 1},
+				{TargetIP: "192.0.2.1", TargetPort: 80, Conns: 1},
 			},
 		},
 	}
@@ -143,7 +143,7 @@ func TestCorrelateAcrossPeers_CallersSortedByConnsDesc(t *testing.T) {
 		ID:   "backend:web",
 		Kind: EnvelopeBackend,
 		ListenAddrs: []ListenAddr{
-			{IP: "10.0.0.1", Port: 80},
+			{IP: "192.0.2.1", Port: 80},
 		},
 	}}
 	byPeer := map[string][]Envelope{"a": hostA, "b": hostB}
@@ -175,7 +175,7 @@ func TestCorrelateAcrossPeers_OutboundEdgeWithoutListenerDropped(t *testing.T) {
 		ID:   "backend:web",
 		Kind: EnvelopeBackend,
 		ListenAddrs: []ListenAddr{
-			{IP: "10.0.0.1", Port: 80},
+			{IP: "192.0.2.1", Port: 80},
 		},
 	}}
 	byPeer := map[string][]Envelope{"a": hostA, "b": hostB}
@@ -193,14 +193,14 @@ func TestCorrelateAcrossPeers_LocalPeerNameSuppressesPrefix(t *testing.T) {
 		ID:   "session:local-s1",
 		Kind: EnvelopeSession,
 		OutboundEdges: []OutboundEdge{
-			{TargetIP: "10.0.0.7", TargetPort: 11434, Conns: 1},
+			{TargetIP: "192.0.2.7", TargetPort: 11434, Conns: 1},
 		},
 	}}
 	hostB := []Envelope{{
 		ID:   "backend:ollama",
 		Kind: EnvelopeBackend,
 		ListenAddrs: []ListenAddr{
-			{IP: "10.0.0.7", Port: 11434},
+			{IP: "192.0.2.7", Port: 11434},
 		},
 	}}
 	byPeer := map[string][]Envelope{"local": hostLocal, "remote-b": hostB}

@@ -7,6 +7,15 @@
 //	datawatch compute node delete <name>
 //	datawatch compute node health <name>
 //	datawatch compute node detail <name>     (on-demand pull from monitoring sidecar)
+//	datawatch compute node drain <name> [--until RFC3339] [--reason TEXT]
+//	datawatch compute node undrain <name>
+//	datawatch compute pin config-get
+//	datawatch compute pin config-set --seconds N   (pin keeper interval; 0 = off)
+//	datawatch compute placements list
+//	datawatch compute placements approve <ask-id>
+//	datawatch compute placements deny <ask-id>
+//	datawatch compute placements config-get
+//	datawatch compute placements config-set [--missing-model ask] [--mem-headroom-pct N] [--disk-headroom-gb N] [--ask-timeout-minutes N] [--assume-model-size-gb N]
 
 package main
 
@@ -15,7 +24,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -31,6 +42,153 @@ ordered failover. See docs/plans/2026-05-08-v7.0.0-plan.md § 5.`,
 	}
 	cmd.AddCommand(newComputeNodeCmd())
 	cmd.AddCommand(newComputeMigrateCmd())
+	cmd.AddCommand(newComputePinCmd())
+	cmd.AddCommand(newComputePlacementCmd())
+	return cmd
+}
+
+// newComputePinCmd exposes the global pin keeper interval
+// (pin_check_seconds). Per-node pins are flags on `compute node add|update`.
+func newComputePinCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pin",
+		Short: "Pin keeper settings (pin_check_seconds)",
+	}
+	cmd.AddCommand(newComputePinConfigGetCmd(), newComputePinConfigSetCmd())
+	return cmd
+}
+
+func newComputePinConfigGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "config-get",
+		Short: "Show pin_check_seconds (0 = pin keeper off)",
+		RunE:  func(*cobra.Command, []string) error { return daemonGetSection("/api/config", "pin_check_seconds") },
+	}
+}
+
+func newComputePinConfigSetCmd() *cobra.Command {
+	var seconds int
+	cmd := &cobra.Command{
+		Use:   "config-set",
+		Short: "Set pin_check_seconds (takes effect after the next daemon restart)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !cmd.Flags().Changed("seconds") {
+				return fmt.Errorf("--seconds is required")
+			}
+			if seconds < 0 {
+				return fmt.Errorf("--seconds must be a whole number >= 0 (0 = pin keeper off)")
+			}
+			return daemonJSON(http.MethodPut, "/api/config", map[string]any{"pin_check_seconds": seconds})
+		},
+	}
+	cmd.Flags().IntVar(&seconds, "seconds", 0, "seconds between pin keeper checks (0 = off, default 300)")
+	return cmd
+}
+
+// newComputePlacementCmd exposes the compute_placement policy block and the
+// pending placement ask queue.
+//
+// A missing-model placement ask is raised when a model is not present on the
+// best-fit compute node and compute_placement.missing_model is "ask"; the
+// operator answers it once (approve pulls and loads the model, deny refuses
+// the placement), and an unanswered ask expires after
+// compute_placement.ask_timeout_minutes.
+func newComputePlacementCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "placements",
+		Short: "Compute placement asks and compute_placement policy settings",
+	}
+	cmd.AddCommand(
+		newComputePlacementListCmd(),
+		newComputePlacementDecisionCmd("approve"),
+		newComputePlacementDecisionCmd("deny"),
+		newComputePlacementConfigGetCmd(),
+		newComputePlacementConfigSetCmd(),
+	)
+	return cmd
+}
+
+func newComputePlacementListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List pending placement asks (models that need loading on a compute node)",
+		Args:  cobra.NoArgs,
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/compute/placements") },
+	}
+}
+
+// newComputePlacementDecisionCmd builds the approve/deny verb for one ask.
+func newComputePlacementDecisionCmd(decision string) *cobra.Command {
+	short := map[string]string{
+		"approve": "Approve a pending placement ask (pull and load the model on the target node)",
+		"deny":    "Deny a pending placement ask (refuse the placement)",
+	}[decision]
+	return &cobra.Command{
+		Use:   decision + " <ask-id>",
+		Short: short,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/compute/placements/"+url.PathEscape(args[0])+"/"+decision, nil)
+		},
+	}
+}
+
+func newComputePlacementConfigGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "config-get",
+		Short: "Show the compute_placement policy block (live values, defaults read through)",
+		Args:  cobra.NoArgs,
+		RunE:  func(*cobra.Command, []string) error { return daemonGetSection("/api/config", "compute_placement") },
+	}
+}
+
+func newComputePlacementConfigSetCmd() *cobra.Command {
+	var missingModel string
+	var memHeadroomPct, diskHeadroomGB, askTimeoutMinutes, assumeModelSizeGB int
+	cmd := &cobra.Command{
+		Use:   "config-set",
+		Short: "Set compute_placement policy keys (applied live, no restart)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			patch := map[string]any{}
+			if cmd.Flags().Changed("missing-model") {
+				patch["compute_placement.missing_model"] = missingModel
+			}
+			if cmd.Flags().Changed("mem-headroom-pct") {
+				if memHeadroomPct < 0 || memHeadroomPct > 100 {
+					return fmt.Errorf("--mem-headroom-pct must be a whole number from 0 to 100")
+				}
+				patch["compute_placement.mem_headroom_pct"] = memHeadroomPct
+			}
+			if cmd.Flags().Changed("disk-headroom-gb") {
+				if diskHeadroomGB < 0 {
+					return fmt.Errorf("--disk-headroom-gb must be a whole number >= 0")
+				}
+				patch["compute_placement.disk_headroom_gb"] = diskHeadroomGB
+			}
+			if cmd.Flags().Changed("ask-timeout-minutes") {
+				if askTimeoutMinutes < 0 {
+					return fmt.Errorf("--ask-timeout-minutes must be a whole number >= 0")
+				}
+				patch["compute_placement.ask_timeout_minutes"] = askTimeoutMinutes
+			}
+			if cmd.Flags().Changed("assume-model-size-gb") {
+				if assumeModelSizeGB < 0 {
+					return fmt.Errorf("--assume-model-size-gb must be a whole number >= 0")
+				}
+				patch["compute_placement.assume_model_size_gb"] = assumeModelSizeGB
+			}
+			if len(patch) == 0 {
+				return fmt.Errorf("set at least one key: --missing-model, --mem-headroom-pct, --disk-headroom-gb, --ask-timeout-minutes, --assume-model-size-gb")
+			}
+			return daemonJSON(http.MethodPut, "/api/config", patch)
+		},
+	}
+	cmd.Flags().StringVar(&missingModel, "missing-model", "", "missing_model policy: ask, auto_load or refuse (default ask)")
+	cmd.Flags().IntVar(&memHeadroomPct, "mem-headroom-pct", 0, "free-RAM headroom percent to require for a placement (0-100, default 10)")
+	cmd.Flags().IntVar(&diskHeadroomGB, "disk-headroom-gb", 0, "free-disk headroom in GB to require for a placement (default 5)")
+	cmd.Flags().IntVar(&askTimeoutMinutes, "ask-timeout-minutes", 0, "minutes before an unanswered placement ask expires (default 30)")
+	cmd.Flags().IntVar(&assumeModelSizeGB, "assume-model-size-gb", 0, "GB to assume for models with an unknown size (0 = size unknown)")
 	return cmd
 }
 
@@ -143,11 +301,38 @@ func newComputeNodeCmd() *cobra.Command {
 		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/compute/nodes/" + args[0]) },
 	})
 	cmd.AddCommand(&cobra.Command{
+		Use:   "versions <name>",
+		Short: "The node's reported backend version and which capability minimums it meets",
+		Args:  cobra.ExactArgs(1),
+		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/compute/nodes/" + args[0] + "/versions") },
+	})
+	cmd.AddCommand(&cobra.Command{
 		Use:   "health <name>",
 		Short: "Static + maintenance state for a ComputeNode",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return daemonGet("/api/compute/nodes/" + args[0] + "/health")
+		},
+	})
+	drainCmd := &cobra.Command{
+		Use:   "drain <name>",
+		Short: "Drain a ComputeNode (stop routing new sessions); optional --until / --reason",
+		Long: `Drains a ComputeNode: the scheduler stops routing new sessions to it.
+--until takes an RFC3339 timestamp that bounds the drain (omitted =
+open-ended until undrained); --reason records why. The daemon replies
+with the node health JSON.`,
+		Args: cobra.ExactArgs(1),
+		RunE: newComputeNodeDrainRunE,
+	}
+	drainCmd.Flags().String("until", "", "RFC3339 timestamp until which the drain is active (empty = open-ended until undrained)")
+	drainCmd.Flags().String("reason", "", "reason to record with the drain")
+	cmd.AddCommand(drainCmd)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "undrain <name>",
+		Short: "Clear the drain state of a ComputeNode",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodDelete, "/api/compute/nodes/"+args[0]+"/drain", nil)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -158,6 +343,7 @@ func newComputeNodeCmd() *cobra.Command {
 			return daemonGet("/api/compute/nodes/" + args[0] + "/detail")
 		},
 	})
+	cmd.AddCommand(newComputeNodeServedModelsCmd())
 	cmd.AddCommand(newComputeNodeAddCmd(false))
 	cmd.AddCommand(newComputeNodeAddCmd(true))
 	cmd.AddCommand(&cobra.Command{
@@ -245,10 +431,15 @@ func newMarketplaceCmd() *cobra.Command {
 // newComputeNodeAddCmd builds either `add` or `update` (PUT vs POST).
 func newComputeNodeAddCmd(update bool) *cobra.Command {
 	var (
-		kind, address, monitoringEndpoint, gpuVendor, gpuModel string
-		maxModels, gpuMemGB, ramGB, gpus, priority             int
-		costPerHour                                            float64
-		tagsCSV, allowedCSV, deniedCSV                         string
+		kind, address, monitoringEndpoint, gpuVendor, gpuModel   string
+		maxModels, gpuMemGB, ramGB, gpus, priority, sessionSlots int
+		verifierSlots, verifierMinFreeMB, verifierContextMB      int
+		costPerHour                                              float64
+		tagsCSV, allowedCSV, deniedCSV                           string
+		pinnedModel                                              string
+		allowModelSwap                                           bool
+		tlsCAFile, tlsCertFingerprint                            string
+		tlsInsecureSkipVerify                                    bool
 	)
 	use := "add <name>"
 	short := "Add a new ComputeNode"
@@ -267,7 +458,14 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
-		Args:  cobra.ExactArgs(1),
+		Long: short + `.
+
+TLS for https nodes: --tls-ca-file trusts an extra CA bundle, --tls-cert-fingerprint
+pins the node's leaf certificate, and --tls-insecure-skip-verify turns certificate
+checking off for the node (audited, shown in the PWA, and not allowed together with
+the other two). The server validates the combination and its error is printed as is.
+Update replaces the whole node, so repeat every setting you want to keep.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if deprecatedKinds[kind] {
 				return fmt.Errorf(
@@ -291,6 +489,32 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 					"gpu_vendor":            gpuVendor,
 					"gpu_model":             gpuModel,
 				},
+				"node_pinned_model":        pinnedModel,
+				"allow_model_swap":         allowModelSwap,
+				"session_slots":            sessionSlots,
+				"verifier_context_mb":      verifierContextMB,
+				"tls_ca_file":              tlsCAFile,
+				"tls_cert_fingerprint":     tlsCertFingerprint,
+				"tls_insecure_skip_verify": tlsInsecureSkipVerify,
+			}
+			// The nullable verifier slots are -1 by default, meaning "unset":
+			// omitted from the body so POST leaves them at the node's derived
+			// defaults and UPDATE clears any earlier override. A value below
+			// -1 is a typo and is refused here, not at the server.
+			if verifierSlots < -1 {
+				return fmt.Errorf("--verifier-slots must be -1 (unset) or >= 0")
+			}
+			if verifierSlots >= 0 {
+				body["verifier_slots"] = verifierSlots
+			}
+			if verifierMinFreeMB < -1 {
+				return fmt.Errorf("--verifier-min-free-mem-mb must be -1 (unset) or >= 0")
+			}
+			if verifierMinFreeMB >= 0 {
+				body["verifier_min_free_mem_mb"] = verifierMinFreeMB
+			}
+			if verifierContextMB < 0 {
+				return fmt.Errorf("--verifier-context-mb must be >= 0")
 			}
 			if tagsCSV != "" {
 				body["tags"] = splitCSV(tagsCSV)
@@ -321,10 +545,50 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&gpuModel, "gpu-model", "", "free-form model string (e.g. RTX 4090)")
 	cmd.Flags().IntVar(&priority, "priority", 50, "scheduling priority 0-100 (higher = preferred)")
 	cmd.Flags().Float64Var(&costPerHour, "cost-per-hour", 0, "USD/hour cost for scheduler accounting")
+	cmd.Flags().IntVar(&sessionSlots, "session-slots", 0, "worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory; capped by max_concurrent_sessions). Update replaces the whole node, so omitting this clears the override")
+	cmd.Flags().IntVar(&verifierSlots, "verifier-slots", -1, "worker slots for verifiers on this node (-1 = unset: 1 if the node hosts a local engine, else 0; explicit 0 = no verifier slots). Update replaces the whole node, so -1 clears the override")
+	cmd.Flags().IntVar(&verifierMinFreeMB, "verifier-min-free-mem-mb", -1, "free GPU memory in MB required before a verifier slot starts here (-1 = unset: 1024 MB; 0 turns the check off). Update replaces the whole node, so -1 resets the default")
+	cmd.Flags().IntVar(&verifierContextMB, "verifier-context-mb", 0, "extra context memory in MB one verifier slot holds, used to size the advice figure from the node's free GPU memory (0 = none). Update replaces the whole node, so omitting this clears it to 0")
 	cmd.Flags().StringVar(&tagsCSV, "tags", "", "comma-separated tags")
 	cmd.Flags().StringVar(&allowedCSV, "allowed-consumers", "", "comma-separated consumer names (council|ask|agent_spawn|session_spawn|*)")
 	cmd.Flags().StringVar(&deniedCSV, "denied-consumers", "", "comma-separated consumer names; denied always wins")
+	cmd.Flags().StringVar(&pinnedModel, "pinned-model", "", "pin this node to one model; other explicit models are refused unless --allow-model-swap (empty = no pin)")
+	cmd.Flags().BoolVar(&allowModelSwap, "allow-model-swap", false, "let an explicit request replace the pinned model (update replaces the whole node, so pass --pinned-model again to keep the pin)")
+	cmd.Flags().StringVar(&tlsCAFile, "tls-ca-file", "", "PEM CA bundle trusted in addition to the system roots when connecting to this node over https (update replaces the whole node, so omitting this clears it)")
+	cmd.Flags().StringVar(&tlsCertFingerprint, "tls-cert-fingerprint", "", "SHA-256 fingerprint of the node's leaf certificate, 64 hex chars, colons allowed (update replaces the whole node, so omitting this clears the pin)")
+	cmd.Flags().BoolVar(&tlsInsecureSkipVerify, "tls-insecure-skip-verify", false, "turn certificate checking off for this node; audited and shown in the PWA; cannot be combined with --tls-ca-file or --tls-cert-fingerprint (update replaces the whole node, so omitting this turns checking back on)")
 	return cmd
+}
+
+// newComputeNodeDrainRunE is the RunE for `compute node drain <name>`. It
+// validates --until, builds the request body (only the keys that were set)
+// and POSTs it to the daemon, which replies with the node health JSON.
+func newComputeNodeDrainRunE(cmd *cobra.Command, args []string) error {
+	until, _ := cmd.Flags().GetString("until")
+	reason, _ := cmd.Flags().GetString("reason")
+	if err := validateComputeDrainUntil(until); err != nil {
+		return err
+	}
+	body := map[string]any{}
+	if until != "" {
+		body["until"] = until
+	}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	return daemonJSON(http.MethodPost, "/api/compute/nodes/"+args[0]+"/drain", body)
+}
+
+// validateComputeDrainUntil rejects a --until that is set but not a valid
+// RFC3339 timestamp before anything is sent to the daemon.
+func validateComputeDrainUntil(until string) error {
+	if until == "" {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339, until); err != nil {
+		return fmt.Errorf("--until must be an RFC3339 timestamp (got %q)", until)
+	}
+	return nil
 }
 
 func splitCSV(s string) []string {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -19,6 +20,26 @@ import (
 // the bus timers are shared per-test state.
 
 const commFanoutTestWindow = 150 * time.Millisecond
+
+// newCommFanoutManager builds a real Manager (store + bus) whose Automata
+// opt into task.in_progress — a kind the global (default) tier does NOT
+// deliver — so these tests exercise the resolver's Automaton tier: the
+// comm fan-out subscribes to every notify kind and delivers only what
+// each event's Automaton resolved set allows.
+func newCommFanoutManager(t *testing.T, prdIDs ...string) *Manager {
+	t.Helper()
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	t.Cleanup(func() { m.lifecycleBus().Close() })
+	for _, id := range prdIDs {
+		if err := m.Store().SavePRD(&PRD{ID: id, NotifyEvents: []string{TaskStatusKind(TaskInProgress)}}); err != nil {
+			t.Fatalf("SavePRD(%s): %v", id, err)
+		}
+	}
+	return m
+}
 
 // textCapture records every comm send() argument so tests can assert
 // an exact send count AND the exact lines inside each send.
@@ -71,12 +92,10 @@ func mustNotContain(t *testing.T, where, text string, banned ...string) {
 // one quiet window must produce exactly ONE comm send whose text is the
 // shared header plus all 5 distinct lines.
 func TestCommFanoutCoalesces(t *testing.T) {
-	m := &Manager{}
-	defer m.lifecycleBus().Close()
+	m := newCommFanoutManager(t, "prd-fanout")
 
 	capSink := &textCapture{}
 	cancel := InstallLifecycleSinks(m, SinkConfig{
-		Kinds:      []string{TaskStatusKind(TaskInProgress)},
 		CommSink:   capSink.record,
 		CommWindow: commFanoutTestWindow,
 	})
@@ -120,12 +139,10 @@ func TestCommFanoutCoalesces(t *testing.T) {
 // send must contain only its own Automaton's lines (per-Automaton
 // isolation: one burst must not coalesce into the other's message).
 func TestCommFanoutSeparateAutomata(t *testing.T) {
-	m := &Manager{}
-	defer m.lifecycleBus().Close()
+	m := newCommFanoutManager(t, "prd-fanout-a", "prd-fanout-b")
 
 	capSink := &textCapture{}
 	cancel := InstallLifecycleSinks(m, SinkConfig{
-		Kinds:      []string{TaskStatusKind(TaskInProgress)},
 		CommSink:   capSink.record,
 		CommWindow: commFanoutTestWindow,
 	})
@@ -167,5 +184,53 @@ func TestCommFanoutSeparateAutomata(t *testing.T) {
 	}
 	if !foundA || !foundB {
 		t.Fatalf("expected one send each for PRD A and PRD B, got:\n%q", texts)
+	}
+}
+
+// TestCommFanoutPanickingSinkRecoveredAndSinkStaysUsable: the send hook
+// is injected — if it panics, deliver() must recover around it: that
+// one message is lost, but the process and the sink must keep working,
+// and later events are delivered normally.
+func TestCommFanoutPanickingSinkRecoveredAndSinkStaysUsable(t *testing.T) {
+	m := newCommFanoutManager(t, "prd-flaky")
+
+	capSink := &textCapture{}
+	var panics int32
+	flakySink := func(text string) {
+		if atomic.AddInt32(&panics, 1) == 1 {
+			panic("injected transport failure")
+		}
+		capSink.record(text)
+	}
+	cancel := InstallLifecycleSinks(m, SinkConfig{
+		CommSink:   flakySink,
+		CommWindow: commFanoutTestWindow,
+	})
+	defer cancel()
+
+	// First event: its delivery panics inside send — it must be
+	// recovered (no crashed daemon), so the waiter keeps going.
+	commFanoutFire(m, "prd-flaky", "flaky-1")
+	waitFor(t, "the panicking delivery to have been attempted", func() bool {
+		return atomic.LoadInt32(&panics) == 1
+	})
+
+	// The sink must still be usable: the next event is coalesced and
+	// delivered exactly as if nothing had happened.
+	commFanoutFire(m, "prd-flaky", "flaky-2")
+	waitFor(t, "the post-panic delivery", func() bool {
+		for _, text := range capSink.snapshot() {
+			if strings.Contains(text, "flaky-2") {
+				return true
+			}
+		}
+		return false
+	})
+
+	// The panicking sink lost its own message; none may have leaked.
+	for _, text := range capSink.snapshot() {
+		if strings.Contains(text, "flaky-1") {
+			t.Errorf("the message lost to a panicking sink leaked through:\n%s", text)
+		}
 	}
 }

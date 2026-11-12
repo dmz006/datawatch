@@ -11,12 +11,22 @@
 // adaptation drops PAI's life-goal scope (health/finances/relationships
 // — out of scope for a technical tool) and keeps the work-relevant
 // fields. The interview-style init flow lives in BL257 Phase 2.
+//
+// The identity cannot be lost by a routine save. Every write is
+// serialised, re-reads the file from disk (so an out-of-band edit is
+// merged, not overwritten) and lands through a temp file, fsync and
+// rename. Before each write the existing file is copied, byte for byte,
+// to identity-backups/ next to it; only the newest few are kept
+// (DefaultBackupsToKeep, adjustable through SetBackupsToKeep, never
+// below one). Set refuses to replace a non-empty identity with an empty
+// one (ErrEmptyOverwrite); clearing on purpose is the explicit Reset.
+// ListBackups and Restore bring an earlier identity back, and Restore is
+// itself undoable because it backs up what it replaces.
 package identity
 
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -51,12 +61,15 @@ func (id Identity) IsEmpty() bool {
 }
 
 // Manager owns the on-disk identity.yaml and provides safe concurrent
-// access. NewManager loads the existing file (if any). Set/Update
-// rewrite atomically and cache the parsed value.
+// access. NewManager loads the existing file (if any). Set/Update/
+// Reset/Restore rewrite atomically, back up the file they replace and
+// cache the parsed value.
 type Manager struct {
+	wmu  sync.Mutex // serialises each read, back up, write cycle
 	mu   sync.RWMutex
 	path string
 	cur  Identity
+	keep func() int // backup retention provider; see SetBackupsToKeep
 }
 
 // NewManager constructs a Manager rooted at path. If path does not
@@ -105,26 +118,39 @@ func (m *Manager) Get() Identity {
 }
 
 // Set replaces the entire identity, stamps UpdatedAt, persists to disk
-// (0600), and updates the cache. Empty identities are still written.
+// (0600), and updates the cache. An empty identity over a non-empty one
+// is refused with ErrEmptyOverwrite and nothing is written; use Reset to
+// clear the identity on purpose. Empty over empty is allowed.
 func (m *Manager) Set(next Identity) (Identity, error) {
-	next.UpdatedAt = time.Now().UTC()
-	if err := m.write(next); err != nil {
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
+	st, err := m.readDisk()
+	if err != nil {
 		return Identity{}, err
 	}
-	m.mu.Lock()
-	m.cur = next
-	m.mu.Unlock()
+	if cur := m.base(st); next.IsEmpty() && !cur.IsEmpty() {
+		return Identity{}, fmt.Errorf("%w: would lose %s", ErrEmptyOverwrite, strings.Join(nonEmptyFields(cur), ", "))
+	}
+	next.UpdatedAt = time.Now().UTC()
+	if err := m.commit(st, next); err != nil {
+		return Identity{}, err
+	}
 	return next, nil
 }
 
-// Update merges non-empty fields from patch into the current identity,
-// stamps UpdatedAt, persists, and returns the merged result. List
-// fields use replace-when-non-empty semantics (a non-nil empty slice
-// keeps the existing value); pass an explicit zero list to clear via
-// Set instead.
+// Update merges non-empty fields from patch into the identity on disk
+// (the cache when there is no usable file), stamps UpdatedAt, persists,
+// and returns the merged result. List fields use replace-when-non-empty
+// semantics (a non-nil empty slice keeps the existing value); use Reset
+// to clear the identity.
 func (m *Manager) Update(patch Identity) (Identity, error) {
-	m.mu.Lock()
-	cur := m.cur
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
+	st, err := m.readDisk()
+	if err != nil {
+		return Identity{}, err
+	}
+	cur := m.base(st)
 	if patch.Role != "" {
 		cur.Role = patch.Role
 	}
@@ -144,28 +170,10 @@ func (m *Manager) Update(patch Identity) (Identity, error) {
 		cur.ContextNotes = patch.ContextNotes
 	}
 	cur.UpdatedAt = time.Now().UTC()
-	m.mu.Unlock()
-	if err := m.write(cur); err != nil {
+	if err := m.commit(st, cur); err != nil {
 		return Identity{}, err
 	}
-	m.mu.Lock()
-	m.cur = cur
-	m.mu.Unlock()
 	return cur, nil
-}
-
-func (m *Manager) write(id Identity) error {
-	b, err := yaml.Marshal(&id)
-	if err != nil {
-		return fmt.Errorf("identity marshal: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(m.path), 0o755); err != nil {
-		return fmt.Errorf("identity mkdir: %w", err)
-	}
-	if err := os.WriteFile(m.path, b, 0o600); err != nil {
-		return fmt.Errorf("identity write: %w", err)
-	}
-	return nil
 }
 
 // PromptText renders the identity as plain text suitable for L0 wake-up

@@ -60,9 +60,9 @@ Using NSSM (Non-Sucking Service Manager):
 ```powershell
 winget install NSSM.NSSM
 
-nssm install Datawatch "C:\Users\YOU\AppData\Local\datawatch\datawatch.exe"
+nssm install Datawatch "C:\Users\<user>\AppData\Local\datawatch\datawatch.exe"
 nssm set Datawatch AppParameters "start"
-nssm set Datawatch AppDirectory "C:\Users\YOU"
+nssm set Datawatch AppDirectory "C:\Users\<user>"
 nssm set Datawatch DisplayName "Datawatch"
 nssm set Datawatch Description "Signal to Claude Code Bridge"
 nssm set Datawatch Start SERVICE_AUTO_START

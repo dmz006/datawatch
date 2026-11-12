@@ -1,0 +1,475 @@
+// Lane fill view — PWA side.
+//
+// window.laneFillCardHtml(status) turns the decoded GET /api/autonomous/lane-fill
+// body into the Automation sub-tab's lane card. The Automaton settings modal
+// carries the lane preference select, which saves through set_lane_preference
+// only when it changed. The config fields and every lane_fill_ and
+// settings_lane_fill_ locale key are pinned here as well.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('path');
+const fs = require('fs');
+const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
+
+const APP_JS = path.join(__dirname, 'app.js');
+const LOCALES_DIR = path.join(__dirname, 'locales');
+const LANGS = ['en', 'de', 'es', 'fr', 'ja'];
+const HOSTILE = '<img src=x onerror=alert(1)>';
+
+function bundle(lang) {
+  return JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, lang + '.json'), 'utf8'));
+}
+
+function loadApp() {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(APP_JS, sandbox);
+  sandbox._i18n.bundle = bundle('en');
+  return sandbox;
+}
+
+function render(status) {
+  const sandbox = loadApp();
+  sandbox._status = status;
+  return vm.runInContext('window.laneFillCardHtml(_status)', sandbox);
+}
+
+function lane(over) {
+  return { id: 'gpu-1', type: 'gpu', state: 'idle', occupant: null, blocker: '', eligible_waiting: 0, ...over };
+}
+
+function status(over) {
+  return {
+    mode: 'shadow', last_poll_at: '2026-10-24T10:00:00Z', lanes: [lane()], queued_eligible: { gpu: 0, claude: 0 },
+    evidence: { checked_at: '2026-10-24T10:00:00Z', gpu_active_sessions: 0, loaded_models: [], error: '' },
+    decisions: [], alerts: [], ...over,
+  };
+}
+
+function countOccurrences(haystack, needle) {
+  return haystack.split(needle).length - 1;
+}
+
+// ── card rendering ──────────────────────────────────────────────────────────
+
+test('an occupied lane shows its id, type, state, occupant title and backend', () => {
+  const html = render(status({
+    lanes: [lane({ id: 'gpu-1', type: 'gpu', state: 'occupied', occupant: { prd_id: 'p1', title: 'Cache column', backend: 'pi-prompt' } })],
+  }));
+  assert.ok(html.includes('gpu-1'), 'lane id missing: ' + html);
+  assert.ok(html.includes('GPU lane'), 'lane type label missing');
+  assert.ok(html.includes('occupied'), 'occupied state missing');
+  assert.ok(html.includes('Cache column · pi-prompt'), 'occupant title and backend missing: ' + html);
+});
+
+test('an idle lane shows the idle state and its blocker text, and a marker when eligible work waits', () => {
+  const html = render(status({
+    lanes: [
+      lane({ id: 'claude-1', type: 'claude', state: 'idle', blocker: 'waiting for a free Claude slot', eligible_waiting: 2 }),
+    ],
+  }));
+  assert.ok(html.includes('Claude lane'), 'claude lane type label missing');
+  assert.ok(html.includes('idle'), 'idle state missing');
+  assert.ok(html.includes('Blocked: waiting for a free Claude slot'), 'blocker text missing: ' + html);
+  assert.ok(html.includes('2 eligible work waiting'), 'eligible waiting marker missing: ' + html);
+  assert.ok(html.includes('lane-fill-waiting'), 'waiting marker element missing');
+});
+
+test('no marker shows when no eligible work waits', () => {
+  const html = render(status({ lanes: [lane({ eligible_waiting: 0 })] }));
+  assert.ok(!html.includes('lane-fill-waiting'), 'marker must not show with nothing waiting');
+});
+
+test('a waiting_verifier lane shows the waiting-on-verifier label, its reason and the occupant', () => {
+  const html = render(status({
+    lanes: [lane({
+      id: 'claude-2', type: 'claude', state: 'waiting_verifier',
+      occupant: { prd_id: 'p2', title: 'Fix login', backend: 'claude-code' },
+      wait_reason: 'CI still running the checks', eligible_waiting: 2,
+    })],
+  }));
+  assert.ok(html.includes('Claude lane'), 'claude lane type label missing');
+  assert.ok(html.includes('Waiting on verifier'), 'waiting-on-verifier label missing: ' + html);
+  assert.ok(html.includes('Waiting on verifier: CI still running the checks'), 'waiting reason missing: ' + html);
+  assert.ok(html.includes('lane-fill-wait-reason'), 'reason element missing');
+  assert.ok(html.includes('Fix login · claude-code'), 'occupant must still show on a waiting_verifier lane');
+});
+
+test('a waiting_verifier lane carries the reason from its occupant when the top-level field is empty', () => {
+  const html = render(status({
+    lanes: [lane({
+      id: 'claude-2', type: 'claude', state: 'waiting_verifier', wait_reason: '',
+      occupant: { prd_id: 'p2', title: 'Fix login', backend: 'claude-code', wait_reason: 'GPU slots taken' },
+    })],
+  }));
+  assert.ok(html.includes('Waiting on verifier: GPU slots taken'), 'occupant wait_reason fallback missing: ' + html);
+});
+
+test('a waiting_verifier lane with no reason shows the label without a reason element', () => {
+  const html = render(status({ lanes: [lane({ id: 'claude-2', type: 'claude', state: 'waiting_verifier', wait_reason: '' })] }));
+  assert.ok(html.includes('Waiting on verifier'), 'waiting-on-verifier label missing');
+  assert.equal(countOccurrences(html, 'lane-fill-wait-reason'), 0, 'reason element must not show with no reason');
+});
+
+test('a hostile verifier wait reason is escaped', () => {
+  const html = render(status({ lanes: [lane({ id: 'claude-2', type: 'claude', state: 'waiting_verifier', wait_reason: HOSTILE })] }));
+  assert.ok(!html.includes('<img'), 'raw markup leaked from the reason: ' + html);
+  assert.ok(html.includes('Waiting on verifier: &lt;img src=x onerror=alert(1)&gt;'), 'escaped reason missing');
+});
+
+test('shadow mode shows the one-line shadow explanation and the mode badge', () => {
+  const html = render(status({ mode: 'shadow' }));
+  assert.ok(html.includes('Shadow: computes and records every decision and starts nothing.'), 'shadow wording missing');
+  assert.ok(html.includes('Mode: shadow'), 'mode badge missing');
+});
+
+test('on and off modes show their badge without the shadow explanation', () => {
+  const on = render(status({ mode: 'on' }));
+  assert.ok(on.includes('Mode: on'), 'on badge missing');
+  assert.ok(!on.includes('starts nothing'), 'shadow wording must not show in on mode');
+  assert.equal(render(status({ mode: 'off' })), '', 'an off lane fill draws no card');
+});
+
+test('queued eligible counts for gpu and claude are shown', () => {
+  const html = render(status({ queued_eligible: { gpu: 3, claude: 1 } }));
+  assert.ok(html.includes('Eligible work queued: GPU 3, Claude 1'), 'queued counts missing: ' + html);
+});
+
+test('evidence shows active GPU sessions and loaded models', () => {
+  const html = render(status({
+    evidence: { gpu_active_sessions: 2, loaded_models: [{ host: 'ollama-1', model: 'qwen3.8:27b' }], error: '' },
+  }));
+  assert.ok(html.includes('Active GPU sessions: 2'), 'active sessions missing: ' + html);
+  assert.ok(html.includes('Loaded models: ollama-1 qwen3.8:27b'), 'loaded models missing');
+});
+
+test('evidence with no loaded models says none', () => {
+  const html = render(status({ evidence: { gpu_active_sessions: 0, loaded_models: [], error: '' } }));
+  assert.ok(html.includes('Loaded models: none'), 'empty model list must read none: ' + html);
+});
+
+test('an evidence error replaces the evidence line', () => {
+  const html = render(status({ evidence: { gpu_active_sessions: 0, loaded_models: [], error: 'ollama unreachable' } }));
+  assert.ok(html.includes('Evidence unavailable: ollama unreachable'), 'evidence error missing: ' + html);
+  assert.ok(!html.includes('Active GPU sessions'), 'evidence counts must not show beside an error');
+});
+
+test('recent alerts show the lane, the work and the message', () => {
+  const html = render(status({
+    alerts: [{ at: '2026-10-24T10:05:00Z', lane_id: 'claude-1', work: 'Cache column', message: 'idle with work waiting' }],
+  }));
+  assert.ok(html.includes('claude-1'), 'alert lane missing');
+  assert.ok(html.includes('Cache column'), 'alert work missing');
+  assert.ok(html.includes('idle with work waiting'), 'alert message missing');
+});
+
+// ── empty and error states ─────────────────────────────────────────────────
+
+test('a missing, empty or off status draws no card', () => {
+  assert.equal(render(null), '');
+  assert.equal(render(status({ lanes: [] })), '');
+  assert.equal(render(status({ mode: 'off' })), '');
+});
+
+test('the alerts block shows only when there are alerts', () => {
+  assert.ok(!render(status()).includes('Idle lane alerts'), 'alerts heading must not show with no alerts');
+  assert.ok(render(status({ alerts: [{ at: '2026-10-24T10:05:00Z', lane_id: 'gpu-1', work: 'W', message: 'm' }] })).includes('Idle lane alerts'));
+});
+
+// ── escaping ──────────────────────────────────────────────────────────────
+
+test('a hostile title, backend, blocker, reason, alert and lane id are escaped everywhere', () => {
+  const html = render(status({
+    evidence: { gpu_active_sessions: 1, loaded_models: [{ host: HOSTILE, model: HOSTILE }], error: '' },
+    queued_eligible: { gpu: 0, claude: 0 },
+    lanes: [lane({
+      id: HOSTILE, type: 'gpu', state: 'occupied',
+      occupant: { prd_id: 'p1', title: HOSTILE, backend: HOSTILE },
+      blocker: HOSTILE, eligible_waiting: 1,
+    })],
+    alerts: [{ at: '2026-10-24T10:05:00Z', lane_id: HOSTILE, work: HOSTILE, message: HOSTILE }],
+  }));
+  assert.ok(!html.includes('<img'), 'raw markup leaked: ' + html);
+  assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'), 'escaped form missing');
+});
+
+test('a hostile evidence error is escaped', () => {
+  const html = render(status({ evidence: { gpu_active_sessions: 0, loaded_models: [], error: HOSTILE } }));
+  assert.ok(!html.includes('<img'), 'raw markup leaked from evidence error');
+});
+
+// ── Automation sub-tab mount and loader ───────────────────────────────────
+
+test('the Automation body mounts the lane card beside the capacity card', () => {
+  const sandbox = loadApp();
+  // Both cards live on the Resources sub-tab; select it before rendering the body.
+  vm.runInContext("_automationState.subtab = 'resources'", sandbox);
+  const body = vm.runInContext('_automationBodyHTML()', sandbox);
+  const cap = body.indexOf('id="automationCapacityCard"');
+  const lanes = body.indexOf('id="automationLaneFillCard"');
+  assert.ok(cap >= 0, 'capacity card missing');
+  assert.ok(lanes > cap, 'lane card must follow the capacity card');
+  for (const other of ['inbox', 'automations', 'progress', 'setup', 'housekeeping']) {
+    vm.runInContext(`_automationState.subtab = '${other}'`, sandbox);
+    const o = vm.runInContext('_automationBodyHTML()', sandbox);
+    assert.ok(!o.includes('id="automationLaneFillCard"'), 'no lane card on ' + other);
+  }
+});
+
+test('the lane loader polls the lane fill endpoint with limit 20 and the lane card element', async () => {
+  const sandbox = loadApp();
+  const urls = [];
+  sandbox.apiFetch = url => { urls.push(url); return Promise.resolve(status()); };
+  const ctl = vm.runInContext('_automationLaneFillLoader()', sandbox);
+  await ctl.load();
+  ctl.stop();
+  assert.deepEqual(urls, ['/api/autonomous/lane-fill?limit=20']);
+  assert.equal(ctl.state.key, 'automation_lane_fill');
+});
+
+// ── settings modal: lane preference select and save call ───────────────────
+
+// openModal runs openPRDSettingsModal against stubs and returns what it mounted
+// plus a recorder of the apiFetch calls its save handler makes.
+async function openModal(prd, fieldValues) {
+  const sandbox = loadApp();
+  const calls = [];
+  const mounted = {};
+  sandbox.apiFetch = (url, opts) => {
+    if (opts) calls.push({ url, body: JSON.parse(opts.body) });
+    return Promise.resolve(url === '/api/autonomous/prds/p1' ? prd : {});
+  };
+  sandbox.ensureLLMModelLists = () => Promise.resolve();
+  sandbox.refreshLLMModelField = () => {};
+  sandbox.showToast = () => {};
+  sandbox._prdCloseModal = () => {};
+  sandbox._refreshAutomataOrPRD = () => {};
+  sandbox._prdMountModal = (html, onSubmit) => { mounted.html = html; mounted.onSubmit = onSubmit; };
+  sandbox.document.getElementById = id => ({
+    value: fieldValues[id] !== undefined ? fieldValues[id] : '',
+    checked: false,
+    querySelector() { return null; },
+  });
+  vm.runInContext('openPRDSettingsModal("p1")', sandbox);
+  for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r));
+  assert.ok(mounted.onSubmit, 'settings modal did not mount');
+  return { mounted, calls, sandbox };
+}
+
+test('the settings modal renders a lane preference select beside Kind, selected from the Automaton', async () => {
+  const { mounted } = await openModal({ id: 'p1', lane_preference: 'claude' }, {});
+  assert.ok(mounted.html.includes('id="prdSettingsLanePreference"'), 'lane preference select missing');
+  assert.ok(mounted.html.includes('value="claude" selected'), 'stored claude preference must be selected');
+  for (const v of ['any', 'gpu', 'claude']) {
+    assert.ok(mounted.html.includes('value="' + v + '"'), 'option ' + v + ' missing');
+  }
+  const kindAt = mounted.html.indexOf('id="prdSettingsKind"');
+  const laneAt = mounted.html.indexOf('id="prdSettingsLanePreference"');
+  assert.ok(kindAt > 0 && laneAt > kindAt, 'lane preference must follow the Kind select');
+});
+
+test('an Automaton with no stored preference shows any as selected', async () => {
+  const { mounted } = await openModal({ id: 'p1' }, {});
+  assert.ok(mounted.html.includes('value="any" selected'), 'any must be selected when none is stored');
+});
+
+test('saving a changed lane preference posts set_lane_preference with the new value', async () => {
+  const { mounted, calls } = await openModal({ id: 'p1', lane_preference: 'gpu' }, { prdSettingsLanePreference: 'claude' });
+  mounted.onSubmit();
+  await new Promise(r => setImmediate(r));
+  const lane = calls.filter(c => c.url.endsWith('/set_lane_preference'));
+  assert.equal(lane.length, 1, 'expected one set_lane_preference call, got ' + JSON.stringify(calls));
+  assert.equal(lane[0].url, '/api/autonomous/prds/p1/set_lane_preference');
+  assert.deepEqual(lane[0].body, { lane_preference: 'claude' });
+});
+
+test('saving an unchanged lane preference sends no set_lane_preference call', async () => {
+  const { mounted, calls } = await openModal({ id: 'p1', lane_preference: 'gpu' }, { prdSettingsLanePreference: 'gpu' });
+  mounted.onSubmit();
+  await new Promise(r => setImmediate(r));
+  assert.equal(calls.filter(c => c.url.endsWith('/set_lane_preference')).length, 0, 'unchanged preference must not post');
+});
+
+test('the lane counts line shows the effective count, the configured count and the source for both lane types', () => {
+  const html = render(status({ lane_counts: {
+    gpu: { configured: 2, effective: 4, source: 'llm_caps' },
+    claude: { configured: 3, effective: 3, source: 'config' },
+  } }));
+  assert.ok(html.includes('lane-fill-lane-counts'), 'counts line missing: ' + html);
+  assert.ok(html.includes('GPU lane 4 (configured 2, source: LLM caps)'), 'gpu counts missing: ' + html);
+  assert.ok(html.includes('Claude lane 3 (configured 3, source: configuration)'), 'claude counts missing: ' + html);
+});
+
+test('no lane counts line shows when the status carries none', () => {
+  assert.equal(countOccurrences(render(status()), 'lane-fill-lane-counts'), 0);
+});
+
+test('a hostile lane count source is escaped', () => {
+  const html = render(status({ lane_counts: { gpu: { configured: 1, effective: 1, source: HOSTILE } } }));
+  assert.ok(!html.includes('<img'), 'raw markup leaked: ' + html);
+});
+
+test('the per-kind modes line shows when a kind differs from the base mode', () => {
+  const html = render(status({ mode: 'shadow', modes: { gpu: 'on', claude: 'shadow' } }));
+  assert.ok(html.includes('lane-fill-kind-modes'), 'modes line missing: ' + html);
+  assert.ok(html.includes('GPU lane on'), 'gpu mode missing: ' + html);
+  assert.ok(html.includes('Claude lane shadow'), 'claude mode missing: ' + html);
+});
+
+test('the per-kind modes line is hidden when both kinds match the base mode', () => {
+  const html = render(status({ mode: 'shadow', modes: { gpu: 'shadow', claude: 'shadow' } }));
+  assert.equal(countOccurrences(html, 'lane-fill-kind-modes'), 0, 'modes line must be hidden: ' + html);
+});
+
+// ── settings fields ───────────────────────────────────────────────────────
+
+const LANE_FIELDS = {
+  'autonomous.lane_fill.mode': { type: 'select', options: ['off', 'shadow', 'on'], labelKey: 'settings_lane_fill_mode' },
+  'autonomous.lane_fill.gpu_lanes': { type: 'number', min: 0, labelKey: 'settings_lane_fill_gpu_lanes' },
+  'autonomous.lane_fill.claude_lanes': { type: 'number', min: 0, labelKey: 'settings_lane_fill_claude_lanes' },
+  'autonomous.lane_fill.idle_alert_minutes': { type: 'number', min: 0, labelKey: 'settings_lane_fill_idle_alert_minutes' },
+  'autonomous.lane_fill.decompose_ahead_min': { type: 'number', min: 0, labelKey: 'settings_lane_fill_decompose_ahead_min' },
+  'autonomous.lane_fill.poll_seconds': { type: 'number', min: 5, labelKey: 'settings_lane_fill_poll_seconds' },
+  'autonomous.lane_fill.gpu_backend': { type: 'text', labelKey: 'settings_lane_fill_gpu_backend' },
+  'autonomous.lane_fill.gpu_model': { type: 'text', labelKey: 'settings_lane_fill_gpu_model' },
+  'autonomous.lane_fill.claude_backend': { type: 'text', labelKey: 'settings_lane_fill_claude_backend' },
+  'autonomous.lane_fill.count_verifier_wait': { type: 'toggle', labelKey: 'settings_lane_fill_count_verifier_wait' },
+};
+
+test('the autonomous settings card declares every lane fill field with its type, bounds and label key', () => {
+  const sandbox = loadApp();
+  const fields = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields)", sandbox));
+  const keys = fields.map(f => f.key);
+  const automationAt = keys.indexOf('autonomous.automation.idle_alert_minutes');
+  assert.ok(automationAt >= 0, 'idle_alert_minutes anchor missing');
+  for (const [key, want] of Object.entries(LANE_FIELDS)) {
+    const f = fields.find(x => x.key === key);
+    assert.ok(f, key + ' missing from the autonomous card');
+    assert.equal(f.type, want.type, key + ' type');
+    assert.equal(f.labelKey, want.labelKey, key + ' labelKey');
+    if (want.options) assert.deepEqual(f.options, want.options, key + ' options');
+    if (want.min !== undefined) assert.equal(f.min, want.min, key + ' min');
+    assert.ok(keys.indexOf(key) > automationAt, key + ' must sit after the automation idle alert');
+  }
+  const mode = fields.find(f => f.key === 'autonomous.lane_fill.mode');
+  assert.equal(mode.default, 'shadow', 'mode must default to shadow');
+});
+
+const NEW_LANE_FIELDS = {
+  'autonomous.lane_fill.stale_after_hours': { type: 'number', min: 0, default: '72', labelKey: 'settings_lane_fill_stale_after_hours' },
+  'autonomous.lane_fill.require_confirmed_proposal': { type: 'toggle', default: true, labelKey: 'settings_lane_fill_require_confirmed_proposal' },
+  'autonomous.lane_fill.check_main_carries': { type: 'toggle', default: true, labelKey: 'settings_lane_fill_check_main_carries' },
+  'autonomous.lane_fill.require_worktree': { type: 'toggle', default: true, labelKey: 'settings_lane_fill_require_worktree' },
+  'autonomous.lane_fill.lane_counts_from_caps': { type: 'toggle', default: true, labelKey: 'settings_lane_fill_lane_counts_from_caps' },
+  'autonomous.lane_fill.gpu_mode': { type: 'select', options: ['', 'off', 'shadow', 'on'], default: '', labelKey: 'settings_lane_fill_gpu_mode' },
+  'autonomous.lane_fill.claude_mode': { type: 'select', options: ['', 'off', 'shadow', 'on'], default: '', labelKey: 'settings_lane_fill_claude_mode' },
+};
+
+test('the autonomous settings card declares the eligibility, lane count and per-kind mode fields with their defaults', () => {
+  const sandbox = loadApp();
+  const fields = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields)", sandbox));
+  const keys = fields.map(f => f.key);
+  const wait = keys.indexOf('autonomous.lane_fill.count_verifier_wait');
+  assert.ok(wait >= 0, 'count_verifier_wait anchor missing');
+  const en = bundle('en');
+  for (const [key, want] of Object.entries(NEW_LANE_FIELDS)) {
+    const f = fields.find(x => x.key === key);
+    assert.ok(f, key + ' missing from the autonomous card');
+    assert.equal(f.type, want.type, key + ' type');
+    assert.equal(f.labelKey, want.labelKey, key + ' labelKey');
+    assert.equal(f.default, want.default, key + ' default');
+    if (want.options) assert.deepEqual(f.options, want.options, key + ' options');
+    if (want.min !== undefined) assert.equal(f.min, want.min, key + ' min');
+    assert.ok(keys.indexOf(key) > wait, key + ' must sit with the other lane fill rows');
+    assert.ok(en[want.labelKey], key + ' label missing in en.json');
+    assert.ok(!/\bPRD\b/.test(en[want.labelKey]), key + ' label must say Automaton, not PRD');
+  }
+});
+
+// ── locale completeness ───────────────────────────────────────────────────
+
+const LANE_PREFIXES = ['lane_fill_', 'settings_lane_fill_'];
+function isLaneKey(k) { return LANE_PREFIXES.some(p => k.startsWith(p)); }
+
+test('every lane_fill_ and settings_lane_fill_ key exists in all five bundles with the same set', () => {
+  const enKeys = Object.keys(bundle('en')).filter(isLaneKey).sort();
+  assert.ok(enKeys.length >= 40, 'expected at least 40 lane keys, found ' + enKeys.length);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    const langKeys = Object.keys(b).filter(isLaneKey).sort();
+    assert.deepEqual(langKeys, enKeys, lang + '.json lane key set differs from English');
+    for (const k of enKeys) {
+      assert.ok(typeof b[k] === 'string' && b[k].trim() !== '', k + ' empty in ' + lang);
+    }
+  }
+});
+
+// These lane keys deliberately carry the English text in de/es/fr/ja until
+// translations arrive; that is not an English-copy regression.
+const PENDING_TRANSLATION = new Set([
+  'lane_fill_state_waiting_verifier',
+  'lane_fill_waiting_verifier_reason',
+  'settings_lane_fill_count_verifier_wait',
+  'lane_fill_eligibility_stale',
+  'lane_fill_eligibility_held',
+  'lane_fill_eligibility_sequenced_after_unshipped',
+  'lane_fill_eligibility_proposal_not_confirmed',
+  'lane_fill_eligibility_proposal_missing',
+  'lane_fill_eligibility_main_carries_work',
+  'lane_fill_eligibility_worktree_invalid',
+  'lane_fill_lane_counts',
+  'lane_fill_lane_counts_part',
+  'lane_fill_lane_counts_source_caps',
+  'lane_fill_lane_counts_source_config',
+  'lane_fill_kind_modes',
+  'lane_fill_kind_modes_part',
+  'settings_lane_fill_stale_after_hours',
+  'settings_lane_fill_require_confirmed_proposal',
+  'settings_lane_fill_check_main_carries',
+  'settings_lane_fill_require_worktree',
+  'settings_lane_fill_lane_counts_from_caps',
+  'settings_lane_fill_gpu_mode',
+  'settings_lane_fill_claude_mode',
+]);
+
+test('every lane key is a real translation in de, es, fr and ja, not an English copy', () => {
+  const en = bundle('en');
+  const enKeys = Object.keys(en).filter(isLaneKey);
+  for (const lang of ['de', 'es', 'fr', 'ja']) {
+    const b = bundle(lang);
+    for (const k of PENDING_TRANSLATION) {
+      assert.ok(k in b, k + ' must exist in ' + lang + ' (English until translated)');
+    }
+    const same = enKeys.filter(k => b[k] === en[k] && !PENDING_TRANSLATION.has(k));
+    assert.deepEqual(same, [], lang + '.json keeps English for: ' + same.join(', '));
+  }
+});
+
+test('lane keys keep the English positional placeholders in every bundle', () => {
+  const ph = s => [...new Set(String(s).match(/%\d+\$[sd]/g) || [])].sort().join(',');
+  const en = bundle('en');
+  for (const k of Object.keys(en).filter(isLaneKey)) {
+    for (const lang of ['de', 'es', 'fr', 'ja']) {
+      assert.equal(ph(bundle(lang)[k]), ph(en[k]), lang + ' placeholders differ for ' + k);
+    }
+  }
+});
+
+test('every literal lane key the app asks for by name exists in en.json, including the key maps', async () => {
+  const sandbox = loadApp();
+  const en = bundle('en');
+  const source = fs.readFileSync(APP_JS, 'utf8');
+  const used = new Set();
+  const callPattern = /\bt\(\s*(['"])((?:lane_fill_|settings_lane_fill_)[A-Za-z0-9_]*)\1/g;
+  let m;
+  while ((m = callPattern.exec(source)) !== null) used.add(m[2]);
+  const mapped = JSON.parse(vm.runInContext(
+    'JSON.stringify([LANE_FILL_MODE_KEYS, LANE_FILL_TYPE_KEYS, LANE_FILL_PREF_KEYS])', sandbox));
+  for (const map of mapped) for (const v of Object.values(map)) used.add(v);
+  const missing = [...used].filter(k => !(k in en)).sort();
+  assert.deepEqual(missing, [], 'lane keys used by app.js missing from en.json: ' + missing.join(', '));
+  assert.ok(used.size >= 25, 'expected to find the lane keys in app.js, found ' + used.size);
+});

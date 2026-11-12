@@ -26,15 +26,19 @@ package observerpeer
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -310,13 +314,91 @@ func (c *Client) pushOnce(ctx context.Context, snap *observer.StatsResponse, cha
 	return nil
 }
 
+// gpuUUIDProbe returns this machine's GPU UUIDs as a sorted slice.
+// Empty when nvidia-smi is missing or the query fails — HostInfo
+// never errors on it. Package-level so tests can substitute a fake
+// probe without touching PATH.
+var gpuUUIDProbe = defaultGPUUUIDProbe
+
+// defaultGPUUUIDProbe resolves nvidia-smi via PATH and asks it for
+// the GPU UUID CSV. Anything short of a clean non-empty answer is
+// reported as "no GPUs" (nil).
+func defaultGPUUUIDProbe() []string {
+	bin, err := exec.LookPath("nvidia-smi")
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "--query-gpu=uuid", "--format=csv,noheader").Output()
+	if err != nil {
+		return nil
+	}
+	var uuids []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			uuids = append(uuids, line)
+		}
+	}
+	if len(uuids) == 0 {
+		return nil
+	}
+	sort.Strings(uuids)
+	return uuids
+}
+
+// nodeInstanceIDPath locates the disk-persisted node-instance id —
+// the same data/config directory the stats agent already uses for its
+// peer token (<home>/.datawatch-stats/). Package-level so tests can
+// point it at a temp dir.
+var nodeInstanceIDPath = defaultNodeInstanceIDPath
+
+func defaultNodeInstanceIDPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".datawatch-stats", "node_instance_id")
+}
+
+// nodeInstanceID returns the node's stable 128-bit identity: read back
+// from disk when present, otherwise freshly generated and persisted
+// with mode 0600. Later calls read the same value back. Empty string
+// when the id can neither be read nor written — never fatal.
+func nodeInstanceID() string {
+	path := nodeInstanceIDPath()
+	if raw, err := os.ReadFile(path); err == nil {
+		if s := strings.TrimSpace(string(raw)); s != "" {
+			return s
+		}
+	}
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return ""
+	}
+	id := hex.EncodeToString(buf[:])
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return ""
+	}
+	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {
+		return ""
+	}
+	return id
+}
+
 // HostInfo returns a minimal envelope of host-identity fields suitable
-// for the registration body. Pure read.
+// for the registration body. Pure read. gpu_uuids and node_instance_id
+// are node-side identity values — the same node reached through any
+// address reports the same ones, so a peer reconciling fingerprints
+// never matches on daemon-configured name or address.
 func HostInfo() map[string]any {
 	host, _ := os.Hostname()
+	uuids := gpuUUIDProbe()
+	if uuids == nil {
+		uuids = []string{}
+	}
 	return map[string]any{
-		"hostname": host,
-		"os":       runtime.GOOS,
-		"arch":     runtime.GOARCH,
+		"hostname":         host,
+		"os":               runtime.GOOS,
+		"arch":             runtime.GOARCH,
+		"gpu_uuids":        uuids,
+		"node_instance_id": nodeInstanceID(),
 	}
 }

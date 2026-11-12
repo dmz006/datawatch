@@ -151,9 +151,20 @@ rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
 Overall average: **60-90% token reduction** on common development operations.
 <!-- /rtk-instructions -->
 
+## Checkpoints
+
+## 2026-11-09 07:55 — draft written
+- Wrote `docs/plans/parity-issues/2026-11-09-verifier-judge-script-restart-parity.md` — the verifier/judge/verification-script half of the 2026-11-08 restart-safety work (sibling to `2026-11-09-planning-boot-resume-parity.md`, the planning half).
+- Content grounded in the tree: `verifying_status.go` five-outcome decision + `ResolveVerifyingResume`, `ConsumeVerifierResult` in manager.go, detached `verify-runs` record, judge once-only, no new endpoint/field/setting/`boot_resume` value; gaps = 4 matrix rows pending re-run (`verify-session`, `verify-script`, `verify-script-mid`, `final-gate`) + no live deploy-restart confirmation; surfaces table follows the planning draft.
+- File-write only; no issue filed; no session touched.
+
 ## Supervisor sessions
 
 A session acting as PRD supervisor must read `docs/plans/2026-10-17-supervisor-rules-and-lessons.md`
 before its first action. It holds the full operator and supervisor rules and the lessons learned,
 including who decides what, how to validate a decompose, how to triage a failed task, and when a PRD
 is ready to advance.
+
+## 2026-11-09 05:35 — COMPLETED — write the Events plan document
+- Wrote `docs/plans/2026-11-09-automata-events-tab.md`: header (2026-11-09, v9.119.0, scope, link to `docs/plans/2026-11-06-automata-pages-redesign.md`), 11 numbered phases with Done/Planned statuses and per-phase checklists (Phases 1–10 Done: record+merge order, sources, classification, off-status alerts/feed, REST `GET /api/autonomous/event-log`, CLI `datawatch autonomous event-log`, comm verb, PWA sub-tab, moved cards + repo CI line removal, locale/help/openapi/docs; Phase 11 Planned: mobile parity tracking in datawatch-app), and a `## Parity surface` section with all 8 rows (REST/CLI/comm/PWA touched; MCP excluded; YAML/config excluded — no configuration setting; Android/iPhone excluded from this change, tracked in datawatch-app).
+- Scope verified against shipped commits 2b2b1963e..91f231055 and the actual files; no tracker IDs; design-record link resolves.

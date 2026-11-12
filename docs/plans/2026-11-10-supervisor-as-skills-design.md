@@ -1,0 +1,282 @@
+# Supervisor as skills, delivered as packs (design proposal, open)
+
+Status: proposal. Nothing here is decided except what is quoted. No Automaton is drafted until the open
+questions below are answered, one at a time.
+
+## Operator direction (quoted)
+
+- 2026-11-09: "We need to modulator even the supervisor, skills and eventually other models seem essential"
+  (read as: make the supervisor modular; skills, and eventually other models, are essential).
+- 2026-11-09, on how to take it forward: "A, but it should be designed to fit into the packs" (option A: a
+  separate design proposal first; it must fit the packs design in `72bc0001`).
+
+- 2026-11-09, on question 2 (what the first cut covers): "A, even though we need to make sure we have the full
+  feature set planned out of when we're going to get the rest of it" (option A: read-only units first, state-
+  changing units second in the same release train; a full roadmap is required so the rest has a date).
+- 2026-11-09, on scratch and notes: "For scratch and notes datawatch has extensive memory that should be used"
+  (as heard; the supervisor's working notes go in datawatch memory, not scratch files).
+
+- 2026-11-09, on question 3 (who runs a unit): "A is correct, configurable" (option A: the daemon on a schedule or a
+  session started for it, chosen by a setting per unit; a session runs it until the scheduler exists). The
+  setting is configurable on every surface that configures the daemon, like the packs settings.
+
+- 2026-11-09, on question 4 (tier to model mapping): "A is the right one" (option A: reuse the existing LLM entries
+  and the planning routing setting; each tier names an existing LLM entry; no new supervisor-specific setting).
+
+- 2026-11-09, on question 5 (a small model is unsure): "The option to try a more mature tier or to stop and raise it as
+  an issue should be configurable. I personally would have it turned on and have it try the next model and then
+  if that was unsure to have it then raise the issue. But that should be configurable." Decision: a setting
+  chooses, per unit with a global default, between escalating one tier and raising a question straight away;
+  the recommended default is on (escalate once, then raise a question with what was tried), configurable on
+  every surface that configures the daemon.
+
+- 2026-11-09, on question 6 (local or community registry): "Hey, yes, publish them. We do have to make sure we don't
+  get any project-specific things in there. There should be configuration options in the scripts that can
+  inject things that might come from rules or definitions, which we can make sure are available in different
+  repo configurations. But we need to set up something to make sure that we don't leak data watch-specific
+  things or anything that is required for us of a bank module so it can work with anybody." (as heard; read
+  as: publish supervisor units in the community registry; units carry no project-specific content; project
+  facts are injected through configuration from rules or definitions, available per repository; a check
+  must stop datawatch-specific content leaking in, so the published unit is a blank module that works for
+  anybody.)
+
+- 2026-11-09, on question 7 (where the lessons go): "Let's go with A and if you run into any issues, make sure it
+  stops and raises them." (option A: split by kind; generic lessons travel inside the unit they belong to as
+  part of the blank pack, datawatch-specific lessons stay in this repository and feed the injected
+  configuration; the leak check keeps the two apart. Any problem found while splitting stops the work and is
+  raised to the operator.)
+
+- 2026-11-09, on the leak check patterns (pasted text, as heard): "For the leak detection, yes, the repo name, the
+  pass [read as: paths], definitely any secrets, and the stuff that you had mentioned were all seemed valid
+  things to be in scope. The rules, though, that are in the agent or the context files, those are local only.
+  And if we have custom specific rules or something actually in the process of doing our minimal rules, uses a
+  repos context to rules to make smaller ones, those are unique for the repo. Those should not be synced
+  locally [read as: not synced to the registry]. ... If there's anything that would be a genericized rule that
+  can be used as a way of approaching [things], so we could have a supervisor skill for doing version
+  detection in a file or however the different things that we end up doing. Those can all be configurable sort
+  of rules and things and procedures around it. People can take those and make those that fit their own
+  stuff, or we can show how context and agent definitions can create and manage their own rules around
+  things. So we just need to make sure we document this and make it as generic as possible and keep data
+  watch specific stuff in our own repo. Let's go through the rest of the leak detection patterns in
+  questions."
+  Decisions: in scope for the leak check are the repository name, paths, secrets, and the items listed in
+  requirement 3. Rules in agent or context files are local only and never published. Repo-specific rules
+  derived from a repository's context (the smaller rules made from it) are unique to that repository and are
+  not synced. Generic, configurable procedures (for example version detection in a file) may be published;
+  the documentation must show how context and agent definitions create and manage a repository's own rules.
+  The remaining pattern questions follow, one at a time.
+
+- 2026-11-09, on leak pattern question 1 (the product name): "A" (allow the product name and its command, MCP tool
+  and REST path names, because every unit needs them; block this repository's name, organization and project
+  names and anything that identifies our deployment; the check holds an explicit allowlist of product terms,
+  so a new term fails closed until added).
+
+- 2026-11-09, on leak pattern question 2 (hosts and deployment identifiers): "A" (block every concrete deployment
+  identifier: host names, IP addresses, node and peer names, deployment-tied ports and URLs; a unit refers to a
+  node only through a configuration input whose value each repository supplies; documentation examples use
+  reserved placeholder values such as example.invalid, and the check recognizes only those).
+
+- 2026-11-09, on leak pattern question 3 (tracker ids and version numbers): "A" (block both, as in task text:
+  tracker ids and Automaton ids never appear; literal release and version numbers never appear except in
+  placeholder examples written as X.Y.Z; a unit that needs the current version reads it through a configuration
+  input such as a version-file path and pattern, which is the version-detection skill).
+
+- 2026-11-09, on leak pattern question 4 (lane, capacity and model names): "A" (block concrete lane and capacity
+  numbers, backend names and model names; a unit refers only to a tier (script, small, strong) and to
+  configuration inputs for limits such as a lane cap, set per repository; examples use placeholder values; the
+  tier-to-entry mapping lives in each installation's LLM entries).
+
+- 2026-11-09, on leak pattern question 5 (identity and secrets): "A" (block secrets in full: tokens, key material,
+  credentials, URLs carrying key paths, vault entry names; block identity in full: email addresses, user and
+  organization handles, signing identities, commit author names; examples use reserved placeholders such as
+  user@example.invalid; the check runs a general secret scanner plus an exact-value scan against this
+  installation's configured identities, so a value in real use fails even if it looks generic).
+
+- 2026-11-09, on leak pattern question 6 (when the check runs and how it fails): "A" (runs at authoring as an
+  Automaton gate, at publish where nothing reaches the registry unless it passes, and as a scheduled re-check of
+  published units that alerts when a later pattern matches an old unit; every point fails closed; a failure
+  names the finding and file, never prints a matched secret value, and raises a question to the operator; an
+  exception is an explicit allowlist entry the operator accepts, recorded with who accepted it and when).
+
+- 2026-11-09, on sequencing: "With your recommendation, that's fine." (draft the supervisor-units Automaton after the
+  packs Automaton is decomposed and reviewed.)
+- 2026-11-09, a new packs question (open): "with these packs that come in, I assume there's configurations for
+  them. Where are the configurations stored? They're not in the normal part of DataWatch Configure. Is there a
+  separate config for the plugins and packs that come in? Or how do we keep track of the different mappings
+  and things that actually take the pack details and then map them into how they're used within the local
+  DataWatch? Where does that mapping happen?" The packs spec does not yet say where per-pack input values live
+  or where the mapping happens; it is raised as a pack design question below.
+
+## Goal
+
+Today the supervisor is one long rules document (`docs/plans/2026-10-17-supervisor-rules-and-lessons.md`),
+two short cron prompts, and scripts in `scripts/` and in a scratch folder outside the repository. Only a
+strong model in one long session can follow it. The goal is that each routine procedure is a unit that
+datawatch can install, version, trust and run, and that a smaller or different model can run the units that
+do not need judgment.
+
+## Fit with packs
+
+The packs design already decides: a pack is one folder with a manifest, versioned, synced through the skills
+registry, trusted per version, with the community registry as the first source and datawatch's own material
+as the first packs. This proposal adds no second mechanism. It adds one pack kind, called `supervisor` here
+(name open), whose manifest lists procedures instead of Automaton tasks.
+
+A procedure unit holds:
+- a name, a version and a short description;
+- the trigger (a schedule, an event such as a merge-ready Automaton, or a manual run);
+- the steps, each a script file in the verify-style folder (never a command string), with a declared read-only
+  mark and a report path where the step writes only a report;
+- for each step, the lowest model tier that may run it: `script` (no model), `small` (a pi-prompt model),
+  `strong` (a Claude model), or `operator` (stop and ask);
+- the tools and files the unit may touch, shown at install like any third-party pack, and bounded by the
+  worker session profile allow-list.
+
+## Candidate units (from the current procedures)
+
+| Unit | Today | Likely tier |
+|---|---|---|
+| Watch | `scripts/supervisor-watch.py`, prints OK or ATTENTION | script, then small to read findings |
+| Budget position | `datawatch usage advice`, `scripts/claude-burn.py` | script |
+| Lane fill | manual, per section 11a step 5 | small for mechanical routing, strong for validating a plan |
+| Decompose validation | manual read of a plan and plan coverage | strong |
+| Merge | trial merge, finish, ship scripts plus helper agents | script for clean merges, strong for semantic conflicts |
+| Registry audit | `docs/plans/README.md` against reality, `scripts/branch-audit.py` | script plus small |
+| CI read | `gh run list` and log reading | small |
+| Failed task triage | manual recipes in the lessons file | strong |
+| Deploy after ship | manual | script, gated by the restart-safety checks |
+
+The scripts the units call move into the repository and into the pack folder, so the unit is complete without
+the scratch folder.
+
+## What stays with the operator
+
+Scope, configuration, design, release 10.0 content, and any step marked `operator`. A unit may never change
+settings or choose lane counts by itself unless a setting delegates that, and that setting would be named and
+off by default.
+
+## Open questions (one at a time)
+
+1. Does the first cut cover only the read-only units (watch, budget, registry audit, CI read), or also the
+   units that change state (lane fill, merge, deploy)? Recommendation: read-only units first, state-changing
+   units second, in the same release train with no phasing of the format itself.
+2. Who runs a unit: the daemon on a schedule, a session started for it, or either by setting? This ties to the
+   scheduler question (the daemon cannot yet run a script on a schedule and alert on failure).
+3. Where does the lessons file go: split into per-unit lessons carried in each unit, or kept as one shared
+   reference every unit links to?
+4. How is a model tier mapped to a real backend and model: by the existing LLM entries and the planning routing
+   setting, or by a new setting? Recommendation: reuse the existing ones.
+5. What does a unit do when a small model is unsure: stop and raise a question, or hand to the next tier?
+   Recommendation: hand to the next tier once, then stop and raise a question.
+6. Should the supervisor units be published in the community registry from the first release, as the packs
+   decision says for the standard tasks, or kept local until the format is proven? The packs decision says no
+   phasing; this asks whether supervisor units count.
+7. After 10.0, the matrix test decides which models take which tiers. Nothing here depends on it, but the tier
+   names must not be tied to a single vendor.
+
+## Not in this proposal
+
+No implementation, no change to the current cron jobs, and no change to who holds scope decisions. The current
+procedures keep running as they are until a unit replaces one and a full day of agreement is shown (section 11a,
+item 9).
+
+## Roadmap (required by the operator's answer; dates are for the operator to set)
+
+| Step | Content | Depends on | Target |
+|---|---|---|---|
+| 1 | Pack format and supervisor unit kind agreed in the packs design | packs Automaton decomposed and reviewed | open |
+| 2 | Read-only units as a pack: watch, budget position, registry audit, CI read | step 1 | open |
+| 3 | Scheduler: the daemon runs a unit on a schedule and alerts on failure | scheduler question | open |
+| 4 | State-changing units: lane fill, merge, deploy-after-ship, with the restart-safety checks | steps 2 and 3, restart-safe verifier work shipped | open |
+| 5 | Failure triage and decompose validation units (strong tier, operator stop points) | step 4 | open |
+| 6 | Tier-to-model mapping run on the post-10.0 matrix test; smaller models take tiers they pass | matrix test | after 10.0 |
+| 7 | Retire each manual check after a full day of agreement with its unit (section 11a, item 9) | each unit | rolling |
+
+Targets stay open until the operator sets them; the supervisor lists, recommends and waits.
+
+## Requirements that follow from the operator's answers
+
+1. **Blank published units.** A supervisor unit in the community registry holds no datawatch-specific names,
+   paths, hosts, release rules, tracker identifiers or lane rules. It works for any repository.
+2. **Injected configuration.** Everything project-specific is an input the unit reads from configuration, which
+   comes from the project's rules and definitions files. Each repository supplies its own values; a unit with a
+   missing required value stops with a plain message naming it. datawatch's own values live in this repository,
+   not in the unit.
+3. **Leak check.** A check runs when a unit is authored and at publish time, and fails on datawatch-specific
+   content in a unit (project name, repository paths, host names, tracker identifiers, version numbers, lane
+   and capacity numbers, and any value that appears in this repository's own rules and definitions files). It
+   reuses the existing local-leak and tracker-identifier checks where they fit, and it is a script file in the
+   verify folder like any other gate. Its exact patterns are an open question for the operator.
+4. **Same trust path.** A published supervisor unit is a pack: accepted by the operator per version, with the
+   community source accepted once, as decided for packs.
+
+## Leak check summary (all six pattern questions answered 2026-11-09)
+
+| Pattern | Rule |
+|---|---|
+| Product name | Allowed with an explicit allowlist of product terms (command, tool and REST names); repository, organization and project names blocked; unknown terms fail closed |
+| Hosts and deployment identifiers | Blocked; reached only through configuration inputs; placeholders such as example.invalid |
+| Tracker and Automaton ids, version numbers | Blocked; X.Y.Z placeholders only; version read through a configurable file path and pattern |
+| Lane, capacity, backend and model names | Blocked; tiers and configurable limits only |
+| Secrets and identity | Blocked in full; secret scanner plus exact-value scan of this installation's identities |
+| Local-only rules (agent and context files, repository-derived rules) | Never published |
+| Run points | Authoring gate, publish gate, scheduled re-check; fail closed; allowlist exceptions accepted and recorded |
+
+## Open pack question: where pack configuration lives and where the mapping happens
+
+The packs spec decides one setting that names the active packs and their order, and says no second registry,
+config tree or sync mechanism is added. It does not say where a pack's own input values are kept (for example a
+version file path, a lane cap, a node name) or where a pack's declared inputs are mapped onto this installation.
+Proposed answer, for the operator to confirm or change: the manifest declares each input (name, type, default,
+whether required, and whether it is a secret); values live in the normal datawatch configuration under a packs
+section, with the same override order as pack selection (Automaton, then project, then global), settable on
+every surface that configures the daemon; secret inputs hold a vault reference, never the value; one resolver in
+the daemon fills the inputs when a task from a pack is created and records the resolved values on the task, so a
+later config change does not alter running work.
+
+Operator answer (2026-11-09): "A" (the manifest declares each input; values live in the normal datawatch
+configuration under a packs section with the override order Automaton, project, global, settable on every
+surface that configures the daemon; secret inputs hold a vault reference; one daemon resolver fills the inputs
+when a pack task is created and records the resolved values on the task). This must be added to the packs
+Automaton before it is approved: the packs spec needs a requirement and a task for the input declaration, the
+resolver and the settings on every surface.
+
+## Visibility and reporting (operator direction, 2026-11-09)
+
+Operator: "Make sure that the supervisor packs also have ways of tracking consumption, usage, logs, and the
+details we have for the reports we'll be doing later. And that they tie into the projects, automations, and
+automata to make sure that we have the full visibility of how these tie together in our dashboards and
+eventually our reports for all the actions that are using these functions."
+
+Requirement (proposed wording, to confirm): every run of a pack unit, and every task a pack creates, leaves one
+run record that carries: the pack name and version, the unit and step, the trigger (schedule, event or manual),
+the runner (daemon or session), the tier and the LLM entry actually used, tokens and cost where the entry
+reports them, duration, outcome, the escalation that happened (if the small tier was unsure), the log location,
+the resolved inputs (secret inputs shown only as references), and the identifiers of the project, Automation,
+Automaton and task it acted on or for. The record is readable on every surface that reads Automata and
+sessions today, appears in the existing dashboards and cost and usage views, and is the source the later
+reports read. The same record applies to every pack kind, not only the supervisor, so the standard tasks are
+attributed to their pack the same way.
+
+Open point: whether the record reuses the existing trace, cost and audit stores (with new link fields) or adds a
+store of its own. Not yet checked against the code: which of those stores already carry per-task token and cost
+figures for daemon-run script steps. That check comes before the question is asked of the operator.
+
+Code check (2026-11-10): the existing trace event (`internal/trace/event.go`) already carries session, task, story
+and Automaton ids, backend, kind, name, outcome, duration and token counts, and there are rollups, MCP trace tools,
+a cost report package and an audit package. It has no field for pack name and version, unit and step, project,
+Automation, runner, the escalation, a cost figure or the resolved inputs. Reuse therefore means extending the trace
+event with those fields, not adding a store.
+
+Operator answer (2026-11-10): "A. Extend the existing one." (extend the existing trace event with the pack, unit,
+project, Automation, runner, escalation, cost and resolved-input fields; no new store.) The operator then asked
+about the data store mechanism itself; see the data store note in the handover plan.
+
+Note (2026-11-10): the operator decided that plans, backlog and status become primary inside datawatch, so
+file-synchronization skills are low priority and the registry-audit unit in this design is deprioritised; see
+docs/plans/2026-11-10-plans-and-backlog-in-datawatch.md.
+
+Operator answer in the questions interface on the watch interval (2026-11-10), option "Keep every 20 minutes": "This should be configurable. In fact, we might at some point have multiple sub agents, but for now it's just one. The idea is you want to be able to capture and have things work. If we can somehow figure out a way to have a hook so when a task or a automation or a project has a step or piece finished, it could kick off the supervisor or have it react to it. Then we wouldn't have to have a queue waiting. Somehow we can find somebody making that better. But 20 minutes is a good place to start, especially if it's configurable and we have these other options available."
+Decision: the interval stays at 20 minutes and must be configurable; there may later be several supervisor sub-agents. New design item: an event hook, so a finished step of a task, Automation or project can start the supervisor or have it react, which removes the waiting queue. The scheduled interval stays as the fallback. Not yet designed.
+
+Operator, 2026-11-10, on the event-driven supervisor: "Go ahead and draft the automation and while you are at it, you can also make sure that the Subscribable events or something that could be selectable or somehow usable to make sure like like Federation that there just works and Extendable and usable by other people how they use data watch" (the question was answered "draft it" in the questions interface by relaying this). Drafted as the Automaton "Event-driven supervisor and subscribable events" (draft, not yet decomposed): a supervisor wake path with de-duplication and the schedule as fallback, a selectable event picker, federation of peer events, extendable kinds and sinks, and a how-to for other users.

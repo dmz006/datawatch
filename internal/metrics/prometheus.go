@@ -2,9 +2,11 @@
 package metrics
 
 import (
+	"net/http"
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"net/http"
 )
 
 var (
@@ -40,6 +42,20 @@ var (
 	CapacityLeasesReaped = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "datawatch_capacity_leases_reaped_total",
 		Help: "Leaked capacity leases reclaimed by the reaper",
+	})
+
+	// Verifier cost metrics
+	VerifierRuns = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_verifier_runs_total",
+		Help: "Verifier runs by outcome category",
+	}, []string{"category"})
+	VerifierWaitSeconds = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_verifier_wait_seconds_total",
+		Help: "Total seconds verifiers waited for a capacity lease",
+	})
+	VerifierRunSeconds = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_verifier_run_seconds_total",
+		Help: "Total seconds verifiers ran after their lease was granted",
 	})
 
 	// System metrics
@@ -129,6 +145,117 @@ var (
 		Help: "Quality gate evaluations that detected a test regression",
 	})
 
+	// Agent tracing (tracing.*).
+	TraceEventsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_trace_events_total",
+		Help: "Trace events written to the trace store",
+	})
+	TraceAppendErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_trace_append_errors_total",
+		Help: "Trace store writes that failed",
+	})
+	TraceStoredEvents = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_trace_stored_events",
+		Help: "Events currently held in the trace store",
+	})
+	TraceStoredSessions = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_trace_stored_sessions",
+		Help: "Sessions with a trace currently held in the trace store",
+	})
+
+	// Burn guard (usage.burn_guard).
+	BurnGuardLevel = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_burn_guard_level",
+		Help: "Burn guard ladder rungs in force (0 = none)",
+	})
+	BurnGuardProjectedPercent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_burn_guard_projected_percent",
+		Help: "Weekly usage percentage projected at the reset at the current burn",
+	})
+	BurnGuardOverByPoints = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_burn_guard_over_by_points",
+		Help: "Projected percentage minus the target (negative when under)",
+	})
+	BurnGuardPointsPerHour = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_burn_guard_points_per_hour",
+		Help: "Weekly points burned per hour over the trailing window",
+	})
+	BurnGuardTicksTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_burn_guard_ticks_total",
+		Help: "Burn guard evaluations run",
+	})
+	BurnGuardStepsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_burn_guard_steps_total",
+		Help: "Burn guard ladder steps by direction (climb, step_back)",
+	}, []string{"direction"})
+	BurnGuardRefitsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_burn_guard_refits_total",
+		Help: "Burn guard cost model refits attempted on a new usage reading",
+	})
+	BurnGuardErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_burn_guard_errors_total",
+		Help: "Burn guard errors (readings, transcripts, admission, state save)",
+	})
+
+	// Supervisor watch gauges.
+	SupervisorWatchFindings = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_watch_findings",
+		Help: "Unresolved supervisor watch findings by standing (open includes would_alert and alerted)",
+	}, []string{"state"})
+	SupervisorWatchAgreedDays = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_watch_agreed_days",
+		Help: "Calendar days whose supervisor watch comparisons with the supervisor script all agreed",
+	})
+	SupervisorWatchLastPollAge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_watch_last_poll_age_seconds",
+		Help: "Seconds since the coordinator last ran a supervisor watch pass (-1 when it never has)",
+	})
+
+	// Branch refresh gauges: Automata by the result of their latest refresh,
+	// and the Automata whose refreshing a conflict stopped.
+	BranchRefreshAutomata = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_branch_refresh_automata",
+		Help: "Automata by the result of their latest branch refresh (clean, conflict, error)",
+	}, []string{"result"})
+	BranchRefreshStopped = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_branch_refresh_stopped",
+		Help: "Automata whose branch refreshing a merge conflict stopped",
+	})
+
+	// Supervisor loop gauges.
+	SupervisorLoopRuns = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_loop_runs",
+		Help: "Stored supervisor loop run records by outcome (ok, validator_failed, escalated, error)",
+	}, []string{"outcome"})
+	SupervisorLoopJobsEnabled = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_loop_jobs_enabled",
+		Help: "Supervisor loop jobs currently enabled (0 when the whole loop is off)",
+	})
+	SupervisorLoopLastRunAge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_loop_last_run_age_seconds",
+		Help: "Seconds since the supervisor loop last ran a job (-1 when it never has)",
+	})
+
+	// Host load check (autonomous.host_load_alert): effective mode, the last
+	// load reading against its threshold, whether the reading is over the
+	// threshold, and the processes the reaper has ended (reap mode).
+	HostLoadLastRead = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_host_load_last_reading",
+		Help: "1-minute load average of the host load check's last successful reading (0 before the first reading, e.g. mode off)",
+	})
+	HostLoadLimit = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_host_load_limit",
+		Help: "Threshold (multiple x core count) of the host load check's last successful reading",
+	})
+	HostLoadBreached = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_host_load_breached",
+		Help: "1 while the host load check's last reading is over its threshold (a breach streak is in progress), else 0",
+	})
+	HostLoadOrphansReaped = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_host_load_orphans_reaped_total",
+		Help: "Leftover processes the host load check's reaper has ended for ended sessions (reap mode; the alert fires on the same tick as the reap)",
+	})
+
 	// BL397 — native ACME subsystem metrics.
 	AcmeCertExpirySeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "datawatch_acme_cert_expiry_seconds",
@@ -148,23 +275,66 @@ var (
 		Name: "datawatch_web_search_errors_total",
 		Help: "Total web search queries that returned an error",
 	})
+	// Worker questions: what became of the DATAWATCH_QUESTION: marker lines
+	// and of the tasks parked on a blocking one. outcome: raised | duplicate
+	// | refused | parked | resumed.
+	WorkerQuestionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_worker_questions_total",
+		Help: "Worker question marker outcomes (raised, duplicate, refused, parked, resumed)",
+	}, []string{"outcome"})
+	// Interstitial UI-prompt dismissals: what became of the safe dismiss key
+	// the daemon pressed on a recognised interstitial prompt. outcome:
+	// dismissed (the key cleared the prompt) | not_cleared (attempts cap
+	// used up, the daemon gave up on keys for the occurrence) | refused (the
+	// send-site guard refused the key, nothing was sent). kind is the
+	// interstitial prompt kind (e.g. autocompact).
+	UIPromptDismissalsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_ui_prompt_dismissals_total",
+		Help: "Interstitial UI-prompt dismissals by kind and outcome (dismissed, not_cleared, refused)",
+	}, []string{"kind", "outcome"})
+	// Session result endpoint metrics (scheduled-job structured results).
+	// Posted = accepted and recorded; rejected = failed authz/identity/validation.
+	SessionResultsPosted = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_session_results_posted_total",
+		Help: "Session result payloads accepted by the result endpoint",
+	})
+	SessionResultsRejected = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_session_results_rejected_total",
+		Help: "Session result payloads rejected by the result endpoint",
+	})
 )
 
-// Register registers all Prometheus metrics.
+// Register registers all Prometheus metrics. Re-calling it is safe:
+// the second call is a no-op.
+var registerOnce sync.Once
+
 func Register() {
-	prometheus.MustRegister(
-		CapacityHeld, CapacityLimit, CapacityWaiting, CapacityLeasesReaped,
-		SessionsActive, SessionsTotal,
-		CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
-		MessagesTotal, AlertsTotal,
-		AccessLogEventsTotal,
-		RTKTokensSaved, RTKSavingsPct,
-		VerifierDiffInjectionsTotal,
-		InjectionGuardHitsTotal,
-		QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
-		WebSearchQueriesTotal, WebSearchErrorsTotal,
-		AcmeCertExpirySeconds, AcmeRenewalsTotal,
-	)
+	registerOnce.Do(func() {
+		prometheus.MustRegister(
+			CapacityHeld, CapacityLimit, CapacityWaiting, CapacityLeasesReaped,
+			VerifierRuns, VerifierWaitSeconds, VerifierRunSeconds,
+			SessionsActive, SessionsTotal,
+			CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
+			MessagesTotal, AlertsTotal,
+			AccessLogEventsTotal,
+			SessionResultsPosted, SessionResultsRejected,
+			RTKTokensSaved, RTKSavingsPct,
+			VerifierDiffInjectionsTotal,
+			InjectionGuardHitsTotal,
+			QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
+			WebSearchQueriesTotal, WebSearchErrorsTotal,
+			AcmeCertExpirySeconds, AcmeRenewalsTotal,
+			WorkerQuestionsTotal,
+			UIPromptDismissalsTotal,
+			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
+			SupervisorLoopRuns, SupervisorLoopJobsEnabled, SupervisorLoopLastRunAge,
+			BranchRefreshAutomata, BranchRefreshStopped,
+			HostLoadLastRead, HostLoadLimit, HostLoadBreached, HostLoadOrphansReaped,
+			BurnGuardLevel, BurnGuardProjectedPercent, BurnGuardOverByPoints, BurnGuardPointsPerHour,
+			BurnGuardTicksTotal, BurnGuardStepsTotal, BurnGuardRefitsTotal, BurnGuardErrorsTotal,
+			TraceEventsTotal, TraceAppendErrorsTotal, TraceStoredEvents, TraceStoredSessions,
+		)
+	})
 }
 
 // Handler returns an HTTP handler for the /metrics endpoint.

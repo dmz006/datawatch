@@ -33,7 +33,7 @@ func newMaxConcurrentTasksServer(t *testing.T) (*Server, *autonomous.Manager, st
 	s := &Server{
 		cfg:           config.DefaultConfig(),
 		cfgPath:       cfgPath,
-		autonomousMgr: autonomous.NewAPI(mgr),
+		autonomousMgr: newTestAPI(mgr),
 	}
 	return s, mgr, cfgPath
 }

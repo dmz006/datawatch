@@ -5,10 +5,10 @@ import autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 // verifierSelectInput is everything selectVerifierLLM needs to decide
 // which LLM the autonomous verifier runs on.
 type verifierSelectInput struct {
-	// Resolved is autonomouspkg.ResolveVerificationLLM(prd, task, cfg).
+	// Resolved is autonomouspkg.ResolveVerificationLLM(prd, task, automation, cfg).
 	Resolved autonomouspkg.VerificationLLM
-	// ExplicitEffort is the first effort set at task → story → Automaton
-	// level, without the global verification_effort fallback (resolve
+	// ExplicitEffort is the first effort set at task → story → Automaton →
+	// Automation level, without the global verification_effort fallback (resolve
 	// with a cfg whose VerificationEffort is cleared).
 	ExplicitEffort string
 	// Pool is autonomous.verification_backends; GlobalBackend /
@@ -24,7 +24,7 @@ type verifierSelection struct {
 	Backend, Kind, Model string
 	UseSession           bool
 	// Effort is the session effort to apply — set only for an explicit
-	// task/story/Automaton override, never from the global
+	// task/story/Automaton/Automation override, never from the global
 	// verification_effort.
 	Effort string
 	// Source is the VerifierSource* value recorded on the result.
@@ -32,12 +32,22 @@ type verifierSelection struct {
 	// Release is non-nil only when a pool candidate was admitted
 	// (Source == pool); the caller must call it when the call ends.
 	Release func()
+	// Node is the compute node the admitted candidate holds; "" unless its
+	// LLM entry pools two or more nodes. The judge starts on this node.
+	Node string
+	// Retarget re-runs the verifier policy for a request waiting on a backend
+	// (waiting) after it left the backends in left. ok is true only when the
+	// policy names another backend that has a free slot right now; the new
+	// selection and the reason come back with it. Nil when the choice is
+	// pinned: a per-unit verification LLM, an infra escalation, the stronger
+	// verifier, or a policy that did not apply.
+	Retarget func(waiting string, left []string) (verifierSelection, string, bool)
 }
 
 // selectVerifierLLM decides the verifier backend/kind/model, whether the
 // call is session-routed, and where the choice came from.
 //
-//   - An explicit task/story/Automaton override (Resolved.Source !=
+//   - An explicit task/story/Automaton/Automation override (Resolved.Source !=
 //     global) skips the verification_backends capacity pool entirely —
 //     an explicit per-unit choice beats load-balancing — and is passed
 //     through resolveVerifierBackendModel's normal safety logic
@@ -49,7 +59,10 @@ type verifierSelection struct {
 //     global verification_backend/model, then the Automaton's own
 //     backend. A pi-family session kind (pi, pi-prompt) on this path
 //     takes the configured verification_model as its session model; an
-//     empty one leaves the model empty for the manager's pi fallback.
+//     empty one stays empty — the caller's pi-family pinned-model guard
+//     (v9.10.19) then applies the global pin from the verification
+//     chain (autonomous.planning_model) or fails loudly, naming the
+//     configuration keys.
 //
 // The global verification_effort is still not consumed by the verify
 // path (a pre-existing gap, deliberately left as-is here so the global
@@ -59,7 +72,7 @@ type verifierSelection struct {
 // in so this stays independently testable.
 func selectVerifierLLM(
 	in verifierSelectInput,
-	tryAdmit func(backend, model string) (release func(), ok bool),
+	tryAdmit func(backend, model string) (release func(), node string, ok bool),
 	resolveAskBackend func(raw string) (kind, model string, err error),
 	askCompatible func(kind string) bool,
 	isSessionKind func(kind string) bool,
@@ -75,10 +88,10 @@ func selectVerifierLLM(
 	}
 	if len(in.Pool) > 0 && tryAdmit != nil {
 		for _, c := range resolveVerifierCandidates(in.Pool, resolveAskBackend, askCompatible) {
-			if r, ok := tryAdmit(c.backend, c.model); ok {
+			if r, node, ok := tryAdmit(c.backend, c.model); ok {
 				return verifierSelection{
 					Backend: c.backend, Kind: c.kind, Model: c.model,
-					Source: autonomouspkg.VerifierSourcePool, Release: r,
+					Source: autonomouspkg.VerifierSourcePool, Release: r, Node: node,
 				}
 			}
 		}
@@ -111,10 +124,11 @@ func selectVerifierLLM(
 	// Pi family with no configured verification_model: do not let the
 	// function fall back to resolveAskBackend's default model for the
 	// named backend (a model that belongs to some other backend). Leave
-	// the model empty so the session manager's pi / pi-prompt fallback
-	// applies the configured pi model. The PRD's own model still wins
-	// when the PRD's backend is the one in use.
-	if piFamily && sel.UseSession && in.GlobalModel == "" && !(usesPRDBackend && in.PRDModel != "") {
+	// the model empty so the caller's pi-family pinned-model guard
+	// (v9.10.19) applies the global pin from the verification chain or
+	// fails loudly. The PRD's own model still wins when the PRD's
+	// backend is the one in use.
+	if piFamily && sel.UseSession && in.GlobalModel == "" && (!usesPRDBackend || in.PRDModel == "") {
 		sel.Model = ""
 	}
 	sel.Source = autonomouspkg.VerifierSourceGlobal

@@ -1,0 +1,4 @@
+{"event":"message_send","time":1767323045,"properties":{"main_model":"ollama_chat/qwen3","prompt_tokens":1200,"completion_tokens":80}}
+{"event":"launched","time":1767323040,"properties":{}}
+> Applied edit to main.go
+> Running go test ./...

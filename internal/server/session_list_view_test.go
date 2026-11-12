@@ -101,9 +101,11 @@ func TestParseSessionListOptions(t *testing.T) {
 		{query: "since=" + strconv.FormatInt(ts.Unix(), 10), wantSince: ts},
 		{query: "since=2026-10-01T12:00:00.5Z", wantSince: ts.Add(500 * time.Millisecond)},
 		{query: "since=yesterday", wantErr: true},
-		{query: "states=active", wantStates: []string{"rate_limited", "running", "waiting_input"}},
+		// active = every non-terminal state; stalled is non-terminal (it is
+		// resumable to running), so it belongs in the active set.
+		{query: "states=active", wantStates: []string{"rate_limited", "running", "stalled", "waiting_input"}},
 		{query: "states=complete,%20failed", wantStates: []string{"complete", "failed"}},
-		{query: "states=active,killed", wantStates: []string{"killed", "rate_limited", "running", "waiting_input"}},
+		{query: "states=active,killed", wantStates: []string{"killed", "rate_limited", "running", "stalled", "waiting_input"}},
 		{query: "states=bogus", wantErr: true},
 		{query: "states=,", wantErr: true},
 	}
@@ -283,14 +285,13 @@ func TestHandleSessions_SummaryView(t *testing.T) {
 	if a == nil {
 		t.Fatal("running session missing")
 	}
-	if task := a["task"].(string); len([]rune(task)) != 21 || !strings.HasSuffix(task, "…") {
-		t.Errorf("task not truncated to 20 runes + ellipsis: %q", task)
+	for _, f := range []string{"task", "prompt_context", "last_response", "last_summary_long", "truncated_fields"} {
+		if _, ok := a[f]; ok {
+			t.Errorf("summary row must not carry %q", f)
+		}
 	}
-	if tf, _ := a["truncated_fields"].([]any); len(tf) != 1 || tf[0] != "task" {
-		t.Errorf("truncated_fields=%v want [task]", a["truncated_fields"])
-	}
-	if _, ok := byID["h-b2"]["truncated_fields"]; ok {
-		t.Error("truncated_fields must be omitted when nothing was cut")
+	if a["status_line"] != "fine" {
+		t.Errorf("status_line=%v want fine", a["status_line"])
 	}
 
 	// The manager's live record must still hold the full task.
@@ -342,21 +343,24 @@ func TestHandleSessions_SinceStatesWithoutSummaryKeepsFullText(t *testing.T) {
 }
 
 // legacySessionsBody is what handleSessions encoded before the summary
-// view existed, for the single-session case (map order is then fixed).
+// view existed, for the single-session case (map order is then fixed). Every
+// session object also carries inherited_tags (BL461, additive): the rest of
+// the shape is unchanged.
 func legacySessionsBody(t *testing.T, s *Server, sessions []*session.Session) string {
 	t.Helper()
 	var buf bytes.Buffer
 	if s.schedStore == nil {
-		_ = json.NewEncoder(&buf).Encode(sessions)
+		_ = json.NewEncoder(&buf).Encode(s.sessionViews(sessions))
 		return buf.String()
 	}
 	type sessionWithCounts struct {
 		*session.Session
-		ScheduledCount int `json:"scheduled_count"`
+		ScheduledCount int      `json:"scheduled_count"`
+		InheritedTags  []string `json:"inherited_tags"`
 	}
 	var enriched []sessionWithCounts
 	for _, sess := range sessions {
-		enriched = append(enriched, sessionWithCounts{sess, s.schedStore.CountForSession(sess.FullID)})
+		enriched = append(enriched, sessionWithCounts{sess, s.schedStore.CountForSession(sess.FullID), s.manager.InheritedTags(sess)})
 	}
 	_ = json.NewEncoder(&buf).Encode(enriched)
 	return buf.String()
@@ -385,14 +389,16 @@ func TestHandleSessions_DefaultTreeOrphanedUnchanged(t *testing.T) {
 			t.Error("default body must not carry truncated_fields")
 		}
 
+		wantTree := buildSessionTree(live)
+		s.fillTreeInheritedTags(wantTree)
 		var tree bytes.Buffer
-		_ = json.NewEncoder(&tree).Encode(buildSessionTree(live))
+		_ = json.NewEncoder(&tree).Encode(wantTree)
 		if got := getSessions(t, s, "tree=1").Body.String(); got != tree.String() {
 			t.Errorf("tree body changed:\n got %s\nwant %s", got, tree.String())
 		}
 
 		var orphans bytes.Buffer
-		_ = json.NewEncoder(&orphans).Encode(live)
+		_ = json.NewEncoder(&orphans).Encode(s.sessionViews(live))
 		if got := getSessions(t, s, "orphaned=1").Body.String(); got != orphans.String() {
 			t.Errorf("orphaned body changed:\n got %s\nwant %s", got, orphans.String())
 		}

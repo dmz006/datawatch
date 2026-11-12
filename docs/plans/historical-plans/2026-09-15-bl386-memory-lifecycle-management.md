@@ -176,7 +176,7 @@ Exposed on all 5 PRD config surfaces (REST, MCP `autonomous_prd_set_llm` → new
   "project_dir": "...",
   "memory_seed": {
     "from_scope": "project-shared",
-    "project":    "/home/user/datawatch",
+    "project":    "/home/<user>/datawatch",
     "max":        30,
     "role_filter": ["learning"]
   }
@@ -279,7 +279,7 @@ deliberately carried forward into successor work.
 
 ```
 memory_archive_import
-  project=/home/user/datawatch
+  project=/home/<user>/datawatch
   source_prd_id=0fb4e302        # filter to archives from a specific PRD
   target_prd_id=a1b2c3d4        # seed this PRD's prd-shared scope
   role_filter=["learning","decision"]
@@ -298,7 +298,7 @@ memory_archive_import
 ```
 POST /api/memory/scopes/archive-import
 {
-  "project_dir":    "/home/user/datawatch",
+  "project_dir":    "/home/<user>/datawatch",
   "source_prd_id":  "0fb4e302",       // required
   "target_prd_id":  "a1b2c3d4",       // optional: if absent, seeds project-shared
   "role_filter":    ["learning"],      // optional
@@ -399,7 +399,7 @@ tooling rather than scope-model mechanics.*
 List all scopes that have data, grouped by type:
 
 ```
-memory_scope_inventory project=/home/user/datawatch
+memory_scope_inventory project=/home/<user>/datawatch
 
 → {
     "prd-shared": [
@@ -408,7 +408,7 @@ memory_scope_inventory project=/home/user/datawatch
     ],
     "story-shared": [...],
     "session-local": [
-      {"session_id": "johnnyjohnny-12cf", "count": 17, ...},
+      {"session_id": "local-node-12cf", "count": 17, ...},
       ...
     ],
     "project-shared": {"count": 203, ...}
@@ -430,7 +430,7 @@ Extend the existing `GET /api/memory/stats` response with a `scopes` breakdown:
   "project_shared": 203,
   "prd_shared": {"0fb4e302": 42, "a1b2c3d4": 8},
   "story_shared":  {"9b90b7a5": 15},
-  "session_local": {"johnnyjohnny-12cf": 17, "...": 6}
+  "session_local": {"local-node-12cf": 17, "...": 6}
 }
 ```
 
@@ -524,7 +524,7 @@ memory archive-import project=<dir> source_prd_id=<id> target_prd_id=<id> role_f
 
 # REST:
 POST /api/memory/scopes/archive-import
-{"project_dir":"/home/user/datawatch","source_prd_id":"<id>","target_prd_id":"<id>","role_filter":["learning"],"max":30}
+{"project_dir":"/home/<user>/datawatch","source_prd_id":"<id>","target_prd_id":"<id>","role_filter":["learning"],"max":30}
 ```
 
 **PRD memory report (Phase 4)**

@@ -10,9 +10,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
+
+// maxMemberStageLen is the longest a member's Stage label may be, in runes.
+const maxMemberStageLen = 64
 
 // AutomationStore is the in-memory + JSONL-backed Automation store,
 // persisted next to prds.jsonl as `automations.jsonl`.
@@ -36,6 +40,10 @@ type AutomationStore struct {
 	// advance"): each Automation gets its own mutex, keyed by ID, so two
 	// different Automations never block each other. Guarded by s.mu.
 	locks map[string]*sync.Mutex
+	// objectTagDeriver, when wired (NewManager does), replaces an
+	// Automation's SystemTags with the derived list on Create and Update
+	// (see ObjectTagDeriver). A nil deriver leaves SystemTags untouched.
+	objectTagDeriver ObjectTagDeriver
 }
 
 // NewAutomationStore opens (or creates) automations.jsonl under dir —
@@ -63,6 +71,12 @@ func (s *AutomationStore) load() error {
 		if err := json.Unmarshal(line, &a); err != nil {
 			return err
 		}
+		// Legacy records carry only the single cursor; seed the cursor set
+		// from it so a linear Automation loads unchanged.
+		if len(a.ActiveCursors) == 0 && a.CurrentMemberID != "" {
+			a.ActiveCursors = []string{a.CurrentMemberID}
+		}
+		a.ActiveCursors = sortedUniqueStrings(a.ActiveCursors)
 		s.automations[a.ID] = &a
 		return nil
 	})
@@ -124,6 +138,57 @@ func (s *AutomationStore) OwnerOf(prdID string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.owner[prdID]
+}
+
+// nestingOwnerOf returns the ID of a non-terminal Automation that has a
+// kind=automation member naming childID, or "" if none does — the store-side
+// version of the nesting rule in validateAutomationNesting. It takes s.mu, so
+// callers must not hold it.
+func (s *AutomationStore) nestingOwnerOf(childID string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.automations {
+		if a.Status == AutomationCompleted || a.Status == AutomationCancelled {
+			continue
+		}
+		for _, m := range a.Members {
+			if m.kind() == MemberKindAutomation && m.AutomationID == childID {
+				return a.ID
+			}
+		}
+	}
+	return ""
+}
+
+// normalizeMemberStages trims surrounding whitespace from every member's
+// Stage label, so the stored form is canonical and an all-blank Stage is
+// dropped by omitempty on the wire.
+func normalizeMemberStages(a *Automation) {
+	if a == nil {
+		return
+	}
+	for i := range a.Members {
+		a.Members[i].Stage = strings.TrimSpace(a.Members[i].Stage)
+	}
+}
+
+// validateMemberStages enforces the Stage rules: a trimmed label of at most
+// maxMemberStageLen runes containing no ':' and no newline; empty (unstaged)
+// is always valid.
+func validateMemberStages(a *Automation) error {
+	for _, m := range a.Members {
+		stage := strings.TrimSpace(m.Stage)
+		if strings.Contains(stage, ":") {
+			return fmt.Errorf("automation invalid: member %s stage %q must not contain ':'", m.ID, stage)
+		}
+		if strings.ContainsAny(stage, "\n\r") {
+			return fmt.Errorf("automation invalid: member %s stage %q must not contain a newline", m.ID, stage)
+		}
+		if n := len([]rune(stage)); n > maxMemberStageLen {
+			return fmt.Errorf("automation invalid: member %s stage must be at most %d characters, got %d", m.ID, maxMemberStageLen, n)
+		}
+	}
+	return nil
 }
 
 // cloneAutomation returns a deep copy of a via a JSON round trip so
@@ -254,10 +319,23 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 	if a.EntryMemberID == "" && len(a.Members) > 0 {
 		a.EntryMemberID = a.Members[0].ID
 	}
+	normalizeMemberStages(a)
+	normalizeActiveCursors(a)
+	if d := s.objectTagDeriver; d != nil {
+		// Object system tags: the full derived list replaces the stored
+		// one (no-op when equal), before validation and the persist.
+		a.SystemTags = replaceSystemTags(a.SystemTags, d.ObjectTagsForAutomation(a))
+	}
 	if err := validateAutomation(a); err != nil {
 		return nil, err
 	}
+	if err := validateMemberStages(a); err != nil {
+		return nil, err
+	}
 	if err := validateAutomationOwnership(a, s.lookupPRD, s.OwnerOf); err != nil {
+		return nil, err
+	}
+	if err := validateAutomationNesting(a, s.Get, s.nestingOwnerOf); err != nil {
 		return nil, err
 	}
 	err := s.WithLock(a.ID, func() error {
@@ -316,10 +394,24 @@ func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*
 			}
 		}
 		clone.ID = id // the store's identity cannot be renamed through mutate
+		normalizeMemberStages(clone)
+		normalizeActiveCursors(clone)
+		if d := s.objectTagDeriver; d != nil {
+			// Re-derive on every update: a membership or config change is
+			// picked up here (the full derived list replaces the stored
+			// one, no-op when equal) before the persist.
+			clone.SystemTags = replaceSystemTags(clone.SystemTags, d.ObjectTagsForAutomation(clone))
+		}
 		if err := validateAutomation(clone); err != nil {
 			return err
 		}
+		if err := validateMemberStages(clone); err != nil {
+			return err
+		}
 		if err := validateAutomationOwnership(clone, s.lookupPRD, s.OwnerOf); err != nil {
+			return err
+		}
+		if err := validateAutomationNesting(clone, s.Get, s.nestingOwnerOf); err != nil {
 			return err
 		}
 		clone.Version = existing.Version + 1
@@ -344,6 +436,13 @@ func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*
 		return nil, err
 	}
 	return out, nil
+}
+
+// SetObjectTagDeriver wires object-derived system tags into Create and
+// Update: the Automation's SystemTags are replaced with the derived list
+// before the write (see ObjectTagDeriver and replaceSystemTags).
+func (s *AutomationStore) SetObjectTagDeriver(d ObjectTagDeriver) {
+	s.objectTagDeriver = d
 }
 
 // Delete removes the Automation with id. Only draft, completed and cancelled

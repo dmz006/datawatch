@@ -11,6 +11,12 @@
 #      working tree to be clean (exit 1 otherwise).
 #   3. Run check-merge-version.sh for every branch before merging anything.
 #      If any check fails, nothing is merged (exit 1).
+#      Then run `make check-internal-refs` against the checked-out main tree
+#      (only when the repository's Makefile defines that target) — a failed
+#      check stops everything before any merge.
+#      Note: this script can only check the main tree; every branch handed to
+#      it must already have passed `make lint` itself, which the script
+#      cannot enforce for not-yet-merged branches.
 #   4. Compute NEXT: the patch number of the version in
 #      cmd/datawatch/main.go, plus one.
 #   5. Merge each branch in order with --no-ff. A conflicting merge is
@@ -19,6 +25,12 @@
 #   6. Run set-release-version.sh with NEXT and the title.
 #   7. Stage only cmd/datawatch/main.go, internal/server/api.go and
 #      CHANGELOG.md, and commit once if anything is staged.
+#   8. Record the shipped state: for every merged branch named
+#      automaton/<automaton id>, record that automaton (and, when all of
+#      its Automation's members are now shipped, that Automation too) as
+#      shipped in the new release, with the merge commit and merge time.
+#      Best effort — a missing daemon or a failed record is a warning,
+#      never a merge failure (scripts/merge-shipped-record.sh).
 #
 # Exit codes:
 #   0  all branches merged (or already merged) and the bump committed
@@ -80,6 +92,21 @@ for branch in "${BRANCHES[@]}"; do
     fi
 done
 
+# The merge helper cannot lint branches that have not been merged yet, so the
+# caller is responsible for every incoming branch having passed `make lint`
+# before it is handed to this script. What it CAN check before merging is the
+# main tree it is about to merge into: run the internal-ref leak check on
+# main, but only when this repository's Makefile actually defines the target
+# — the small temporary repositories used by the merge-helper tests have no
+# Makefile and must keep behaving exactly as before.
+if grep -q '^check-internal-refs:' Makefile 2>/dev/null; then
+    echo "==> Checking main tree for internal-ref leaks (make check-internal-refs)"
+    if ! make check-internal-refs; then
+        echo "✗ check-internal-refs failed on the checked-out $MAIN_BRANCH tree; nothing was merged" >&2
+        exit 1
+    fi
+fi
+
 # --- 4. next version --------------------------------------------------------
 MAIN_V=$(grep -E '^var Version = "' "$MAIN_FILE" | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
 if [[ ! "$MAIN_V" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
@@ -91,6 +118,7 @@ echo "==> Version on $MAIN_BRANCH is $MAIN_V; the merge bump will be $NEXT"
 
 # --- 5. merge each branch in order ------------------------------------------
 MERGED=()
+declare -A MERGED_SHA=()
 for branch in "${BRANCHES[@]}"; do
     echo "==> Merging $branch into $MAIN_BRANCH"
     if ! git merge --no-ff --no-edit "$branch"; then
@@ -103,6 +131,7 @@ for branch in "${BRANCHES[@]}"; do
         exit 1
     fi
     MERGED+=("$branch")
+    MERGED_SHA["$branch"]=$(git rev-parse HEAD)
 done
 echo "==> Merged: ${MERGED[*]}"
 
@@ -117,4 +146,16 @@ else
     git commit -m "chore(release): v${NEXT} bump for merged branches"
     echo "==> Committed chore(release): v${NEXT} bump for merged branches"
 fi
+# --- 8. record the shipped state (best effort; never fails the merge) ------
+if [[ -f "$SCRIPT_DIR/merge-shipped-record.sh" ]]; then
+    source "$SCRIPT_DIR/merge-shipped-record.sh"
+    for branch in "${MERGED[@]}"; do
+        record_shipped_for_branch "$branch" "v${NEXT}" "${MERGED_SHA[$branch]}" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" ||
+            echo "warning: shipped record step for '$branch' did not complete; the merge itself succeeded" >&2
+    done
+else
+    echo "note: merge-shipped-record.sh not found; the shipped state is not recorded for this merge" >&2
+fi
+
 echo "ok: merged ${MERGED[*]} and set version $NEXT"

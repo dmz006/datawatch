@@ -41,6 +41,14 @@ open questions 17 to 20) is where these rules become mechanical.
   them, that is a product bug to fix in datawatch, not a reason to change their setup.
 - **Commits.** The supervisor commits validated work it owns, staging an explicit list of
   files. An automatic snapshot or task commit is not approval of its contents.
+- **Idle lanes are the supervisor's defect, not an operator question (2026-10-21).** The operator should never have to ask why a lane is idle. Check 4 of the tick (section 11) is mandatory and fills every idle lane in the same tick. Ask the operator only for design decisions.
+- **Merge, push, tag and release are the supervisor's calls (2026-10-21).** The supervisor is
+  release manager. A completed, validated PRD is merged, pushed (fast-forward, Section A
+  checks pass) and tagged (patch or minor) without asking; only the 10.0 tag is the
+  operator's. Never end a tick on "do you want me to merge/push/tag?". If a residual risk
+  remains (for example other flaky tests), ship the fix that is ready, file a follow-up fix
+  PRD for the rest, and report both. A question to the operator is allowed only for a
+  design choice or after the loop rule; a build or release question is neither.
 - **Resets.** Reset a blocked task once after its cause is fixed, then run. If it fails
   again with the same error, that is the loop rule above.
 
@@ -63,10 +71,32 @@ The supervisor orchestrates and validates. It does not hand-fix code.
 
 ## 3. Backends, models and compute
 
-- While the Claude weekly ceiling is exhausted, every PRD decompose, run, verify and
-  smoke session uses the pi or pi-prompt backend with a local qwen model. No
-  claude-code and no opencode. The window and its history are in
-  [concurrency and budget, section 4b](2026-10-14-concurrency-and-budget-design.md).
+- **Lane model (operator, 2026-10-20; supersedes the pi-only rule of 2026-10-17).** The weekly
+  Claude ceiling was exhausted on 2026-10-17 and reset on Sunday 2026-10-18 08:00. Claude is
+  tracked, not capped, and the reset day can differ by provider, so the reset date is read from
+  `docs/plans/2026-10-14-concurrency-and-budget-design.md`, not assumed.
+  - **GPU lanes (two):** pi-prompt with `qwen3.8-64k:27b`, one engine per node.
+  - **Claude lanes (three, interchangeable):** each runs one PRD and one decompose thread at a
+    time. A worker is Claude Haiku (`claude-haiku-5-5`); the verifier is Claude Sonnet for a PRD
+    on a Claude lane. Any Claude lane takes a decompose, a worker or a verify as the queue needs.
+  - **Budget pace (operator):** Claude work beyond the lanes is allowed only while
+    `weekly % <= days elapsed since reset / 7 x 100`. Read the weekly % each tick and record it
+    in the budget doc. Above pace, Claude takes no extra work; the GPU lanes carry the queue.
+  - **P0 and overflow (operator):** a P0 takes a free Claude lane. If every lane is full and the
+    pace rule allows, the supervisor opens a temporary Claude lane for it. Otherwise the P0 waits
+    for the next free GPU or Claude lane.
+  - **One-off decompose:** a decompose may run as a one-off Claude session when there is pace
+    budget. Otherwise it waits for any lane to free.
+  - **Compare, don't assume:** record Claude vs qwen time and accuracy per PRD (the
+    `time`/`accuracy` columns in the budget doc). If qwen matches Claude, the operator may move
+    work back to the GPU lanes.
+  - The supervisor enforces the lane count; the daemon does not. Do not exceed two GPU engines
+    or three Claude lanes.
+  - **Accepted ideas (operator, 2026-10-20):** (1) when both GPU lanes are full and pace
+    allows, the next approved PRD runs on a Claude lane as a Haiku worker; (2) run the time and
+    accuracy log for about a week before moving work between qwen and Claude. **Not adopted:** keeping a Claude lane idle
+    for P0. P0 is infrequent, so the three Claude lanes stay interchangeable and P0 takes a free
+    one, or a temporary lane under the P0 rule.
 - Two GPU nodes are two lanes. Keep both busy, and run at most one engine per node. If
   two land on one node, cancel the newer one.
 - **No experiments on a busy GPU.** Never run a test, benchmark or trial of a model setting
@@ -96,7 +126,10 @@ The supervisor orchestrates and validates. It does not hand-fix code.
 
 Do not rubber-stamp a plan. Before approving, check every item:
 
-- Every story and task has a title and a spec. The planning parser once accepted blank
+- Tests are part of the plan (2026-10-20 rule). For each feature, bug fix or refactor the plan
+  has unit-test tasks, a smoke or e2e task for every web, API or CLI surface it changes, and a
+  verification script that runs them. A plan without them is revised, not approved.
+- Every story and task has a title and a spec.- Every story and task has a title and a spec. The planning parser once accepted blank
   titles and specs (`dbf62787`); a plan with blanks is rejected.
 - Each task is one tool-call chain with one checkable outcome. A task that reads like
   two or more deliverables is split into atomic tasks with `depends_on` chains. Two
@@ -107,12 +140,33 @@ Do not rubber-stamp a plan. Before approving, check every item:
 - No tracker ID (BL, B, GH) appears in any file, function, test or type name the plan
   specifies. Tracker IDs belong in `docs/plans/` and commit messages only.
 - The PRD is pinned to the open-model backend and model before it is approved or run.
+- Release tasks never contain a fixed version number. The release version is taken
+  at merge time as the next patch above main: task titles, specs and descriptions
+  say 'next patch above main' instead of a number, and no number is repeated even
+  if a revision note or earlier plan used one.
 - Before decomposing, append the atomic-sizing guidance block to the spec while the PRD
   is still a draft.
+- The atomic-sizing guidance block appended before decomposing must also carry this
+  release-version rule, so the draft spec and the planner prompts state it the same
+  way.
+
+- Feature plans carry the parity and config checks from `DATAWATCH-CONTEXT.md` (2026-10-20): a task that adds or changes an endpoint records the `docs/testing-tracker.md` section (B1); a new user-facing PWA string adds the five locale keys and the `TestLocales_CommonNavKeysPresent` entry (B2, B3); a new config field covers all six registration points (B6: `config.go`, `api.go`, `app.js`, `config-reference.yaml`, `implementation.md`, MCP); a new operator-facing endpoint adds a smoke section (B12); a change to `SignalBackend` or `LLMBackend` is flagged for operator sign-off (interface stability).
+- Design-document tasks carry the two checks decided under DIP on 2026-10-20 (AGENT.md, "Design-document verification"): every heading the spec names exists and is non-empty, and each section meets the minimum length and cites a file or PRD ID.
+- An open design decision with no rule in AGENT.md is not decided by the supervisor. It goes to the operator through the DIP (AGENT.md, Decision Making), and the plan waits.
 
 If the plan fails, either request a revision with specific feedback or fix a small
 mechanical gap directly through the edit, add and remove task commands. If a decompose
 ends with no plan, read the newest pi log for `stopReason=length` and report it.
+
+### Validate against the planning record and the rules checklist
+
+A decompose is also validated against what the planner was told to read. Open the PRD's planning record (`datawatch autonomous rules-context --prd <id>` or `rules_context_status` with `prd`) before approving: it shows which rules and context files the planner was pointed at, their hashes and sizes, any missing file and whether a digest was injected. A plan made while the rules file was missing, or while a headless backend got no digest, was planned without the project's rules and is revised, not approved. Then read the per-task rules checklist: every file-changing task carries a `rules_applied` list, and a *rules checklist gap* finding means a task touches an area its list does not name.
+
+- The planning record lists the project's rules file as present, with the hash you expect.
+- Every context file the project relies on is listed, and none is reported missing.
+- A backend without file tools shows a digest injected, with a size below the limit.
+- Every task that changes files has a non-empty `rules_applied` list.
+- Each *rules checklist gap* finding is resolved by a revision, or the reason it is not needed is written down.
 
 ## 5. Triage when a task fails or blocks
 
@@ -202,6 +256,7 @@ Recovery moves that have been needed in practice:
 Run this before marking a PRD done and moving on. Anything missing is a content gap to
 route back as corrective work, not something to skip:
 
+- The tests the change needs (unit, smoke, and e2e where a surface changed) are in the same commit, cover the new behaviour, and pass on the merged main. A bug fix has a regression test that fails before the fix.
 - Version bumped in `cmd/datawatch/main.go` and `internal/server/api.go` together.
 - A CHANGELOG entry in plain operator language with no tracker IDs.
 - Real tests for new behaviour, not only a passing existing suite.
@@ -254,8 +309,8 @@ requirement (open question 19).
 
 ## 11. Supervisor loop mechanics
 
-- A recurring wakeup runs the tick every five minutes, and an hourly backstop confirms
-  the tick chain is alive.
+- A recurring wakeup runs the tick every 20 minutes (cron `7,27,47 * * * *`), and an hourly
+  backstop (cron `17 * * * *`) confirms the tick chain is alive. Never a 5-minute tick.
 - **A tick must not strand the work it interrupts.** Each tick does its checks, then
   tells the supervisor to resume what it was doing. Every tick prompt names the work in
   progress.
@@ -312,19 +367,19 @@ requirement (open question 19).
 - **Lane idle diagnosis corrected (2026-10-19).** A first diagnosis said the local GPU lane
   was idle because the LLM registry did not bind the 64k model to its node. That was wrong.
   Both machines have the 64k model, and both hold it resident (verified 2026-10-19:
-  `ollama ps` on johnnyjohnny shows qwen3.8-64k:27b at a 65536 context, 100% GPU; the remote
-  box at 100.64.0.20 also shows it resident, about 18 GB VRAM). The remote box has done PRD
+  `ollama ps` on local-node shows qwen3.8-64k:27b at a 65536 context, 100% GPU; the remote
+  box at <remote-node-address> also shows it resident, about 18 GB VRAM). The remote box has done PRD
   work, per the operator. Which Ollama serves a given pi PRD is NOT yet verified: the
   pi sessions and daemon were seen connected to the local Ollama on one check, and no
   connection to the remote one was seen on that check. The capacity pool labels do not show
   where traffic goes. Do not call either GPU idle or busy without a live check (`ss -tnp |
   grep 11434` on each side, `ollama ps` on each machine, the remote box's own logs). Each
   tick does this before judging a lane.
-  Lanes, defined: GPU lane A = this machine (johnnyjohnny), qwen3.8-64k:27b;
-  GPU lane B = remote datawatch (100.64.0.20), qwen3.8-64k:27b; traffic routing unverified;
+  Lanes, defined: GPU lane A = this machine (local-node), qwen3.8-64k:27b;
+  GPU lane B = remote datawatch (<remote-node-address>), qwen3.8-64k:27b; traffic routing unverified;
   Claude 1 and Claude 2 = claude-code, two lanes only.
 - **Registry gap (2026-10-19).** Neither ollama backend (`ollama-datawatch`,
-  `ollama-johnnyjohnny`) lists `qwen3.8-64k:27b` in its model list; each lists only
+  `ollama-local-node`) lists `qwen3.8-64k:27b` in its model list; each lists only
   `qwen3.8:27b`. The PRD and config settings use `ollama/qwen3.8-64k:27b` anyway. Track this
   in the automation BL; do not change the registry without a decision.
 - **Plan check against the original spec.** A rewritten or shortened spec can drop test
@@ -362,6 +417,352 @@ The coordinator replaces the human loop, so these become mechanical:
   plan that matches their own rules.
 - Defect intake (section 11): when it triages a failure as a product defect, it files the
   tracker row and a draft fix PRD itself.
+- Completed-but-unmerged detection: a completed PRD whose commits are not on main (compared by
+  content, not by commit count) is shown as merge pending in the Automation view, and raises
+  an alert when it sits longer than a configurable time. Never silent (da660001, 2026-10-24).
+- CI for every workflow, the security-failure exception, failed and blocked PRD triage each poll, a Claude lane whose PRDs all wait on verifiers counted as idle, and detectors that match the tool's own error line: see the Automation design doc section 'Supervisor duties the Automation coordinator must absorb' (2026-10-24), which is the requirement list for the Automation PRD.
+- Search before create: creating a PRD warns when its title or spec overlaps an existing PRD of
+  any status or an unmerged branch, and names it. Warn, never block.
 
 Design choices left to the operator: the escalation channel and thresholds, which
 surfaces map to which regression suites, and how an urgent bug may jump the queue.
+
+- **Local merges are authorized; ask only before a push (lesson, 2026-10-20).** Rule 6 says to trial-merge a completed branch, renumber it to the next patch above main, build and test it, and then merge. Do the local merge without asking. Only a push needs operator approval. The "do not run git add or git commit" line in `/home/<user>/CLAUDE.md` belongs to another session's guardrail (the imap-mcp run-rules session). It does not govern datawatch supervisor work, and the project rules (`CLAUDE.md` in the datawatch folder and `/home/<user>/workspace/CLAUDE.md`) allow commits. Holding merges for a go-ahead stalled every lane for several ticks (the BL516 and BL519 fixes sat unmerged while PRDs stayed blocked). Stage explicit paths only, and never include unrelated working-tree files such as `.oss-scanner/threat_model.md`. Recorded in `docs/plans/README.md` row 95 (BL514) and in memory as supervisor-local-merge-authorized.
+
+- **Supervisor pushes (rule 6b, decided 2026-10-20).** The supervisor decides pushes, not the operator. The operator makes design decisions only. A push is allowed when all of these hold: it is a fast-forward of `origin/main` (never force-push, never rewrite history); the touched packages build and their tests pass on the local `main`; no HOLD PRD is in the pushed range; and the push is recorded in the automation BL (`docs/plans/README.md`, row 95) with the commit range and the remote URL. Anything that is not a fast-forward, or that fails build or tests, is held and reported with the reason, not pushed. Release tags are not pushed by the supervisor; the release CI runs on tags, and the release decision stays with the operator.
+
+- **Correction to rule 6b (2026-10-20): AGENT.md governs every merge and push.** Rule 6b as first written said build and the touched package's tests were enough. That was wrong. Before any push or merge the supervisor must follow `AGENT.md`: feature branches never change the version (the merge script does it); merge with `scripts/check-merge-version.sh`, and bump with `scripts/merge-branches-bump-version.sh` (one bump commit per run, next patch above main) and `scripts/set-release-version.sh`, never by hand; run the Section A checks before each push (full `go test ./...`, `make lint`, `make build`, `node --check`, CHANGELOG entry, README current-release line, backlog refactor, ID and leak checks), and check CI after the push. Two merges on 2026-10-20 (`06ae0001` as 9.5.27 and `be670001` as 9.5.28) were bumped by hand in separate commits, and were pushed before the Section A checks had run. That is recorded as a process deviation in `docs/plans/README.md` row 95 (BL514).
+
+- **[SUPERSEDED 2026-10-21 by the 'Merge, push, tag and release' bullet in section 1: the supervisor pushes and tags.] Earlier text: pushes need operator approval.** The tick instruction is explicit: no pushes without operator approval. Rule 6b, as written earlier the same day, let the supervisor push. That conflicts with the tick and is withdrawn. The supervisor merges completed branches into local `main` (rule 6, per AGENT.md: merge script, one bump per run, Section A checks), and records each merge in the BL. Pushing local `main` to origin is an operator decision, and the supervisor asks for it with the commit range and the Section A results. The push of `c1922994` on 2026-10-20 was made before this rule was settled and is recorded as a deviation in row 95 (BL514).
+
+- **Pushes are the supervisor's decision when tests pass (decided by the operator, 2026-10-20).** This supersedes the 2026-10-20 line above that required operator approval. Push is not a design decision. The supervisor pushes local `main` to origin when all of these hold: fast-forward only, never force; `go test ./...` passes; `make build` and `node --check` pass; `make lint` is clean (AGENT.md Section A12 requires this, so lint is part of "tests pass"); no HOLD PRD is in the range; the push is recorded in the BL with the commit range and the Section A results; and CI is checked after the push. If any condition fails, the supervisor does not push and records the reason. Release tags stay with the operator. Deviation on 2026-10-20: `c1922994` was pushed while `make lint` had 16 findings (10 errcheck, 6 staticcheck); the lint cleanup is BL522.
+
+- **Claude decompose is one thread per Claude lane (operator decision, 2026-10-20).** Earlier wording said "one decompose at a time, never two", and the supervisor read that as one decompose for all of Claude. That was wrong. Each Claude lane runs one decompose thread at a time, and the two lanes may decompose in parallel. An agent within one decompose is not limited. An idle Claude lane with decompose backlog starts the next draft in the same tick.
+
+- **Three Claude lanes (operator decision, 2026-10-20).** The lane model is now two GPU channels (one pool) and three Claude lanes, each running one PRD, plus one decompose thread per lane. This supersedes "two Claude channels" in the earlier lane model and in the tick prompts. The daemon has no Claude lane count (the capacity pools cover nodes and pi-prompt only), so the limit is enforced by the supervisor. The operator tracks usage: 16% weekly at 2026-10-20 04:31 (calculator reading), recorded in `docs/plans/2026-10-14-concurrency-and-budget-design.md`.
+
+- **Record before you push (lesson, 2026-10-20).** On 2026-10-20 the BL row edit failed on an assertion, but the shell command continued and pushed `c1922994..69b0db61` before the BL record existed. Order is fixed: write the BL record, check that it succeeded, and only then push. Run the push as its own step and stop the chain if the record step fails.
+
+
+- **Release manager and kill validation (operator decisions, 2026-10-20).** The supervisor is release manager: it does patch and minor version bumps and releases through the automation scripts (AGENT.md scripts, one bump commit per run). Only a major release (10.0) is the operator's. The "no version bump without ask" gotcha in `DATAWATCH-CONTEXT.md` predates automation and is superseded by this line; the context file is updated to match. A session is killed only when all of these hold: its pi process has exited (checked by process, not by pane silence); the session log or task output shows no completion record and nothing written after the exit; and the reason is written to the BL. A session that is still running and quiet is waiting, not wedged. The earlier kills on 2026-10-19 and 2026-10-20 did not check the log before killing; that gap is recorded as a deviation.
+
+### 11a. Schedule and procedures (current, 2026-10-26; supersedes the tick prompt below)
+
+Why this exists: the cron prompt had grown to about 1,900 words by accretion (every incident added a
+clause) and was re-sent twice an hour, while a tick that found nothing still ran a dozen state commands.
+The operator asked for a cheap check often and the full procedure hourly (2026-10-26: "I'm happy with the
+hourly change but want something small every 20"). The cron texts are now short pointers; this section is
+the single source for what each run does.
+
+**Watch, every 20 minutes** (cron `3,23,43 * * * *`). Run `python3 scripts/supervisor-watch.py`. It prints
+`OK <lane summary>` or `ATTENTION` plus one line per finding. On OK, reply with that one line and stop. On
+ATTENTION, handle each finding: a restarted tmux server (section 11, tmux-loss check), a down daemon or a
+missing model, a newly failed or review-needed task (section 5), a finished PRD to merge (section 7), an
+idle lane (fill it, GPU rule below), a broken or silent worktree (see "worktree check" below), a dirty main
+checkout (commit the tracked changes first, a ship aborts otherwise), red or stuck CI (section 8b below).
+The watch does not run merges beyond a MERGE READY finding, the registry audit, the v10 table or the
+budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script with the reason in the registry.
+
+**Full tick, hourly** (cron `17 * * * *`; the old separate backstop is folded in). In order:
+0. CronList: both jobs present (watch `3,23,43 * * * *`, full tick `17 * * * *`); recreate from this section if missing.
+1. Run the watch script and read its findings first.
+2. Budget: estimate Claude use against the pace line before filling any Claude lane. Pace line = days since the
+   Sunday 08:00 reset / 7 x 100. Last operator reading is the newest entry in
+   `docs/plans/2026-10-14-concurrency-and-budget-design.md`. Lead the report with an over-pace warning when the
+   estimate or the reading is above the line; ask for a fresh reading. The lane count is the operator's decision.
+3. Every non-terminal PRD including blocked and failed ones. Held `review_needed` task: retry with
+   `datawatch autonomous resolve-review <prd> --task T --action retry --backend claude-code --model sonnet
+   --effort high --note ...` after reading its attempt summary; a completed task's spec cannot be edited, so fold a
+   correction into the next held task or add a task. After 3 failures of one task stop and bring it to the operator
+   with an attempt summary (a stronger worker first, never the default Haiku). Idle Claude worker over 30 minutes
+   with no file or commit activity: read its pane and nudge with `datawatch session send`.
+4. Worktree check: each running PRD's directory under `~/.datawatch/prd-worktrees/<id>` has `go.mod`, is a
+   registered worktree, and its `.datawatch/verify/*.sh` scripts are executable (a missing exec bit failed a final
+   gate three times on 2026-10-26; a rebuilt worktree must carry the verify folder over).
+   Claude lanes: the standing cap is 1. Operator, 2026-10-26: "Stay at 1 but use 2nd for special". Raise the cap to 2
+   (`datawatch llm update claude-code --max-inflight 2`) only for a special item (a defect that blocks other work or
+   throughput, a security finding that needs triage, a merge that cannot wait), return it to 1 when that item's Claude
+   work is done, and state the use, its reason and open and close times in the next report.
+5. Lane fill (GPU rule: GPU lanes cost no Claude usage, so Claude limits never hold GPU work). For every idle lane:
+   a. decomposed PRDs: read the spec first (never run HOLD or sequenced-after-unshipped work), 4a grep main for what
+      it asks for (a stale PRD is dropped and reported), validate (section 4, read tasks touching tmux, pkill,
+      killall or systemctl line by line, no forbidden literals or release numbers in specs), ack coverage false
+      positives, approve, run. Mechanical work goes to pi-prompt, design-heavy and debugging-heavy work to Claude.
+   b. finished PRDs: merge (below). c. drafts: decompose. d. new work only from decided designs, after searching the
+   registry, `prd-list` and `scripts/branch-audit.py`. An implementation PRD for an open design point is gated on a
+   `Confirmed: yes` line in the proposal file.
+6. Merge procedure: `<workspace>/supervisor-scratch/sv/trial-merge.sh <id>` in a throwaway worktree; resolve conflicts (a helper subagent for
+   semantic ones); changelog body = lines added by the branch against its merge-base; `BUMP=minor` for a feature,
+   patch for a fix or refactor; `<workspace>/supervisor-scratch/sv/finish-merge.sh` (lint, full `go test` with `env -u TMUX -u TMUX_TMPDIR`, and the PWA suite `node --test internal/server/web/*.test.js`; the PWA suite was missing until 2026-10-30 and a field-order test failed on main for three releases before a task gate caught it);
+   ship only on go exit 0 and only with a clean main checkout; `<workspace>/supervisor-scratch/sv/ship-merge.sh`; cancel the PRD record only
+   after the ship succeeded; update the registry row; redeploy when a release or setting needs it and no worker is
+   on a final task (record in-flight sessions; resume PRDs the restart parked). After each redeploy run
+   `scripts/check-waiter-nodes.sh` with the daemon address and token (`DATAWATCH_URL`, `DATAWATCH_TOKEN`): exit
+   status 2, or any over-limit node it reports, is a defect to triage before the next tick — the pool may briefly
+   read over limit at boot while resumed workers drain, so re-run after a minute before filing.
+7. Registry audit (`docs/plans/README.md` against reality; `scripts/branch-audit.py`; a pending branch is merged
+   or recorded as dropped; every defect has a row and a draft PRD) and CI for all workflows on main and the latest
+   tags (`gh run list`; read failures; security patches are consumed as soon as available, an unfixed CVE stays
+   suppressed in `security/accepted-risks.yml`; never rerun a security workflow; leave external dependabot and
+   `auto/cve-cleanup` PRs alone).
+9. Dogfood (operator, 2026-10-26: "remember we should be using DataWatch automation and debugging as we do so, where
+   possible"). When a datawatch built-in replaces one of these checks (the BL609 follow-on steps 9 to 11: daemon-side
+   watch, lane fill switched on, merge mechanics), run it in parallel with the manual check, compare the outputs, file
+   every difference as a tracker row and a draft PRD, and retire the manual check only after a full day of agreement.
+7b. **GitHub issues and pull requests are cleaned as we go (operator, 2026-11-06: "step 1 is good, with every ship but sweep is daily when we have active projects/automations and doesn't sweep if nothing is active").** (1) At every ship: close each issue the release fixes with a comment naming the release; close a pull request the release supersedes with the reason. (2) Daily sweep while any project, Automation or Automaton is active (running, queued or being merged); no sweep when nothing is active: read `gh pr list` and `gh issue list`, verify each open item against main (the issue's symptom in the code, the registry and the CHANGELOG), close what is shipped, duplicate or superseded with a comment, ask dependabot to rebase a stale bump (`@dependabot rebase`) and merge the green low-risk ones through a patch release, file a registry row and a draft Automaton for a real open defect, and leave open an issue that is not done. Bot trackers (the ZAP baseline, the upstream watch, the accepted-risks watch) stay, with the older duplicate closed. The daily CVE clean-up pull requests are closed when stale. Record what the sweep closed in the tick report.
+8. Report: one line per lane, then state changes, then the audit result, then `python3 scripts/v10-status.py`.
+   Questions go as plain text at the end, one at a time. Never use the blocking question tool. Record every
+   operator answer in the design or decisions doc with the words quoted.
+
+### Tick prompt (superseded 2026-10-26 by 11a; kept for history, 2026-10-20)
+
+The tick runs these checks in order and reports only state changes and idle lanes with blockers:
+
+0. tmux: `systemctl --user show datawatch-tmux -p NRestarts,ActiveEnterTimestamp`; baseline NRestarts 3 and 18:46:38 EDT (third tmux death, 2026-10-20 18:46:35). Never kill the tmux server.
+1. Infrastructure: qwen3.8-64k:27b resident locally (`ollama ps`) and on <remote-node-address>.
+2. Every non-terminal PRD (`prd-list`, `prd-get`). A session silent for 15 minutes after a read with no reply is wedged: kill that one session by ID.
+3. Model and routing drift: restate backend and decomposition profile together in `prd-set-llm`.
+4. **Lane fill is mandatory (operator, 2026-10-21: "I shouldn't have to keep asking about idle lanes").** After checks 0 to 3, look at GPU 1, GPU 2 and Claude 1 to 3. Every lane that is not running a PRD MUST be given work in this same tick, taking the first source that has something:
+   a. Already-decomposed PRDs (`prd-list` approved, then needs_review): read the spec first (a spec that says HOLD or "sequenced last" is never run; BL424 was started by mistake on 2026-10-21), validate against section 4, approve, run.
+   b. PRDs whose tasks are all done but whose status is blocked or failed: rejudge or merge (section 7).
+   c. Draft PRDs: set backend and decomposition profile together, decompose, validate, run.
+   d. File a new PRD from the roadmap: the lowest-numbered not-started row in `docs/plans/README.md` whose dependencies are done (rows 10, 11, 12, 13 first, then open defects), with the design document's phase section as the spec, and decompose it.
+   GPU lanes take mechanical PRDs on pi-prompt (tests, docs, ports, small fixes, CRUD); Claude decomposes everything and takes the hard debugging and design-heavy PRDs. Keep decompose-ahead: at all times at least one validated, approved PRD waits per lane type so a freed lane starts without a tick. The report line for an idle lane must name a blocker with an identifier (for example "GPU 2: projected weekly 47% vs 46.7% allowed") or the lane gets work. "Nothing eligible" is never a valid report; a lane left idle without a named blocker is a supervisor defect, fixed in that tick and recorded in the BL514 row.
+   Pace: use the last operator-reported weekly % and project it forward (assume +4 points per 24 hours with no new reading, and +2 points for each Claude PRD started since the reading). Ask the operator for a reading at most once per day and never wait for the answer. If the projection exceeds the allowed pace, move the work to the GPU lanes rather than idling. A one-off Claude decompose is allowed inside the pace; P0 per the P0 rule.
+5. Validate every decompose against section 4, including the tests rule.
+6. Merges per AGENT.md; the supervisor then pushes (fast-forward, Section A green) and tags patch and minor releases itself, watches CI, and reruns a failed Release. Do not ask the operator; if a risk remains, ship what is ready and file a follow-up PRD.
+   **A judge timeout never justifies merging around the judge (operator, 2026-10-27, after asking why a large change could not be judged).** Verified: with `judge_policy` empty the judges follow `verifier_policy.backends` = pi-prompt then claude-code, one attempt each, 30 minutes per run, and a PRD whose judge times out on every backend is held in needs_review (`judge_timeout_hold`). Hold it and report it. Do not snapshot or commit the worktree and merge, as was done for BL613. Open improvement (design): size-aware routing so a large diff goes straight to Claude instead of spending 30 minutes on the local model first.
+   **Parity issue at every merge (operator, 2026-10-27: "Parity is required, no design there, it is a core rule").** Before the ship step, check `git diff <merge-base> <branch> -- internal/server/web/app.js internal/server/web/index.html internal/server/web/locales`. If the PWA changed in an operator-visible way (new strings, layout, behaviour, API shape, settings, affordances added or removed), file a datawatch-app issue for the release titled `feat(i18n): add <keys> for <feature> parity (datawatch vX.Y.Z)` (or `[sync] ...` when there are no new strings) with the keys and EN values, the screen, the API contract change and the parent release, as the Mobile-Parity Rule in AGENT.md says, and name it in the release report. It is not a design decision and it needs no operator word. The audit of 2026-10-27 found 58 of 68 PWA-changing releases since v9.0.0 with no datawatch-app issue naming the version; the backfill is tracked as its own item.
+
+**File the next step at the merge of the previous one (added 2026-10-29).** When a merge ships step N of a multi-step plan, in the same pass either file step N+1 as a draft PRD (when the plan already carries its design and the operator's confirmation covers it) or put one plain question in that report asking for the go-ahead (when the confirmation covered only the shipped step, or the plan says the step needs re-confirmation). A step is never parked as "design-gated" when its design is written and only a filing or a go-ahead is missing. BL610 Step 2 sat unfiled for two days after Step 1 shipped for exactly this reason.
+
+**New PRDs run inside an Automation (added 2026-10-29).** Operator, quoted: "shouldn't prd be in automation, how else are we going to test and debug". Approve the PRD, create or extend an Automation with it as a member, activate the Automation and let the coordinator start and advance it; do not run a PRD on its own except to rescue a held one. Log every defect, surprise or missing feature in `docs/plans/historical-plans/2026-10-29-automation-dogfood-findings.md` and file a tracker row for each. A PRD that is already running is not adopted until a cheap PRD has tested adoption.
+7. **Registry audit is mandatory every tick (operator, 2026-10-21: "you should audit the BL backlog for complete stuff, on ticks").** `docs/plans/README.md` is the backlog; it must never say draft, running, approved, blocked or not started for work that has shipped. Each tick: (a) list rows whose status cell is not done and look up each named PRD (`prd-list`) and its branch (`git rev-list --count main..automaton/<id>`); (b) a PRD completed with 0 commits ahead is shipped: mark the row **done** with the release it shipped in (find it in `CHANGELOG.md` or `git log`); (c) a PRD completed with commits ahead is a pending merge: mark the row "completed, merge pending" and use it as lane-fill source (b) in check 4; (d) a PRD blocked, failed or cancelled while its work is merged gets its record cancelled (never left blocked); (e) every new defect gets a row and a draft PRD the moment it is found; (f) after any merge, update the row in the same commit; (g) run `python3 scripts/branch-audit.py` every tick: it compares branch commits to main by subject, because the commit count ahead of main is wrong for any merge that rewrites commits and made every branch look like stale noise; a PENDING line (PRD completed, work not on main) must be merged or recorded as dropped with a reason in the registry the same tick, and a `landed` branch is deleted; (h) before filing or creating any PRD from the roadmap, search for the capability first: the registry, `prd-list` including completed and cancelled PRDs, and the branch audit; if work for it exists, stop and report what exists instead of filing. The audit output (rows changed) goes in the tick report.
+8b. **CI is part of every tick, all workflows, not only Release (operator, 2026-10-24: "is the tick still monitoring and fixing the ci").** Each tick run `gh run list --limit 20` and for the head of main and every tag pushed since the last tick list the result of every workflow (Release, security-scan, docs-sync, secret-scan, CI summary). Any `failure` or a run stuck in progress for over 90 minutes is read with `gh run view <id> --log-failed` in the same tick and either fixed (a registry, docs or test fix goes straight to main; a code fix goes through a PRD) or filed as a defect row with a draft PRD and named in the report. A hung step (the stats-cluster tarball) is rerun with `gh run rerun <id> --failed`. A red workflow is never reported as "CI running". AGENT.md governs the rest, and the tick follows it: after a fix is confirmed green, delete the failed runs (`gh run delete <id>`) so the next failure stands out; the security-failure rule in AGENT.md applies (operator, 2026-10-25: the 72-hour window is withdrawn and security patches are consumed as soon as they are available): a dependency or CVE failure with a fixed version available is upgraded now, one with no fix stays suppressed in the registry with a real trace, and the operator is told only for a reachable high or critical finding or a suppression renewed past its first expiry; A suppression is added to `security/accepted-risks.yml` and generated, never to `.trivyignore`, with the real first_added date (it is immutable), the real trace, and a package version read from the scan or the image, not guessed.
+9. **Overall counts and the v10.0.0 status block in every report (operator, 2026-10-21; counts added 2026-11-06: "update the tick script so it shows the current overall counts and details").** First run `python3 scripts/overall-counts.py` and paste its block: all records with archived finished work counted as done, tasks, retries and worker time, by kind, backend, Automation and project, the last days, and the release count. The v10 status table below only covers open work until its counting is fixed (registry row 388). Then run `python3 scripts/v10-status.py` and paste its table: PRDs split into features and bugs (total, done, running, waiting, blocked), tasks for each (total, done, left), worker time, average time per PRD and per task, what is left in the registry for 10.0.0 (open rows, with phase rows expanded), and two time-to-completion estimates (measured throughput, and lane math from the average PRD time over the lane count: two GPU lanes and one Claude lane, the supervisor session is not a lane). The two estimates are a range, not a promise. Fix a misclassified PRD in the script's keyword list, not by hand.
+8. Report: one line per lane (occupant, or the named blocker), then state changes only. Never end a report with a question about idle lanes.
+
+### Lesson: third tmux server death, 2026-10-20 18:46:35 (cause found)
+
+- **Time:** the dedicated tmux server (`datawatch-tmux.service`) died at 18:46:35 EDT and every session died with it, including the supervisor. systemd restarted it at 18:46:38 (NRestarts 3). Earlier deaths: 2026-10-18 20:18:09 (found: a pi worker's sandbox helper) and 2026-10-18 22:55:31.
+- **Cause:** at 22:46:32.852Z (18:46:32 EDT) the Claude Haiku worker of PRD `148b0001` (live smoke cleanup of the retried-task story) ran `TMUX_TMPDIR=$S/tmux tmux kill-server`. tmux gives the `$TMUX` variable priority over `TMUX_TMPDIR`, and every worker runs inside a pane where `$TMUX` points at the production socket, so the "sandbox" kill hit the production server. It is the same mechanism as the 2026-10-18 20:18 death. Found in `~/.claude/projects/-home-user--datawatch-prd-worktrees-148b0001/*.jsonl` by searching the minute before the death.
+- **Why it recurred:** the fix PRDs for this class (BL504 `c7f10001`, then `e2120001`) were cancelled on 2026-10-19 as duplicated by the scoped cleanup in `scripts/run-tests.sh` and `scripts/release-smoke.sh`. Those scripts are scoped, but a worker writes and runs its own cleanup, so the worker environment itself must make the production socket unreachable.
+- **Recovered:** no task was left running or verifying. After the restart the daemon resumed the workers, and `148b0001`, `17880001`, `677d0001` and `51670001` completed. `cece0001` is blocked with all five tasks completed (verdict defect). Merges for six completed PRDs are pending.
+
+- **Hold exception (operator, 2026-10-20 23:00):** the hold on test-heavy PRDs until the production tmux guard (`df790001`) ships is lifted for the two release blockers only: the Go version bump (`9db60001`) and the flaky autonomous tests (`4cbc0001`). Each is validated first, runs with Sonnet or Haiku workers on a Claude lane, and its tests run with `env -u TMUX -u TMUX_TMPDIR`. Everything else stays held.
+
+- **Hold lifted (2026-10-20 23:39):** the production tmux guard shipped as 9.5.34 and the daemon runs it. PRD-owned worker, verifier and guardrail sessions start without `TMUX` and `TMUX_TMPDIR` (verified on a new worker's process). Operator-started sessions are unchanged. Keep running tests with `env -u TMUX -u TMUX_TMPDIR`, and keep reading any task that touches tmux, pkill, killall or systemctl before its verification runs.
+- **Restart revives stale smoke PRDs (BL500, 2026-10-20 23:38):** `3b518952` and `69e8421b` came back as running after every daemon restart, even after a cancel (the cancel leaves them `failed`). Cancel them after each restart until BL500 ships, or ask the operator to delete them.
+
+- **Set the Sonnet verifier before approving a Claude-lane PRD (lesson, 2026-10-20 23:57).** `prd-set-verification-llm` and `prd-set-llm` are accepted only while the PRD is `needs_review`, `revisions_asked` or `cancelled`; on an approved or running PRD the call fails (HTTP 400) and my commands hid the error. So the Claude-lane PRDs `148b0001`, `51670001`, `677d0001`, `df790001`, `9db60001`, `4cbc0001` and `60270001` were all verified by qwen on the GPU pool (`verifier_source: global`), not by Sonnet, and each such verify takes a GPU engine, which can push the pool past two engines. Order for a Claude-lane PRD: validate the plan, then `prd-set-llm` (worker) and `prd-set-verification-llm --backend claude-code --model sonnet`, read the result, then approve and run. Never send these calls to /dev/null.
+
+## Lesson: merge helpers must refuse leftover conflict markers (2026-10-22)
+
+The BL398 merge (v9.5.76) shipped `docs/testing-tracker.md` with unresolved conflict markers: the trial merge listed it as unresolved, only the changelog was resolved by hand, and `finish-merge.sh` committed everything with `git add -A`. The build, lint and tests do not read that file, so nothing failed. It was found on the next merge and fixed on main without a release. `finish-merge.sh` now aborts with `CONFLICT_MARKERS_REMAIN` when the staged diff adds a marker line. Before running it, list `git diff --name-only --diff-filter=U` and resolve every file it names, not only the one you expect. Earlier the helper script's `--ours` shortcut for `api.go` and `main.go` silently dropped branch changes; it now resolves only the version-variable hunks.
+
+## Lesson: the planner copies absolute paths and process words into task specs (2026-10-22)
+
+Task specs that contain an absolute home or temp path, or the words kill and tmux next to a session, fail the scope lint and block the PRD. Add this to every new PRD spec: "Wording rule for every task text and script: never use absolute paths, never use the words kill, killed or tmux, and never name process-ending commands; say session end path and terminal multiplexer." A blocked PRD accepts task edits; replace the text and reset the task with force.
+
+## Lesson: run go mod tidy before shipping (2026-10-22)
+
+The v9.5.90 release (BL428 Phase 5) failed the pipeline's "verify go.mod is tidy" step: the worker's code imported a module directly that `go.mod` still listed as indirect. Build, lint and tests do not catch it. `finish-merge.sh` now runs `go mod tidy` and stages `go.mod` and `go.sum` before committing, so the merge commit carries the fix. Also check the Release workflow's goreleaser job for every tag, not only the go test job.
+
+## Rule: release numbering, features are minor and fixes are patch (operator 2026-10-23)
+
+Each feature is a minor version bump (x.y.z becomes x.(y+1).0). Defects, fixes, flaky-test repairs and pure documentation or test changes that ship with a fix are patch bumps (x.y.z becomes x.y.(z+1)). The supervisor decides which a merge is by reading the PRD: if it adds operator-visible behaviour or a setting, it is a feature. Only the 10.0 tag belongs to the operator. Until 2026-10-23 every release was a patch bump, including features (9.5.100 to 9.5.125); those stay as released. The merge helper takes `BUMP=minor` for a feature and defaults to a patch. Features waiting at that date: the progress dashboard, the Automation sub-tab and the failure escalation policy; fixes: the Automata list paging, the external pull request review, the commit scope check and the restart matrix. **Which changes skip the bump (corrected 2026-10-28):** only files under `docs/plans/` and test-only changes skip it. An edit to any other doc (for example `docs/operations.md`), to a workflow, to a script or to `README.md` needs a patch bump with a CHANGELOG entry and the README release line; the CI version-bump check fails the push otherwise (BL622 was pushed without one and needed v9.30.2).
+
+## Lesson: the GPU lanes sat idle for hours and the reports blamed the review backlog (2026-10-24)
+
+From about 00:26 on 2026-10-24 until 06:46, with one 50 minute exception, both GPU lanes were idle while eight decomposed PRDs waited for review. The operator had to ask why.
+
+What went wrong, in order of weight:
+
+1. **I rewrote the 30 minute tick prompt and dropped the rule that sends mechanical PRDs to the GPU lanes** ("GPU lanes take mechanical PRDs on pi-prompt; Claude decomposes everything and takes hard work; keep decompose-ahead; if over pace move work to the GPU lanes"). The idle-lane rule near line 44 of this document says an idle lane is the supervisor's defect, but the shortened prompt no longer carried it.
+2. **I treated my own review backlog as a blocker.** The reports said "idle, blocker: no approved mechanical PRD, PRD X is decomposed and waits for my review". That names an identifier but the blocker was me, which the rule forbids.
+3. **I held approvals to protect the Claude budget** and applied that to every lane. The GPU lanes cost no Claude usage, so the hold had no reason to cover them. Every PRD had also been set to a Claude worker at filing time, so nothing was queued for the GPU lanes.
+
+Rules from now on, also written into the tick prompt:
+
+- Claude limits never hold work for the GPU lanes. If a GPU lane is idle and any PRD is needs_review, approved, draft or decomposable, review it, move its worker to pi-prompt with `prd-set-llm`, approve it and run it in the same tick.
+- Mechanical patterns (config surfaces and parity, tests, docs, ports, small fixes, CRUD) go to the GPU lanes; design-heavy, debugging-heavy and UI-layout work waits for Claude.
+- The supervisor's own review backlog is never a valid blocker. A lane is reported idle only for an external blocker with an identifier, such as an operator decision.
+- Keep at least two mechanical PRDs queued for the GPU lanes at all times (decompose ahead).
+- When shortening or rewriting the tick prompt, diff it against this document first.
+
+
+## Lesson: a finished PRD was never merged and the same feature was built again (2026-10-24)
+
+PRD `da660001` (automatic lane fill, 12 commits, completed 2026-10-19) never reached main, and on 2026-10-24 the supervisor filed BL514 and started building the same capability again. Two process gaps caused it. First, the registry audit counted commits ahead of main per branch; merges here rewrite commits, so 18 finished branches looked "ahead" forever and the whole list was read as stale noise, hiding the one completed PRD that was truly unmerged. Second, filing a PRD from the roadmap had no search-first step: row 95 described the problem and nobody looked for a completed PRD, a branch or a closeout for it. Fixes, all in check 7 above: the content-based `scripts/branch-audit.py` every tick, a PENDING branch must be merged or recorded as dropped in the same tick, and a search of the registry, all PRDs and the branches before any new PRD is filed. The Automation coordinator needs both as built-in behaviour (section 12).
+
+
+## Lesson: security-scan was red for a day and the ticks only watched the Release workflow (2026-10-24)
+
+Two earlier commits (the libbrotli1 and openjdk suppressions) edited `.trivyignore` by hand. The security-scan job regenerates `.trivyignore` from `security/accepted-risks.yml` and fails on any difference, so every push to main since then showed a red security-scan. The ticks listed only the Release workflow and called it healthy. Fixed on 2026-10-24 by moving the three CVEs into the registry (traces kept) and regenerating. Rules: check 8b above (all workflows every tick), and a suppression is only ever added to the registry, then generated, never to `.trivyignore` directly.
+
+## Lesson: a blocking question stopped the ticks and the lanes sat idle for 16 hours (2026-10-24)
+
+The ticks are session crons and fire only while the session is idle. At 15:10 on 2026-10-24 the supervisor asked a blocking multiple-choice question (BL607 decisions) and the operator answered at 07:21 the next day, 16 hours later. No tick ran in between, so the lanes sat idle, 4 PRDs finished unmerged, 3 more failed or blocked and nothing was triaged. Rule: before asking any blocking question, first put every lane on work that does not depend on the answer, merge what is finished, and start the merges and deploys that take time; ask the question only when the next tick is not due within the next hour, and prefer a plain-text question at the end of the report (which does not block the crons) for anything that can wait. Do not use the blocking question tool when the operator may be away.
+
+
+## Lesson: a stale draft PRD was run and duplicated shipped work (2026-10-25)
+
+PRD 85d00001 (BL431 Phase 3) was a draft from 2026-10-22 that asked for pause, resume, cancel, skip, insert, remove and reorder on an Automation, on REST, MCP, CLI and the comm channel. Phases 2 and 3a had already shipped all of it. The supervisor decomposed and approved it on 2026-10-25 without grepping main, and it ran 8 tasks (about 4,500 lines) before the merge attempt showed 22 conflicts in files that already contained the same functions. Rule: before running any decomposed or draft PRD, grep main for the names it asks for (check 4a), and when the PRD is older than the last release, read the registry rows of the work it depends on.
+
+### Everything that waits on the operator is a question in the queue (2026-10-30)
+
+Operator, 2026-10-30, quoted: "Should blocked or held waiting on me also be questions?" Yes. With the question channel on (`autonomous.questions.enabled`), anything that waits on the operator (a design proposal, a held or blocked PRD, a policy choice, a deletion I am not authorised to make) is raised with `datawatch question raise`: options, my recommendation with its reason, and a forced default (`hold` when nothing should happen without an answer). The tick report lists the count of open questions and the oldest, not the text of each; it reads the queue at the start of every tick and acts on answers (an answer's quoted words go into the design or decisions doc as before). A question is raised once; do not raise duplicates. The first 15 were raised on 2026-10-30: node placement for evals, the eight pre-10.0.0 proposals, hung request options, the chain advance rule, model routing (BL517), push on complete (BL486), BL644 pending items and BL433.
+
+### Every new operator-visible feature has a "?" help entry and a definitions section (2026-10-30)
+
+Operator, 2026-10-30, quoted: "also didnt see ? With definitions for all new features, need to add that to the audit prd, it is a rule that was missed". Each card and settings section in the web UI gets its "?" link from the table `DOCS_LINKS_BY_KEY` in `internal/server/web/app.js` (the same keys as the mobile apps' DocsLinks table) mapped to an anchor in `docs/datawatch-definitions.md`. A feature PRD spec must name its card key, its table entry and its definitions section, and its docs task must add all three; the plan review checks that the plan has that task. The cards added from 9.0.0 to 9.42 lack them; the backfill is PRD `d6970001` in the final stage (registry row 259). The same applies to the PRDs now running (lane fill, merge pending, repo CI watch, supervisor watch, cleanup, held-state questions), which the backfill covers.
+
+### Read the queue's answers every tick (2026-10-30)
+
+On 2026-10-30 eight questions were answered between 13:33 and 13:42 and the tick reports kept showing only the first answered one. Every tick lists `datawatch question list --state answered` and acts on each answer not yet recorded: the answer and the operator's quoted words go into the design or decisions doc, the proposal's `Confirmed` line is set where it applies, and the follow-up PRD is filed. Standing design rule (operator, 2026-10-30, quoted: "need to remember most options need to be configurable since others may use datawatch in their own way, my answers are default and our use case"): every behaviour choice a PRD builds is a configuration key, with the operator's answer as its default.
+
+### How to write a question for the queue (2026-10-30)
+
+Operator, 2026-10-30, quoted: "Maybe i am missing the question or it needs to be clearer, please review this and the next screenshot in pwa, not app, and help me understand the quotation being asked or isn't clear". My first batch asked 'confirm proposal A' with the generic options confirm, walk me through and not now, using tracker identifiers and shorthand; the operator could not tell what was being decided. A question must stand alone: say in plain language what the situation is and what is being decided, name no tracker identifier, offer the real choices as options (each with a trade-off line giving its cost and its risk), give a recommendation with its reason, and set a forced default. Questions that say 'confirm the recommendation' are not allowed. The eight proposal questions were withdrawn and raised again in this form on 2026-10-30.
+
+### What the supervisor still does by hand (2026-10-30)
+
+Operator, 2026-10-30, quoted: "What else are you doing by hand that datawatch should be doing?" The inventory, each with what removes it:
+
+1. Merging a finished Automaton (trial merge, conflict resolution, the version and changelog, lint, the full tests, the ship, the tag): the coordinator merge mechanics step (the last supervisor duty step, behind a design answer) and the pre-flight and post-flight checks feature. Not filed as a PRD yet beyond the answered design questions.
+2. Cancelling the PRD record and the Automation after a ship: the merged-member-completes feature (`46df0001`).
+3. Deploying (build, install, restart, check the leases and sessions): done by hand and still no PRD (filed as row 265, draft `90d60001`). Deploy is routine, never a question: the operator's standing rule is that the local daemon runs the latest main and restarts freely; on 2026-10-31 the operator asked "Why didn't you deploy" after seven releases sat undeployed for hours because the supervisor kept holding the restart to protect running work. Deploy after every ship, record the running sessions first (tmux sessions survive a systemd restart), and check the resumed PRDs afterwards.
+4. Checking the hourly list (lanes, held tasks, CI, releases, disk, questions): the daemon-side supervisor watch (`85720001`) covers the findings; the hourly tick as a whole is not replaced.
+5. Reading a plan for coverage and approving it (acknowledging the false findings of the plan-coverage gate): draft PRD `a8e80001` (files a task creates and stray spec tokens stop being findings). Reading the plan itself stays a supervisor job.
+6. Moving a task to another backend when it is slow or stuck, and releasing a hung verification: the request progress observer (`8f040001`) and the model routing and per-task pin work (`b2220001`).
+7. Resetting tasks after a failure caused by the disk quota or a restart: shipped in 9.50.0 (transient infrastructure failures retry automatically and dependents recover); the held-state questions feature (`56d30001`) covers what still holds.
+8. Committing a worker's uncommitted work after a backend move or a cancel and reopen, and checking the worktree before a merge: shipped in 9.51.0 (the executor refuses to complete a task whose work was not committed).
+9. Writing the PRD specs, the follow-up PRDs after an answer, and the registry rows and decision records: decisions raising their own questions (`ee660001`) covers the question part; filing the follow-up PRD from an answer is the follow-up list in that feature; the registry row is no PRD yet. To file.
+10. Recording the operator's answers and their quotes in the design docs: decisions raising their own questions (`ee660001`).
+11. Reading the answered questions every tick: the same feature, applying an answer.
+12. Cleaning up temp space and worktrees: the cleanup feature (shipped in 9.43.0) and the test leak fix (shipped in 9.42.3).
+13. Reading CI failures, finding the cause and shipping the fix: the repo CI watch (shipped 9.38.0) reports and reruns a hung run once; diagnosing is not automated and should stay a supervisor job.
+14. Budget: reading the percentage, computing the pace and choosing lanes: the usage calculator advises; moving the lane count automatically within the operator's setting is not built. To file.
+15. Starting the next feature step when one merges (filing it, decomposing it, starting it in an Automation): the Automation chain does the start; filing the next step is by hand.
+
+### Friday-night Claude burn (2026-11-01)
+
+Operator, 2026-11-01, quoted: "see what happened Friday night, we were on track for Sunday 8am then [ran out] a full day in advance, something used a lot of claude". Then, quoted: "Remember the claude usage is token based not $". The first analysis priced the transcripts in dollars; that was the wrong unit and it overstated cache reads, so it is replaced by a fit in tokens. Fitted to the 16 usage readings of 2026-10-25 to 2026-10-31 and the session transcripts: usage points are about 0.373 per million cache-write tokens plus 0.0069 per million cache-read tokens (output tokens add nothing once cache writes are in; error about 1.5 points per interval). `scripts/claude-burn.py` applies it.
+
+What the tokens say: from the 70 percent reading on Friday 13:28 the account reached its limit about Saturday 05:30, 26 hours early, about 28.5 points in 16 hours, 1.7 points an hour, three times the 0.55 an hour the calculator projected for two lanes. The allowed pace is 14.3 points a day, 0.6 an hour. Workers and verifiers in task worktrees were 91 percent of the points (51.6 million cache-write tokens and 1,047 million cache-read tokens over the week to date) and the supervisor session 9 percent. Cache writes dominate: they are new context created, so the cost is the number of worker turns that add new context, retries that rebuild context, and large worker contexts, not the supervisor.
+
+Rules from this:
+1. **The per-tick pace check is mandatory and is computed, not asked.** Each hourly tick runs `python3 scripts/claude-burn.py --since "<last reading time>"` and leads the report with points used since the reading, points per hour against 0.6, and the projected percent at the reset. Over the pace line means: cap to 1 lane and move new work to pi-prompt in that same tick. Waiting for the operator to type a reading is not a check.
+2. **Mechanical tasks never go to Claude at high effort.** Docs, parity filing, live checks, final gates and report tasks run on pi-prompt or at most medium effort. Sonnet high is for debugging and design-heavy tasks.
+3. **Retries on Claude are bounded.** After three failed attempts of one task stop and bring it to the operator; six Sonnet high attempts on one documentation task were spent on 2026-10-31, each one rebuilding the context.
+4. **A lane approval ends at its stated time** and the cap returns to 1 then without being asked.
+5. The daemon-side fix is the burn guard PRD (registry row 278).
+
+### Shipped work is not cancelled (2026-11-01)
+
+Operator, 2026-11-01, quoted: "Closed automation are canceled?  That is a terrible state,  how do we tell the difference from real canceled?" Counted from git history: 29 of 30 cancelled Automations and 178 of 281 cancelled PRDs were merged into main; the genuinely cancelled are 1 Automation and about 103 PRDs. The supervisor's close step after a ship was "cancel the PRD record, then cancel the Automation", because nothing better existed, and the state alone cannot tell the two apart.
+
+Rules from now on:
+1. **After a ship, do not cancel the PRD or the Automation.** Leave the PRD completed and let the Automation finish through the merged-member rule (9.45.0, `autonomous.automation.merged_member_policy` completed). The worktree and temp cleanup (9.43.0) removes the branch and worktree after the retention time. `cancel` means abandoned work only.
+2. The registry row and the release name the PRD that shipped; the branch audit already treats a completed PRD whose commits are on main as landed.
+3. How shipped work is shown in the product (merged fields, a shipped status, or both) is a queue question; the filed PRD is `Shipped state for Automata and Automations` with a backfill from git history.
+
+Correction, same day, 15:55: the first ship after that rule showed why the cancel step existed. PRD `8f040001` finished all 17 tasks, was pushed, got a warn verdict from the rules review at 15:46 and then stayed `running` indefinitely (its record had not been updated since the verdict), and its Automation stayed active; the watch keeps listing it as merge ready. Until the shipped state PRD (`89560001`) adds a proper close action and the backfill, the supervisor still cancels the PRD and Automation after a ship so the lists stay usable, and that cancel is the exact mislabel the backfill corrects from git history. The stuck-after-warn behaviour is its own defect (row 283).
+
+### Shipped a PRD whose review had blocked it (2026-11-01)
+
+At 16:07 the supervisor shipped `a5db0001` (lane fill step 10, v9.56.0) while its completion rules review had returned **block** at 15:52 and the daemon's content auto-fix was running. The watch had reported "MERGE READY" because all 13 tasks were done, and the supervisor did not read the verdicts. The block listed: lint findings (the supervisor fixed these in the merge before shipping), operator identifiers in tracked reports, "PRD" wording in operator text, missing documentation, end-to-end, audit and smoke coverage, and the parity note on an old issue instead of a new one. This is exactly "never merge around the judge".
+
+Rules:
+1. **Read the verdicts before a merge.** Merge only when the latest completion rules review is pass or warn. A block with the daemon's auto-fix running is waited out; the corrective commits are merged afterwards as their own release. The watch script now reports `JUDGE BLOCKED` and `MERGE WAIT` instead of `MERGE READY` for those cases.
+2. **Generated reports leak operator identifiers.** PRD workers write the host name and home paths into plan documents; scrub tracked files for them at every merge until the leak check PRD (`5fab0001`) exists. Done at 16:05 for the 10 files this merge brought.
+3. What remains open on `a5db0001`: the daemon's corrective task, the wording fix in the lane fill text, the missing coverage and a new parity issue; the PRD is left running and will be merged again.
+
+## A silent pi worker is not a hung pi worker (2026-11-02)
+
+The watch's SILENT line looks at file changes and logs in the worktree. A pi worker started with `--print` writes its output file only when it finishes, and while it reads a large file or compacts its context it changes nothing in the tree. Before ending any pi worker, read its transcript: the newest `*.jsonl` under `~/.pi/agent/sessions/<worktree path with slashes as dashes>/`. If its modification time is recent (minutes), the worker is working; leave it. End a pi worker only when the transcript has not changed for 30 minutes and the model server shows no request from it. On 2026-11-02 a working worker was ended on an empty output file and lost about 20 minutes of work.
+
+## Cancelling an Automaton removes its verification scripts (2026-11-02)
+
+Decompose writes each task's verification script into the Automaton's worktree as untracked files. Cancelling the Automaton removes that worktree, scripts included, and every task then fails with a missing-script setup fault. To change an Automaton's LLM after it started, do not cancel it: that costs a second decompose. Set the LLM while the Automaton is still in review, before the first run, because the settings are locked once it runs. On 2026-11-02 cancelling the leak-check Automaton to move it from Claude to the pi lane lost its 16 scripts and forced a second decompose.
+
+## The rules file question, answered 2026-11-02
+
+Operator, 2026-11-02 06:52, through the PWA, on the question about the paragraph a worker had added to AGENT.md for the Claude Code prompt table: option "Leave AGENT.md alone; the definitions page already documents the exception", with no further words. Effect: the paragraph stays out of AGENT.md. Workers still must not edit AGENT.md without being asked, and the leak-check Automaton's own task that updates the leak rule and checklist item A8 is the one edit asked for (the operator's 2026-10-30 report).
+
+## A scrub must not change what code means (2026-11-02)
+
+The leak-check Automaton replaced the two cloud metadata addresses in the push and webhook SSRF guards with documentation placeholders so that its own check would pass, which weakened the guards; its rules review caught it as a failed verdict with a blank outcome (the status field read like a pending review). When a merge shows a blank review outcome, read the verdict text before treating it as pending. Before merging any scrub or rename Automaton, diff the non-test, non-comment Go lines against the merge base: any changed string or number in code is a behaviour change until proven otherwise. Public constants that code must keep go on the check's allowed-address list instead of being rewritten.
+
+## A scrub that touches build files needs a build (2026-11-02)
+
+The same scrub that changed the cloud metadata addresses also rewrote the container user name in seven Dockerfiles as a build argument declared before the first FROM. That argument is empty inside a stage, so the agent-base image failed to build, and the failure showed only in the next image refresh, hours after the release. Its review, lint and the Go suites cannot see it. Before merging any Automaton that edits files under docker/ or .github/, build the touched image locally or reproduce the changed line in a small Dockerfile, and check the next image-refresh run the same day.
+
+## The Python XML finding, answered 2026-11-02
+
+Operator, 2026-11-02 11:22, through the PWA, on the question about CVE-2026-7210 (a critical Python 3.11 XML parser finding with no Debian fix, reachable in the aider agent image): option "Accept the risk for 30 days", with no further words. Effect: the registry entry was renewed to 2026-12-02 in 9.63.2 with the operator's acceptance recorded; Debian is re-checked weekly and the entry is removed when a fixed version ships. The registry check still prints two escalation lines for it; they are the standing reminder, not an open item.
+
+## A smoke test must never copy the operator's configuration into the repository (2026-11-02)
+
+The cost report Automaton's live smoke test ran a throwaway daemon whose data folder was created inside the repository (under tmp/) as a copy of the operator's data, including the inference configuration with a real API key. A worker committed about 70 of those runtime files, and the daemon's push before teardown sent three branches to GitHub before any review could see them. The completion review caught it; the supervisor deleted the three remote branches, removed the commit from every local branch, tag and worktree, collapsed the Automaton branch into one clean commit, and told the operator to rotate the key. Rules for specs and merges from now on: (1) any task that starts a throwaway daemon puts its data folder under the supervisor scratch folder (outside every repository) and never copies the operator's configuration, inference or secrets files into it; (2) before approving a decompose that contains a live smoke task, read its spec for the data folder; (3) on a blocked review that mentions runtime files or a key, check the remote branches at once, because the push happens before the review; (4) a key found in a pushed commit is treated as leaked whatever is deleted afterwards.
+
+### Lesson 2026-11-03: group Automata by theme; never write back a spec you only read through a truncating view
+
+Why: one-member wrappers around every Automaton added records and no behaviour. The Automation is meant to carry order, shared settings and a budget for several members. Separately, an Automaton read returns its spec cut at 4096 bytes with a marker inside the text, and editing from that read lost the tail of a placeholder spec (recovered from the saved attachment of the earlier record).
+
+Rules:
+1. The arc is the spine for a release: bugs and defects first, then features, then the held final stage. Everything shares one set of lanes and the capacity ledger; Automations decide order, LLM settings and budget, never lane ownership.
+2. Standing maintenance (deflake, CI fixes, security triage, process tuning) lives in one continuous Automation outside the arc; members are inserted as they appear.
+3. Every defect or tuning finding gets a member the day it is found, and recurring mistakes become decompose lint rules and task templates.
+4. Before editing a spec, check its size; if the read shows a truncation marker, rebuild the spec from the saved attachment or the registry, never from the marked text.
+5. `datawatch automation get <id>` prints a table; use `--json` for the raw response. That was not a bug.
+
+### Lesson 2026-11-03: do not close the record of a merged Automaton that is a member of an active Automation
+
+Why: after merging the smoke-check lint I cancelled its Automaton record, as the old procedure says. It was the entry member of the active maintenance Automation, which then went blocked and could not be skipped, resumed or returned to draft, so the next members never started. The Automation had to be cancelled and recreated.
+
+Rules:
+1. For a member of an active Automation, let the Automation finish the member (or skip it before the merge). Cancel the record only for a standalone Automaton.
+2. A blocked Automation cannot be edited, skipped or resumed; recreate it. The entry-member defect (`72d90001`) covers returning a never-started blocked Automation to draft.
+3. Set the worker backend before approval; it is locked once the Automaton runs.
+4. A started stage cannot be reshaped: build it parallel from the start, with a normal Automaton as its entry member.
+5. The merge helper needs the changelog body at `../body-<id>.md`; check the changelog and README after every merge.
+
+### Lesson 2026-11-03: set the backend before approving, and never let a helper set it for you
+
+Why: my approve helper ran the PRD LLM setter with the local model after every approval, which silently replaced the cloud backend I had set on three defects. Once an Automaton runs, its backend is locked; the only way back was to cancel the Automaton (which wedged the Automation that held it as entry), reset it to draft and re-plan it.
+
+Rules:
+1. Set the worker backend, model, effort and planning profile on a draft, before the first decompose and before approval. Approval helpers must not set them (the helper now sets them only when asked).
+2. Check the backend on the Automaton after approving, before an Automation starts it.
+3. If a backend must change after approval: stop the Automation first, cancel and reset the Automaton to draft, change it, plan again. The planner re-queue defect (`9e4d0001`) is meant to remove this.
+
+### Lesson 2026-11-03: a test file under the embedded web folder needs a version bump
+
+Why: I fixed a CodeQL alert in `internal/server/web/app-usage-billing.test.js` and pushed it as a test-only change with no bump, following the 2026-10-28 note that test-only changes skip the bump. The CI version check failed (version not greater than base), because that folder is embedded in the binary and the check counts any change under it. A patch release (9.71.1) fixed it.
+
+Rule: "test-only changes skip the bump" holds for Go test files and test scripts outside the embedded folders. Any change under `internal/server/web/`, including `*.test.js`, takes a patch bump with a changelog entry and the README release line, even when it only fixes a test.
+
+### Lesson 2026-11-03: a deploy restart can throw away a running worker's output
+
+Why: the 9.73.1 deploy restarted the daemon while a task was launching. The task's first attempt was recorded as failed ("daemon is shutting down; a new launch is refused"), yet its worker session kept running for 93 minutes. When the executor started a second attempt it reset the worktree, and the first session's diff (444 lines in 13 files) was discarded. Two earlier deploys also reset planning runs to draft.
+
+Rules until the restart defect (`aee00001`) is fixed:
+1. Before a deploy, check `datawatch capacity` for running tasks and how long they have run. Prefer to deploy when no task has run more than about ten minutes, or batch deploys: ship several merges, deploy once.
+2. A deploy of a change that only touches docs, scripts or tests does not need a restart (already the practice).
+3. After any restart, restart the planning runs that went back to draft and check each running task's attempts for a spawn failure with a live session.
+4. The deploy-after-ship rule stays, but "never hold" means do not leave a release undeployed for hours, not restart under a long running task.
+
+### Lessons 2026-11-09 (the day the daemon started running standard tasks and gates itself)
+
+1. **An Automaton branch goes stale.** The daemon never updates an Automaton branch from main. An Automaton created before a feature ships has tasks that depend on it and stop ("the setting the spec depends on exists only on main"); the watch shows it as SILENT and a worker waits at its prompt. Before approving an old Automaton, and when a worker reports a missing feature, check `git rev-list --count HEAD..main` in its worktree and merge main in (a helper resolves conflicts keeping both sides; take main's CHANGELOG; `go build` catches duplicate declarations). Never reset a stalled worker's task without merging first. A task marked completed with no code on the branch needs `reset_task force` after the merge.
+2. **A final gate script must not require its own report.** Since the daemon runs a final gate's verification script itself and writes the report after the script exits, a script that checks for a report (a Verdict line) fails every time. Gate scripts either write their own report or skip the check. Gate checks that grep for exact words (for example "host login" against a how-to that says `host_login`) should accept the identifier form.
+3. **A planner can starve behind a worker that holds the single Claude slot.** Aging does not beat a higher-priority holder and a planner never preempts a running task. When a planner waits more than ten minutes with no session, raise its priority above the holder until it plans, then put it back.
+4. **The idle pi slot.** Tasks queued for the single Claude slot wait while a pi slot idles. Move small mechanical tasks with `prd-set-task-llm ... --backend pi-prompt` each watch (docs, config keys, scripts, adapters), skipping tasks with unfinished dependencies and Automata being repaired. The guard's pi routing covers only tasks created after it moved.
+5. **Check before a restart, then gate on it.** Count live planner sessions with a filter on the session kind (decompose), not on a word match, and stop the chain when the count is not zero.
+6. **Command-like file names stay out of worktrees** (a file named after a shell command was committed to an Automaton branch and blocked a merge review).
+7. **Old standard tasks are not daemon-run.** Whether a standard task runs in the daemon is decided when the plan is made. A plan decomposed before the daemon task modes shipped still holds docs-set and parity-draft tasks that run as sessions on pi, queue behind each other, and keep an otherwise finished Automaton open for hours. For a finished Automaton, cancel the leaf docs-set and parity-draft tasks that nothing depends on (the daemon's generated artefacts and the merge step cover the parity draft). Check dependents first: a final gate that depends on them would fail.
+
+8. Per-story standard tasks that cannot pass (2026-11-10). A per-story changelog entry task runs once its own story's tasks are done, but the verifier judges it against the whole Automaton, so it fails while later stories are unfinished (observed on the verifier run cap and the Vault alert Automata). The version-note and docs-set standard tasks can have nothing to change, so the verifier fails them with "no changes detected". Do not cancel them: a cancelled task stops the completion judge from running ("every task must be completed"). A running Automaton also rejects task edits. Recipe: let the Automaton reach blocked (every other task terminal), then edit the held task into a read-only check with a report path under .datawatch/reports/ (edit_task with read_only and report_path), and retry it with resolve-review. A scoped note on a retry of a changelog task may be enough when the entry only needs to name what its own story delivers.
+
+9. A cancelled task hides a finished Automaton (2026-11-10). The watch only flagged an Automaton as done when every task was completed, so one with completed and cancelled tasks never showed up, while the daemon's completion judge refuses to run when any task is cancelled and the daemon then marks the Automaton blocked as stuck running. A restart-safety Automaton sat that way for nineteen hours, and about nine finished Automata were stranded, the oldest since 7 November. Rule: the watch treats completed and cancelled as terminal and flags STUCK for an Automaton that is all terminal with a cancelled task, or blocked with a stuck-running reason (fixed in scripts/supervisor-watch.py). In the hourly tick read blocked_reason for every blocked Automaton, not only the task states. Never cancel a task to clear it; reset a cancelled task (force) so the judge can run, and convert a task that cannot pass into a read-only check instead. A daemon-side fix is open: the judge should treat a cancelled task as terminal, and a stuck-running block should raise an alert or a question.

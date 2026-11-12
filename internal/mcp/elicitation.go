@@ -108,7 +108,8 @@ func (d *ElicitationDispatcher) Elicit(ctx context.Context, req ElicitationReque
 
 	raw, err := d.srv.RequestElicitation(ctx, sdkReq)
 	if err != nil {
-		if errors.Is(err, server.ErrElicitationNotSupported) || errors.Is(err, server.ErrNoActiveSession) {
+		if errors.Is(err, server.ErrElicitationNotSupported) || errors.Is(err, server.ErrNoActiveSession) ||
+			errors.Is(err, server.ErrServerInitiatedRequestUnsupported) {
 			return nil, ErrElicitationNotSupported
 		}
 		return nil, fmt.Errorf("elicitation request failed: %w", err)

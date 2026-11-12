@@ -6,9 +6,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/tagregistry"
+	"github.com/dmz006/datawatch/internal/trace"
 	"io"
+	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -16,6 +21,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,31 +36,40 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/auth"
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/fingerprint"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/memory"
+	"github.com/dmz006/datawatch/internal/mergepipeline"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
+	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
+	"github.com/dmz006/datawatch/internal/requestwatch"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/shutdowncause"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tooling"
+	"github.com/dmz006/datawatch/internal/usagecalc"
 	"github.com/dmz006/datawatch/internal/vision"
 	"github.com/dmz006/datawatch/internal/websearch"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // PipelineAPI is the interface for pipeline operations from the HTTP server.
@@ -190,35 +205,90 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.5.26"
+var Version = "9.147.0"
+
+// broadcastSessionsAsync pushes the session-list change to every client
+// without blocking the caller. The default-view sessions are selected with
+// the cheap state / UpdatedAt check and copied under the store lock here,
+// on the caller's goroutine: the monitor goroutines keep writing the live
+// sessions, and marshalling them from the broadcast goroutine would race
+// with those writes. Nothing outside the default view is copied, and
+// nothing at all when no client is connected. The goroutine is tracked in
+// broadcastWG so a test can wait for it before mutating or tearing down
+// the sessions it marshals.
+func (s *Server) broadcastSessionsAsync() {
+	if s.hub == nil {
+		return
+	}
+	if s.hub.ClientCount() == 0 {
+		s.hub.resetSessionSnapshot()
+		return
+	}
+	view, held := s.hub.defaultViewSnapshot()
+	if held == nil {
+		return
+	}
+	s.broadcastWG.Add(1)
+	go func() {
+		defer s.broadcastWG.Done()
+		s.hub.broadcastSessionList(view, held)
+	}()
+}
 
 // Server holds all HTTP handler dependencies
 type Server struct {
-	hub      *Hub
-	manager  *session.Manager
-	hostname string
-	token    string
+	// traceStore feeds the additive trace_usage field of the cost report
+	// (nil when tracing is not wired).
+	traceStore *trace.Store
+	hub        *Hub
+	manager    *session.Manager
+	hostname   string
+	token      string
+	// broadcastWG tracks the fire-and-forget sessions broadcasts started by
+	// broadcastSessionsAsync so a test can wait for them.
+	broadcastWG sync.WaitGroup
+	// peerClients caches one TLS-configured HTTP client per federation peer,
+	// keyed by peer name; peerClientsMu guards it.
+	peerClientsMu sync.Mutex
+	peerClients   map[string]peerClientEntry
 	// SEC-016 — tokenMu guards token/oldToken/oldTokenExpiry, which
 	// POST /api/auth/rotate-token mutates live (hot-swap, no restart)
 	// while fedAuthMiddleware reads them on every request. oldToken stays
 	// valid until oldTokenExpiry (a 60s grace window from rotation) so a
 	// client that already has the previous token isn't cut off mid-flight;
 	// after that it's hard-revoked, same as if it had never existed.
-	tokenMu            sync.RWMutex
-	oldToken           string
-	oldTokenExpiry     time.Time
-	availableBackends  []string // registered LLM backend names
-	cfg                *config.Config
-	cfgPath            string
+	tokenMu           sync.RWMutex
+	oldToken          string
+	oldTokenExpiry    time.Time
+	availableBackends []string // registered LLM backend names
+	cfg               *config.Config
+	cfgPath           string
+	// dataDir is this instance's explicit data-directory override (set by
+	// the daemon at startup; empty in bare test fixtures). statePath
+	// resolves it first, then cfg.DataDir, then the config default.
+	dataDir string
+	// configAudit (BL110 extension) — the shared config-write audit sink
+	// (surface "rest"); nil means REST config writes produce no audit
+	// record. One audited record per PUT /api/config or PUT
+	// /api/cost/rates from session or peer callers (admin excluded — see
+	// auditConfigPut).
+	configAudit        *federation.ConfigAuditor
 	schedStore         *session.ScheduleStore
 	exitHookStore      *session.ExitHookStore      // BL356
 	queueStore         *session.QueueStore         // BL357
 	discussionSubStore *session.DiscussionSubStore // BL358
 	resultStore        *session.ResultStore        // BL360
-	cmdLib             *session.CmdLibrary
-	alertStore         *alerts.Store
-	filterStore        *session.FilterStore
-	statsCollector     *stats.Collector
+	// scheduleResultStore — per-schedule structured result history backing
+	// the result panel (POST /api/sessions/{id}/result, GET /api/schedule-results*).
+	scheduleResultStore *session.ScheduleResultStore
+	cmdLib              *session.CmdLibrary
+	alertStore          *alerts.Store
+	// mergeShip overrides the merge run route's Ship step (tag/push/deploy
+	// and hook commands); nil runs the production ExecShipRunner. Unit tests
+	// set it to keep those steps off any real remote.
+	mergeShip      mergepipeline.ShipRunner
+	filterStore    *session.FilterStore
+	statsCollector *stats.Collector
 	// F10 sprint 2: profile stores. Wired from main.go via setters so
 	// unit tests can leave them nil (handlers return 503).
 	projectStore *profile.ProjectStore
@@ -289,10 +359,44 @@ type Server struct {
 
 	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
 	computeReg *compute.Registry
+	// servedModels reads and caches what each compute node serves; modelHostCheck
+	// answers the served-models route's model check. Both are nil until wired.
+	servedModels   *compute.ServedModelsCache
+	modelHostCheck autonomous.ModelHostCheckFn
+
+	// Per-node usage cache for the node:<name> capacity pools. Lazily
+	// created by (s *Server) nodeUsageCache(); see node_usage.go.
+	nodeUsageCacheOnce sync.Once
+	nodeUsageCacheVal  *nodeUsageCache
+
+	// Shared usage-calculator readings series (keeper/peer federation). Lazily
+	// created by (s *Server) usageSeries(); see usage_readings.go.
+	usageSeriesOnce     sync.Once
+	usageSeriesCacheVal *usageSeriesCache
+
+	// usageCalc is the usage-calculator advice service (nil = not wired);
+	// see usage_calculator_advice.go.
+	usageCalc *usagecalc.Service
+	// autoLanesSpecialCounter counts open items at a priority threshold for
+	// the auto-lanes status (nil = 0); see usage_autolanes.go.
+	autoLanesSpecialCounter func(threshold int) int
+	// burnGuard is the burn guard runner (burn_guard.go); nil until AttachBurnGuard.
+	burnGuard *BurnGuard
 
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg   *inference.Registry
+	roleMonitor    inference.RoleContentionMonitor
 	capacityLedger *capacity.Ledger
+	// verifierNodeStatus is the daemon's verifier admission state reader
+	// (nil = not wired); see VerifierNodeStatus in compute.go.
+	verifierNodeStatus VerifierNodeStatusReader
+	// capacityWatchdogThreshold lowers the ledger lock watchdog threshold in
+	// tests; zero uses capacity.DefaultLockWatchdogThreshold.
+	capacityWatchdogThreshold time.Duration
+	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
+	usageBackoff *autonomous.Backoff
+	// budgetLedger is the per-LLM dollar budget ledger (nil = not wired).
+	budgetLedger *autonomous.BudgetLedger
 	// capacityAdmit gates an interactive (non-autonomous) session start on
 	// the same node:/llm: capacity pools an autonomous task would use for
 	// the same backend+model — nil when capacity isn't wired at all.
@@ -326,6 +430,11 @@ type Server struct {
 
 	// restartFn is wired from main.go; it restarts the daemon in-place.
 	restartFn func()
+	// restartForceFn is the force-aware restart wired by SetRestartFuncForce
+	// (the restart guard). When set, POST /api/restart and the update restart
+	// call it with the operator's force flag; restartFn stays for the callers
+	// that have no force concept (router, MCP, ACME).
+	restartForceFn func(force bool)
 
 	// acmeManager (BL397) is wired from main.go when acme.enabled is
 	// true. nil when ACME is disabled — every acmeManager consumer must
@@ -355,6 +464,13 @@ type Server struct {
 	// back to server.token when mcp.token is empty (see internal/mcp).
 	mcpTokenConfigured bool
 
+	// mcpSSEStateFn returns the MCP SSE listener state
+	// (disabled|retrying|listening|failed). Wired from main.go via
+	// SetMCPSSEStateFn; nil when SSE is off or never wired — /api/health
+	// reports "disabled" in that case so operators read state from the
+	// health endpoint rather than logs.
+	mcpSSEStateFn func() string
+
 	// nonces mints/consumes SEC-006 short-lived single-use nonces for
 	// browser requests that can't attach an Authorization header.
 	nonces *nonceStore
@@ -365,6 +481,8 @@ type Server struct {
 	// token" by fedAuthMiddleware, falling through to admin/peer
 	// checks). Wired from main.go via SetSessionTokenStore.
 	sessionTokens *auth.SessionTokenStore
+	// traceRecorder receives session trace events (observe only); nil until wired.
+	traceRecorder SessionTraceRecorder
 
 	// BL302 S3 — sampling/elicitation dispatchers (nil when MCP disabled).
 	// Wired from main.go via SetMCPSamplingDispatcher / SetMCPElicitationDispatcher.
@@ -381,7 +499,9 @@ type Server struct {
 
 	// testMessageHandler is an optional function that routes a simulated incoming
 	// message through the router, enabling comm channel testing via the API.
-	testMessageHandler func(text string) []string
+	// The attribution parameter carries the calling credential and its
+	// config:write decision (see TestMessageAttribution).
+	testMessageHandler func(text string, at TestMessageAttribution) []string
 
 	// memoryAPI provides memory operations for the REST API.
 	memoryAPI MemoryAPI
@@ -409,6 +529,91 @@ type Server struct {
 	// Wired from main.go; nil when autonomous is disabled. Handlers
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
+	// costReportLedger — spend ledger read by GET /api/cost/report.
+	costReportLedger spendLedgerReader
+
+	// Defect queue backend + intake decision log (defect_queue.go); nil until
+	// SetDefectQueue wires them, and the defect endpoints answer 503 then.
+	defectQueue DefectQueueBackend
+	defectLog   autonomous.IntakeLog
+	// classifierStatus reads the classifier capability probes and calibration
+	// records; nil until the daemon wires it. classifierMu serialises
+	// allowlist additions.
+	classifierStatus ClassifierStatusSource
+	classifierMu     sync.Mutex
+	// Requirements engine (internal/autonomous or a test fake) + the
+	// automation backend summary provider it reports over. Nil =
+	// /api/automation/requirements-report reports 503.
+	requirementsReporter requirementsReporter
+	automationBackends   automationBackendsSummary
+
+	// requestWatch reads the in-flight model request observations; nil until
+	// SetRequestWatch wires it, and the request-watch route answers 503 then.
+	requestWatch    requestwatch.Reader
+	requestWatchCfg func() config.RequestWatchConfig
+
+	// overlapSearch runs the search-before-create check on the create route.
+	// Nil uses the autonomous finder over autonomousMgr's Automata; tests
+	// substitute a fake that can fail or panic.
+	overlapSearch overlapCreateSearch
+
+	// tagRegistry is the shared Automata tag registry, wired from main.go
+	// (SetTagRegistry). Nil keeps the tag routes on their local write path.
+	// tagRegistryStart starts its sync loop.
+	tagRegistry      *tagregistry.Registry
+	tagRegistryStart func()
+
+	// autonomousSettings reads the autonomous settings the tag routes use, by
+	// config key. Nil, or a key it does not set, means the built-in default
+	// (see autonomous.ResolveAttentionStatuses).
+	autonomousSettings autonomous.SettingLookup
+
+	// progressNow is the clock the progress routes read; nil means time.Now.
+	// Tests set it to a fixed time.
+	progressNow func() time.Time
+
+	// BL427 phase 3 — lifecycle event subscription store for
+	// /api/autonomous/subscriptions. Wired from main.go alongside the
+	// subscription engine; nil (default) makes the handlers return 503.
+	autonomousSubs LifecycleSubscriptionsAPI
+	// questionStore — the operator question channel (raise + read)
+	// backing /api/questions. Wired from main.go alongside the daemon's
+	// data; nil (default) makes the handlers return 503.
+	questionStore QuestionsAPI
+	// decisionFollowUps — records the follow-up an operator asks for when
+	// answering a decision record question; wired by main.go via
+	// SetDecisionFollowUps; nil (default) = a follow_up in an answer is
+	// refused with 503.
+	decisionFollowUps DecisionFollowUpAPI
+	// decisionRecords — the decision record service behind
+	// /api/autonomous/decision-records; wired by main.go via
+	// SetDecisionRecords; nil (default) makes the routes return 503.
+	decisionRecords DecisionRecordsAPI
+	// questionRaiseNotifier — the raise fan-out to the messaging group,
+	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
+	// messaging fan-out (the WS + alert parts do not need it).
+	questionRaiseNotifier QuestionRaiseNotifier
+	// questionNotifies — counts the raise fan-out goroutines in flight
+	// (see WaitQuestionNotifies) so a caller can block until the latest
+	// raise's alert-write side effect has completed.
+	questionNotifies sync.WaitGroup
+	// questionAnswerReturnPath — the per-question opt-in session line on
+	// answer (one line of DATAWATCH_ANSWER: into the asking session); wired
+	// by main.go via SetQuestionAnswerReturnPath; nil (default) = no
+	// session line (the event plus polled GET still carry the answer).
+	questionAnswerReturnPath *autonomous.QuestionAnswerReturnPath
+	// questionEventsSwitch applies autonomous.questions.enabled to the
+	// store's lifecycle-event sink (wired when on, dropped when off). The
+	// daemon binds it at start; a config write that changes the switch calls
+	// it, so a live enable attaches the sink with no restart. Nil = none.
+	questionEventsSwitch func(enabled bool)
+	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
+	autonomousEvents PendingEventsAPI
+	// supervisorLoop serves the supervisor-loop run history and manual runs.
+	supervisorLoop SupervisorLoopControl
+	// BL427 phase 5 — receiving side of peer forwarding for
+	// /api/autonomous/events/forward; nil → 503.
+	autonomousFwd ForwardedEventsAPI
 
 	// BL328 — in-flight async decompose jobs. key=prdID (string),
 	// value=*decomposeJob. Jobs are in-memory only; not persisted across
@@ -425,6 +630,25 @@ type Server struct {
 	pluginWidgetSrc PluginWidgetSource
 	widgetStore     *plugins.WidgetStore
 	pluginTokens    PluginTokensAPI
+
+	// Per-plugin token-usage listing (GET /api/plugins/{name}/tokens):
+	// manifest secret-ref scan + service-token names. Nil until main.go
+	// wires it; the handler returns 503 in that case.
+	pluginTokensSrc PluginTokensSource
+
+	// Per-service model-use report (GET /api/plugins/{name}/models):
+	// models used, Ollama node + memory + context per model, and the
+	// two parameterised findings (small_model_large_context,
+	// node_overloaded). pluginModelsSrc is a test/override injection;
+	// nil uses the default source built from pluginTokensSrc + computeReg
+	// + secretsStore. The model-node events task starts in
+	// StartModelNodeEvents and owns the model_node_unreachable raise via
+	// its recorder (pluginModelNodeRec when wired, else the process
+	// default).
+	pluginModelsSrc        PluginModelsSource
+	pluginModelNodeRec     *plugins.ServiceEventRecorder
+	modelNodeEvents        *plugins.ModelNodeEvents
+	modelNodeEventInterval time.Duration
 
 	// BL117 — PRD-DAG orchestrator (Sprint S8, v4.0.0). Wired from
 	// main.go; nil when orchestrator.enabled=false. Handlers return
@@ -482,6 +706,25 @@ type Server struct {
 	// Nil when not wired; group endpoints return builtin-only lists.
 	fedGroupStore *federation.GroupStore
 
+	// Observer pull protocol — the PullCollector wired to the federation
+	// peer store by NewObserverPullCollector. Nil until wired; while nil
+	// syncObserverPullTargets is a no-op.
+	observerPull   *observerPull
+	observerPullMu sync.Mutex // guards the one-time wiring in StartObserverPull
+
+	// Fingerprint exchange (docs/plans/2026-10-14-concurrency-and
+	// budget-design.md §3c) — the exporter behind
+	// GET /api/federation/fingerprints, wired from main.go when the
+	// compute/inference registries exist. Nil (unwired) answers an
+	// empty list.
+	fingerprintExporter *fingerprint.Exporter
+
+	// Fingerprint match records surfaced for operator decision
+	// (docs/plans/2026-10-14-concurrency-and-budget-design.md §3c) —
+	// behind /api/federation/fingerprint-matches. Nil (unwired) answers
+	// 503.
+	fingerprintMatchStore *fingerprint.MatchStore
+
 	// S14b — per-pod alert rules + observer-driven autoscaling store.
 	// Nil when not wired; handlers return 503.
 	alertRulesAPI AlertRulesAPI
@@ -517,6 +760,10 @@ type Server struct {
 
 // SetWebSearchRegistry wires the shared *websearch.Registry (BL391) used by
 // the /api/websearch/* REST handlers for stats/history/provider-test.
+// SetTraceStore wires the trace store whose model-request and token totals
+// the cost report carries as an additive field.
+func (s *Server) SetTraceStore(st *trace.Store) { s.traceStore = st }
+
 func (s *Server) SetWebSearchRegistry(r *websearch.Registry) { s.websearchReg = r }
 
 // SetWebSearchAPIKeyRefs wires the pre-ResolveConfig snapshot of each
@@ -601,6 +848,10 @@ type AutonomousAPI interface {
 	GetPRD(id string) (any, bool)
 	ListPRDs() []any
 	Decompose(id string) (any, error)
+	// Planning requeue (planning_requeue.go): decompose re-requested while
+	// the Automaton is already planning — re-queue the queued planning run
+	// on the current pool, or explain why the run was left alone.
+	RestartPlanning(id string) (any, error)
 	// BL328 — async decompose with per-story callback. Used by the
 	// SSE-streaming handler. The callback is called for each story as
 	// it becomes available; index is 0-based, total is total story count.
@@ -626,12 +877,23 @@ type AutonomousAPI interface {
 	Reject(id, actor, reason string) (any, error)
 	RequestRevision(id, actor, note string) (any, error)
 	EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error)
-	// v8.23.0 — reset a failed/blocked task to pending for retry.
-	// BL382 — force=true also requeues completed/cancelled tasks.
+	// EditTask is EditTaskSpec plus the read_only flag (nil = unchanged,
+	// empty newSpec = spec unchanged).
+	EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (any, error)
+	// v8.23.0 — reset a failed, blocked or waiting-for-capacity task to
+	// pending for retry (a waiting task needs no force — it is re-admitted
+	// with a fresh wait budget). BL382 — force=true also requeues
+	// completed/cancelled tasks.
 	ResetTask(prdID, taskID, actor string, force bool) (any, error)
 	// clean_restart — as ResetTask, and cleanRestart=true makes the next
 	// attempt skip the restore of preserved attempt work.
 	ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (any, error)
+	// Re-run the PRD-completion "rules-review" guardrail for a PRDBlocked
+	// PRD whose work is fully done: the verdict and a
+	// "guardrail_rejudge" Decision for the acting operator are recorded
+	// in the decision log, a pass unblocks the PRD, a block keeps it
+	// blocked, and a no-verdict failure returns an error.
+	RejudgeCompletionGuardrail(prdID, actor, backend string) (any, error)
 	// v8.36.6 — repair DependsOn titles to real IDs on an existing PRD.
 	RepairDependsOn(prdID, actor string) (any, error)
 	// BL382 — cancel an individual story or task without cancelling the whole PRD.
@@ -646,6 +908,7 @@ type AutonomousAPI interface {
 	AddStory(prdID, title, description, actor string) (any, error)
 	RemoveStory(prdID, storyID, actor string) (any, error)
 	AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (any, error)
+	AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool, reportPath string) (any, error)
 	RemoveTask(prdID, storyID, taskID, actor string) (any, error)
 
 	// Phase 3 (v5.26.60) — per-story execution profile + approval.
@@ -680,6 +943,10 @@ type AutonomousAPI interface {
 	SetTaskVerificationLLM(prdID, taskID string, backend, model, effort *string, actor string) (any, error)
 	SetStoryVerificationLLM(prdID, storyID string, backend, model, effort *string, actor string) (any, error)
 	SetPRDVerificationLLM(prdID string, backend, model, effort *string, actor string) (any, error)
+	// Verifier policy overrides (mode + backend list). nil = leave unchanged,
+	// "" / [] = clear. Precedence task > Automaton > global verifier_policy.
+	SetTaskVerifierPolicy(prdID, taskID string, mode *string, backends *[]string, actor string) (any, error)
+	SetPRDVerifierPolicy(prdID string, mode *string, backends *[]string, actor string) (any, error)
 
 	// BL386 Phase 1 + BL387 Phase 2b — per-PRD warm-start seed config.
 	SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error)
@@ -690,6 +957,10 @@ type AutonomousAPI interface {
 	// GH#172 D75 — per-PRD permission_mode, inherited by tasks spawned
 	// under it as their claude-code --permission-mode default.
 	SetPermissionMode(prdID, mode, actor string) (any, error)
+	// pi --thinking level overrides (task > story > PRD > pi.thinking_level).
+	SetPRDThinkingLevel(prdID, level, actor string) (any, error)
+	SetStoryThinkingLevel(prdID, storyID, level, actor string) (any, error)
+	SetTaskThinkingLevel(prdID, taskID, level, actor string) (any, error)
 
 	// GH#172 D52 — pause/resume a running PRD without treating it as
 	// blocked or failed.
@@ -726,6 +997,13 @@ type AutonomousAPI interface {
 	GetScanResult(prdID string) (any, bool)
 	GetScanConfig() any
 	SetScanConfig(body map[string]any) error
+	// decompose-lint — live config read (autonomous.decompose_lint /
+	// task_templates / decompose_guidance), validated replace, and the
+	// per-PRD read-only dry run. Stored findings ride on GetPRD
+	// (PRD.DecomposeLint).
+	DecomposeLintConfig() any
+	SetDecomposeLintConfig(body map[string]any) error
+	DecomposeLintDryRun(prdID string) (any, error)
 	CreateFixPRD(prdID string) (any, error)
 	ProposeRuleEdits(prdID string) (any, error)
 
@@ -740,19 +1018,36 @@ type AutonomousAPI interface {
 	SetPRDConcurrency(prdID string, n int) (any, error)
 	SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error)
 	SetPRDPriority(prdID string, n int) (any, error)
+	SetPRDKind(prdID, kind string) (any, error)
+	SetPRDReleaseSize(prdID, size string) (any, error)
+	SetPRDBreakingChange(prdID string, breaking bool) (any, error)
+	// Per-Automaton worker profile name (built-in or user-defined; empty clears it).
+	SetPRDWorkerProfile(prdID, name string) (any, error)
+
+	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
+	SetPRDLanePreference(prdID, pref string) (any, error)
+	// Lane fill status: mode, lanes, evidence, decisions and alerts.
+	LaneFillStatus(limit int) autonomous.LaneFillStatus
 
 	// BL367 — per-PRD quality gate config.
-	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)
+	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool, scope string, smokePackages []string) (any, error)
 
 	// Per-PRD override for whether a story failure halts the PRD (default)
 	// or the executor continues into later, independent stories.
 	SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool) (any, error)
+	// Per-Automaton notify_events list (lifecycle event kinds that produce
+	// notifications for this Automaton). A nil or empty list clears the
+	// field (inherit from the next tier: profile, then global default set).
+	SetPRDNotifyEvents(prdID string, kinds []string) (any, error)
 	SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, error)
+	// Per-PRD push-on-complete override (never|branch|default_branch; "" clears
+	// the override so the daemon's git.push_on_complete applies).
+	SetPRDGitPush(prdID, policy string) (any, error)
 
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	GuardrailLibrary() []any
-	CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (any, error)
-	UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (any, error)
+	CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (any, error)
+	UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (any, error)
 	DeleteGuardrailProfile(id string) error
 	ListGuardrailProfiles() []any
 	GetGuardrailProfile(id string) (any, bool)
@@ -772,6 +1067,20 @@ type AutonomousAPI interface {
 	DeleteAutomation(id string) error
 	ListAutomations() []any
 	GetAutomation(id string) (any, bool)
+	ActivateAutomation(id, actor string, expectedVersion int64) (any, error)
+	ReturnAutomationToDraft(id, actor string, expectedVersion int64) (any, error)
+
+	// Record shipped state: the release the work was merged into, the merge
+	// time (zero = cleared), the merge commit, and the source of the record
+	// (merge_step or backfill). Recording never changes the item's Status.
+	RecordPRDShipped(id, release string, mergedAt time.Time, commit, source string) (any, error)
+	RecordAutomationShipped(id, release string, mergedAt time.Time, commit, source string) (any, error)
+
+	// Shipped backfill — one shipped-state backfill pass over the base
+	// repository's main branch, returning the manager's
+	// ShippedBackfillReport. dryRun scans and computes the report without
+	// writing any shipped record.
+	ShippedBackfillOnce(dryRun bool) (any, error)
 
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
@@ -779,8 +1088,36 @@ type AutonomousAPI interface {
 	InvokeGuardrailByName(name, projectDir string) (any, error)
 }
 
+// storeSideFileCapSetter is implemented by autonomous APIs whose PRD store
+// takes a live side-file threshold.
+type storeSideFileCapSetter interface{ SetStoreSideFileCapKB(kb int) }
+
+// applyStoreConfig pushes the session.store_* settings to the live session
+// and PRD stores. The daemon calls it at startup and a config write calls it
+// again, so a change takes effect without a restart.
+func (s *Server) applyStoreConfig() {
+	sc := &s.cfg.Session
+	if s.manager != nil {
+		s.manager.SetFlushInterval(sc.EffectiveStoreFlushInterval())
+		s.manager.SetArchiveAfter(time.Duration(sc.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
+		s.manager.SetFieldCap(sc.EffectiveStoreFieldCapKB() << 10)
+	}
+	if setter, ok := s.autonomousMgr.(storeSideFileCapSetter); ok {
+		setter.SetStoreSideFileCapKB(sc.EffectiveStoreSideFileCapKB())
+	}
+}
+
 // SetAutonomousAPI is the wiring entry point used by main.go.
-func (s *Server) SetAutonomousAPI(a AutonomousAPI) { s.autonomousMgr = a }
+func (s *Server) SetAutonomousAPI(a AutonomousAPI) {
+	s.autonomousMgr = a
+	s.wireSessionTags()
+	// Requirements surface: the concrete manager also implements the
+	// requirements-report engine — wire it plus a config-derived backend
+	// summary (nil API leaves the route reporting 503).
+	if a != nil {
+		s.wireRequirementsFromAuto(a)
+	}
+}
 
 // SummarizerSvc is the interface for the response summarizer.
 // The summarizer package implements this with Service.Summarize.
@@ -806,6 +1143,7 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		channelHist:       make(map[string][]channelHistEntry),
 		nonces:            newNonceStore(),
 	}
+	s.autonomousSettings = s.tagSettingLookup // attention statuses come from autonomous.tags
 	if cfg != nil {
 		setPushConfig(cfg.Push) // BL394 -- initial push-SSRF-guard config
 	}
@@ -917,7 +1255,26 @@ func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 }
 
 // SetRestartFunc wires the daemon self-restart function.
-func (s *Server) SetRestartFunc(fn func())             { s.restartFn = fn }
+func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
+
+// SetRestartFuncForce wires the force-aware restart function (the restart
+// guard). It takes precedence over SetRestartFunc's function for /api/restart.
+func (s *Server) SetRestartFuncForce(fn func(force bool)) { s.restartForceFn = fn }
+
+// restartAvailable reports whether any restart function is wired.
+func (s *Server) restartAvailable() bool { return s.restartFn != nil || s.restartForceFn != nil }
+
+// doRestart runs the wired restart function. The force-aware one takes the
+// force flag; the plain one has no force concept and ignores it.
+func (s *Server) doRestart(force bool) {
+	if s.restartForceFn != nil {
+		s.restartForceFn(force)
+		return
+	}
+	if s.restartFn != nil {
+		s.restartFn()
+	}
+}
 func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
 
 // SetACMEManager wires the ACME subsystem (BL397) into the API server.
@@ -990,6 +1347,10 @@ func (s *Server) SessionTokenStore() *auth.SessionTokenStore { return s.sessionT
 // SetMCPAuthRequired records whether mcp.token is configured (SEC-002),
 // for /api/health's mcp_auth_required field.
 func (s *Server) SetMCPAuthRequired(configured bool) { s.mcpTokenConfigured = configured }
+
+// SetMCPSSEStateFn wires the MCP SSE listener state reporter
+// (disabled|retrying|listening|failed) into /api/health's mcp_sse field.
+func (s *Server) SetMCPSSEStateFn(fn func() string) { s.mcpSSEStateFn = fn }
 
 // SetMCPSamplingDispatcher wires the sampling dispatcher for POST /api/mcp/sample (BL302 S3).
 func (s *Server) SetMCPSamplingDispatcher(d MCPSamplingAPI) { s.mcpSamplingDisp = d }
@@ -1104,6 +1465,7 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	s.traceMCPCall(r.Context(), req.Tool)
 	data, err := s.mcpBridge.MCPCallJSON(ctx, req.Tool, req.Args)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1675,6 +2037,39 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Backend: q.Get("backend"),
 		Alive:   q.Get("alive"),
 	}
+	// Tags repeatable; own, system and inherited tags count. tag_match is any
+	// (default) or all; a value outside that set is rejected before anything is
+	// read.
+	tagSeen := map[string]bool{}
+	for _, v := range q["tag"] {
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" && !tagSeen[part] {
+				tagSeen[part] = true
+				filter.Tags = append(filter.Tags, part)
+			}
+		}
+	}
+	// Axis shortcuts expand to axis:value tag filters and combine with the
+	// explicit tag list under tag_match. Empty values are ignored. backend is
+	// not expanded here: it stays the BL361 session-backend filter, which
+	// also accepts the backend:<value> placement tag (a session matches on
+	// its family name OR that tag, see Manager.sessionMatchesBackend), so
+	// no earlier result is lost and ?backend=<axis value> works.
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
+		if v := strings.TrimSpace(q.Get(axis)); v != "" {
+			tag := axis + ":" + v
+			if !tagSeen[tag] {
+				tagSeen[tag] = true
+				filter.Tags = append(filter.Tags, tag)
+			}
+		}
+	}
+	filter.TagMatch = strings.TrimSpace(q.Get("tag_match"))
+	if filter.TagMatch != "" && filter.TagMatch != "any" && filter.TagMatch != "all" {
+		http.Error(w, `tag_match: must be "any" or "all"`, http.StatusBadRequest)
+		return
+	}
 	sessions := s.manager.ListSessionsFiltered(filter)
 
 	// BL432 — ?view=summary / ?since= / ?states= (session_list_view.go).
@@ -1684,7 +2079,30 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pageOpts, err := parseSessionPageOptions(q)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// — group_by / tag_prefix (grouping read, session_group.go): an unknown
+	// axis is refused before anything is served; without group_by the options
+	// are inactive and the responses below are unchanged.
+	groupOpts, err := parseSessionGroupOptions(q)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// History / search requests also cover the archive (store_archive.go).
+	sessions = append(sessions, s.archivedForList(q, filter, pageOpts)...)
+
 	w.Header().Set("Content-Type", "application/json")
+
+	if groupOpts.active {
+		s.writeSessionGrouped(w, r, sessions, groupOpts)
+		return
+	}
 
 	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
 	if q.Get("orphaned") == "1" {
@@ -1698,36 +2116,49 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				orphans = append(orphans, sess)
 			}
 		}
-		_ = json.NewEncoder(w).Encode(orphans)
+		_ = json.NewEncoder(w).Encode(s.sessionViews(orphans))
 		return
 	}
 
 	// BL347 — ?tree=1 returns the lineage tree instead of a flat list.
 	if q.Get("tree") == "1" {
-		_ = json.NewEncoder(w).Encode(buildSessionTree(sessions))
+		tree := buildSessionTree(sessions)
+		s.fillTreeInheritedTags(tree)
+		_ = json.NewEncoder(w).Encode(tree)
 		return
 	}
 
 	// view / since / states apply to the flat list only; without them the
 	// legacy response below is emitted unchanged.
+	// limit / cursor / status / active / q imply the row-only summary view.
+	if listOpts.summary || pageOpts.any() {
+		s.writeSessionSummaryList(w, r, sessions, listOpts, pageOpts)
+		return
+	}
 	if listOpts.active() {
 		s.writeSessionListView(w, sessions, listOpts)
 		return
 	}
 
 	if s.schedStore == nil {
-		_ = json.NewEncoder(w).Encode(sessions)
+		_ = json.NewEncoder(w).Encode(s.sessionViews(sessions))
 		return
 	}
 	type sessionWithCounts struct {
 		*session.Session
-		ScheduledCount int `json:"scheduled_count"`
+		ScheduledCount int      `json:"scheduled_count"`
+		InheritedTags  []string `json:"inherited_tags"`
+		// ModelRequest is the request watch's observation of the session, the
+		// same one sessionView adds; omitted when the session has none.
+		ModelRequest *requestwatch.Observation `json:"model_request,omitempty"`
 	}
 	enriched := make([]sessionWithCounts, 0, len(sessions))
 	for _, sess := range sessions {
 		enriched = append(enriched, sessionWithCounts{
 			Session:        sess,
 			ScheduledCount: s.schedStore.CountForSession(sess.FullID),
+			InheritedTags:  s.manager.InheritedTags(sess),
+			ModelRequest:   s.sessionObservation(sess),
 		})
 	}
 	_ = json.NewEncoder(w).Encode(enriched)
@@ -1736,7 +2167,16 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 // SessionTreeNode is one node in the BL347 lineage tree.
 type SessionTreeNode struct {
 	*session.Session
-	Children []*SessionTreeNode `json:"children,omitempty"`
+	Children      []*SessionTreeNode `json:"children,omitempty"`
+	InheritedTags []string           `json:"inherited_tags"`
+}
+
+// fillTreeInheritedTags sets inherited_tags on every node of a lineage tree.
+func (s *Server) fillTreeInheritedTags(nodes []*SessionTreeNode) {
+	for _, n := range nodes {
+		n.InheritedTags = s.manager.InheritedTags(n.Session)
+		s.fillTreeInheritedTags(n.Children)
+	}
 }
 
 // buildSessionTree converts a flat session list to a forest of trees.
@@ -1872,14 +2312,17 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := router.Parse(req.Text)
-	result := s.executeCommand(cmd, req.Text)
+	origin := fmt.Sprintf("REST POST /api/command requested by %s", s.auditActor(r.Context()))
+	result := s.executeCommand(cmd, req.Text, origin)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"result": result}) //nolint:errcheck
 }
 
-// executeCommand runs a parsed command and returns a response string
-func (s *Server) executeCommand(cmd router.Command, raw string) string {
+// executeCommand runs a parsed command and returns a response string. origin
+// names the surface and actor that sent the command; a kill records it as the
+// session's end reason.
+func (s *Server) executeCommand(cmd router.Command, raw, origin string) string {
 	// Handle tmux-copy-mode command: enters tmux copy-mode directly (more reliable than C-b [).
 	if strings.HasPrefix(raw, "tmux-copy-mode ") {
 		sessID := strings.TrimSpace(raw[15:])
@@ -1962,7 +2405,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 			return fmt.Sprintf("Error: %v", err)
 		}
 		// Broadcast updated session list
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 		return fmt.Sprintf("[%s][%s] Started: %s\nTmux: %s", s.hostname, sess.ID, cmd.Text, sess.TmuxSession)
 
 	case router.CmdList:
@@ -1988,15 +2431,15 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 		return fmt.Sprintf("[%s] Input sent.", cmd.SessionID)
 
 	case router.CmdKill:
-		err := s.manager.Kill(cmd.SessionID)
+		err := s.manager.EndSession(cmd.SessionID, session.EndReason{Caller: endCallerCommandKill, Reason: origin})
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 		return fmt.Sprintf("[%s] Killed.", cmd.SessionID)
 
 	case router.CmdTail:
@@ -2015,7 +2458,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		if !ok {
 			return "Session not found."
 		}
-		return session.TmuxAttachCommand(sess.TmuxSession)
+		return session.TmuxAttachCommand(sess.TmuxSession, s.manager.DataDir())
 
 	case router.CmdHelp:
 		return router.HelpText(s.hostname)
@@ -2026,10 +2469,29 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 	}
 }
 
+// wsOffloadImageSend delivers a WebSocket send whose text references images
+// via the connection's input worker instead of blocking the read loop:
+// expandImageTags calls the vision backend (seconds per image) and returns
+// the description for SendInput. The worker sends the same response the
+// synchronous path would have sent, and the per-connection FIFO plus the
+// awaitInputForSession gate on the synchronous path keep per-session input
+// order intact (an earlier image send is never overtaken by a later plain
+// send for the same session).
+func wsOffloadImageSend(c *client, s *Server, cmd router.Command, raw, origin string) {
+	c.enqueueInput(cmd.SessionID, func() {
+		result := s.executeCommand(cmd, raw, origin)
+		respRaw, _ := json.Marshal(NotificationData{Message: result})
+		c.safeSend(mustMarshal(WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}))
+	})
+}
+
 // handleWS upgrades a connection to WebSocket and registers it with the hub
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// BL316 — capture federated peer at upgrade time for per-message cap checks.
 	wsPeer := peerFromContext(r.Context())
+	// The actor names who opened the socket; a command sent over it records
+	// that actor as the end reason of any session it kills.
+	wsOrigin := fmt.Sprintf("WebSocket command requested by %s", s.auditActor(r.Context()))
 	var wsGranted []string
 	if wsPeer != nil {
 		var custom map[string]*federation.CapabilityGroup
@@ -2095,19 +2557,23 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial session list — unless the configured default is the
 	// delta stream, whose clients fetch the list over REST instead (see
-	// ws_session_stream.go).
+	// ws_session_stream.go). The frame is bounded to the default-view
+	// sessions; a client that then announces the window form gets its rows
+	// frame from handleHello.
 	if s.wsSessionListDefault() != sessionListDelta {
-		sessions := s.manager.ListSessions()
-		raw, _ := json.Marshal(SessionsData{Sessions: sessions})
-		msg := WSMessage{Type: MsgSessions, Data: raw, Timestamp: time.Now()}
-		payload, _ := json.Marshal(msg)
-		c.safeSend(payload)
+		c.safeSend(s.hub.boundedSessionsFrame())
+	} else {
+		s.hub.seedSnapshotIfIdle()
 	}
 
 	go c.writePump()
 
 	// Read pump (blocking)
 	defer func() {
+		// Deliver any accepted-but-still-expanding inputs and stop the
+		// connection's input worker before unregistering, so the worker
+		// never runs past connection teardown.
+		c.stopInputWorker()
 		// Cancel all screen captures for this client
 		c.mu.Lock()
 		for _, cancel := range c.captureCancels {
@@ -2161,7 +2627,20 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			var d CommandData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			cmd := router.Parse(d.Text)
-			result := s.executeCommand(cmd, d.Text)
+			if cmd.Type == router.CmdSend && strings.Contains(d.Text, "[image:") {
+				// Offload: expandImageTags can take seconds per image while the
+				// vision backend describes, so it runs on this connection's
+				// input worker instead of blocking the read loop
+				// (see client.enqueueInput).
+				wsOffloadImageSend(c, s, cmd, d.Text, wsOrigin)
+				continue
+			}
+			// A plain send must not overtake an earlier, still-expanding
+			// image send for the same session.
+			if cmd.Type == router.CmdSend {
+				c.awaitInputForSession(cmd.SessionID)
+			}
+			result := s.executeCommand(cmd, d.Text, wsOrigin)
 			// Send result back to this client
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
 			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
@@ -2190,7 +2669,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				result = fmt.Sprintf("Error: %v", err)
 			} else {
 				result = fmt.Sprintf("[%s][%s] Started: %s\nTmux: %s", s.hostname, sess.ID, d.Task, sess.TmuxSession)
-				s.hub.BroadcastSessions(s.manager.ListSessions())
+				s.broadcastSessionsAsync()
 			}
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
 			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
@@ -2200,6 +2679,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case MsgSendInput:
 			var d SendInputData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
+			if !d.Raw && strings.Contains(d.Text, "[image:") {
+				// Offload the image expansion to the per-connection input
+				// worker so the read loop keeps reading (see
+				// client.enqueueInput).
+				wsOffloadImageSend(c, s, router.Command{Type: router.CmdSend, SessionID: d.SessionID, Text: d.Text}, "", wsOrigin)
+				continue
+			}
+			// A later plain or raw input must not overtake an earlier
+			// still-expanding image input for the same session.
+			c.awaitInputForSession(d.SessionID)
 			if d.Raw {
 				// Raw mode: send literal bytes to tmux (for interactive terminal)
 				sess, ok := s.manager.GetSession(d.SessionID)
@@ -2218,7 +2707,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				cmd := router.Command{Type: router.CmdSend, SessionID: d.SessionID, Text: d.Text}
-				result := s.executeCommand(cmd, "")
+				result := s.executeCommand(cmd, "", wsOrigin)
 				respRaw, _ := json.Marshal(NotificationData{Message: result})
 				resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
 				respPayload, _ := json.Marshal(resp)
@@ -2364,6 +2853,31 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	uptime := int(time.Since(startTime).Seconds())
 	encrypted := s.manager.IsEncrypted()
 	hasEnvPassword := os.Getenv("DATAWATCH_SECURE_PASSWORD") != ""
+	// mcp_sse — live MCP SSE listener state (disabled|retrying|
+	// listening|failed). Always present; "disabled" when SSE is off or no
+	// reporter was wired, so operators don't need the server logs.
+	mcpSSE := "disabled"
+	if s.mcpSSEStateFn != nil {
+		mcpSSE = s.mcpSSEStateFn()
+	}
+	// listeners — per-listener auth posture, computed live from the config
+	// the server holds (config.ListenerAuthStates) so the answer is never
+	// stale. Health is reachable without auth, so the body carries posture
+	// only: no bind addresses, and never any token/secret value.
+	listeners := []map[string]interface{}{}
+	if s.cfg != nil {
+		states := config.ListenerAuthStates(s.cfg)
+		listeners = make([]map[string]interface{}, 0, len(states))
+		for _, st := range states {
+			listeners = append(listeners, map[string]interface{}{
+				"name":          st.Name,
+				"enabled":       st.Enabled,
+				"auth_required": st.AuthRequired,
+				"loopback":      st.Loopback,
+				"acknowledged":  st.Acknowledged,
+			})
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"status":           "ok",
@@ -2376,6 +2890,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		// SEC-002 — MCP SSE's actual auth posture: gated if mcp.token is
 		// set, or (since mcp.New falls back) if server.token is set.
 		"mcp_auth_required": s.mcpTokenConfigured || s.token != "",
+		"mcp_sse":           mcpSSE,
+		"listeners":         listeners,
 	})
 }
 
@@ -3665,6 +4181,8 @@ func (s *Server) handleSessionSelf(w http.ResponseWriter, r *http.Request) {
 	all := s.manager.ListSessions()
 	var candidates []*session.Session
 	for _, sess := range all {
+		// stalled is not a candidate: redelivery needs an active process to
+		// receive it — a stalled session is non-terminal but not reachable.
 		if sess.ChannelReady && (sess.State == session.StateRunning || sess.State == session.StateWaitingInput) {
 			candidates = append(candidates, sess)
 		}
@@ -3675,6 +4193,55 @@ func (s *Server) handleSessionSelf(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(candidates[0]) //nolint:errcheck
+}
+
+// handleSessionSelfScope returns the self session's full scope: identity,
+// MCP channel server name (per-session), shared/global .mcp.json entry
+// name, mode (host vs container/agent), project/tmux surface, channel
+// readiness, and the set of every other session's MCP names — the REST
+// mirror of the get_my_scope MCP tool (BL463), built from the same
+// channel.BuildSelfScope so both surfaces report identical data.
+//
+// Resolution: ?hint=<id|name> first, then the same channel-ready/active
+// rule as handleSessionSelf (the MCP tool additionally consults the
+// in-band caller-scope credential, HLLM-004, which only exists on the
+// MCP-calls-via-token path). resolved_via always says which one applied.
+// GET /api/sessions/self/scope — BL463.
+func (s *Server) handleSessionSelfScope(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	all := s.manager.ListSessions()
+	var sess *session.Session
+	var resolvedVia string
+	if hint := r.URL.Query().Get("hint"); hint != "" {
+		found, ok := s.manager.GetSession(hint)
+		if !ok {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		sess, resolvedVia = found, "hint"
+	}
+	if sess == nil {
+		for _, cand := range all {
+			if cand.ChannelReady && (cand.State == session.StateRunning || cand.State == session.StateWaitingInput) {
+				sess, resolvedVia = cand, "channel-ready-fallback"
+				break
+			}
+		}
+	}
+	if sess == nil {
+		http.Error(w, "no channel-ready session found", http.StatusNotFound)
+		return
+	}
+	selfScope := channel.BuildSelfScope(sess, all)
+	selfScope.ResolvedVia = resolvedVia
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(selfScope) //nolint:errcheck
 }
 
 // handleSessionPrompt returns the last user prompt for a session.
@@ -3715,12 +4282,12 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapSessionsRead) {
 			return
 		}
-		sess, ok := s.manager.GetSession(path)
+		sess, ok := s.manager.GetSessionOrArchived(path)
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		writeJSONOK(w, sess)
+		writeJSONOK(w, s.sessionView(sess))
 		return
 	}
 	if strings.HasSuffix(path, "/last-summary") {
@@ -3735,8 +4302,19 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionCurrentStatus(w, r)
 		return
 	}
+	// GET /api/sessions/{id}/progress — live progress snapshot from the
+	// session's own log (turn count, tool-call breakdown, most recent
+	// action, tokens). See session_progress.go.
+	if strings.HasSuffix(path, "/progress") {
+		s.handleSessionProgress(w, r)
+		return
+	}
 	if strings.HasSuffix(path, "/children") {
 		s.handleSessionChildren(w, r)
+		return
+	}
+	if strings.HasSuffix(path, "/result") {
+		s.handleSessionResultPost(w, r)
 		return
 	}
 	// BL359 — POST /api/sessions/{id}/restart
@@ -4031,7 +4609,7 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
@@ -4082,7 +4660,7 @@ func (s *Server) handleBindSessionAgent(w http.ResponseWriter, r *http.Request) 
 		_ = s.agentMgr.MarkSessionBound(req.AgentID, req.ID)
 	}
 	if s.hub != nil {
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "agent_id": req.AgentID}) //nolint:errcheck
@@ -4135,12 +4713,12 @@ func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()}) //nolint:errcheck
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session_id": body.SessionID}) //nolint:errcheck
 }
 
-// POST /api/sessions/state {"id":"...","state":"running|waiting_input|complete|killed"}
+// POST /api/sessions/state {"id":"...","state":"running|waiting_input|stalled|complete|killed|failed|rate_limited"}
 func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsWrite) {
 		return
@@ -4157,7 +4735,10 @@ func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	validStates := map[string]bool{"running": true, "waiting_input": true, "complete": true, "killed": true, "failed": true, "rate_limited": true}
+	// "stalled" is a valid override target: it is non-terminal, so it belongs on
+	// the settable side of the split (a manual stall must be writable, and
+	// revertible to running, just like rate_limited).
+	validStates := map[string]bool{"running": true, "waiting_input": true, "stalled": true, "complete": true, "killed": true, "failed": true, "rate_limited": true}
 	if !validStates[req.State] {
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
@@ -4166,7 +4747,7 @@ func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
@@ -4197,9 +4778,60 @@ func (s *Server) handleSetSessionLLMRef(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": req.ID, "llm_ref": req.LLMRef}) //nolint:errcheck
+}
+
+// handleSetSessionPriority sets a session's capacity-queue priority.
+//
+// POST /api/sessions/set_priority {"id":"<session>"|"session_name":"<name>","priority":<int>}
+func (s *Server) handleSetSessionPriority(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID          string `json:"id"`
+		SessionName string `json:"session_name"`
+		Priority    any    `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	priority, perr := session.ParsePriority(req.Priority)
+	if perr != nil {
+		http.Error(w, perr.Error(), http.StatusBadRequest)
+		return
+	}
+	targetID := req.ID
+	if targetID == "" && req.SessionName != "" {
+		sess, resolveErr := s.resolveSessionAny("", req.SessionName)
+		if resolveErr != nil {
+			http.Error(w, resolveErr.Error(), http.StatusConflict)
+			return
+		}
+		if sess == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		targetID = sess.FullID
+	}
+	if targetID == "" {
+		http.Error(w, "id or session_name required", http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.SetPriority(targetID, priority); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	s.broadcastSessionsAsync()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "id": targetID, "priority": priority}) //nolint:errcheck
 }
 
 // handleKillSession terminates a running or waiting session.
@@ -4233,12 +4865,16 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		}
 		targetID = sess.FullID
 	}
-	if err := s.manager.Kill(targetID); err != nil {
+	why := session.EndReason{
+		Caller: endCallerRESTSessionKill,
+		Reason: fmt.Sprintf("REST POST /api/sessions/kill requested by %s", s.auditActor(r.Context())),
+	}
+	if err := s.manager.EndSession(targetID, why); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	s.audit(r.Context(), "kill", "session", targetID, nil) // GH#201 Phase 4
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
@@ -4303,9 +4939,39 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		"delete_data":     req.DeleteData,
 		"memory_strategy": req.MemoryStrategy,
 	})
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// nodeHostFor resolves the host a session placed on compute node nodeRef talks
+// to, from the compute registry. ollamaURL is the Ollama base URL that opencode
+// writes into opencode.json (opencode on an Ollama-kind node only). nodeAddress
+// is the node's own address, carried on the session as NodeAddress for the pi
+// family and opencode, so a resume or restart reuses the same host. Both are
+// empty when nodeRef is empty, the registry is not wired, the backend is
+// neither family, or the node has no address.
+func (s *Server) nodeHostFor(nodeRef, backend string) (ollamaURL, nodeAddress string) {
+	if nodeRef == "" || s.computeReg == nil {
+		return "", ""
+	}
+	isOpenCode := backend == string(inference.KindOpenCode) || backend == string(inference.KindOpenCodeACP)
+	isPi := backend == string(inference.KindPi) || backend == string(inference.KindPiPrompt)
+	if !isOpenCode && !isPi {
+		return "", ""
+	}
+	n, err := s.computeReg.Get(nodeRef)
+	if err != nil || n == nil || n.Address == "" {
+		return "", ""
+	}
+	addr := n.Address
+	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		addr = "http://" + addr
+	}
+	if isOpenCode && n.Kind == compute.KindOllama {
+		ollamaURL = addr
+	}
+	return ollamaURL, addr
 }
 
 // handleStartSession starts a new session with optional backend and name overrides.
@@ -4338,6 +5004,15 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PermissionMode string `json:"permission_mode,omitempty"`
 		Model          string `json:"model,omitempty"`
 		ClaudeEffort   string `json:"claude_effort,omitempty"`
+		// ThinkingLevel — pi --thinking level override (off|minimal|low|
+		// medium|high); the autonomous executor populates it from the
+		// resolved per-task → per-story → per-PRD chain. Empty = the
+		// session manager's own pi.thinking_level config applies.
+		ThinkingLevel string `json:"thinking_level,omitempty"`
+		// WorkerProfile — the resolved worker session profile to apply to
+		// this one launch (claude-code only; ignored by other backends).
+		// Absent = the plain, non-profile launch.
+		WorkerProfile *workerprofile.WorkerProfile `json:"worker_profile,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -4356,6 +5031,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// path runs unchanged.
 		LLM         string `json:"llm,omitempty"`
 		ComputeNode string `json:"compute_node,omitempty"`
+		// ComputeNodeAdvisory marks ComputeNode as the scheduler's placement
+		// rather than an operator pick. An advisory node outside the entry's
+		// compute_nodes list is dropped and placement chooses again.
+		ComputeNodeAdvisory bool `json:"compute_node_advisory,omitempty"`
 		// OneShot — when true, DATAWATCH_COMPLETE: in pane output terminates
 		// the session (StateComplete). Default false keeps sessions alive for
 		// interactive use. Autonomous task runners set this to true.
@@ -4379,6 +5058,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID   string `json:"prd_id,omitempty"`
 		TaskID  string `json:"task_id,omitempty"`
 		StoryID string `json:"story_id,omitempty"`
+		// AutomatonID and SpendRole attribute the session's spend; stored at start.
+		AutomatonID string `json:"automaton_id,omitempty"`
+		SpendRole   string `json:"spend_role,omitempty"`
+		// TaskTitle is the bare autonomous task title (no "autonomous:" prefix).
+		TaskTitle string `json:"task_title,omitempty"`
 		// WriteScope (auto-commit leak fix) — the session's effective write
 		// directories. Automatic commits stage only files under these
 		// directories instead of the whole tree. Empty = historical broad
@@ -4387,6 +5071,24 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// ValidateCommands (validation gate): run in the project dir before a
 		// one-shot may commit. Required to auto-commit an ad-hoc one-shot.
 		ValidateCommands []string `json:"validate_commands,omitempty"`
+		// SkipSnapshot — planning/judgment sessions must never stage or
+		// commit the repo. When true, the pre-session snapshot commit and
+		// the completion commit are both skipped.
+		SkipSnapshot bool `json:"skip_snapshot,omitempty"`
+		// RequireExistingWorktree — the project dir is an Automaton-owned
+		// linked worktree; the session must fail rather than create or
+		// initialise it.
+		RequireExistingWorktree bool `json:"require_existing_worktree,omitempty"`
+		// ScrubTmuxEnv: PRD-owned launchers ask the pane shell to unset
+		// TMUX and TMUX_TMPDIR before the LLM starts, so tmux commands the
+		// LLM runs cannot reach the production tmux server.
+		ScrubTmuxEnv bool `json:"scrub_tmux_env,omitempty"`
+		// Git — true when the PRD that spawned this session has git settings
+		// (prd.Git populated or a project profile). The session then runs git
+		// activity: pre-session snapshot, checkpoint tag, completion commit.
+		// PRD / git-less sessions may omit it; an explicit value always wins;
+		// session.git_default config value (default false = existing behavior) when the field is omitted.
+		Git *bool `json:"git,omitempty"`
 		// BL386 Phase 1 — optional warm-start seeding at session creation.
 		// When from_scope is set, memories are copied from that scope into
 		// the new session's session-local scope after it starts.
@@ -4396,10 +5098,44 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			Max        int      `json:"max,omitempty"`
 			RoleFilter []string `json:"role_filter,omitempty"`
 		} `json:"memory_seed,omitempty"`
+		// Priority — capacity-queue priority for the session (integer,
+		// higher first, default 0). Kept untyped so a non-integer value is
+		// rejected with a priority-specific error.
+		Priority any `json:"priority,omitempty"`
+		// Tags (BL461) — the session's own tag IDs. Each must exist in the
+		// tag registry; an unknown ID refuses the start.
+		Tags []string `json:"tags,omitempty"`
+		// Launch tagging (2026-11-06-automata-pages-redesign.md §12) —
+		// optional session-launch facts: the role the session plays, the
+		// kind of work it does, the Automaton (PRD) it runs for and the
+		// Automaton stage it belongs to. Absent = no launch tags, exactly
+		// as before. All handling lives in session_launch_tags.go.
+		LaunchRole      string `json:"launch_role,omitempty"`
+		LaunchKind      string `json:"launch_kind,omitempty"`
+		LaunchAutomaton string `json:"launch_automaton,omitempty"`
+		LaunchStage     string `json:"launch_stage,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
+	}
+	if err := validateSessionLaunch(req.LaunchRole, req.LaunchKind); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	startTags, tagErr := s.manager.ValidateTagIDs(req.Tags)
+	if tagErr != nil {
+		writeTagError(w, tagErr)
+		return
+	}
+	startPriority := 0
+	if req.Priority != nil {
+		p, perr := session.ParsePriority(req.Priority)
+		if perr != nil {
+			http.Error(w, perr.Error(), http.StatusBadRequest)
+			return
+		}
+		startPriority = p
 	}
 	// v7.0.0-alpha.21 (#259) — resolve operator's {compute_node, llm} pick
 	// from the v7 unified registries. Lookup happens BEFORE template/profile
@@ -4413,6 +5149,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	//   - compute_node alone → 400 (operator must pick an LLM too; we
 	//     don't auto-pick because Kind selection is a deliberate choice).
 	var resolvedLLMRef, resolvedComputeNodeRef string
+	// resolvedPoolNodes is how many compute nodes the resolved entry lists.
+	var resolvedPoolNodes int
 	if req.LLM != "" {
 		if s.inferenceReg == nil {
 			http.Error(w, "llm registry not wired (v7.0.0 inference subsystem disabled)", http.StatusBadRequest)
@@ -4428,8 +5166,12 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resolvedLLMRef = llm.Name
+		resolvedPoolNodes = len(llm.ComputeNodes)
 		// LLM.Kind becomes the session backend (overrides req.Backend).
 		req.Backend = string(llm.Kind)
+		if req.ComputeNodeAdvisory && len(llm.ComputeNodes) > 0 && !slices.Contains(llm.ComputeNodes, req.ComputeNode) {
+			req.ComputeNode = ""
+		}
 		switch {
 		case req.ComputeNode != "":
 			// Validate against LLM's compute_nodes list when set.
@@ -4459,9 +5201,6 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	} else if req.ComputeNode != "" {
-		http.Error(w, "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node", http.StatusBadRequest)
-		return
 	}
 	// v8.19.10 — Named v7 inference-registry LLMs (e.g. "ollama-datawatch")
 	// arrive via req.Backend when the autonomous executor spawns task sessions
@@ -4473,11 +5212,39 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if req.LLM == "" && req.Backend != "" && s.inferenceReg != nil {
 		if entry, err := s.inferenceReg.Get(req.Backend); err == nil && entry != nil && !entry.Disabled {
 			resolvedLLMRef = entry.Name
+			resolvedPoolNodes = len(entry.ComputeNodes)
 			req.Backend = string(entry.Kind)
-			if len(entry.ComputeNodes) > 0 && resolvedComputeNodeRef == "" {
+			if req.ComputeNodeAdvisory && len(entry.ComputeNodes) > 0 && !slices.Contains(entry.ComputeNodes, req.ComputeNode) {
+				req.ComputeNode = ""
+			}
+			switch {
+			case req.ComputeNode != "":
+				// A held node (the autonomous lease, or an operator pick) decides
+				// where the session runs. It must be one of the entry's
+				// compute_nodes when the entry lists any, and it wins over the
+				// first entry.
+				if len(entry.ComputeNodes) > 0 && !slices.Contains(entry.ComputeNodes, req.ComputeNode) {
+					http.Error(w, "compute_node "+req.ComputeNode+" not in llm "+entry.Name+" compute_nodes list", http.StatusBadRequest)
+					return
+				}
+				if s.computeReg != nil {
+					if _, err := s.computeReg.Get(req.ComputeNode); err != nil {
+						http.Error(w, "compute_node "+req.ComputeNode+" not found in registry", http.StatusBadRequest)
+						return
+					}
+				}
+				resolvedComputeNodeRef = req.ComputeNode
+			case len(entry.ComputeNodes) > 0 && resolvedComputeNodeRef == "":
 				resolvedComputeNodeRef = entry.ComputeNodes[0]
 			}
 		}
+	}
+	// compute_node is accepted with a bare backend only when that backend names
+	// an enabled inference-registry entry (handled above). Anything else keeps
+	// the rule that compute_node needs an llm.
+	if req.LLM == "" && req.ComputeNode != "" && resolvedLLMRef == "" {
+		http.Error(w, "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node", http.StatusBadRequest)
+		return
 	}
 	// v8.7.1 — resolve Ollama URL from compute node for opencode sessions
 	// backed by an Ollama-kind node.
@@ -4491,19 +5258,18 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// how the caller spelled the model), and normalize req.Model so
 	// opencode.json always gets the form it requires, regardless of
 	// which spelling the task override used.
-	var resolvedOllamaURL string
-	isOpenCodeBackend := req.Backend == string(inference.KindOpenCode) || req.Backend == string(inference.KindOpenCodeACP)
-	if resolvedComputeNodeRef != "" && s.computeReg != nil && isOpenCodeBackend {
-		if n, err := s.computeReg.Get(resolvedComputeNodeRef); err == nil && n != nil && n.Kind == compute.KindOllama && n.Address != "" {
-			addr := n.Address
-			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
-				addr = "http://" + addr
-			}
-			resolvedOllamaURL = addr
-			if req.Model != "" && !strings.HasPrefix(req.Model, "ollama/") {
-				req.Model = "ollama/" + req.Model
-			}
-		}
+	// A pi session binds to its compute node when the entry is a pool of two or
+	// more nodes, or when a one-shot start names the node its lease was granted
+	// on: that node is authoritative whatever the entry size. A one-node entry
+	// that names no node keeps pi's own provider table, as before.
+	hostRef := resolvedComputeNodeRef
+	leasedNode := req.OneShot && req.ComputeNode != ""
+	if resolvedPoolNodes < 2 && !leasedNode && (req.Backend == string(inference.KindPi) || req.Backend == string(inference.KindPiPrompt)) {
+		hostRef = ""
+	}
+	resolvedOllamaURL, resolvedNodeAddress := s.nodeHostFor(hostRef, req.Backend)
+	if resolvedOllamaURL != "" && req.Model != "" && !strings.HasPrefix(req.Model, "ollama/") {
+		req.Model = "ollama/" + req.Model
 	}
 	// BL5 — apply template defaults BEFORE per-request overrides.
 	if req.Template != "" {
@@ -4585,12 +5351,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// Clone target: <data_dir>/workspaces/<profile>-<8char-random>/
 		// Random suffix prevents collision when the same profile is
 		// reused across simultaneous PRD spawns.
-		dataDir := os.Getenv("DATAWATCH_DATA_DIR")
-		if dataDir == "" {
-			home, _ := os.UserHomeDir()
-			dataDir = filepath.Join(home, ".datawatch")
-		}
-		cloneRoot := filepath.Join(dataDir, "workspaces")
+		cloneRoot := s.statePath("workspaces")
 		if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
 			http.Error(w, "create workspace root: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -4676,8 +5437,27 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid effort: must be one of quick, normal, thorough", http.StatusBadRequest)
 		return
 	}
+	// thinking_level (pi --thinking) — reject invalid values outright at the
+	// write edge instead of storing a value that trips pi later.
+	if req.ThinkingLevel != "" {
+		if err := config.ValidatePiThinkingLevel(req.ThinkingLevel); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	gitFlag := false
+	if req.Git != nil {
+		gitFlag = *req.Git
+	} else if s.cfg != nil {
+		gitFlag = s.cfg.Session.GitDefault
+	}
+
+	var profileFallbackReason string
+	workerProfileLaunchFn := s.workerProfileLaunchFn(req.WorkerProfile, req.Backend, &profileFallbackReason)
 
 	opts := &session.StartOptions{
+		LaunchFn:              workerProfileLaunchFn,
 		Name:                  req.Name,
 		Backend:               req.Backend,
 		ResumeID:              req.ResumeID,
@@ -4687,6 +5467,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PermissionMode:        req.PermissionMode,
 		Model:                 req.Model,
 		ClaudeEffort:          req.ClaudeEffort,
+		ThinkingLevel:         req.ThinkingLevel,
 		EphemeralWorkspace:    ephemeralWorkspace,
 		Skills:                profileSkills,
 		LLMRef:                resolvedLLMRef,
@@ -4694,6 +5475,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		OneShot:               req.OneShot || (s.cfg != nil && s.cfg.Session.OneShotSessions),
 		LSPLanguage:           req.LSPLanguage,
 		OllamaURL:             resolvedOllamaURL,
+		NodeAddress:           resolvedNodeAddress,
 		Chrome:                req.Chrome,
 		ParentID:              req.ParentID,
 		KillChildren:          req.KillChildren,
@@ -4701,9 +5483,18 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID:                 req.PRDID,
 		TaskID:                req.TaskID,
 		StoryID:               req.StoryID,
+		AutomatonID:           req.AutomatonID,
+		SpendRole:             req.SpendRole,
+		TaskTitle:             req.TaskTitle,
 		WriteScope:            req.WriteScope,
 		ValidateCommands:      req.ValidateCommands,
+		SkipSnapshot:          req.SkipSnapshot,
+		ScrubTmuxEnv:          req.ScrubTmuxEnv,
+		Git:                   gitFlag,
+		Priority:              startPriority,
+		Tags:                  startTags,
 	}
+	opts.RequireExistingWorktree = req.RequireExistingWorktree
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
 		if cl, err := s.inferenceReg.Get("claude-code"); err == nil && cl != nil && cl.PermissionMode != "" {
@@ -4775,22 +5566,42 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			waitSecs = s.cfg.Session.CapacityWaitSeconds
 		}
 		admitCtx, cancel := context.WithTimeout(r.Context(), time.Duration(waitSecs)*time.Second)
-		aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder)
+		grantedNode, aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
 		cancel()
 		if aerr != nil {
 			jsonError(w, http.StatusServiceUnavailable, "capacity: "+aerr.Error())
 			return
 		}
 		capacityHolder = holder
+		// The ledger placed this start on grantedNode, so the session runs there,
+		// not on the backend's first node. A compute_node the operator named is
+		// kept as named.
+		if grantedNode != "" && req.ComputeNode == "" && grantedNode != resolvedComputeNodeRef {
+			resolvedComputeNodeRef = grantedNode
+			resolvedOllamaURL, resolvedNodeAddress = s.nodeHostFor(grantedNode, req.Backend)
+			if resolvedOllamaURL != "" && req.Model != "" && !strings.HasPrefix(req.Model, "ollama/") {
+				req.Model = "ollama/" + req.Model
+			}
+			opts.ComputeNodeRef = resolvedComputeNodeRef
+			opts.OllamaURL = resolvedOllamaURL
+			opts.NodeAddress = resolvedNodeAddress
+			opts.Model = req.Model
+		}
 	}
 	sess, err := s.manager.Start(context.Background(), req.Task, "", req.ProjectDir, opts)
 	if err != nil {
 		if capacityHolder != "" && s.capacityRelease != nil {
 			s.capacityRelease(capacityHolder)
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if errors.Is(err, gitguard.ErrOutsideAllowedRoots) || errors.Is(err, gitguard.ErrPathEscapes) {
+			status = http.StatusBadRequest // the project_dir in the request is not allowed
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
+	// The launch ran inside Start, so the fallback reason (if any) is already set.
+	sess.ProfileFallbackReason = profileFallbackReason
 	if capacityHolder != "" && s.capacityBind != nil {
 		s.capacityBind(capacityHolder, sess.FullID)
 	}
@@ -4808,7 +5619,16 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		to := memory.ScopeRef{Scope: memory.ScopeSessionLocal, SessionID: sess.FullID}
 		_, _ = memory.Seed(s.memoryBackend, from, to, memory.SeedFilter{RolePrefix: rolePrefix}, seedMax)
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	// Launch tagging (2026-11-06-automata-pages-redesign.md §12) — the only
+	// call api.go makes: no launch fields → no-op, otherwise the placement
+	// tags land in the session's system tags before we broadcast.
+	s.applySessionLaunchTags(sess, launchFacts{
+		Role:      req.LaunchRole,
+		Kind:      req.LaunchKind,
+		Automaton: req.LaunchAutomaton,
+		Stage:     req.LaunchStage,
+	})
+	s.broadcastSessionsAsync()
 	// GH#201 Phase 4 — session lifecycle was the plan's own leading
 	// example of a state-changing action access-logging alone can't
 	// explain ("a PUT /api/config, session and Automata changes are
@@ -4821,7 +5641,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		"parent_id":   req.ParentID,
 	})
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sess) //nolint:errcheck
+	snap := s.manager.SessionSnapshot(sess) // the monitor goroutine is already updating sess
+	json.NewEncoder(w).Encode(&snap)        //nolint:errcheck
 }
 
 // handleRestartSession restarts a session from any state in-place (BL359),
@@ -4872,7 +5693,7 @@ func (s *Server) handleRestartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sess) //nolint:errcheck
 }
@@ -5179,10 +6000,17 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleGetConfig(w, r)
 	case http.MethodPut:
-		if !s.fedCap(w, r, federation.CapConfigWrite) {
-			return
-		}
-		s.handlePutConfig(w, r)
+		// BL110 extension — the single REST audit point for config writes:
+		// it wraps the capability gate AND the handler, so exactly one
+		// record per call is written, allowed or denied (denied records
+		// carry the gate's refusal reason). Shared sink with the MCP and
+		// comm surfaces.
+		s.auditConfigPut("/api/config", func(w http.ResponseWriter, r *http.Request) {
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			s.handlePutConfig(w, r)
+		})(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -5195,6 +6023,20 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 // that Claude Code sessions can use the @ file-reference notation to read the image
 // directly via their own vision pipeline.
 // If the file cannot be read or described, the tag is left as-is.
+//
+// Trailing-space rule: every bare '@<path>' form (no vision backend, and the
+// timeout, error and empty-description fallbacks) gets exactly one space appended
+// after the path when the matched [image:<path>] tag ends at the very end of the
+// input text, so the session's @ file-reference is terminated. A tag followed by
+// any text is unchanged (the following text supplies the separation). Successful
+// descriptions, unreadable files and path-traversal rejections are unaffected.
+//
+// Each vision describe request is bounded: it runs under a context derived from
+// s.cfg.Vision.EffectiveDescribeTimeout() (5s when s.cfg is nil) and is executed in
+// a goroutine so a backend that ignores its context cannot block the caller past the
+// deadline. On timeout or error the bare '@<path>' form is returned (the same
+// conversion used when there is no vision backend) rather than leaving the [image:]
+// tag in place.
 func (s *Server) expandImageTags(text string) string {
 	if !strings.Contains(text, "[image:") {
 		return text
@@ -5202,17 +6044,13 @@ func (s *Server) expandImageTags(text string) string {
 	if s.visioner == nil {
 		// No server-side vision backend — convert to @ notation so Claude Code
 		// sessions pick up the image via their built-in file-reading capability.
-		re := regexp.MustCompile(`\[image:([^\]]+)\]`)
-		return re.ReplaceAllString(text, "@$1")
+		return replaceImageTags(text, func(match, rawPath string, atEnd bool) string {
+			return bareImageRef(rawPath, atEnd)
+		})
 	}
 	root := s.fileServiceRoot()
-	re := regexp.MustCompile(`\[image:([^\]]+)\]`)
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		sub := re.FindStringSubmatch(match)
-		if len(sub) < 2 {
-			return match
-		}
-		imgPath := strings.TrimSpace(sub[1])
+	return replaceImageTags(text, func(match, rawPath string, atEnd bool) string {
+		imgPath := strings.TrimSpace(rawPath)
 		if err := checkPathTraversal(root, imgPath); err != nil {
 			return match
 		}
@@ -5221,12 +6059,69 @@ func (s *Server) expandImageTags(text string) string {
 			return match
 		}
 		ct := http.DetectContentType(data)
-		desc, err := s.visioner.Describe(context.Background(), data, ct, "")
-		if err != nil || desc == "" {
-			return match
+		timeout := s.visionDescribeTimeout()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		type describeResult struct {
+			desc string
+			err  error
 		}
-		return "[image: " + desc + " | path: " + imgPath + "]"
+		resCh := make(chan describeResult, 1)
+		go func() {
+			desc, err := s.visioner.Describe(ctx, data, ct, "")
+			resCh <- describeResult{desc: desc, err: err}
+		}()
+		var res describeResult
+		select {
+		case res = <-resCh:
+		case <-ctx.Done():
+		}
+		cancel()
+		if res.err != nil || res.desc == "" {
+			// Bounded describe failed, timed out, or produced nothing — fall back
+			// to the @ notation so the image is still available to the session.
+			return bareImageRef(imgPath, atEnd)
+		}
+		return "[image: " + res.desc + " | path: " + imgPath + "]"
 	})
+}
+
+var imageTagRe = regexp.MustCompile(`\[image:([^\]]+)\]`)
+
+// replaceImageTags rewrites each [image:<path>] tag in text using fn, which gets
+// the whole match, the raw captured path, and whether the match ends at the very
+// end of text.
+func replaceImageTags(text string, fn func(match, rawPath string, atEnd bool) string) string {
+	locs := imageTagRe.FindAllStringSubmatchIndex(text, -1)
+	if len(locs) == 0 {
+		return text
+	}
+	var b strings.Builder
+	last := 0
+	for _, m := range locs {
+		b.WriteString(text[last:m[0]])
+		b.WriteString(fn(text[m[0]:m[1]], text[m[2]:m[3]], m[1] == len(text)))
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
+// bareImageRef returns the bare '@<path>' form, with exactly one trailing space
+// when the tag was at the very end of the input.
+func bareImageRef(path string, atEnd bool) string {
+	if atEnd {
+		return "@" + path + " "
+	}
+	return "@" + path
+}
+
+// visionDescribeTimeout returns the per-request describe deadline: the configured
+// value from s.cfg.Vision, or the 5s default when s.cfg is nil.
+func (s *Server) visionDescribeTimeout() time.Duration {
+	if s.cfg != nil {
+		return s.cfg.Vision.EffectiveDescribeTimeout()
+	}
+	return config.DefaultVisionDescribeTimeout
 }
 
 // handleGetConfig returns a sanitized view of the current config (sensitive fields masked).
@@ -5244,6 +6139,32 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]interface{}{
 		"hostname":       s.cfg.Hostname,
 		"notify_exclude": s.cfg.NotifyExclude,
+		// Identity backup retention: the effective value (10 when absent).
+		"identity": map[string]interface{}{
+			"backups_to_keep": s.cfg.Identity.EffectiveBackupsToKeep(),
+		},
+		// Pin keeper interval (seconds); 0 = keeper off. Per-node pin fields
+		// (node_pinned_model, allow_model_swap) live on /api/compute/nodes.
+		"pin_check_seconds": s.cfg.PinCheckSeconds,
+		// Effective, not raw: an unset compute_placement key reads its
+		// default (missing_model via EffectiveMissingModel; assume_model_size_gb
+		// reads 0 = size unknown when unset).
+		"compute_placement": computePlacementConfigSurface(s.cfg.ComputePlacement),
+		// cost_report — the cost report engine knobs (internal/costreport);
+		// each key reads its default while absent.
+		"cost_report": map[string]interface{}{
+			"default_group_by":    s.cfg.CostReport.EffectiveGroupBy(),
+			"default_window_days": s.cfg.CostReport.EffectiveWindowDays(),
+			"show_usd_estimates":  s.cfg.CostReport.EffectiveShowUSDEstimates(),
+			"week_start":          s.cfg.CostReport.EffectiveWeekStart(),
+			"include_peer_spend":  s.cfg.CostReport.EffectiveIncludePeerSpend(),
+		},
+		// resource_limits — the memory ceiling settings.
+		"resource_limits": map[string]interface{}{
+			"memory_share_percent": s.cfg.ResourceLimits.MemorySharePercent,
+			"memory_floor_mb":      s.cfg.ResourceLimits.MemoryFloorMB,
+			"memory_cap_mb":        s.cfg.ResourceLimits.MemoryCapMB,
+		},
 		"server": map[string]interface{}{
 			"enabled":                        s.cfg.Server.Enabled,
 			"host":                           s.cfg.Server.Host,
@@ -5257,7 +6178,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"channel_port":                   s.cfg.Server.ChannelPort,
 			"tls_port":                       s.cfg.Server.TLSPort,
 			"proxy_sandbox_port":             s.proxySandboxPortFor(""),
+			"acknowledge_unauthenticated":    s.cfg.Server.AcknowledgeUnauthenticated,
 			"auto_restart_on_config":         s.cfg.Server.AutoRestartOnConfig,
+			"allowed_project_roots":          append([]string{}, s.cfg.Server.AllowedProjectRoots...),
 			"recent_session_minutes":         s.cfg.Server.RecentSessionMinutes,
 			"session_summary_terminal_limit": s.cfg.Server.SessionSummaryTerminalLimit,
 			"session_summary_text_chars":     s.cfg.Server.SessionSummaryTextChars,
@@ -5288,6 +6211,19 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"access_log_enabled": s.cfg.Audit.AccessLogEnabledOrDefault(),
 			"retention_days":     s.cfg.Audit.RetentionDaysOrDefault(),
 			"cef_mirror_enabled": s.cfg.Audit.CEFMirrorEnabled,
+		},
+		// dashboard.hide_inactive_cards + the operator console switches
+		// (dashboard.console.*); an absent key reads its default, true.
+		"dashboard": map[string]interface{}{
+			"hide_inactive_cards": s.cfg.Dashboard.EffectiveHideInactiveCards(),
+			"console": map[string]interface{}{
+				"enabled":           s.cfg.Dashboard.Console.EffectiveEnabled(),
+				"show_questions":    s.cfg.Dashboard.Console.EffectiveShowQuestions(),
+				"show_held_blocked": s.cfg.Dashboard.Console.EffectiveShowHeld(),
+				"show_lanes":        s.cfg.Dashboard.Console.EffectiveShowLanes(),
+				"show_usage":        s.cfg.Dashboard.Console.EffectiveShowUsage(),
+				"show_ci_release":   s.cfg.Dashboard.Console.EffectiveShowCIRelease(),
+			},
 		},
 		"signal": map[string]interface{}{
 			"enabled":        s.cfg.Signal.AccountNumber != "",
@@ -5328,6 +6264,29 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"topic":      s.cfg.Ntfy.Topic,
 			"token":      mask(s.cfg.Ntfy.Token),
 		},
+		// Observer pull protocol (pull mode) — global knobs; each key reads
+		// its code default while absent (default off, 30s interval, 5s
+		// timeout). Per-peer opt-in (observer_pull, observer_pull_interval_s,
+		// observer_pull_timeout_s) lives on /api/federation/peers entries;
+		// live per-peer state is on /api/observer/pull.
+		"observer": map[string]interface{}{
+			"peers": map[string]interface{}{
+				"silent_alert_minutes": s.cfg.Observer.Peers.SilentAlertMinutes,
+			},
+			"pull": map[string]interface{}{
+				"enabled":            s.cfg.Observer.Pull.Enabled,
+				"default_interval_s": s.cfg.Observer.Pull.DefaultIntervalS,
+				"default_timeout_s":  s.cfg.Observer.Pull.DefaultTimeoutS,
+			},
+		},
+		"imap_mcp": map[string]interface{}{
+			"enabled":        s.cfg.ImapMcp.Enabled,
+			"url":            s.cfg.ImapMcp.URL,
+			"account":        s.cfg.ImapMcp.Account,
+			"subject_prefix": s.cfg.ImapMcp.SubjectPrefix,
+			"to":             s.cfg.ImapMcp.To,
+			"token":          mask(s.cfg.ImapMcp.Token),
+		},
 		"email": map[string]interface{}{
 			"enabled":  s.cfg.Email.Enabled,
 			"host":     s.cfg.Email.Host,
@@ -5358,25 +6317,38 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		"session": func() map[string]interface{} {
 			m := map[string]interface{}{
-				"llm_backend":           s.cfg.Session.LLMBackend,
-				"max_sessions":          s.cfg.Session.MaxSessions,
-				"reserved_interactive":  s.cfg.Session.EffectiveReservedInteractive(),
-				"input_idle_timeout":    s.cfg.Session.InputIdleTimeout,
-				"tail_lines":            s.cfg.Session.TailLines,
-				"alert_context_lines":   s.cfg.Session.AlertContextLines,
-				"default_project_dir":   s.cfg.Session.DefaultProjectDir,
-				"workspace_root":        s.cfg.Session.WorkspaceRoot,
-				"claude_enabled":        s.cfg.Session.ClaudeEnabled,
-				"auto_git_commit":       s.cfg.Session.AutoGitCommit,
-				"auto_git_init":         s.cfg.Session.AutoGitInit,
-				"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
-				"one_shot_sessions":     s.cfg.Session.OneShotSessions,
-				"root_path":             s.cfg.Session.RootPath,
-				"mcp_max_retries":       s.cfg.Session.MCPMaxRetries,
-				"schedule_settle_ms":    s.cfg.Session.ScheduleSettleMs,
-				"console_cols":          s.cfg.Session.ConsoleCols,
-				"console_rows":          s.cfg.Session.ConsoleRows,
-				"log_level":             s.cfg.Session.LogLevel,
+				"llm_backend":                     s.cfg.Session.LLMBackend,
+				"max_sessions":                    s.cfg.Session.MaxSessions,
+				"reserved_interactive":            s.cfg.Session.EffectiveReservedInteractive(),
+				"input_idle_timeout":              s.cfg.Session.InputIdleTimeout,
+				"liveness_window_seconds":         s.cfg.Session.LivenessWindowSeconds,
+				"liveness_idle_timeout_overrides": livenessOverridesForDisplay(s.cfg.Session.LivenessIdleTimeoutOverrides),
+				"tail_lines":                      s.cfg.Session.TailLines,
+				"alert_context_lines":             s.cfg.Session.AlertContextLines,
+				"task_delivery_window_seconds":    int(s.cfg.Session.EffectiveTaskDeliveryWindow().Seconds()),
+				"task_delivery_attempts":          s.cfg.Session.EffectiveTaskDeliveryAttempts(),
+				"dismiss_ui_prompts":              s.cfg.Session.EffectiveDismissUIPrompts(),
+				"ui_prompt_dismiss_delay_seconds": s.cfg.Session.EffectiveUIPromptDismissDelaySeconds(),
+				"ui_prompt_clear_bound_seconds":   s.cfg.Session.EffectiveUIPromptClearBoundSeconds(),
+				"ui_prompt_max_attempts":          s.cfg.Session.EffectiveUIPromptMaxAttempts(),
+				"store_flush_interval":            int(s.cfg.Session.EffectiveStoreFlushInterval().Milliseconds()),
+				"store_archive_after_days":        s.cfg.Session.EffectiveStoreArchiveAfterDays(),
+				"store_field_cap_kb":              s.cfg.Session.EffectiveStoreFieldCapKB(),
+				"store_side_file_cap_kb":          s.cfg.Session.EffectiveStoreSideFileCapKB(),
+				"default_project_dir":             s.cfg.Session.DefaultProjectDir,
+				"workspace_root":                  s.cfg.Session.WorkspaceRoot,
+				"claude_enabled":                  s.cfg.Session.ClaudeEnabled,
+				"auto_git_commit":                 s.cfg.Session.AutoGitCommit,
+				"auto_git_init":                   s.cfg.Session.AutoGitInit,
+				"git_default":                     s.cfg.Session.GitDefault,
+				"kill_sessions_on_exit":           s.cfg.Session.KillSessionsOnExit,
+				"one_shot_sessions":               s.cfg.Session.OneShotSessions,
+				"root_path":                       s.cfg.Session.RootPath,
+				"mcp_max_retries":                 s.cfg.Session.MCPMaxRetries,
+				"schedule_settle_ms":              s.cfg.Session.ScheduleSettleMs,
+				"console_cols":                    s.cfg.Session.ConsoleCols,
+				"console_rows":                    s.cfg.Session.ConsoleRows,
+				"log_level":                       s.cfg.Session.LogLevel,
 				"summarizer": map[string]interface{}{
 					"enabled": s.cfg.Session.Summarizer.Enabled,
 					"llm_ref": s.cfg.Session.Summarizer.LLMRef,
@@ -5396,16 +6368,65 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			}
 			return m
 		}(),
+		// UI display settings — the ui.* splash minimum-dwell seconds, EFFECTIVE
+		// values, so an unset config shows its defaults (6 / 9).
+		"ui": map[string]interface{}{
+			"splash_min_seconds":             s.cfg.UI.SplashMinSecondsEffective(),
+			"splash_min_seconds_new_version": s.cfg.UI.SplashMinSecondsNewVersionEffective(),
+		},
+		// Usage calculator settings — EFFECTIVE values, so an unset config
+		// shows its defaults.
+		"usage": map[string]interface{}{
+			"calculator": usageCalculatorForDisplay(s.cfg.Usage.Calculator),
+			"burn_guard": s.cfg.Usage.BurnGuard,
+			// Billing profiles the cost report and the usage calculator price
+			// from. {} when none are set — the assumed api_metered default
+			// then applies per backend and the report labels it as assumed —
+			// never null, so a fresh daemon's config has the same shape.
+			"billing": billingProfilesForDisplay(s.cfg.Usage.Billing),
+		},
+		"tracing": s.cfg.Tracing.WithDefaults(),
+
+		"classifier": classifierForDisplay(s.cfg.Classifier),
+		"git": map[string]interface{}{
+			"push_on_complete":          s.cfg.Git.EffectivePushOnComplete(),
+			"push_remote":               s.cfg.Git.EffectivePushRemote(),
+			"release_ci_window_minutes": s.cfg.Git.ReleaseCIWindowMinutes,
+			// git.secret_scan — pre-push secret scan (v9.0.0). Effective
+			// values, mirroring push_* above: an unset config shows its
+			// defaults (mode shadow, all built-in detectors, empty allow-list).
+			"secret_scan": map[string]interface{}{
+				"mode":      s.cfg.Git.EffectiveSecretScanMode(),
+				"detectors": s.cfg.Git.EffectiveSecretScanDetectors(),
+				"allow_list": map[string]interface{}{
+					"paths":        s.cfg.Git.SecretScan.AllowList.Paths,
+					"fingerprints": s.cfg.Git.SecretScan.AllowList.Fingerprints,
+				},
+			},
+		},
 		"mcp": map[string]interface{}{
 			"enabled":           s.cfg.MCP.Enabled,
 			"sse_enabled":       s.cfg.MCP.SSEEnabled,
 			"sse_host":          s.cfg.MCP.SSEHost,
 			"sse_port":          s.cfg.MCP.SSEPort,
+			"public_url":        s.cfg.MCP.PublicURL,
 			"token":             mask(s.cfg.MCP.Token),
 			"tls_enabled":       s.cfg.MCP.TLSEnabled,
 			"tls_auto_generate": s.cfg.MCP.TLSAutoGenerate,
 			"tls_cert":          s.cfg.MCP.TLSCert,
 			"tls_key":           s.cfg.MCP.TLSKey,
+			// BL412 — self-config group (alias: mcp.allow_self_config). The
+			// YAML field is tri-state (absent = enabled); GET reports the
+			// effective value so a read-modify-write round trip preserves the
+			// enabled/disabled state. Audit path and denied-recording flag are
+			// read-only here (mutable via PUT, same as every other mcp.* key).
+			"allow_self_config": s.cfg.MCP.SelfConfigEnabled(),
+			// allow_sensitive_writes gates the sensitive write tool class for
+			// model sessions; same tri-state (absent = enabled), so GET
+			// reports the effective value.
+			"allow_sensitive_writes":   s.cfg.MCP.SensitiveWritesEnabled(),
+			"self_config_audit_path":   s.cfg.MCP.SelfConfigAuditPath,
+			"self_config_audit_denied": s.cfg.MCP.SelfConfigAuditDeniedOn(),
 		},
 		"detection": map[string]interface{}{
 			"prompt_patterns":       s.cfg.Detection.PromptPatterns,
@@ -5496,13 +6517,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_mode":   s.cfg.Aider.InputMode,
 		},
 		"pi": map[string]interface{}{
-			"enabled":      s.cfg.Pi.Enabled,
-			"binary":       s.cfg.Pi.Binary,
-			"model":        s.cfg.Pi.Model,
-			"console_cols": s.cfg.Pi.ConsoleCols,
-			"console_rows": s.cfg.Pi.ConsoleRows,
-			"output_mode":  s.cfg.Pi.OutputMode,
-			"input_mode":   s.cfg.Pi.InputMode,
+			"enabled":        s.cfg.Pi.Enabled,
+			"binary":         s.cfg.Pi.Binary,
+			"model":          s.cfg.Pi.Model,
+			"thinking_level": s.cfg.Pi.ThinkingLevel,
+			"console_cols":   s.cfg.Pi.ConsoleCols,
+			"console_rows":   s.cfg.Pi.ConsoleRows,
+			"output_mode":    s.cfg.Pi.OutputMode,
+			"input_mode":     s.cfg.Pi.InputMode,
 		},
 		"pi_prompt": map[string]interface{}{
 			"enabled":      s.cfg.PiPrompt.Enabled,
@@ -5575,13 +6597,37 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// in the GET response too. Without them the PWA and mobile
 		// Settings cards render empty fields on reload even though
 		// the PUT path now persists correctly.
+		// Daemon-level project defaults (projects_defaults.*), effective values.
+		"projects_defaults": projectsDefaultsForDisplay(s.cfg.ProjectsDefaults),
 		"autonomous": map[string]interface{}{
 			"enabled":               s.cfg.Autonomous.Enabled,
+			"push_and_tag":          s.cfg.Autonomous.PushAndTag,
+			"release_path":          effectiveReleasePath(s.cfg.Autonomous.ReleasePath),
 			"poll_interval_seconds": s.cfg.Autonomous.PollIntervalSeconds,
 			"max_parallel_tasks":    s.cfg.Autonomous.MaxParallelTasks, // deprecated, ignored; removal deferred one release
 			// Daemon-wide default for how many independent tasks of one
 			// Automaton run at once (an Automaton's own setting overrides).
 			"max_concurrent_tasks": s.cfg.Autonomous.MaxConcurrentTasks,
+			// B165 — boot-resume age limit in seconds (default 3600). 0 =
+			// never resume, -1 = no age limit: both survive, so no
+			// omitempty on the struct tag.
+			"resume_max_age_seconds": s.cfg.Autonomous.ResumeMaxAgeSeconds,
+			// Attempt-cost settings: which worker (backend+model) runs each
+			// task kind's first attempt, how many failures push a task off
+			// that pair, and the cap on prior context a retry may resume
+			// with (0 = every retry starts a fresh session).
+			"first_attempt":                         firstAttemptDisplay(s.cfg.Autonomous.FirstAttempt),
+			"first_attempt_escalate_after_failures": s.cfg.Autonomous.FirstAttemptEscalateAfterFailures,
+			"retry_resume_max_context_tokens":       s.cfg.Autonomous.RetryResumeMaxContextTokens,
+			// Between-task branch refresh: off by default; the behind limit's
+			// 0 reads as 5 (config.AutonomousConfig.BranchRefreshLimit).
+			"branch_refresh_enabled":      s.cfg.Autonomous.BranchRefreshEnabled,
+			"branch_refresh_behind_limit": s.cfg.Autonomous.BranchRefreshBehindLimit,
+			// Snapshot-never-stage list (path patterns the autonomous
+			// snapshot must never `git add`): nil (unset) reads the built-in
+			// defaults (config.DefaultSnapshotNeverStage), so render the
+			// effective list.
+			"snapshot_never_stage": s.cfg.Autonomous.EffectiveSnapshotNeverStage(),
 			// Local-model engine sessions allowed per compute node (1 = default).
 			"max_engines_per_node": s.cfg.Autonomous.MaxEnginesPerNode,
 			// BL304: new key. Also emit legacy key for back-compat with old clients.
@@ -5589,36 +6635,173 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"decomposition_backend": s.cfg.Autonomous.PlanningBackend,
 			"verification_backend":  s.cfg.Autonomous.VerificationBackend,
 			"verification_backends": s.cfg.Autonomous.VerificationBackends,
+			// Verifier policy: mode, backend list, Claude session cap, and the
+			// stronger-verifier settings. Rendered whole so an unset policy
+			// shows its zero values rather than a missing object.
+			"verifier_policy": verifierPolicyForDisplay(s.cfg.Autonomous.VerifierPolicy),
+			// Worker session profiles (autonomous.worker_profiles / .worker_profile_defaults
+			// / .worker_profile) — the user profiles keyed by name, the role/kind
+			// defaults and the global profile name; unset tables read as empty
+			// objects and the unset global name reads as "". Built-in profile
+			// names (minimal, digest, full, datawatch-tools) are reserved and
+			// never appear in worker_profiles.
+			"worker_profiles":         workerProfilesForDisplay(s.cfg.Autonomous.WorkerProfiles),
+			"worker_profile_defaults": workerProfileDefaultsForDisplay(s.cfg.Autonomous.WorkerProfileDefaults),
+			"worker_profile":          s.cfg.Autonomous.WorkerProfile,
+			// in_force: the profile each worker role and task kind starts with,
+			// from the live values (read-only; see workerProfileInForceForDisplay).
+			"in_force": workerProfileInForceForDisplay(s.cfg.Autonomous),
+			// Host load check: effective mode, multiple and minutes.
+			"host_load_alert": hostLoadAlertForDisplay(s.cfg.Autonomous.HostLoadAlert),
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
 			// 4-item default in the PWA rather than an empty field.
 			"task_override_statuses": autonomous.EffectiveTaskOverrideStatuses(s.cfg.Autonomous.TaskOverrideStatuses),
-			"execution_backend":      s.cfg.Autonomous.ExecutionBackend,
+			// Render the EFFECTIVE value: unset (nil) reads as true — the
+			// new queued-task override behavior — only an explicit false in
+			// the config restores the pre-change refusal.
+			"override_queued_tasks": autonomous.EffectiveOverrideQueuedTasks(s.cfg.Autonomous.OverrideQueuedTasks),
+			// Plan requirement coverage gate — render the EFFECTIVE value
+			// so the unset state (empty mode / zero ratio) shows its safe
+			// defaults ("block", 1.0) rather than blanks.
+			"plan_coverage_check":     effectivePlanCoverageCheckForDisplay(s.cfg.Autonomous.PlanCoverageCheck),
+			"plan_coverage_min_ratio": config.NormalizePlanCoverageRatio(s.cfg.Autonomous.PlanCoverageMinRatio),
+			// Plan-coverage finding filters — render the EFFECTIVE values
+			// so the unset state shows its safe defaults (both filters on,
+			// the scope,constraints section list, the 30-character minimum)
+			// rather than zero values.
+			"plan_coverage_suppress_created_files": s.cfg.Autonomous.EffectivePlanCoverageFilters().SuppressCreatedFiles,
+			"plan_coverage_scoped_requirements":    s.cfg.Autonomous.EffectivePlanCoverageFilters().ScopedRequirements,
+			"plan_coverage_requirement_sections":   strings.Join(s.cfg.Autonomous.EffectivePlanCoverageFilters().RequirementSections, ","),
+			"plan_coverage_min_requirement_chars":  s.cfg.Autonomous.EffectivePlanCoverageFilters().MinRequirementChars,
+			// Generated artefacts — the effective switches (unset = on) so
+			// a fresh config shows every artefact enabled.
+			"generated_artefacts": s.cfg.Autonomous.EffectiveGeneratedArtefacts(),
+			// Tag browser settings (autonomous.tags) — the effective values, so an
+			// unset block shows its defaults. Validated by ValidateTagSetting.
+			"tags":      tagSettingsForDisplay(s.cfg.Autonomous.Tags),
+			"auto_tags": autoTagsSettingsForDisplay(s.cfg.Autonomous.AutoTags),
+			// Defect queue (autonomous.defect_queue) — effective block values and
+			// per-project overrides. Validated by ValidateDefectQueueSetting.
+			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
+			// Per-backend usage back-off — render the EFFECTIVE values so an
+			// unset config shows its defaults (pause_backend, 60).
+			"usage_backoff":            usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
+			"backoff_max_wait_minutes": usageBackoffMaxWaitForDisplay(s.cfg.Autonomous.BackoffMaxWaitMinutes),
+			// tier -> max-inflight table; a nil table renders as an empty
+			// object (rather than null) so clients treat "absent tier" and
+			// "empty table" the same way: kind defaults apply.
+			"plan_tier_max_inflight": planTierTableForDisplay(s.cfg.Autonomous.PlanTierMaxInflight),
+			// tier -> notional dollar allocation per budget window; empty
+			// object when nothing is declared.
+			"plan_tier_allocation_usd": planTierAllocationForDisplay(s.cfg.Autonomous.PlanTierAllocationUSD),
+			// kind -> capacity-priority table — the EFFECTIVE entries, so an
+			// unset table shows the shipped defaults (bug=80, maintenance=70,
+			// feature=20, other=0) instead of blanks. An entry a PRD kind has
+			// no row of its own for falls back to the "other" row.
+			"priority_by_kind": priorityByKindForDisplay(s.cfg.Autonomous),
+			// Automation that new kind:bug filings are recorded under; an
+			// empty string means not configured (recorded, not guessed).
+			// Deliberately empty by default: each installation chooses its own.
+			"defect_intake_automation": s.cfg.Autonomous.DefectIntakeAutomation,
+			"execution_backend":        s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
-			"planning_effort":               s.cfg.Autonomous.PlanningEffort,
-			"decomposition_effort":          s.cfg.Autonomous.PlanningEffort,
-			"verification_effort":           s.cfg.Autonomous.VerificationEffort,
-			"planning_timeout_seconds":      s.cfg.Autonomous.PlanningTimeoutSeconds,
-			"verification_timeout_seconds":  s.cfg.Autonomous.VerificationTimeoutSeconds,
-			"session_idle_timeout_seconds":  s.cfg.Autonomous.SessionIdleTimeoutSeconds,
-			"capacity_enabled":              s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
-			"capacity_wait_timeout_seconds": s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
-			"capacity_gpu_util_pct":         s.cfg.Autonomous.CapacityGPUUtilPct,
-			"ci_watch_timeout_seconds":      s.cfg.Autonomous.CIWatchTimeoutSeconds,
-			"per_prd_guardrails":            s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
-			"block_on_file_drift":           s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
-			"stale_task_seconds":            s.cfg.Autonomous.StaleTaskSeconds,
-			"preserve_attempt_work":         s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
-			"auto_fix_retries":              s.cfg.Autonomous.AutoFixRetries,
-			"verifier_diff_max_bytes":       s.cfg.Autonomous.VerifierDiffMaxBytes,
-			"security_scan":                 s.cfg.Autonomous.SecurityScan,
-			"per_story_approval":            s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
-			"continue_on_story_failure":     s.cfg.Autonomous.ContinueOnStoryFailure,
+			"planning_effort":              s.cfg.Autonomous.PlanningEffort,
+			"decomposition_effort":         s.cfg.Autonomous.PlanningEffort,
+			"verification_effort":          s.cfg.Autonomous.VerificationEffort,
+			"planning_timeout_seconds":     s.cfg.Autonomous.PlanningTimeoutSeconds,
+			"verification_timeout_seconds": s.cfg.Autonomous.VerificationTimeoutSeconds,
+			// Judge routing: an empty judge_policy means the judges follow the verifier routing policy;
+			// the time limit shows its 30-minute default; the size threshold is the stored value (0 = off).
+			"judge_policy":               judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
+			"judge_timeout_seconds":      config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
+			"judge_size_threshold_lines": s.cfg.Autonomous.JudgeSizeThresholdLines,
+			// Judge prompt delivery: the stored values (0 = always send the full prompt / no extra wait).
+			"judge_prompt_file_threshold_lines":              s.cfg.Autonomous.JudgePromptFileThresholdLines,
+			"judge_delivery_wait_per_thousand_lines_seconds": s.cfg.Autonomous.JudgeDeliveryWaitPerThousandLinesSeconds,
+			// Strong-first judge routing: the named strong backend (empty =
+			// the last judge-policy entry) and the per-commit verdict cache
+			// flag (unset reads the default, true).
+			"judge_strong_backend":         s.cfg.Autonomous.JudgeStrongBackend,
+			"judge_verdict_cache_enabled":  config.NormalizeJudgeVerdictCacheEnabled(s.cfg.Autonomous.JudgeVerdictCacheEnabled),
+			"session_idle_timeout_seconds": s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			// Effective value (nil -> default 3, so the key is never absent from
+			// the read surface); 0 renders as 0 = loop detection off.
+			"loop_detect_turns":                    config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
+			"descendant_stall_seconds":             s.cfg.Autonomous.DescendantStallSeconds,
+			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
+			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
+			"duplicate_session_keep":               config.NormalizeDuplicateSessionKeep(s.cfg.Autonomous.DuplicateSessionKeep),
+			"restart_policy":                       config.NormalizeRestartPolicy(s.cfg.Autonomous.RestartPolicy),
+			"planning_restart_policy":              config.NormalizePlanningRestartPolicy(s.cfg.Autonomous.PlanningRestartPolicy),
+			"restart_quiet_timeout_seconds":        config.NormalizeRestartQuietTimeoutSeconds(s.cfg.Autonomous.RestartQuietTimeoutSeconds),
+			"restart_on_timeout":                   config.NormalizeRestartOnTimeout(s.cfg.Autonomous.RestartOnTimeout),
+			"stuck_running_seconds":                s.cfg.Autonomous.StuckRunningSeconds,
+			"worker_idle_nudge_seconds":            s.cfg.Autonomous.WorkerIdleNudgeSeconds,
+			"worker_idle_nudge_stall_seconds":      s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
+			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
+			"capacity_wait_timeout_seconds":        s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
+			"capacity_fallthrough":                 s.cfg.Autonomous.CapacityFallthrough,
+			"capacity_strict_node_limit":           s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
+			"capacity_count_pool_by_node":          s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
+			"capacity_adopt_before_admit":          s.cfg.Autonomous.CapacityAdoptBeforeAdmitOn(),
+			"capacity_adoption_wait_seconds":       int(s.cfg.Autonomous.CapacityAdoptionWait() / time.Second),
+			"capacity_gpu_util_pct":                s.cfg.Autonomous.CapacityGPUUtilPct,
+			"capacity_rate_requests":               s.cfg.Autonomous.CapacityRateRequests,
+			"capacity_rate_tokens":                 s.cfg.Autonomous.CapacityRateTokens,
+			"capacity_rate_window_seconds":         s.cfg.Autonomous.CapacityRateWindowSeconds,
+			"ci_watch_timeout_seconds":             s.cfg.Autonomous.CIWatchTimeoutSeconds,
+			"checks":                               checksShipConfigDisplay(s.cfg)["checks"],
+			"ship":                                 checksShipConfigDisplay(s.cfg)["ship"],
+			"detail_text_cap_bytes":                s.cfg.Autonomous.DetailTextCapBytes,
+			"inherited_tags_cache_seconds":         s.cfg.Autonomous.InheritedTagsCacheSeconds, // 0 = default (15s), negative = off
+			"per_prd_guardrails":                   s.cfg.Autonomous.PerPRDGuardrails,          // rules-review, ci-watch
+			"block_on_file_drift":                  s.cfg.Autonomous.BlockOnFileDrift,          // strict foreign-file-drift enforcement
+			"gate_disagreement":                    s.cfg.Autonomous.GateDisagreement,          // verifier OK + gate regression: "warn" (default) or "block"
+			"failure_escalation":                   failureEscalationConfigForDisplay(s.cfg.Autonomous.FailureEscalation),
+			"verifier_infra_escalation_threshold":  s.cfg.Autonomous.VerifierInfraEscalationThreshold,
+			"verification_record_scores":           autonomous.RecordScoresEnabled(s.cfg.Autonomous.VerificationRecordScores),
+			"scope_breadth_enabled":                s.cfg.Autonomous.ScopeBreadthEnabled,
+			"fallback_verification_backend":        s.cfg.Autonomous.FallbackVerificationBackend,
+			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
+			"verifier_max_run_seconds":             s.cfg.Autonomous.VerifierMaxRunSeconds, // 0 = no cap
+
+			// Read-only: the idle-nudge windows the daemon applies after the
+			// unset or non-positive fallback (180s nudge, 600s stall).
+			"worker_idle_nudge_effective_seconds":       config.NormalizeWorkerIdleNudgeSeconds(s.cfg.Autonomous.WorkerIdleNudgeSeconds),
+			"worker_idle_nudge_stall_effective_seconds": config.NormalizeWorkerIdleNudgeStallSeconds(s.cfg.Autonomous.WorkerIdleNudgeStallSeconds),
+
+			// Plan review gate + smoke verification settings.
+			"plan_review_backend":        s.cfg.Autonomous.PlanReviewBackend,
+			"plan_review_model":          s.cfg.Autonomous.PlanReviewModel,
+			"plan_review_mode":           s.cfg.Autonomous.PlanReviewMode,
+			"smoke_verification_backend": s.cfg.Autonomous.SmokeVerificationBackend,
+			"smoke_verification_model":   s.cfg.Autonomous.SmokeVerificationModel,
+			// Pre-existing foreign-file-drift enforcement mode: "block"
+			// (default) or "warn". Show the effective mode so an unset
+			// value renders as "block" (same as the executor's
+			// resolveDriftMode), matching EffectiveTaskOverrideStatuses above.
+			"drift_mode": effectiveDriftMode(s.cfg.Autonomous.DriftMode),
+			// Undeclared-edit enforcement: off|warn|block; unset/unknown renders "warn".
+			"undeclared_edit_mode":      effectiveUndeclaredEditMode(s.cfg.Autonomous.UndeclaredEditMode),
+			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
+			"task_max_attempt_seconds":  s.cfg.Autonomous.TaskMaxAttemptSeconds,
+			"task_no_progress_seconds":  s.cfg.Autonomous.TaskNoProgressSeconds,
+			"preserve_attempt_work":     s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
+			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
+			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
+			"security_scan":             s.cfg.Autonomous.SecurityScan,
+			"per_story_approval":        s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
+			"continue_on_story_failure": s.cfg.Autonomous.ContinueOnStoryFailure,
+			"scope_lint":                s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
+			"planning_routing":          s.cfg.Autonomous.PlanningRouting,
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
 				"test_command":        s.cfg.Autonomous.DefaultQualityGates.TestCommand,
 				"timeout":             s.cfg.Autonomous.DefaultQualityGates.Timeout,
 				"block_on_regression": s.cfg.Autonomous.DefaultQualityGates.BlockOnRegression,
+				"scope":               s.cfg.Autonomous.DefaultQualityGates.Scope,
+				"smoke_packages":      s.cfg.Autonomous.DefaultQualityGates.SmokePackages,
 			},
 			// BL369 — prompt injection guard.
 			"injection_guard":    s.cfg.Autonomous.InjectionGuard,
@@ -5642,6 +6825,133 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// rather than null. The field itself has no omitempty for the
 			// same reason (see config.AutonomousNotifyConfig).
 			"notify": defaultEventsNotifySurface(s.cfg.Autonomous.Notify),
+			// Operator-question switch and its notify toggles. Always emitted
+			// (even when false) so the PWA settings card renders the fields;
+			// the fields have no omitempty for the same reason (see
+			// config.AutonomousQuestionsConfig). Surface keys:
+			// autonomous.questions.enabled, .notify_messaging, .notify_alert,
+			// .return_path (the toggles report their effective value, which
+			// defaults on when the key is absent; an explicit false shows
+			// false).
+			"questions": map[string]interface{}{
+				"enabled":          s.cfg.Autonomous.Questions.Enabled,
+				"notify_messaging": s.cfg.Autonomous.Questions.EffectiveNotifyMessaging(),
+				"notify_alert":     s.cfg.Autonomous.Questions.EffectiveNotifyAlert(),
+				"return_path":      s.cfg.Autonomous.Questions.EffectiveReturnPath(),
+				// Decision gate: effective values (on, and shadow, when absent).
+				"decision_gate":      s.cfg.Autonomous.Questions.EffectiveDecisionGate(),
+				"decision_gate_mode": s.cfg.Autonomous.Questions.EffectiveDecisionGateMode(),
+				// Held question: effective values — held_mode reads shadow
+				// when the key is absent; held_states reads the five held
+				// state ids when the list is absent, and stays an explicit
+				// empty list (none) when one was set (no omitempty on the
+				// field, so the clear survives the round trip).
+				"held_mode":   s.cfg.Autonomous.Questions.EffectiveHeldMode(),
+				"held_states": s.cfg.Autonomous.Questions.EffectiveHeldStates(),
+				// Worker question marker: effective value (off when absent).
+				"worker_marker": s.cfg.Autonomous.Questions.EffectiveWorkerMarker(),
+				// Question quality check and queue row preview: effective values
+				// (warn, 60, the default pattern and 3 when absent).
+				"quality_mode":               s.cfg.Autonomous.Questions.EffectiveQualityMode(),
+				"quality_min_text_chars":     s.cfg.Autonomous.Questions.EffectiveQualityMinTextChars(),
+				"quality_tracker_id_pattern": s.cfg.Autonomous.Questions.EffectiveQualityTrackerIDPattern(),
+				"queue_preview_lines":        s.cfg.Autonomous.Questions.EffectiveQueuePreviewLines(),
+			},
+			"parallel": parallelSurface(s.cfg.Autonomous.Parallel),
+			// Task template modes: the stored {template id: mode} map (nil
+			// renders as {}, not null); an unset id reads its shipped default
+			// (llm) via EffectiveTaskTemplateMode.
+			"task_templates": map[string]interface{}{
+				"mode": taskTemplateModeSurface(s.cfg.Autonomous.TaskTemplates.Mode),
+			},
+			// Script gate: raw stored values; an unset timeout reads the 900-
+			// second default and an unset command stays empty, both via the
+			// Effective* accessors.
+			"script_gate_timeout_seconds": s.cfg.Autonomous.ScriptGateTimeoutSeconds,
+			"project_gate_command":        s.cfg.Autonomous.ProjectGateCommand,
+			// Decision record keys: effective values (the shipped defaults when a
+			// key is absent).
+			"decisions": decisionRecordSurface(s.cfg.Autonomous.Decisions),
+			"automation": map[string]interface{}{
+				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
+				// Effective, not raw: an unset (nil) value reads the 30-minute
+				// default, an explicit 0 stays 0 (the triage alert off).
+				"triage_alert_minutes": s.cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(),
+				// Merge-pending check: the mode reads off when unset, the alert
+				// minutes read the 30-minute default when unset and an explicit
+				// 0 stays 0 (the merge-pending alert off).
+				"merge_pending_mode":          s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
+				"merge_pending_alert_minutes": s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
+				// Effective, not raw: an empty value reads the "completed"
+				// default via the accessor.
+				"merged_member_policy": s.cfg.Autonomous.Automation.EffectiveMergedMemberPolicy(),
+				"agent_insert_policy":  s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
+				// Effective values: unset fields read their defaults in one place
+				// (Effective* accessors), so GET never emits a zero that reads
+				// a different default.
+				"repo_ci_watch": repoCIWatchSurface(s.cfg.Autonomous.Automation.RepoCIWatch),
+				// Effective, not raw: an unset or empty mode reads shadow (the
+				// first-release default) via the Effective* accessor.
+				"security_failure": securityFailureSurface(s.cfg.Autonomous.Automation.SecurityFailure),
+				// Effective, not raw: an unset or empty mode reads shadow (the
+				// release default — reports only, never acts) and the unset
+				// minute thresholds read their one defaults, all via the
+				// Effective* accessors.
+				"supervisor_watch": supervisorWatchSurface(s.cfg.Autonomous.Automation.SupervisorWatch),
+				// Effective, not raw: an unset value reads the "shadow" default,
+				// an explicit off/on stays.
+				"create_search_mode": s.cfg.Autonomous.Automation.EffectiveCreateSearchMode(),
+				// Effective, not raw: an unset (nil) value reads the 0.5 default.
+				"create_search_threshold": s.cfg.Autonomous.Automation.EffectiveCreateSearchThreshold(),
+				// Effective, not raw: an unset key or an unrecognized value
+				// reads report; zero/negative values read the 24-hour and 10
+				// defaults; the alert percent reads 85 when unset and is
+				// clamped to 1..100 otherwise.
+				"cleanup_mode":                  s.cfg.Autonomous.Automation.EffectiveCleanupMode(),
+				"cleanup_retention_hours":       s.cfg.Autonomous.Automation.EffectiveCleanupRetentionHours(),
+				"cleanup_max_removals_per_pass": s.cfg.Autonomous.Automation.EffectiveCleanupMaxRemovalsPerPass(),
+				"disk_alert_percent":            s.cfg.Autonomous.Automation.EffectiveDiskAlertPercent(),
+				// Effective, not raw: an unset key reads hold and task_files.
+				"uncommitted_work_policy": s.cfg.Autonomous.Automation.EffectiveUncommittedWorkPolicy(),
+				"uncommitted_work_scope":  s.cfg.Autonomous.Automation.EffectiveUncommittedWorkScope(),
+				// Effective, not raw: an unset key reads the default list, hold
+				// and base_commit.
+				"protected_paths":        protectedPathsEffectiveList(s.cfg),
+				"protected_paths_action": s.cfg.Autonomous.Automation.EffectiveProtectedPathsAction(),
+				"rules_review_source":    s.cfg.Autonomous.Automation.EffectiveRulesReviewSource(),
+			},
+			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
+			// Effective, not raw: an unset enabled switch reads on, the unset
+			// gate timeout reads 20 minutes and the unset plan keep reads 200.
+			"merge_shadow": mergeShadowConfigSurface(s.cfg.Autonomous.MergeShadow),
+			// Effective, not raw: every supervisor_loop key with its default
+			// filled in, keyed without the supervisor_loop. prefix.
+			"supervisor_loop": supervisorLoopConfigSurface(s.cfg.Autonomous.SupervisorLoop),
+			"infra_retry":     infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
+			// Effective, not raw: the merge pipeline values with defaults filled in.
+			"merge_pipeline": mergePipelineConfigSurface(s.cfg.Autonomous.MergePipeline),
+			// Effective, not raw: all eleven request watch values with the
+			// defaults filled in; remediation_options is the list in effect.
+			"request_watch": requestWatchConfigSurface(s.cfg.Autonomous.RequestWatch),
+			// Effective, not raw: an unset key shows its default.
+			"model_routing": modelRoutingConfigSurface(s.cfg.Autonomous.ModelRouting),
+			// Model-pull consent: the per-model allow flags plus the publisher
+			// allow-list. Rendered whole (nil lists become empty arrays, not
+			// null) so an unset consent visibly allows nothing — the
+			// fail-closed default, not a missing setting.
+			"model_pull_consent": modelPullConsentForDisplay(s.cfg.Autonomous.ModelPullConsent),
+			// Requirements min-Ollama overrides: the stored per-capability
+			// minimums (empty = the in-code table applies) plus the known
+			// capability list, so the web settings, CLI and comm render the
+			// same fields in the same order.
+			"requirements": requirementsConfigGetSurface(s.cfg.Autonomous.Requirements),
+			"progress": map[string]interface{}{
+				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
+				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
+				"backlog_path":            s.cfg.Autonomous.Progress.EffectiveBacklogPath(),
+				"since":                   s.cfg.Autonomous.Progress.Since,
+				"snapshot_retention_days": s.cfg.Autonomous.Progress.SnapshotRetentionDays,
+			},
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -5660,6 +6970,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"dir":        s.cfg.Plugins.Dir,
 			"timeout_ms": s.cfg.Plugins.TimeoutMs,
 			"disabled":   s.cfg.Plugins.Disabled,
+			// plugins.services — service-plugin watch settings; each field is
+			// its stored value (0 = unset; the Effective* accessors apply the
+			// documented defaults).
+			"services": pluginServicesSurface(s.cfg),
 		},
 		"orchestrator": map[string]interface{}{
 			"enabled":              s.cfg.Orchestrator.Enabled,
@@ -5684,10 +6998,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// daemon was honoring the YAML value (e.g. "ollama" → BL201
 			// inheritance silently routed through OpenWebUI's audio API).
 			// Operator-flagged after Chrome PWA audit.
-			"backend":   s.cfg.Whisper.Backend,
-			"model":     s.cfg.Whisper.Model,
-			"language":  s.cfg.Whisper.Language,
-			"venv_path": s.cfg.Whisper.VenvPath,
+			"backend":       s.cfg.Whisper.Backend,
+			"model":         s.cfg.Whisper.Model,
+			"language":      s.cfg.Whisper.Language,
+			"venv_path":     s.cfg.Whisper.VenvPath,
+			"chunk_seconds": s.cfg.Whisper.ChunkSeconds,
 		},
 		"vision": map[string]interface{}{
 			"enabled":         s.cfg.Vision.Enabled,
@@ -5697,6 +7012,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"model":           s.cfg.Vision.Model,
 			"default_prompt":  s.cfg.Vision.DefaultPrompt,
 			"max_image_bytes": s.cfg.Vision.MaxImageBytes,
+			// Effective, not raw: an unset (0 or negative) stored value shows
+			// the default (5s), never 0.
+			"describe_timeout_seconds": int(s.cfg.Vision.EffectiveDescribeTimeout().Seconds()),
 		},
 		"memory": map[string]interface{}{
 			"enabled":            s.cfg.Memory.Enabled,
@@ -5720,8 +7038,19 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"session_awareness":  s.cfg.Memory.IsSessionAwareness(),
 			"session_broadcast":  s.cfg.Memory.IsSessionBroadcast(),
 		},
+		// Platform context: only the toggle and the operator note are exposed.
+		// The platform context text itself is never returned for editing.
+		"platform_context": map[string]interface{}{
+			"enabled": s.cfg.PlatformContext.IsEnabled(),
+			"note":    s.cfg.PlatformContext.Note,
+		},
 		"cross_session": map[string]interface{}{
 			"enabled": s.cfg.CrossSession.IsEnabled(),
+		},
+		"secrets": map[string]interface{}{
+			"vault": map[string]interface{}{
+				"unreachable_alert_after_seconds": s.cfg.Secrets.Vault.EffectiveUnreachableAlertAfterSeconds(),
+			},
 		},
 		"proxy": map[string]interface{}{
 			"enabled":                   s.cfg.Proxy.Enabled,
@@ -5748,6 +7077,16 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"max_parallel":         s.cfg.Council.MaxParallel,
 			"comm_firehose":        s.cfg.Council.CommFirehose,
 		},
+		// scheduled-jobs results: per-schedule result history store.
+		"results": map[string]interface{}{
+			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
+		},
+	}
+	// Model-to-node collisions: two different models configured on one
+	// ollama node. Omitted when there are none, so the PWA shows the banner
+	// only when it has something to say.
+	if warnings := s.modelNodeWarnings(); len(warnings) > 0 {
+		out["model_node_warnings"] = warnings
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
@@ -5772,6 +7111,30 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Tag browser settings (autonomous.tags.*): every key goes through the
+	// shared validator before anything is applied, so a bad value rejects the
+	// whole PUT and the comm, MCP and CLI surfaces show the same message.
+	if verr := firstTagSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Defect queue settings (autonomous.defect_queue.*): same shared validator.
+	if verr := firstDefectQueueSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Project defaults (projects_defaults.*): refused before anything is applied.
+	if verr := firstProjectsDefaultsSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Auto tagging (autonomous.auto_tags.*): every key goes through the
+	// shared validator before anything is applied, so a bad value rejects the
+	// whole PUT and the comm, MCP and CLI surfaces show the same message.
+	if verr := firstAutoTagsSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	// v9.5.5 — validate task_override_statuses before anything is applied,
 	// so a bad name rejects the whole PUT instead of storing a partial one.
 	// Accepts the array form and the comma-separated string form the CLI
@@ -5788,7 +7151,1038 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// override_queued_tasks — a boolean (or a parseable boolean string from
+	// the comm channel); anything else rejects the whole PUT so a typo
+	// never stores a value that later resolves to the wrong behavior.
+	if v, ok := patch["autonomous.override_queued_tasks"]; ok {
+		valid := false
+		if _, ok := v.(bool); ok {
+			valid = true
+		} else if str, ok := v.(string); ok {
+			if _, perr := strconv.ParseBool(strings.TrimSpace(str)); perr == nil {
+				valid = true
+			}
+		}
+		if !valid {
+			http.Error(w, "autonomous.override_queued_tasks: must be a boolean (true or false)", http.StatusBadRequest)
+			return
+		}
+	}
+	// scope_lint — refuse an unknown mode before anything is applied, so a
+	// typo rejects the whole PUT instead of storing a value that quietly
+	// resolves to enforce.
+	if v, ok := patch["autonomous.scope_lint"]; ok {
+		mode, _ := v.(string)
+		if verr := config.ValidateScopeLint(mode); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// verifier_max_run_seconds — a whole, non-negative JSON number (0 = no
+	// cap). A negative or fractional value rejects the whole PUT so the
+	// stored cap is never silently truncated or ignored.
+	if v, ok := patch["autonomous.verifier_max_run_seconds"]; ok {
+		f, isNum := v.(float64)
+		if !isNum || f != math.Trunc(f) {
+			http.Error(w, "autonomous.verifier_max_run_seconds: must be a whole number of seconds (0 = no cap)", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateVerifierRunCapSeconds(int(f)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// notify default events: the operator pre-selects which lifecycle
+	// kinds the built-in sinks subscribe to. The new opt-in warning
+	// kinds (scope_warning, guardrail_warn) and the task session
+	// lifecycle kinds are valid choices; an unknown kind (or an
+	// empty entry) rejects the whole PUT instead of silently storing a
+	// list the sinks will never match — same rule as
+	// task_override_statuses above. An empty list is valid: it clears
+	// the pre-selection so the global default set applies.
+	if v, ok := patch["autonomous.notify.default_events"]; ok {
+		var candidate []string
+		if arr, ok := toStringArray(v); ok {
+			candidate = arr
+		} else if str, ok := v.(string); ok {
+			candidate = splitCSV(str)
+		} else {
+			http.Error(w, "autonomous.notify.default_events must be an array of event kinds or a comma-separated list", http.StatusBadRequest)
+			return
+		}
+		if verr := autonomous.ValidateNotifyEvents(candidate); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Plan requirement coverage gate — validate both knobs before
+	// anything is applied, so a bad mode or ratio rejects the whole
+	// PUT instead of storing a half-set or malformed pair (same rule
+	// as the task_override_statuses block above).
+	if v, ok := patch["autonomous.plan_coverage_check"]; ok {
+		if _, verr := config.NormalizePlanCoverageCheck(fmt.Sprintf("%v", v)); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.plan_coverage_min_ratio"]; ok {
+		if _, verr := configPatchFloat(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Plan-coverage finding filters (plan_coverage) — same whole-PUT
+	// rejection rule as the two plan-coverage keys above: a bad type
+	// refuses the whole PUT instead of storing a half-applied set.
+	for _, k := range []string{
+		"autonomous.plan_coverage_suppress_created_files",
+		"autonomous.plan_coverage_scoped_requirements",
+	} {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				http.Error(w, k+": must be a boolean (true or false)", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	if v, ok := patch["autonomous.plan_coverage_requirement_sections"]; ok {
+		if _, isStr := v.(string); !isStr {
+			http.Error(w, "autonomous.plan_coverage_requirement_sections: must be a comma-separated string of spec section names (empty = the scope,constraints default)", http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.plan_coverage_min_requirement_chars"]; ok {
+		f, err := configPatchFloat(v)
+		if err != nil || f != math.Trunc(f) || f < 0 {
+			http.Error(w, "autonomous.plan_coverage_min_requirement_chars: must be a whole number >= 0 (0 = the 30-character default)", http.StatusBadRequest)
+			return
+		}
+	}
+	// autonomous.generated_artefacts.<kind>: boolean switches only.
+	for _, k := range generatedArtefactConfigKeys() {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				http.Error(w, k+": must be a boolean (true or false)", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// mcp.public_url is advertised verbatim to MCP SSE clients, so a value
+	// that is not an absolute http(s) URL is rejected before anything is
+	// applied and the config is left unchanged.
+	if v, ok := patch["mcp.public_url"]; ok {
+		if _, verr := config.NormalizePublicURL(toString(v)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// platform_context.note is appended to every session's context text, so an
+	// over-long value is rejected before anything is applied.
+	if v, ok := patch["platform_context.note"]; ok {
+		if n := len(toString(v)); n > config.PlatformContextNoteMaxLen {
+			http.Error(w, fmt.Sprintf("platform_context.note: too long (%d bytes, max %d)", n, config.PlatformContextNoteMaxLen), http.StatusBadRequest)
+			return
+		}
+	}
+	// Usage back-off knobs: an unrecognized mode would otherwise normalize to
+	// "off" and silently disable the automatic back-off, and a non-whole or
+	// sub-1 maximum would be clamped; reject the whole PUT instead.
+	if v, ok := patch["autonomous.usage_backoff"]; ok {
+		if verr := validateUsageBackoffMode(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.backoff_max_wait_minutes"]; ok {
+		if _, verr := parseBackoffMaxWaitMinutes(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Usage calculator keys: any invalid value (unknown variant or policy,
+	// out-of-range number, bad clock, unknown or fixed-offset zone) rejects
+	// the whole PUT.
+	if verr := validateUsageCalculatorPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Classifier keys (classifier.*): any invalid value rejects the whole PUT.
+	if verr := validateClassifierPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Burn guard keys (usage.burn_guard.*): any invalid value rejects the whole PUT.
+	if verr := validateBurnGuardPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Billing profiles (usage.billing.<provider>.<field>): any invalid value
+	// (unknown mode or allowance unit, a negative or non-finite monthly
+	// price, a bad reset weekday or time, an unknown field) rejects the
+	// whole PUT, the same way every other usage.* key does.
+	if verr := validateBillingPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Verifier policy: an unknown mode, an empty backend entry or a negative
+	// cap rejects the whole PUT.
+	if verr := validateVerifierPolicyPatch(patch); verr != nil {
+		http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Outbound webhook sink and peer forwarding (autonomous.notify.webhook.*,
+	// autonomous.notify.forwarding.*). A bad host, a non-numeric number or a
+	// bad delay schedule rejects the whole PUT before anything is applied.
+	if verr := validateLifecycleNotifyPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Automation idle-alert threshold: whole minutes, 0 = off. A negative or
+	// non-integer value rejects the whole PUT rather than being skipped.
+	if v, ok := patch["autonomous.automation.idle_alert_minutes"]; ok {
+		if verr := validateIdleAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Vault-unreachable alert threshold: whole seconds >= 0 (0 = off). A
+	// negative, fractional or non-numeric value rejects the whole PUT.
+	if v, ok := patch["secrets.vault.unreachable_alert_after_seconds"]; ok {
+		if verr := validateVaultUnreachableAlertAfterSeconds(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Automation triage-alert threshold: whole minutes >= 0. Unset reads the
+	// 30-minute default; an explicit 0 turns the triage alert off and is
+	// preserved. A negative, fractional or non-numeric value rejects the
+	// whole PUT rather than being skipped.
+	if v, ok := patch["autonomous.automation.triage_alert_minutes"]; ok {
+		if verr := validateTriageAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Host load alert: mode off | alert | reap, multiple >= 0, whole minutes
+	// >= 0. Any bad value rejects the whole PUT.
+	for _, hk := range hostLoadAlertKeys {
+		if v, ok := patch[hk]; ok {
+			if verr := validateHostLoadAlertPatchKey(hk, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// Merge-pending mode: off | shadow | on. Any other value rejects the whole
+	// PUT. The alert threshold is whole minutes >= 0; unset reads the 30-minute
+	// default and an explicit 0 turns the merge-pending alert off.
+	if v, ok := patch["autonomous.automation.merge_pending_mode"]; ok {
+		if verr := validateMergePendingMode(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.automation.merge_pending_alert_minutes"]; ok {
+		if verr := validateMergePendingAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Merged-member policy: completed | manual | block. Any other value
+	// rejects the whole PUT, same as merge_pending_mode.
+	if v, ok := patch["autonomous.automation.merged_member_policy"]; ok {
+		if verr := validateMergedMemberPolicy(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Agent insert policy: allow | require_operator. Any other value rejects
+	// the whole PUT, same as idle_alert_minutes.
+	if v, ok := patch["autonomous.automation.agent_insert_policy"]; ok {
+		if verr := validateAgentInsertPolicy(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Repo CI watch (autonomous.automation.repo_ci_watch.*): every key is
+	// checked before anything is applied, so one bad value (a mode other
+	// than off|shadow|on, a delete_superseded other than report|delete, a
+	// non-absolute repository path, a poll interval below 60, a negative
+	// alert/tag threshold, a hung threshold below 1) rejects the whole
+	// PUT rather than being skipped.
+	if verr := validateRepoCIWatchPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Search-before-create mode: off | shadow | on. Any other value rejects
+	// the whole PUT, same as agent_insert_policy.
+	if v, ok := patch["autonomous.automation.create_search_mode"]; ok {
+		if verr := validateCreateSearchModeValue(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Search-before-create threshold: finite number in (0, 1]. Zero, a
+	// negative, an above-1, a non-finite or a non-numeric value rejects the
+	// whole PUT rather than being skipped.
+	if v, ok := patch["autonomous.automation.create_search_threshold"]; ok {
+		if verr := validateCreateSearchThresholdValue(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Model-pull consent (autonomous.model_pull_consent): the whole block is
+	// checked before anything is applied — an entry the gate could not
+	// interpret (empty model name, duplicated model, empty publisher) or a
+	// wrong shape rejects the whole PUT, same rule as the
+	// PUT /api/autonomous/config surface.
+	if v, ok := patch["autonomous.model_pull_consent"]; ok {
+		var mpc config.ModelPullConsent
+		if b, err := json.Marshal(v); err == nil {
+			if json.Unmarshal(b, &mpc) != nil {
+				http.Error(w, `autonomous.model_pull_consent: must be an object with "models" and/or "publishers"`, http.StatusBadRequest)
+				return
+			}
+		} else {
+			http.Error(w, `autonomous.model_pull_consent: must be an object with "models" and/or "publishers"`, http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateModelPullConsent(mpc); verr != nil {
+			http.Error(w, "autonomous.model_pull_consent: "+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Cleanup keys (autonomous.automation.cleanup_mode,
+	// cleanup_retention_hours, cleanup_max_removals_per_pass,
+	// disk_alert_percent): only the value type is checked here. An unknown
+	// cleanup_mode word is legal — it reads as report through
+	// EffectiveCleanupMode — and zero/negative hours and caps plus out-of-
+	// range percents are not refusals either (they read their defaults or
+	// clamp to 1..100), unlike the merge-pending and search-before-create
+	// keys above.
+	if v, ok := patch["autonomous.automation.cleanup_mode"]; ok {
+		if verr := validateCleanupModeValue(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	for _, key := range []string{
+		"autonomous.automation.cleanup_retention_hours",
+		"autonomous.automation.cleanup_max_removals_per_pass",
+		"autonomous.automation.disk_alert_percent",
+	} {
+		if v, ok := patch[key]; ok {
+			if verr := validateCleanupWholeNumber(key, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// Uncommitted-work keys (autonomous.automation.uncommitted_work_policy and
+	// uncommitted_work_scope): strict, unlike the cleanup mode above. A present
+	// key must be hold|warn|off (policy) or task_files|worktree (scope), and
+	// any other value rejects the whole PUT with a message naming the allowed
+	// words, so a read back always shows the word that was written.
+	for _, key := range []string{
+		"autonomous.automation.uncommitted_work_policy",
+		"autonomous.automation.uncommitted_work_scope",
+	} {
+		if v, ok := patch[key]; ok {
+			if verr := validateUncommittedWorkValue(key, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// Protected-paths keys (autonomous.automation.protected_paths,
+	// protected_paths_action and rules_review_source): strict. The action must
+	// be hold|warn|block|off and the source base_commit|worktree, each refused
+	// with a message naming the allowed words; a list entry that is absolute,
+	// has a .. segment or is over 256 bytes, or a list over 100 entries, is
+	// refused naming it. One bad key rejects the whole PUT.
+	for _, key := range []string{protectedPathsActionKey, rulesReviewSourceKey} {
+		if v, ok := patch[key]; ok {
+			if verr := validateProtectedPathsWord(key, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	if v, ok := patch[protectedPathsKey]; ok {
+		if _, verr := parseProtectedPathsValue(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Security failure (autonomous.automation.security_failure.*): the only
+	// key is mode, which must be off, shadow or on (empty = unset =
+	// shadow). Any other value rejects the whole PUT rather than being
+	// skipped.
+	if verr := validateSecurityFailurePatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Supervisor watch (autonomous.automation.supervisor_watch.*): the mode
+	// must be off, shadow or on (empty = unset = shadow), the minute
+	// thresholds must be whole numbers >= 0, and the path/baseline keys
+	// must be strings. Any other value rejects the whole PUT rather than
+	// being skipped.
+	if verr := validateSupervisorWatchPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Parallel (autonomous.parallel.*): read_only_tasks must be a boolean.
+	if verr := validateParallelPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Lane fill: every autonomous.lane_fill.* value is checked before
+	// anything is applied, so one bad value rejects the whole PUT.
+	for k, v := range patch {
+		if field, ok := strings.CutPrefix(k, laneFillKeyPrefix); ok {
+			if verr := validateLaneFillValue(field, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// Merge shadow: every autonomous.merge_shadow.* value is checked before
+	// anything is applied, so one bad value (or an unknown key) rejects the
+	// whole PUT with an error naming the key.
+	for k, v := range patch {
+		if field, ok := strings.CutPrefix(k, mergeShadowKeyPrefix); ok {
+			if verr := ValidateMergeShadowValue(field, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// Supervisor loop: every autonomous.supervisor_loop.* value is applied to a
+	// copy of the block first, so one bad value or unknown key rejects the whole
+	// PUT with an error naming the key.
+	if verr := validateSupervisorLoopPatch(s.cfg.Autonomous.SupervisorLoop, patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Progress engine parameters: every autonomous.progress.* value is checked
+	// before anything is applied, so one bad value rejects the whole PUT.
+	if verr := validateProgressPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// tier -> max-inflight table: validate the whole value before anything
+	// is applied, so a bad tier key or negative limit rejects the PUT
+	// instead of being stored (same rule as the plan-coverage pair above).
+	if v, ok := patch["autonomous.plan_tier_max_inflight"]; ok {
+		if _, verr := parsePlanTierTable(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// kind -> capacity-priority table: same whole-PUT rejection. Integer
+	// values only (non-numeric, fractional and boolean values are refused
+	// with a clear message) and non-empty kind keys; any kind name is
+	// accepted — the shipped kinds plus an installation's own.
+	if v, ok := patch["autonomous.priority_by_kind"]; ok {
+		if _, verr := autonomous.ParsePriorityByKindValue(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// defect_intake_automation: an Automation name (or the empty string to
+	// clear it); anything else is a client error rather than a stored junk
+	// value.
+	if v, ok := patch["autonomous.defect_intake_automation"]; ok {
+		if _, okS := v.(string); !okS && v != nil {
+			http.Error(w, "autonomous.defect_intake_automation: must be a string (the Automation name; the empty string clears it)", http.StatusBadRequest)
+			return
+		}
+	}
+	// tier -> notional allocation table: same whole-PUT rejection, for both
+	// the whole-object form and the single autonomous.plan_tier_allocation_usd.<tier> pair.
+	for k, v := range patch {
+		if k == planTierAllocationKey {
+			if _, verr := parsePlanTierAllocationTable(v); verr != nil {
+				http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+				return
+			}
+		} else if tier, ok := planTierAllocationPairTier(k); ok {
+			if _, verr := parsePlanTierAllocationPair(tier, v); verr != nil {
+				http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// pin_check_seconds: whole seconds >= 0, 0 = pin keeper off. A negative
+	// or non-integer value rejects the whole PUT, same as idle_alert_minutes.
+	if v, ok := patch["pin_check_seconds"]; ok {
+		if _, verr := parsePinCheckSeconds(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// plan_review_mode must be a known mode (off/warn/block). A typo would
+	// otherwise normalize to off and silently disable the gate, so reject
+	// the whole PUT as a client error.
+	if mv, ok := patch["autonomous.plan_review_mode"]; ok {
+		mode := toString(mv)
+		if !autonomous.ValidPlanReviewMode(mode) {
+			http.Error(w, fmt.Sprintf("autonomous.plan_review_mode: %q is not a valid mode (expected off, warn or block)", mode), http.StatusBadRequest)
+			return
+		}
+	}
+	// drift_mode accepts only "block" or "warn"; reject the whole PUT
+	// before anything is applied (same discipline as
+	// task_override_statuses above).
+	if v, ok := patch["autonomous.drift_mode"]; ok {
+		if verr := config.ValidateDriftMode(toString(v)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// undeclared_edit_mode accepts only "off", "warn" or "block"; same
+	// whole-PUT rejection as drift_mode above.
+	if v, ok := patch["autonomous.undeclared_edit_mode"]; ok {
+		if verr := config.ValidateUndeclaredEditMode(toString(v)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// gate_disagreement accepts only "warn" or "block"; the whole PUT is
+	// rejected before anything is applied (the default is "warn", so an
+	// explicit empty string is also invalid).
+	if v, ok := patch["autonomous.gate_disagreement"]; ok {
+		if str, ok := v.(string); !ok || (str != "warn" && str != "block") {
+			http.Error(w, `autonomous.gate_disagreement: must be "warn" or "block"`, http.StatusBadRequest)
+			return
+		}
+	}
+	// default_quality_gates.scope accepts only full / touched-plus-smoke /
+	// touched (the empty string is valid and means inherit the built-in
+	// default); the whole PUT is rejected before anything is applied.
+	if v, ok := patch["autonomous.default_quality_gates.scope"]; ok {
+		if _, err := pipeline.ParseGateScope(toString(v)); err != nil {
+			http.Error(w, `autonomous.default_quality_gates.scope: `+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// server.allowed_project_roots is checked before anything is applied: a
+	// relative path or a filesystem root refuses the whole PUT.
+	if v, ok := patch["server.allowed_project_roots"]; ok {
+		if _, err := parseAllowedProjectRoots(v); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The failure escalation block is checked as a whole, the same way: a bad
+	// max_failures, steps value or enabled flag refuses the whole PUT.
+	if err := validateFailureEscalationPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The infrastructure retry block is checked as a whole too: one bad value
+	// among its seven keys refuses the whole PUT.
+	if err := validateInfraRetryPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The merge pipeline block is checked as a whole too: an unknown key, an
+	// absolute or escaping file name, an unknown source, fallback or policy
+	// refuses the whole PUT with a message naming the key. The check reads the
+	// live block first, so a post_ship hook whose built-in target the block
+	// already holds is accepted, as is a single PUT that sets the target and
+	// the hook together.
+	if err := validateMergePipelinePatchBase(s.cfg.Autonomous.MergePipeline, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The request watch block is checked as a whole too: poll_seconds and
+	// no_progress_minutes of at least 1, gpu_busy_percent from 1 to 100, only
+	// known remediation option ids and real booleans. One bad value among its
+	// eleven keys refuses the whole PUT with a message naming the key.
+	if err := validateRequestWatchPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The model routing block is checked as a whole too: one bad value among
+	// its six keys refuses the whole PUT. A whole-block object is first
+	// expanded into the dotted keys.
+	if err := expandModelRoutingBlock(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateModelRoutingPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The compute placement block is checked before any key is applied:
+	// a known missing_model, a memory headroom in 0-100 and the
+	// rest non-negative whole numbers. One bad key rejects the
+	// whole PUT; the error names the key.
+	if err := validateComputePlacementPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// judge_size_threshold_lines is a whole number of 0 or more; the whole PUT
+	// is refused before anything is applied.
+	if err := validateJudgeSizeThresholdPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The two judge prompt delivery keys are whole numbers within fixed ranges.
+	if err := validateJudgePromptDeliveryPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// judge_strong_backend must be a string (empty clears strong-first
+	// routing) and judge_verdict_cache_enabled accepts only a JSON boolean
+	// (JSON null is not a boolean); each refusal names the key and the
+	// whole PUT is refused before anything is applied.
+	if err := validateJudgeStrongRoutingPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Questions switch: autonomous.questions.enabled accepts only a JSON
+	// boolean. The CLI and the comm configure verb both send true/false as
+	// JSON literals, and a quoted string or number is not a boolean, so it
+	// rejects the whole PUT (400) rather than being stored.
+	if v, ok := patch["autonomous.questions.enabled"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.questions.enabled: must be a boolean (true or false)", http.StatusBadRequest)
+			return
+		}
+	}
+	// The question notify toggles accept only a JSON boolean too: the same
+	// whole-PUT rejection as the switch, so a quoted string or number 400s
+	// rather than being stored.
+	for _, k := range []string{
+		"autonomous.questions.notify_messaging",
+		"autonomous.questions.notify_alert",
+		"autonomous.questions.return_path",
+		"autonomous.questions.decision_gate",
+		"autonomous.questions.worker_marker",
+	} {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				http.Error(w, k+": must be a boolean (true or false)", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// The decision gate mode is shadow or on. Anything else rejects the whole
+	// PUT before a value is applied, by the same rule the config file load
+	// uses.
+	if v, ok := patch["autonomous.questions.decision_gate_mode"]; ok {
+		mode, isStr := v.(string)
+		if !isStr {
+			http.Error(w, "autonomous.questions.decision_gate_mode: must be \"shadow\" or \"on\"", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateDecisionGateMode(mode); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The held question mode is off, shadow or on (empty reads as shadow).
+	// Same whole-PUT rejection, by the same rule the config file load uses.
+	if v, ok := patch["autonomous.questions.held_mode"]; ok {
+		mode, isStr := v.(string)
+		if !isStr {
+			http.Error(w, "autonomous.questions.held_mode: must be \"off\", \"shadow\" or \"on\"", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateHeldMode(mode); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The task template modes (autonomous.task_templates.mode as a whole
+	// {template id: mode} object, and the dotted form
+	// autonomous.task_templates.mode.<id>) are llm, daemon or off. The merged
+	// map is validated by the same rule the config file load uses
+	// (TaskTemplatesConfig.Validate), so an unknown mode, daemon on a
+	// non-daemon-capable template, or daemon on final_gate rejects the whole
+	// PUT before a value is applied.
+	if taskTemplateModePatchTouched(patch) {
+		candidate, cerr := taskTemplateModePatchCandidate(s.cfg.Autonomous.TaskTemplates.Mode, patch)
+		if cerr != nil {
+			http.Error(w, cerr.Error(), http.StatusBadRequest)
+			return
+		}
+		tc := config.TaskTemplatesConfig{Mode: candidate}
+		if verr := tc.Validate(); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The script gate timeout (autonomous.script_gate_timeout_seconds) is a
+	// whole number of seconds >= 0 (0 = no cap). A negative or non-whole
+	// value rejects the whole PUT by the same rule the config file load
+	// uses (validateScriptGateTimeout), so nothing is stored.
+	if v, ok := patch["autonomous.script_gate_timeout_seconds"]; ok {
+		if _, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr != nil {
+			http.Error(w, "autonomous.script_gate_timeout_seconds: must be a whole number of seconds >= 0 (0 = no cap)", http.StatusBadRequest)
+			return
+		}
+	}
+	// The project gate command (autonomous.project_gate_command) is a single
+	// line of shell text (empty = unset). Same whole-PUT rejection, by the
+	// same rule the config file load uses (ValidateProjectGateCommand).
+	if v, ok := patch["autonomous.project_gate_command"]; ok {
+		cmd, isStr := v.(string)
+		if !isStr {
+			http.Error(w, "autonomous.project_gate_command: must be a string (empty = unset)", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateProjectGateCommand("autonomous", cmd); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The held state ids cover tasks parked in one of the five known states.
+	// An absent key means all five, an explicit empty list means none; an
+	// unknown id names the valid ones and rejects the whole PUT before
+	// anything is applied.
+	if v, ok := patch["autonomous.questions.held_states"]; ok {
+		var candidate []string
+		if arr, ok := toStringArray(v); ok {
+			candidate = arr
+		} else if str, ok := v.(string); ok {
+			candidate = splitCSV(str)
+		} else {
+			http.Error(w, "autonomous.questions.held_states: must be a list of state ids or a comma-separated list", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateHeldStates(candidate); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The question quality and queue preview keys: a bad value rejects the
+	// whole PUT before anything is applied, by the same rules the config file
+	// load uses.
+	if err := validateQuestionQualityPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The decision record keys: a bad value rejects the whole PUT before
+	// anything is applied, by the same rules the config file load uses.
+	if err := validateDecisionRecordPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// identity.backups_to_keep: a bad value rejects the whole PUT before
+	// anything is applied, by the same rule the config file load uses.
+	if err := validateIdentityBackupsPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// resource_limits.*: share 1 to 100, floor not above cap; a bad value
+	// rejects the whole PUT before anything is applied.
+	if err := validateResourceLimitsPatch(s.cfg.ResourceLimits, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// session.dismiss_ui_prompts and the session.ui_prompt_* keys: a bad value
+	// rejects the whole PUT before anything is applied, by the same rules the
+	// config file load uses.
+	if err := validateUIPromptPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// session.liveness_window_seconds / session.liveness_idle_timeout_overrides:
+	// a bad value or an unknown backend name rejects the whole PUT.
+	if err := validateLivenessPatch(patch, s.availableBackends); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// ui.splash_min_seconds and ui.splash_min_seconds_new_version: a bad value
+	// rejects the whole PUT before anything is applied, by the same rules the
+	// config file load uses.
+	if err := validateUISplashPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// pi.thinking_level — pre-validate like task_override_statuses above so an
+	// unknown level rejects the whole PUT instead of silently no-op'ing in
+	// applyConfigPatch. Empty string is valid (clears the flag).
+	if raw, ok := patch["pi.thinking_level"]; ok {
+		if ls, isStr := raw.(string); !isStr || !config.IsPiThinkingLevel(ls) {
+			http.Error(w, "pi.thinking_level: use one of "+strings.Join(config.PiThinkingLevels, ", ")+" (empty clears it)", http.StatusBadRequest)
+			return
+		}
+	}
+	// autonomous.loop_detect_turns — only the integer form is accepted; 0
+	// (loop detection off) is valid.
+	if raw, ok := patch["autonomous.loop_detect_turns"]; ok {
+		if n, okInt := toInt(raw); !okInt || n < 0 {
+			http.Error(w, "autonomous.loop_detect_turns: must be a non-negative integer (0 turns loop detection off; default 3)", http.StatusBadRequest)
+			return
+		}
+	}
+	// autonomous.snapshot_never_stage — the snapshot's never-stage list.
+	// Blank patterns and a wrong type reject the whole PUT (same rule as
+	// the /api/autonomous/config surface); a CSV blank value is nil and
+	// passes (unset → the built-in defaults apply).
+	if rawNS, ok := patch["autonomous.snapshot_never_stage"]; ok {
+		var patterns []string
+		if arr, isArr := toStringArray(rawNS); isArr {
+			patterns = arr
+		} else if str, isStr := rawNS.(string); isStr {
+			patterns = splitCSV(str)
+		} else {
+			http.Error(w, "autonomous.snapshot_never_stage: must be a list of path patterns or a comma-separated string", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateSnapshotNeverStage(patterns); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// autonomous.requirements (min-Ollama overrides) — a bad capability, or
+	// a value that is not a version string, rejects the whole PUT like the
+	// keys above, by the one shared rule set; the per-capability
+	// autonomous.requirements.min_ollama.<capability> keys are validated by
+	// the same helper.
+	if raw, ok := patch["autonomous.requirements"]; ok {
+		if _, verr := validateRequirementsConfigBlock(raw); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if err := validateChecksShipPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateRestartPolicyPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// tracing.* — pre-validate like git.secret_scan below: a bad mode, cap,
+	// retention or backend map rejects the whole PUT.
+	if terr := validateTracingPatch(s.cfg.Tracing, patch); terr != nil {
+		http.Error(w, terr.Error(), http.StatusBadRequest)
+		return
+	}
+	// autonomous.release_path and git.release_ci_window_minutes — refused
+	// with the config layer's own message so every surface shows the same text.
+	if raw, ok := patch["autonomous.release_path"]; ok {
+		rs, isStr := raw.(string)
+		if !isStr {
+			http.Error(w, "autonomous.release_path must be \"direct_push\" or \"pull_request\"", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateReleasePath(strings.TrimSpace(rs)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if raw, ok := patch["git.release_ci_window_minutes"]; ok {
+		n, isInt := toInt(raw)
+		if !isInt {
+			http.Error(w, "git.release_ci_window_minutes must be greater than 0 (a whole number of minutes)", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateReleaseCIWindowMinutes(n); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// git.secret_scan.mode — pre-validate like pi.thinking_level above: an
+	// unknown mode (a security-critical setting) rejects the whole PUT
+	// instead of silently no-op'ing in applyConfigPatch.
+	if raw, ok := patch["git.secret_scan.mode"]; ok {
+		ms, isStr := raw.(string)
+		if !isStr || config.ValidateGitSecretScanMode(strings.ToLower(strings.TrimSpace(ms))) != nil {
+			http.Error(w, "git.secret_scan.mode: use one of "+config.GitSecretScanShadow+", "+config.GitSecretScanEnforce+", "+config.GitSecretScanOff, http.StatusBadRequest)
+			return
+		}
+	}
+	// git.secret_scan.detectors — an unknown detector name rejects the whole
+	// PUT: a typo would otherwise make the push-time scan fail and, in
+	// enforce mode, let the push through with only a log line.
+	if raw, ok := patch["git.secret_scan.detectors"]; ok {
+		var names []string
+		if arr, okArr := toStringArray(raw); okArr {
+			names = arr
+		} else if str, okStr := raw.(string); okStr {
+			names = splitCSV(str)
+		} else {
+			http.Error(w, "git.secret_scan.detectors: must be a list of detector names or a comma-separated list", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateGitSecretScanDetectors(names); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	for k := range patch {
+		if !strings.HasPrefix(k, "autonomous.requirements.min_ollama.") {
+			continue
+		}
+		if _, verr := validateRequirementsMinOllamaKey(strings.TrimPrefix(k, "autonomous.requirements.min_ollama."), patch[k]); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// git.secret_scan.allow_list.fingerprints — 16 or 64 lowercase hex
+	// chars each (sha256 of the secret, first 16 = short form). A bad
+	// entry rejects the whole PUT; allow-list fingerprints never appear
+	// in findings, so an unparseable one is always an operator error.
+	if raw, ok := patch["git.secret_scan.allow_list.fingerprints"]; ok {
+		var candidate []string
+		if arr, okArr := toStringArray(raw); okArr {
+			candidate = arr
+		} else if s, okStr := raw.(string); okStr {
+			candidate = splitCSV(s)
+		} else {
+			http.Error(w, "git.secret_scan.allow_list.fingerprints: must be a list of fingerprints or a comma-separated list", http.StatusBadRequest)
+			return
+		}
+		for _, fp := range candidate {
+			if !isSecretFingerprint(fp) {
+				http.Error(w, "git.secret_scan.allow_list.fingerprints: "+strings.TrimSpace(fp)+" is not a 16- or 64-char hex fingerprint (sha256 of the secret)", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	if err := validateRulesContextPatch(s.cfg.Autonomous.RulesContext, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// plugins.services.* validates as a block (every value is also checked
+	// on its own, but the combined state is what Load re-validates at the
+	// next startup), so the patch is simulated onto the stored block and the
+	// load-time validator is run over the result before anything is applied.
+	if err := validatePluginServicesPatch(s.cfg.Plugins.Services, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Worker session profile settings (autonomous.worker_profiles,
+	// autonomous.worker_profile_defaults, autonomous.worker_profile):
+	// simulate the patch onto a copy of the current config and run the
+	// load-time validator over the result, so a built-in profile name, an
+	// unknown profile reference or an unknown role/kind key rejects the whole
+	// PUT (400 with the validation message) before anything is applied — the
+	// same rule the config file load uses.
+	if err := validateWorkerProfilePatch(s.cfg, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Does this PUT touch the tags.placement block at all? The sweep trigger
+	// after the save keys off this, so a request that changes no placement
+	// key never sweeps.
+	placementChanged := false
+	for k := range patch {
+		if strings.HasPrefix(k, "autonomous.tags.placement") {
+			placementChanged = true
+			break
+		}
+	}
+	// Attempt-cost settings: when the patch sends any of the three keys,
+	// validate the merged candidate (sent values layered over the stored
+	// ones) with the shared config.ValidateAttemptCostSettings BEFORE
+	// anything is applied. An unknown task kind, a number outside 0..max,
+	// or a backend that needs a model without one names the key in a 400
+	// and leaves every stored value untouched — the whole PUT is refused
+	// and nothing is written. Keys the patch does not send keep their
+	// stored values (the PUT's normal patch semantics).
+	if err := expandAttemptCostDottedKeys(patch, s.cfg.Autonomous.FirstAttempt); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if attemptCostPatchTouched(patch) {
+		next := s.cfg.Autonomous
+		next.FirstAttempt = cloneAttemptChoices(next.FirstAttempt)
+		if raw, ok := patch["autonomous.first_attempt"]; ok {
+			fa, shapeOK := parseFirstAttempt(raw)
+			if !shapeOK {
+				http.Error(w, "autonomous.first_attempt: expected an object mapping a task kind (implementation, docs, note, final_gate) to {backend, model}", http.StatusBadRequest)
+				return
+			}
+			next.FirstAttempt = fa
+		}
+		if raw, ok := patch["autonomous.first_attempt_escalate_after_failures"]; ok {
+			n, numOK := toInt(raw)
+			if !numOK {
+				http.Error(w, "autonomous.first_attempt_escalate_after_failures: expected a whole number", http.StatusBadRequest)
+				return
+			}
+			next.FirstAttemptEscalateAfterFailures = n
+		}
+		if raw, ok := patch["autonomous.retry_resume_max_context_tokens"]; ok {
+			n, numOK := toInt(raw)
+			if !numOK {
+				http.Error(w, "autonomous.retry_resume_max_context_tokens: expected a whole number", http.StatusBadRequest)
+				return
+			}
+			next.RetryResumeMaxContextTokens = n
+		}
+		if verr := config.ValidateAttemptCostSettings(next); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Branch refresh settings: a non-boolean enabled or a negative or
+	// non-numeric behind limit refuses the whole PUT (branch_refresh_api.go).
+	if err := validateBranchRefreshPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Release approval modes go through SetReleaseApprovalMode, which stores
+	// them with an audit event and a decision record, so they are taken out of
+	// the patch here and never reach applyConfigPatch.
+	if err := s.routeReleaseModeKeys(releaseModeSurface(r), patch); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errReleaseModeUnavailable) {
+			status = http.StatusServiceUnavailable
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
+	// Keep the ship step's policy in step with the live autonomous.ship config.
+	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
+	autonomous.SetChecksConfig(s.cfg.Autonomous.Checks)
+	// Same for the per-project rules/context names: resolution reads the
+	// installed snapshot, so this keeps planning in step without a restart.
+	autonomous.SetRulesContextConfig(s.cfg.Autonomous.RulesContext)
+	// observer.pull.* — the pull collector reads these globals when it
+	// derives targets (a per-peer interval/timeout of 0 falls back here),
+	// so after a PUT that touches them re-sync the target set; no restart
+	// needed.
+	for k := range patch {
+		if strings.HasPrefix(k, "observer.pull.") {
+			s.syncObserverPullTargets()
+			break
+		}
+	}
+	// The question lifecycle events follow the switch at runtime: a flip
+	// attaches (or drops) the store's event sink, so no restart is needed.
+	if _, ok := patch["autonomous.questions.enabled"]; ok && s.questionEventsSwitch != nil {
+		s.questionEventsSwitch(s.cfg.Autonomous.Questions.Enabled)
+	}
+	// The shared tag registry follows its keeper and sync interval at runtime,
+	// so a change made here needs no restart.
+	for _, k := range []string{"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds"} {
+		if _, ok := patch[k]; ok {
+			s.applyTagRegistrySettings()
+			break
+		}
+	}
+	// Auto tagging (autonomous.auto_tags.*) follows the live block without
+	// a restart: the engine-tag sync reads it at sync time (auto_tags.go),
+	// and a whole-PUT re-sync of every existing Automation applies a
+	// flip-off (strip engine tags, reclaim un-referenced records) or a
+	// template change at once.
+	for k := range patch {
+		if strings.HasPrefix(k, config.AutoTagsSettingPrefix) {
+			if a, ok := s.autonomousMgr.(autoTagsSyncAPI); ok {
+				a.SyncAutoTagsAll()
+			}
+			break
+		}
+	}
 	// BL368 — re-initialize visioner when vision config changes via PUT.
 	for k := range patch {
 		if strings.HasPrefix(k, "vision.") {
@@ -5817,6 +8211,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if s.manager != nil {
 		s.manager.SetScheduleSettleMs(s.cfg.Session.ScheduleSettleMs)
 	}
+	// The inherited-tags cache lifetime is hot-reloadable too: a write
+	// applies to the live session manager immediately, no restart.
+	if _, touched := patch["autonomous.inherited_tags_cache_seconds"]; touched && s.manager != nil {
+		s.manager.SetInheritedTagsCacheTTL(time.Duration(s.cfg.Autonomous.InheritedTagsCacheSeconds) * time.Second)
+	}
+	for k := range patch {
+		if strings.HasPrefix(k, "session.store_") {
+			s.applyStoreConfig()
+			break
+		}
+	}
 	// BL394 -- re-sync the live push-SSRF-guard config on any push.* change.
 	for k := range patch {
 		if strings.HasPrefix(k, "push.") {
@@ -5843,10 +8248,56 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The tags.placement block (autonomous.tags.placement.*) follows the
+	// live config without a restart: new placements already read it on every
+	// derivation (SetPlacementTagSettings), and one tag-sweep pass
+	// re-derives the existing sessions' and records' system tags under the
+	// new block — turning an axis off strips its tag, a template change
+	// re-stamps it where the fact exists; the operator's own tags are a
+	// separate field the sweep never touches. The pass runs in the
+	// background after the config is saved, so the PUT answers without
+	// waiting on the whole-history sweep; a request that changed no
+	// placement key never reaches this point.
+	if placementChanged && s.autonomousMgr != nil {
+		if a, ok := s.autonomousMgr.(tagSweepAPI); ok {
+			go func() {
+				res := a.SweepTags(false)
+				log.Printf("[autonomous] tag sweep (placement settings changed): sessions %d/%d changed, automata %d/%d, automations %d/%d, tasks %d/%d, templates %d/%d, decision records %d/%d, questions %d/%d",
+					res.Sessions.Changed, res.Sessions.Examined,
+					res.Automata.Changed, res.Automata.Examined,
+					res.Automations.Changed, res.Automations.Examined,
+					res.Tasks.Changed, res.Tasks.Examined,
+					res.Templates.Changed, res.Templates.Examined,
+					res.DecisionRecords.Changed, res.DecisionRecords.Examined,
+					res.Questions.Changed, res.Questions.Examined)
+			}()
+		}
+	}
+	// A config write can create a model-to-node collision, so re-check and log
+	// every one that now exists.
+	for _, warning := range s.modelNodeWarnings() {
+		log.Printf("model-node collision: %s", warning.Message)
+	}
 	// SEC-017 — every config write, logged with the key names touched and
 	// a masked value for each (credential-shaped keys are masked outright;
 	// skipped keys, per applyConfigPatch, never reach here at all).
 	s.auditConfigPatch(r.Context(), patch, skipped)
+	// Model-pull consent changed: record the consent itself (which models
+	// are allowed, which are refused, which publishers are allow-listed),
+	// not just the generic config-patch entry.
+	if _, touched := patch["autonomous.model_pull_consent"]; touched {
+		sel := s.cfg.Autonomous.ModelPullConsent
+		names := make([]string, 0, len(sel.Models))
+		for i := range sel.Models {
+			if sel.Models[i].Allowed {
+				names = append(names, sel.Models[i].Name+"=pull_allowed")
+			} else {
+				names = append(names, sel.Models[i].Name+"=pull_refused")
+			}
+		}
+		s.auditAs(s.auditActor(r.Context()), audit.ActionModelPullConsentChanged, "model_pull_consent", "autonomous",
+			map[string]any{"models": names, "publishers": sel.Publishers})
+	}
 	// BL369 — propagate autonomous.* config changes to the live manager so
 	// injection_guard and other knobs take effect without a daemon restart.
 	// Forward only the top-level JSON field(s) this PUT actually touched
@@ -5894,6 +8345,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 						// value. Encode the zero value directly instead
 						// of skipping it.
 						partial[top] = v
+					}
+				}
+				if raw, ok := partial["automation"]; ok && patchTouchesSupervisorWatch(patch) {
+					partial["automation"] = withSupervisorWatchClears(raw, s.cfg.Autonomous.Automation.SupervisorWatch)
+				}
+				if _, touched := patch[protectedPathsKey]; touched {
+					if raw, ok := partial["automation"]; ok {
+						partial["automation"] = withProtectedPathsList(raw, s.cfg.Autonomous.Automation.ProtectedPaths)
 					}
 				}
 				if b, err := json.Marshal(partial); err == nil {
@@ -6032,6 +8491,63 @@ func autonomousFieldJSONByTag(cfg config.AutonomousConfig, tag string) (json.Raw
 func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string {
 	var skipped []string
 	for k, v := range patch {
+		if strings.HasPrefix(k, "tracing.backends.") {
+			_ = applyTracingKey(&cfg.Tracing, k, v)
+			continue
+		}
+		// projects_defaults.* — the daemon-level project defaults. Validated in
+		// handlePutConfig; a direct applyConfigPatch caller's bad value is left
+		// unchanged.
+		if strings.HasPrefix(k, config.ProjectsDefaultsSettingPrefix) {
+			_ = cfg.ProjectsDefaults.ApplyProjectsDefaultsSetting(k, v)
+			continue
+		}
+		if _, ok := supervisorLoopPatchKey(k); ok {
+			// Validated in handlePutConfig; stored under its plan key.
+			applySupervisorLoopPatch(cfg, map[string]interface{}{k: v})
+			continue
+		}
+		// autonomous.requirements.min_ollama.<capability> — the dynamic
+		// per-capability min-Ollama overrides (one key per capability),
+		// handled before the switch so future capabilities need no switch
+		// case. Validated in handlePutConfig by the shared rule set; a
+		// direct applyConfigPatch caller's bad value is left unchanged.
+		if capability, ok := strings.CutPrefix(k, "autonomous.requirements.min_ollama."); ok && capability != "" {
+			if version, verr := validateRequirementsMinOllamaKey(capability, v); verr == nil {
+				if cfg.Autonomous.Requirements.MinOllama == nil {
+					cfg.Autonomous.Requirements.MinOllama = map[string]string{}
+				}
+				cfg.Autonomous.Requirements.MinOllama[capability] = version
+			}
+			continue
+		}
+		// plugins.services.per_service.<name> — the dynamic per-plugin map,
+		// handled before the switch like its sibling dynamic map above; the
+		// lifecycle mode is validated by validatePluginServicesPatch (the
+		// shared load-time rule) before anything is applied here.
+		if service, ok := strings.CutPrefix(k, "plugins.services.per_service."); ok && service != "" {
+			if ov, verr := normalizePluginServiceOverride(service, v); verr == nil {
+				applyPluginServiceOverride(cfg, service, ov)
+			}
+			continue
+		}
+		// autonomous.task_templates.mode.<id> — the per-template mode in
+		// dotted key form (one key per template id), handled before the
+		// switch like its dynamic-map siblings above. Validated in
+		// handlePutConfig by the shared rule set; a direct applyConfigPatch
+		// caller's bad value is left unchanged.
+		if id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode."); ok && id != "" {
+			if mode, isStr := v.(string); isStr {
+				tc := config.TaskTemplatesConfig{Mode: map[string]string{id: mode}}
+				if tc.Validate() == nil {
+					if cfg.Autonomous.TaskTemplates.Mode == nil {
+						cfg.Autonomous.TaskTemplates.Mode = map[string]string{}
+					}
+					cfg.Autonomous.TaskTemplates.Mode[id] = mode
+				}
+			}
+			continue
+		}
 		switch k {
 		case "server.token", "mcp.token":
 			skipped = append(skipped, k)
@@ -6042,6 +8558,52 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.NotifyExclude = splitCSV(s)
 			}
+		// cost_report.* — the cost report engine knobs (internal/costreport);
+		// each sticks as the pointer field, so an absent key reads the default.
+		case "cost_report.default_group_by":
+			if str := toString(v); str != "" {
+				cfg.CostReport.DefaultGroupBy = &str
+			}
+		case "cost_report.default_window_days":
+			if n, ok := toInt(v); ok {
+				cfg.CostReport.DefaultWindowDays = &n
+			}
+		case "cost_report.show_usd_estimates":
+			b := toBool(v)
+			cfg.CostReport.ShowUSDEstimates = &b
+		case "cost_report.week_start":
+			if str := toString(v); str != "" {
+				cfg.CostReport.WeekStart = &str
+			}
+		case "cost_report.include_peer_spend":
+			b := toBool(v)
+			cfg.CostReport.IncludePeerSpend = &b
+		// dashboard.hide_inactive_cards — explicit true/false both stick;
+		// an absent key (never PUT) reads the default, true.
+		case "dashboard.hide_inactive_cards":
+			b := toBool(v)
+			cfg.Dashboard.HideInactiveCards = &b
+		// dashboard.console.* — the operator console switches behind
+		// GET /api/dashboard/console: same pattern, explicit true/false both
+		// stick, an absent subkey (never PUT) reads the default, true.
+		case "dashboard.console.enabled":
+			b := toBool(v)
+			cfg.Dashboard.Console.Enabled = &b
+		case "dashboard.console.show_questions":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowQuestions = &b
+		case "dashboard.console.show_held_blocked":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowHeld = &b
+		case "dashboard.console.show_lanes":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowLanes = &b
+		case "dashboard.console.show_usage":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowUsage = &b
+		case "dashboard.console.show_ci_release":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowCIRelease = &b
 		case "telegram.enabled":
 			cfg.Telegram.Enabled = toBool(v)
 		case "discord.enabled":
@@ -6061,6 +8623,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "ntfy.token":
 			if s := toString(v); s != "" {
 				cfg.Ntfy.Token = s
+			}
+		// BL404 — imap_mcp config parity.
+		case "imap_mcp.enabled":
+			cfg.ImapMcp.Enabled = toBool(v)
+		case "imap_mcp.url":
+			cfg.ImapMcp.URL = toString(v)
+		case "imap_mcp.account":
+			cfg.ImapMcp.Account = toString(v)
+		case "imap_mcp.subject_prefix":
+			cfg.ImapMcp.SubjectPrefix = toString(v)
+		case "imap_mcp.to":
+			cfg.ImapMcp.To = toString(v)
+		case "imap_mcp.token":
+			// Ignore empty and the GET redaction placeholder so a client
+			// echoing back the masked value never clobbers the real token.
+			if s := toString(v); s != "" && s != "***" {
+				cfg.ImapMcp.Token = s
 			}
 		case "email.enabled":
 			cfg.Email.Enabled = toBool(v)
@@ -6177,6 +8756,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Session.InputIdleTimeout = n
 			}
+		case "session.liveness_window_seconds":
+			if n, ok := wholeNumber(v); ok {
+				cfg.Session.LivenessWindowSeconds = n
+			}
+		case "session.liveness_idle_timeout_overrides":
+			if m, ok := livenessOverridesFromValue(v); ok {
+				if len(m) == 0 {
+					m = nil
+				}
+				cfg.Session.LivenessIdleTimeoutOverrides = m
+			}
 		case "session.tail_lines":
 			if n, ok := toInt(v); ok {
 				cfg.Session.TailLines = n
@@ -6202,6 +8792,51 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.auto_git_init":
 			cfg.Session.AutoGitInit = toBool(v)
+		case "session.git_default":
+			cfg.Session.GitDefault = toBool(v)
+		case "git.push_on_complete":
+			// Accept only the three known policies (case-insensitive,
+			// trimmed). Invalid values are ignored — the stored value is
+			// left untouched — the same way unknown keys are no-ops here.
+			if s := strings.ToLower(strings.TrimSpace(toString(v))); s == config.GitPushNever || s == config.GitPushBranch || s == config.GitPushDefaultBranch {
+				cfg.Git.PushOnComplete = s
+			} else {
+				fmt.Fprintf(os.Stderr, "[config] git.push_on_complete: invalid value %q (allowed: never, branch, default_branch); ignored\n", toString(v))
+			}
+		case "git.push_remote":
+			// Trimmed; empty resets to the built-in default (origin),
+			// resolved via GitConfig.EffectivePushRemote.
+			cfg.Git.PushRemote = strings.TrimSpace(toString(v))
+		case "tracing.mode", "tracing.arg_cap_bytes", "tracing.retention_days", "tracing.backends":
+			// Pre-validated by the PUT handler (validateTracingPatch).
+			_ = applyTracingKey(&cfg.Tracing, k, v)
+		case "git.secret_scan.mode":
+			// Pre-validated by the PUT handler (unknown modes reject the
+			// whole PUT); empty clears the flag back to the shadow default.
+			if s := strings.ToLower(strings.TrimSpace(toString(v))); config.ValidateGitSecretScanMode(s) == nil {
+				cfg.Git.SecretScan.Mode = s
+			}
+		case "git.secret_scan.detectors":
+			// Empty (either form) resets to all built-in detectors, resolved
+			// via EffectiveSecretScanDetectors at scan time.
+			if arr, ok := toStringArray(v); ok {
+				cfg.Git.SecretScan.Detectors = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Git.SecretScan.Detectors = splitCSV(s)
+			}
+		case "git.secret_scan.allow_list.paths":
+			if arr, ok := toStringArray(v); ok {
+				cfg.Git.SecretScan.AllowList.Paths = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Git.SecretScan.AllowList.Paths = splitCSV(s)
+			}
+		case "git.secret_scan.allow_list.fingerprints":
+			// Pre-validated by the PUT handler (each entry 16/64 hex).
+			if arr, ok := toStringArray(v); ok {
+				cfg.Git.SecretScan.AllowList.Fingerprints = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Git.SecretScan.AllowList.Fingerprints = splitCSV(s)
+			}
 		case "session.kill_sessions_on_exit":
 			cfg.Session.KillSessionsOnExit = toBool(v)
 		case "session.one_shot_sessions":
@@ -6262,8 +8897,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Server.ProxySandboxPort = n
 			}
+		case "server.acknowledge_unauthenticated":
+			cfg.Server.AcknowledgeUnauthenticated = toBool(v)
 		case "server.auto_restart_on_config":
 			cfg.Server.AutoRestartOnConfig = toBool(v)
+		case "server.allowed_project_roots":
+			// Validated before the patch is applied; an empty value clears it.
+			if roots, err := parseAllowedProjectRoots(v); err == nil {
+				cfg.Server.AllowedProjectRoots = roots
+			}
 		case "server.recent_session_minutes":
 			if n, ok := toInt(v); ok {
 				cfg.Server.RecentSessionMinutes = n
@@ -6283,7 +8925,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "server.ws_session_list_default":
 			// Only "full" or "delta"; anything else is ignored.
-			if m := normalizeSessionListMode(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
+			if m := normalizeSessionListDefault(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
 				cfg.Server.WSSessionListDefault = m
 			}
 		case "server.ws_output_scope_default":
@@ -6358,6 +9000,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.MCP.SSEPort = n
 			}
+		case "mcp.public_url":
+			// handlePutConfig has already rejected invalid values; an invalid
+			// one reaching here (a direct caller) leaves the field unchanged.
+			if u, err := config.NormalizePublicURL(toString(v)); err == nil {
+				cfg.MCP.PublicURL = u
+			}
 		case "mcp.sse_enabled":
 			cfg.MCP.SSEEnabled = toBool(v)
 		case "mcp.tls_enabled":
@@ -6368,6 +9016,24 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.MCP.TLSCert = toString(v)
 		case "mcp.tls_key":
 			cfg.MCP.TLSKey = toString(v)
+		// BL412 — self-config group. allow_self_config is stored as an
+		// explicit bool (the tri-state "absent = on" default is resolved on
+		// read via SelfConfigEnabled; PUT makes the operator's intent stick).
+		case "mcp.allow_self_config":
+			b := toBool(v)
+			cfg.MCP.AllowSelfConfig = &b
+		// allow_sensitive_writes is stored as an explicit bool, like
+		// allow_self_config, so the operator's choice sticks.
+		case "mcp.allow_sensitive_writes":
+			b := toBool(v)
+			cfg.MCP.AllowSensitiveWrites = &b
+		case "mcp.self_config_audit_path":
+			if s := toString(v); s != "" {
+				cfg.MCP.SelfConfigAuditPath = s
+			}
+		case "mcp.self_config_audit_denied":
+			b := toBool(v)
+			cfg.MCP.SelfConfigAuditDenied = &b
 		case "update.enabled":
 			cfg.Update.Enabled = toBool(v)
 		case "update.schedule":
@@ -6486,6 +9152,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "memory.session_awareness":
 			val := toBool(v)
 			cfg.Memory.SessionAwareness = &val
+		case "platform_context.enabled":
+			val := toBool(v)
+			cfg.PlatformContext.Enabled = &val
+		case "platform_context.note":
+			if n := toString(v); len(n) <= config.PlatformContextNoteMaxLen {
+				cfg.PlatformContext.Note = n
+			}
 		case "cross_session.enabled":
 			val := toBool(v)
 			cfg.CrossSession.Enabled = &val
@@ -6641,6 +9314,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "pi.model":
 			cfg.Pi.Model = toString(v)
+		// pi.thinking_level — an empty string is a VALID value (clears the
+		// flag → pi uses its own model default). Unknown levels are rejected
+		// by handlePutConfig's pre-validation above (400), so if we get here
+		// the string is either "" or one of config.PiThinkingLevels.
+		case "pi.thinking_level":
+			if s, ok := v.(string); ok && config.IsPiThinkingLevel(s) {
+				cfg.Pi.ThinkingLevel = s
+			}
 		case "pi_prompt.enabled":
 			cfg.PiPrompt.Enabled = toBool(v)
 		case "pi_prompt.binary":
@@ -6928,6 +9609,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if s := toString(v); s != "" {
 				cfg.Whisper.VenvPath = s
 			}
+		case "whisper.chunk_seconds":
+			// 0 disables chunking; whisper's own window is 30 s, so
+			// anything from 1 to 29 is skipped, not stored.
+			if n, ok := toInt(v); ok && (n == 0 || n >= 30) {
+				cfg.Whisper.ChunkSeconds = n
+			}
 		// v4.0.8 (B38) — autonomous / plugins / orchestrator keys.
 		// Without these cases the PWA + mobile-client save forms
 		// for these sections silently no-op: the handler returns
@@ -6935,6 +9622,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// See https://github.com/dmz006/datawatch/issues/19.
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
+		// Planning routing switches; the rules, ladders and classes go
+		// through PUT /api/autonomous/planning-routing.
+		case "autonomous.planning_routing.enabled":
+			cfg.Autonomous.PlanningRouting.Enabled = toBool(v)
+		case "autonomous.planning_routing.shadow":
+			cfg.Autonomous.PlanningRouting.Shadow = toBool(v)
 		case "autonomous.poll_interval_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.PollIntervalSeconds = n
@@ -6949,6 +9642,32 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// normalizes an unset value to 1 the same way).
 			if n, ok := toInt(v); ok && n >= 1 {
 				cfg.Autonomous.MaxConcurrentTasks = n
+			}
+			// B165 — boot-resume age limit. 0 (never resume) and -1 (no age
+			// limit) are meaningful sentinels, so the threshold is >= -1,
+			// not >= 0. Values below -1 are skipped, not stored (same
+			// treatment as max_concurrent_tasks below 1).
+		case "autonomous.resume_max_age_seconds":
+			if n, ok := toInt(v); ok && n >= -1 {
+				cfg.Autonomous.ResumeMaxAgeSeconds = n
+			}
+		// Attempt-cost settings: handlePutConfig ran these through the
+		// shared config.ValidateAttemptCostSettings before this switch, so
+		// the switch only stores what was allowed; an unreadable value is
+		// left as-is (such a PUT would have been refused anyway).
+		case "autonomous.first_attempt":
+			if fa, ok := parseFirstAttempt(v); ok {
+				cfg.Autonomous.FirstAttempt = fa
+			}
+		case "autonomous.first_attempt_escalate_after_failures":
+			// 0 is meaningful: escalate on the first failure.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.FirstAttemptEscalateAfterFailures = n
+			}
+		case "autonomous.retry_resume_max_context_tokens":
+			// 0 is meaningful: always start a fresh session.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.RetryResumeMaxContextTokens = n
 			}
 		case "autonomous.max_engines_per_node":
 			// Clamped to 1 like config load does: values below 1 become 1
@@ -6975,11 +9694,426 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.VerificationBackends = splitCSV(s)
 			}
+		case "autonomous.judge_policy":
+			// Empty clears it, so the judges follow the verifier routing policy again.
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.JudgePolicy = config.NormalizeJudgePolicy(arr)
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.JudgePolicy = config.NormalizeJudgePolicy(splitCSV(s))
+			}
 		case "autonomous.task_override_statuses":
 			if arr, ok := toStringArray(v); ok {
 				cfg.Autonomous.TaskOverrideStatuses = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
+			}
+		// Worker session profile settings — the PUT /api/config path
+		// pre-validates the combined state with validateWorkerProfilePatch,
+		// so a direct applyConfigPatch caller's badly-shaped value is left
+		// unchanged rather than stored.
+		case "autonomous.worker_profiles":
+			if m, ok := parseWorkerProfilesValue(v); ok {
+				if len(m) == 0 {
+					m = nil
+				}
+				cfg.Autonomous.WorkerProfiles = m
+			}
+		case "autonomous.worker_profile_defaults":
+			if d, ok := parseWorkerProfileDefaultsValue(v); ok {
+				cfg.Autonomous.WorkerProfileDefaults = d
+			}
+		case "autonomous.worker_profile":
+			if s, ok := v.(string); ok {
+				cfg.Autonomous.WorkerProfile = s
+			}
+		case "autonomous.override_queued_tasks":
+			// Boolean: true enables overriding the LLM of a not-yet-started
+			// task while the Automaton is at a locked (typically "running")
+			// status; false restores the pre-change refusal. Only a real
+			// boolean (or an "true"/"false" string, matching how comm-channel
+			// scalars land here) changes the value; anything else leaves
+			// the current setting alone.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.OverrideQueuedTasks = &b
+			} else if s, ok := v.(string); ok {
+				if bs, err := strconv.ParseBool(strings.TrimSpace(s)); err == nil {
+					cfg.Autonomous.OverrideQueuedTasks = &bs
+				}
+			}
+		case "autonomous.snapshot_never_stage":
+			// Path patterns the autonomous snapshot must never `git add`.
+			// Same dual-form handling as task_override_statuses above: JSON
+			// array first, comma-separated string fallback (the comm channel
+			// sends CSV). Blank patterns are rejected earlier in
+			// handlePutConfig; a CSV blank value lands as nil (unset → the
+			// built-in defaults apply).
+			if arr, ok := toStringArray(v); ok {
+				trimmed := make([]string, 0, len(arr))
+				for _, p := range arr {
+					if t := strings.TrimSpace(p); t != "" {
+						trimmed = append(trimmed, t)
+					}
+				}
+				cfg.Autonomous.SnapshotNeverStage = trimmed
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.SnapshotNeverStage = splitCSV(s)
+			}
+		case "autonomous.model_pull_consent":
+			// Model-pull consent (allowed models + publisher allow-list).
+			// handlePutConfig rejects a malformed block before this runs;
+			// anything still unparseable here is reported as skipped rather
+			// than stored — the zero value (allow nothing) is fail-closed.
+			if b, err := json.Marshal(v); err == nil {
+				var mpc config.ModelPullConsent
+				if json.Unmarshal(b, &mpc) == nil {
+					cfg.Autonomous.ModelPullConsent = mpc
+				} else {
+					skipped = append(skipped, k)
+				}
+			} else {
+				skipped = append(skipped, k)
+			}
+		case "autonomous.tags.default_view", "autonomous.tags.attention_statuses",
+			"autonomous.tags.default_match_mode", "autonomous.tags.direct_counts_visible",
+			"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds":
+			// Validated in handlePutConfig before this runs; Set stores the
+			// normalized value and leaves the block unchanged on a refusal.
+			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
+		case "autonomous.auto_tags.enabled", "autonomous.auto_tags.automation_template",
+			"autonomous.auto_tags.stage_template", "autonomous.auto_tags.kind_template",
+			"autonomous.auto_tags.kind_labels":
+			// Validated in handlePutConfig before this runs; Set stores the
+			// normalized value and leaves the block unchanged on a refusal.
+			if updated, ok := cfg.Autonomous.AutoTags.Set(strings.TrimPrefix(k, config.AutoTagsSettingPrefix), v); ok {
+				cfg.Autonomous.AutoTags = updated
+			}
+		// autonomous.tags.placement: the placement tag axes (internal/
+		// placementtags), per-key like the tag settings above.
+		case "autonomous.tags.placement.enabled",
+			"autonomous.tags.placement.compute.enabled", "autonomous.tags.placement.compute.template",
+			"autonomous.tags.placement.peer.enabled", "autonomous.tags.placement.peer.template",
+			"autonomous.tags.placement.backend.enabled", "autonomous.tags.placement.backend.template",
+			"autonomous.tags.placement.lane.enabled", "autonomous.tags.placement.lane.template",
+			"autonomous.tags.placement.role.enabled", "autonomous.tags.placement.role.template",
+			"autonomous.tags.placement.project.enabled", "autonomous.tags.placement.project.template",
+			"autonomous.tags.placement.automaton.enabled", "autonomous.tags.placement.automaton.template",
+			"autonomous.tags.placement.automation.enabled", "autonomous.tags.placement.automation.template",
+			"autonomous.tags.placement.stage.enabled", "autonomous.tags.placement.stage.template",
+			"autonomous.tags.placement.kind.enabled", "autonomous.tags.placement.kind.template":
+			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
+		case "autonomous.plan_coverage_check":
+			// off|warn|block plan-coverage gate (empty normalizes to
+			// "block"). handlePutConfig rejects invalid modes loudly; this
+			// re-normalizes defensively so a direct applyConfigPatch caller
+			// still can't store a malformed value.
+			if str, ok := v.(string); ok {
+				if mode, err := config.NormalizePlanCoverageCheck(str); err == nil {
+					cfg.Autonomous.PlanCoverageCheck = mode
+				}
+			}
+		case "autonomous.plan_coverage_min_ratio":
+			// Stored normalized into (0,1]; zero/negative and >1 both
+			// clamp to the 1.0 safe default. handlePutConfig rejects
+			// non-numeric values loudly before applyConfigPatch runs.
+			if ratio, err := configPatchFloat(v); err == nil {
+				cfg.Autonomous.PlanCoverageMinRatio = config.NormalizePlanCoverageRatio(ratio)
+			}
+		case "autonomous.plan_coverage_suppress_created_files":
+			// Plan-coverage "file the plan itself creates" suppression
+			// filter. Stored as an explicit pointer value: a nil pointer
+			// would read back as ON (the default), so the written value
+			// must be stored verbatim. handlePutConfig rejects non-bool
+			// values before applyConfigPatch runs.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.PlanCoverageSuppressCreatedFiles = &b
+			}
+		case "autonomous.plan_coverage_scoped_requirements":
+			// Scoped requirement-extraction filter (default on when nil);
+			// same explicit-pointer storage rule as the suppress filter.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.PlanCoverageScopedRequirements = &b
+			}
+		case "autonomous.plan_coverage_requirement_sections":
+			// Validated (string) in handlePutConfig; stored trimmed as
+			// written — empty clears it back to the scope,constraints
+			// default, and entries are normalized again by
+			// EffectivePlanCoverageFilters at read time.
+			if str, ok := v.(string); ok {
+				cfg.Autonomous.PlanCoverageRequirementSections = strings.TrimSpace(str)
+			}
+		case "autonomous.plan_coverage_min_requirement_chars":
+			// Validated (whole number >= 0) in handlePutConfig; 0 is
+			// stored as 0 and reads back as the 30-character default.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.PlanCoverageMinRequirementChars = n
+			}
+		case "autonomous.generated_artefacts.change_record", "autonomous.generated_artefacts.gate_report",
+			"autonomous.generated_artefacts.changelog_draft", "autonomous.generated_artefacts.parity_draft",
+			"autonomous.generated_artefacts.tracker_rows", "autonomous.generated_artefacts.registry_row",
+			"autonomous.generated_artefacts.combined_docs_task":
+			// Validated (boolean) in handlePutConfig. Stored as an explicit
+			// pointer so an explicit off survives; the manager reads the
+			// live config through its settings provider, so no restart.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.GeneratedArtefacts.Set(strings.TrimPrefix(k, "autonomous.generated_artefacts."), b)
+			}
+		case "autonomous.usage_backoff":
+			// Validated in handlePutConfig; stored lower-cased and trimmed.
+			if validateUsageBackoffMode(v) == nil {
+				cfg.Autonomous.UsageBackoff = strings.ToLower(strings.TrimSpace(toString(v)))
+			}
+		case "autonomous.requirements":
+			// Whole min-Ollama override block (capability → minimum version
+			// map). Validated in handlePutConfig by the one shared rule set;
+			// re-normalized defensively here so a direct applyConfigPatch
+			// caller's bad value is left unchanged.
+			if req, verr := validateRequirementsConfigBlock(v); verr == nil {
+				cfg.Autonomous.Requirements = req
+			}
+		case "usage.calculator.variant", "usage.calculator.policy", "usage.calculator.safety_points", "usage.calculator.cost_per_task_points", "usage.calculator.baseline_per_24h", "usage.calculator.max_lanes", "usage.calculator.auto_lanes", "usage.calculator.auto_lanes_max", "usage.calculator.auto_lanes_special_priority", "usage.calculator.reset_weekday", "usage.calculator.reset_time", "usage.calculator.reset_zone", "usage.calculator.keeper":
+			// Validated in handlePutConfig; stored normalized.
+			applyUsageCalculatorPatchKey(&cfg.Usage.Calculator, k, v)
+		case "classifier.timeout_seconds", "classifier.top_logprobs", "classifier.abstain_margin", "classifier.min_probability", "classifier.min_option_mass", "classifier.rotate_options", "classifier.thinking_off_models", "classifier.probe_ttl_seconds", "classifier.probe_timeout_seconds", "classifier.calibration.test_fraction", "classifier.calibration.split_seed", "classifier.calibration.min_fit_samples", "classifier.calibration.false_pass_weight", "classifier.calibration.rotation_bias_threshold", "classifier.calibration.rotation_flip_threshold":
+			// Validated in handlePutConfig; stored normalized.
+			applyClassifierPatchKey(&cfg.Classifier, k, v)
+		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change", "usage.burn_guard.max_projection_gap_points":
+			// Validated in handlePutConfig; stored normalized.
+			applyBurnGuardPatchKey(&cfg.Usage.BurnGuard, k, v)
+		case "autonomous.backoff_max_wait_minutes":
+			if n, err := parseBackoffMaxWaitMinutes(v); err == nil {
+				cfg.Autonomous.BackoffMaxWaitMinutes = n
+			}
+		case "autonomous.verifier_policy.mode", "autonomous.verifier_policy.backends",
+			"autonomous.verifier_policy.claude_session_cap", "autonomous.verifier_policy.claude_cap_window_minutes",
+			"autonomous.verifier_policy.force_stronger_on_retry", "autonomous.verifier_policy.final_gate_stronger",
+			"autonomous.verifier_policy.stronger_backend", "autonomous.verifier_policy.stronger_model":
+			// Validated in handlePutConfig; a value that fails the check here
+			// is left unchanged.
+			applyVerifierPolicyPatchKey(&cfg.Autonomous.VerifierPolicy, k, v)
+		case "autonomous.host_load_alert.mode", "autonomous.host_load_alert.multiple",
+			"autonomous.host_load_alert.minutes":
+			// Validated in handlePutConfig; a value that fails the check here
+			// is left unchanged.
+			applyHostLoadAlertPatchKey(&cfg.Autonomous.HostLoadAlert, k, v)
+		case "autonomous.automation.idle_alert_minutes":
+			// 0 = off; negative values are skipped, not stored.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.Automation.IdleAlertMinutes = n
+			}
+		case "secrets.vault.unreachable_alert_after_seconds":
+			// Validated above in handlePutConfig; an explicit 0 (alert off)
+			// is preserved.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Secrets.Vault.UnreachableAlertAfterSeconds = &n
+			}
+		case "autonomous.automation.triage_alert_minutes":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged. n >= 0 is re-checked for safety;
+			// an explicit 0 (0 = triage alert off) is preserved.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.Automation.TriageAlertMinutes = &n
+			}
+		case "autonomous.automation.merge_pending_mode":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if validateMergePendingMode(v) == nil {
+				cfg.Autonomous.Automation.MergePendingMode = toString(v)
+			}
+		case "autonomous.automation.merge_pending_alert_minutes":
+			// Validated above in handlePutConfig; n >= 0 is re-checked for
+			// safety, and an explicit 0 (merge-pending alert off) is preserved.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.Automation.MergePendingAlertMinutes = &n
+			}
+		case "autonomous.automation.merged_member_policy":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if validateMergedMemberPolicy(v) == nil {
+				cfg.Autonomous.Automation.MergedMemberPolicy = toString(v)
+			}
+		case "autonomous.automation.agent_insert_policy":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if validateAgentInsertPolicy(v) == nil {
+				cfg.Autonomous.Automation.AgentInsertPolicy = toString(v)
+			}
+		case "autonomous.automation.create_search_mode":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if validateCreateSearchModeValue(v) == nil {
+				cfg.Autonomous.Automation.CreateSearchMode = toString(v)
+			}
+		case "autonomous.automation.create_search_threshold":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if f, err := parseCreateSearchThreshold(v); err == nil {
+				cfg.Autonomous.Automation.CreateSearchThreshold = &f
+			}
+		case "autonomous.automation.cleanup_mode":
+			// String; stored as written — off | report | on are the intended
+			// words and an empty/unknown one reads as report through
+			// EffectiveCleanupMode.
+			if validateCleanupModeValue(v) == nil {
+				cfg.Autonomous.Automation.CleanupMode = toString(v)
+			}
+		case "autonomous.automation.cleanup_retention_hours":
+			// Stored as written (a whole number, checked above); zero or a
+			// negative value reads the 24-hour default through
+			// EffectiveCleanupRetentionHours.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Automation.CleanupRetentionHours = n
+			}
+		case "autonomous.automation.cleanup_max_removals_per_pass":
+			// Stored as written (a whole number, checked above); zero or a
+			// negative value reads the 10 default through
+			// EffectiveCleanupMaxRemovalsPerPass.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Automation.CleanupMaxRemovalsPerPass = n
+			}
+		case "autonomous.automation.disk_alert_percent":
+			// Stored as written (a whole number, checked above); the accessor
+			// surfaces it clamped to 1..100 (unset reads the 85 default).
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Automation.DiskAlertPercent = n
+			}
+		case "autonomous.automation.uncommitted_work_policy":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged. The change reaches the live
+			// manager through the autonomous.* forward after the apply.
+			if validateUncommittedWorkValue(k, v) == nil {
+				cfg.Autonomous.Automation.UncommittedWorkPolicy = toString(v)
+			}
+		case "autonomous.automation.uncommitted_work_scope":
+			if validateUncommittedWorkValue(k, v) == nil {
+				cfg.Autonomous.Automation.UncommittedWorkScope = toString(v)
+			}
+		case protectedPathsKey:
+			// Validated above in handlePutConfig. An empty list clears the key
+			// back to the default list; a value that fails the check here is
+			// left unchanged. The change reaches the live manager through the
+			// autonomous.* forward after the apply.
+			if list, err := parseProtectedPathsValue(v); err == nil {
+				cfg.Autonomous.Automation.ProtectedPaths = list
+			}
+		case protectedPathsActionKey, rulesReviewSourceKey:
+			if validateProtectedPathsWord(k, v) == nil {
+				if k == rulesReviewSourceKey {
+					cfg.Autonomous.Automation.RulesReviewSource = toString(v)
+				} else {
+					cfg.Autonomous.Automation.ProtectedPathsAction = toString(v)
+				}
+			}
+		case "autonomous.automation.repo_ci_watch.mode",
+			"autonomous.automation.repo_ci_watch.repos",
+			"autonomous.automation.repo_ci_watch.poll_seconds",
+			"autonomous.automation.repo_ci_watch.alert_minutes",
+			"autonomous.automation.repo_ci_watch.tag_count",
+			"autonomous.automation.repo_ci_watch.hung_after_minutes",
+			"autonomous.automation.repo_ci_watch.security_workflows",
+			"autonomous.automation.repo_ci_watch.delete_superseded":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyRepoCIWatchValue(&cfg.Autonomous.Automation.RepoCIWatch,
+				strings.TrimPrefix(k, repoCIWatchKeyPrefix), v)
+		case "autonomous.automation.security_failure.mode":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applySecurityFailureValue(&cfg.Autonomous.Automation.SecurityFailure, v)
+		case supervisorWatchKeyPrefix + "mode",
+			supervisorWatchKeyPrefix + "alert_minutes",
+			supervisorWatchKeyPrefix + "silent_minutes",
+			supervisorWatchKeyPrefix + "poll_seconds",
+			supervisorWatchKeyPrefix + "script_output_path",
+			supervisorWatchKeyPrefix + "tmux_restart_baseline",
+			supervisorWatchKeyPrefix + "main_checkout",
+			supervisorWatchKeyPrefix + "working_model":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applySupervisorWatchValue(&cfg.Autonomous.Automation.SupervisorWatch,
+				strings.TrimPrefix(k, supervisorWatchKeyPrefix), v)
+		case laneFillKeyPrefix + "mode", laneFillKeyPrefix + "gpu_lanes", laneFillKeyPrefix + "claude_lanes",
+			laneFillKeyPrefix + "idle_alert_minutes", laneFillKeyPrefix + "decompose_ahead_min",
+			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
+			laneFillKeyPrefix + "gpu_model", laneFillKeyPrefix + "claude_backend",
+			laneFillKeyPrefix + "count_verifier_wait", laneFillKeyPrefix + "stale_after_hours",
+			laneFillKeyPrefix + "require_confirmed_proposal", laneFillKeyPrefix + "check_main_carries",
+			laneFillKeyPrefix + "require_worktree", laneFillKeyPrefix + "lane_counts_from_caps",
+			laneFillKeyPrefix + "gpu_mode", laneFillKeyPrefix + "claude_mode":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyLaneFillValue(&cfg.Autonomous.LaneFill, strings.TrimPrefix(k, laneFillKeyPrefix), v)
+		case mergeShadowKeyPrefix + "enabled", mergeShadowKeyPrefix + "gate_timeout",
+			mergeShadowKeyPrefix + "plan_keep":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyMergeShadowValue(&cfg.Autonomous.MergeShadow, strings.TrimPrefix(k, mergeShadowKeyPrefix), v)
+		case "autonomous.progress.lanes":
+			// Validated in handlePutConfig; 0 = the default of 5.
+			if n, err := parseProgressWhole("autonomous.progress.lanes", v); err == nil {
+				cfg.Autonomous.Progress.Lanes = n
+			}
+		case "autonomous.progress.inactive_gap_hours":
+			// Validated in handlePutConfig; 0 = the default of 3 hours.
+			if f, err := parseProgressGapHours(v); err == nil {
+				cfg.Autonomous.Progress.InactiveGapHours = f
+			}
+		case "autonomous.progress.backlog_path":
+			// Validated in handlePutConfig; empty = docs/plans/README.md.
+			if str, ok := v.(string); ok && config.ValidateProgressBacklogPath(str) == nil {
+				cfg.Autonomous.Progress.BacklogPath = strings.TrimSpace(str)
+			}
+		case "autonomous.progress.since":
+			// Validated in handlePutConfig; empty = the first record's creation date.
+			if str, ok := v.(string); ok && config.ValidateProgressSince(str) == nil {
+				cfg.Autonomous.Progress.Since = strings.TrimSpace(str)
+			}
+		case "autonomous.progress.snapshot_retention_days":
+			// Validated in handlePutConfig; 0 = the default of 90 days.
+			if n, err := parseProgressWhole("autonomous.progress.snapshot_retention_days", v); err == nil {
+				cfg.Autonomous.Progress.SnapshotRetentionDays = n
+			}
+		case "pin_check_seconds":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if n, err := parsePinCheckSeconds(v); err == nil {
+				cfg.PinCheckSeconds = n
+			}
+		case "autonomous.plan_tier_max_inflight":
+			// tier -> max-inflight table (autonomous.plan_tier_max_inflight).
+			// Accepted shapes: a JSON object ({"pro":1}), the same object
+			// arriving as a string (CLI `config set` and the comm-channel
+			// `configure` verb quote their values), or `tier=limit,tier=limit`.
+			// Unknown tier keys and negative limits are rejected loudly by
+			// parsePlanTierTable; handlePutConfig runs the same check before
+			// apply, so a bad value never reaches here in the REST path.
+			if table, verr := parsePlanTierTable(v); verr == nil {
+				cfg.Autonomous.PlanTierMaxInflight = table
+			}
+		case "autonomous.priority_by_kind":
+			// kind -> capacity-priority table (autonomous.priority_by_kind).
+			// Accepted shapes: a JSON object ({"bug":80}), the same object
+			// arriving as a string (CLI `config set` and the comm-channel
+			// `configure` verb quote their values), or `kind=priority` pairs.
+			// Non-integer values and empty kind keys are rejected loudly by
+			// ParsePriorityByKindValue; handlePutConfig runs the same check
+			// before apply, so a bad value never reaches here. An empty table
+			// is a valid clear (it round-trips: the field has no omitempty).
+			if table, verr := autonomous.ParsePriorityByKindValue(v); verr == nil {
+				cfg.Autonomous.PriorityByKind = table
+			}
+		case "autonomous.defect_intake_automation":
+			// Automation name for new kind:bug filings; the empty string
+			// clears it so filings are recorded, not guessed into an
+			// Automation.
+			if str, okS := v.(string); okS {
+				cfg.Autonomous.DefectIntakeAutomation = strings.TrimSpace(str)
+			}
+		case planTierAllocationKey:
+			// tier -> notional dollar allocation (whole table). Validated in
+			// handlePutConfig; a value that fails the check here is left
+			// unchanged.
+			if table, verr := parsePlanTierAllocationTable(v); verr == nil {
+				cfg.Autonomous.PlanTierAllocationUSD = table
 			}
 		case "autonomous.notify.default_events":
 			// Default event kinds the built-in lifecycle sinks subscribe to.
@@ -6991,6 +10125,213 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.Notify.DefaultEvents = splitCSV(s)
 			}
+		case "autonomous.notify.pending_events_max":
+			// Per-queue retention for the mcp_queue sink; < 1 stores the
+			// default. Takes effect on the next daemon start.
+			if n, ok := toInt(v); ok {
+				if n < 1 {
+					n = config.DefaultPendingEventsMax
+				}
+				cfg.Autonomous.Notify.PendingEventsMax = n
+			}
+		case "autonomous.notify.webhook.enabled", "autonomous.notify.webhook.allow_hosts",
+			"autonomous.notify.webhook.max_attempts", "autonomous.notify.webhook.backoff_seconds",
+			"autonomous.notify.webhook.jitter_percent", "autonomous.notify.webhook.attempt_timeout_seconds",
+			"autonomous.notify.webhook.max_body_bytes", "autonomous.notify.webhook.signature_tolerance_seconds",
+			"autonomous.notify.forwarding.enabled", "autonomous.notify.forwarding.max_hops",
+			"autonomous.notify.forwarding.max_attempts", "autonomous.notify.forwarding.backoff_seconds",
+			"autonomous.notify.forwarding.jitter_percent", "autonomous.notify.forwarding.attempt_timeout_seconds":
+			// Validated in handlePutConfig (validateLifecycleNotifyPatch). The
+			// webhook sink and peer forwarding read these live on every call,
+			// so no restart is needed.
+			applyLifecycleNotifyKey(&cfg.Autonomous.Notify, k, v)
+		case "autonomous.checks.pre_start_verifier", "autonomous.checks.plan_rules",
+			"autonomous.checks.after_done", "autonomous.checks.registry_readme",
+			"autonomous.checks.block_when_missing", "autonomous.ship.push",
+			"autonomous.ship.tag", "autonomous.ship.ci_watch", "autonomous.ship.tag_format",
+			"autonomous.ship.remote", "autonomous.ship.ci_workflows":
+			// Validated in handlePutConfig (validateChecksShipPatch).
+			applyChecksShipKey(cfg, k, v)
+		case "autonomous.questions.enabled":
+			// Validated in handlePutConfig to a strict boolean (a non-boolean
+			// value 400s before reaching here). The /api/questions handlers
+			// read the live config on every call, so the change takes effect
+			// immediately with no daemon restart.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Questions.Enabled = b
+			}
+		case "autonomous.questions.notify_messaging",
+			"autonomous.questions.notify_alert",
+			"autonomous.questions.return_path":
+			// Validated in handlePutConfig to a strict boolean (a non-boolean
+			// value 400s before reaching here). Stored as *bool so an explicit
+			// false is distinguishable from an absent key (which stays on);
+			// readers use the Effective* helpers.
+			if b, ok := v.(bool); ok {
+				switch k {
+				case "autonomous.questions.notify_messaging":
+					cfg.Autonomous.Questions.NotifyMessaging = &b
+				case "autonomous.questions.notify_alert":
+					cfg.Autonomous.Questions.NotifyAlert = &b
+				case "autonomous.questions.return_path":
+					cfg.Autonomous.Questions.ReturnPath = &b
+				}
+			}
+		case "autonomous.questions.decision_gate":
+			// Validated in handlePutConfig to a strict boolean. Stored as *bool
+			// so an explicit false is distinguishable from an absent key
+			// (which stays on). The gate reads the live config on every pass,
+			// so no restart is needed.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Questions.DecisionGate = &b
+			}
+		case parallelKeyPrefix + "read_only_tasks",
+			parallelKeyPrefix + "worktree_per_task",
+			parallelKeyPrefix + "merge_conflict_policy",
+			parallelKeyPrefix + "merge_conflict_model",
+			parallelKeyPrefix + "merge_retry_seconds":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyParallelValue(&cfg.Autonomous.Parallel,
+				strings.TrimPrefix(k, parallelKeyPrefix), v)
+		case "autonomous.questions.worker_marker":
+			// Validated in handlePutConfig to a strict boolean. Stored as *bool
+			// so an explicit value is distinguishable from an absent key
+			// (which stays off).
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Questions.WorkerMarker = &b
+			}
+		case "autonomous.questions.decision_gate_mode":
+			// Validated in handlePutConfig to shadow or on.
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.Questions.DecisionGateMode = mode
+			}
+		// autonomous.task_templates.mode — the whole {template id: mode}
+		// object (llm, daemon, off). Validated in handlePutConfig against
+		// the merged map by the shared load-time rule; a direct
+		// applyConfigPatch caller's bad value is left unchanged.
+		case "autonomous.task_templates.mode":
+			if m, ok := v.(map[string]interface{}); ok {
+				next := make(map[string]string, len(m))
+				for id, mv := range m {
+					if s, isStr := mv.(string); isStr {
+						next[id] = s
+					}
+				}
+				tc := config.TaskTemplatesConfig{Mode: next}
+				if tc.Validate() == nil {
+					cfg.Autonomous.TaskTemplates.Mode = next
+				}
+			}
+		// The script gate time cap in whole seconds (0 = no cap). Validated
+		// in handlePutConfig by the shared load-time rule; a value that
+		// fails here is left unchanged.
+		case "autonomous.script_gate_timeout_seconds":
+			if n, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr == nil {
+				cfg.Autonomous.ScriptGateTimeoutSeconds = n
+			}
+		// The project gate command: a single line of shell text (empty =
+		// unset). Validated in handlePutConfig by the shared load-time rule;
+		// a value that fails here is left unchanged.
+		case "autonomous.project_gate_command":
+			if s, ok := v.(string); ok {
+				if config.ValidateProjectGateCommand("autonomous", s) == nil {
+					cfg.Autonomous.ProjectGateCommand = s
+				}
+			}
+		case "autonomous.questions.held_mode":
+			// Validated in handlePutConfig to off, shadow or on. The gate
+			// reads the live config on every pass, so no restart is needed.
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.Questions.HeldMode = mode
+			}
+		case "autonomous.questions.held_states":
+			// Validated in handlePutConfig to the five known state ids.
+			// Accept an array or a comma-separated string, same as
+			// default_events above; an explicit empty list really means
+			// none (no omitempty on the field, so the clear survives
+			// round-trip and an absent key keeps reading all five).
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.Questions.HeldStates = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.Questions.HeldStates = splitCSV(s)
+			}
+		case "autonomous.questions.quality_mode":
+			// Validated in handlePutConfig to off, warn or refuse. Stored as
+			// *string so an absent key is distinguishable from an explicit one.
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.Questions.QualityMode = &mode
+			}
+		case "autonomous.questions.quality_tracker_id_pattern":
+			// Validated in handlePutConfig to a pattern that compiles.
+			if pat, ok := v.(string); ok {
+				cfg.Autonomous.Questions.QualityTrackerIDPattern = &pat
+			}
+		case "autonomous.questions.quality_min_text_chars":
+			// Validated in handlePutConfig to a whole number >= 0.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Questions.QualityMinTextChars = &n
+			}
+		case "autonomous.questions.queue_preview_lines":
+			// Validated in handlePutConfig to a whole number >= 1.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Questions.QueuePreviewLines = &n
+			}
+		case "autonomous.decisions.enabled", "autonomous.decisions.folder", "autonomous.decisions.folder_glob", "autonomous.decisions.front_matter_delimiter", "autonomous.decisions.front_matter_separator", "autonomous.decisions.front_matter_field_separator", "autonomous.decisions.front_matter_keys", "autonomous.decisions.folder_withdraw_on_delete", "autonomous.decisions.clarity_mode", "autonomous.decisions.clarity_min_text_chars", "autonomous.decisions.clarity_require_tradeoffs", "autonomous.decisions.clarity_require_label", "autonomous.decisions.clarity_tracker_id_pattern", "autonomous.decisions.doc_root", "autonomous.decisions.doc_status_mode", "autonomous.decisions.doc_status_pattern", "autonomous.decisions.doc_status_template", "autonomous.decisions.follow_ups":
+			// Validated in handlePutConfig (validateDecisionRecordPatch).
+			applyDecisionRecordKey(&cfg.Autonomous.Decisions, k, v)
+		case "resource_limits.memory_share_percent":
+			// Validated in handlePutConfig (validateResourceLimitsPatch).
+			if n, ok := toInt(v); ok {
+				cfg.ResourceLimits.MemorySharePercent = n
+			}
+		case "resource_limits.memory_floor_mb":
+			if n, ok := toInt(v); ok {
+				cfg.ResourceLimits.MemoryFloorMB = n
+			}
+		case "resource_limits.memory_cap_mb":
+			if n, ok := toInt(v); ok {
+				cfg.ResourceLimits.MemoryCapMB = n
+			}
+		case "identity.backups_to_keep":
+			// Validated in handlePutConfig to a whole number >= 1.
+			if n, ok := toInt(v); ok {
+				cfg.Identity.BackupsToKeep = &n
+			}
+		case "session.dismiss_ui_prompts":
+			// Bool (a string such as "true" is no different from 1 in JSON —
+			// only a real boolean is accepted, matching session.skip_permissions).
+			b, isBool := v.(bool)
+			if isBool {
+				cfg.Session.DismissUIPrompts = &b
+			}
+		case "session.ui_prompt_dismiss_delay_seconds":
+			// Validated in handlePutConfig to a whole number >= 0.
+			if n, ok := toInt(v); ok {
+				cfg.Session.UIPromptDismissDelaySeconds = &n
+			}
+		case "session.ui_prompt_clear_bound_seconds":
+			// Validated in handlePutConfig to a whole number >= 1.
+			if n, ok := toInt(v); ok {
+				cfg.Session.UIPromptClearBoundSeconds = &n
+			}
+		case "session.ui_prompt_max_attempts":
+			// Validated in handlePutConfig to a whole number >= 1.
+			if n, ok := toInt(v); ok {
+				cfg.Session.UIPromptMaxAttempts = &n
+			}
+		case "ui.splash_min_seconds":
+			// Validated in handlePutConfig to a whole number from 0 to 60
+			// (0 = keep the legacy timing).
+			if n, ok := toInt(v); ok {
+				cfg.UI.SplashMinSeconds = &n
+			}
+		case "ui.splash_min_seconds_new_version":
+			// Validated in handlePutConfig to a whole number from 0 to 60
+			// (0 = keep the legacy timing).
+			if n, ok := toInt(v); ok {
+				cfg.UI.SplashMinSecondsNewVersion = &n
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -7000,6 +10341,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.PlanningModel = toString(v)
 		case "autonomous.verification_model":
 			cfg.Autonomous.VerificationModel = toString(v)
+		// v9.10.18 — pinned guardrail judge model (tier 3 of
+		// ResolveGuardrailModel, internal/autonomous/guardrail_model.go).
+		case "autonomous.guardrail_model":
+			cfg.Autonomous.GuardrailModel = toString(v)
 		case "autonomous.planning_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.PlanningTimeoutSeconds = n
@@ -7010,19 +10355,167 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Autonomous.VerificationTimeoutSeconds = n
 			}
+		case "autonomous.judge_timeout_seconds":
+			// Stored as-is; zero/negative fall back to the 30m default via
+			// config.NormalizeJudgeTimeoutSeconds at read time.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.JudgeTimeoutSeconds = n
+			}
+		case "autonomous.judge_size_threshold_lines":
+			// Stored as-is: 0 turns size-aware judge routing off. Negative and
+			// fractional values are refused up front by
+			// validateJudgeSizeThresholdPatch.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.JudgeSizeThresholdLines = n
+			}
+		case "autonomous.judge_prompt_file_threshold_lines":
+			// Range checked up front by validateJudgePromptDeliveryPatch.
+			if n, ok := toInt(v); ok && n >= 0 && n <= 100000 {
+				cfg.Autonomous.JudgePromptFileThresholdLines = n
+			}
+		case "autonomous.judge_delivery_wait_per_thousand_lines_seconds":
+			// Range checked up front by validateJudgePromptDeliveryPatch.
+			if n, ok := toInt(v); ok && n >= 0 && n <= 3600 {
+				cfg.Autonomous.JudgeDeliveryWaitPerThousandLinesSeconds = n
+			}
+		case "autonomous.judge_strong_backend":
+			// Stored trimmed; empty clears the strong-first routing. Type
+			// checked up front by validateJudgeStrongRoutingPatch.
+			if str, ok := v.(string); ok {
+				cfg.Autonomous.JudgeStrongBackend = strings.TrimSpace(str)
+			}
+		case "autonomous.judge_verdict_cache_enabled":
+			// Stored as a pointer so an explicit false keeps meaning false
+			// while an unset key reads the default (true) via
+			// config.NormalizeJudgeVerdictCacheEnabled. Type-checked up front
+			// by validateJudgeStrongRoutingPatch.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.JudgeVerdictCacheEnabled = &b
+			}
 		case "autonomous.session_idle_timeout_seconds":
 			// Stored as-is; zero falls back to the default via
 			// config.NormalizeSessionIdleTimeoutSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.SessionIdleTimeoutSeconds = n
 			}
+		case "autonomous.descendant_stall_seconds":
+			// Stored as-is; zero falls back to the default via
+			// config.NormalizeDescendantStallSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.DescendantStallSeconds = n
+			}
+		case "autonomous.verifier_infra_escalation_threshold":
+			// Zero falls back to the default via
+			// config.NormalizeVerifierInfraEscalationThreshold at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierInfraEscalationThreshold = n
+			}
+		case "autonomous.scope_breadth_enabled":
+			cfg.Autonomous.ScopeBreadthEnabled = toBool(v)
+		case "autonomous.verification_record_scores":
+			b := toBool(v)
+			cfg.Autonomous.VerificationRecordScores = &b
+		case "autonomous.fallback_verification_backend":
+			cfg.Autonomous.FallbackVerificationBackend = toString(v)
+		case "autonomous.verifier_max_run_seconds":
+			// Validated in handlePutConfig; 0 means no cap and is stored as zero.
+			if n, ok := toInt(v); ok && config.ValidateVerifierRunCapSeconds(n) == nil {
+				cfg.Autonomous.VerifierMaxRunSeconds = n
+			}
+		case "autonomous.verifier_no_progress_timeout_seconds":
+			// Zero falls back to the default via
+			// config.NormalizeVerifierNoProgressTimeoutSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierNoProgressTimeoutSeconds = n
+			}
+		case "autonomous.worker_idle_nudge_seconds":
+			// Zero falls back to the default via
+			// config.NormalizeWorkerIdleNudgeSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.WorkerIdleNudgeSeconds = n
+			}
+		case "autonomous.worker_idle_nudge_stall_seconds":
+			// Zero falls back to the default via
+			// config.NormalizeWorkerIdleNudgeStallSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.WorkerIdleNudgeStallSeconds = n
+			}
+		case "autonomous.session_start_confirm_seconds":
+			// Stored as-is; zero falls back to the default via
+			// config.NormalizeSessionStartConfirmSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.SessionStartConfirmSeconds = n
+			}
+		case "autonomous.orphan_grace_seconds":
+			// Stored as-is; zero falls back to the default via
+			// config.NormalizeOrphanGraceSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.OrphanGraceSeconds = n
+			}
+		case "autonomous.restart_policy", "autonomous.restart_on_timeout",
+			"autonomous.restart_quiet_timeout_seconds", "autonomous.planning_restart_policy":
+			// Validated in handlePutConfig (validateRestartPolicyPatch).
+			applyRestartPolicyKey(cfg, k, v)
+		case "autonomous.duplicate_session_keep":
+			// "older" (default) or "newer"; anything else is rejected.
+			if str, ok := v.(string); ok {
+				switch strings.ToLower(strings.TrimSpace(str)) {
+				case config.DuplicateSessionKeepOlder, config.DuplicateSessionKeepNewer:
+					cfg.Autonomous.DuplicateSessionKeep = config.NormalizeDuplicateSessionKeep(str)
+				}
+			}
+		case "autonomous.stuck_running_seconds":
+			// Stored as-is; zero falls back to the default via
+			// config.NormalizeStuckRunningSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.StuckRunningSeconds = n
+			}
+		// autonomous.loop_detect_turns — 0 is meaningful (loop detection
+		// OFF) and must survive the no-omitempty round-trip as 0, not be
+		// confused with "unset". A bare int would let 0 mean BOTH off and
+		// unset, hence the *int (nil = unset → default 3 via
+		// config.LoopDetectTurnsEffective). Negative values are rejected by
+		// handlePutConfig's pre-validation above (400).
+		case "autonomous.loop_detect_turns":
+			if n, ok := toInt(v); ok && n >= 0 {
+				nv := n
+				cfg.Autonomous.LoopDetectTurns = &nv
+			}
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.CapacityEnabled = &b
 			}
+		case "autonomous.capacity_strict_node_limit":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityStrictNodeLimit = &b
+			}
+		case "autonomous.capacity_count_pool_by_node":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityCountPoolByNode = &b
+			}
+		case "autonomous.capacity_adopt_before_admit":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityAdoptBeforeAdmit = &b
+			}
+		case "autonomous.capacity_adoption_wait_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityAdoptionWaitSeconds = n
+			}
+		case "autonomous.capacity_fallthrough":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityFallthrough = b
+			}
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.CapacityWaitTimeoutSeconds = n
+			}
+		case "autonomous.detail_text_cap_bytes":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.DetailTextCapBytes = n
+			}
+		case "autonomous.inherited_tags_cache_seconds":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.InheritedTagsCacheSeconds = n
 			}
 		case "autonomous.ci_watch_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
@@ -7032,6 +10525,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 && n <= 100 {
 				cfg.Autonomous.CapacityGPUUtilPct = n
 			}
+		case "autonomous.capacity_rate_requests":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityRateRequests = n
+			}
+		case "autonomous.capacity_rate_tokens":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityRateTokens = n
+			}
+		case "autonomous.capacity_rate_window_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityRateWindowSeconds = n
+			}
 		case "session.reserved_interactive":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Session.ReservedInteractive = &n
@@ -7040,9 +10545,49 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Session.CapacityWaitSeconds = n
 			}
+		case "session.task_delivery_window_seconds":
+			// Delivered through SessionConfig.EffectiveTaskDeliveryWindow, which the delivery
+			// path reads live, so a patched value takes effect on the next one-shot task —
+			// no restart needed.
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.TaskDeliveryWindowSeconds = n
+			}
+		case "session.task_delivery_attempts":
+			// Delivered through SessionConfig.EffectiveTaskDeliveryAttempts, which the
+			// delivery path reads live, so a patched value takes effect on the next one-shot
+			// task — no restart needed.
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.TaskDeliveryAttempts = n
+			}
+		case "session.store_flush_interval":
+			// Milliseconds; 0 writes through. Applied to the live store by the daemon's
+			// config-apply hook, so no restart is needed.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Session.StoreFlushInterval = &n
+			}
+		case "session.store_archive_after_days":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Session.StoreArchiveAfterDays = &n
+			}
+		case "session.store_field_cap_kb":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.StoreFieldCapKB = n
+			}
+		case "session.store_side_file_cap_kb":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.StoreSideFileCapKB = n
+			}
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.StaleTaskSeconds = n
+			}
+		case "autonomous.task_max_attempt_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.TaskMaxAttemptSeconds = n
+			}
+		case "autonomous.task_no_progress_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.TaskNoProgressSeconds = n
 			}
 		case "autonomous.preserve_attempt_work":
 			if b, ok := v.(bool); ok {
@@ -7064,12 +10609,28 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// to "awaiting_approval"; the runner skips those until the
 			// operator approves each via POST .../approve_story.
 			cfg.Autonomous.PerStoryApproval = toBool(v)
+		case branchRefreshEnabledKey, branchRefreshLimitKey:
+			// Between-task branch refresh (branch_refresh_api.go): handlePutConfig
+			// refuses a bad value first; one that reaches here is skipped.
+			if _, applied := applyBranchRefreshConfigKey(cfg, k, v); !applied {
+				skipped = append(skipped, k)
+			}
 		case "autonomous.continue_on_story_failure":
 			// Daemon-wide default: false (halt) so a story failure stops
 			// the PRD for operator re-edit/rerun instead of continuing
 			// into later, independent stories. Per-PRD override via
 			// POST .../set_continue_on_story_failure takes precedence.
 			cfg.Autonomous.ContinueOnStoryFailure = toBool(v)
+		case "autonomous.scope_lint":
+			// Pre-spawn scope lint mode: off, warn or enforce. handlePutConfig
+			// rejects anything else before this runs; an invalid value that
+			// reaches here is reported as skipped rather than stored.
+			mode, _ := v.(string)
+			if config.ValidateScopeLint(mode) == nil {
+				cfg.Autonomous.ScopeLint = mode
+			} else {
+				skipped = append(skipped, k)
+			}
 		case "autonomous.default_auto_pr":
 			// BL407 Phase 5 -- daemon-wide default for a new PRD's
 			// Git.AutoPR, applied once at creation time. Per-PRD
@@ -7079,6 +10640,24 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// v5.17.0 — BL191 Q4 (recursion) + Q6 (guardrails) config
 		// surface. Pre-v5.17.0 these keys silently no-op'd through
 		// the PUT /api/config path because the case wasn't here.
+		case "autonomous.push_and_tag":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.PushAndTag = b
+			} else if str, ok := v.(string); ok {
+				if bs, err := strconv.ParseBool(strings.TrimSpace(str)); err == nil {
+					cfg.Autonomous.PushAndTag = bs
+				}
+			}
+		case "autonomous.release_path":
+			// Pre-validated by the PUT handler.
+			if str, ok := v.(string); ok && config.ValidateReleasePath(strings.TrimSpace(str)) == nil {
+				cfg.Autonomous.ReleasePath = strings.TrimSpace(str)
+			}
+		case "git.release_ci_window_minutes":
+			// Pre-validated by the PUT handler.
+			if n, ok := toInt(v); ok && config.ValidateReleaseCIWindowMinutes(n) == nil {
+				cfg.Git.ReleaseCIWindowMinutes = n
+			}
 		case "autonomous.max_recursion_depth":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.MaxRecursionDepth = n
@@ -7128,6 +10707,34 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.AutoFixSkipApproval = toBool(v)
 		case "autonomous.block_on_file_drift":
 			cfg.Autonomous.BlockOnFileDrift = toBool(v)
+		// Verifier/quality-gate disagreement policy. "warn" (default)
+		// records the disagreement and completes the task; "block" fails
+		// it with a "gate_disagreement: …" error. Invalid values are
+		// rejected upstream in handlePutConfig with a 400.
+		case "autonomous.gate_disagreement":
+			if gd := toString(v); gd == "warn" || gd == "block" {
+				cfg.Autonomous.GateDisagreement = gd
+			}
+		// Plan review gate (plan_review_mode is pre-validated in
+		// handlePutConfig) and smoke-verification reviewer override.
+		case "autonomous.plan_review_backend":
+			cfg.Autonomous.PlanReviewBackend = toString(v)
+		case "autonomous.plan_review_model":
+			cfg.Autonomous.PlanReviewModel = toString(v)
+		case "autonomous.plan_review_mode":
+			cfg.Autonomous.PlanReviewMode = toString(v)
+		case "autonomous.smoke_verification_backend":
+			cfg.Autonomous.SmokeVerificationBackend = toString(v)
+		case "autonomous.smoke_verification_model":
+			cfg.Autonomous.SmokeVerificationModel = toString(v)
+		case "autonomous.drift_mode": // "block" (default) or "warn"; validated in handlePutConfig
+			if mode := toString(v); config.ValidateDriftMode(mode) == nil {
+				cfg.Autonomous.DriftMode = mode
+			}
+		case "autonomous.undeclared_edit_mode": // "off", "warn" (default) or "block"; validated in handlePutConfig
+			if mode := toString(v); config.ValidateUndeclaredEditMode(mode) == nil {
+				cfg.Autonomous.UndeclaredEditMode = strings.ToLower(strings.TrimSpace(mode))
+			}
 		// BL428 §3a ii — refuse tasks on a dirty tree.
 		case "autonomous.refuse_dirty_tree_start":
 			cfg.Autonomous.RefuseDirtyTreeStart = toBool(v)
@@ -7136,6 +10743,33 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.RulesFile = toString(v)
 		case "autonomous.context_file":
 			cfg.Autonomous.ContextFile = toString(v)
+		// Per-project rules/context names + digest sub-configuration.
+		// Validated in handlePutConfig (validateRulesContextPatch).
+		case "autonomous.rules_context.rules_file":
+			cfg.Autonomous.RulesContext.RulesFile = strings.TrimSpace(toString(v))
+		case "autonomous.rules_context.context_files":
+			if files, ok := contextFilesFromValue(v); ok {
+				cfg.Autonomous.RulesContext.ContextFiles = files
+			}
+		case "autonomous.rules_context.digest_mode":
+			cfg.Autonomous.RulesContext.DigestMode = strings.TrimSpace(toString(v))
+		case "autonomous.rules_context.digest_max_bytes":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.RulesContext.DigestMaxBytes = n
+			}
+		case "autonomous.rules_context":
+			if raw, err := json.Marshal(v); err == nil {
+				if uerr := json.Unmarshal(raw, &cfg.Autonomous.RulesContext); uerr != nil {
+					// already rejected by validateRulesContextPatch
+					cfg.Autonomous.RulesContext = config.AutonomousRulesContextConfig{}
+				}
+			} else {
+				cfg.Autonomous.RulesContext = config.AutonomousRulesContextConfig{}
+			}
+		case "autonomous.rules_context.projects":
+			if prjs := parseRulesContextProjectList(v); prjs != nil {
+				cfg.Autonomous.RulesContext.Projects = prjs
+			}
 		// BL407 Phase 1 — local git-worktree isolation config.
 		case "autonomous.worktree_base_repo":
 			cfg.Autonomous.WorktreeBaseRepo = toString(v)
@@ -7167,6 +10801,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "autonomous.default_quality_gates.block_on_regression":
 			cfg.Autonomous.DefaultQualityGates.BlockOnRegression = toBool(v)
+		// Gate scope (full | touched-plus-smoke | touched; pre-validated in
+		// handlePutConfig) and smoke package patterns for the scopes that
+		// use them. Accepts a JSON string list or a comma-separated string
+		// (the comm/CLI wire form).
+		case "autonomous.default_quality_gates.scope":
+			cfg.Autonomous.DefaultQualityGates.Scope = toString(v)
+		case "autonomous.default_quality_gates.smoke_packages":
+			cfg.Autonomous.DefaultQualityGates.SmokePackages = parseGateSmokePackagesValue(v)
 		// BL369 — prompt injection guard config.
 		case "autonomous.injection_guard":
 			cfg.Autonomous.InjectionGuard = toBool(v)
@@ -7179,6 +10821,39 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "plugins.timeout_ms":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Plugins.TimeoutMs = n
+			}
+			// plugins.services.* — the service-plugin watch settings (the attach-only
+			// probe cadence, the backlog-growth streak, the model-use thresholds),
+			// validated as a block in handlePutConfig so a PUT can never store a
+			// state Load would reject at next startup; the guards below are the
+			// same rules applied key by key.
+		case "plugins.services.health_interval_seconds":
+			if n, ok := toInt(v); ok && n >= config.MinPluginServicesHealthInterval {
+				cfg.Plugins.Services.HealthIntervalSeconds = n
+			}
+		case "plugins.services.backlog_growth_pulls":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Plugins.Services.BacklogGrowthPulls = n
+			}
+		case "plugins.services.node_load_ratio":
+			if f, err := configPatchFloat(v); err == nil && f > 0 {
+				cfg.Plugins.Services.NodeLoadRatio = f
+			}
+		case "plugins.services.small_model_max_params_billions":
+			if f, err := configPatchFloat(v); err == nil && f > 0 {
+				cfg.Plugins.Services.SmallModelMaxParamsBillions = f
+			}
+		case "plugins.services.small_model_context_tokens":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Plugins.Services.SmallModelContextTokens = n
+			}
+		case "plugins.services.per_service":
+			if obj, ok := v.(map[string]interface{}); ok {
+				for name, raw := range obj {
+					if ov, verr := normalizePluginServiceOverride(name, raw); verr == nil {
+						applyPluginServiceOverride(cfg, name, ov)
+					}
+				}
 			}
 		case "orchestrator.enabled":
 			cfg.Orchestrator.Enabled = toBool(v)
@@ -7254,8 +10929,32 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Observer.Peers.PushIntervalSeconds = n
 			}
+		case "observer.peers.silent_alert_minutes":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.Peers.SilentAlertMinutes = n
+			}
 		case "observer.peers.listen_addr":
 			cfg.Observer.Peers.ListenAddr = toString(v)
+		// Observer pull protocol (pull mode) globals. A per-peer
+		// interval/timeout of 0 falls back to these defaults, so they read
+		// the code defaults (DefaultObserverPullIntervalS /
+		// DefaultObserverPullTimeoutS) while unset; an interval below the
+		// 5-second floor or a negative timeout is rejected (listed in
+		// "skipped") to match config.ValidateObserverPullConfig.
+		case "observer.pull.enabled":
+			cfg.Observer.Pull.Enabled = toBool(v)
+		case "observer.pull.default_interval_s":
+			if n, ok := toInt(v); ok && n >= config.ObserverPullMinIntervalS {
+				cfg.Observer.Pull.DefaultIntervalS = n
+			} else {
+				skipped = append(skipped, k)
+			}
+		case "observer.pull.default_timeout_s":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Observer.Pull.DefaultTimeoutS = n
+			} else {
+				skipped = append(skipped, k)
+			}
 		// v5.21.0 — fill in the missing whisper.* keys. Pre-v5.21.0
 		// only enabled/model/language/venv_path were patchable; the
 		// HTTP-shape backends (openai/openai_compat/openwebui/ollama)
@@ -7282,11 +10981,85 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "vision.default_prompt":
 			cfg.Vision.DefaultPrompt = toString(v)
+		// Image-describe request timeout in seconds. Unset or below 1 is
+		// rejected here; the getter always reports the effective value
+		// (default 5, min 1) — same rule as results.schedule_history_limit.
+		case "vision.describe_timeout_seconds":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Vision.DescribeTimeoutSeconds = n
+			}
 		case "session.quick_commands":
 			if cmds, ok := toQuickCommands(v); ok {
 				cfg.Session.QuickCommands = cmds
 			}
+		// Results — scheduled-jobs per-schedule result history. Unset or
+		// below 1 is rejected here; the getter always reports the
+		// effective value (default 20, min 1).
+		case "results.schedule_history_limit":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Results.ScheduleHistoryLimit = n
+			}
 		default:
+			// autonomous.defect_queue.*; validated in handlePutConfig, Set
+			// leaves the block unchanged on a refusal.
+			if name, ok := strings.CutPrefix(k, config.DefectQueueSettingPrefix); ok {
+				_ = cfg.Autonomous.DefectQueue.Set(name, v)
+				continue
+			}
+			// autonomous.failure_escalation.{enabled,max_failures,steps}; the
+			// values were checked by validateFailureEscalationPatch.
+			if applyFailureEscalationPatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.infra_retry.*; the values were checked by
+			// validateInfraRetryPatch.
+			if applyInfraRetryPatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.merge_pipeline.*; the values were checked by
+			// validateMergePipelinePatch. The merge run reads the live block,
+			// so the change applies with no restart.
+			if applyMergePipelinePatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.request_watch.*; the values were checked by
+			// validateRequestWatchPatch. The watcher reads the live block on
+			// every tick, so the change applies with no restart.
+			if applyRequestWatchPatch(cfg, k, v) {
+				continue
+			}
+			// usage.billing.<provider>.<field>; the values were checked by
+			// validateBillingPatch. The cost report and the usage calculator
+			// read the live block, so the change applies with no restart.
+			if applyBillingPatchKey(cfg, k, v) {
+				continue
+			}
+			// autonomous.model_routing.refusal_mode,
+			// .served_models_cache_seconds, autonomous.model_routing.verifier_follows_worker_node,
+			// .unknown_node_policy, .probe_timeout_seconds and .alert_on_refusal;
+			// the values were checked by validateModelRoutingPatch.
+			if applyModelRoutingPatch(cfg, k, v) {
+				continue
+			}
+
+			// compute_placement.* — already validated in
+			// validateComputePlacementPatch. Placement reads the live
+			// block on every decision, so the new value applies with
+			// no restart.
+			if applyComputePlacementPatch(cfg, k, v) {
+				continue
+			}
+			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>
+			// sets one tier and leaves the rest of the table alone.
+			if tier, ok := planTierAllocationPairTier(k); ok {
+				if usd, verr := parsePlanTierAllocationPair(tier, v); verr == nil {
+					if cfg.Autonomous.PlanTierAllocationUSD == nil {
+						cfg.Autonomous.PlanTierAllocationUSD = map[string]float64{}
+					}
+					cfg.Autonomous.PlanTierAllocationUSD[tier] = usd
+				}
+				continue
+			}
 			// Unknown keys are logged so future mobile/PWA schema
 			// drift surfaces instead of silent no-op'ing again.
 			// Clients still get 200 for now — returning 4xx would
@@ -7300,8 +11073,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 }
 
 // SetTestMessageHandler wires a function that routes simulated messages through
-// the router. Used by POST /api/test/message for comm channel testing.
-func (s *Server) SetTestMessageHandler(fn func(text string) []string) {
+// the router. Used by POST /api/test/message for comm channel testing. The
+// handler receives the request's TestMessageAttribution (calling credential +
+// config:write decision) so a session-attributed configure is audited once
+// (surface "comm") and refused without the capability.
+func (s *Server) SetTestMessageHandler(fn func(text string, at TestMessageAttribution) []string) {
 	s.testMessageHandler = fn
 }
 
@@ -7328,13 +11104,62 @@ func (s *Server) handleTestMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "need {\"text\":\"...\"}", http.StatusBadRequest)
 		return
 	}
-	responses := s.testMessageHandler(req.Text)
+	responses := s.testMessageHandler(req.Text, s.configureWriteAttribution(r))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"input":     req.Text,
 		"responses": responses,
 		"count":     len(responses),
 	})
+}
+
+// effectiveDriftMode renders the configured autonomous.drift_mode the way
+// the executor enforces it, so GET /api/config shows the effective mode:
+// an unset/empty value renders as "block" (matching
+// resolveDriftMode in internal/autonomous/file_drift.go), as does any
+// "block" spelling, and "warn" stays "warn".
+func effectiveDriftMode(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), "warn") {
+		return "warn"
+	}
+	return "block"
+}
+
+// effectiveUndeclaredEditMode renders autonomous.undeclared_edit_mode the
+// way the executor resolves it (Manager.EffectiveUndeclaredEditMode):
+// lowercased off|warn|block, anything else renders "warn".
+func effectiveUndeclaredEditMode(mode string) string {
+	switch m := strings.ToLower(strings.TrimSpace(mode)); m {
+	case "off", "warn", "block":
+		return m
+	}
+	return "warn"
+}
+
+// parseGateSmokePackagesValue accepts a JSON string list or a
+// comma-separated string (the comm/CLI wire form) and returns the trimmed,
+// non-empty entries. Anything else yields nil ("use the default smoke
+// set").
+func parseGateSmokePackagesValue(v interface{}) []string {
+	switch val := v.(type) {
+	case []interface{}:
+		out := []string{}
+		for _, item := range val {
+			if s := strings.TrimSpace(toString(item)); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		out := []string{}
+		for _, part := range strings.Split(val, ",") {
+			if p := strings.TrimSpace(part); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func toBool(v interface{}) bool {
@@ -7349,11 +11174,1573 @@ func toBool(v interface{}) bool {
 	return false
 }
 
+// effectivePlanCoverageCheckForDisplay renders the plan-coverage
+// check mode for the /api/config display surface: the unset state
+// (empty) shows its safe default "block", a valid raw value passes
+// through, and a malformed raw value (written via raw YAML) is shown
+// as-is rather than turning a config read into an error.
+func effectivePlanCoverageCheckForDisplay(raw string) string {
+	mode, err := config.NormalizePlanCoverageCheck(raw)
+	if err != nil {
+		return raw
+	}
+	return mode
+}
+
+// judgePolicyForDisplay renders autonomous.judge_policy as a list even when
+// unset, so the field reads as an empty array (follow the verifier policy)
+// rather than null.
+func judgePolicyForDisplay(backends []string) []string {
+	return config.NormalizeJudgePolicy(append([]string{}, backends...))
+}
+
+// configPatchFloat coerces a /api/config patch value for
+// autonomous.plan_coverage_min_ratio to a float64. Accepts a JSON
+// number and a numeric string (the CLI and comm channel commonly send
+// strings); booleans and unparseable values are errors. NaN/±Inf are
+// rejected because they would defeat the (0,1] clamping.
+// pluginServicesSurface renders plugins.services for GET /api/config: each
+// field as stored (0 when unset; the Effective* accessors apply the
+// documented defaults on the reading side, and the reference documents the
+// defaults themselves).
+func pluginServicesSurface(cfg *config.Config) map[string]interface{} {
+	svc := cfg.Plugins.Services
+	per := map[string]interface{}{}
+	for name, ov := range svc.PerService {
+		per[name] = map[string]interface{}{"lifecycle_mode": ov.LifecycleMode}
+	}
+	return map[string]interface{}{
+		"health_interval_seconds":         svc.HealthIntervalSeconds,
+		"backlog_growth_pulls":            svc.BacklogGrowthPulls,
+		"node_load_ratio":                 svc.NodeLoadRatio,
+		"small_model_max_params_billions": svc.SmallModelMaxParamsBillions,
+		"small_model_context_tokens":      svc.SmallModelContextTokens,
+		"per_service":                     per,
+	}
+}
+
+// applyPluginServiceOverride merges one validated per-service entry into the
+// config (the map is created on first write, like the other dynamic maps).
+func applyPluginServiceOverride(cfg *config.Config, service string, ov config.PluginServiceOverride) {
+	if cfg.Plugins.Services.PerService == nil {
+		cfg.Plugins.Services.PerService = map[string]config.PluginServiceOverride{}
+	}
+	cfg.Plugins.Services.PerService[service] = ov
+}
+
+// normalizePluginServiceOverride accepts a per_service value as a mode
+// string or as an object with a lifecycle_mode member, lower-cases and
+// trims it, and checks it against the load-time rule: "" (unset = the only
+// supported mode, or attach_only when the manifest supports both),
+// attach_only, or managed. A mis-spelled mode is rejected naming the
+// service and listing the valid values.
+func normalizePluginServiceOverride(service string, v interface{}) (config.PluginServiceOverride, error) {
+	mode := ""
+	switch t := v.(type) {
+	case string:
+		mode = t
+	case map[string]interface{}:
+		if raw, ok := t["lifecycle_mode"]; ok {
+			mode = toString(raw)
+		}
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "" && mode != config.PluginServiceLifecycleAttachOnly && mode != config.PluginServiceLifecycleManaged {
+		return config.PluginServiceOverride{}, config.ValidatePluginServiceMode(service, mode)
+	}
+	return config.PluginServiceOverride{LifecycleMode: mode}, nil
+}
+
+// validatePluginServicesPatch simulates the patch's plugins.services.* keys
+// on a copy of the stored block and runs the same validator Load runs
+// (config.PluginServicesConfig.Validate) over the result — so a single PUT
+// cannot store a block the next startup would reject. Reports the first
+// violation; keys are visited in sorted order.
+func validatePluginServicesPatch(current config.PluginServicesConfig, patch map[string]interface{}) error {
+	next := current
+	if next.PerService == nil {
+		next.PerService = map[string]config.PluginServiceOverride{}
+	}
+	keys := make([]string, 0, len(patch))
+	for k := range patch {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v := patch[k]
+		switch {
+		case k == "plugins.services.health_interval_seconds":
+			if n, ok := toInt(v); ok {
+				next.HealthIntervalSeconds = n
+			}
+		case k == "plugins.services.backlog_growth_pulls":
+			if n, ok := toInt(v); ok {
+				next.BacklogGrowthPulls = n
+			}
+		case k == "plugins.services.node_load_ratio":
+			if f, err := configPatchFloat(v); err == nil {
+				next.NodeLoadRatio = f
+			}
+		case k == "plugins.services.small_model_max_params_billions":
+			if f, err := configPatchFloat(v); err == nil {
+				next.SmallModelMaxParamsBillions = f
+			}
+		case k == "plugins.services.small_model_context_tokens":
+			if n, ok := toInt(v); ok {
+				next.SmallModelContextTokens = n
+			}
+		case k == "plugins.services.per_service":
+			if obj, ok := v.(map[string]interface{}); ok {
+				for name, raw := range obj {
+					ov, verr := normalizePluginServiceOverride(name, raw)
+					if verr != nil {
+						return fmt.Errorf("plugins.services: %v", verr)
+					}
+					next.PerService[name] = ov
+				}
+			}
+		case strings.HasPrefix(k, "plugins.services.per_service."):
+			name, _ := strings.CutPrefix(k, "plugins.services.per_service.")
+			if name == "" {
+				continue
+			}
+			ov, verr := normalizePluginServiceOverride(name, v)
+			if verr != nil {
+				return fmt.Errorf("plugins.services: %v", verr)
+			}
+			next.PerService[name] = ov
+		}
+	}
+	return next.Validate()
+}
+
+func configPatchFloat(v interface{}) (float64, error) {
+	rejectNonFinite := func(f float64, lit string) error {
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return fmt.Errorf("invalid plan_coverage_min_ratio %s: must be a finite number in (0,1]", lit)
+		}
+		return nil
+	}
+	switch n := v.(type) {
+	case float64:
+		if err := rejectNonFinite(n, fmt.Sprintf("%v", v)); err != nil {
+			return 0, err
+		}
+		return n, nil
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("invalid plan_coverage_min_ratio %s: %v", n, err)
+		}
+		if err := rejectNonFinite(f, n.String()); err != nil {
+			return 0, err
+		}
+		return f, nil
+	case bool:
+		return 0, fmt.Errorf("invalid plan_coverage_min_ratio %v: must be a number in (0,1]", v)
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid plan_coverage_min_ratio %q: must be a number in (0,1]", n)
+		}
+		if err := rejectNonFinite(f, n); err != nil {
+			return 0, err
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("invalid plan_coverage_min_ratio %v: must be a number in (0,1]", v)
+	}
+}
+
 func toString(v interface{}) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// parsePinCheckSeconds reads pin_check_seconds from a PUT /api/config
+// body. It accepts a JSON number, a numeric string (the CLI and comm
+// channel send strings), and must be a whole number >= 0 (0 = keeper off).
+func parsePinCheckSeconds(v interface{}) (int, error) {
+	const msg = "pin_check_seconds: must be a whole number of seconds >= 0 (0 = pin keeper off)"
+	var n int
+	switch x := v.(type) {
+	case float64:
+		if x != math.Trunc(x) || x > math.MaxInt32 {
+			return 0, errors.New(msg)
+		}
+		n = int(x)
+	case int:
+		n = x
+	case string:
+		i, err := strconv.Atoi(strings.TrimSpace(x))
+		if err != nil {
+			return 0, errors.New(msg)
+		}
+		n = i
+	default:
+		return 0, errors.New(msg)
+	}
+	if n < 0 {
+		return 0, errors.New(msg)
+	}
+	return n, nil
+}
+
+// parseProgressWhole reads a whole-number autonomous.progress.* value from a
+// PUT /api/config body. It accepts a JSON number and a numeric string (the CLI
+// and comm channel send strings); the value must be >= 0 (0 = the default).
+func parseProgressWhole(key string, v interface{}) (int, error) {
+	msg := key + ": must be a whole number >= 0 (0 = default)"
+	switch x := v.(type) {
+	case float64:
+		if x != math.Trunc(x) || x < 0 || x > math.MaxInt32 {
+			return 0, errors.New(msg)
+		}
+		return int(x), nil
+	case int:
+		if x < 0 || x > math.MaxInt32 {
+			return 0, errors.New(msg)
+		}
+		return x, nil
+	case string:
+		if strings.TrimSpace(x) == "" {
+			return 0, nil // a cleared Settings field means the default
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(x))
+		if err != nil || n < 0 || n > math.MaxInt32 {
+			return 0, errors.New(msg)
+		}
+		return n, nil
+	}
+	return 0, errors.New(msg)
+}
+
+// parseProgressGapHours reads autonomous.progress.inactive_gap_hours: a finite
+// number of hours >= 0 (0 = the default), as a JSON number or numeric string.
+func parseProgressGapHours(v interface{}) (float64, error) {
+	const msg = "autonomous.progress.inactive_gap_hours: must be a number of hours >= 0 (0 = default)"
+	var f float64
+	switch x := v.(type) {
+	case float64:
+		f = x
+	case int:
+		f = float64(x)
+	case string:
+		if strings.TrimSpace(x) == "" {
+			return 0, nil // a cleared Settings field means the default
+		}
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		if err != nil {
+			return 0, errors.New(msg)
+		}
+		f = parsed
+	default:
+		return 0, errors.New(msg)
+	}
+	if math.IsNaN(f) || math.IsInf(f, 0) || f < 0 || f > 24*366 {
+		return 0, errors.New(msg)
+	}
+	return f, nil
+}
+
+// validateProgressPatch checks every autonomous.progress.* key present in a
+// PUT /api/config body and returns the first problem.
+func validateProgressPatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.progress.lanes"]; ok {
+		if _, err := parseProgressWhole("autonomous.progress.lanes", v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.progress.inactive_gap_hours"]; ok {
+		if _, err := parseProgressGapHours(v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.progress.snapshot_retention_days"]; ok {
+		if _, err := parseProgressWhole("autonomous.progress.snapshot_retention_days", v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.progress.backlog_path"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return errors.New("autonomous.progress.backlog_path: must be a string (empty = docs/plans/README.md)")
+		}
+		if err := config.ValidateProgressBacklogPath(str); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.progress.since"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return errors.New("autonomous.progress.since: must be a YYYY-MM-DD date string (empty = first record's creation date)")
+		}
+		if err := config.ValidateProgressSince(str); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateIdleAlertMinutes checks autonomous.automation.idle_alert_minutes:
+// a whole number >= 0 (0 turns the idle alert off).
+func validateIdleAlertMinutes(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("autonomous.automation.idle_alert_minutes: must be a whole number >= 0 (0 = off)")
+	}
+	return nil
+}
+
+// validateVaultUnreachableAlertAfterSeconds checks
+// secrets.vault.unreachable_alert_after_seconds: a whole number >= 0
+// (unset reads the 120-second default; 0 turns the alert off).
+func validateVaultUnreachableAlertAfterSeconds(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("secrets.vault.unreachable_alert_after_seconds: must be a whole number >= 0 (0 = off, default %d)", config.DefaultVaultUnreachableAlertAfterSeconds)
+	}
+	return nil
+}
+
+// validateTriageAlertMinutes checks autonomous.automation.triage_alert_minutes:
+// a whole number >= 0 (an unset key reads the 30-minute default;
+// an explicit 0 turns the triage alert off).
+func validateTriageAlertMinutes(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("autonomous.automation.triage_alert_minutes: must be a whole number >= 0 (0 = off, default %d)", config.DefaultAutomationTriageAlertMinutes)
+	}
+	return nil
+}
+
+// repoCIWatchKeyPrefix — the REST key prefix for the repo CI watch knobs
+// (autonomous.automation.repo_ci_watch.*).
+const repoCIWatchKeyPrefix = "autonomous.automation.repo_ci_watch."
+
+// repoCIWatchSurface builds the GET /api/config surface for the repo CI
+// watch, emitting effective values: unset (nil / zero / empty) fields read
+// their defaults from the Effective* accessors, and an explicit alert 0
+// stays 0 (the alert off).
+func repoCIWatchSurface(c config.RepoCIWatchConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"mode":               c.EffectiveMode(),
+		"repos":              c.EffectiveRepos(),
+		"poll_seconds":       c.EffectivePollSeconds(),
+		"alert_minutes":      c.EffectiveAlertMinutes(),
+		"tag_count":          c.EffectiveTagCount(),
+		"hung_after_minutes": c.EffectiveHungAfterMinutes(),
+		"security_workflows": c.EffectiveSecurityWorkflows(),
+		"delete_superseded":  c.EffectiveDeleteSuperseded(),
+	}
+}
+
+// parseRepoCIWatchWhole accepts a whole number for one repo CI watch key
+// (the CLI and the comm channel may send plain ints or JSON numbers;
+// fractional, string and missing values are refused with a clear error).
+func parseRepoCIWatchWhole(field string, v interface{}) (int, error) {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) {
+		return 0, fmt.Errorf("%s%s: must be a whole number", repoCIWatchKeyPrefix, field)
+	}
+	return int(f), nil
+}
+
+// validateRepoCIWatchPatch checks every autonomous.automation.repo_ci_watch.*
+// value present in the patch before anything is applied, so one bad value
+// rejects the whole PUT rather than being silently skipped. It runs the
+// same rules the config-load path runs (config.validateRepoCIWatch), so a
+// bad value is refused consistently on every write path.
+func validateRepoCIWatchPatch(patch map[string]interface{}) error {
+	if v, ok := patch[repoCIWatchKeyPrefix+"mode"]; ok {
+		if str, isStr := v.(string); !isStr || config.ValidateRepoCIWatchMode(str) != nil {
+			return fmt.Errorf("%smode: must be %q, %q or %q",
+				repoCIWatchKeyPrefix, config.RepoCIWatchModeOff, config.RepoCIWatchModeShadow, config.RepoCIWatchModeOn)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"delete_superseded"]; ok {
+		if str, isStr := v.(string); !isStr || config.ValidateRepoCIWatchDeleteSuperseded(str) != nil {
+			return fmt.Errorf("%sdelete_superseded: must be %q or %q",
+				repoCIWatchKeyPrefix, config.RepoCIWatchDeleteSupersededReport, config.RepoCIWatchDeleteSupersededDelete)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"repos"]; ok {
+		arr, isArr := v.([]interface{})
+		if !isArr {
+			return fmt.Errorf("%srepos: must be a list of absolute repository paths (unset means nothing is watched)", repoCIWatchKeyPrefix)
+		}
+		for i, item := range arr {
+			path, isStr := item.(string)
+			p := strings.TrimSpace(path)
+			if !isStr || len(p) <= 1 || !strings.HasPrefix(p, "/") {
+				return fmt.Errorf("%srepos[%d]: %v must be an absolute path (repositories are never inferred from the working directory)",
+					repoCIWatchKeyPrefix, i, item)
+			}
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"poll_seconds"]; ok {
+		n, err := parseRepoCIWatchWhole("poll_seconds", v)
+		if err != nil {
+			return err
+		}
+		if n < config.RepoCIWatchMinPollSeconds {
+			return fmt.Errorf("%spoll_seconds: %d must be a whole number >= %d (unset reads the %d-second default)",
+				repoCIWatchKeyPrefix, n, config.RepoCIWatchMinPollSeconds, config.RepoCIWatchDefaultPollSeconds)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"alert_minutes"]; ok {
+		n, err := parseRepoCIWatchWhole("alert_minutes", v)
+		if err != nil {
+			return err
+		}
+		if n < 0 {
+			return fmt.Errorf("%salert_minutes: %d must be a whole number >= 0 (0 = alert off, unset reads the %d-minute default)",
+				repoCIWatchKeyPrefix, n, config.DefaultAutomationTriageAlertMinutes)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"tag_count"]; ok {
+		n, err := parseRepoCIWatchWhole("tag_count", v)
+		if err != nil {
+			return err
+		}
+		if n < 0 {
+			return fmt.Errorf("%stag_count: %d must be a whole number >= 0 (0 = none, unset reads the %d default)",
+				repoCIWatchKeyPrefix, n, config.RepoCIWatchDefaultTagCount)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"hung_after_minutes"]; ok {
+		n, err := parseRepoCIWatchWhole("hung_after_minutes", v)
+		if err != nil {
+			return err
+		}
+		if n < config.RepoCIWatchMinHungAfterMinutes {
+			return fmt.Errorf("%shung_after_minutes: %d must be a whole number >= %d (unset reads the %d-minute default)",
+				repoCIWatchKeyPrefix, n, config.RepoCIWatchMinHungAfterMinutes, config.RepoCIWatchDefaultHungAfterMinutes)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"security_workflows"]; ok {
+		if _, isArr := v.([]interface{}); !isArr {
+			return fmt.Errorf("%ssecurity_workflows: must be a list of workflow names (an empty list means none)", repoCIWatchKeyPrefix)
+		}
+	}
+	return nil
+}
+
+// applyRepoCIWatchValue stores one repo CI watch value (validated above in
+// handlePutConfig; a value that fails the check here is left unchanged).
+func applyRepoCIWatchValue(rcw *config.RepoCIWatchConfig, field string, v interface{}) {
+	switch field {
+	case "mode":
+		str := toString(v)
+		if config.ValidateRepoCIWatchMode(str) == nil {
+			rcw.Mode = str
+		}
+	case "delete_superseded":
+		str := toString(v)
+		if config.ValidateRepoCIWatchDeleteSuperseded(str) == nil {
+			rcw.DeleteSuperseded = str
+		}
+	case "repos":
+		if arr, ok := toStringArray(v); ok {
+			rcw.Repos = arr
+		}
+	case "security_workflows":
+		if arr, ok := toStringArray(v); ok {
+			rcw.SecurityWorkflows = arr
+		}
+	case "poll_seconds":
+		if n, err := parseRepoCIWatchWhole("poll_seconds", v); err == nil && n >= config.RepoCIWatchMinPollSeconds {
+			rcw.PollSeconds = n
+		}
+	case "hung_after_minutes":
+		if n, err := parseRepoCIWatchWhole("hung_after_minutes", v); err == nil && n >= config.RepoCIWatchMinHungAfterMinutes {
+			rcw.HungAfterMinutes = n
+		}
+	case "alert_minutes":
+		// A pointer on purpose: an explicit 0 (the alert off) must be stored
+		// as such, not dropped as a zero.
+		if n, err := parseRepoCIWatchWhole("alert_minutes", v); err == nil && n >= 0 {
+			rcw.AlertMinutes = &n
+		}
+	case "tag_count":
+		// A pointer on purpose: an explicit 0 (no tags watched) must be
+		// stored as such, not dropped as a zero.
+		if n, err := parseRepoCIWatchWhole("tag_count", v); err == nil && n >= 0 {
+			rcw.TagCount = &n
+		}
+	}
+}
+
+// securityFailureKeyPrefix — the REST key prefix for the security failure
+// knob (autonomous.automation.security_failure.mode).
+const securityFailureKeyPrefix = "autonomous.automation.security_failure."
+
+// securityFailureSurface renders the security failure block on the GET
+// /api/config surface as effective values (unset or empty mode reads
+// shadow, the first-release default), read from the Effective* accessors
+// — never a literal.
+func securityFailureSurface(c config.SecurityFailureConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"mode": c.EffectiveMode(),
+	}
+}
+
+// validateSecurityFailurePatch checks every autonomous.automation
+// .security_failure.* value present in the patch before anything is
+// applied, so one bad value rejects the whole PUT rather than being
+// silently skipped. It runs the same rules the config-load path runs
+// (config.validateSecurityFailure), so a bad value is refused
+// consistently on every write path.
+func validateSecurityFailurePatch(patch map[string]interface{}) error {
+	v, ok := patch[securityFailureKeyPrefix+"mode"]
+	if !ok {
+		return nil
+	}
+	str, isStr := v.(string)
+	if !isStr || config.ValidateSecurityFailureMode(str) != nil {
+		return fmt.Errorf("%smode: must be %q, %q or %q (empty is unset and reads the %q first-release default)",
+			securityFailureKeyPrefix, config.SecurityFailureModeOff, config.SecurityFailureModeShadow, config.SecurityFailureModeOn, config.SecurityFailureModeShadow)
+	}
+	return nil
+}
+
+// applySecurityFailureValue stores the security failure value (validated
+// above in handlePutConfig; a value that fails the check here is left
+// unchanged).
+func applySecurityFailureValue(sfc *config.SecurityFailureConfig, v interface{}) {
+	if str, isStr := v.(string); isStr && config.ValidateSecurityFailureMode(str) == nil {
+		sfc.Mode = str
+	}
+}
+
+// supervisorWatchKeyPrefix — the REST key prefix for the supervisor
+// watch knobs (autonomous.automation.supervisor_watch.*).
+const supervisorWatchKeyPrefix = "autonomous.automation.supervisor_watch."
+
+// supervisorWatchSurface renders the supervisor watch block on the GET
+// /api/config surface as effective values (an unset or empty mode reads
+// shadow, the release default — reports only, never acts — and the unset
+// minute thresholds read their one defaults), read from the Effective*
+// accessors — never a literal.
+func supervisorWatchSurface(c config.SupervisorWatchConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"mode":                  c.EffectiveMode(),
+		"alert_minutes":         c.EffectiveAlertMinutes(),
+		"silent_minutes":        c.EffectiveSilentMinutes(),
+		"poll_seconds":          c.EffectivePollSeconds(),
+		"script_output_path":    c.ScriptOutputPath,
+		"tmux_restart_baseline": c.TmuxRestartBaseline,
+		"main_checkout":         c.MainCheckout,
+		"working_model":         strings.TrimSpace(c.WorkingModel),
+	}
+}
+
+// patchTouchesSupervisorWatch reports whether a PUT /api/config patch
+// carries any autonomous.automation.supervisor_watch.* key.
+func patchTouchesSupervisorWatch(patch map[string]interface{}) bool {
+	for k := range patch {
+		if strings.HasPrefix(k, supervisorWatchKeyPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// withSupervisorWatchClears makes the supervisor watch block of the
+// automation JSON carry its string keys and poll_seconds explicitly. Those
+// fields are omitempty (or empty strings the live merge cannot tell from
+// absent), so a PUT that clears one back to empty was dropped from the
+// pushed block and the live watch kept serving the stale value until a
+// restart. Writing the current value explicitly lets the live merge apply
+// the clear. A block that cannot be decoded is returned unchanged.
+func withSupervisorWatchClears(automation json.RawMessage, swc config.SupervisorWatchConfig) json.RawMessage {
+	var auto map[string]json.RawMessage
+	if json.Unmarshal(automation, &auto) != nil {
+		return automation
+	}
+	block := map[string]json.RawMessage{}
+	if raw, ok := auto["supervisor_watch"]; ok {
+		if json.Unmarshal(raw, &block) != nil {
+			return automation
+		}
+	}
+	for key, val := range map[string]interface{}{
+		"script_output_path":    swc.ScriptOutputPath,
+		"tmux_restart_baseline": swc.TmuxRestartBaseline,
+		"main_checkout":         swc.MainCheckout,
+		"working_model":         swc.WorkingModel,
+		"poll_seconds":          swc.PollSeconds,
+	} {
+		b, err := json.Marshal(val)
+		if err != nil {
+			return automation
+		}
+		block[key] = b
+	}
+	nb, err := json.Marshal(block)
+	if err != nil {
+		return automation
+	}
+	auto["supervisor_watch"] = nb
+	out, err := json.Marshal(auto)
+	if err != nil {
+		return automation
+	}
+	return out
+}
+
+// validateSupervisorWatchWhole checks one supervisor watch minute
+// threshold: a whole number >= 0 (0 is legal — the operator said zero;
+// an unset key reads its default, which is not this value's business).
+func validateSupervisorWatchWhole(field string, v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("%s%s: must be a whole number >= 0 (an unset key reads its default)",
+			supervisorWatchKeyPrefix, field)
+	}
+	return nil
+}
+
+// parseSupervisorWatchWhole accepts a whole number for one supervisor watch
+// key (the CLI and the comm channel may send plain ints or JSON numbers;
+// fractional, string and missing values are refused with a clear error).
+func parseSupervisorWatchWhole(field string, v interface{}) (int, error) {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) {
+		return 0, fmt.Errorf("%s%s: must be a whole number", supervisorWatchKeyPrefix, field)
+	}
+	return int(f), nil
+}
+
+// validateSupervisorWatchPatch checks every autonomous.automation
+// .supervisor_watch.* value present in the patch before anything is
+// applied, so one bad value rejects the whole PUT rather than being
+// silently skipped. It runs the same rules the config-load path runs
+// (config.validateSupervisorWatch), so a bad value is refused
+// consistently on every write path.
+func validateSupervisorWatchPatch(patch map[string]interface{}) error {
+	if v, ok := patch[supervisorWatchKeyPrefix+"mode"]; ok {
+		str, isStr := v.(string)
+		if !isStr || config.ValidateSupervisorWatchMode(str) != nil {
+			return fmt.Errorf("%smode: must be %q, %q or %q (empty is unset and reads the %q release default)",
+				supervisorWatchKeyPrefix, config.SupervisorWatchModeOff, config.SupervisorWatchModeShadow, config.SupervisorWatchModeOn, config.SupervisorWatchModeShadow)
+		}
+	}
+	for _, field := range []string{"alert_minutes", "silent_minutes"} {
+		if v, ok := patch[supervisorWatchKeyPrefix+field]; ok {
+			if verr := validateSupervisorWatchWhole(field, v); verr != nil {
+				return verr
+			}
+		}
+	}
+	if v, ok := patch[supervisorWatchKeyPrefix+"poll_seconds"]; ok {
+		n, err := parseSupervisorWatchWhole("poll_seconds", v)
+		if err != nil {
+			return err
+		}
+		if n < 0 || (n > 0 && n < config.SupervisorWatchMinPollSeconds) {
+			return fmt.Errorf("%spoll_seconds: %d must be 0 (unset) or a whole number >= %d (unset reads the %d-second default)",
+				supervisorWatchKeyPrefix, n, config.SupervisorWatchMinPollSeconds, config.DefaultSupervisorWatchPollSeconds)
+		}
+	}
+	for _, field := range []string{"script_output_path", "tmux_restart_baseline", "main_checkout", "working_model"} {
+		if v, ok := patch[supervisorWatchKeyPrefix+field]; ok {
+			if _, isStr := v.(string); !isStr {
+				return fmt.Errorf("%s%s: must be a string", supervisorWatchKeyPrefix, field)
+			}
+		}
+	}
+	return nil
+}
+
+// applySupervisorWatchValue stores one supervisor watch value (validated
+// above in handlePutConfig; a value that fails the check here is left
+// unchanged). The minute thresholds are pointers on purpose: an explicit
+// 0 must be stored as such, not dropped as a zero.
+func applySupervisorWatchValue(swc *config.SupervisorWatchConfig, field string, v interface{}) {
+	switch field {
+	case "mode":
+		if str, ok := v.(string); ok && config.ValidateSupervisorWatchMode(str) == nil {
+			swc.Mode = str
+		}
+	case "alert_minutes":
+		if n, ok := toInt(v); ok && n >= 0 {
+			swc.AlertMinutes = &n
+		}
+	case "silent_minutes":
+		if n, ok := toInt(v); ok && n >= 0 {
+			swc.SilentMinutes = &n
+		}
+	case "poll_seconds":
+		// 0 is unset (it reads the default), the same as on the config-load
+		// path. An explicitly set value below the minimum is already refused
+		// by validateSupervisorWatchPatch and by config.load validation; a
+		// value that slips past those checks is left unchanged rather than
+		// stored.
+		if n, err := parseSupervisorWatchWhole("poll_seconds", v); err == nil && (n == 0 || n >= config.SupervisorWatchMinPollSeconds) {
+			swc.PollSeconds = n
+		}
+	case "script_output_path":
+		if str, ok := v.(string); ok {
+			swc.ScriptOutputPath = strings.TrimSpace(str)
+		}
+	case "tmux_restart_baseline":
+		if str, ok := v.(string); ok {
+			swc.TmuxRestartBaseline = strings.TrimSpace(str)
+		}
+	case "main_checkout":
+		// Empty (after trimming) disables the dirty main-checkout finding.
+		if str, ok := v.(string); ok {
+			swc.MainCheckout = strings.TrimSpace(str)
+		}
+	case "working_model":
+		// Empty (after trimming) turns the model_not_resident check off.
+		if str, ok := v.(string); ok {
+			swc.WorkingModel = strings.TrimSpace(str)
+		}
+	}
+}
+
+// validateMergePendingMode checks autonomous.automation.merge_pending_mode: a
+// string that is "off", "shadow" or "on" (empty is not accepted over the wire;
+// the default applies when the key is absent).
+func validateMergePendingMode(v interface{}) error {
+	str, ok := v.(string)
+	if !ok || str == "" {
+		return fmt.Errorf("autonomous.automation.merge_pending_mode: must be %q, %q or %q",
+			config.MergePendingModeOff, config.MergePendingModeShadow, config.MergePendingModeOn)
+	}
+	return config.ValidateMergePendingMode(str)
+}
+
+// validateMergedMemberPolicy checks autonomous.automation.
+// merged_member_policy: a string that is "completed", "manual" or "block"
+// (empty is not accepted over the wire; the default applies when the key is
+// absent).
+func validateMergedMemberPolicy(v interface{}) error {
+	str, ok := v.(string)
+	if !ok || str == "" {
+		return fmt.Errorf("autonomous.automation.merged_member_policy: must be %q, %q or %q",
+			config.MergedMemberPolicyCompleted, config.MergedMemberPolicyManual, config.MergedMemberPolicyBlock)
+	}
+	return config.ValidateMergedMemberPolicy(str)
+}
+
+// validateMergePendingAlertMinutes checks
+// autonomous.automation.merge_pending_alert_minutes: a whole number >= 0 (an
+// unset key reads the 30-minute default; an explicit 0 turns the merge-pending
+// alert off).
+func validateMergePendingAlertMinutes(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("autonomous.automation.merge_pending_alert_minutes: must be a whole number >= 0 (0 = off, default %d)", config.DefaultAutomationMergePendingAlertMinutes)
+	}
+	return nil
+}
+
+// validateAgentInsertPolicy checks autonomous.automation.agent_insert_policy:
+// a string that is "allow" or "require_operator" (empty is not accepted over
+// the wire; the default applies when the key is absent).
+func validateAgentInsertPolicy(v interface{}) error {
+	str, ok := v.(string)
+	if !ok || str == "" {
+		return fmt.Errorf("autonomous.automation.agent_insert_policy: must be %q or %q", config.AgentInsertPolicyAllow, config.AgentInsertPolicyRequireOperator)
+	}
+	return config.ValidateAgentInsertPolicy(str)
+}
+
+// validateCreateSearchModeValue checks
+// autonomous.automation.create_search_mode: a string that is "off", "shadow"
+// or "on" (empty is not accepted over the wire; the "shadow" default applies
+// when the key is absent).
+func validateCreateSearchModeValue(v interface{}) error {
+	str, ok := v.(string)
+	if !ok || str == "" {
+		return fmt.Errorf("autonomous.automation.create_search_mode: must be %q, %q or %q (default %q)", config.CreateSearchModeOff, config.CreateSearchModeShadow, config.CreateSearchModeOn, config.DefaultAutomationCreateSearchMode)
+	}
+	return config.ValidateCreateSearchMode(str)
+}
+
+// validateCreateSearchThresholdValue checks
+// autonomous.automation.create_search_threshold: a finite number in the
+// open-closed interval (0, 1] (0.5 is the default when the key is absent).
+func validateCreateSearchThresholdValue(v interface{}) error {
+	f, err := createSearchThresholdNumber(v)
+	if err != nil {
+		return fmt.Errorf("autonomous.automation.create_search_threshold: must be a finite number in the open-closed interval (0, 1], default %v", config.DefaultAutomationCreateSearchThreshold)
+	}
+	return config.ValidateCreateSearchThreshold(f)
+}
+
+// createSearchThresholdNumber coerces a patch value to a float64; it is the
+// shared numeric coercion for the create_search_threshold validation in
+// handlePutConfig and applyConfigPatch.
+func createSearchThresholdNumber(v interface{}) (float64, error) {
+	switch n := v.(type) {
+	case float64:
+		return n, nil
+	case int:
+		return float64(n), nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil {
+			return 0, err
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("non-numeric value")
+	}
+}
+
+// parseCreateSearchThreshold is the parse-and-validate pair used by
+// applyConfigPatch for autonomous.automation.create_search_threshold.
+func parseCreateSearchThreshold(v interface{}) (float64, error) {
+	f, err := createSearchThresholdNumber(v)
+	if err != nil {
+		return 0, err
+	}
+	if verr := config.ValidateCreateSearchThreshold(f); verr != nil {
+		return 0, verr
+	}
+	return f, nil
+}
+
+// validateCleanupModeValue checks autonomous.automation.cleanup_mode: it
+// must hold a string. Unlike validateMergePendingMode and
+// validateCreateSearchModeValue, unknown words (and the empty string) are
+// not errors: they resolve to report through EffectiveCleanupMode, so the
+// write path only refuses a type mismatch.
+func validateCleanupModeValue(v interface{}) error {
+	if _, ok := v.(string); !ok {
+		return fmt.Errorf("autonomous.automation.cleanup_mode: must be a string (off, report or on; an empty or unrecognized value reads as report)")
+	}
+	return nil
+}
+
+// validateCleanupWholeNumber checks one of the three whole-number cleanup
+// keys (cleanup_retention_hours, cleanup_max_removals_per_pass,
+// disk_alert_percent): it must hold a whole number (a JSON number or a
+// numeric string). Out-of-range values are not refused here — the
+// Effective* accessors resolve zero/negative values to the defaults and
+// clamp disk_alert_percent to 1..100.
+func validateCleanupWholeNumber(key string, v interface{}) error {
+	if _, ok := toInt(v); !ok {
+		return fmt.Errorf("%s: must be a whole number (zero or a negative value reads the default; disk_alert_percent is otherwise clamped to 1..100)", key)
+	}
+	return nil
+}
+
+// planTierTableForDisplay renders the tier -> max-inflight table for the
+// config surface. A nil table (test servers, pre-default configs) renders
+// as an empty object rather than null.
+func planTierTableForDisplay(table map[string]int) map[string]int {
+	if table == nil {
+		return map[string]int{}
+	}
+	return table
+}
+
+// attemptCostPatchTouched reports whether the PUT patch carries any of the
+// three autonomous attempt-cost keys. Only then does handlePutConfig run the
+// shared config.ValidateAttemptCostSettings check — so a patch that changes
+// unrelated keys is never refused because of values it did not send.
+func attemptCostPatchTouched(patch map[string]interface{}) bool {
+	for _, k := range []string{
+		"autonomous.first_attempt",
+		"autonomous.first_attempt_escalate_after_failures",
+		"autonomous.retry_resume_max_context_tokens",
+	} {
+		if _, ok := patch[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// parseFirstAttempt turns a decoded JSON value into the first_attempt table.
+// ok is false when the value is not an object; each entry is decoded as an
+// optional backend and an optional model string (a non-object entry becomes
+// an empty choice, which the shared validator then vets for kind and model
+// rules, so parsing here only checks the top-level shape).
+func parseFirstAttempt(v interface{}) (map[string]config.FirstAttemptChoice, bool) {
+	obj, ok := v.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	out := make(map[string]config.FirstAttemptChoice, len(obj))
+	for kind, entry := range obj {
+		choice := config.FirstAttemptChoice{}
+		if e, ok := entry.(map[string]interface{}); ok {
+			choice.Backend, _ = e["backend"].(string)
+			choice.Model, _ = e["model"].(string)
+		}
+		out[kind] = choice
+	}
+	return out, true
+}
+
+// cloneAttemptChoices copies one kind→choice table so a candidate config can
+// be validated in handlePutConfig without the live s.cfg sharing the map.
+func cloneAttemptChoices(m map[string]config.FirstAttemptChoice) map[string]config.FirstAttemptChoice {
+	out := make(map[string]config.FirstAttemptChoice, len(m))
+	for kind, choice := range m {
+		out[kind] = choice
+	}
+	return out
+}
+
+// firstAttemptDisplay renders autonomous.first_attempt for GET /api/config:
+// a nil table (nothing configured for any kind) becomes an empty object
+// rather than null, so the JSON is always an object.
+func firstAttemptDisplay(m map[string]config.FirstAttemptChoice) map[string]config.FirstAttemptChoice {
+	if m == nil {
+		return map[string]config.FirstAttemptChoice{}
+	}
+	return m
+}
+
+// priorityByKindForDisplay renders the kind → capacity-priority table in
+// GET /api/config. It displays the EFFECTIVE entries — the operator's
+// overrides layered onto the shipped defaults — so an unset table shows its
+// safe defaults (bug=80, maintenance=70, feature=20, other=0) instead of
+// blanks. Never returns nil, so the JSON is an object, not null.
+func priorityByKindForDisplay(a config.AutonomousConfig) map[string]int {
+	m := a.EffectivePriorityByKind()
+	if m == nil {
+		return map[string]int{}
+	}
+	return m
+}
+
+// parsePlanTierTable validates a value destined for
+// autonomous.plan_tier_max_inflight and returns the table it represents.
+// Accepted shapes:
+//
+//   - an object: {"pro": 1, "max_5x": 2} (REST/PWA raw JSON),
+//   - that object as a string: '{"pro":1}' (CLI `config set` and the
+//     comm-channel `configure` verb quote their values),
+//   - a compact list: "pro=1,max_5x=2".
+//
+// Every key must be a known tier (pro|max_5x|max_20x|api); the empty
+// tier name is rejected because it would shadow EffectiveMaxInflight's
+// unset-tier fallback. Every limit must be an integer >= 0 (0 =
+// unlimited for that tier). Empty input is a valid "clear the table" edit
+// and returns an empty non-nil map so the clear round-trips (the config
+// struct field has no omitempty on purpose).
+func parsePlanTierTable(v any) (map[string]int, error) {
+	var raw map[string]any
+	switch x := v.(type) {
+	case map[string]any:
+		raw = x
+	case nil:
+		return map[string]int{}, nil
+	case string:
+		s := strings.TrimSpace(x)
+		if strings.HasPrefix(s, "{") {
+			if err := json.Unmarshal([]byte(s), &raw); err != nil {
+				return nil, fmt.Errorf("plan_tier_max_inflight: malformed JSON %q: %v", s, err)
+			}
+		} else if s == "" {
+			return map[string]int{}, nil
+		} else {
+			raw = map[string]any{}
+			for _, part := range strings.Split(s, ",") {
+				kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+				if len(kv) != 2 || strings.TrimSpace(kv[0]) == "" || strings.TrimSpace(kv[1]) == "" {
+					return nil, fmt.Errorf("plan_tier_max_inflight: expected an object, a JSON object string, or \"tier=limit,tier=limit\"; got %q", strings.TrimSpace(part))
+				}
+				raw[kv[0]] = strings.TrimSpace(kv[1])
+			}
+		}
+	default:
+		return nil, fmt.Errorf("plan_tier_max_inflight: expected an object (or a JSON object string); got %T", v)
+	}
+	out := make(map[string]int, len(raw))
+	for k, val := range raw {
+		if !inference.ValidPlanTier(inference.PlanTier(k)) {
+			return nil, fmt.Errorf("plan_tier_max_inflight: unknown tier %q (allowed: %s, %s, %s, %s)",
+				k, inference.PlanTierPro, inference.PlanTierMax5x, inference.PlanTierMax20x, inference.PlanTierAPI)
+		}
+		switch n := val.(type) {
+		case int:
+			if n < 0 {
+				return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0", k)
+			}
+			out[k] = n
+		case json.Number:
+			if iv, err := n.Int64(); err == nil {
+				if iv < 0 {
+					return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0", k)
+				}
+				out[k] = int(iv)
+				continue
+			}
+			return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0; got %v", k, val)
+		case float64:
+			if n < 0 || n != math.Trunc(n) {
+				return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0", k)
+			}
+			out[k] = int(n)
+		case string:
+			iv, err := strconv.Atoi(strings.TrimSpace(n))
+			if err != nil || iv < 0 {
+				return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0", k)
+			}
+			out[k] = iv
+		case bool:
+			return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0, not a boolean", k)
+		default:
+			return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0; got %v", k, val)
+		}
+	}
+	return out, nil
+}
+
+// validateJudgeSizeThresholdPatch checks autonomous.judge_size_threshold_lines
+// in a config patch: a whole number of 0 or more. Zero is valid and turns
+// size-aware judge routing off.
+func validateJudgeSizeThresholdPatch(patch map[string]interface{}) error {
+	const key = "autonomous.judge_size_threshold_lines"
+	v, ok := patch[key]
+	if !ok {
+		return nil
+	}
+	switch x := v.(type) {
+	case float64:
+		if x == math.Trunc(x) && x >= 0 && x <= math.MaxInt32 {
+			return nil
+		}
+	case int:
+		if x >= 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s: %v is invalid; use a whole number of 0 or more (0 turns size-aware judge routing off)", key, v)
+}
+
+// validateJudgePromptDeliveryPatch checks the judge prompt delivery keys in a
+// config patch: autonomous.judge_prompt_file_threshold_lines is a whole number
+// from 0 to 100000, autonomous.judge_delivery_wait_per_thousand_lines_seconds a
+// whole number from 0 to 3600.
+func validateJudgePromptDeliveryPatch(patch map[string]interface{}) error {
+	for key, max := range map[string]float64{
+		"autonomous.judge_prompt_file_threshold_lines":              100000,
+		"autonomous.judge_delivery_wait_per_thousand_lines_seconds": 3600,
+	} {
+		v, ok := patch[key]
+		if !ok {
+			continue
+		}
+		var f float64
+		switch x := v.(type) {
+		case float64:
+			f = x
+		case int:
+			f = float64(x)
+		default:
+			return fmt.Errorf("%s: %v is invalid; use a whole number from 0 to %d", key, v, int(max))
+		}
+		if f != math.Trunc(f) || f < 0 || f > max {
+			return fmt.Errorf("%s: %v is invalid; use a whole number from 0 to %d", key, v, int(max))
+		}
+	}
+	return nil
+}
+
+// validateJudgeStrongRoutingPatch checks the two strong-first judge routing
+// keys in a config patch: autonomous.judge_strong_backend must be a string
+// (empty clears the strong-first routing), and
+// autonomous.judge_verdict_cache_enabled must be a JSON boolean (JSON null is
+// not a boolean). Each refusal names the key.
+func validateJudgeStrongRoutingPatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.judge_strong_backend"]; ok {
+		if _, isStr := v.(string); !isStr {
+			return fmt.Errorf("autonomous.judge_strong_backend: %v is invalid; use a backend name, or an empty string to turn the strong-first routing off", v)
+		}
+	}
+	if v, ok := patch["autonomous.judge_verdict_cache_enabled"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("autonomous.judge_verdict_cache_enabled: %v is invalid; use a boolean (true or false)", v)
+		}
+	}
+	return nil
+}
+
+// validateQuestionQualityPatch checks the four autonomous.questions quality and
+// queue preview keys in a PUT /api/config body. Each refusal names the key and
+// the valid values; a number must be a whole JSON number (a quoted number is
+// not one).
+func validateQuestionQualityPatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.questions.quality_mode"]; ok {
+		mode, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("autonomous.questions.quality_mode: %v is invalid; use %q, %q or %q",
+				v, config.QuestionQualityModeOff, config.QuestionQualityModeWarn, config.QuestionQualityModeRefuse)
+		}
+		if err := config.ValidateQuestionQualityMode(mode); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.questions.quality_tracker_id_pattern"]; ok {
+		pat, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("autonomous.questions.quality_tracker_id_pattern: %v is invalid; use a regular expression as text (empty for the default)", v)
+		}
+		if err := config.ValidateQuestionQualityTrackerIDPattern(pat); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.questions.quality_min_text_chars"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("autonomous.questions.quality_min_text_chars: %v is invalid; use a whole number >= 0 (default %d)",
+				v, config.DefaultQuestionQualityMinTextChars)
+		}
+		if err := config.ValidateQuestionQualityMinTextChars(n); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.questions.queue_preview_lines"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("autonomous.questions.queue_preview_lines: %v is invalid; use a whole number >= 1 (default %d)",
+				v, config.DefaultQuestionQueuePreviewLines)
+		}
+		if err := config.ValidateQuestionQueuePreviewLines(n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// decisionRecordBoolKeys, decisionRecordStringKeys and the keys named in
+// validateDecisionRecordPatch are the autonomous.decisions.* keys a PUT
+// /api/config body may carry. Every other autonomous.decisions.* key is not a
+// key at all; the generic patch path ignores it like any unknown key.
+var decisionRecordBoolKeys = []string{
+	"autonomous.decisions.enabled",
+	"autonomous.decisions.folder_withdraw_on_delete",
+	"autonomous.decisions.clarity_require_tradeoffs",
+	"autonomous.decisions.clarity_require_label",
+}
+
+var decisionRecordStringKeys = []string{
+	"autonomous.decisions.folder",
+	"autonomous.decisions.folder_glob",
+	"autonomous.decisions.doc_root",
+	"autonomous.decisions.doc_status_template",
+}
+
+// parseDecisionFollowUps reads autonomous.decisions.follow_ups from a PUT
+// /api/config body: a list of {name, kind, target} objects, or a JSON text of
+// such a list (the comm channel and the CLI send text). It checks the rules
+// the config file load checks.
+func parseDecisionFollowUps(v interface{}) ([]config.AutonomousDecisionFollowUp, error) {
+	const key = "autonomous.decisions.follow_ups"
+	var raw []byte
+	switch x := v.(type) {
+	case string:
+		raw = []byte(strings.TrimSpace(x))
+		if len(raw) == 0 {
+			return nil, nil
+		}
+	case []interface{}:
+		b, err := json.Marshal(x)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %v", key, err)
+		}
+		raw = b
+	case nil:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("%s: expected a list of {name, kind, target} objects (or its JSON text); got %T", key, v)
+	}
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	var list []config.AutonomousDecisionFollowUp
+	if err := dec.Decode(&list); err != nil {
+		return nil, fmt.Errorf("%s: expected a list of {name, kind, target} objects: %v", key, err)
+	}
+	if err := config.ValidateDecisionFollowUps(list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// parseDecisionFrontMatterKeys reads autonomous.decisions.front_matter_keys
+// from a PUT /api/config body: an object of text values, or its JSON text.
+func parseDecisionFrontMatterKeys(v interface{}) (map[string]string, error) {
+	const key = "autonomous.decisions.front_matter_keys"
+	switch x := v.(type) {
+	case nil:
+		return map[string]string{}, nil
+	case string:
+		if strings.TrimSpace(x) == "" {
+			return map[string]string{}, nil
+		}
+		out := map[string]string{}
+		if err := json.Unmarshal([]byte(x), &out); err != nil {
+			return nil, fmt.Errorf("%s: expected an object of canonical name to file name (or its JSON text): %v", key, err)
+		}
+		return out, nil
+	case map[string]interface{}:
+		out := make(map[string]string, len(x))
+		for k, val := range x {
+			s, ok := val.(string)
+			if !ok {
+				return nil, fmt.Errorf("%s: the name for %q must be text; got %T", key, k, val)
+			}
+			out[k] = s
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("%s: expected an object of canonical name to file name (or its JSON text); got %T", key, v)
+}
+
+// validateDecisionRecordPatch checks the autonomous.decisions keys in a PUT
+// /api/config body. A bad value rejects the whole PUT before anything is
+// applied, by the same rules the config file load uses; each refusal names the
+// key and the valid values.
+func validateDecisionRecordPatch(patch map[string]interface{}) error {
+	for _, k := range decisionRecordBoolKeys {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				return fmt.Errorf("%s: must be a boolean (true or false)", k)
+			}
+		}
+	}
+	for _, k := range decisionRecordStringKeys {
+		if v, ok := patch[k]; ok {
+			if _, isStr := v.(string); !isStr {
+				return fmt.Errorf("%s: %v is invalid; use text", k, v)
+			}
+		}
+	}
+	textRules := []struct {
+		key    string
+		hint   string
+		verify func(string) error
+	}{
+		{"autonomous.decisions.clarity_mode", `"off", "warn" or "refuse"`, config.ValidateDecisionClarityMode},
+		{"autonomous.decisions.doc_status_mode", `"off", "report" or "on"`, config.ValidateDecisionDocStatusMode},
+		{"autonomous.decisions.clarity_tracker_id_pattern", "a regular expression as text (empty for the built-in pattern)", config.ValidateDecisionClarityTrackerIDPattern},
+		{"autonomous.decisions.doc_status_pattern", "a regular expression as text (empty for the default)", config.ValidateDecisionDocStatusPattern},
+		{"autonomous.decisions.front_matter_delimiter", "non-empty text", config.ValidateDecisionFrontMatterDelimiter},
+		{"autonomous.decisions.front_matter_separator", "non-empty text", config.ValidateDecisionFrontMatterSeparator},
+		{"autonomous.decisions.front_matter_field_separator", "non-empty text", config.ValidateDecisionFrontMatterFieldSeparator},
+	}
+	for _, r := range textRules {
+		v, ok := patch[r.key]
+		if !ok {
+			continue
+		}
+		s, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("%s: %v is invalid; use %s", r.key, v, r.hint)
+		}
+		if err := r.verify(s); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.decisions.clarity_min_text_chars"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("autonomous.decisions.clarity_min_text_chars: %v is invalid; use a whole number >= 0 (default %d)",
+				v, config.DefaultDecisionClarityMinTextChars)
+		}
+		if err := config.ValidateDecisionClarityMinTextChars(n); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.decisions.front_matter_keys"]; ok {
+		if _, err := parseDecisionFrontMatterKeys(v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.decisions.follow_ups"]; ok {
+		if _, err := parseDecisionFollowUps(v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyDecisionRecordKey stores one validated autonomous.decisions key. Keys
+// whose default is not the zero value are stored as pointers, so an explicit
+// false, 0 or empty text is told apart from an absent key.
+func applyDecisionRecordKey(d *config.AutonomousDecisionsConfig, k string, v interface{}) {
+	str := func() (string, bool) { s, ok := v.(string); return s, ok }
+	switch k {
+	case "autonomous.decisions.enabled":
+		if b, ok := v.(bool); ok {
+			d.Enabled = &b
+		}
+	case "autonomous.decisions.folder_withdraw_on_delete":
+		if b, ok := v.(bool); ok {
+			d.FolderWithdrawOnDelete = &b
+		}
+	case "autonomous.decisions.clarity_require_tradeoffs":
+		if b, ok := v.(bool); ok {
+			d.ClarityRequireTradeoffs = &b
+		}
+	case "autonomous.decisions.clarity_require_label":
+		if b, ok := v.(bool); ok {
+			d.ClarityRequireLabel = &b
+		}
+	case "autonomous.decisions.folder":
+		if s, ok := str(); ok {
+			d.Folder = s
+		}
+	case "autonomous.decisions.doc_root":
+		if s, ok := str(); ok {
+			d.DocRoot = s
+		}
+	case "autonomous.decisions.folder_glob":
+		if s, ok := str(); ok {
+			d.FolderGlob = &s
+		}
+	case "autonomous.decisions.doc_status_template":
+		if s, ok := str(); ok {
+			d.DocStatusTemplate = &s
+		}
+	case "autonomous.decisions.front_matter_delimiter":
+		if s, ok := str(); ok {
+			d.FrontMatterDelimiter = &s
+		}
+	case "autonomous.decisions.front_matter_separator":
+		if s, ok := str(); ok {
+			d.FrontMatterSeparator = &s
+		}
+	case "autonomous.decisions.front_matter_field_separator":
+		if s, ok := str(); ok {
+			d.FrontMatterFieldSeparator = &s
+		}
+	case "autonomous.decisions.clarity_mode":
+		if s, ok := str(); ok {
+			d.ClarityMode = &s
+		}
+	case "autonomous.decisions.doc_status_mode":
+		if s, ok := str(); ok {
+			d.DocStatusMode = &s
+		}
+	case "autonomous.decisions.clarity_tracker_id_pattern":
+		if s, ok := str(); ok {
+			d.ClarityTrackerIDPattern = &s
+		}
+	case "autonomous.decisions.doc_status_pattern":
+		if s, ok := str(); ok {
+			d.DocStatusPattern = &s
+		}
+	case "autonomous.decisions.clarity_min_text_chars":
+		if n, ok := toInt(v); ok {
+			d.ClarityMinTextChars = &n
+		}
+	case "autonomous.decisions.front_matter_keys":
+		if m, err := parseDecisionFrontMatterKeys(v); err == nil {
+			d.FrontMatterKeys = m
+		}
+	case "autonomous.decisions.follow_ups":
+		if list, err := parseDecisionFollowUps(v); err == nil {
+			d.FollowUps = list
+		}
+	}
+}
+
+// decisionRecordSurface is the effective autonomous.decisions values GET
+// /api/config returns.
+func decisionRecordSurface(d config.AutonomousDecisionsConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"enabled":                      d.EffectiveEnabled(),
+		"folder":                       d.EffectiveFolder(),
+		"folder_glob":                  d.EffectiveFolderGlob(),
+		"front_matter_delimiter":       d.EffectiveFrontMatterDelimiter(),
+		"front_matter_separator":       d.EffectiveFrontMatterSeparator(),
+		"front_matter_field_separator": d.EffectiveFrontMatterFieldSeparator(),
+		"front_matter_keys":            d.EffectiveFrontMatterKeys(),
+		"folder_withdraw_on_delete":    d.EffectiveFolderWithdrawOnDelete(),
+		"clarity_mode":                 d.EffectiveClarityMode(),
+		"clarity_min_text_chars":       d.EffectiveClarityMinTextChars(),
+		"clarity_require_tradeoffs":    d.EffectiveClarityRequireTradeoffs(),
+		"clarity_require_label":        d.EffectiveClarityRequireLabel(),
+		"clarity_tracker_id_pattern":   d.EffectiveClarityTrackerIDPattern(),
+		"doc_root":                     d.EffectiveDocRoot(),
+		"doc_status_mode":              d.EffectiveDocStatusMode(),
+		"doc_status_pattern":           d.EffectiveDocStatusPattern(),
+		"doc_status_template":          d.EffectiveDocStatusTemplate(),
+		"follow_ups":                   d.EffectiveFollowUps(),
+	}
+}
+
+// validateResourceLimitsPatch checks the resource_limits.* keys in a PUT:
+// each is a whole number, share is 1 to 100, floor and cap are >= 1, and the
+// resulting floor (patched or current) is not above the resulting cap.
+func validateResourceLimitsPatch(cur config.ResourceLimitsConfig, patch map[string]interface{}) error {
+	next := cur
+	fields := []struct {
+		key string
+		dst *int
+	}{
+		{"resource_limits.memory_share_percent", &next.MemorySharePercent},
+		{"resource_limits.memory_floor_mb", &next.MemoryFloorMB},
+		{"resource_limits.memory_cap_mb", &next.MemoryCapMB},
+	}
+	touched := false
+	for _, f := range fields {
+		v, ok := patch[f.key]
+		if !ok {
+			continue
+		}
+		touched = true
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("%s: %v is invalid; use a whole number", f.key, v)
+		}
+		*f.dst = n
+	}
+	if !touched {
+		return nil
+	}
+	if _, ok := patch["resource_limits.memory_share_percent"]; ok &&
+		(next.MemorySharePercent < 1 || next.MemorySharePercent > 100) {
+		return fmt.Errorf("resource_limits.memory_share_percent: %d is invalid; use 1 to 100", next.MemorySharePercent)
+	}
+	for _, f := range fields[1:] {
+		if _, ok := patch[f.key]; ok && *f.dst < 1 {
+			return fmt.Errorf("%s: %d is invalid; use a whole number >= 1", f.key, *f.dst)
+		}
+	}
+	if next.MemoryFloorMB > next.MemoryCapMB {
+		return fmt.Errorf("resource_limits.memory_floor_mb (%d) must not be above resource_limits.memory_cap_mb (%d)",
+			next.MemoryFloorMB, next.MemoryCapMB)
+	}
+	return nil
+}
+
+// validateIdentityBackupsPatch checks identity.backups_to_keep: a whole
+// number >= 1.
+func validateIdentityBackupsPatch(patch map[string]interface{}) error {
+	v, ok := patch["identity.backups_to_keep"]
+	if !ok {
+		return nil
+	}
+	n, whole := wholeNumber(v)
+	if !whole {
+		return fmt.Errorf("identity.backups_to_keep: %v is invalid; use a whole number >= 1 (default %d)",
+			v, config.DefaultIdentityBackupsToKeep)
+	}
+	return config.ValidateIdentityBackupsToKeep(n)
+}
+
+// validateUIPromptPatch checks session.dismiss_ui_prompts and the three
+// session.ui_prompt_* keys: real types and whole-number bounds, by the same
+// rules the config file load uses.
+func validateUIPromptPatch(patch map[string]interface{}) error {
+	var firstErr error
+	err := func(e error) {
+		if firstErr == nil && e != nil {
+			firstErr = e
+		}
+	}
+	if v, ok := patch["session.dismiss_ui_prompts"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			firstErr = fmt.Errorf("session.dismiss_ui_prompts: %v is invalid; use a boolean (true or false)", v)
+		}
+	}
+	if v, ok := patch["session.ui_prompt_dismiss_delay_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("session.ui_prompt_dismiss_delay_seconds: %v is invalid; use a whole number >= 0 (0 = send at once; default %d)",
+				v, config.DefaultUIPromptDismissDelaySeconds))
+		} else {
+			err(config.ValidateUIPromptDismissDelaySeconds(n))
+		}
+	}
+	if v, ok := patch["session.ui_prompt_clear_bound_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("session.ui_prompt_clear_bound_seconds: %v is invalid; use a whole number >= 1 (default %d)",
+				v, config.DefaultUIPromptClearBoundSeconds))
+		} else {
+			err(config.ValidateUIPromptClearBoundSeconds(n))
+		}
+	}
+	if v, ok := patch["session.ui_prompt_max_attempts"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("session.ui_prompt_max_attempts: %v is invalid; use a whole number >= 1 (default %d)",
+				v, config.DefaultUIPromptMaxAttempts))
+		} else {
+			err(config.ValidateUIPromptMaxAttempts(n))
+		}
+	}
+	return firstErr
+}
+
+// validateUISplashPatch checks the ui.* splash minimum-dwell keys: a whole
+// number from 0 to 60 inclusive, by the same rules the config file load uses.
+func validateUISplashPatch(patch map[string]interface{}) error {
+	var firstErr error
+	err := func(e error) {
+		if firstErr == nil && e != nil {
+			firstErr = e
+		}
+	}
+	if v, ok := patch["ui.splash_min_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("ui.splash_min_seconds: %v is invalid; use a whole number from 0 to %d (0 = keep the legacy timing; default %d)",
+				v, config.MaxUISplashSeconds, config.DefaultUISplashMinSeconds))
+		} else {
+			err(config.ValidateUISplashMinSeconds(n))
+		}
+	}
+	if v, ok := patch["ui.splash_min_seconds_new_version"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("ui.splash_min_seconds_new_version: %v is invalid; use a whole number from 0 to %d (0 = keep the legacy timing; default %d)",
+				v, config.MaxUISplashSeconds, config.DefaultUISplashMinSecondsNewVersion))
+		} else {
+			err(config.ValidateUISplashMinSecondsNewVersion(n))
+		}
+	}
+	return firstErr
+}
+
+// wholeNumber reports v as an int when it is a JSON number with no fractional
+// part that fits an int32; anything else (a string, a fraction, a bool) is not.
+func wholeNumber(v interface{}) (int, bool) {
+	switch x := v.(type) {
+	case float64:
+		if x == math.Trunc(x) && x >= math.MinInt32 && x <= math.MaxInt32 {
+			return int(x), true
+		}
+	case int:
+		return x, true
+	}
+	return 0, false
 }
 
 func toInt(v interface{}) (int, bool) {
@@ -7596,6 +12983,22 @@ func toQuickCommands(v interface{}) ([]config.QuickCommand, bool) {
 	return result, len(result) > 0
 }
 
+// isSecretFingerprint reports whether fp is a 16- or 64-character hex
+// fingerprint (the sha256 of a secret, short or full form).
+func isSecretFingerprint(fp string) bool {
+	hex := strings.TrimSpace(fp)
+	if len(hex) != 16 && len(hex) != 64 {
+		return false
+	}
+	for _, c := range hex {
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 // splitCSV (v5.17.0) is the convenience fallback for the PWA's
 // text-input multi-value entry (e.g. "rules, security,
 // release-readiness" → []string{"rules","security","release-readiness"}).
@@ -7626,7 +13029,12 @@ func defaultEventsNotifySurface(n config.AutonomousNotifyConfig) map[string]inte
 	if ev == nil {
 		ev = []string{}
 	}
-	return map[string]interface{}{"default_events": ev}
+	return map[string]interface{}{
+		"default_events":     ev,
+		"pending_events_max": n.EffectivePendingEventsMax(),
+		"webhook":            webhookNotifySurface(n.Webhook),
+		"forwarding":         forwardingNotifySurface(n.Forwarding),
+	}
 }
 
 // ---- Proxy endpoint --------------------------------------------------------
@@ -8635,6 +14043,7 @@ func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
 		"subtype":    body.Type,
 		"request_id": body.RequestID,
 	}
+	s.tracePermissionRelay(r.Context(), body.Type, body.RequestID)
 	raw, _ := json.Marshal(notifyData)
 	outMsg := WSMessage{Type: MsgChannelNotify, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(outMsg)
@@ -8693,6 +14102,8 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 			return sessions[i].CreatedAt.After(sessions[j].CreatedAt)
 		})
 		for _, sess := range sessions {
+			// stalled is excluded: it is non-terminal but the process is not
+			// reachable, so it can't accept a redelivered message.
 			if sess.BackendFamily == "claude-code" &&
 				(sess.State == session.StateRunning || sess.State == session.StateWaitingInput) &&
 				sess.Hostname == s.hostname &&
@@ -8777,29 +14188,26 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		}
 		sessID := targetSess.FullID
 		go func() {
-			// Poll up to 60s for the session to reach the main ❯ prompt (no
-			// startup dialogs). The auto-accept goroutines dismiss the trust
-			// dialogs, so by the time GetActiveStartupPromptInput returns "" the
-			// session is interactive and ready to receive typed input.
-			for i := 0; i < 60; i++ {
-				time.Sleep(time.Second)
-				if dialog := s.manager.GetActiveStartupPromptInput(sessID); dialog == "" {
-					if sess, ok := s.manager.GetSession(sessID); ok && sess.State == session.StateWaitingInput {
-						if err := s.manager.SendInput(sessID, input, "channel-task"); err != nil {
-							fmt.Printf("[channel] task send_input for %s: %v\n", sessID, err)
-							s.manager.ReleaseTaskDelivery(sessID)
-						} else {
-							fmt.Printf("[channel] task delivered to %s via send_input\n", sessID)
-							// Record delivery time so processOutputLine can suppress
-							// the 5 s task-echo window (TUI re-renders task text).
-							s.manager.MarkTaskDelivered(sessID)
-						}
-						return
-					}
-				}
+			// Wait for the strict main-prompt check (❯ input line, no active
+			// choice dialog) and type the task. Each attempt waits up to the
+			// configured delivery window (60 s default); DeliverOneShotTask
+			// marks the task delivered only on success and releases the claim
+			// after its final failed attempt.
+			attempts := 3 // production defaults used when s.cfg is nil
+			window := 60 * time.Second
+			if s.cfg != nil {
+				attempts = s.cfg.Session.EffectiveTaskDeliveryAttempts()
+				window = s.cfg.Session.EffectiveTaskDeliveryWindow()
 			}
-			fmt.Printf("[channel] task timeout waiting for main prompt on %s\n", sessID)
-			s.manager.ReleaseTaskDelivery(sessID)
+			if err := s.manager.DeliverOneShotTask(sessID, input, attempts, window, config.TaskDeliveryBackoff); err != nil {
+				if errors.Is(err, session.ErrTaskUndelivered) {
+					fmt.Printf("[channel] task delivery failed for %s: no main prompt within %s across %d attempts\n", sessID, window, attempts)
+				} else {
+					fmt.Printf("[channel] task delivery failed for %s after %d attempts (window %s): %v\n", sessID, attempts, window, err)
+				}
+				return
+			}
+			fmt.Printf("[channel] task delivered to %s via send_input\n", sessID)
 		}()
 		// Broadcast task delivery to WS clients for the channel tab
 		s.recordChannelHistory(targetSess.FullID, targetSess.Task, "outgoing")
@@ -8934,7 +14342,7 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.restartFn == nil {
+	if !s.restartAvailable() {
 		http.Error(w, "restart not available", http.StatusNotImplemented)
 		return
 	}
@@ -8947,13 +14355,63 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	force := restartForceRequested(r)
+	rep, hasRep := s.restartInterruptions()
+	if hasRep && rep.NeedsForce && !force {
+		// Running work would be interrupted and the operator did not pass
+		// force: refuse, and answer with the read-only report.
+		writeRestartRefused(w, rep)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "restarting"}) //nolint:errcheck
+	resp := map[string]interface{}{"status": "restarting"}
+	if hasRep {
+		// What this restart interrupts, counted before the restart policy runs.
+		resp["interrupts"] = rep
+	}
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	s.hub.Broadcast(MsgNotification, map[string]string{"message": "Daemon restarting…"})
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		s.restartFn()
+		// Declare the shutdown as API-initiated so the restarted process
+		// records source=api-restart with via in the audit entry +
+		// last-shutdown.json (picked up by the daemon's Capture).
+		shutdowncause.MarkAPIInitiated("api-restart")
+		s.doRestart(force)
 	}()
+}
+
+// restartForceRequested reports whether a restart request carries the force
+// flag, as ?force=true or a JSON body {"force": true}.
+func restartForceRequested(r *http.Request) bool {
+	switch strings.ToLower(r.URL.Query().Get("force")) {
+	case "1", "true", "yes":
+		return true
+	}
+	if r.Body == nil || r.ContentLength == 0 {
+		return false
+	}
+	var body struct {
+		Force bool `json:"force"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return false
+	}
+	return body.Force
+}
+
+// writeRestartRefused answers 409 Conflict with the full read-only interruption
+// report, the policy, and how to pass force. Nothing is restarted.
+func writeRestartRefused(w http.ResponseWriter, rep autonomous.RestartInterruption) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"status":       "refused",
+		"error":        "restart refused: running work would be interrupted; pass force to restart anyway",
+		"needs_force":  true,
+		"how_to_force": `POST /api/restart?force=true, or POST /api/restart with {"force": true}`,
+		"interrupts":   rep,
+	})
 }
 
 // handleQuickCommands (BL209, v5.27.7 — datawatch#28) returns the
@@ -9242,8 +14700,20 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			"phase":   "restarting",
 		})
 		time.Sleep(800 * time.Millisecond)
-		if s.restartFn != nil {
-			s.restartFn() // calls os.Exit(0); never returns
+		if s.restartAvailable() {
+			// The restart guard refuses a restart that would interrupt running
+			// work without force. The new binary is installed either way; leave
+			// the daemon up and say so instead of exiting below.
+			if rep, ok := s.restartInterruptions(); ok && rep.NeedsForce {
+				s.hub.Broadcast(MsgNotification, map[string]string{
+					"message": "[update] Installed v" + latest + ". Restart deferred: running work would be interrupted. Restart with force to apply.",
+				})
+				return
+			}
+			// Mark as update-initiated so the cause record shows
+			// source=api-restart via=update-restart.
+			shutdowncause.MarkAPIInitiated("update-restart")
+			s.doRestart(false) // calls os.Exit(0) when it proceeds
 		}
 		// Fallback if restartFn is nil.
 		fmt.Printf("[update] installed v%s — run `datawatch start` to bring the daemon back up\n", latest)
@@ -9841,4 +15311,291 @@ func (s *Server) handleDiscussionSubs(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 	}
+}
+
+// parallelKeyPrefix is the REST key prefix for the parallel execution
+// knobs (autonomous.parallel.*).
+const parallelKeyPrefix = "autonomous.parallel."
+
+// parallelSurface renders the parallel block on the GET /api/config
+// surface as effective values, read from the Effective* accessor, never a
+// literal.
+func parallelSurface(c config.AutonomousParallelConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"read_only_tasks":       autonomous.EffectiveReadOnlyTasks(c),
+		"worktree_per_task":     autonomous.EffectiveWorktreePerTask(c),
+		"merge_conflict_policy": autonomous.EffectiveMergeConflictPolicy(c),
+		"merge_conflict_model":  autonomous.EffectiveMergeConflictModel(c),
+		"merge_retry_seconds":   autonomous.EffectiveMergeRetrySeconds(c),
+	}
+}
+
+// taskTemplateModeSurface renders the stored task template mode map on the
+// GET /api/config surface: nil becomes {} (an empty object, not null), so
+// an unset mode map visibly has no per-template overrides and an absent id
+// reads its shipped default (llm) via EffectiveTaskTemplateMode.
+func taskTemplateModeSurface(m map[string]string) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for id, mode := range m {
+		out[id] = mode
+	}
+	return out
+}
+
+// taskTemplateModePatchTouched reports whether a PUT /api/config patch sets
+// any task template mode key: the whole map under
+// autonomous.task_templates.mode, or a dotted form under
+// autonomous.task_templates.mode.<id>.
+func taskTemplateModePatchTouched(patch map[string]interface{}) bool {
+	if _, ok := patch["autonomous.task_templates.mode"]; ok {
+		return true
+	}
+	for k := range patch {
+		if id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode."); ok && id != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// taskTemplateModePatchCandidate merges the stored task template mode map
+// with a PUT's entries: the whole object under
+// autonomous.task_templates.mode (each value a string) and each dotted key
+// under autonomous.task_templates.mode.<id>. A non-object mode map, a
+// non-string entry, or an empty template id is an error; the result is the
+// map to validate (TaskTemplatesConfig.Validate) and store.
+func taskTemplateModePatchCandidate(stored map[string]string, patch map[string]interface{}) (map[string]string, error) {
+	candidate := make(map[string]string, len(stored))
+	for id, mode := range stored {
+		candidate[id] = mode
+	}
+	if v, ok := patch["autonomous.task_templates.mode"]; ok {
+		obj, isObj := v.(map[string]interface{})
+		if !isObj {
+			return nil, errors.New(`autonomous.task_templates.mode: must be an object of template id to mode ("llm", "daemon" or "off")`)
+		}
+		for id, mv := range obj {
+			mode, isStr := mv.(string)
+			if !isStr || id == "" {
+				return nil, fmt.Errorf(`autonomous.task_templates.mode[%q]: template id and mode must be non-empty strings ("llm", "daemon" or "off")`, id)
+			}
+			candidate[id] = mode
+		}
+	}
+	for k, v := range patch {
+		id, ok := strings.CutPrefix(k, "autonomous.task_templates.mode.")
+		if !ok || id == "" {
+			continue
+		}
+		mode, isStr := v.(string)
+		if !isStr {
+			return nil, fmt.Errorf(`autonomous.task_templates.mode[%q]: must be a string ("llm", "daemon" or "off")`, id)
+		}
+		candidate[id] = mode
+	}
+	return candidate, nil
+}
+
+// validateParallelPatch checks every autonomous.parallel.* value present
+// in the patch before anything is applied, so one bad value rejects the
+// whole PUT rather than being silently skipped.
+func validateParallelPatch(patch map[string]interface{}) error {
+	if v, ok := patch[parallelKeyPrefix+"read_only_tasks"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("%sread_only_tasks: must be a boolean", parallelKeyPrefix)
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"worktree_per_task"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("%sworktree_per_task: must be a boolean", parallelKeyPrefix)
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"merge_conflict_policy"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("%smerge_conflict_policy: must be a string", parallelKeyPrefix)
+		}
+		if err := config.ValidateMergeConflictPolicy(str); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"merge_conflict_model"]; ok {
+		if _, isStr := v.(string); !isStr {
+			return fmt.Errorf("%smerge_conflict_model: must be a string", parallelKeyPrefix)
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"merge_retry_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("%smerge_retry_seconds: must be a whole number of seconds >= 0 (0 = timer off, default %d)",
+				parallelKeyPrefix, config.DefaultMergeRetrySeconds)
+		}
+		if err := config.ValidateMergeRetrySeconds(&n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyParallelValue stores one parallel value (validated above in
+// handlePutConfig; a value that fails the check here is left unchanged).
+// read_only_tasks is a pointer so an explicit false is distinguishable
+// from an absent key.
+func applyParallelValue(pc *config.AutonomousParallelConfig, field string, v interface{}) {
+	switch field {
+	case "read_only_tasks":
+		if b, ok := v.(bool); ok {
+			pc.ReadOnlyTasks = &b
+		}
+	case "worktree_per_task":
+		if b, ok := v.(bool); ok {
+			pc.WorktreePerTask = &b
+		}
+	case "merge_conflict_policy":
+		if str, ok := v.(string); ok && config.ValidateMergeConflictPolicy(str) == nil {
+			pc.MergeConflictPolicy = str
+		}
+	case "merge_conflict_model":
+		if str, ok := v.(string); ok {
+			pc.MergeConflictModel = str
+		}
+	case "merge_retry_seconds":
+		if n, ok := wholeNumber(v); ok && config.ValidateMergeRetrySeconds(&n) == nil {
+			pc.MergeRetrySeconds = &n
+		}
+	}
+}
+
+const livenessOverridesKey = "session.liveness_idle_timeout_overrides"
+
+// livenessOverridesForDisplay returns a copy of the overrides map for GET
+// /api/config; it is never nil so clients always see an object.
+func livenessOverridesForDisplay(m map[string]int) map[string]int {
+	out := make(map[string]int, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// livenessOverridesFromValue converts a JSON object with whole-number values
+// into the overrides map. ok is false when v is not such an object.
+func livenessOverridesFromValue(v interface{}) (map[string]int, bool) {
+	switch obj := v.(type) {
+	case map[string]interface{}:
+		m := make(map[string]int, len(obj))
+		for k, raw := range obj {
+			n, whole := wholeNumber(raw)
+			if !whole {
+				return nil, false
+			}
+			m[k] = n
+		}
+		return m, true
+	case map[string]int:
+		m := make(map[string]int, len(obj))
+		for k, n := range obj {
+			m[k] = n
+		}
+		return m, true
+	}
+	return nil, false
+}
+
+// validateLivenessPatch checks the two liveness keys in a config patch. It
+// also folds the nested form "session.liveness_idle_timeout_overrides.<name>"
+// into the object form, so applyConfigPatch only sees one shape. Called
+// before anything is applied.
+func validateLivenessPatch(patch map[string]interface{}, known []string) error {
+	window := 0
+	if v, ok := patch["session.liveness_window_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("session.liveness_window_seconds: %v is invalid; use a whole number of seconds >= 0 (0 = default %d)",
+				v, config.DefaultLivenessWindowSeconds)
+		}
+		window = n
+	}
+	var overrides map[string]int
+	prefix := livenessOverridesKey + "."
+	var nested []string
+	for k := range patch {
+		if strings.HasPrefix(k, prefix) && len(k) > len(prefix) {
+			nested = append(nested, k)
+		}
+	}
+	if v, ok := patch[livenessOverridesKey]; ok {
+		m, isObj := livenessOverridesFromValue(v)
+		if !isObj {
+			return fmt.Errorf("%s: %v is invalid; use an object of backend name to whole seconds (0 = off)", livenessOverridesKey, v)
+		}
+		overrides = m
+	}
+	if len(nested) > 0 {
+		if overrides == nil {
+			overrides = map[string]int{}
+		}
+		for _, k := range nested {
+			name := strings.TrimPrefix(k, prefix)
+			n, whole := wholeNumber(patch[k])
+			if !whole {
+				return fmt.Errorf("%s: %v is invalid; use whole seconds >= 0 (0 = off)", k, patch[k])
+			}
+			overrides[name] = n
+			delete(patch, k)
+		}
+		out := make(map[string]interface{}, len(overrides))
+		for k, n := range overrides {
+			out[k] = float64(n)
+		}
+		patch[livenessOverridesKey] = out
+	}
+	return config.ValidateLivenessSettings(window, overrides, known)
+}
+
+// SessionMemoryCeiling is the effective memory ceiling shown on the session
+// status: the limit in MB, where it came from, and how it is enforced (scope,
+// watchdog or none). Warning is true and Reason says why when nothing caps
+// verification runs.
+type SessionMemoryCeiling struct {
+	EffectiveMB     int    `json:"effective_mb"`
+	Source          string `json:"source"`
+	EnforcementPath string `json:"enforcement_path"`
+	Warning         bool   `json:"warning,omitempty"`
+	// Reason is "no_settings" (no ceiling settings installed) or
+	// "no_enforcement" (host has neither a user scope nor /proc); empty
+	// when a ceiling is enforced.
+	Reason string `json:"reason,omitempty"`
+}
+
+// memoryCeilingProvider is implemented by the autonomous Manager.
+type memoryCeilingProvider interface {
+	MemoryCeiling() autonomous.MemoryCeilingStatus
+}
+
+// sessionMemoryCeiling builds the ceiling block of the session status. It
+// returns nil when no autonomous manager is wired, so a status with nothing to
+// say carries no block.
+func (s *Server) sessionMemoryCeiling() *SessionMemoryCeiling {
+	p, ok := s.autonomousMgr.(memoryCeilingProvider)
+	if !ok || p == nil {
+		return nil
+	}
+	st := p.MemoryCeiling()
+	out := &SessionMemoryCeiling{EffectiveMB: st.EffectiveMB, Source: st.Source, EnforcementPath: st.EnforcementPath}
+	switch {
+	case st.Source == autonomous.MemoryCeilingSourceNone || st.EffectiveMB <= 0:
+		out.Warning, out.Reason = true, "no_settings"
+	case st.EnforcementPath == autonomous.VerifyCeilingNone:
+		out.Warning, out.Reason = true, "no_enforcement"
+	}
+	return out
+}
+
+// effectiveReleasePath shows the default when autonomous.release_path is unset.
+func effectiveReleasePath(v string) string {
+	if v == "" {
+		return config.ReleasePathDirectPush
+	}
+	return v
 }

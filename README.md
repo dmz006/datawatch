@@ -2,271 +2,144 @@
 
 <p align="center"><img src="internal/server/web/icon-512.svg" width="180" alt="datawatch logo"/></p>
 
-**A distributed control plane for orchestrating AI work — recursive, episodic, secure, and structured across hosts, clusters, and channels.**
+**Run AI coding and automation work from one place: on your own machines, from your phone, or from chat.**
 
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v9.0.46-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v9.64.2-success)](CHANGELOG.md)
 
-`datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
+datawatch is a program you run on your own computer or server. It starts AI assistants such as Claude Code to do work, watches them, and tells you when they need you, in a web page, on your phone, or in Signal, Telegram, Slack and other chat apps.
 
-It started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a full compute abstraction layer with capability-based federation access control, multi-mode compute-node routing, a multi-server proxy surface, and full PAI-parity personal AI infrastructure — structured identity, multi-phase reasoning, rubric-based grading, and multi-persona debate — all mirrored across 7 interchangeable surfaces.
+It began as a way to answer an AI coding session from Signal or Telegram. It now also plans bigger jobs, remembers what happened, and shares the work across several machines.
 
 <p align="center"><img src="docs/tour.gif" width="300" alt="datawatch web UI tour"/></p>
 
 ---
 
-## 📱 [Android — phone, auto, and wearables unified](https://github.com/dmz006/datawatch-app)
+## At a glance
 
-**datawatch is now on your wrist, dashboard, and pocket.** Compose Multiplatform with full 7-surface parity across Android, Android Auto, and Wear OS — same capabilities, native to each form factor.
-
-- **Android Auto** — hands-free voice commands via "Hey Google, ask DataWatch for status," live session/vitals monitoring on the infotainment display, quick-decision buttons, urgent push notifications. Three distraction-safe screens.
-- **Wear OS** — Automata queue dashboard, **private local voice** (audio goes straight to your own server, transcribed by your own Whisper instance — no Google, no cloud STT), tile shortcuts, ambient progress, health-data cross-reference.
-- **Android phone** — full session and Automata orchestration parity with desktop (REST/MCP/CLI), discussion scopes, file uploads, offline queue with auto-sync, bidirectional push replies.
-
-> [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://groups.google.com/g/datawatch-testers)
->
-> **Android is in Google Play closed testing, currently pending Google's app review.** Google requires 12 testers opted in for 14 continuous days before production access. **The opt-in/install links below may not load the app yet** if the review hasn't cleared — if a link 404s or shows nothing to install, the app isn't visible to new testers yet; try again later or watch `dmz006/datawatch-app`'s CHANGELOG for the review-cleared announcement.
->
-> 1. [Join the tester group](https://groups.google.com/g/datawatch-testers) with the same Google account your phone uses for Play
-> 2. [Opt in on Google Play](https://play.google.com/apps/testing/com.dmzs.datawatchclient)
-> 3. [Install from Google Play](https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient) (the listing appears after you opt in, once Google's review clears) and stay opted in for 14 days — **we need 12 testers.**
->
-> **Wear OS** is in the same closed test. Once you've opted in, open Play Store on the watch and search **datawatch**, or install it from play.google.com in a browser and pick the watch. Android Auto is part of the phone app.
->
-> **iOS:** [public TestFlight beta](https://testflight.apple.com/join/qta87V4Q) — install
-> TestFlight from the App Store, open the link on your iPhone/iPad, tap
-> **Accept**, then **Install**. Feedback: open an issue in
-> [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app).
-
----
-
-## 🎉 Community skills + plugins registry
-
-**[`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community)** is the official hub for sharing datawatch Skills and Plugins — autonomous session patterns, multi-agent topologies, inter-agent proposal pipelines, and more, contributed by operators and installable in one command:
-
-```bash
-datawatch skills registry connect https://github.com/dmz006/datawatch-community
-datawatch skills sync community
-```
-
-Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To contribute: fork, add your Skill or Plugin directory, open a PR — see [`CONTRIBUTING.md`](https://github.com/dmz006/datawatch-community/blob/main/CONTRIBUTING.md).
+- Start and watch AI work from your phone, the web, chat or a terminal
+- Give it a goal: it breaks the goal into steps, does them and checks the results
+- It remembers past work, so a new session starts with background
+- Use one machine or many; the work is shared
+- Your data stays on your machines, encrypted and behind a login
 
 ---
 
 ## Current release
 
-**Current release: v9.1.4 (2026-10-15).** opencode sessions on an Ollama
-compute node now start when the model is given without its `ollama/`
-prefix. The session gets the Ollama provider settings instead of exiting
-at launch. **v9.1.3** fixes `llm test` and ask calls for opencode LLM
-entries whose model carries the `ollama/` prefix (they returned 404).
+**Current release: v9.147.0 (2026-11-12).** Projects is now the first sub-tab of Automata, to the left of Automation, and the top-level Projects button is gone; old Projects links and saved views land on the sub-tab. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
-**v9.0.87** The session Status tab now
-shows Automaton task detail (current focus, a formatted Automaton card,
-verification results, files and base commit, recent activity and cost)
-from datawatch's own task data, with no hook payload needed. The Stats tab
-now gets a per-session process envelope for running tmux sessions.
+Recent changes, newest first:
 
-**v9.0.86** `autonomous.max_concurrent_tasks`
-can now be set daemon-wide (YAML, Settings, REST, MCP, comm, CLI), and an
-Automaton without its own setting follows it. The default stays 1 (one task
-at a time). `autonomous.max_parallel_tasks`, which never had any effect, is
-deprecated: still accepted but ignored, with a warning. It will be removed
-in a later release.
-
-**v9.0.85** Automata now publish internal
-lifecycle events (Automaton and task status changes, worker session start)
-through an in-process event dispatcher. The PWA's live Automata refresh now
-runs on top of it, with no visible change. This is groundwork for upcoming
-notifications.
-
-**v9.0.84** The three session repos that
-grew before v9.0.83 have been shrunk with `scripts/shrink-session-repo.sh`
-(31 GB → 3.3 MB for the largest). Evidence is in [Testing](docs/testing.md).
-
-**v9.0.83** Session-tracking folders no
-longer keep the live `output.log` in their git history, and the daemon
-turns off git's automatic garbage collection in those repos, so a large
-session repo can no longer trigger a repack that exhausts host memory
-and takes the daemon down. `scripts/shrink-session-repo.sh` shrinks repos
-that grew before the fix. See [Session Tracking](docs/session-tracking.md#repository-size--maintenance)
-and [v9.0.83](CHANGELOG.md).
-
-**v9.0.82** brought smaller payloads for mobile
-and web clients on busy daemons, each one requested by the client: a compact session list
-(`GET /api/sessions?view=summary`), gzip for `/api/*` JSON, paged alerts
-with a cheap unread-count endpoint and an `alerts_read` WebSocket event,
-and a WebSocket `hello` handshake that switches a client to per-session
-delta updates and to terminal output only for the sessions it has open.
-`GET /api/info` now lists `capabilities` so clients can detect each
-feature, and six new `server.*` settings tune the limits and defaults.
-See the [low-bandwidth client flow](docs/api/mobile-surface.md#low-bandwidth-client-flow)
-and [v9.0.82](CHANGELOG.md).
-
-**v9.0.9–v9.0.75** are a patch
-chain on top of the v9.0.0 major release: a plugin extension framework
-(manifest-declared widgets, now rendering live on the dashboard and in
-session detail — plugins can push or pull their own stat tiles,
-tables, lists, sparklines, status badges and markdown cards), and a
-pass of fixes to Automata's own verification and guardrail checks so a
-configured tool-capable backend actually gets real file/tool access
-instead of silently falling back to a plain text-only check. v9.0.62
-lets a blocked Automaton's failed task be edited and retried in place,
-stops the scope check from blocking specs that merely name an installed
-system tool, and makes cancel/delete report exactly which sessions it
-stopped. v9.0.63 adds an opt-in **ci-watch** completion check: an
-Automaton that pushed a commit waits for that commit's GitHub Actions
-runs before it counts as done, and a failing run either blocks it for
-an operator decision, gets a corrective task, or is re-run when CI
-itself broke — see
-[ci-watch-guardrail.md](docs/howto/ci-watch-guardrail.md). v9.0.64
-clarifies the ci-watch MCP tool descriptions, and v9.0.65 fixes the
-agent container image's security scan by rebuilding its bundled GitHub
-CLI with a patched Go and `golang.org/x/net`. v9.0.66 stops one-shot
-claude-code workers from getting their task re-pasted on every channel
-heartbeat. v9.0.73 lets you choose which LLM verifies a task, a story
-or a whole Automaton, overriding the global verifier (task > story >
-Automaton > global), from REST, MCP, the CLI, chat and the PWA. Each
-verification result records which backend, model and level judged it
-— see
-[autonomous-planning.md](docs/howto/autonomous-planning.md). v9.0.74
-makes an autonomous claude-code task actually run at the effort level
-you chose. v9.0.75 flags an Automaton task whose commit swept in
-somebody else's uncommitted work (a file that was already modified or
-untracked before the task started and was never in its planned files).
-It warns by default and can be set to block — see
-[file-drift-guardrail.md](docs/howto/file-drift-guardrail.md). None of
-these change v9.0.0's actual feature set, described below.
-
-**v9.0.0 — Memory Lifecycle Complete.** The
-first major version since the memory-scope/lifecycle work landed:
-per-session and shared memory scopes, seeding/harvest/archive across
-PRDs, and Automata memory-stats reporting are now considered stable,
-not in-progress. Bundled with this release: the bulk of a multi-week
-security hardening sweep (session-scoped credentials replacing the
-admin token, SSRF/path-traversal/prototype-pollution/reflected-XSS
-fixes, bearer-token leakage and federation-proxy origin-isolation
-closures), full HTTP
-access/audit logging with SIEM/CEF forwarding, and the Cross-Session
-Communication Rule guardrail for spawned sessions. A handful of larger
-hardening items (TLS fingerprint pinning, cosign/sigstore release
-signing, Helm `securityContext` hardening, an egress allowlist, and
-real sandbox isolation for session workers) are deliberately sequenced
-as post-9.0.0 follow-on work — each is fully designed, not yet built.
-Full detail: [CHANGELOG.md](CHANGELOG.md).
-
-- **[v8.74.0](CHANGELOG.md)** — Added an HTTP access / WebSocket
-  lifecycle / auth-failure log — see "Audit & Access Logging" in
-  [operations.md](docs/operations.md).
-- **[v8.72.0](CHANGELOG.md)** — Three-finger swipe now opens a real
-  server-picker overlay (server list + an explicit "Add server" action)
-  instead of scrolling to and pulsing the always-visible toolbar bar —
-  works even with zero remote servers configured, which the old approach
-  never did.
-- **[v8.67.0](CHANGELOG.md)** — Cross-host comm-channel `send` and the
-  CLI's `--server` flag were both blind to any federation peer added after
-  daemon startup (a frozen snapshot from boot, never refreshed from the
-  live server registry) — fixed.
-- **[v8.62.0](CHANGELOG.md)** — Native ACME/Let's Encrypt HTTP-01,
-  live-verified end-to-end against a real public host and a real Let's
-  Encrypt directory — 4 real bugs found and fixed in that run.
-- **[v8.39.25](CHANGELOG.md)** — Security Design A3: every spawned session
-  gets its own scoped credential (not the admin token), closing the last of
-  the SEC-002–SEC-014 security hardening sweep (11 real findings fixed:
-  SSRF, path traversal, prototype pollution, reflected XSS, bearer-token
-  leakage, an origin-isolation gap in the federation-peer PWA proxy). Full
-  writeup: [docs/plans/2026-10-03-bl394-security-findings-review.md](docs/plans/2026-10-03-bl394-security-findings-review.md).
-
-### v8.63.0–v8.73.1 highlights
-
-- claude-code and ollama sessions now report real token usage/cost
-  (`Session.TokensIn/TokensOut/EstCostUSD` had been zero for every session
-  on every backend). The PWA shows the animated datawatch eye for
-  content-loading states across 123 cards/panels/sheets, matching the apps
-  (GH#186), and council live-run logs render markdown instead of truncated
-  plain text (GH#181).
-- Native ACME/Let's Encrypt feature-complete: HTTP-01, DNS-01 via
-  Cloudflare (wildcards / port-80-unavailable), zero-downtime hot-swap
-  renewal, and native APNs push dispatch straight to registered iOS
-  devices. See [docs/howto/letsencrypt-acme.md](docs/howto/letsencrypt-acme.md).
-- Several real security/config-sync bugs found and fixed: the LLM
-  registry leaking a literal API key in clear text (GH#179), a config/
-  manager desync where `PUT /api/autonomous/config` and a council LLM
-  change didn't take effect until a daemon restart, APNs push dispatch
-  mixing up sandbox/production hosts per-device.
-- A help-link anchor mismatch fixed across most PWA cards (GH#189), 3
-  missing help-link pages, a Community Plugins browse/install card
-  (GH#191), and PRD scratch artifacts (`CHECKPOINT.md`,
-  `.decompose-output-*.json`) relocated out of the shared project
-  repository into a managed per-PRD scratch directory.
-
-### v8.45.0–v8.61.1 highlights (PWA parity sweep, Phases 2–3, now complete)
-
-- Repair-deps button, council-run markdown rendering, memory-scope browser + promote, voice-reply quick commands, "memory promote to" wizard field, watch sessions/automata, terminal search + copy, skeleton loading shimmer, mute-session notifications, splash status line + replay.
-- PRD `permission_mode` editor, a persisted session Chrome-enabled badge, pause/resume for a running Automaton (new paused status + cooperative executor drain), Observer Backend Health / Envelopes / quick add-memory cards, an About-screen subsystem reload + MCP channel/tools status cards, a Config Viewer + safe raw editor, and a hand-rolled SVG dependency-graph card for an Automaton's stories/tasks.
-
-See [CHANGELOG.md](CHANGELOG.md) for the complete patch-by-patch history.
-
-### Release eras
-
-- **v9.x** — Memory-lifecycle-complete era: the subprocess scope isolation / lifecycle management / PRD-integration memory trilogy, full Android/iOS parity sweeps, and federation live-store consistency fixes.
-- **v8.x** — Federation era: capability-based access control (50 capabilities, 14 built-in groups) gating every REST endpoint and MCP tool, multi-mode Compute Node routing (direct / docker-network / cross-peer proxy), channel routing, federated file service, discussion-scoped shared memory, full operational data encryption, and the Android/Wear/Auto app.
-- **v7.x** — Compute abstraction era: Compute Node registry + LLM Registry with automatic failover dispatch, the Ollama Marketplace, Claude Code hooks + live status board, systematic capability enforcement across 110+ endpoints.
-- **v6.x and earlier** — PAI-parity era: operator identity, Algorithm Mode's 7-phase reasoning harness, the Evals framework, Council Mode's multi-persona debate, Skill Registries, the native Secrets Manager, Tailscale mesh, and the original Signal-bridge core.
-
-Full detail for any version: [CHANGELOG.md](CHANGELOG.md).
+- Unreleased: an Automaton keeps a change record and drafts its gate report, changelog entry, parity issue, tracker rows and registry row from it (`datawatch autonomous generated-artefacts`, `change-record`, `generated`; REST `/api/autonomous/generated-artefacts` and `/api/autonomous/prds/{id}/change-record`; MCP `generated_artefacts_get`, `autonomous_prd_change_record`, `autonomous_prd_generated_artefact`, `autonomous_prd_regenerate_artefact`; Settings group "Generated artefacts")
+- v9.62: a check keeps machine names and addresses out of the code and docs
+- v9.61: a limit keeps weekly Claude usage on budget
+- v9.60: the steps of one job can run at the same time
+- v9.58: each project sets its own merge steps, plus a setup report
+- v9.57: stuck Claude Code prompts are dismissed safely
+- v9.50 to v9.55: automatic retries, held work asks you a question, a watch tells slow from hung
 
 ---
 
 ## Why a control plane and not a bot
 
-The same profile that drives a chat-spawned session can drive a Kubernetes-deployed worker in a remote cluster, a child agent of an existing worker, a scheduled cron job, a webhook reaction, or a cross-host fan-out — and the operator only ever interacts with one surface: the daemon's REST API. **Every feature is mirrored verbatim across 7 surfaces:** REST, MCP, CLI, Comm channels (Signal/Telegram/Matrix/Slack/Discord/etc.), PWA, mobile (Compose Multiplatform), and YAML on disk.
+A chat bot answers one message at a time. datawatch keeps running: it starts the work, keeps track of it, and reports back.
 
-That uniformity is the whole point. Read once, write once, audit once.
+The same setup works whether the work runs on your laptop, in a container, on another machine, or on a schedule, and you control it the same way from everywhere. One way to set it up, one place to look.
 
 ---
 
 ## What it does
 
-➡ **[docs/architecture-overview.md](docs/architecture-overview.md)** has the one-screen Mermaid map of every interface, subsystem, and data path. The summary below is intentionally short — each area links to its full howto.
+A map of every part is in [docs/architecture-overview.md](docs/architecture-overview.md).
 
-### Orchestration & autonomy
+### Plan and run work
 
-The **Automata PRD-DAG orchestrator** decomposes a goal into a dependency graph of stories and tasks, executes them with quality gates and git-diff-grounded verification, and supports guardrails, rubric-based grading, and structural mid-run editing. Writes are serialized per project tree: at most one task writer per tree at a time (same-tree tasks queue behind an advisory lock with a visible wait reason), while work on different trees — including per-Automaton worktrees — runs in parallel. **Algorithm Mode** is PAI's 7-phase structured-thinking harness (Observe → Orient → Decide → Act → Measure → Learn → Improve) as a per-session state machine. **Council Mode** runs multi-persona structured debate — 6 default personas, each able to use its own LLM backend — with real-time SSE streaming. The **Evals framework** replaces binary pass/fail verification with rubric-based grading.
-→ [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md)
+Give it a goal. It splits the goal into steps, runs them, checks each result, and asks you when a decision is yours.
 
-### Compute & LLM routing
+- Breaks a goal into steps and checks each result against the code changes
+- Runs steps at the same time when it is safe
+- Stops to ask you instead of guessing
+- Warns you about failed work and about finished work that has not been merged
+- Lines queued work up by kind (bug, maintenance, feature, other) with a visible priority source, and offers new defect filings to the Automation you name
+- Points the planner and workers at your project's rules and context files; set the file names under Settings, *Rules and context*, with `datawatch autonomous rules-context`, or with `GET`/`PUT /api/autonomous/rules-context` ([how-to](docs/howto/automata-rules-and-context.md))
+- Sets how small each worker, verifier and judge session starts with worker session profiles: which MCP servers, tools, skills, starting context, model and effort a session gets, set per role, task kind, task, Automaton, project or globally; the start-up size and profile name are recorded per attempt and shown in the cost report, stats and usage advice ([how-to](docs/howto/worker-session-profiles.md))
 
-Register any host, GPU box, Kubernetes cluster, or remote datawatch peer as a **Compute Node** with declared capacity, RBAC, and scheduling priority. The **LLM Registry** maps named LLM entries to an ordered failover list of nodes; every consumer (sessions, Council, Automata, `/api/ask`) routes through one dispatcher. Three routing modes — direct, docker-managed, or proxied through another datawatch peer. The **Ollama Marketplace** is a browseable, hardware-fit-checked model catalog shipped embedded in the daemon.
-→ [docs/howto/compute-nodes.md](docs/howto/compute-nodes.md) · [docs/howto/llm-registry.md](docs/howto/llm-registry.md) · [docs/howto/ollama-marketplace.md](docs/howto/ollama-marketplace.md)
+More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md)
 
-### Memory & intelligence
+### See what agents did
 
-Vector-indexed episodic memory (SQLite or PostgreSQL+pgvector) with a 5-scope hierarchy — persona-global, persona-in-project, project-shared, session-local, and federated **discussion scopes** shared across peers via an append-only WAL. A temporal knowledge graph with validity-windowed triples, a 6-axis spatial "memory palace" schema, and a 4-layer wake-up stack that auto-injects operator identity and relevant context into every spawned session.
-→ [docs/memory.md](docs/memory.md) · [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md)
+Agent tracing records each tool call, model request, state change and permission decision as a timeline you can read per session or per Automaton.
 
-### Federation & multi-instance
+- Reads one session or a whole Automaton in order, with filters for tool, backend and errors
+- Rolls up time, errors and tokens by session, task, story, agent or backend
+- Shows how much of each backend's activity the trace captures
+- Off, summary (default) or full mode under `tracing.*` in the config
 
-**Capability-based access control** — 50 capabilities, 14 built-in groups — gates every REST endpoint and MCP tool for federated peers; no admin-or-nothing. Peers can proxy inference, aggregate sessions, route inbound channel messages to specific peers, and share a federated file service. A remote peer's own PWA can be viewed inline from your dashboard, served from an isolated origin so a compromised peer can never read your session's credentials.
-→ [docs/howto/channel-routing.md](docs/howto/channel-routing.md) · [docs/howto/file-service.md](docs/howto/file-service.md)
+More: [how-to](docs/howto/agent-tracing.md) · [configuration](docs/operations.md) · [MCP tools](docs/cursor-mcp.md)
+
+### Choose where AI runs
+
+- Add any computer, GPU machine or cluster as a place to run models
+- Name a model and list backups for when a machine is busy
+- Browse models that fit your hardware
+- Drain a machine for maintenance so it takes no new work while running work finishes (`datawatch compute node drain` and `undrain`)
+
+- Can read a judge's answer as option probabilities instead of parsing prose (classify mode), and blocks rather than guesses when the numbers are missing
+- `datawatch llm classifier status|publishers|add-publisher|verdicts|review` shows what the judge is allowed to do and why a verdict came out as it did; a model's publisher must be on the allowlist you maintain
+- See what the automations need against what is configured — the requirements report (`datawatch automation requirements-report`) says what is missing and which backend minimums each node meets, fails or cannot verify
+- Decide which models may be pulled before anything is pulled — the model-pull consent gate is default-deny (`datawatch automation model-consent get|set`), with per-model allow/deny notes and publisher allow-lists
+
+More: [compute nodes](docs/howto/compute-nodes.md) · [model list](docs/howto/llm-registry.md) · [classification verdicts](docs/howto/classification-verdicts.md) · [requirements report](docs/howto/automation-requirements.md) · [model pull consent](docs/howto/model-pull-consent.md)
+
+### Memory
+
+- Remembers past sessions and facts, and you can search them
+- Keeps private notes apart from notes shared with other machines
+- A new session starts with who you are and the background it needs
+
+More: [memory](docs/memory.md) · [shared notes](docs/howto/discussion-scopes.md)
+
+### Several machines
+
+- Connect machines and share work, sessions, files and chat messages
+- Each machine gets only the access you give it
+
+More: [channel routing](docs/howto/channel-routing.md) · [file sharing](docs/howto/file-service.md)
 
 ### Security
 
-Full operational data encryption at rest (XChaCha20-Poly1305) covering config, memory, logs, and every JSON store. A centralized native secrets manager (plus optional KeePass/1Password/Vault backends) with `${secret:name}` references everywhere a credential is needed. Bearer token auth, dual-port TLS, full audit logging, and — as of the current release — a fully reviewed and hardened CodeQL/Dependabot posture.
-→ [docs/encryption.md](docs/encryption.md) · [docs/plans/2026-10-03-bl394-security-findings-review.md](docs/plans/2026-10-03-bl394-security-findings-review.md)
+- Data on disk is encrypted
+- Passwords and keys live in a vault
+- Logins, encrypted connections, and a log of who did what
+- Self-config gate: an agent may change the daemon's own non-secret settings only while it holds the **self-config** group — every attempt (allowed and denied) is recorded, and you can read the trail from the PWA Settings card, `datawatch audit self-config` or `GET /api/audit/self-config`
+- Sensitive writes: the high-impact tools (secrets, identity, daemon restart and reload, plugin install, starting sessions, and a few more) can be refused to sessions and peers with `mcp.allow_sensitive_writes: false` — on by default, your own UI, CLI and REST calls are never affected, and every call is recorded in the same audit trail.
 
-### Interfaces & extensibility
+More: [encryption](docs/encryption.md) · [security review](docs/security-review.md)
 
-A manifest-driven **plugin framework** (hot-reload, declared comm verbs / CLI subcommands / MCP tools / mobile cards) and **Skill Registries** synced from git, including the community hub. **Docs-as-MCP-Interface** makes 22 curated howtos searchable and executable through MCP with a hybrid vector+BM25 index. Claude Code hooks auto-install at session spawn and drive a live status board. An MCP server exposes 60+ tools to Cursor, Claude Desktop, and VS Code.
-→ [docs/skills.md](docs/skills.md) · [docs/mcp.md](docs/mcp.md) · [docs/howto/claude-hooks.md](docs/howto/claude-hooks.md) · [docs/howto/docs-as-mcp.md](docs/howto/docs-as-mcp.md)
+### Tools and add-ons
+
+- Plugins and skills, including a community collection
+- Service plugins (e.g. imap-mcp): attach to a service you already run, or let the daemon launch and supervise it, with status tiles, token vaulting and down/backlog alerts
+- Works with Claude Desktop, Cursor and VS Code
+- Claude Code reports its status automatically
+
+More: [skills](docs/skills.md) · [MCP](docs/mcp.md) · [plugin services](docs/plugins.md) · [imap-mcp how-to](docs/howto/imap-mcp-service.md) · [Claude Code hooks](docs/howto/claude-hooks.md)
 
 ### Also included
 
-Multi-channel messaging (Signal, Telegram, Discord, Slack, Matrix, Twilio, webhooks, DNS, voice via Whisper) · pluggable LLM backends (claude-code, aider, pi, goose, gemini, opencode, ollama, openwebui, shell) · Docker/Kubernetes container workers with PQC bootstrap · auto rate-limit recovery · eBPF per-process network monitoring + Prometheus `/metrics` · Tailscale mesh for the PWA and agent pods.
+- Chat apps: Signal, Telegram, Discord, Slack, Matrix, Twilio, webhooks, DNS and voice
+- AI tools: claude-code, aider, pi, goose, gemini, opencode, ollama, openwebui and shell
+- Docker and Kubernetes workers
+- Agent tracing: a timeline of what each agent did (tool calls, model requests, permission decisions, loop warnings, errors) for a session or a whole Automaton, with roll-ups and a per-backend coverage badge. On by default at the summary level; settings under `tracing.*` ([how-to](docs/howto/agent-tracing.md))
+- Rate-limit recovery, network monitoring, Prometheus metrics and a Tailscale network
+- A usage calculator that sizes the parallel lanes to your weekly Claude allowance, with an option for the daemon to apply that advice itself within a cap you set (auto-lanes, off by default)
+- A host load watch: one warning when the load average stays high for the minutes you set, naming the busiest processes, and in reap mode also ending the leftover processes of already-ended sessions (`autonomous.host_load_alert`; more: [host load check](docs/howto/host-load-check.md))
+- A session-end reap: when a session ends — finished, cancelled or failed — the daemon ends the processes that session left behind, attributing each only by evidence read from `/proc`, never by name (more: [orphan reaping](docs/howto/automata-orphan-reaping.md))
 
-See the [Documentation index](#documentation-index) below for everything else.
+Everything else is in the [Documentation index](#documentation-index).
 
 ---
 
@@ -423,6 +296,44 @@ For deeper drill-downs: [docs/architecture.md](docs/architecture.md) (package li
 
 ---
 
+## 📱 [Android — phone, auto, and wearables unified](https://github.com/dmz006/datawatch-app)
+
+**datawatch is now on your wrist, dashboard, and pocket.** Compose Multiplatform with full 7-surface parity across Android, Android Auto, and Wear OS — same capabilities, native to each form factor.
+
+- **Android Auto** — hands-free voice commands via "Hey Google, ask DataWatch for status," live session/vitals monitoring on the infotainment display, quick-decision buttons, urgent push notifications. Three distraction-safe screens.
+- **Wear OS** — Automata queue dashboard, **private local voice** (audio goes straight to your own server, transcribed by your own Whisper instance — no Google, no cloud STT), tile shortcuts, ambient progress, health-data cross-reference.
+- **Android phone** — full session and Automata orchestration parity with desktop (REST/MCP/CLI), discussion scopes, file uploads, offline queue with auto-sync, bidirectional push replies.
+
+> [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://groups.google.com/g/datawatch-testers)
+>
+> **Android is in Google Play closed testing, currently pending Google's app review.** Google requires 12 testers opted in for 14 continuous days before production access. **The opt-in/install links below may not load the app yet** if the review hasn't cleared — if a link 404s or shows nothing to install, the app isn't visible to new testers yet; try again later or watch `dmz006/datawatch-app`'s CHANGELOG for the review-cleared announcement.
+>
+> 1. [Join the tester group](https://groups.google.com/g/datawatch-testers) with the same Google account your phone uses for Play
+> 2. [Opt in on Google Play](https://play.google.com/apps/testing/com.dmzs.datawatchclient)
+> 3. [Install from Google Play](https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient) (the listing appears after you opt in, once Google's review clears) and stay opted in for 14 days — **we need 12 testers.**
+>
+> **Wear OS** is in the same closed test. Once you've opted in, open Play Store on the watch and search **datawatch**, or install it from play.google.com in a browser and pick the watch. Android Auto is part of the phone app.
+>
+> **iOS:** [public TestFlight beta](https://testflight.apple.com/join/qta87V4Q) — install
+> TestFlight from the App Store, open the link on your iPhone/iPad, tap
+> **Accept**, then **Install**. Feedback: open an issue in
+> [`dmz006/datawatch-app`](https://github.com/dmz006/datawatch-app).
+
+---
+
+## 🎉 Community skills + plugins registry
+
+**[`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community)** is the official hub for sharing datawatch Skills and Plugins — autonomous session patterns, multi-agent topologies, inter-agent proposal pipelines, and more, contributed by operators and installable in one command:
+
+```bash
+datawatch skills registry connect https://github.com/dmz006/datawatch-community
+datawatch skills sync community
+```
+
+Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To contribute: fork, add your Skill or Plugin directory, open a PR — see [`CONTRIBUTING.md`](https://github.com/dmz006/datawatch-community/blob/main/CONTRIBUTING.md).
+
+---
+
 ## Documentation index
 
 Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.md) for a complete index with all flow diagrams.
@@ -432,12 +343,13 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | Getting started | [docs/setup.md](docs/setup.md) · [docs/commands.md](docs/commands.md) · [docs/pwa-setup.md](docs/pwa-setup.md) |
 | Compute + LLM | [docs/howto/compute-nodes.md](docs/howto/compute-nodes.md) · [docs/howto/llm-registry.md](docs/howto/llm-registry.md) · [docs/howto/ollama-marketplace.md](docs/howto/ollama-marketplace.md) |
 | Sessions + hooks | [docs/howto/sessions-deep-dive.md](docs/howto/sessions-deep-dive.md) · [docs/howto/claude-hooks.md](docs/howto/claude-hooks.md) |
-| Backends | [docs/llm-backends.md](docs/llm-backends.md) · [docs/messaging-backends.md](docs/messaging-backends.md) |
+| Backends | [docs/llm-backends.md](docs/llm-backends.md) · [docs/messaging-backends.md](docs/messaging-backends.md) · [docs/backend-state.md](docs/backend-state.md) |
 | Interfaces | [docs/mcp.md](docs/mcp.md) · [docs/howto/mcp-tools.md](docs/howto/mcp-tools.md) · [docs/howto/docs-as-mcp.md](docs/howto/docs-as-mcp.md) · [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) |
-| Autonomous + plugins | [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md) · [docs/api/plugins.md](docs/api/plugins.md) · [docs/skills.md](docs/skills.md) |
+| Autonomous + plugins | [docs/api/autonomous.md](docs/api/autonomous.md)<br>[docs/howto/automation-tab.md](docs/howto/automation-tab.md)<br>[docs/howto/automata-events.md](docs/howto/automata-events.md)<br>[docs/howto/automata-progress.md](docs/howto/automata-progress.md)<br>[docs/howto/automation-lane-fill.md](docs/howto/automation-lane-fill.md)<br>[docs/howto/infrastructure-retry.md](docs/howto/infrastructure-retry.md)<br>[docs/howto/merge-pipeline.md](docs/howto/merge-pipeline.md)<br>[docs/howto/merge-shadow.md](docs/howto/merge-shadow.md)<br>[docs/howto/release-size-and-milestones.md](docs/howto/release-size-and-milestones.md)<br>[docs/howto/release-push-and-tag.md](docs/howto/release-push-and-tag.md)<br>[docs/howto/onboarding-report.md](docs/howto/onboarding-report.md)<br>[docs/howto/automation-requirements.md](docs/howto/automation-requirements.md)<br>[docs/howto/model-pull-consent.md](docs/howto/model-pull-consent.md)<br>[docs/howto/model-request-progress.md](docs/howto/model-request-progress.md)<br>[docs/howto/automation-repo-ci-watch.md](docs/howto/automation-repo-ci-watch.md)<br>[docs/howto/automation-security-failure.md](docs/howto/automation-security-failure.md)<br>[docs/howto/supervisor-loop.md](docs/howto/supervisor-loop.md)<br>[docs/howto/automaton-search-before-create.md](docs/howto/automaton-search-before-create.md)<br>[docs/howto/automata-tags.md](docs/howto/automata-tags.md)<br>[docs/howto/automata-tag-registry.md](docs/howto/automata-tag-registry.md)<br>[docs/howto/automata-checks-and-ship.md](docs/howto/automata-checks-and-ship.md)<br>[docs/howto/generated-artefacts.md](docs/howto/generated-artefacts.md)<br>[docs/flow/tag-registry-sync-flow.md](docs/flow/tag-registry-sync-flow.md)<br>[docs/api/orchestrator.md](docs/api/orchestrator.md)<br>[docs/api/plugins.md](docs/api/plugins.md)<br>[docs/plugins.md](docs/plugins.md)<br>[docs/howto/imap-mcp-service.md](docs/howto/imap-mcp-service.md)<br>[docs/skills.md](docs/skills.md)<br>[docs/howto/result-panel.md](docs/howto/result-panel.md)<br>[docs/howto/automaton-verifier-run-cap.md](docs/howto/automaton-verifier-run-cap.md)<br>[docs/howto/automaton-branch-refresh.md](docs/howto/automaton-branch-refresh.md) |
 | Comms + federation | [docs/howto/channel-routing.md](docs/howto/channel-routing.md) · [docs/howto/file-service.md](docs/howto/file-service.md) · [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) · [docs/howto/comm-channels.md](docs/howto/comm-channels.md) |
 | Memory & intelligence | [docs/memory.md](docs/memory.md) · [docs/memory-usage-guide.md](docs/memory-usage-guide.md) |
 | Operations & security | [docs/operations.md](docs/operations.md) · [docs/config-reference.yaml](docs/config-reference.yaml) · [docs/encryption.md](docs/encryption.md) · [docs/multi-session.md](docs/multi-session.md) · [docs/uninstall.md](docs/uninstall.md) |
+| CI + release | [docs/howto/ci-code-scanning-upload.md](docs/howto/ci-code-scanning-upload.md) · [docs/howto/container-image-refresh.md](docs/howto/container-image-refresh.md) |
 | Community | [`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community) |
 | Source attribution | [docs/plan-attribution.md](docs/plan-attribution.md) |
 

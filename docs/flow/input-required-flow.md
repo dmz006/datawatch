@@ -47,3 +47,34 @@ sequenceDiagram
 ```
 <sub>🔍 <a href="https://mermaid.live/view#pako:eNqtVu9P40YQ_VdG_hSkOOW4T7V6nHRwbak4QKTVfcCoWuyJs8Xedb1rIEL87327601yMUH9hZBw8Js3b-fNzOY5KXTJSZYY_rNnVfCpFFUnmlwRflrRWVnIVihLJ7XoSyZhqPBPqQukttMFGzOGn-vKYZvVUhubiveLo1mtqzHui1bS6s5jw-Nlb9veUqU73Vup-JUYoUTFPmaO5FKr-K8xdg5Gr9oEpJn9YbQa437u7xzqK9_NdXHP_h9j1DUkhcThaYz41Mmy8gnnslKiPjk_-yRAqMox9iecsN1Aw-cAE4Urym8mJPN_JwF1kA_qL7Rl0g94E6yZouTZN-Y8dtKyIeFcalpLVpNdMkF3I8EUaEJwenzsw_PkR92rkt4TP0mD8leAG0sLWbOZ0SXSeVYSdf2RblbfXdwiZlfQYGpGra5rQzDeExDj5YqODg-boWMGYMzesShJ8SPVa983iDWpaFuU053mrl8sYEKuOjawTJbIYWUTfXlF0Gw2o3eHaIZCq9LADWPoUdolKe0T69B8gO1Nv8mCQyHxXmCx5OKebNM_0VKYdGhAKky6NRWU90fvvj9CPeXD_iPXAh64ohA72V5xnsTyR47B5lZYWKyoERYSyhFpGJUMRbBzKyxPnLIpeB6FdI7_LhVqkCcHKOw5El8F2g__qTmGrMjvJzKjuXjgyTC-z8bpyEYKprTJn8GTl4NdMkxphpnToiyAvGAuzZmLneTJVpEd09vi4XcykIMyEpuhz3Cerc1Q1JKVNbtSwkbISKstGaG0wZiBP-AQEFYFKoEsk8rN_tmp03kTlN_eOOm35NnIVySDI__YAsTg95rbejWcyPFm9AN6t8VC5OP10YMiSPObKKMG6nE6Ktl1Zxd7yb9NAXN7KXtbsa9sXFkOv2HPky01q9gogXxTnV_mlxfp9dUJlkPBUIFJtXIhC2Fl3ONr2dGCpVAY0i9B_WS37hF1JTqDt3F6TprSOfE89OTZKfoxNs-v_ITiJxD5skO2niYXu7f1VusSb_pl_xx2vVJw9pWYt2ZnHTWekrDjs7CLXNHTe14ZSu1oGTml9Fmtr7Z9kzYkNxP0WXz-l_3ti-ZU2dn_3YjfUP_dWxM3A-aqx8XJT1z0rs2m8Spt3JeJcEck0wRXQCNkiW9Pzy_42LclnPhcuj2bZAtRG54mord6vlJFktmu5wgavmUNqJe_AFwQP1c">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
+## Related: an Automaton asks the operator a question
+
+A session needing input is detected from its output. An Automaton can instead **raise a question** through the daemon (`POST /api/questions`), a structured request that needs a decision. This path only runs when `autonomous.questions.enabled` is on.
+
+```mermaid
+sequenceDiagram
+    participant Asker as Automaton session
+    participant API as Daemon (questions API)
+    participant Store as Question store
+    participant Hub as WebSocket Hub
+    participant Router as Router
+    participant Alerts as Alert store
+    participant Subs as Lifecycle subscriptions
+    actor Operator
+
+    Asker->>API: raise question (priority, options, return_path)
+    API->>Store: record question (open)
+    API-->>Asker: 201 with the question id
+    API->>Hub: question_raised message
+    Hub-->>Operator: open PWA shows the question
+    API->>Router: one line to each active messaging group (notify_messaging)
+    Router-->>Operator: who asked, question, numbered options, where to answer
+    API->>Alerts: warning alert when priority is high (notify_alert)
+    Operator->>API: answer (PWA, REST, CLI, MCP or comm)
+    API->>Store: append answer, state becomes answered
+    API->>Subs: question.answered event, once
+    API->>Asker: one DATAWATCH_ANSWER line when return_path was set
+    Asker->>API: GET /api/questions/{id} (poll, the default return path)
+```
+
+The raise is acknowledged before any announcement runs, so a failed leg never fails the raise. Each of the three announce routes and the return-path line has its own switch (`notify_messaging`, `notify_alert`, `return_path`). Withdrawing fires `question.withdrawn` in place of the answer steps. See [../howto/operator-questions-notifications.md](../howto/operator-questions-notifications.md).

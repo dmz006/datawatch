@@ -3,12 +3,13 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean install lint test fmt cross release release-snapshot channel-build \
+.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
         security-registry-gen security-registry-check \
-        test-e2e-docker test-e2e-pwa test-e2e-all test-e2e-clean
+        test-tmp-guard \
+        test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-shared-nav test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
 # carries the markdown files the in-PWA viewer renders. Run before
@@ -229,11 +230,117 @@ install: sync-docs docs-index
 clean:
 	rm -rf $(BUILD_DIR)
 
-lint:
+# Remove stale throwaway test scratch directories (dw-test-*, dw-leak-*,
+# svchelper-*, datawatch-*-task-*, ...) older than an hour from the
+# program temp directory. Never follows symlinks, never touches tmux,
+# never kills processes. Runs with TMUX/TMUX_TMPDIR unset as a
+# belt-and-braces guarantee.
+clean-test-tmp:
+	env -u TMUX -u TMUX_TMPDIR bash scripts/clean-test-tmp.sh
+
+check-tmux:
+	bash scripts/check-no-unscoped-tmux.sh
+
+# Static audit: no script or test may start a datawatch daemon without
+# ending it (and the sessions it started), by its recorded PID only, on every
+# exit path; no kill-by-name pattern. See the Test daemon cleanup rules in
+# docs/testing.md and scripts/test-daemon-lib.sh.
+check-test-daemons:
+	bash scripts/check-test-daemon-cleanup.sh
+
+# Live test daemons (started with `start --foreground --config <path>` whose
+# path is under /tmp, in $TMPDIR, or in a datawatch-<hex> run folder). The
+# snapshot file is named by LEFTOVER_BASELINE; its default is a file that
+# does not exist, so an empty baseline is used and every live test daemon is
+# reported. Pass a run's baseline (its run folder's
+# leftover-daemon-baseline) to report only daemons started after the run.
+LEFTOVER_BASELINE ?= .leftover-daemon-baseline.empty
+check-leftover-daemons:
+	bash scripts/check-no-leftover-test-daemons.sh check "$(LEFTOVER_BASELINE)"
+
+check-service-scope:
+	bash scripts/check-no-production-service-control.sh
+
+check-go-pins:
+	bash scripts/check-go-toolchain-pins.sh
+
+check-trivy-version:
+	bash scripts/check-trivy-version-single.sh
+	bash scripts/tests/check-trivy-version-single_test.sh
+
+check-internal-refs:
+	bash scripts/check-no-internal-refs.sh
+
+check-sarif-upload:
+	python3 scripts/check-sarif-upload-nonblocking.py
+
+# Whole-tree local-environment leak check: private/internal addresses,
+# absolute home-directory paths, non-allowed emails and the operator's own
+# .leak-patterns.local fixed strings. The report is path:line: class lines
+# only — matched text is never printed. Absent .leak-patterns.local is not
+# an error (that class is skipped with a stderr notice).
+check-leaks:
+	bash scripts/check-no-local-leaks.sh .
+
+# Fails when a changed file looks like a copy of operator configuration or
+# credentials (backups, .env files, config copies, key files). Compares the
+# branch with the remote main; untracked files count too.
+check-plans-links:
+	bash scripts/check-plans-links.sh --quiet
+
+check-no-config-copies:
+	bash scripts/check-no-config-copies.sh origin/main
+
+# Seed .leak-patterns.local: created from the template when absent (an
+# existing file is never overwritten), then names of every federation peer,
+# compute node, observer peer and pool host the local daemon knows are
+# appended — one per line after a '# seeded peer names' comment, deduped
+# against existing lines case-insensitively. Only counts are printed.
+# When the daemon is unreachable nothing is seeded and the target exits 0.
+leak-patterns-init:
+	bash scripts/seed-leak-patterns.sh
+
+check-no-identity-wipe:
+	bash scripts/check-no-identity-wipe.sh
+
+check-security-ignore-writes:
+	bash scripts/check-no-direct-ignore-writes.sh
+
+lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs check-sarif-upload check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links
 	golangci-lint run ./...
+
+# Local, non-uploading CodeQL run compared with GitHub's alerts. Long running
+# (minutes, several GB of databases): not part of lint, build or test.
+codeql-local:
+	bash scripts/codeql-local.sh --compare
+
+test-plans-registry-archive:
+	bash tests/test-plans-registry-archive.sh
+
+test-plans-tidy-daily:
+	bash tests/test-plans-tidy-daily.sh
 
 test:
 	go test ./...
+	bash tests/test-check-no-local-leaks.sh
+	bash tests/test-seed-leak-patterns.sh
+	bash tests/test-scrub-peer-names.sh
+	bash tests/test-ci-package-listing.sh
+	bash tests/test-codeql-trigger-listing.sh
+	bash tests/test-sarif-upload-nonblocking.sh
+	bash tests/test-tidy-plans.sh
+	bash tests/test-plans-registry-archive.sh
+	bash tests/test-plans-tidy-daily.sh
+	python3 scripts/tests/test_dismissed_alerts_watch.py
+	python3 scripts/tests/test_codeql_alert_gate.py
+
+# Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
+# mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
+# (except internal/session, which would run a copy of the guard) one at a
+# time, attributing any temp-dir survivor to the package that left it. The
+# normal `go test ./...` run of the same test keeps the small default list.
+test-tmp-guard:
+	DW_LEAK_GUARD_FULL=1 go test -count=1 -timeout 20h ./internal/session/ -run TestNoNewTmpLeakEntries
 
 fmt:
 	gofmt -w .
@@ -312,8 +419,12 @@ cross-channel:
 # Local:   make test-e2e          (auto-starts isolated daemon, adaptive parallel)
 # Docker:  make test-e2e-docker   (docker compose stack, routing tests)
 # PWA:     make test-e2e-pwa      (Playwright via docker compose)
+#          PWA_SUITE_DIR (default scripts/test-stories/pwa) selects the story suite;
+# Mobile:  make test-e2e-mobile-fit (mobile-fit guard stories TS-817 + TS-818 via scripts/e2e-pwa.sh)
+#          override on the command line, e.g. make test-e2e-pwa PWA_SUITE_DIR=path/to/suite
 # Requires: docker, docker compose v2, bash
 E2E_COMPOSE=docs/testing/docker-compose.test.yml
+PWA_SUITE_DIR?=scripts/test-stories/pwa
 
 # Local E2E: run-tests.sh starts its own isolated daemon, cleans up after.
 test-e2e:
@@ -334,11 +445,31 @@ test-e2e-docker:
 	TEST_PORT=18080 TEST_MCP_PORT=19090 DW_PEER_URL=http://localhost:28081 DW_PEER_TOKEN=peer-test-token \
 	  bash scripts/run-tests.sh --feature=routing --no-daemon
 
+# PWA schedules-flood story (TS-797) via its entry script scripts/test-stories/pwa/schedule-flood.mjs.
+# Local route (no Docker): starts an isolated daemon on fresh 127.0.0.1 ports,
+# runs `npm ci` in scripts/test-stories/pwa, then `node schedule-flood.mjs` with
+# TEST_HTTP/TEST_TLS/TEST_TOKEN (and TEST_TRUSTED_TLS when set). Exits with the
+# story's code: 0 pass · 1 fail · 2 skip. See docs/testing/README.md.
 test-e2e-pwa:
+	bash scripts/check-pwa-suite-path.sh $(PWA_SUITE_DIR)
 	docker compose -f $(E2E_COMPOSE) up datawatch -d
 	@echo "Waiting for daemon healthy..."
 	until docker compose -f $(E2E_COMPOSE) ps datawatch | grep -q healthy; do sleep 2; done
 	docker compose -f $(E2E_COMPOSE) run --rm playwright
+
+# PWA slow-network load group (TS-802..TS-812) via run-all.mjs --group load.
+test-e2e-pwa-load:
+	bash scripts/e2e-pwa.sh load
+# Mobile-fit guard stories (TS-817 observer regression guard + TS-818
+# desktop/tablet baseline guard), one e2e-pwa invocation per story.
+test-e2e-mobile-fit:
+	bash scripts/e2e-pwa.sh TS-817
+	bash scripts/e2e-pwa.sh TS-818
+
+# PWA shared navigation phone-width scenario (scripts/test-stories/pwa/shared-nav-mobile-fit.mjs)
+# via run-all.mjs --group shared-nav.
+test-e2e-shared-nav:
+	bash scripts/e2e-pwa.sh group:shared-nav
 
 test-e2e-all: test-e2e-docker test-e2e-pwa
 

@@ -25,6 +25,30 @@ ts() { date '+%H:%M:%S'; }
 phase() { echo "[$(ts)] $*"; }
 py() { python3 -I "$PY_MOD" "$@"; }
 
+# _dw_ppid prints the parent pid of a live pid (robust to spaces in comm).
+_dw_ppid() {
+  local s rest
+  s=$(</proc/$1/stat 2>/dev/null) || return 1
+  rest="${s##*) }"
+  set -- $rest
+  # fields after ")": state ppid ...
+  printf '%s\n' "${2:-}"
+}
+
+# _dw_is_descendant <pid> <ancestor> — true iff <pid> is <ancestor> or a
+# descendant of it (walks /proc/<pid>/stat upward, bounded).
+_dw_is_descendant() {
+  local h="$1" anc="$2" np i=0
+  while [[ "$h" -gt 1 ]] 2>/dev/null && ((i < 64)); do
+    [[ "$h" == "$anc" ]] && return 0
+    np=$(_dw_ppid "$h") || return 1
+    [[ -n "$np" ]] || return 1
+    h="$np"
+    i=$((i + 1))
+  done
+  return 1
+}
+
 usage() {
   cat <<EOF
 Usage: $SELF <subcommand> [options]
@@ -268,7 +292,16 @@ verify_tier_self_test() {
   # TERM the per-tier process (child of the bg job) and the mock task itself.
   local sub
   for sub in $(ps -o pid= --ppid "$bgpid" 2>/dev/null); do kill -TERM "$sub" 2>/dev/null || true; done
-  kill -TERM "$(cat "$tmp/task.pid")" 2>/dev/null || true
+  # task.pid was written by our own bg job above; before signaling, verify
+  # the pid on disk is still alive and still a descendant of that job —
+  # never kill a bare pid from a file without an ownership check.
+  local taskpid
+  taskpid=$(cat "$tmp/task.pid" 2>/dev/null || true)
+  if [[ -n "$taskpid" ]] && kill -0 "$taskpid" 2>/dev/null && _dw_is_descendant "$taskpid" "$bgpid"; then
+    kill -TERM "$taskpid" 2>/dev/null || true
+  elif [[ -n "$taskpid" ]]; then
+    echo "[selftest] task.pid pid ${taskpid:-?} is not a descendant of our bg job $bgpid; not killing" >&2
+  fi
   wait "$bgpid" || rc=$?
   expect_rc "SIGTERM" nonzero $rc; check_restored "SIGTERM"
   grep -q 'caught SIGTERM' "$tmp/sig.log" && phase "  PASS signal: TERM trap fired" \

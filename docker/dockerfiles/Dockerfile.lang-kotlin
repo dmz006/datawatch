@@ -16,12 +16,16 @@
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
+# Inherited non-root user name (see agent-base); home under /home/${DW_USER}.
+ARG DW_USER=datawatch
 ARG JDK_VERSION=17
 ARG KOTLIN_VERSION=2.1.10
 ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708
 ARG GRADLE_VERSION=8.11.1
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG JDK_VERSION
 ARG KOTLIN_VERSION
 ARG ANDROID_CMDLINE_TOOLS_VERSION
@@ -62,7 +66,7 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
 
 # Persist Gradle home so caches survive across rebuilds when /workspace
 # isn't mounted as a separate volume.
-ENV GRADLE_USER_HOME=/home/datawatch/.gradle
+ENV GRADLE_USER_HOME=/home/${DW_USER}/.gradle
 RUN mkdir -p $GRADLE_USER_HOME && chown -R datawatch:datawatch $GRADLE_USER_HOME
 
 USER datawatch

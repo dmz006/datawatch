@@ -55,6 +55,7 @@ Legend: ✅ Implemented · 🟡 Partial / indirect only · 🔴 Missing
 | **Alert rules (S14b)** | ✅ | ✅ | ✅ | ✅ | 🟡 | 🔴 | Comm: inherits system alerts; no dedicated `alert-rules` comm command. PWA: management card pending v8.2. |
 | **Plugin install/browse (BL325)** | 🟡 | ✅ | ✅ | ✅ | 🔴 | 🔴 | YAML: community registry pre-seeded but no install YAML verb. Comm: no plugin install comm command. PWA: browse/install UI pending v8.2. |
 | **Mic recording overlay (BL326)** | 🔴 | 🔴 | 🔴 | 🔴 | 🔴 | ✅ | PWA-only UX feature. No config option, no REST endpoint, no CLI, no Comm, no MCP. Mobile: native OS audio recorder used instead (see voice-input.md). |
+| **Identity backups, restore and reset (`identity.backups_to_keep`)** | ✅ | ✅ | ✅ | ✅ | 🟡 | ✅ | YAML: `identity.backups_to_keep` (default 10, minimum 1). REST: `GET /api/identity/backups`, `POST /api/identity/restore`, `POST /api/identity/reset`, and `PUT /api/config` for the key; an empty write over a saved identity is HTTP 409 `identity_wipe_refused`. MCP: `identity_backups`, `restore_identity`, `reset_identity`, and `config_set` for the key. CLI: `datawatch identity backups|restore|reset` and `datawatch config set identity.backups_to_keep`. Comm: `identity backups` and `identity restore <name\|latest>` and `configure identity.backups_to_keep=N`; **no chat reset by design**, so one mistyped line cannot clear the identity (the reply points at the CLI, PWA or MCP). PWA: Settings → Automata → Identity has Save, Revert, Reset, Restore and the *Identity backups to keep* field. |
 
 ---
 

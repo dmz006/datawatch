@@ -136,7 +136,7 @@ func (d *SamplingDispatcher) Sample(ctx context.Context, req SamplingRequest) (*
 	}
 
 	start := time.Now()
-	raw, err := d.srv.RequestSampling(ctx, sdkReq)
+	raw, err := d.srv.RequestSampling(ctx, sdkReq) //nolint:staticcheck // deprecated in protocol 2026-07-28; still used for older clients
 	latency := time.Since(start).Milliseconds()
 
 	entry := &samplingLogEntry{
@@ -214,6 +214,12 @@ func (d *SamplingDispatcher) appendLog(e *samplingLogEntry) {
 func isNoSessionErr(err error) bool {
 	if err == nil {
 		return false
+	}
+	// mcp-go v1.x returns ErrServerInitiatedRequestUnsupported for clients on
+	// protocol 2026-07-28+, which dropped server-initiated requests; treat it
+	// like "no sampling-capable client" so callers degrade gracefully.
+	if errors.Is(err, server.ErrServerInitiatedRequestUnsupported) {
+		return true
 	}
 	msg := err.Error()
 	return msg == "no active session" || msg == "session does not support sampling"

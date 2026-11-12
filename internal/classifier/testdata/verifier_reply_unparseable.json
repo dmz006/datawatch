@@ -1,0 +1,5 @@
+{
+  "_fixture": "SYNTHETIC. Hand-authored open-model verifier reply that violates the strict JSON contract ({\"ok\": bool, \"severity\": ..., \"summary\": ..., \"issues\": [...]}) by answering in prose around the verdict. Not recorded from a live model.",
+  "prompt_ref": "prompt.json",
+  "reply": "Looking at the diff, I think this mostly implements the spec. The flag is added and wired to the encoder, and there is a test. So overall the answer is yes, it looks fine, though I would double check the help text.\n\nVerdict: ok (severity: info)."
+}

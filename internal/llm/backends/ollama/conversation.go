@@ -91,14 +91,18 @@ func emitChat(tmuxSession, role, content string, streaming bool) {
 // LaunchChat starts an Ollama conversation using the API instead of `ollama run`.
 // This enables structured chat_message events for the rich chat UI.
 func (b *Backend) LaunchChat(ctx context.Context, task, tmuxSession, projectDir string) error {
+	model, err := b.runModel()
+	if err != nil {
+		return err
+	}
 	conv := &conversationState{}
 	conversations.Store(tmuxSession, conv)
 
 	// Show init in tmux (for fallback/logging)
 	exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession,
-		fmt.Sprintf("echo '[ollama] chat mode — model: %s'", b.model), "Enter").Run() //nolint:errcheck
+		fmt.Sprintf("echo '[ollama] chat mode — model: %s'", model), "Enter").Run() //nolint:errcheck
 
-	emitChat(tmuxSession, "system", fmt.Sprintf("Chat mode — model: %s", b.model), false)
+	emitChat(tmuxSession, "system", fmt.Sprintf("Chat mode — model: %s", model), false)
 
 	if task != "" {
 		go func() { _ = b.sendAndStream(ctx, tmuxSession, task, true) }()
@@ -177,8 +181,18 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 		host = "http://localhost:11434"
 	}
 
+	// Resolved per turn: a refused swap must not reach the node.
+	model, err := b.runModel()
+	if err != nil {
+		emitChat(tmuxSession, "system", fmt.Sprintf("Error: %v", err), false)
+		return err
+	}
+
+	rec := RequestRecord{Session: tmuxSession, Model: model, Start: recordNow()}
+	defer func() { emitRecord(rec, recordNow()) }()
+
 	reqBody := map[string]interface{}{
-		"model":    b.model,
+		"model":    model,
 		"messages": messages,
 		"stream":   true,
 	}
@@ -194,12 +208,15 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
+		rec.Err = err
 		emitChat(tmuxSession, "system", fmt.Sprintf("Error: %v", err), false)
 		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck
+	rec.StatusCode = resp.StatusCode
 
 	if resp.StatusCode != 200 {
+		rec.Err = fmt.Errorf("ollama HTTP %d", resp.StatusCode)
 		emitChat(tmuxSession, "system", fmt.Sprintf("Ollama error: HTTP %d", resp.StatusCode), false)
 		return fmt.Errorf("ollama HTTP %d", resp.StatusCode)
 	}
@@ -225,6 +242,7 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 			emitChat(tmuxSession, "assistant", chunk.Message.Content, true)
 		}
 		if chunk.Done {
+			rec.TokensIn, rec.TokensOut = chunk.PromptEvalCount, chunk.EvalCount
 			if usageFn != nil && (chunk.PromptEvalCount > 0 || chunk.EvalCount > 0) {
 				usageFn(tmuxSession, chunk.PromptEvalCount, chunk.EvalCount)
 			}

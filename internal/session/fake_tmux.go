@@ -8,10 +8,15 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// ErrInjected is the error FakeTmux returns for calls covered by a
+// FakeTmux.FailNextOp budget.
+var ErrInjected = errors.New("fake tmux: injected failure")
 
 // FakeTmux is a test-only TmuxAPI that records calls in memory.
 type FakeTmux struct {
@@ -25,6 +30,18 @@ type FakeTmux struct {
 
 	// Pane simulates visible pane content returned by CapturePane*.
 	Pane map[string]string
+
+	// PaneCmd simulates each pane's foreground command (PaneCommand). Unset
+	// panes report "", as a pane that cannot be queried does.
+	PaneCmd map[string]string
+
+	// FailNextOp maps a FakeTmuxCall.Op name (e.g. "SendTrustPromptAccept")
+	// to the number of upcoming calls under that op that should fail with
+	// ErrInjected before succeeding again. Unlike the global FailNext queue
+	// (consumed by whatever call happens next, e.g. a capture), the budget is
+	// only spent by the matching op — so a test can force a failed keystroke
+	// send without the surrounding capture calls eating the error.
+	FailNextOp map[string]int
 
 	// WindowSizes simulates each session's current tmux window size, for
 	// WindowSize/ResizePane. Unset sessions return an error (callers fall
@@ -45,6 +62,7 @@ func NewFakeTmux() *FakeTmux {
 	return &FakeTmux{
 		sessions: map[string]bool{},
 		Pane:     map[string]string{},
+		PaneCmd:  map[string]string{},
 	}
 }
 
@@ -52,12 +70,24 @@ func (f *FakeTmux) record(op, session string, args ...string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, FakeTmuxCall{Op: op, Session: session, Args: args})
+	if n, ok := f.FailNextOp[op]; ok && n > 0 {
+		f.FailNextOp[op] = n - 1
+		return ErrInjected
+	}
 	if len(f.FailNext) > 0 {
 		err := f.FailNext[0]
 		f.FailNext = f.FailNext[1:]
 		return err
 	}
 	return nil
+}
+
+// CallsSnapshot returns a copy of the recorded calls, safe to read while
+// other goroutines keep recording.
+func (f *FakeTmux) CallsSnapshot() []FakeTmuxCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]FakeTmuxCall(nil), f.Calls...)
 }
 
 // Count returns the number of calls with the given op.
@@ -98,7 +128,10 @@ func (f *FakeTmux) NewSessionWithSize(name string, cols, rows int) error {
 func (f *FakeTmux) SessionExists(name string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.sessions[name]
+	// A pane implies a live session in real tmux, so a session seeded via
+	// Pane (e.g. task-delivery tests) counts as existing; KillSession removes
+	// both.
+	return f.sessions[name] || f.Pane[name] != ""
 }
 
 func (f *FakeTmux) SendKeys(session, keys string) error {
@@ -190,6 +223,7 @@ func (f *FakeTmux) RepipeOutput(session, logFile string) error {
 func (f *FakeTmux) KillSession(name string) error {
 	f.mu.Lock()
 	delete(f.sessions, name)
+	delete(f.Pane, name)
 	f.mu.Unlock()
 	return f.record("kill", name)
 }
@@ -204,6 +238,13 @@ func (f *FakeTmux) SetEnvironment(session string, env map[string]string) error {
 
 // PaneTTY returns "" so WaitTypingIdle is a no-op in tests.
 func (f *FakeTmux) PaneTTY(session string) string { return "" }
+
+// PaneCommand returns the foreground command a test seeded in PaneCmd.
+func (f *FakeTmux) PaneCommand(session string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.PaneCmd[session]
+}
 
 // ListSessions returns all fake session names that match the given prefix.
 func (f *FakeTmux) ListSessions(prefix string) ([]string, error) {

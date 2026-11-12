@@ -22,6 +22,15 @@ const (
 	testFile = "app/core_test.go" // exempt: matches _test\.go$
 )
 
+// goModBefore/goModAfter are the Dependabot-style dependency-only change
+// pair: go.mod is non-exempt (not in EXEMPT_RE), so a no-bump range that
+// touches it fails under the normal rules — exactly the case the
+// Dependabot exemption in the script carves out.
+const (
+	goModBefore = "module datawatch\n\ngo 1.24\n\nrequire example.com/dep v1.0.0\n"
+	goModAfter  = "module datawatch\n\ngo 1.24\n\nrequire example.com/dep v1.0.1\n"
+)
+
 // goVersionFile renders a minimal Go file carrying `var Version = "..."`
 // for one of the two invariants-checked files.
 func goVersionFile(pkg, ver string) string {
@@ -117,6 +126,51 @@ func (r *repo) commit(msg string, files map[string]string) string {
 func (r *repo) shaw() string {
 	r.t.Helper()
 	return r.git("rev-parse", "HEAD")
+}
+
+// commitAs is commit() with the git author identity overridden via
+// GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL (the committer stays the repo
+// default) — used to simulate Dependabot-authored or spoofed-author commits.
+func (r *repo) commitAs(msg, author, email string, files map[string]string) string {
+	r.t.Helper()
+	for path, content := range files {
+		full := filepath.Join(r.root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			r.t.Fatalf("mkdir for %s: %v", path, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			r.t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	r.git("add", "-A")
+	cmd := exec.Command("git", "commit", "-m", msg)
+	cmd.Dir = r.root
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME="+author,
+		"GIT_AUTHOR_EMAIL="+email,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		r.t.Fatalf("git commit (author=%q): %v\n%s", author, err, out)
+	}
+	return r.shaw()
+}
+
+// mergeAs merges branch into the current head with --no-ff so a merge
+// commit is always produced, authored by the given name.
+func (r *repo) mergeAs(msg, author, branch string) string {
+	r.t.Helper()
+	cmd := exec.Command("git", "merge", "--no-ff", "-m", msg, branch)
+	cmd.Dir = r.root
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME="+author,
+		"GIT_AUTHOR_EMAIL="+strings.ToLower(strings.ReplaceAll(author, " ", "-"))+"@example.com",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		r.t.Fatalf("git merge %q (author=%q): %v\n%s", branch, author, err, out)
+	}
+	return r.shaw()
 }
 
 // versionBumpFiles returns the two invariant files at a given version with
@@ -326,5 +380,132 @@ func TestRangeBaseResolutionOrder(t *testing.T) {
 	}
 	if !strings.Contains(out, "CHECK_VERSION_BASE") {
 		t.Fatalf("expected output to note base resolved via $CHECK_VERSION_BASE, got:\n%s", out)
+	}
+}
+
+// --- Dependabot exemption (AGENT.md Versioning) ---------------------------
+
+const (
+	depName  = "dependabot[bot]"
+	depEmail = "49699333+dependabot[bot]@users.noreply.github.com"
+)
+
+// (1) range mode: a Dependabot-authored go.mod change with NO version bump
+// passes — the exemption carves out dependabot[bot]-authored ranges.
+func TestRangePassDependabotNoBump(t *testing.T) {
+	r := newRepo(t)
+	base := r.initial
+
+	r.commitAs("build(deps): bump example.com/dep from 1.0.0 to 1.0.1", depName, depEmail, map[string]string{
+		"go.mod": goModAfter,
+	})
+
+	out, ok := r.runScript(t, []string{base}, nil)
+	if !ok {
+		t.Fatalf("expected exit 0 (Dependabot exemption), got non-zero:\n%s", out)
+	}
+	if !strings.Contains(out, "PASS") || !strings.Contains(out, "Dependabot") {
+		t.Fatalf("expected Dependabot-exempt PASS output, got:\n%s", out)
+	}
+}
+
+// (2) commit mode: the same Dependabot-authored no-bump change passes.
+func TestCommitModePassDependabotNoBump(t *testing.T) {
+	r := newRepo(t)
+	base := r.initial
+
+	r.commitAs("build(deps): bump example.com/dep from 1.0.0 to 1.0.1", depName, depEmail, map[string]string{
+		"go.mod": goModAfter,
+	})
+
+	out, ok := r.runScript(t, []string{base}, map[string]string{"VERSION_CHECK_MODE": "commit"})
+	if !ok {
+		t.Fatalf("expected exit 0 (Dependabot exemption, commit mode), got non-zero:\n%s", out)
+	}
+	if !strings.Contains(out, "PASS") || !strings.Contains(out, "Dependabot") {
+		t.Fatalf("expected Dependabot-exempt PASS output, got:\n%s", out)
+	}
+}
+
+// (3) a HUMAN-authored go.mod change with no bump still fails — the
+// exemption is keyed on the author, not the file.
+func TestRangeFailHumanGoModNoBump(t *testing.T) {
+	r := newRepo(t)
+	base := r.initial
+
+	r.commit("bump dep (human), no version bump", map[string]string{
+		"go.mod": goModAfter,
+	})
+
+	out, ok := r.runScript(t, []string{base}, nil)
+	if ok {
+		t.Fatalf("expected non-zero exit (human go.mod change, no bump), got 0:\n%s", out)
+	}
+	if !strings.Contains(out, "FAIL") {
+		t.Fatalf("expected FAIL output, got:\n%s", out)
+	}
+}
+
+// (4) a MIXED range — a dependabot[bot] commit plus any commit by another
+// author — is not exempt and fails without a bump.
+func TestRangeFailMixedDependabotAndHuman(t *testing.T) {
+	r := newRepo(t)
+	base := r.initial
+
+	r.commitAs("build(deps): bump example.com/dep from 1.0.0 to 1.0.1", depName, depEmail, map[string]string{
+		"go.mod": goModAfter,
+	})
+	r.commit("more work, no bump", map[string]string{
+		codeFile: "package app\n\nfunc Core() int { return 2 }\n",
+	})
+
+	out, ok := r.runScript(t, []string{base}, nil)
+	if ok {
+		t.Fatalf("expected non-zero exit (mixed authors, no bump), got 0:\n%s", out)
+	}
+	if !strings.Contains(out, "FAIL") {
+		t.Fatalf("expected FAIL output, got:\n%s", out)
+	}
+}
+
+// (5) an author name that merely CONTAINS the bot name is not the bot —
+// whole-name compare must reject dependabot[bot] lookalikes.
+func TestRangeFailSpoofedDependabotAuthor(t *testing.T) {
+	r := newRepo(t)
+	base := r.initial
+
+	r.commitAs("build(deps): bump (spoofed author)", "not-dependabot[bot]", "spoof@example.com", map[string]string{
+		"go.mod": goModAfter,
+	})
+
+	out, ok := r.runScript(t, []string{base}, nil)
+	if ok {
+		t.Fatalf("expected non-zero exit (spoofed author), got 0:\n%s", out)
+	}
+	if !strings.Contains(out, "FAIL") {
+		t.Fatalf("expected FAIL output, got:\n%s", out)
+	}
+}
+
+// (6) a Dependabot commit that a human merges (no-ff merge commit) stays
+// exempt: merge commits are ignored, so the only non-merge commit in the
+// range is still dependabot[bot].
+func TestRangePassDependabotThenHumanMerge(t *testing.T) {
+	r := newRepo(t)
+	base := r.initial
+
+	r.git("checkout", "-b", "dependabot-bump", base)
+	r.commitAs("build(deps): bump example.com/dep from 1.0.0 to 1.0.1", depName, depEmail, map[string]string{
+		"go.mod": goModAfter,
+	})
+	r.git("checkout", "main")
+	r.mergeAs("Merge branch 'dependabot-bump'", "CI Test", "dependabot-bump")
+
+	out, ok := r.runScript(t, []string{base}, nil)
+	if !ok {
+		t.Fatalf("expected exit 0 (Dependabot commit + human merge), got non-zero:\n%s", out)
+	}
+	if !strings.Contains(out, "PASS") || !strings.Contains(out, "Dependabot") {
+		t.Fatalf("expected Dependabot-exempt PASS output, got:\n%s", out)
 	}
 }

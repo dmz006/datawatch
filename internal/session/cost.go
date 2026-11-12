@@ -14,6 +14,7 @@ package session
 import (
 	"errors"
 	"strings"
+	"time"
 )
 
 // ErrSessionNotFound is returned by helpers that require an existing
@@ -30,7 +31,7 @@ type CostRate struct {
 // override per-backend via SetCostRates.
 func DefaultCostRates() map[string]CostRate {
 	return map[string]CostRate{
-		"claude-code":     {InPerK: 0.003, OutPerK: 0.015},   // sonnet 4.x ballpark
+		"claude-code":     {InPerK: 0.003, OutPerK: 0.015}, // sonnet 4.x ballpark
 		"opencode":        {InPerK: 0.003, OutPerK: 0.015},
 		"opencode-acp":    {InPerK: 0.003, OutPerK: 0.015},
 		"opencode-prompt": {InPerK: 0.003, OutPerK: 0.015},
@@ -52,11 +53,11 @@ func EstimateCost(rate CostRate, tokensIn, tokensOut int) float64 {
 
 // CostSummary aggregates one or many sessions for reporting.
 type CostSummary struct {
-	Sessions    int                    `json:"sessions"`
-	TotalIn     int                    `json:"total_tokens_in"`
-	TotalOut    int                    `json:"total_tokens_out"`
-	TotalUSD    float64                `json:"total_usd"`
-	PerBackend  map[string]CostBucket  `json:"per_backend,omitempty"`
+	Sessions   int                   `json:"sessions"`
+	TotalIn    int                   `json:"total_tokens_in"`
+	TotalOut   int                   `json:"total_tokens_out"`
+	TotalUSD   float64               `json:"total_usd"`
+	PerBackend map[string]CostBucket `json:"per_backend,omitempty"`
 }
 
 // CostBucket is the per-backend breakdown.
@@ -99,6 +100,18 @@ func (m *Manager) AddUsage(sessID string, tokensIn, tokensOut int, override Cost
 func (m *Manager) AddUsageLinesRead(sessID string, tokensIn, tokensOut, linesRead int) error {
 	return m.addUsage(sessID, tokensIn, tokensOut, CostRate{}, func(sess *Session) {
 		sess.UsageLinesRead = linesRead
+	})
+}
+
+// AddClaudeUsage is AddUsageLinesRead plus the cache and tool-call totals the
+// claude-code transcript reader returns. TokensIn stays the non-cache input;
+// the extra values only feed the session record and the spend ledger.
+func (m *Manager) AddClaudeUsage(sessID string, d ClaudeUsageDelta) error {
+	return m.addUsage(sessID, d.In, d.Out, CostRate{}, func(sess *Session) {
+		sess.UsageLinesRead = d.LinesRead
+		sess.CacheReadTokens += d.CacheRead
+		sess.CacheCreationTokens += d.CacheCreation
+		sess.ToolCalls += d.ToolCalls
 	})
 }
 
@@ -156,13 +169,68 @@ func (m *Manager) addUsage(sessID string, tokensIn, tokensOut int, override Cost
 			rate = r
 		}
 	}
+	deltaUSD := EstimateCost(rate, tokensIn, tokensOut)
 	sess.TokensIn += tokensIn
 	sess.TokensOut += tokensOut
-	sess.EstCostUSD += EstimateCost(rate, tokensIn, tokensOut)
+	sess.EstCostUSD += deltaUSD
 	if setTracker != nil {
 		setTracker(sess)
 	}
-	return m.SaveSession(sess)
+	if err := m.SaveSession(sess); err != nil {
+		return err
+	}
+	m.upsertLedger(sess)
+	if tokensIn != 0 || tokensOut != 0 {
+		m.emitUsageEvent(UsageEvent{
+			SessionID: sess.FullID,
+			Backend:   sess.BackendFamily,
+			At:        time.Now(),
+			TokensIn:  tokensIn,
+			TokensOut: tokensOut,
+			USD:       deltaUSD,
+		})
+	}
+	return nil
+}
+
+// UsageEvent is one usage delta (not a cumulative total) priced at the
+// configured session.cost_rates. Backend is the session backend name, the
+// same name the capacity admission passes to the inference registry to build
+// its llm:<name> pool.
+type UsageEvent struct {
+	SessionID string
+	Backend   string
+	At        time.Time
+	TokensIn  int
+	TokensOut int
+	USD       float64
+}
+
+// SetUsageEventHook registers fn to be called after each saved usage delta.
+// A nil fn clears the hook. The hook runs on the caller's goroutine without
+// any manager lock held.
+func (m *Manager) SetUsageEventHook(fn func(UsageEvent)) {
+	m.usageHookMu.Lock()
+	m.usageHook = fn
+	m.usageHookMu.Unlock()
+}
+
+func (m *Manager) emitUsageEvent(ev UsageEvent) {
+	m.usageHookMu.RLock()
+	fn := m.usageHook
+	m.usageHookMu.RUnlock()
+	if fn != nil {
+		fn(ev)
+	}
+}
+
+// CostRateFor returns the manager's effective rate for backend, the same
+// lookup AddUsage prices usage with (a rate for an exact backend name, else
+// the family fallback, else absent). Exposed so read-only surfaces — e.g. the
+// cost_report MCP tool — can price with the daemon's own table instead of
+// keeping a second copy of it.
+func (m *Manager) CostRateFor(backend string) (CostRate, bool) {
+	return m.costRate(backend)
 }
 
 // costRate returns the rate for backend, falling back to the matching

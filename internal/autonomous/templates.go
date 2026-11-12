@@ -19,6 +19,10 @@ type TemplateStore struct {
 	mu        sync.Mutex
 	templates map[string]*Template
 	dir       string
+	// objectTagDeriver, when wired (NewManager does), replaces a
+	// template's SystemTags with the derived list on Create and Update
+	// (see ObjectTagDeriver). A nil deriver leaves SystemTags untouched.
+	objectTagDeriver ObjectTagDeriver
 }
 
 func newTemplateStore(dir string) *TemplateStore {
@@ -67,7 +71,12 @@ func (ts *TemplateStore) persist() error {
 	return os.WriteFile(path, []byte(sb.String()), 0600)
 }
 
-func (ts *TemplateStore) Create(title, description, spec, typ string, tags []string) (*Template, error) {
+// Create stores a new template. sourcePRDID names the Automaton the
+// template was cloned from ("" for one that names no source): it is
+// recorded as the template's provenance and is the axis its object system
+// tags derive from (ObjectTagFactsForTemplate). Create derives only when a
+// deriver is wired (see SetObjectTagDeriver); it never writes tags itself.
+func (ts *TemplateStore) Create(title, description, spec, typ, sourcePRDID string, tags []string) (*Template, error) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	now := time.Now()
@@ -77,13 +86,26 @@ func (ts *TemplateStore) Create(title, description, spec, typ string, tags []str
 		Description: description,
 		Spec:        spec,
 		Type:        typ,
+		SourcePRDID: sourcePRDID,
 		Tags:        tags,
 		Vars:        ExtractVars(spec, nil),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+	if d := ts.objectTagDeriver; d != nil {
+		// Object system tags: the full derived list replaces the stored
+		// one (an empty one is a no-op), before the persist.
+		tmpl.SystemTags = replaceSystemTags(tmpl.SystemTags, d.ObjectTagsForTemplate(tmpl))
+	}
 	ts.templates[tmpl.ID] = tmpl
 	return tmpl, ts.persist()
+}
+
+// SetObjectTagDeriver wires object-derived system tags into Create and
+// Update: the template's SystemTags are replaced with the derived list
+// before the write (see ObjectTagDeriver and replaceSystemTags).
+func (ts *TemplateStore) SetObjectTagDeriver(d ObjectTagDeriver) {
+	ts.objectTagDeriver = d
 }
 
 func (ts *TemplateStore) Get(id string) (*Template, bool) {
@@ -140,6 +162,11 @@ func (ts *TemplateStore) Update(id, title, description, spec, typ string, tags [
 		tmpl.Tags = tags
 	}
 	tmpl.UpdatedAt = time.Now()
+	if d := ts.objectTagDeriver; d != nil {
+		// Re-derive on every update: the full derived list replaces the
+		// stored one, no-op when it is unchanged, before the persist.
+		tmpl.SystemTags = replaceSystemTags(tmpl.SystemTags, d.ObjectTagsForTemplate(tmpl))
+	}
 	return tmpl, ts.persist()
 }
 
@@ -199,3 +226,8 @@ func (ts *TemplateStore) Instantiate(id string, vars map[string]string) (spec, t
 	ts.RecordUse(id)
 	return subst(tmpl.Spec), subst(tmpl.Title), nil
 }
+
+// builtinTaskTemplates are the built-in task templates. None ships a task for
+// a daemon-generated artefact (gate report, changelog, parity draft, tracker
+// rows, registry row); documentation is one combined task.
+var builtinTaskTemplates = []Template{}

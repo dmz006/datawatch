@@ -1,0 +1,551 @@
+#!/usr/bin/env python3
+"""Cheap supervisor watch: one command, one verdict, no judgement calls.
+
+Prints "OK <summary>" when nothing needs attention, otherwise "ATTENTION" followed
+by one line per finding. Meant for the 20 minute supervisor wake-up; the full tick
+(merges, lane fill, registry audit, CI deep read, v10 table) stays hourly.
+
+Checks: tmux restarts, daemon up, the working model resident on both nodes, PRDs that
+newly failed, blocked or need review, PRDs finished but not merged, idle lanes with
+work waiting, running PRDs whose worktree is broken or silent, a dirty main checkout
+(it makes a ship abort), and red or stuck CI on main and the tags.
+
+After the verdict, one READINESS line per release size (patch, minor, major) that has
+at least one comparison record: "ready", or "not ready" with the missing items, read from
+the daemon's release readiness endpoint. These lines are informational and never change
+the OK/ATTENTION verdict or the exit code.
+
+With --record <path> the findings (and the READINESS lines, kind release_readiness, subject
+the size) are additionally written to <path> as
+{"at": <unix seconds>, "findings": [{"kind": <stable finding kind>,
+"subject": <id or empty>, "text": <line>}]} (the daemon-side supervisor watch
+compares its own findings against that record); without the option stdout and
+exit code are unchanged.
+"""
+import glob
+import json
+import os
+import re
+import ssl
+import subprocess
+import sys
+import time
+import urllib.request
+
+BASE = os.path.expanduser("~/workspace/datawatch")
+WT = os.path.expanduser("~/.datawatch/prd-worktrees")
+STATE = "/tmp/sv/watch-state.json"
+MODEL = "qwen3.8-64k"
+TMUX_RESTARTS, TMUX_SINCE = "0", "Thu 2026-11-05 23:48:15 EST"
+SILENT_MIN = 60
+
+
+def _placement_skip_nodes():
+    """Node pools the PLACEMENT finding ignores (helper nodes that are never
+    meant to carry work). Names come from the environment variable
+    SUPERVISOR_WATCH_SKIP_NODES (comma separated) and from the gitignored file
+    .supervisor-watch-skip at the repository root (one pool name per line,
+    '#' starts a comment); nothing machine specific is kept in this script."""
+    names = set()
+    for part in os.environ.get("SUPERVISOR_WATCH_SKIP_NODES", "").split(","):
+        if part.strip():
+            names.add(part.strip())
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".supervisor-watch-skip")
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if line:
+                    names.add(line)
+    except OSError:
+        pass
+    return names
+
+
+PLACEMENT_SKIP_NODES = _placement_skip_nodes()
+# Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
+ACKED_RUNS = {41868200648, 41833726032, 41827384648, 41821649568, 40316827946, 40293597613, 40320408404, 40366394552, 40366382818, 40425238678}  # 41868200648 is the 9.85.3 Release run whose agent-goose and agent-opencode container jobs failed at the buildx setup step during the GitHub Actions outage of 2026-11-04 (no code or scan finding; 9.85.2 passed and 9.86.0 supersedes it). # 41833726032, 41827384648 and 41821649568 are Release runs for 9.84.1, 9.84.0 and 9.83.1 whose agent-base container step failed on the Trivy libexpat finding CVE-2026-113351, accepted in 9.84.2 (row 325); the binary release succeeded. # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209); 40320408404 failed the version bump check on a script-only commit, fixed by exempting this script in 9.19.3; 40366394552 and 40366382818 are CodeQL Analyze (actions) runs that end red at the result upload with no error shown, tracked in BL625 (row 212); 40425238678 is CodeQL rejecting the workflow upload because GitHub default setup is also enabled (operator decision pending)
+# The operator chose (2026-10-30): GitHub default CodeQL setup stays and the CodeQL workflow now only gates on open alerts,
+# so a red CodeQL run on main is a real finding and must be reported.
+CODEQL_CONFLICT_KNOWN = False
+IGNORE = {"fa840001", "06410001", "b7a50001", "42950001", "58aa0001", "99c20001", "fdd80001", "6bded76a", "04b20001", "7c960001", "7e460001", "7f3e0001", "80660001", "900d0001", "95950001", "fdba0001", "e4fb0001", "fb1d0001", "b2220001", "0e680001", "ad4e0001"}  # 04b20001 BL637 parity backfill held until the final stage before 10.0 (row 227); 6bded76a voice PRD cancelled, it ran in the main checkout (replaced by a worktree PRD, row 222); 58aa0001 BL598 held (row 180); db4b0001 BL622 draft, not decomposed while Claude use is over the pace line (row 209); 99c20001 BL623 draft, decompose at the next hourly tick if the budget allows (row 210); 7c96/7e46/7f3e/8066 final-stage placeholders (BL411, BL409, BL424, BL496) and 900d0001 BL644 design-gated, all held; e4fb0001 shipped as 9.78.0 but left uncancelled because it is a branch of the bug chain 0e4c8979 (row 315)
+
+
+def sh(cmd, timeout=40):
+    try:
+        return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
+def get_json(url, timeout=6, insecure=False):
+    ctx = ssl._create_unverified_context() if insecure else None
+    try:
+        with urllib.request.urlopen(url, timeout=timeout, context=ctx) as r:
+            return json.load(r)
+    except Exception:
+        return None
+
+
+def model_hosts():
+    """The Ollama hosts to check: every ollama compute node the daemon has
+    registered (its own registry, never a hard-coded address), plus the
+    loopback host. SUPERVISOR_WATCH_EXTRA_MODEL_URLS (comma separated) adds more."""
+    hosts = [("local", "http://127.0.0.1:11434")]
+    try:
+        out = sh("curl -sk https://localhost:8443/api/compute/nodes", 20)
+        for n in json.loads(out[out.index("["):]):
+            addr = (n.get("address") or "").rstrip("/")
+            if n.get("kind") == "ollama" and addr and addr not in [h[1] for h in hosts]:
+                hosts.append((n.get("name") or addr, addr))
+    except Exception:
+        pass
+    for i, u in enumerate(filter(None, os.environ.get("SUPERVISOR_WATCH_EXTRA_MODEL_URLS", "").split(","))):
+        hosts.append(("extra%d" % i, u.strip()))
+    return hosts
+
+
+def models(url):
+    """Names of the resident models; the working model also counts when it is loaded under its base tag with the 64k context."""
+    d = get_json(url + "/api/ps")
+    if d is None:
+        return None
+    out = []
+    for m in d.get("models", []):
+        name = m["name"]
+        if name.startswith("qwen3.8:") and (m.get("context_length") or 0) >= 65536:
+            name = MODEL + ":" + name.split(":", 1)[1]
+        out.append(name)
+    return out
+
+
+def recent(ts, hours=72):
+    """True when an ISO timestamp is within the last `hours` (old probes and drafts do not count)."""
+    try:
+        t = time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))
+        return time.time() - t < hours * 3600
+    except Exception:
+        return False
+
+
+def pi_transcript_dir(worktree_path):
+    """The pi transcript folder for a worktree path.
+
+    Base is $PI_CODING_AGENT_DIR when set and non-empty, else ~/.pi/agent. The folder name is the
+    absolute worktree path with each path separator turned into a dash, wrapped in two dashes on each
+    side. Dots are kept: existing folders look like --home-dmz-.datawatch-prd-worktrees-<id>--.
+    """
+    base = os.environ.get("PI_CODING_AGENT_DIR") or os.path.expanduser("~/.pi/agent")
+    name = os.path.abspath(worktree_path).replace(os.sep, "-")
+    return os.path.join(base, "sessions", "-" + name + "--")
+
+
+def newest_transcript_mtime(worktree_path):
+    """Modification time of the newest *.jsonl in the worktree's pi transcript folder, or None."""
+    best = None
+    for f in glob.glob(os.path.join(glob.escape(pi_transcript_dir(worktree_path)), "*.jsonl")):
+        try:
+            m = os.path.getmtime(f)
+        except OSError:
+            continue
+        if best is None or m > best:
+            best = m
+    return best
+
+
+def task_worktrees(prd_id):
+    """Task worktree paths of an Automaton, from git worktree list run in the Automaton worktree.
+
+    A path belongs to the Automaton when it sits under WT and its first component below WT starts with
+    the Automaton id (the Automaton worktree itself is WT/<id>, its tasks live in WT/<id>-tasks/<name>).
+    """
+    root = os.path.join(WT, prd_id)
+    if not os.path.isdir(root):
+        return []
+    try:
+        out = subprocess.run(["env", "-u", "TMUX", "-u", "TMUX_TMPDIR", "git", "worktree", "list", "--porcelain"],
+                             cwd=root, capture_output=True, text=True, timeout=20).stdout
+    except Exception:
+        return []
+    found = []
+    for line in out.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        path = os.path.abspath(line[len("worktree "):].strip())
+        rel = os.path.relpath(path, WT)
+        if rel.startswith("..") or path == os.path.abspath(root):
+            continue
+        if rel.split(os.sep)[0].startswith(prd_id):
+            found.append(path)
+    return found
+
+
+def newest_activity_measure(prd_id):
+    """(seconds since the newest activity, measure name) or (None, None).
+
+    The name is one of "transcript", "worktree file" or "log".
+    """
+    cands = []  # (mtime, label)
+    d = os.path.join(WT, prd_id)
+    best = 0
+    for root, dirs, files in os.walk(d):
+        dirs[:] = [x for x in dirs if x != ".git"]
+        for f in files:
+            try:
+                best = max(best, os.path.getmtime(os.path.join(root, f)))
+            except OSError:
+                pass
+    if best:
+        cands.append((best, "worktree file"))
+    for path in [d] + task_worktrees(prd_id):
+        m = newest_transcript_mtime(path)
+        if m:
+            cands.append((m, "transcript"))
+    for f in glob.glob(os.path.expanduser("~/.pi/agent/sessions/--home-user-.datawatch-prd-worktrees-%s--/*.jsonl" % prd_id)):
+        try:
+            cands.append((os.path.getmtime(f), "log"))
+        except OSError:
+            pass
+    for f in glob.glob(os.path.expanduser("~/.claude/projects/-home-user--datawatch-prd-worktrees-%s/*.jsonl" % prd_id)):
+        try:
+            cands.append((os.path.getmtime(f), "transcript"))
+        except OSError:
+            pass
+    if not cands:
+        return None, None
+    m, label = max(cands, key=lambda c: c[0])
+    return time.time() - m, label
+
+
+def newest_activity(prd_id):
+    """Seconds since the newest activity (see newest_activity_measure), or None when no measure exists."""
+    return newest_activity_measure(prd_id)[0]
+
+
+def liveness(prd_id):
+    """One-line sign of life for a silent worker: processes whose cwd is in its worktree, with state and wait channel.
+
+    A worker that is only waiting shows pipe_read or do_wait with no CPU time; a live one is running, or its children are.
+    """
+    root = os.path.join(WT, prd_id)
+    out = []
+    for d in glob.glob("/proc/[0-9]*"):
+        try:
+            if not os.path.realpath(os.readlink(d + "/cwd")).startswith(root):
+                continue
+            pid = os.path.basename(d)
+            st = open(d + "/stat").read().rsplit(")", 1)[1].split()
+            cpu = (int(st[11]) + int(st[12])) / os.sysconf("SC_CLK_TCK")
+            wchan = open(d + "/wchan").read().strip() or "-"
+            out.append("%s:%s/%s/%.0fs" % (pid, st[0], wchan, cpu))
+        except (OSError, IndexError, ValueError):
+            continue
+    return ("processes in worktree (pid:state/wait/cpu) " + " ".join(out[:6])) if out else "no process has its cwd in the worktree"
+
+
+def usage_snapshot():
+    """Append cumulative Claude token counters per session to /tmp/sv/usage-ledger.jsonl.
+
+    Session counters are lifetime totals, so only the difference between two snapshots says how many tokens a window used.
+    """
+    d = get_json("https://localhost:8443/api/sessions", timeout=15, insecure=True)
+    ss = d if isinstance(d, list) else (d or {}).get("sessions", [])
+    rec = {"ts": int(time.time()), "s": {x["id"]: [x.get("model") or "default", x.get("tokens_in") or 0, x.get("tokens_out") or 0, x.get("name", "")[:30]]
+                                         for x in ss if x.get("backend_family") == "claude-code"}}
+    try:
+        with open("/tmp/sv/usage-ledger.jsonl", "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass
+
+
+READINESS_SIZES = ("patch", "minor", "major")
+READINESS_URL = "https://localhost:8443/api/autonomous/release-readiness?size=%s"
+
+
+def release_readiness_lines():
+    """[(size, line)] for each release size with at least one comparison record.
+
+    Reads GET /api/autonomous/release-readiness through get_json, the same helper the
+    rest of the script uses. The endpoint counts plan-equal-or-better records and
+    blocking-defect records per size, so a size with neither prints nothing. A failed
+    read is skipped and prints nothing; the caller never lets these lines change the verdict.
+    """
+    out = []
+    for size in READINESS_SIZES:
+        d = get_json(READINESS_URL % size, insecure=True)
+        r = (d or {}).get("readiness") or {}
+        if not (r.get("records") or r.get("blocking_defects")):
+            continue
+        if r.get("ready"):
+            line = "READINESS %s: ready" % size
+        else:
+            line = "READINESS %s: not ready, missing: %s" % (size, "; ".join(r.get("missing") or []))
+        out.append((size, line))
+    return out
+
+
+def map_finding(text):
+    """(stable finding kind, subject id) for one printed finding line, or None when the line is outside the stable vocabulary the daemon watch understands.
+
+    The kinds are the daemon-side supervisor watch's stable vocabulary; subject is the id the line is about (the PRD id, the CI run id, the model host or lane name) or the empty string when the line carries no id.
+    """
+    m = re.match(r"^READINESS (patch|minor|major): ", text)
+    if m:
+        return "release_readiness", m.group(1)
+    m = re.match(r"^NEW (failed|review_needed) task \S+ of (\S+)", text)
+    if m:
+        return ("task_failed" if m.group(1) == "failed" else "task_review_needed"), m.group(2)
+    m = re.match(r"^MERGE READY (\S+)", text)
+    if m:
+        return "automaton_not_merged", m.group(1)
+    if text.startswith("TMUX"):
+        return "tmux_restart", ""
+    if text.startswith("DAEMON"):
+        return "daemon_inactive", ""
+    m = re.search(r"not resident on (\S+)", text)
+    if text.startswith("MODEL") and m:
+        # "MODEL host X unreachable" is not a resident-model finding: the daemon
+        # watch reports nothing when a node cannot be reached, so leave it out
+        # of the record rather than key it as model_not_resident with no node.
+        return "model_not_resident", m.group(1)
+    m = re.match(r"^IDLE (\S+) lane", text)
+    if m:
+        return "idle_lane_eligible_work", m.group(1).lower()
+    m = re.match(r"^WORKTREE (\S+) has no go\.mod", text)
+    if m:
+        return "worktree_no_gomod", m.group(1)
+    m = re.match(r"^SILENT (\S+)", text)
+    if m:
+        # The printed line is "SILENT <id>: ...", so \S+ catches the trailing
+        # colon. The daemon-side watch keys this finding by the bare Automaton
+        # id, so strip the colon — keeping it would make every silent
+        # worktree a false one-sided difference in the compare.
+        return "worktree_silent", m.group(1).rstrip(":")
+    if text.startswith("MAIN checkout"):
+        return "main_checkout_dirty", ""
+    m = re.search(r"run (\d+)", text)
+    sub = m.group(1) if m else ""
+    if text.startswith("CI RED"):
+        return "ci_red", sub
+    if text.startswith("CI STUCK"):
+        return "ci_stuck", sub
+    return None
+
+
+def merge_shadow_lines():
+    """One informational line per release size that has merge shadow comparisons, with matched and different counts.
+
+    Read only from GET /api/autonomous/merge/shadow through get_json (its default timeout). Sizes with no comparisons print
+    nothing, and nothing is returned when there are no comparisons or the endpoint cannot be reached. Informational only: it
+    never changes the OK or ATTENTION verdict.
+    """
+    d = get_json("https://localhost:8443/api/autonomous/merge/shadow", insecure=True)
+    if not isinstance(d, dict):
+        return []
+    totals = {}
+    for proj in d.get("projects") or []:
+        for size, cnt in (proj.get("counts") or {}).items():
+            if not isinstance(cnt, dict):
+                continue
+            m, x = cnt.get("matched") or 0, cnt.get("different") or 0
+            if m + x == 0:
+                continue
+            t = totals.setdefault(size, [0, 0])
+            t[0] += m
+            t[1] += x
+    return ["MERGE SHADOW %s: matched %d different %d" % (size, t[0], t[1]) for size, t in sorted(totals.items())]
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    record_path = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--record" and i + 1 < len(argv):
+            record_path = argv[i + 1]
+            i += 2
+        else:
+            i += 1
+
+    findings, state = [], {}
+    usage_snapshot()
+    try:
+        state = json.load(open(STATE))
+    except Exception:
+        pass
+    seen = set(tuple(x) for x in state.get("held", []))
+
+    # tmux and daemon
+    t = sh("systemctl --user show datawatch-tmux -p NRestarts -p ActiveEnterTimestamp")
+    nr = re.search(r"NRestarts=(\d+)", t)
+    ae = re.search(r"ActiveEnterTimestamp=(.*)", t)
+    if not nr or nr.group(1) != TMUX_RESTARTS or not ae or ae.group(1).strip() != TMUX_SINCE:
+        findings.append("TMUX server restarted or unreadable (%s): audit every non-terminal PRD" % t.replace("\n", " ").strip())
+    if sh("systemctl --user is-active datawatch").strip() != "active":
+        findings.append("DAEMON is not active")
+
+    # models
+    for name, url in model_hosts():
+        m = models(url)
+        if m is None:
+            findings.append("MODEL host %s unreachable" % name)
+        elif not any(MODEL in x for x in m):
+            findings.append("MODEL %s not resident on %s (reload with keep_alive -1)" % (MODEL, name))
+
+    # PRDs
+    out = sh("datawatch autonomous prd-list", 60)
+    prds = []
+    try:
+        prds = json.loads(out[out.index("{"):]).get("prds", [])
+    except Exception:
+        findings.append("PRD list unreadable")
+    held_now, running, queued_runnable = [], [], 0
+    for p in prds:
+        st = p.get("status")
+        tasks = [k for s in p.get("stories", []) for k in s.get("tasks", [])]
+        if p["id"] in IGNORE:
+            continue
+        if st in ("needs_review", "approved", "draft") and recent(p.get("updated_at")) and (tasks or st == "draft"):
+            queued_runnable += 1
+        if st not in ("running", "blocked"):
+            continue
+        done = sum(1 for k in tasks if k.get("status") == "completed")
+        cancelled = sum(1 for k in tasks if k.get("status") == "cancelled")
+        # A cancelled task is finished work for the purpose of "every task is terminal",
+        # but the completion judge refuses to run while any task is cancelled. An Automaton
+        # whose tasks are all completed or cancelled and that has no verdict is therefore
+        # stuck, and used to be invisible here because completed != len(tasks) (found
+        # 2026-11-10, a daemon restart-safety Automaton sat blocked for nineteen hours).
+        if cancelled and tasks and done + cancelled == len(tasks):
+            findings.append("STUCK %s: every task is done or cancelled (%d cancelled) but the completion judge refuses to run while a task is cancelled; reset or remove the cancelled tasks: %s" % (p["id"], cancelled, (p.get("title") or "")[:40]))
+        if st == "blocked" and "stuck running" in str(p.get("blocked_reason") or ""):
+            findings.append("STUCK %s is blocked: %s" % (p["id"], str(p.get("blocked_reason"))[:90]))
+        for k in tasks:
+            if k.get("status") in ("failed", "review_needed"):
+                key = (p["id"], k["id"], k["status"])
+                held_now.append(key)
+                if key not in seen and p["id"] not in ("4f9da380", "67915a24", "6d3c36ca"):
+                    findings.append("NEW %s task %s of %s (%s)" % (k["status"], k["id"], p["id"], (p.get("title") or "")[:40]))
+        if tasks and done == len(tasks):
+            # A finished Automaton is merge ready only when its completion rules review has
+            # passed or warned. A block verdict means the daemon is fixing it (or it is held);
+            # merging then ships work the judge refused (2026-11-01, a5db0001). No verdict
+            # yet means the review has not run: wait for it.
+            verdicts = p.get("verdicts") or []
+            last = (verdicts[-1].get("outcome") if verdicts else None)
+            if last == "block":
+                findings.append("JUDGE BLOCKED %s all %d tasks done but the rules review blocked it, do not merge: %s" % (p["id"], len(tasks), (p.get("title") or "")[:40]))
+            elif last is None:
+                findings.append("MERGE WAIT %s all %d tasks done, rules review not finished: %s" % (p["id"], len(tasks), (p.get("title") or "")[:40]))
+            else:
+                findings.append("MERGE READY %s all %d tasks done (review %s): %s" % (p["id"], len(tasks), last, (p.get("title") or "")[:40]))
+        if st == "running":
+            running.append(p["id"])
+            d = os.path.join(WT, p["id"])
+            if not os.path.isfile(os.path.join(d, "go.mod")):
+                findings.append("WORKTREE %s has no go.mod (broken project directory)" % p["id"])
+            live = [k for k in tasks if k.get("status") in ("in_progress", "verifying")]
+            if live:
+                age, measure = newest_activity_measure(p["id"])
+                if age is not None and age > SILENT_MIN * 60:
+                    findings.append("SILENT %s: no activity for %d min while %s is running (newest measure: %s); %s" % (p["id"], age // 60, live[0]["id"], measure, liveness(p["id"])))
+
+    # capacity and lanes
+    cap = get_json("https://localhost:8443/api/capacity", insecure=True) or {}
+    pools = {p["name"]: p for p in cap.get("pools", [])}
+    waiting = cap.get("waiting") or []
+    cl, pi = pools.get("llm:claude-code", {}), pools.get("llm:pi-prompt", {})
+    summary = "claude %s/%s pi %s/%s waiting %d prds-running %d" % (
+        cl.get("held", "?"), cl.get("limit", "?"), pi.get("held", "?"), pi.get("limit", "?"), len(waiting), len(running))
+    if cl.get("limit") and cl.get("held", 0) == 0 and queued_runnable:
+        findings.append("IDLE Claude lane while %d PRD(s) are needs_review, approved or draft" % queued_runnable)
+    if pi.get("limit") and pi.get("held", 0) < pi.get("limit", 0) and (waiting or queued_runnable):
+        findings.append("IDLE pi lane (%s/%s held) with %d waiting and %d queued PRDs" % (pi.get("held"), pi.get("limit"), len(waiting), queued_runnable))
+
+    # node balancing invariants (one engine per node; every running pi worker holds a node lease; no idle node with waiters)
+    for name, pool in pools.items():
+        if name.startswith(("node:", "node-verify:")) and pool.get("limit") and pool.get("held", 0) > pool["limit"]:
+            findings.append("NODE %s holds %s sessions against a limit of %s (balancing broken)" % (name, pool["held"], pool["limit"]))
+    for l in cap.get("leases") or []:
+        lp = l.get("pools") or []
+        if "llm:pi-prompt" in lp and not any(x.startswith(("node:", "node-verify:")) for x in lp):
+            why = "node unknown after adoption" if l.get("node_unknown") else "no node lease"
+            findings.append("LEASE %s holds a pi-prompt slot with %s" % (l.get("holder"), why))
+    idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in PLACEMENT_SKIP_NODES]
+    node_waiters = [w for w in waiting if "waiting for node" in str(w.get("reason", ""))]
+    if idle_nodes and node_waiters:
+        findings.append("PLACEMENT idle %s while %d request(s) wait for a busy node" % (",".join(idle_nodes), len(node_waiters)))
+
+    # main checkout
+    dirty = [l for l in sh("git -C %s status --short" % BASE).splitlines() if not l.startswith("??")]
+    if dirty:
+        findings.append("MAIN checkout has %d uncommitted tracked file(s): a ship will abort until committed" % len(dirty))
+    ab = sh("git -C %s rev-list --left-right --count origin/main...main" % BASE).split()
+    if len(ab) == 2 and ab[1] != "0":
+        findings.append("MAIN is %s commit(s) ahead of origin: push pending" % ab[1])
+
+    # CI on main and tags
+    ci = sh("gh run list --limit 20 --json workflowName,conclusion,status,databaseId,headBranch,displayTitle,createdAt", 30)
+    # The Release run takes about an hour and is pushed out of the 20 newest runs by the others, so
+    # read the last few Release runs on their own (a failed container step went unseen for days).
+    rel = sh("gh run list --workflow release.yaml --limit 4 --json workflowName,conclusion,status,databaseId,headBranch,displayTitle,createdAt", 30)
+    try:
+        for r in json.loads(ci) + (json.loads(rel) if rel.strip().startswith("[") else []):
+            if r["workflowName"] == "Release CI Summary":
+                continue
+            if not (r["headBranch"] == "main" or r["headBranch"].startswith("v")):
+                continue
+            age = time.time() - time.mktime(time.strptime(r["createdAt"], "%Y-%m-%dT%H:%M:%SZ")) + time.timezone
+            if r["status"] == "completed" and r["conclusion"] not in ("success", "skipped", "cancelled"):
+                if age < 6 * 3600 and r["databaseId"] not in ACKED_RUNS and not (CODEQL_CONFLICT_KNOWN and r["workflowName"] == "CodeQL"):
+                    findings.append("CI RED %s run %s (%s)" % (r["workflowName"], r["databaseId"], r["displayTitle"][:40]))
+            elif r["status"] == "in_progress" and age > 150 * 60 and r["workflowName"] == "Release":
+                findings.append("CI STUCK? Release run %s in progress for %d min" % (r["databaseId"], age // 60))
+    except Exception:
+        findings.append("CI unreadable (gh rate limit or auth): check manually in the hourly tick")
+
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        json.dump({"held": held_now, "at": time.time()}, open(STATE, "w"))
+    except OSError:
+        pass
+
+    # release readiness per size: informational, printed after the verdict and never counted in it
+    try:
+        readiness = [line for _, line in release_readiness_lines()]
+    except Exception:
+        readiness = []
+
+    if record_path is not None:
+        recs = []
+        for f in findings + readiness:
+            mapped = map_finding(f)
+            if mapped is None:
+                continue  # outside the stable vocabulary; the daemon watch cannot key it
+            recs.append({"kind": mapped[0], "subject": mapped[1], "text": f})
+        try:
+            d = os.path.dirname(record_path)
+            if d:
+                os.makedirs(d, exist_ok=True)
+            with open(record_path, "w") as fh:
+                json.dump({"at": int(time.time()), "findings": recs}, fh)
+        except OSError as e:
+            print("record write failed: %s" % e, file=sys.stderr)
+
+    shadow = merge_shadow_lines()
+    if findings:
+        print("ATTENTION " + summary)
+        for f in findings:
+            print(" - " + f)
+    else:
+        print("OK " + summary)
+    for line in readiness:
+        print(line)
+    for line in shadow:
+        print(line)
+    return 1 if findings else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -21,6 +21,14 @@ const (
 	CapSessionsWrite = "sessions:write"
 	CapSessionsKill  = "sessions:kill"
 	CapSessionsInput = "sessions:input"
+	// CapSessionsResultWrite (GH#204 Phase 1) — a session-scoped credential
+	// may POST its owning session's structured run result (a later phase).
+	// Deliberately NOT added to ANY built-in group's caps — not even
+	// allCaps/full-control: it is meant to be minted explicitly into a
+	// per-session token's caps (the session package's minter path, backed
+	// by internal/auth.SessionTokenStore.Mint), the same least-privilege
+	// default this file uses for every other write-class capability.
+	CapSessionsResultWrite = "sessions:result_write"
 
 	// agents
 	CapAgentsList      = "agents:list"
@@ -69,6 +77,25 @@ const (
 	CapConfigRead  = "config:read"
 	CapConfigWrite = "config:write"
 
+	// usage (federated usage calculator series)
+	// CapUsageRead gates a peer's read of the shared usage readings
+	// (GET /api/usage/readings, including the hop-guarded local answer);
+	// CapUsageWrite gates a peer's forwarded writes
+	// (POST/DELETE /api/usage/readings, PUT /api/usage/extra-credit).
+	CapUsageRead  = "usage:read"
+	CapUsageWrite = "usage:write"
+
+	// plugins (widget data surface)
+	// CapPluginRead gates reading plugin widget data
+	// (GET /api/plugins/{name}/widgets[/{widget_id}]); CapPluginWrite
+	// gates minting or rotating a plugin's widget push token
+	// (POST /api/plugins/{name}/widgets/token). Both are deliberately
+	// left out of every built-in group below except the full-control
+	// allCaps list, so an operator must grant them explicitly to a
+	// federation peer via a custom group.
+	CapPluginRead  = "plugin:read"
+	CapPluginWrite = "plugin:write"
+
 	// secrets
 	CapSecretsList  = "secrets:list"
 	CapSecretsRead  = "secrets:read"
@@ -100,6 +127,14 @@ const (
 	// Read which can enumerate every other peer's entry too. Part of the
 	// federation-peer default group; List/Read are not, as of v9.0.0.
 	CapFederationSelf = "federation:self"
+	// CapFederationFingerprint gates the endpoint a peer calls to read this
+	// daemon's fingerprint hashes (the resource-fingerprint exchange from
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md). Deliberately
+	// added to allCaps only — full-control holds it, but it is in NO default
+	// group (not even federation-peer): a peer's control capability does not
+	// imply fingerprint trust, per that doc's open question 10 opt-in
+	// decision.
+	CapFederationFingerprint = "federation:fingerprint"
 
 	// docs
 	CapDocsRead = "docs:read"
@@ -155,13 +190,15 @@ var allCaps = []string{
 	CapLLMsList, CapLLMsRead, CapLLMsWrite,
 	CapComputeList, CapComputeRead, CapComputeWrite,
 	CapAnalyticsRead, CapAnalyticsWrite,
+	CapUsageRead, CapUsageWrite,
 	CapHealthRead,
 	CapConfigRead, CapConfigWrite,
+	CapPluginRead, CapPluginWrite,
 	CapSecretsList, CapSecretsRead, CapSecretsWrite,
 	CapPipelinesList, CapPipelinesRead, CapPipelinesStart, CapPipelinesCancel,
 	CapAutonomousList, CapAutonomousRead, CapAutonomousWrite, CapAutonomousRun,
 	CapCouncilList, CapCouncilRead, CapCouncilRun,
-	CapFederationList, CapFederationRead, CapFederationWrite, CapFederationSelf,
+	CapFederationList, CapFederationRead, CapFederationWrite, CapFederationSelf, CapFederationFingerprint,
 	CapDocsRead,
 	CapAuditRead,
 	CapCommRead, CapCommWrite,
@@ -189,6 +226,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Caps: []string{
 			CapHealthRead,
 			CapAnalyticsRead,
+			CapUsageRead,
 			CapSessionsList,
 			CapAgentsList,
 			CapObserversList,
@@ -235,13 +273,49 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Name:        "config-admin",
 		Description: "Read and write configuration",
 		Builtin:     true,
-		Caps:        []string{CapConfigRead, CapConfigWrite},
+		Caps:        []string{CapConfigRead, CapConfigWrite, CapUsageRead, CapUsageWrite},
+	},
+	// self-config (BL412 option C, docs/plans/2026-10-29-bl412-self-config-
+	// gate-proposal.md; operator answer 2026-11-01: fold the allow_self_config
+	// switch into the capability system as a built-in group, covering only
+	// non-secret settings). Holds exactly the configuration-write capabilities
+	// a session needs to change daemon settings:
+	//   config:write     — config_set, every *_config_set tool (detection,
+	//                     dns channel, proxy, channel routing, council,
+	//                     orchestrator, autonomous, autonomous scan, smoke
+	//                     forward), compute_pin_settings, usage_backoff_set
+	//   autonomous:write — autonomous_config_set, orchestrator_config_set,
+	//                     autonomous_scan_config_set (and their getters'
+	//                     sibling settings writers)
+	//   observers:write  — observer_config_set
+	//   llms:write       — llm_add / llm_update / llm_delete and the rest of
+	//                     the LLM registry writes
+	//   usage:write      — burn_guard_config_set, usage_extra_credit_set,
+	//                     usage_remaining_work_set
+	// Chosen exclusions, recorded here per the operator's "non-secret
+	// settings only" answer: secrets:* (secret_set and friends),
+	// federation:* — so server_add / server_update write the upstream-server
+	// registry but are granted only via federation:write, never this group;
+	// identity and daemon-control (restart_daemon / reload) have no dedicated
+	// capability to withhold, so they are kept OUT of the self-config
+	// classification instead (IsConfigWriteTool in mcp_tool_caps.go).
+	//
+	// BL412 option C followup: mcp.allow_self_config is the ALIAS for this
+	// group and defaults to ENABLED. When the alias is enabled, spawned
+	// sessions' scoped credentials are minted with this group added to the
+	// session-default grant (SessionDefaultGrantCaps below); an explicit
+	// grant (session.capabilities) can remove or narrow it.
+	SelfConfigGroup: {
+		Name:        SelfConfigGroup,
+		Description: "Session config-write surface: the setting writers a session may run — config:write, autonomous:write, observers:write, llms:write, usage:write. Excluded (non-secret settings only) and recorded here: secrets (secret_*), federation (so server_add/server_update stay outside), identity (set_identity/update_identity/configure_identity/restore/reset_identity) and daemon control (restart_daemon, reload) — see IsConfigWriteTool for the per-tool boundary",
+		Builtin:     true,
+		Caps:        []string{CapConfigWrite, CapAutonomousWrite, CapObserversWrite, CapLLMsWrite, CapUsageWrite},
 	},
 	"analytics-viewer": {
 		Name:        "analytics-viewer",
 		Description: "Cost analytics, dashboard, and audit log",
 		Builtin:     true,
-		Caps:        []string{CapAnalyticsRead, CapDashboardRead, CapAuditRead},
+		Caps:        []string{CapAnalyticsRead, CapDashboardRead, CapAuditRead, CapUsageRead},
 	},
 	"autonomous-operator": {
 		Name:        "autonomous-operator",
@@ -306,6 +380,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapLLMsList, CapLLMsRead,
 			CapComputeList, CapComputeRead,
 			CapAnalyticsRead,
+			CapUsageRead,
 			CapHealthRead,
 			CapConfigRead,
 			CapSecretsList,
@@ -330,7 +405,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			"PUT /api/smoke/forward-url) — narrower than full-control for " +
 			"a peer instance whose only job is reporting its own smoke runs",
 		Builtin: true,
-		Caps:    []string{CapAnalyticsRead, CapAnalyticsWrite},
+		Caps:    []string{CapAnalyticsRead, CapAnalyticsWrite, CapUsageRead},
 	},
 	// session-default (Design A3, v8.39.25) — the default grant for a
 	// per-session scoped credential (internal/auth.SessionTokenStore),
@@ -364,6 +439,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapObserversList, CapObserversRead,
 			CapHealthRead,
 			CapAnalyticsRead,
+			CapUsageRead, CapUsageWrite,
 			CapDocsRead,
 			CapAlertsList, CapAlertsRead,
 			CapAutonomousList, CapAutonomousRead,
@@ -381,6 +457,27 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Builtin:     true,
 		Caps:        allCaps,
 	},
+}
+
+// SelfConfigGroup is the name of the builtin capability group that
+// mcp.allow_self_config aliases (BL412 option C followup,
+// docs/plans/2026-10-29-bl412-self-config-gate-proposal.md). Defined as a
+// constant so the alias and the group cannot drift apart.
+const SelfConfigGroup = "self-config"
+
+// SessionDefaultGrantCaps is the grant list (group names) minted into a
+// spawned session's scoped credential when the operator has NOT set
+// session.capabilities: the builtin "session-default" group plus, when
+// the allow_self_config alias is enabled (its default), the builtin
+// "self-config" group. An explicit operator grant (session.capabilities)
+// is always used as-written instead of this helper — that is how the
+// self-config group is removed or narrowed on purpose.
+func SessionDefaultGrantCaps(selfConfigEnabled bool) []string {
+	grant := []string{"session-default"}
+	if selfConfigEnabled {
+		grant = append(grant, SelfConfigGroup)
+	}
+	return grant
 }
 
 // Resolve expands a slice of capability strings (group names and/or individual
@@ -439,7 +536,7 @@ func Check(granted []string, required string) bool {
 func ListBuiltinGroups() []*CapabilityGroup {
 	order := []string{
 		"monitor", "session-viewer", "session-operator",
-		"inference-admin", "config-reader", "config-admin",
+		"inference-admin", "config-reader", "config-admin", "self-config",
 		"analytics-viewer", "autonomous-operator", "council-operator",
 		"federation-peer", "comm-bridge", "comms-channel-agent", "session-default", "read-only", "full-control",
 	}

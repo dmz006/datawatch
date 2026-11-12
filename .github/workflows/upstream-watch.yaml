@@ -1,0 +1,116 @@
+# Upstream watch — maintainer tooling only, not part of the product.
+#
+# Runs daily at 06:15 UTC (after image-refresh at 05:30) plus on demand.
+# Never on push or pull_request: it reads pinned versions from the
+# default-branch files and only talks to upstream feeds.
+#
+# What it covers (scripts/upstream_watch.py), i.e. exactly what
+# Dependabot (.github/dependabot.yml) cannot see:
+#   1. Pinned tool versions — `ARG NAME=value` in docker/dockerfiles/*
+#      and Dockerfile.dev — compared against each tool's upstream feed.
+#   2. The scanner pin: the tag in scripts/trivy-version.txt compared
+#      with the latest aquasecurity/trivy release.
+#   3. Advisory-only: OSV queries for every pin whose package can be
+#      named.
+# Dependabot covers the rest: Go modules, Docker tags, workflow actions.
+#
+# This workflow does NOT create a pull request, push, or edit any file:
+# the edits are coupled. A Go version has a floor check
+# (scripts/check-go-toolchain-pins.sh) the pin must keep passing, and a gh
+# version bump must move GH_COMMIT to the new tag's commit in the same
+# Dockerfile. A human makes those edits. So the outcome is an issue, not
+# a PR: the report body is informational (what is stale, what is
+# coupled), and a human acts on it. Standing notes (monitoring-only
+# items) are reported in the body but do not open or keep an issue open
+# by themselves — only findings do.
+#
+# The job fails only if the script itself errors; finding something is
+# not a failure.
+#
+# See the upstream-monitoring maintainer guide under docs/plans/
+# (search for "upstream-monitoring").
+
+name: upstream-watch
+
+on:
+  schedule:
+    - cron: '15 6 * * *'   # daily 06:15 UTC, after image-refresh (05:30)
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      - name: Run upstream watch
+        # Exit status decides: the script is 0 whether or not findings
+        # exist, 2 on a real error — so this step (and thus the job)
+        # fails only on an actual crash.
+        id: run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          report_md="$(mktemp)"
+          report_json="$(mktemp)"
+          trap 'rm -f "$report_md" "$report_json"' EXIT
+          python3 scripts/upstream_watch.py \
+            --report-md "$report_md" \
+            --report-json "$report_json"
+          findings="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["findings_count"])' "$report_json")"
+          # Body passed to the issue step, truncated to 60000 characters
+          # (GitHub issue bodies are limited to 65535).
+          body="$(head -c 60000 "$report_md")"
+          body_file="$(mktemp)"
+          printf '%s' "$body" > "$body_file"
+          { echo "- upstream-watch ran: $findings finding(s)"; echo ""; printf '%s\n' "$body"; } >> "$GITHUB_STEP_SUMMARY"
+          echo "findings=$findings" >> "$GITHUB_OUTPUT"
+          echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
+
+      - name: Upsert tracking issue by label
+        # Finds the issue by the upstream-watch label, never by number.
+        # Only findings drive create/edit; a clean run comments and
+        # closes. Standing notes in the body never open an issue on
+        # their own because the findings gate is findings_count == 0.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FINDINGS: ${{ steps.run.outputs.findings }}
+          BODY_FILE: ${{ steps.run.outputs.body_file }}
+          LABEL: upstream-watch
+          TITLE: 'chore: upstream watch - pinned tools and advisories'
+        run: |
+          set -euo pipefail
+          # Ensure the label exists; ignore the "already exists" failure.
+          gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" || true
+          issue_number="$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label "$LABEL" --state open --limit 1 \
+            --json number -q '.[0].number // empty' || true)"
+          if [[ "$FINDINGS" != "0" ]]; then
+            if [[ -n "${issue_number:-}" ]]; then
+              gh issue edit "$issue_number" --repo "$GITHUB_REPOSITORY" \
+                --title "$TITLE" --body-file "$BODY_FILE"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" \
+                --title "$TITLE" --label "$LABEL" --body-file "$BODY_FILE"
+            fi
+          else
+            if [[ -n "${issue_number:-}" ]]; then
+              gh issue comment "$issue_number" --repo "$GITHUB_REPOSITORY" \
+                --body "Last upstream-watch run (GitHub run $GITHUB_RUN_ID) was clean — no findings. Closing this tracking issue; it will be reopened on the next run with findings."
+              gh issue close "$issue_number" --repo "$GITHUB_REPOSITORY"
+            fi
+          fi

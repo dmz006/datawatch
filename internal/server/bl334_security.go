@@ -55,8 +55,7 @@ func (s *Server) handleSecurityEncryptionStatus(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".datawatch")
+	base := s.statePath()
 
 	var files []encryptionFileStatus
 
@@ -89,8 +88,8 @@ func (s *Server) handleSecurityEncryptionStatus(w http.ResponseWriter, r *http.R
 		files = append(files, encryptionFileStatus{Path: appLog, Exists: false})
 	}
 
-	// discussion WAL and participants under ~/.datawatch/discussions/
-	discussionsDir := filepath.Join(base, "discussions")
+	// discussion WAL and participants under <data dir>/discussions/
+	discussionsDir := s.statePath("discussions")
 	if entries, err := os.ReadDir(discussionsDir); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() {
@@ -167,10 +166,9 @@ func (s *Server) handleSecurityEncryptionMigrate(w http.ResponseWriter, r *http.
 		return
 	}
 
-	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".datawatch")
+	base := s.statePath()
 
-	migratedDiscussions, err := secfile.MigrateDiscussionWALs(filepath.Join(base, "discussions"), s.encKey)
+	migratedDiscussions, err := secfile.MigrateDiscussionWALs(s.statePath("discussions"), s.encKey)
 	if err != nil {
 		http.Error(w, "discussion migration: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -227,14 +225,13 @@ func (s *Server) handleSecurityWipePlaintext(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".datawatch")
+	base := s.statePath()
 
 	var wiped []string
 	var skipped []string
 
 	// Collect plaintext discussion WAL and participants files.
-	discussionsDir := filepath.Join(base, "discussions")
+	discussionsDir := s.statePath("discussions")
 	if entries, err := os.ReadDir(discussionsDir); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() {

@@ -21,6 +21,10 @@ exec_steps:
     args:
       name: "{{params.name}}"
     read_only: true
+  - tool: observer_pull_status
+    description: Read per-peer observer pull states (pull mode; off by default)
+    args: {}
+    read_only: true
 ---
 # How-to: Federated observer
 
@@ -113,12 +117,15 @@ observer:
   peers:
     push_to:
       - name: primary-kona
-        url: https://100.64.0.1:8443    # primary's tailnet IP
+        url: https://198.51.100.1:8443    # primary's tailnet IP
         token: ${secret:PRIMARY_TOKEN}
         shape: B                        # or A / C
 ```
 
 `datawatch reload` on each.
+
+> The peer URLs in this guide are placeholders; each node's real URL lives in
+> its operator config and is not committed to this repository.
 
 ## Two happy paths
 
@@ -137,14 +144,14 @@ datawatch observer peer-token-mint --name lab-east-peer
 # 2. Register.
 datawatch secrets set PRIMARY_TOKEN "ops_..."
 datawatch observer peer-register \
-  --primary-url https://100.64.0.1:8443 \
+  --primary-url https://198.51.100.1:8443 \
   --name lab-east-peer \
   --shape B
 #  → registered; pushing every 5s
 
 # On the PEER — start datawatch-stats pushing to multiple primaries:
 datawatch-stats \
-  --datawatch https://100.64.0.1:8443,https://100.64.0.2:8443 \
+  --datawatch https://198.51.100.1:8443,https://198.51.100.2:8443 \
   --insecure-tls
 
 # Back on the PRIMARY:
@@ -152,7 +159,7 @@ datawatch-stats \
 # 3. Confirm peers are pushing (includes is_self:true entry for local daemon).
 datawatch observer peers
 #  → (self)           shape:A   is_self:true  ip:local
-#    lab-east-peer    shape:B   last_push:3s ago   ip:100.64.0.42
+#    lab-east-peer    shape:B   last_push:3s ago   ip:198.51.100.142
 #                                compute_node:datawatch-ollama
 
 # 4. View free peers (not yet bound to a Compute Node).
@@ -203,9 +210,133 @@ datawatch observer peer-remove lab-east-peer
    only).
 9. Click into a peer row → drill-down modal: last snapshot, push
    history, per-envelope detail.
-10. Cog-nav badge: when any peer goes stale (no push in >60s), the
-    gear icon shows a numeric badge. Click → navigates to Federated
-    Peers + flashes the offending row.
+10. Peer connectivity: there is no badge on the Settings nav button. A
+    peer that last pushed more than a minute ago shows an inline
+    "Stale (age)" note on its row in the Observer peer list; a peer that
+    has never pushed shows "Never pushed". The daemon's own row is
+    skipped. For a longer outage the daemon raises one system alert
+    (see "Silent-peer alert" below).
+
+> **Operator review.** Confirm the default `silent_alert_minutes: 5`
+> suits your lab, and recapture any Settings-nav screenshots that still
+> show the old peer-stale badge. Story TS-852 checks at 390 px that
+> nothing covers the Settings nav label.
+
+### Silent-peer alert
+
+The daemon watches every registered observer peer (never its own row).
+When a peer has not pushed for longer than
+`observer.peers.silent_alert_minutes` it raises a system alert.
+
+- **Setting.** `observer.peers.silent_alert_minutes` is a whole number
+  of minutes. The default is 5. `0` turns the watcher off.
+- **Once per outage.** The warning alert, "Observer peer silent:
+  <name>", names the peer, how long it has been silent and the time of
+  its last push. You get it once, not again on every check while the
+  peer stays down. A peer that never pushed is measured from its
+  registration time and shows "never" as its last push.
+- **Recovery alert.** When the peer pushes again, an info alert,
+  "Observer peer recovered: <name>", closes the outage. If it goes
+  silent again later, that is a new outage and a new alert.
+- **Momentary gaps never alert.** A peer that is quiet for less than the
+  threshold, such as a late push or a short network blip, raises
+  nothing and needs no clean-up.
+- **Stale indicator.** Separate from the alert, a peer that last pushed
+  more than a minute ago shows an inline "Stale (age)" note on its row
+  in the Observer peer list ("Never pushed" if it has not pushed at
+  all). The note appears well before the alert fires, so you can spot a
+  struggling peer early.
+
+Ways to read or change the setting:
+
+| Access method | How |
+|---|---|
+| YAML | Set `silent_alert_minutes` under `observer.peers` in `~/.datawatch/config.yaml`. |
+| CLI | `datawatch config set observer.peers.silent_alert_minutes <n>` |
+| Web UI | Settings, Observer section, "Silent peer alert after (minutes; 0 = disabled)" field. |
+| REST | `PUT /api/config` with `observer.peers.silent_alert_minutes`; read it back with `GET /api/config`. |
+| MCP | `config_set` with key `observer.peers.silent_alert_minutes`; read it back with `get_config` section `observer`. |
+| Comm channel | `configure observer.peers.silent_alert_minutes=<n>` |
+
+## Pull mode
+
+Push mode makes the **peer** send its stats to the primary. Pull mode is
+the other direction: the **primary's daemon fetches the peer's v2 stats
+on a schedule**, and the peer does nothing — no registration, no push
+token, no inbound registration gate on the peer. Pull mode is **off by
+default**: it needs the global `observer.pull` block enabled *and* the
+individual peer opted in (`observer_pull: true`).
+
+### Push vs pull
+
+| | Push mode | Pull mode |
+|---|---|---|
+| **Who initiates** | The peer daemon (or its `datawatch-stats` sidecar) pushes into the primary | The primary's daemon pulls `GET /api/observer/stats?v=2` from the peer |
+| **Credential** | A peer-minted registration token the peer presents on push (peer stores it in `push_to`) | The peer's bearer token stored in the primary's federation peer store; the primary sends it as `Authorization: Bearer …` on the outbound fetch, and the peer enforces the `observers:read` capability on it |
+| **Firewall direction** | Inbound to the primary (the peer must be able to reach it) | Outbound from the primary (the peer just needs its API reachable on the mesh) |
+| **Snapshot trigger** | The peer's own push cadence (`push_interval`) | The primary's per-peer ticker: `observer_pull_interval_s` per peer, else the global `observer.pull.default_interval_s` (default **30 s**, minimum **5 s**); each fetch is bounded by the per-peer timeout (`observer_pull_timeout_s`, else `observer.pull.default_timeout_s`, default **5 s**) |
+| **Staleness rules** | A peer with no push in >60 s goes stale (cog badge) | Per-peer `stale` flag plus a `stale_reason`: `none` \| `timeout` \| `error` \| `forbidden` (401/403) \| `not_permitted` (peer lacks the `observers:read` capability — no request is even issued) \| `bad_payload` (stats v2 decode failed) \| `unknown` |
+| **Shadow state** | A registered peer that never pushed shows as a shadow row: visible in the merged peer list but contributes no data and is excluded from the envelope aggregate | A federation peer with pull off and no push is a shadow row; a peer that is *also* pull-target shows `shadow: true` on its pull row, and appears **once** in the merged peer list |
+| **Compute-node binding** | Bindable; `Node.observer_peer` auto-sets by name-match on first push | A peer with pull configured is bindable through the same attach endpoint; a shadow peer (no push, no pull) is refused with `409` |
+| **On by default?** | Off until the peer is registered with `allow_register` open on the primary | **Off**: `observer.pull.enabled` defaults to `false` and every peer's `observer_pull` defaults to `false` |
+
+A slow or blocked peer never delays the others: each target pulls in its
+own goroutine with its own timeout, and a failed peer is simply marked
+stale with a reason until the next fetch succeeds.
+
+### Configuring pull
+
+Global defaults (primary side), `~/.datawatch/datawatch.yaml`:
+
+```yaml
+observer:
+  pull:
+    enabled: true              # off by default — global gate for the pull collector
+    default_interval_s: 30     # per-peer fallback (minimum 5)
+    default_timeout_s: 5       # per-fetch timeout fallback
+```
+
+Per peer (any access method), on the primary:
+
+```bash
+# CLI — opt the peer in; interval/timeout 0 = use the global defaults.
+datawatch federation peer add lab-west \
+  --url https://198.51.100.99:8443 --token <PEER_BEARER_TOKEN> \
+  --observer-pull --observer-pull-interval 30 --observer-pull-timeout 5
+
+# or flip an existing peer
+datawatch federation peer update lab-west --observer-pull
+```
+
+The Web UI's federation peer form has the **Observer pull** opt-in plus
+pull interval and pull timeout fields (blank = server default). The REST
+surface is `PUT /api/federation/peers/<name>` with `observer_pull`,
+`observer_pull_interval_s`, `observer_pull_timeout_s`, and the global
+defaults via `PUT /api/config` keys `observer.pull.enabled`,
+`observer.pull.default_interval_s`, `observer.pull.default_timeout_s`.
+
+The peer being pulled needs no operator work: it only serves
+`GET /api/observer/stats?v=2` (observer enabled) to a token that carries
+the `observers:read` capability.
+
+### Five access methods
+
+| Method | Configure pull | Read pull status |
+|---|---|---|
+| **YAML** | `observer.pull.{enabled,default_interval_s,default_timeout_s}` in `~/.datawatch/datawatch.yaml` + `datawatch reload` | — (status is live state, not config) |
+| **CLI** | `datawatch config set observer.pull.*`; `federation peer add/update --observer-pull [--observer-pull-interval N] [--observer-pull-timeout N]` | `datawatch observer pull status` (`--json` for the raw payload) |
+| **Web UI** | Federation peer form: **Observer pull** checkbox + interval/timeout fields | Peer rows show a **source** badge (push / pull / shadow) and a stale chip with the reason |
+| **REST API** | `PUT /api/config` (`observer.pull.*` keys); `POST`/`PUT /api/federation/peers[/name]` (`observer_pull*` fields) | `GET /api/observer/pull`; the merged `GET /api/observer/peers` rows carry `source`, `shadow` and a `pull` object |
+| **Comm channel** | `rest PUT /api/config …` / `rest PUT /api/federation/peers/<name> …` passthrough | `observer pull status` |
+
+### Where to see pull status
+
+| Surface | What you get |
+|---|---|
+| **Web UI** | Observer → Federated Peers: source badge per row (push / pull / shadow), stale chip with reason; the peer form's pull fields |
+| **REST API** | `GET /api/observer/pull` → `{peers: [{name, source: "pull", shadow, stale, stale_reason, last_success_at, interval_s, timeout_s}]}` (empty array when no peer is opted in; bearer tokens are never returned) |
+| **Comm channel** | `observer pull status` — the same rows, table-rendered |
+| **MCP** | `observer_pull_status` tool (read-only, `observers:read`) — same rows for an LLM or automation |
 
 ## Other channels
 
@@ -230,7 +361,7 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
 # Register (called by the peer).
 curl -sk -X POST -H "Authorization: Bearer $PRIMARY_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"lab-east-peer","shape":"B","url":"https://100.64.0.42:8443"}' \
+  -d '{"name":"lab-east-peer","shape":"B","url":"https://198.51.100.142:8443"}' \
   $PRIMARY_BASE/api/observer/peers
 
 # Remove.
@@ -267,6 +398,7 @@ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
 Tools: `observer_peers_list`, `observer_envelopes`,
 `observer_envelopes_all_peers`, `observer_peer_register`,
 `observer_peer_delete`, `observer_peers_free`, `observer_peers_by_node`,
+`observer_pull_status` (pull mode; see the Pull mode section above),
 `federation_meta_peers`, `compute_node_attach_observer`,
 `compute_node_detach_observer`.
 
@@ -287,6 +419,7 @@ to find unbound peers that can be attached to a new Compute Node.
 | `compute node observer-free` | List free (unbound) observer peers. |
 | `compute node observer-by-node` | List peers grouped by Compute Node. |
 | `compute node federation-meta-peers` | Cross-instance meta-peers view. |
+| `observer pull status` | Per-peer observer pull states (pull mode): source, shadow, stale + reason, last success, interval and timeout. |
 
 ### 5e. YAML
 
@@ -300,7 +433,7 @@ observer:
     push_interval: 5s
     push_to:                          # peer-side: where to push
       - name: primary-kona
-        url: https://100.64.0.1:8443
+        url: https://198.51.100.1:8443
         token: ${secret:PRIMARY_TOKEN}
         shape: B
         push_memory_summaries: true   # opt-in: forward memory snippets
@@ -330,6 +463,69 @@ restructuring.
    All over the same Tailscale mesh. No public exposure.
 ```
 
+## Install the datawatch-stats peer
+
+For a host that only runs the `datawatch-stats` observer reporter (no
+full daemon), the repo ships a standalone installer:
+
+```bash
+bash install/install-stats.sh --datawatch <parent-url>
+```
+
+Common options:
+
+| Option | Meaning |
+|--------|---------|
+| `--datawatch URL` | Parent datawatch base URL (required, or `DATAWATCH_URL` env) |
+| `--name NAME` | Stable peer name reported to the parent (default: hostname) |
+| `--version <version>` | Pin a specific release instead of fetching the latest |
+| `--archive PATH` | Install from a local tarball — no download, no version fetch |
+| `--service` | Also install and enable a systemd service (user, or system with `--root`) |
+| `--root` | System-wide install: `/usr/local/bin` + system service (needs sudo) |
+
+Without `--service`, the installer prints the exact manual start
+command. The bearer token minted by the parent is stored under
+`~/.datawatch-stats/peer.token` (or `/var/lib/datawatch-stats/peer.token`
+for `--root`) and is never written to stdout or logs.
+
+### Release archives
+
+A release publishes the observer peer as its **own** asset:
+
+```
+datawatch-stats_<version>_linux_<amd64|arm64>.tar.gz   # the stats binary
+datawatch_<version>_linux_<arch>.tar.gz                # the main daemon archive
+```
+
+`datawatch_<version>_linux_<arch>.tar.gz` is the **main daemon**
+release, not the stats archive. The installer first looks for the
+standalone `datawatch-stats_<version>_linux_<amd64|arm64>.tar.gz`
+asset; for older releases that shipped the `datawatch-stats` binary
+inside the main archive, it automatically falls back to
+`datawatch_<version>_linux_<arch>.tar.gz` and extracts the binary
+from there. Either way the result is the same: you always end up
+with a working `datawatch-stats`.
+
+### Offline / air-gapped installs
+
+`--archive PATH` skips the download (and the version lookup) and
+installs from a tarball you staged on the host — the standalone
+stats archive or a legacy main-daemon archive both work, as long as
+the `datawatch-stats` binary is inside:
+
+```bash
+# On the air-gapped host, after the archive has been copied in:
+bash install/install-stats.sh \
+  --datawatch https://primary.tailnet.internal:8443 \
+  --name edge-observer \
+  --archive /tmp/datawatch-stats_<version>_linux_amd64.tar.gz
+```
+
+> **Note**: the archive must actually contain the `datawatch-stats`
+> binary; the installer errors out otherwise. For a fully offline pin,
+> combine `--archive` with `--version <version>` if the filename does
+> not already encode it.
+
 ## Common pitfalls
 
 - **Peer can't reach primary.** Mesh is up but `push_to.url` wrong
@@ -343,9 +539,13 @@ restructuring.
 - **Memory summaries not flowing.** Opt-in: `push_memory_summaries:
   true` on the peer. Off by default to avoid leaking content across
   trust boundaries.
-- **Cog badge stuck on N stale.** A registered peer hasn't pushed in
-  >60s. Either bring it back or remove the peer record. Click the
-  badge in the PWA to navigate to it.
+- **Peer row shows "Stale" or "Never pushed".** A registered peer
+  hasn't pushed in over a minute (or ever). Either bring it back or
+  remove the peer record. The Settings nav button no longer carries a
+  badge; look at the peer row in the Observer peer list.
+- **"Observer peer silent" alert.** The peer was silent longer than
+  `observer.peers.silent_alert_minutes`. One alert per outage; an
+  "Observer peer recovered" alert follows when it pushes again.
 
 ## Linked references
 
@@ -360,7 +560,7 @@ restructuring.
 - [ ] Mint peer token modal
 - [ ] Peer drill-down with last snapshot
 - [ ] Cross-host envelope view
-- [ ] Cog-icon stale badge with breadcrumb to flashing peer row
+- [ ] Peer row with the inline "Stale (age)" and "Never pushed" notes
 - [ ] CLI `datawatch observer peers` output
 
 ---

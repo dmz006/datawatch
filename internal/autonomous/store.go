@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +33,22 @@ type Store struct {
 	profiles map[string]*GuardrailProfile
 	// BL410 Phase 1 — retry profiles
 	retryProfiles map[string]*RetryProfile
+	// managed tags
+	tags map[string]*Tag
+
+	// rec is the per-PRD record layout state (store_records.go).
+	rec prdRecords
+
+	// SavePRDFailHook is test-only: when set and it returns true for a PRD,
+	// SavePRD rejects the save with an error. Nil in production — behavior
+	// is unchanged when unset.
+	SavePRDFailHook func(prd *PRD) bool
+
+	// objectTagDeriver, when wired (NewManager does), re-derives the
+	// object system tags under the live tags.placement block and replaces
+	// the record's SystemTags on SavePRD/SaveTask (see ObjectTagDeriver).
+	// Nil stores leave SystemTags untouched.
+	objectTagDeriver ObjectTagDeriver
 }
 
 // NewStore opens (or creates) the JSONL files under dir/autonomous/.
@@ -46,11 +64,22 @@ func NewStore(dataDir string) (*Store, error) {
 		tasks:         map[string]*Task{},
 		profiles:      map[string]*GuardrailProfile{},
 		retryProfiles: map[string]*RetryProfile{},
+		tags:          map[string]*Tag{},
+		rec:           newPRDRecords(),
 	}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// SetObjectTagDeriver wires object-derived system tags into this store's
+// save paths: SavePRD and SaveTask replace the record's SystemTags with
+// the derived list before the write (see ObjectTagDeriver and
+// replaceSystemTags). A nil deriver leaves SystemTags exactly as held —
+// the behaviour of any store the Manager does not wire.
+func (s *Store) SetObjectTagDeriver(d ObjectTagDeriver) {
+	s.objectTagDeriver = d
 }
 
 // CreatePRD generates an ID, persists, and returns the new PRD.
@@ -83,7 +112,7 @@ func (s *Store) CreatePRDWithParent(spec, projectDir, backend, model string, eff
 		Depth:        depth,
 	}
 	s.prds[prd.ID] = prd
-	if err := s.persist(); err != nil {
+	if err := s.persistPRD(prd.ID); err != nil {
 		return nil, err
 	}
 	return prd, nil
@@ -161,7 +190,7 @@ func (s *Store) DeletePRD(id string) error {
 			}
 		}
 	}
-	return s.persist()
+	return s.persistDeleted(toRemove...)
 }
 
 // UpdatePRDFields (v5.19.0) edits PRD-level fields (Title, Spec) on
@@ -186,7 +215,7 @@ func (s *Store) UpdatePRDFields(id, title, spec string) (*PRD, error) {
 		p.Spec = spec
 	}
 	p.UpdatedAt = time.Now()
-	if err := s.persist(); err != nil {
+	if err := s.persistPRD(id); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -199,13 +228,31 @@ func (s *Store) UpdatePRDFields(id, title, spec string) (*PRD, error) {
 // + re-run hundreds of times grows multi-MB Decisions slices that bloat
 // every JSONL row + the in-memory store snapshot the loop reads.
 func (s *Store) SavePRD(p *PRD) error {
+	d := s.objectTagDeriver
+	var derived []string
+	if d != nil {
+		// Object system tags: derived before the lock (the fact read is
+		// a store read and must not run under s.mu). The full derived
+		// list replaces the stored one below — no-op when equal — with
+		// the assignment inside the lock so it is ordered against the
+		// persist encode of this PRD.
+		derived = d.ObjectTagsForPRD(p)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.SavePRDFailHook != nil && s.SavePRDFailHook(p) {
+		return errors.New("SavePRD: forced failure (test hook)")
+	}
+	if d != nil {
+		p.SystemTags = replaceSystemTags(p.SystemTags, derived)
+	}
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
+	clearStaleBlockedReason(p)
+	p.NotifyEventsEffective = nil // computed read-time view; never persisted
 	p.Rev++
 	s.prds[p.ID] = p
-	return s.persist()
+	return s.persistPRD(p.ID)
 }
 
 // ErrPRDStale (BL451) is returned by CommitPRDIfRev when the PRD's Rev
@@ -233,8 +280,18 @@ func (s *Store) CommitPRDIfRev(id string, expectedRev int, mutate func(p *PRD) b
 	}
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
+	clearStaleBlockedReason(p)
+	p.NotifyEventsEffective = nil // computed read-time view; never persisted
 	p.Rev++
-	return s.persist()
+	return s.persistPRD(id)
+}
+
+// clearStaleBlockedReason empties BlockedReason unless the PRD is blocked,
+// so a reason from an earlier block never outlives that block.
+func clearStaleBlockedReason(p *PRD) {
+	if p.Status != PRDBlocked {
+		p.BlockedReason = ""
+	}
 }
 
 // PRDRev (BL451) returns the PRD's current revision under the lock.
@@ -248,12 +305,82 @@ func (s *Store) PRDRev(id string) (int, bool) {
 	return p.Rev, true
 }
 
-// GetPRD by ID; returns false on miss.
+// GetPRD by ID; returns false on miss. The result is the live *PRD held
+// in the store, so callers that mutate it and then SavePRD keep working,
+// but it must not be read concurrently with executor writes; read-only
+// callers that may overlap a running executor should use SnapshotPRD.
 func (s *Store) GetPRD(id string) (*PRD, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.prds[id]
 	return p, ok
+}
+
+// SnapshotPRD returns a deep copy of the PRD (stories, tasks and every
+// nested slice, map and pointer) taken under the store lock; returns false
+// on miss. The copy shares nothing with the stored PRD, so it is safe to
+// read after the call returns and mutating it never alters the store.
+func (s *Store) SnapshotPRD(id string) (*PRD, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.prds[id]
+	if !ok {
+		return nil, false
+	}
+	return deepCopyPRD(p), true
+}
+
+// deepCopyPRD copies p including all reachable exported slices, maps and
+// pointers. Unexported fields (e.g. time.Time internals) are copied by value.
+func deepCopyPRD(p *PRD) *PRD {
+	out := new(PRD)
+	deepCopyValue(reflect.ValueOf(out).Elem(), reflect.ValueOf(p).Elem())
+	return out
+}
+
+func deepCopyValue(dst, src reflect.Value) {
+	switch src.Kind() {
+	case reflect.Struct:
+		dst.Set(src) // by-value copy covers unexported fields
+		for i := 0; i < src.NumField(); i++ {
+			if src.Type().Field(i).IsExported() {
+				deepCopyValue(dst.Field(i), src.Field(i))
+			}
+		}
+	case reflect.Slice:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Len()))
+		for i := 0; i < src.Len(); i++ {
+			deepCopyValue(dst.Index(i), src.Index(i))
+		}
+	case reflect.Map:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.MakeMapWithSize(src.Type(), src.Len()))
+		for _, k := range src.MapKeys() {
+			v := reflect.New(src.Type().Elem()).Elem()
+			deepCopyValue(v, src.MapIndex(k))
+			dst.SetMapIndex(k, v)
+		}
+	case reflect.Pointer:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.New(src.Type().Elem()))
+		deepCopyValue(dst.Elem(), src.Elem())
+	case reflect.Interface:
+		if src.IsNil() {
+			return
+		}
+		v := reflect.New(src.Elem().Type()).Elem()
+		deepCopyValue(v, src.Elem())
+		dst.Set(v)
+	default:
+		dst.Set(src)
+	}
 }
 
 // ListPRDs returns all PRDs newest-first.
@@ -271,6 +398,20 @@ func (s *Store) ListPRDs() []*PRD {
 				out[i], out[j] = out[j], out[i]
 			}
 		}
+	}
+	return out
+}
+
+// ListTasks returns pointers to every task the store holds, newest PRD
+// first for stable ordering. It is the enumeration the tag sweep uses to
+// re-derive the object system tags of existing task records;
+// Store's tasks map has no other read API.
+func (s *Store) ListTasks() []*Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Task, 0, len(s.tasks))
+	for _, t := range s.tasks {
+		out = append(out, t)
 	}
 	return out
 }
@@ -350,7 +491,7 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 	}
 	prd.Story = stories
 	prd.UpdatedAt = time.Now()
-	return s.persist()
+	return s.persistPRD(prdID)
 }
 
 // dependsOnReStoryTask matches a positional "sN-tM" reference (the Mth task
@@ -397,10 +538,21 @@ var dependsOnRePlainNumber = regexp.MustCompile(`^[1-9][0-9]*$`)
 func resolveDependsOn(stories []Story, storyByID map[string]*Story, taskByID map[string]*Task) error {
 	taskIDByTitle := make(map[string]string, len(taskByID))
 	storyIDByTitle := make(map[string]string, len(stories))
+	// The ids of the plan being resolved. The store maps only hold plans that
+	// are already stored, so an entry that names an id inside this very plan
+	// (the task templates build theirs from real ids) is matched here.
+	planStoryIDs := make(map[string]bool, len(stories))
+	planTaskIDs := make(map[string]bool, len(taskByID))
 	for i := range stories {
 		storyIDByTitle[stories[i].Title] = stories[i].ID
+		if stories[i].ID != "" {
+			planStoryIDs[stories[i].ID] = true
+		}
 		for j := range stories[i].Tasks {
 			taskIDByTitle[stories[i].Tasks[j].Title] = stories[i].Tasks[j].ID
+			if stories[i].Tasks[j].ID != "" {
+				planTaskIDs[stories[i].Tasks[j].ID] = true
+			}
 		}
 	}
 
@@ -414,14 +566,14 @@ func resolveDependsOn(stories []Story, storyByID map[string]*Story, taskByID map
 	resolve := func(raw string, storyLevel bool) (string, bool) {
 		e := strings.TrimSpace(raw)
 		if storyLevel {
-			if _, ok := storyByID[e]; ok {
+			if _, ok := storyByID[e]; ok || planStoryIDs[e] {
 				return e, true
 			}
 			if id, ok := storyIDByTitle[e]; ok {
 				return id, true
 			}
 		} else {
-			if _, ok := taskByID[e]; ok {
+			if _, ok := taskByID[e]; ok || planTaskIDs[e] {
 				return e, true
 			}
 			if id, ok := taskIDByTitle[e]; ok {
@@ -581,7 +733,7 @@ func (s *Store) RepairDependsOn(prdID string) (*PRD, error) {
 		return nil, err
 	}
 	prd.UpdatedAt = time.Now()
-	if err := s.persist(); err != nil {
+	if err := s.persistPRD(prdID); err != nil {
 		return nil, err
 	}
 	return prd, nil
@@ -589,11 +741,24 @@ func (s *Store) RepairDependsOn(prdID string) (*PRD, error) {
 
 // SaveTask updates one task's state.
 func (s *Store) SaveTask(t *Task) error {
+	d := s.objectTagDeriver
+	var derived []string
+	if d != nil {
+		// Same discipline as SavePRD: derivation (a fact read that must
+		// not run under s.mu) before the lock; the full derived list
+		// replaces the stored one — no-op when equal — with the
+		// assignment inside the lock, ordered against the persist encode
+		// of the PRD's task list.
+		derived = d.ObjectTagsForTask(t)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if d != nil {
+		t.SystemTags = replaceSystemTags(t.SystemTags, derived)
+	}
 	t.UpdatedAt = time.Now()
 	s.tasks[t.ID] = t
-	return s.persist()
+	return s.persistPRD(t.PRDID)
 }
 
 // GetTask by ID.
@@ -602,6 +767,16 @@ func (s *Store) GetTask(id string) (*Task, bool) {
 	defer s.mu.Unlock()
 	t, ok := s.tasks[id]
 	return t, ok
+}
+
+// WithLock runs f holding the store lock. Plain field writes to a PRD,
+// Story or Task reachable from the store must go through it so they are
+// ordered against persist's JSON encoding and against snapshot reads; f
+// must not call other Store methods (the lock is not re-entrant).
+func (s *Store) WithLock(f func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f()
 }
 
 // TaskSnapshot returns a value copy of one task taken under the store
@@ -634,7 +809,29 @@ func (s *Store) MutateTask(id string, f func(*Task)) bool {
 	}
 	f(t)
 	t.UpdatedAt = time.Now()
-	_ = s.persist()
+	_ = s.persistPRD(t.PRDID)
+	return true
+}
+
+// MutatePRD applies f to one canonical PRD under the store lock and persists
+// the result only when f returns true (a no-op reports false and leaves the
+// stored PRD untouched). Field mutations made this way are synchronized with
+// SnapshotPRD reads from other goroutines, unlike direct field writes on
+// GetPRD's shared pointer (a pattern that is race-unsafe the moment a
+// concurrent reader is involved — e.g. setPRDWaitReason racing a status poll
+// during a run). Mirrors MutateTask at the PRD level.
+func (s *Store) MutatePRD(id string, f func(p *PRD) bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.prds[id]
+	if !ok {
+		return false
+	}
+	if !f(p) {
+		return false
+	}
+	p.UpdatedAt = time.Now()
+	_ = s.persistPRD(id)
 	return true
 }
 
@@ -677,7 +874,7 @@ func (s *Store) AddStory(prdID, title, description string) (*Story, error) {
 	prd.Story = append(prd.Story, story)
 	prd.UpdatedAt = time.Now()
 	s.reindexPRDLocked(prd)
-	if err := s.persist(); err != nil {
+	if err := s.persistPRD(prdID); err != nil {
 		return nil, err
 	}
 	return &prd.Story[len(prd.Story)-1], nil
@@ -708,7 +905,7 @@ func (s *Store) RemoveStory(prdID, storyID string) error {
 	prd.Story = append(prd.Story[:idx], prd.Story[idx+1:]...)
 	prd.UpdatedAt = time.Now()
 	s.reindexPRDLocked(prd)
-	return s.persist()
+	return s.persistPRD(prdID)
 }
 
 // AddTask appends a new task to an existing story.
@@ -750,7 +947,7 @@ func (s *Store) AddTask(prdID, storyID, title, spec string, dependsOn []string) 
 		prd.Story[i].UpdatedAt = time.Now()
 		prd.UpdatedAt = time.Now()
 		s.reindexPRDLocked(prd)
-		if err := s.persist(); err != nil {
+		if err := s.persistPRD(prdID); err != nil {
 			return nil, err
 		}
 		return &prd.Story[i].Tasks[len(prd.Story[i].Tasks)-1], nil
@@ -785,7 +982,7 @@ func (s *Store) RemoveTask(prdID, storyID, taskID string) error {
 		prd.Story[i].UpdatedAt = time.Now()
 		prd.UpdatedAt = time.Now()
 		s.reindexPRDLocked(prd)
-		return s.persist()
+		return s.persistPRD(prdID)
 	}
 	return fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 }
@@ -812,7 +1009,7 @@ func (s *Store) AddLearning(l Learning) error {
 	if len(s.learnings) > maxLearnings {
 		s.learnings = s.learnings[len(s.learnings)-maxLearnings:]
 	}
-	return s.persist()
+	return s.persistOthers()
 }
 
 // ListLearnings returns all stored learnings.
@@ -830,7 +1027,7 @@ func (s *Store) SaveGuardrailProfile(p *GuardrailProfile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.profiles[p.ID] = p
-	return s.persist()
+	return s.persistOthers()
 }
 
 // GetGuardrailProfile returns a profile by ID (BL303 S2).
@@ -868,7 +1065,51 @@ func (s *Store) DeleteGuardrailProfile(id string) error {
 		return fmt.Errorf("guardrail profile %q not found", id)
 	}
 	delete(s.profiles, id)
-	return s.persist()
+	return s.persistOthers()
+}
+
+// SaveTag upserts a tag.
+func (s *Store) SaveTag(t *Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tags[t.ID] = t
+	return s.persistOthers()
+}
+
+// GetTag returns a tag by ID.
+func (s *Store) GetTag(id string) (*Tag, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tags[id]
+	return t, ok
+}
+
+// ListTags returns all tags sorted by name (ID as tiebreak).
+func (s *Store) ListTags() []*Tag {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Tag, 0, len(s.tags))
+	for _, t := range s.tags {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// DeleteTag removes a tag by ID.
+func (s *Store) DeleteTag(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tags[id]; !ok {
+		return fmt.Errorf("tag %q not found", id)
+	}
+	delete(s.tags, id)
+	return s.persistOthers()
 }
 
 // SaveRetryProfile upserts a profile (BL410 Phase 1).
@@ -876,7 +1117,7 @@ func (s *Store) SaveRetryProfile(p *RetryProfile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.retryProfiles[p.ID] = p
-	return s.persist()
+	return s.persistOthers()
 }
 
 // GetRetryProfile returns a profile by ID (BL410 Phase 1).
@@ -913,30 +1154,14 @@ func (s *Store) DeleteRetryProfile(id string) error {
 		return fmt.Errorf("retry profile %q not found", id)
 	}
 	delete(s.retryProfiles, id)
-	return s.persist()
+	return s.persistOthers()
 }
 
 func (s *Store) load() error {
-	if err := loadJSONL(filepath.Join(s.dir, "prds.jsonl"), func(line []byte) error {
-		var p PRD
-		if err := json.Unmarshal(line, &p); err != nil {
-			return err
-		}
-		p.Status = NormalizePRDStatus(p.Status)
-		migrateGuidedMode(&p) // BL406 Phase 5 — B111's real fix
-		s.prds[p.ID] = &p
-		// rebuild story/task indexes
-		for i := range p.Story {
-			st := &p.Story[i]
-			s.stories[st.ID] = st
-			for j := range st.Tasks {
-				s.tasks[st.Tasks[j].ID] = &st.Tasks[j]
-			}
-		}
-		return nil
-	}); err != nil {
+	if err := s.loadPRDs(); err != nil {
 		return err
 	}
+	s.clearStaleProgress() // boot-time safety re-check of the progress invariant
 	if err := loadJSONL(filepath.Join(s.dir, "learnings.jsonl"), func(line []byte) error {
 		var l Learning
 		if err := json.Unmarshal(line, &l); err != nil {
@@ -957,6 +1182,16 @@ func (s *Store) load() error {
 	}); err != nil {
 		return err
 	}
+	if err := loadJSONL(filepath.Join(s.dir, "tags.jsonl"), func(line []byte) error {
+		var t Tag
+		if err := json.Unmarshal(line, &t); err != nil {
+			return err
+		}
+		s.tags[t.ID] = &t
+		return nil
+	}); err != nil {
+		return err
+	}
 	if err := loadJSONL(filepath.Join(s.dir, "retry_profiles.jsonl"), func(line []byte) error {
 		var p RetryProfile
 		if err := json.Unmarshal(line, &p); err != nil {
@@ -970,18 +1205,55 @@ func (s *Store) load() error {
 	return nil
 }
 
-// persist writes the in-memory state back as JSON-lines (full rewrite).
-func (s *Store) persist() error {
-	if err := writeJSONL(filepath.Join(s.dir, "prds.jsonl"), len(s.prds), func(emit func(any) error) error {
-		for _, p := range s.prds {
-			if err := emit(p); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		return err
+// clearStaleProgress enforces the task-progress invariant at persist time:
+// Progress and LoopingWarning are only ever meaningful while the task is in
+// progress (in_progress or verifying — the two states the worker can be
+// actively running in). Any terminal or waiting task must carry neither,
+// and centralizing the check here means it holds no matter which save path
+// ran — SavePRD, SaveTask, MutateTask, the executor's terminal transitions,
+// the coordinator's auto-fail, resets, cancels — instead of every caller
+// having to remember to clear the field.
+//
+// Callers must hold s.mu. The mutation is deliberate and happens before the
+// serialize step, so both the on-disk JSONL and the shared in-memory task
+// pointer (which GetPRD/BuildTasksView read straight off) end up clean.
+func (s *Store) clearStaleProgress() {
+	for _, t := range s.tasks {
+		clearTaskStaleProgress(t)
 	}
+}
+
+// clearTaskStaleProgress applies the same invariant to one task.
+func clearTaskStaleProgress(t *Task) {
+	if t == nil || progressActive(t.Status) {
+		return
+	}
+	if t.Progress != nil || t.LoopingWarning != "" {
+		t.ClearProgress()
+	}
+}
+
+// clearStaleProgressForPRD applies the invariant to the tasks of one PRD
+// (the per-record persist path writes one PRD at a time, so the whole-store
+// sweep is not needed on every save). An unknown id falls back to the
+// whole-store sweep.
+func (s *Store) clearStaleProgressForPRD(id string) {
+	p, ok := s.prds[id]
+	if !ok {
+		s.clearStaleProgress()
+		return
+	}
+	for i := range p.Story {
+		for j := range p.Story[i].Tasks {
+			clearTaskStaleProgress(&p.Story[i].Tasks[j])
+		}
+	}
+}
+
+// persistOthers rewrites the learnings, guardrail profile, tag and retry
+// profile files. PRDs are written one record at a time by persistPRD and
+// are not touched here.
+func (s *Store) persistOthers() error {
 	if err := writeJSONL(filepath.Join(s.dir, "learnings.jsonl"), len(s.learnings), func(emit func(any) error) error {
 		for _, l := range s.learnings {
 			if err := emit(l); err != nil {
@@ -995,6 +1267,16 @@ func (s *Store) persist() error {
 	if err := writeJSONL(filepath.Join(s.dir, "guardrail_profiles.jsonl"), len(s.profiles), func(emit func(any) error) error {
 		for _, p := range s.profiles {
 			if err := emit(p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := writeJSONL(filepath.Join(s.dir, "tags.jsonl"), len(s.tags), func(emit func(any) error) error {
+		for _, t := range s.tags {
+			if err := emit(t); err != nil {
 				return err
 			}
 		}

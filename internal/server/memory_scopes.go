@@ -273,7 +273,7 @@ func (s *Server) memoryScopesDelete(w http.ResponseWriter, r *http.Request) {
 //
 //	POST /api/memory/scopes/archive-import
 //	{
-//	  "project_dir":   "/home/user/proj",
+//	  "project_dir":   "/home/<user>/proj",
 //	  "source_prd_id": "0fb4e302",
 //	  "target_prd_id": "a1b2c3d4",   // optional; absent = seed into project-shared
 //	  "role_filter":   ["learning"],  // optional

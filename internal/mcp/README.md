@@ -14,6 +14,7 @@ mcp:
   enabled: true
   sse_host: 0.0.0.0
   sse_port: 8081
+  public_url: ""  # optional; base URL advertised to SSE clients behind a reverse proxy
   tls_enabled: false
   token: ""  # optional bearer token for SSE transport
 ```

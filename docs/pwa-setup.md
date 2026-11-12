@@ -44,8 +44,11 @@ http://100.x.x.x:8080
 You can also use the Tailscale MagicDNS hostname if enabled:
 
 ```
-http://hostname.your-tailnet.ts.net:8080
+http://hostname.your-tailnet.example.net:8080
 ```
+
+(Example values; your real tailnet IP/hostname lives in your operator
+config and is not committed to this repository.)
 
 ---
 
@@ -135,9 +138,9 @@ The token is sent as a WebSocket query parameter (`?token=...`) and as an HTTP `
 Each machine has its own PWA at its own Tailscale IP. Bookmark all of them in Chrome or add each to the home screen.
 
 ```
-http://100.100.1.10:8080  → laptop
-http://100.100.1.20:8080  → desktop
-http://100.100.1.30:8080  → vps
+http://198.51.100.110:8080  → laptop
+http://198.51.100.120:8080  → desktop
+http://198.51.100.130:8080  → vps
 ```
 
 Sessions from each machine are shown independently — the PWA for `laptop` only shows `laptop` sessions.
@@ -195,17 +198,17 @@ server:
 If you use Tailscale, it provides valid certificates automatically:
 
 ```bash
-tailscale cert hostname.your-tailnet.ts.net
+tailscale cert hostname.your-tailnet.example.net
 ```
 
 ```yaml
 server:
   tls: true
-  tls_cert: /path/to/hostname.your-tailnet.ts.net.crt
-  tls_key: /path/to/hostname.your-tailnet.ts.net.key
+  tls_cert: /path/to/hostname.your-tailnet.example.net.crt
+  tls_key: /path/to/hostname.your-tailnet.example.net.key
 ```
 
-Access via `https://hostname.your-tailnet.ts.net:8443` — no cert warnings.
+Access via `https://hostname.your-tailnet.example.net:8443` — no cert warnings.
 
 ### Installing the CA Certificate (self-signed only)
 

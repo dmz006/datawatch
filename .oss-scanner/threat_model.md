@@ -42,7 +42,7 @@ Stated by the maintainer (2026-10-16). These are the operator's positions, to be
 | Project files and task text in a repo the daemon operates on | **Semi-trusted** | Can contain injected instructions. |
 | Config files (`config.yaml`), local secrets stores (KeePass, 1Password, env, file provider) | **Trusted** (operator-controlled) | Attacker who can write these already owns the host. Out of scope unless the daemon grants them more than it should. |
 | Outbound calls to LLM providers, npm/Go module registries, Signal/Telegram/Matrix servers | **Trusted transport, untrusted content** | Responses should be parsed defensively. |
-| **Federation peers and observer peers** (other datawatch instances that register, send envelopes, or receive session calls) | **Authenticated by handshake; authority set per peer** | Each peer completes a handshake, and each side defines a privilege mapping: what the other peer may do and see. Findings are in scope where a peer exceeds its mapping, or where the handshake or mapping can be bypassed or spoofed. The peer's own host is outside this boundary. |
+| **Federation peers and observer peers** (other datawatch instances that register, send envelopes, or receive session calls) | **Authenticated by a per-peer bearer token; authority set per peer by capability groups** | Each peer is registered with its own token (`AuthType` `token`; `spiffe` is wire-ready but not the default) and a capability list. A peer with no capability list gets the `federation-peer` group. The code reviewed has no challenge-response step: registration plus the health ping (`/api/federation/peers/{name}/test`) is the whole handshake. Findings are in scope where a peer exceeds its capability grant, where a peer token is accepted for a route it should not reach, or where a token is disclosed, reused across peers, or compared in a non-constant-time way. The peer's own host is outside this boundary. |
 | **Local CLI and `~/.datawatch/` access** | **Trusted** | Anyone who can run the CLI or read `~/.datawatch/` already has host access, so plaintext data they can read is not a finding. The exception is encrypted data: see the `--secure` item below. |
 | **Compute nodes** (remote model hosts such as Ollama or other LLM backends used by this instance) | **Untrusted responses** | Model-pull and model-remove actions are control operations on a remote host. |
 | **Worker containers** spawned by datawatch (docker, podman, kubectl, and cf drivers; agent images) | **Semi-trusted, nested** | A worker runs agent code inside a container that the parent datawatch launched. The parent is the control plane; a compromised worker must not reach the parent's secrets, config, or other workers. Tailscale sidecars are optional. |
@@ -148,12 +148,19 @@ GitHub advisory process named in `SECURITY.md`.
 4. Should the autonomous PRD runner be in scope as an attack surface, or treated as
    trusted operator tooling?
 5. Confirm the severity thresholds and reporting destination (see above).
-6. ~~**Federation auth:** how does a peer prove its identity?~~ **Answered 2026-10-16:**
-   a handshake, with a privilege mapping defined by each peer for the other. The exact
-   handshake mechanism still needs to be read from the code and documented before peer
-   findings can be rated.
-7. **Worker containers:** are workers ever launched with privileged mode, host networking,
+6. ~~**Federation auth:** how does a peer prove its identity?~~ **Partly answered
+   2026-10-19 from the code:** each peer authenticates with a static bearer token stored
+   in its registry entry, and authority comes from capability groups. There is no
+   challenge-response. **[OPERATOR TO CONFIRM]** whether that matches your intent, or
+   whether a challenge-response or `spiffe` mode is planned, since the answer changes what
+   counts as a spoofing finding.
+7. **Empty server token:** when `server.token` is empty, the federation middleware passes
+   requests through without identity (`internal/server/federation_cap.go`). Under your rule
+   that running without a token is not a finding, this is expected. **[OPERATOR TO
+   CONFIRM]** whether a peer that has its own token but is reached on a daemon with no
+   admin token should still be treated as a bypass when a peer-scoped route is hit.
+8. **Worker containers:** are workers ever launched with privileged mode, host networking,
    or host mounts? Which driver (docker, podman, kubectl, cf) is the production default?
-8. **Severity for nested and peer findings:** should a peer or worker reaching the parent's
+9. **Severity for nested and peer findings:** should a peer or worker reaching the parent's
    control plane be rated like the same bug reached from the HTTP API, or lower because a
    peer already holds some authority?

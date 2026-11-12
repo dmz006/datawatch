@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestScope_EffectiveDirsAndPathInDirs(t *testing.T) {
@@ -25,7 +24,7 @@ func TestScope_EffectiveDirsAndPathInDirs(t *testing.T) {
 
 func TestScope_LintFlagsOutOfScopePaths(t *testing.T) {
 	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
-	if p := LintTaskScope(prd, "t", "Work in the repo at /home/dmz/workspace/datawatch and edit it", nil); len(p) != 1 {
+	if p := LintTaskScope(prd, "t", "Work in the repo at /root/workspace/datawatch and edit it", nil); len(p) != 1 {
 		t.Fatalf("want 1 problem, got %v", p)
 	}
 	if p := LintTaskScope(prd, "t", "read /w/ref/notes.md then write docs/x.md", []string{"docs/x.md"}); len(p) != 0 {
@@ -73,6 +72,52 @@ func TestScope_LintStillFlagsPlannedFileUnderBinDir(t *testing.T) {
 	p := LintTaskScope(prd, "t", "x", []string{"/usr/bin/time"})
 	if len(p) != 1 || !strings.Contains(p[0], "outside the writable directories") {
 		t.Fatalf("planned file under /usr/bin must be flagged: %v", p)
+	}
+}
+
+func TestScope_LintIgnoresGrepPatternProse(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	spec := "Grep your final output for 'real hostnames', then for the home-directory path /home/<user>/workspace, then for 'API keys'."
+	if p := LintTaskScope(prd, "t", spec, nil); len(p) != 0 {
+		t.Fatalf("search-pattern prose flagged: %v", p)
+	}
+}
+
+func TestScope_LintIgnoresPlaceholderAndGlobPaths(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	for _, spec := range []string{
+		"Save the report under /home/{user}/reports before you finish.",
+		"Collect every log matching /home/<user>/*/logs/today.txt for the summary.",
+		"Expand /home/$USER/notes in the template.",
+		"Compare against ~alice's copy at /home/~alice/notes.md.",
+	} {
+		if p := LintTaskScope(prd, "t", spec, nil); len(p) != 0 {
+			t.Fatalf("placeholder/glob path flagged for %q: %v", spec, p)
+		}
+	}
+}
+
+func TestScope_LintIgnoresQuotedSearchPatterns(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	for _, spec := range []string{
+		"search for '/home/<user>/.ssh/id_rsa' in the output",
+		"search for '/home/<user>/secret.txt' in the output",
+		"match `/home/<user>/secret.txt` against the log",
+	} {
+		if p := LintTaskScope(prd, "t", spec, nil); len(p) != 0 {
+			t.Fatalf("quoted search pattern flagged for %q: %v", spec, p)
+		}
+	}
+	// A quoted path with no pattern verb before it is still a path claim.
+	if p := LintTaskScope(prd, "t", "copy '/root/secret.txt' into docs", nil); len(p) != 1 {
+		t.Fatalf("quoted non-pattern path must still be flagged: %v", p)
+	}
+}
+
+func TestScope_LintStillFlagsOutOfScopeReadPath(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
+	if p := LintTaskScope(prd, "t", "Read /root/workspace/datawatch/notes.md and summarise it", nil); len(p) != 1 {
+		t.Fatalf("want 1 problem for out-of-scope read path, got %v", p)
 	}
 }
 
@@ -126,45 +171,28 @@ func TestScope_SetPRDDirsValidatesAndRelints(t *testing.T) {
 	}
 }
 
+// runToTerminal approves the PRD, wires executors, runs it, and returns the
+// final PRD once the executor has fully exited. It shares the
+// approve/drain/Run/wait-exit sequence with runToTerminalOrBlocked (both
+// call settlePRD in story_halt_test.go) so the boot-resume scan never
+// overlaps the executor — a fake (nonexistent) project dir lets the scan
+// park a finished PRD as PRDBlocked and clobber the asserted terminal state.
 func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
-	prd, _ := m.Store().GetPRD(id)
-	prd.Status = PRDApproved
-	_ = m.Store().SavePRD(prd)
-	api.SetExecutors(spawn, verify)
-	if err := api.Run(id); err != nil {
-		t.Fatal(err)
+	final := settlePRD(t, m, api, id, spawn, verify)
+	if final.Status != PRDCompleted && final.Status != PRDFailed {
+		t.Fatalf("PRD %s ended %q, want completed or failed", id, final.Status)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(id)
-		if got.Status == PRDCompleted || got.Status == PRDFailed {
-			// v8.36.14 — API.Run's executor goroutine writes the terminal
-			// PRD status deep inside Manager.Run, then RETURNS to the
-			// wrapping goroutine, which still has its own deferred
-			// cleanup (clearing runCancels) and an EmitPRDUpdate call
-			// left to run. This poll can observe the terminal status the
-			// instant it's persisted, well before that goroutine tail
-			// actually finishes — a real, reproduced flake: found live,
-			// TestExecutor_WorkerStallRespectsRetryBudget's own
-			// t.TempDir() cleanup intermittently failed with "directory
-			// not empty" in CI, consistent with the goroutine still
-			// touching the autonomous store directory at teardown. A
-			// short settle avoids racing t.TempDir()'s automatic
-			// RemoveAll against that tail.
-			time.Sleep(50 * time.Millisecond)
-			return got
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("PRD did not reach a terminal state")
-	return nil
+	return final
 }
 
 func TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning(t *testing.T) {
 	m, api, _, verify := apiFixture(t)
-	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
-	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /home/dmz/workspace/datawatch"}}}})
+	// B165 — a real project dir: a fake one lets a concurrent boot-resume
+	// scan park this PRD (dir-missing) and clobber the PRDFailed state
+	// the test asserts.
+	prd, _ := m.CreatePRD("s", t.TempDir(), "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /root/workspace/datawatch"}}}})
 	spawned := 0
 	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) {
 		spawned++
@@ -215,5 +243,119 @@ func TestScope_ExecutorPrependsScopeBlockToSpec(t *testing.T) {
 	}
 	if !strings.HasPrefix(spec, "SCOPE (hard boundary)") || !strings.Contains(spec, "write docs/x.md") {
 		t.Fatalf("spec not prefixed with scope block: %q", spec)
+	}
+}
+
+func TestScope_LintSpecProblemNamesTokenLineAndRemedy(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	spec := "Step one: summarise the notes.\nStep two: keep the draft in docs/x.md.\nStep three: read /root/workspace/datawatch/notes.md and summarise it."
+	p := LintTaskScope(prd, "task 't'", spec, nil)
+	if len(p) != 1 {
+		t.Fatalf("want 1 problem, got %v", p)
+	}
+	for _, want := range []string{
+		"/root/workspace/datawatch/notes.md",
+		"line 3",
+		"edit the task spec to remove or quote it, or widen the PRD read dirs if the task must read it",
+	} {
+		if !strings.Contains(p[0], want) {
+			t.Fatalf("problem %q missing %q", p[0], want)
+		}
+	}
+}
+
+func TestScope_LintPlannedFileNamesPathAndRemedy(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
+	p := LintTaskScope(prd, "task 't'", "x", []string{"/w/ref/f.md"})
+	if len(p) != 1 {
+		t.Fatalf("want 1 problem, got %v", p)
+	}
+	for _, want := range []string{
+		"/w/ref/f.md",
+		"remove it from the task's files or widen the PRD write dirs",
+	} {
+		if !strings.Contains(p[0], want) {
+			t.Fatalf("problem %q missing %q", p[0], want)
+		}
+	}
+}
+
+// scopeLintRun runs one task whose spec names a path outside the PRD scope,
+// under the given scope_lint mode, with a fake spawn. It returns the terminal
+// PRD and how many sessions the executor spawned.
+func scopeLintRun(t *testing.T, mode string) (*PRD, int) {
+	t.Helper()
+	m, api, _, verify := apiFixture(t)
+	cfg := m.Config()
+	cfg.ScopeLint = mode
+	m.SetConfig(cfg)
+	prd, _ := m.CreatePRD("s", t.TempDir(), "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /root/workspace/datawatch"}}}})
+	// Plan-time lint: SetPRDDirs re-runs it and fills ScopeWarnings per mode.
+	if err := m.SetPRDDirs(prd.ID, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	spawned := 0
+	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) {
+		spawned++
+		return SpawnResult{SessionID: "x"}, nil
+	}
+	return runToTerminal(t, m, api, prd.ID, spawn, verify), spawned
+}
+
+func hasScopeLintWarnDecision(prd *PRD) bool {
+	for _, d := range prd.Decisions {
+		if d.Kind == "scope_lint_warn" {
+			return true
+		}
+	}
+	return false
+}
+
+func TestScope_ScopeLintOffSkipsLintAndWarnings(t *testing.T) {
+	got, spawned := scopeLintRun(t, scopeLintOff)
+	if spawned != 1 {
+		t.Fatalf("off mode: spawned %d sessions, want 1", spawned)
+	}
+	if hasScopeLintWarnDecision(got) {
+		t.Fatalf("off mode: unexpected scope_lint_warn decision: %+v", got.Decisions)
+	}
+	if len(got.ScopeWarnings) != 0 {
+		t.Fatalf("off mode: ScopeWarnings should be empty, got %v", got.ScopeWarnings)
+	}
+	if got.Status != PRDCompleted {
+		t.Fatalf("off mode: want completed, got %s", got.Status)
+	}
+}
+
+func TestScope_ScopeLintWarnSpawnsAndRecordsDecision(t *testing.T) {
+	got, spawned := scopeLintRun(t, scopeLintWarn)
+	if spawned != 1 {
+		t.Fatalf("warn mode: spawned %d sessions, want 1", spawned)
+	}
+	if !hasScopeLintWarnDecision(got) {
+		t.Fatalf("warn mode: missing scope_lint_warn decision: %+v", got.Decisions)
+	}
+	if len(got.ScopeWarnings) == 0 {
+		t.Fatal("warn mode: ScopeWarnings should still be populated at plan time")
+	}
+	if got.Status != PRDCompleted {
+		t.Fatalf("warn mode: want completed, got %s", got.Status)
+	}
+}
+
+func TestScope_ScopeLintEnforceBlocksWithoutSpawning(t *testing.T) {
+	got, spawned := scopeLintRun(t, scopeLintEnforce)
+	if spawned != 0 {
+		t.Fatalf("enforce mode: out-of-scope task spawned %d sessions", spawned)
+	}
+	if hasScopeLintWarnDecision(got) {
+		t.Fatalf("enforce mode: blocked task must not record scope_lint_warn: %+v", got.Decisions)
+	}
+	if len(got.ScopeWarnings) == 0 {
+		t.Fatal("enforce mode: ScopeWarnings should be populated at plan time")
+	}
+	if got.Status != PRDFailed {
+		t.Fatalf("enforce mode: want failed, got %s", got.Status)
 	}
 }

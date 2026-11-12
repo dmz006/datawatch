@@ -63,6 +63,10 @@ your reply), `RateLimited` (auto-resumes), `Complete` / `Failed` /
 `Killed` (terminal — sticky). See `channel-state-engine.md` for the
 state-decision logic.
 
+## How a worker pane is capped
+
+A pane that an Automaton task runs in is held to a memory ceiling. With a systemd user scope, the pane's shell starts inside that scope. Without one, the daemon watches the pane's processes through `/proc` and ends them if they pass the ceiling. With neither, the pane runs uncapped. The session records `ceiling_path` and `ceiling_mb`. Sessions you start yourself are not capped. See [Memory ceiling](../operations.md#memory-ceiling).
+
 ## Base requirements
 
 - `datawatch start` — daemon up.
@@ -85,6 +89,39 @@ v7.0 added two new orthogonal identifiers carried on every session object:
 ## Setup
 
 No setup beyond having a backend. Sessions spawn on demand.
+
+### Project directories and allowed roots
+
+A session may only start in a project directory that lies under an allowed
+root. The roots are:
+
+- the PRD worktree base, `autonomous.worktree_dir` (default
+  `~/.datawatch/prd-worktrees`);
+- the workspace root: `session.workspace_root` when set, otherwise the default
+  workspace folder `~/workspace`;
+- any folder listed in `server.allowed_project_roots`.
+
+A session started in a folder under `~/workspace` works with no
+configuration. The check applies to every way of starting a session (CLI,
+REST, MCP, chat and Automaton tasks) and resolves `..` and symlinks first, so
+a link that points outside the roots is refused.
+
+A directory outside every root is refused with an error such as:
+
+```
+project dir refused: project directory is outside the allowed project roots: "/srv/app" (allowed roots: /home/<user>/.datawatch/prd-worktrees, /home/<user>/workspace; add a root with server.allowed_project_roots)
+```
+
+REST answers with a bad-request error. To widen the set, list the folder (or a parent of several
+repositories) in `server.allowed_project_roots`, or set `session.workspace_root`
+to the parent folder of your repositories; setting it replaces `~/workspace`
+as the default. Changes apply without a restart:
+
+```sh
+datawatch config set server.allowed_project_roots /srv/projects,~/work
+```
+
+See [`operations.md`](../operations.md) "Allowed project roots" for the full rule.
 
 ## Two happy paths
 
@@ -118,7 +155,7 @@ datawatch sessions input $SID "Start with the password reset flow"
 
 # 5. Inspect via API — note v7 field names.
 datawatch sessions get $SID | jq
-#  → {"id":"abcd","full_id":"ralfthewise-abcd","state":"running",
+#  → {"id":"abcd","full_id":"peer-d-abcd","state":"running",
 #     "task":"...","llm_ref":"claude-code","compute_node_ref":"gpu-box-1",
 #     "backend_family":"claude-code","last_channel_event_at":"..."}
 
@@ -151,6 +188,22 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - **Text input** — narrows by session name, task, ID,
      `llm_ref`, or `compute_node_ref` substrings. Combines with the
      badge filters.
+   - **Tags** (header icon button) — the session list's **Watched only**
+     toggle and tag filter live in the dropdown behind the Tags icon
+     button in the page header, not in the filter bar. The button is a
+     tag icon with no visible word: a solid tag filled in the theme
+     accent color, with a lighter hole and a subtle darker edge, that
+     reads clearly on both the dark and the light theme. It looks
+     brighter when the dropdown is open or a tag filter is on, it
+     carries a count badge while filters are active, and it shows a
+     visible focus ring for keyboard users. Its tooltip and accessible
+     name read **Tags**. Open it, tick **Watched only** to
+     list only sessions you watch, and tick tags to list only sessions
+     that carry them (**match ANY** by default; the match button
+     switches to **match ALL**). The icon shows a count of the active
+     filters, and **Clear** in the dropdown resets the tag ticks. These
+     combine with the filter bar above. See
+     [`automata-tags.md`](automata-tags.md#the-header-tags-dropdown).
 3. Click the **+** FAB → wizard:
    - **LLM** dropdown (populated from `/api/llms`; disabled entries
      filtered out; adapter kind shown in label).
@@ -171,6 +224,13 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - ⚡ `<llm-name>` green badge (v7 LLM registry name, when set).
    - ⚙ `<compute-node>` purple badge (v7 Compute Node, when set).
    - Hover each for a tooltip explaining the v7 field.
+   The session header has no time counter and no watch eye. Watching
+   moved into the dropdown: open the Tags icon button in the header (the
+   solid tag in the accent color, shown brighter while the dropdown is
+   open) and, under
+   **This session**, press **Watch this session** (or **Stop watching
+   this session**). The same section has **Edit tags of this session**.
+
    Detail view opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands. While the session
@@ -207,7 +267,7 @@ optional.
 # Start — v7 LLM registry path.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"llm":"claude-code","task":"...","project_dir":"/tmp"}' \
+  -d '{"llm":"claude-code","task":"...","project_dir":"/home/<user>/workspace/myproject"}' \
   $BASE/api/sessions/start
 
 # Start — with explicit compute node.
@@ -296,30 +356,151 @@ Apply: `datawatch sessions start --template audit-flow`.
 
 ### 5f. WebSocket push (mobile / external clients)
 
-`GET /ws` (upgrade) takes the same Bearer token as REST — no separate
-auth path, no subscribe frame needed for session-list updates. On
-connect the server immediately sends the full list, then again on every
-session-affecting change:
+`GET /ws` (upgrade) takes the same Bearer token as REST. No subscribe frame
+is needed for session-list updates.
 
-```json
-{"type":"sessions","data":{"sessions":[...],"version":"8.37.0"},"ts":"..."}
+**What changed.** The socket used to send every session on connect and
+again on every change. On a daemon with about 4,000 sessions that was
+about 35 MB per change, which is too much for a phone on a metered
+connection. The daemon now sends only the sessions that belong in the
+default view, and only what changed.
+
+**The default view.** A session is in it when it is not finished, or when
+it finished (complete, failed or killed) within the last
+`server.recent_session_minutes` minutes (default 5; a value of 0 or less
+also means 5). Finished sessions older than that are never sent over the
+socket. Read them over REST instead, with the paged list (see
+[list-endpoints-and-paging.md](list-endpoints-and-paging.md)).
+
+**Before and after.** Measured with the hub byte-budget test on a
+4,000-session fixture (40 sessions in the default view, each with about
+2,500 to 3,000 characters of text). Sizes are the raw WebSocket message
+sizes.
+
+| Message | Before | After |
+|---|---|---|
+| Connect, legacy client (no `hello`) | `sessions` with every session: 35.8 MB | bounded `sessions` frame: 44.8 KB |
+| Connect, window client (after `hello`) | not available | rows `sessions` frame: 20.2 KB, once |
+| One session changes, window client | `sessions` 35.8 MB and `session_state` 9.0 KB | `session_state` 588 bytes |
+| One session changes, legacy client | `sessions` 35.8 MB and `session_state` 9.0 KB | bounded `sessions` 44.8 KB and `session_state` 9.0 KB |
+| 20 changes in a row, window client | 20 × 35.8 MB | 11.7 KB in total |
+
+These numbers come from a test fixture, not a live daemon. A live daemon
+with longer text or more active sessions sends larger frames. The test
+fails any single WebSocket message over 300 KB, so that is the ceiling the
+design holds to.
+
+**Which mode you get.**
+
+| Client | Sends in `hello` | On connect | On each change |
+|---|---|---|---|
+| Window form (new apps and the PWA) | `"session_list":"window"` | bounded legacy frame, then one rows frame after `hello_ack` | `session_state` for the changed session only |
+| Legacy (no `hello`, or `full`) | nothing | bounded `sessions` frame | bounded `sessions` frame and the full `session_state` |
+| Delta | `"session_list":"delta"` | no `sessions` frame | `session_state` or `session_removed` |
+
+A bounded frame carries `data.more`, `data.total` and `data.window_minutes`.
+Long text fields are cut to `server.session_summary_text_chars` and listed
+in `truncated_fields`; the full text comes from `GET /api/sessions/{id}`.
+The window form and the rest of the message shapes are specified in
+[mobile-surface.md](../api/mobile-surface.md#low-bandwidth-client-flow).
+
+**Operator settings.**
+
+- `server.recent_session_minutes` sets the window (default 5). Clients read
+  it from `window_minutes` and never hard-code it. `PUT /api/config` applies
+  it without a restart.
+- `server.session_summary_text_chars` sets how much text a cut field keeps
+  (default 200).
+- `server.ws_session_list_default` is the mode for clients that never say
+  `hello`: `full` (the default) or `delta`. `window` is not valid here,
+  because only a client that says `hello` can ask for it.
+
+**Confirm it in a browser's network panel.**
+
+1. Open the PWA in a browser, then open the browser's developer tools.
+2. In the Network tab, filter for `WS`, click the `/ws` connection, and open
+   its Messages pane (Chrome) or Frames pane (Firefox). Each row is one
+   message, with its type and length.
+3. On a daemon with about 4,000 sessions, expect a connect `sessions` frame
+   of about 45 KB, then one `sessions` rows frame of about 20 KB after the
+   client's `hello_ack`, then only small `session_state` rows (about 1 KB or
+   less each). No further `sessions` frame should appear.
+4. Toggle **Show history**. The history comes from a `GET
+   /api/sessions?view=summary...` request in the Fetch/XHR filter, not from a
+   new large WebSocket message.
+
+The Playwright story TS-816 (group `wire`) checks these budgets
+automatically against the seeded fixture. See
+[testing/README.md](../testing/README.md).
+
+### 5g. Image attachments in session input
+
+You can send an image to a running session by putting `[image:<path>]`
+in the input text — the PWA's attach control builds that tag from your
+upload automatically, so all of the following work the same way:
+
+```sh
+# REST — path first uploaded via POST /api/files, or any file the daemon can read
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"<full-id>","text":"what do you think about this?\n[image:/home/<user>/dw_attach_photo.jpg]"}' \
+  $BASE/api/sessions/send
 ```
 
-v8.37.0 adds a lighter-weight single-session message alongside it, for
-clients on a metered connection that would rather not re-parse the full
-list on every change:
+**What the daemon does with the tag.** Before the text is typed into
+the session, every `[image:<path>]` is read from disk and described by
+the vision backend (requires `vision.enabled: true`; see the Vision
+System entry in [datawatch-definitions.md](../datawatch-definitions.md)),
+and the tag becomes `[image: <description> | path: <path>]` — so the model
+gets both the description and the path.
 
-```json
-{"type":"session_state","data":{"session":{...}},"ts":"..."}
+**Every describe call is bounded.** A single describe runs for at most
+`vision.describe_timeout_seconds` (a value of 0 or less uses the 5-second
+default), enforced on the caller side, so even a backend that ignores
+cancellation cannot exceed it. The setting is read on every send — no
+restart needed:
+
+```sh
+datawatch config set vision.describe_timeout_seconds 15
 ```
 
-Both are sent together from the same state transition — `session_state`
-is additive, not a replacement. A client that only understands
-`"sessions"` keeps working unchanged; a client that wants smaller
-payloads can listen for `"session_state"` instead. No poll interval is
-needed either way — see `PrdHub`-style patterns in `datawatch-app` for
-the client-side "any open WS connection is a free broadcast pipe" idiom
-already used there for `prd_update`.
+**What the message looks like when the describe fails.** If a call
+times out, the backend errors, the description comes back empty, or there
+is no vision service at all, the tag degrades to a bare `@<path>` in the
+delivered text. The message is still delivered — nothing is dropped — and
+a vision-capable model (for example Claude Code) can then read the file at
+that path with its own image pipeline. An **unreadable file is a different
+case**: a file that is missing, unreadable by the daemon, or outside the
+file-service root is never described, and the original `[image:<path>]`
+tag passes through **unchanged** — the delivered text carries the literal
+tag, not `@<path>` (`TestExpandImageTags_FileNotFound` and
+`TestExpandImageTags_PathOutsideRoot` in `internal/server/vision_test.go`
+assert exactly this).
+
+**The terminal cannot freeze.** Over a WebSocket, a send that carries an
+image tag is expanded on the connection's input worker instead of in the
+socket's read loop, so the terminal keeps rendering, scrolling and
+typing while the describe runs. Order is preserved **per connection, per
+session**: the worker and the wait both live on the WebSocket connection
+(`client.inputQueue` + per-connection `inputPending` in
+`internal/server/ws.go`), so a later plain send from the *same*
+connection to the *same* session waits for the still-expanding image send
+to finish rather than overtaking it, and sends to other sessions on that
+connection are never blocked. A plain send from a **different** WebSocket
+client to the same session is *not* awaited — the ordering guarantee does
+not cross sockets. The REST `POST /api/sessions/send` endpoint runs inline, within the same bounded
+timeout. If the PWA or terminal appears to wait on an image send, the
+wait is the describe itself taking its full budget — cap it with
+`vision.describe_timeout_seconds` if your backend is slow.
+
+**Review before relying on it.** Two of the behaviors above are
+deliberate, not bugs — check them against your workflow: (1) an unreadable
+file arrives as the literal `[image:<path>]` tag, and only the `@<path>`
+form is picked up by a model's own `@` file-reading — a model without that
+capability sees a tag it may not understand (verify the file exists and is
+readable by the daemon); (2) send order only ever waits *within one
+WebSocket connection*, so multiple clients sending to the same session can
+interleave.
 
 ## Diagram
 
@@ -348,6 +529,21 @@ already used there for `prd_update`.
               ▼
        output.log (append-only, ANSI preserved)
 ```
+
+## Claude Code interstitial prompts — recognised and dismissed for you
+
+A lane can sit blocked on a Claude Code interstitial prompt — a question, an idle notice or the autocompact threshold prompt — and look healthy the whole time. datawatch watches the terminal and takes the safe action itself instead of waiting:
+
+1. **It recognises the prompt kind.** Claude Code interstitial prompts are a small, built-in, per-kind table (a fixed set of known kinds), not fuzzy text matching — today the table holds the autocompact threshold question ("Want to autocompact at 400k tokens instead?" with the Autocompact / Keep auto options and the "choose · confirm · Esc not now" hint line). Matching is deliberately strict: all of the prompt's anchor phrases plus its hint line must appear in the pane's last 20 non-empty lines (ANSI stripped), and when a capture is partial or in doubt the classifier returns *none* — a quoted prompt line in output, an idle prompt, or a startup dialog is never acted on.
+2. **It dismisses with the safe key, never a blind Enter.** Each kind has one safe dismissal key. For prompts where Enter would pick a choice and change a setting (the autocompact question), the key sent is **Esc** — the "not now" / "dismiss" path — because a wrong Enter is worse than a missed dismissal. It only types when the prompt kind is known and its key is safe.
+3. **It is bounded and auditable.** Three timing knobs bound how aggressively it acts, and a switch turns it all off:
+   - `session.dismiss_ui_prompts` (default **on**) — the feature switch; `false` restores the old wait-for-you behaviour.
+   - `session.ui_prompt_dismiss_delay_seconds` (default **5**) — settle wait after the prompt appears, before the dismissal key is sent, so a transient prompt the session itself resolves in time is left alone.
+   - `session.ui_prompt_clear_bound_seconds` (default **30**) — how long datawatch will keep considering the prompt "the one it dismissed" before treating a re-appearance as a fresh prompt needing action.
+   - `session.ui_prompt_max_attempts` (default **2**) — retries before the session is flagged for the operator instead of being spamming further keys. When the budget is spent and the prompt is still on screen, or the switch is off, the escalation goes to the operator through the question channel.
+4. **When it can't clear it, it hands you the session.** A prompt that survives the retries (or one seen with the switch off) is escalated as an operator question describing the session and the prompt. The session transitions to `waiting_input` (its previous state is restored the moment the prompt clears), and the audit log records the outcome: `ui_prompt_dismissed` (prompt kind, session, key), `ui_prompt_not_cleared` after the budget, `ui_prompt_refused` if a key would not pass the safety allow-list. Counters show up in `ui_prompts` of `GET /api/stats` / the `get_stats` MCP tool and in the `datawatch_ui_prompt_dismissals_total` Prometheus metric.
+
+Change any of the four from the PWA (Settings → Sessions), REST config, MCP `config_set`, `datawatch config set`, or the comm channel — e.g. `configure session.dismiss_ui_prompts=false` to hand the decision back to yourself. There is no per-kind pattern list to hand-edit: the kinds are a built-in table, and adding a new one is a code change with tests, not a config knob. See `datawatch-definitions.md` § Claude Code interstitial prompts.
 
 ## Where to look when something is wrong
 
@@ -393,8 +589,26 @@ tmux ls | grep cs-                     # tmux sessions
 
 Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 
-## Common pitfalls
+## What a session is told about datawatch
 
+Every session starts with a short platform context: what datawatch is, how its sessions, Automata and channels fit together, and where to look for help. It is delivered in one or both of two ways, depending on the backend:
+
+- **Local file (claude-code).** datawatch writes the text into an **untracked `CLAUDE.local.md`** file in the session's project directory — **not** into `CLAUDE.md` or `AGENT.md`, which it never edits for the platform context. In a git repository the filename is added to the repository's `info/exclude` list, a per-clone ignore list that is itself not tracked, so the write never dirties `git status` and the file can never reach a commit. The marked block is kept up to date, and anything you wrote outside the block is left alone. If the project already tracks its own `CLAUDE.local.md`, datawatch refuses to write into it and that session gets the text as its **first prompt** instead.
+- **First prompt (every other backend).** The text is placed at the start of the session's first prompt. This covers pi-prompt, aider, gemini, goose, goose-prompt, ollama, opencode, opencode-acp, opencode-prompt, openwebui, pi, shell and subprocess.
+
+`platform_context_status` (MCP) shows, for one session, whether it is enabled, any project override, the text version and which delivery the session's backend uses (`rules_file`, `first_prompt` or `rules_file_and_first_prompt`).
+
+**Turning it off.**
+
+- Globally: set `platform_context.enabled: false` in the config, use the **Platform context** card in Settings, or send `configure platform_context enabled off` on a comm channel.
+- Per project: set `platform_context_enabled: false` (or `true` to keep it on when the global value is off) in that project's policy. The project value wins over the global one.
+- To add your own text instead, set `platform_context.note`.
+
+A change applies to sessions started afterwards; a running session keeps what it already received.
+
+**Where it is re-delivered.** When a session's conversation is compacted or cleared, the text would normally be lost. For **claude-code** datawatch installs a SessionStart hook (matching `compact` and `clear`) that prints the text again, so the session gets it back. **No other backend can be re-delivered after compaction**: the first-prompt text is sent once and is not repeated. That covers pi, pi-prompt, aider, gemini, goose, goose-prompt, ollama, opencode, opencode-acp, opencode-prompt, openwebui, shell and subprocess sessions. If one of these backends compacts a long session, restart the session or re-send what it needs.
+
+## Common pitfalls
 - **Editing `state.json` by hand.** Race-prone. Use the API.
 - **Confusing `last_channel_event_at` with `updated_at`.** UpdatedAt
   is bumped by daemon-internal housekeeping (rate-limit timer,

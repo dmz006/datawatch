@@ -40,7 +40,7 @@ func (s *Server) toolDiscussionWrite() mcpsdk.Tool {
 func (s *Server) handleDiscussionWrite(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("discussion_id", "")
 	if id == "" {
-		return textOK("Error: discussion_id is required"), nil
+		return toolErrorf("discussion_write", "discussion_id is required"), nil
 	}
 	content := req.GetString("content", "")
 	body := map[string]any{
@@ -54,7 +54,7 @@ func (s *Server) handleDiscussionWrite(_ context.Context, req mcpsdk.CallToolReq
 	}
 	out, err := s.proxyJSON(http.MethodPost, fmt.Sprintf("/api/memory/discussion/%s", url.PathEscape(id)), body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("discussion_write", err), nil
 	}
 	// BL358: dispatch to subscribers asynchronously.
 	if s.subStore != nil && s.manager != nil {
@@ -78,7 +78,7 @@ func (s *Server) toolDiscussionRecall() mcpsdk.Tool {
 func (s *Server) handleDiscussionRecall(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("discussion_id", "")
 	if id == "" {
-		return textOK("Error: discussion_id is required"), nil
+		return toolErrorf("discussion_recall", "discussion_id is required"), nil
 	}
 	q := url.Values{}
 	if v := req.GetString("q", ""); v != "" {
@@ -93,7 +93,7 @@ func (s *Server) handleDiscussionRecall(_ context.Context, req mcpsdk.CallToolRe
 	}
 	out, err := s.proxyJSON(http.MethodGet, path, nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("discussion_recall", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -122,7 +122,7 @@ func (s *Server) toolDiscussionWAL() mcpsdk.Tool {
 func (s *Server) handleDiscussionWAL(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("discussion_id", "")
 	if id == "" {
-		return textOK("Error: discussion_id is required"), nil
+		return toolErrorf("discussion_wal", "discussion_id is required"), nil
 	}
 
 	afterSeq := -1
@@ -158,7 +158,7 @@ func (s *Server) handleDiscussionWAL(_ context.Context, req mcpsdk.CallToolReque
 	if !block || afterSeq < 0 {
 		out, err := s.proxyJSON(http.MethodGet, path, nil)
 		if err != nil {
-			return textOK("Error: " + err.Error()), nil
+			return toolError("discussion_wal", err), nil
 		}
 		if afterSeq >= 0 {
 			out = filterWALAfterSeq(out, afterSeq)
@@ -171,7 +171,7 @@ func (s *Server) handleDiscussionWAL(_ context.Context, req mcpsdk.CallToolReque
 	for time.Now().Before(deadline) {
 		out, err := s.proxyJSON(http.MethodGet, path, nil)
 		if err != nil {
-			return textOK("Error: " + err.Error()), nil
+			return toolError("discussion_wal", err), nil
 		}
 		filtered := filterWALAfterSeq(out, afterSeq)
 		if len(filtered) > 2 { // non-empty JSON array
@@ -222,7 +222,7 @@ func (s *Server) toolDiscussionParticipants() mcpsdk.Tool {
 func (s *Server) handleDiscussionParticipants(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("discussion_id", "")
 	if id == "" {
-		return textOK("Error: discussion_id is required"), nil
+		return toolErrorf("discussion_participants", "discussion_id is required"), nil
 	}
 	path := fmt.Sprintf("/api/memory/discussion/%s/participants", url.PathEscape(id))
 	peersRaw := req.GetString("peers", "")
@@ -232,13 +232,13 @@ func (s *Server) handleDiscussionParticipants(_ context.Context, req mcpsdk.Call
 		body := map[string]any{"peers": peers}
 		out, err := s.proxyJSON(http.MethodPut, path, body)
 		if err != nil {
-			return textOK("Error: " + err.Error()), nil
+			return toolError("discussion_participants", err), nil
 		}
 		return textOK(string(out)), nil
 	}
 	out, err := s.proxyJSON(http.MethodGet, path, nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("discussion_participants", err), nil
 	}
 	return textOK(string(out)), nil
 }

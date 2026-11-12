@@ -7,13 +7,17 @@
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
-ARG GO_VERSION=1.26.9
+# Inherited non-root user name (see agent-base); home under /home/${DW_USER}.
+ARG DW_USER=datawatch
+ARG GO_VERSION=1.26.11
 ARG GOPLS_VERSION=v0.20.0
 ARG GOLANGCI_LINT_VERSION=v2.6.1
 ARG DELVE_VERSION=v1.26.1
 ARG GOVULNCHECK_VERSION=v1.1.4
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG GO_VERSION
 ARG GOPLS_VERSION
 ARG GOLANGCI_LINT_VERSION
@@ -41,9 +45,9 @@ RUN ARCH="$TARGETARCH"; case "$ARCH" in \
     ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt && \
     rm -rf /usr/local/go/doc /usr/local/go/api /usr/local/go/test
 
-ENV GOPATH=/home/datawatch/go \
-    PATH="/home/datawatch/go/bin:/usr/local/go/bin:${PATH}"
-RUN mkdir -p /home/datawatch/go && chown -R datawatch:datawatch /home/datawatch/go
+ENV GOPATH=/home/${DW_USER}/go \
+    PATH="/home/${DW_USER}/go/bin:/usr/local/go/bin:${PATH}"
+RUN mkdir -p /home/${DW_USER}/go && chown -R datawatch:datawatch /home/${DW_USER}/go
 
 USER datawatch
 # go install builds gopls/golangci-lint/delve/govulncheck. Critical: clean BOTH the
@@ -54,7 +58,7 @@ RUN go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
     go install github.com/go-delve/delve/cmd/dlv@${DELVE_VERSION} && \
     go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} && \
     go clean -cache -modcache -testcache && \
-    rm -rf /home/datawatch/.cache/go-build /tmp/go-build*
+    rm -rf /home/${DW_USER}/.cache/go-build /tmp/go-build*
 
 LABEL datawatch.variant="lang-go" \
       datawatch.lang.go=$GO_VERSION \

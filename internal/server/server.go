@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/spendledger"
 	"io"
 	"io/fs"
 	"net"
@@ -27,11 +28,13 @@ import (
 	"github.com/dmz006/datawatch/internal/apns"
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/auth"
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/fingerprint"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -43,7 +46,9 @@ import (
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
+	"github.com/dmz006/datawatch/internal/tagregistry"
 	"github.com/dmz006/datawatch/internal/tlsutil"
+	"github.com/dmz006/datawatch/internal/trace"
 	"github.com/dmz006/datawatch/internal/websearch"
 )
 
@@ -251,6 +256,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/files/upload", api.handleFilesJSONUpload)
 	apiMux.HandleFunc("/api/sessions/timeline", api.handleSessionTimeline)
 	apiMux.HandleFunc("/api/sessions/rename", api.handleRenameSession)
+	apiMux.HandleFunc("/api/sessions/tags", api.handleSessionTags) // session tags
 	apiMux.HandleFunc("/api/sessions/bind", api.handleBindSessionAgent)
 	apiMux.HandleFunc("/api/sessions/kill", api.handleKillSession)
 	apiMux.HandleFunc("/api/sessions/delete", api.handleDeleteSession)
@@ -259,6 +265,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/send", api.handleSessionSend)
 	apiMux.HandleFunc("/api/sessions/state", api.handleSetSessionState)
 	apiMux.HandleFunc("/api/sessions/set_llm_ref", api.handleSetSessionLLMRef)
+	apiMux.HandleFunc("/api/sessions/set_priority", api.handleSetSessionPriority)
 	apiMux.HandleFunc("/api/sessions/response", api.handleSessionResponse)
 	apiMux.HandleFunc("/api/sessions/prompt", api.handleSessionPrompt)
 	apiMux.HandleFunc("/api/sessions/reconcile", api.handleSessionReconcile) // BL93
@@ -287,6 +294,17 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/profiles/clusters", api.handleClusterProfiles)
 	apiMux.HandleFunc("/api/profiles/clusters/", api.handleClusterProfiles)
 
+	// Shared usage-calculator readings series (keeper/peer federation, decision 8).
+	apiMux.HandleFunc("/api/usage/readings", api.handleUsageReadings)
+	apiMux.HandleFunc("/api/usage/readings/", api.handleUsageReadingDelete)
+	apiMux.HandleFunc("/api/usage/extra-credit", api.handleUsageExtraCredit)
+	apiMux.HandleFunc("/api/usage/advice", api.handleUsageAdvice)
+	apiMux.HandleFunc("/api/usage/autolanes", api.handleUsageAutoLanes)
+	apiMux.HandleFunc("/api/usage/burn-guard", api.handleBurnGuardStatus)
+	apiMux.HandleFunc("/api/usage/burn-guard/run", api.handleBurnGuardRun)
+	apiMux.HandleFunc("/api/usage/burn-guard/config", api.handleBurnGuardConfig)
+	apiMux.HandleFunc("/api/usage/remaining-work", api.handleUsageRemainingWork)
+
 	// F10 sprint 3 — agent lifecycle routes.
 	apiMux.HandleFunc("/api/agents/audit", api.handleAgentAudit)     // BL107
 	apiMux.HandleFunc("/api/agents/peer/send", api.handlePeerSend)   // BL104
@@ -302,25 +320,29 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/servers", api.handleBL312Servers)
 	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
 	apiMux.HandleFunc("/api/servers/", api.handleBL312Servers)
-	apiMux.HandleFunc("/api/proxy/llm/", api.handleProxyLLM)                                   // BL320 — inference proxy endpoint
-	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend)                             // BL102
-	apiMux.HandleFunc("/api/devices/register", api.handleDevicesRegister)                      // issue #1
-	apiMux.HandleFunc("/api/devices", api.handleDevicesList)                                   // issue #1 (list)
-	apiMux.HandleFunc("/api/devices/", api.handleDevicesList)                                  // issue #1 (delete by id)
-	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe)                      // issue #2
-	apiMux.HandleFunc("/api/whisper/transcribe", api.handleVoiceTranscribe)                    // issue #113 alias
-	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)                                  // BL289 — Settings test button
-	apiMux.HandleFunc("/api/vision/describe", api.handleVisionDescribe)                        // BL368
-	apiMux.HandleFunc("/api/summarizer/test", api.handleSummarizerTest)                        // v8.9.5 — settings health check
-	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions)                // issue #3
-	apiMux.HandleFunc("/api/federation/peers", api.handleFederationPeers)                      // BL316 S1
-	apiMux.HandleFunc("/api/federation/peers/", api.handleFederationPeers)                     // BL316 S1
-	apiMux.HandleFunc("/api/federation/groups", api.handleFederationGroups)                    // BL316 S1
-	apiMux.HandleFunc("/api/federation/groups/", api.handleFederationGroups)                   // BL316 S1
+	apiMux.HandleFunc("/api/proxy/llm/", api.handleProxyLLM)                            // BL320 — inference proxy endpoint
+	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend)                      // BL102
+	apiMux.HandleFunc("/api/devices/register", api.handleDevicesRegister)               // issue #1
+	apiMux.HandleFunc("/api/devices", api.handleDevicesList)                            // issue #1 (list)
+	apiMux.HandleFunc("/api/devices/", api.handleDevicesList)                           // issue #1 (delete by id)
+	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe)               // issue #2
+	apiMux.HandleFunc("/api/whisper/transcribe", api.handleVoiceTranscribe)             // issue #113 alias
+	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)                           // BL289 — Settings test button
+	apiMux.HandleFunc("/api/vision/describe", api.handleVisionDescribe)                 // BL368
+	apiMux.HandleFunc("/api/summarizer/test", api.handleSummarizerTest)                 // v8.9.5 — settings health check
+	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions)         // issue #3
+	apiMux.HandleFunc("/api/federation/peers", api.handleFederationPeers)               // BL316 S1
+	apiMux.HandleFunc("/api/federation/peers/", api.handleFederationPeers)              // BL316 S1
+	apiMux.HandleFunc("/api/federation/groups", api.handleFederationGroups)             // BL316 S1
+	apiMux.HandleFunc("/api/federation/groups/", api.handleFederationGroups)            // BL316 S1
+	apiMux.HandleFunc("/api/federation/fingerprints", api.handleFederationFingerprints) // fingerprint exchange
+	apiMux.HandleFunc("/api/federation/fingerprint-matches", api.handleFingerprintMatches)
+	apiMux.HandleFunc("/api/federation/fingerprint-matches/", api.handleFingerprintMatchDecision)
 	apiMux.HandleFunc("/api/analytics", api.handleAnalytics)                                   // BL12
 	apiMux.HandleFunc("/api/dashboard/layout", api.handleDashboardLayout)                      // BL303 card layout
 	apiMux.HandleFunc("/api/dashboard/cards", api.handleDashboardCards)                        // #57 card CRUD (list + add)
 	apiMux.HandleFunc("/api/dashboard/cards/", api.handleDashboardCards)                       // #57 card CRUD (get/update/delete by id)
+	apiMux.HandleFunc("/api/dashboard/console", api.handleDashboardConsole)                    // operator console one-glance summary
 	apiMux.HandleFunc("/api/smoke/progress", api.handleSmokeProgress)                          // BL303 smoke progress (list)
 	apiMux.HandleFunc("/api/smoke/progress/", api.handleSmokeProgress)                         // BL303 (detail + delete with sub-paths)
 	apiMux.HandleFunc("/api/smoke/forward-url", api.handleSmokeForwardURL)                     // #54 cross-instance forward config
@@ -334,10 +356,17 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/project/summary", api.handleProjectSummary)                        // BL35
 	apiMux.HandleFunc("/api/projects", api.handleProjects)                                     // BL27
 	apiMux.HandleFunc("/api/projects/", api.handleProjects)                                    // BL27 (with name)
+	apiMux.HandleFunc("GET /api/projects/{name}/rollup", api.handleProjectRollup)              // project roll-up: arcs, Automata, tasks, points, throughput
+	apiMux.HandleFunc("GET /api/projects/{name}/history", api.handleProjectHistory)              // project history: finished/archived Automata, daily progress, Gantt rows
 	apiMux.HandleFunc("/api/sessions/stale", api.handleSessionsStale)                          // BL40
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)                                     // BL30
+	apiMux.HandleFunc("/api/usage-backoff", api.handleUsageBackoff)                            // BL428 Phase 4
+	apiMux.HandleFunc("/api/usage-backoff/recheck", api.handleUsageBackoffRecheck)             // pattern-drift guard
+	apiMux.HandleFunc("/api/budget", api.handleBudget)                                         // per-LLM dollar budgets
+	apiMux.HandleFunc("/api/budget/usage", api.handleBudgetUsage)                              // this daemon's own spend only
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                                           // BL9
 	apiMux.HandleFunc("/api/audit/access", api.handleAuditAccess)                              // GH#201
+	apiMux.HandleFunc("/api/audit/self-config", api.handleSelfConfigAudit)                     // BL412 (self-config audit view)
 	apiMux.HandleFunc("/api/secrets/service-tokens", api.handleSecretServiceTokens)            // GH#203 (list + mint)
 	apiMux.HandleFunc("/api/secrets/service-tokens/", api.handleSecretServiceTokens)           // GH#203 (revoke by name)
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)                                      // BL242
@@ -349,6 +378,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/skills", api.handleSkills)                                         // BL255 (synced list)
 	apiMux.HandleFunc("/api/skills/", api.handleSkills)                                        // BL255 (synced get + content)
 	apiMux.HandleFunc("/api/identity", api.handleIdentity)                                     // BL257 P1 v6.8.0 (GET/PUT/PATCH)
+	apiMux.HandleFunc("/api/identity/backups", api.handleIdentityBackups)                      // identity backups (GET)
+	apiMux.HandleFunc("/api/identity/restore", api.handleIdentityRestore)                      // identity restore (POST)
+	apiMux.HandleFunc("/api/identity/reset", api.handleIdentityReset)                          // identity explicit clear (POST)
 	apiMux.HandleFunc("/api/algorithm", api.handleAlgorithm)                                   // BL258 v6.9.0 (list)
 	apiMux.HandleFunc("/api/algorithm/", api.handleAlgorithm)                                  // BL258 v6.9.0 (per-session + actions)
 	apiMux.HandleFunc("/api/evals", api.handleEvalsCompat)                                     // #42 compat: GET → { runs:[{id,name,status,score,created_at}] }
@@ -363,10 +395,14 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/council/runs", api.handleCouncilRuns)                              // BL260 v6.11.0
 	apiMux.HandleFunc("/api/council/runs/", api.handleCouncilRuns)                             // BL260 v6.11.0
 	apiMux.HandleFunc("/api/council/config", api.handleCouncilConfig)                          // BL297 v6.22.4 — runtime config knob
+	apiMux.HandleFunc("/api/compute/served-models", api.handleServedModels)                    // models each compute node serves, with an optional model check
 	apiMux.HandleFunc("/api/compute/nodes", api.handleComputeNodes)                            // v7.0.0 S1 — ComputeNode registry CRUD
 	apiMux.HandleFunc("/api/compute/nodes/", api.handleComputeNodes)                           // v7.0.0 S1 — /name + /name/health + /name/detail
+	apiMux.HandleFunc("/api/compute/placements", api.handleComputePlacements)                  // missing-model placement asks — pending list
+	apiMux.HandleFunc("/api/compute/placements/", api.handleComputePlacementAskDecision)       // missing-model placement asks — /<id>/approve|deny
 	apiMux.HandleFunc("/api/llms", api.handleLLMs)                                             // v7.0.0 S2 — LLM registry CRUD
 	apiMux.HandleFunc("/api/llms/", api.handleLLMs)                                            // v7.0.0 S2 — /name + /name/test
+	apiMux.HandleFunc("/api/llm-roles", api.handleLLMRoles)                                    // workload role table + contention warnings
 	apiMux.HandleFunc("/api/memory/scopes/", api.handleMemoryScopes)                           // v7.0.0 S5 — recall/borrow/seed/promote
 	apiMux.HandleFunc("/api/memory/discussion", api.handleDiscussionScopeList)                 // BL332 T42a — discussion scope list
 	apiMux.HandleFunc("/api/memory/discussion/", api.handleDiscussionScope)                    // BL332 T42a — discussion scope CRUD + WAL
@@ -382,6 +418,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/cost/aggregated", api.handleAggregatedCost)                        // BL317 — Dashboard "all servers" mode
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)                                  // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)                                  // BL6 — operator override
+	apiMux.HandleFunc("/api/cost/report", api.handleCostReport)                                // cost report engine (internal/costreport)
+	apiMux.HandleFunc("/api/trace/session/", api.handleTraceSession)                           // trace: one session's events + roll-up
+	apiMux.HandleFunc("/api/trace/automaton/", api.handleTraceAutomaton)                       // trace: an Automaton's events + roll-up
+	apiMux.HandleFunc("/api/trace/rollup", api.handleTraceRollup)                              // trace: roll-ups by dimension
+	apiMux.HandleFunc("/api/trace/coverage", api.handleTraceCoverage)                          // trace: per-session / per-backend coverage
+	apiMux.HandleFunc("/api/trace/stats", api.handleTraceStats)                                // trace: store totals + write counters
 	// Sprint S4 (v3.8.0) — messaging + UI polish.
 	apiMux.HandleFunc("/api/splash/logo", api.handleSplashLogo)        // BL69
 	apiMux.HandleFunc("/api/splash/info", api.handleSplashInfo)        // BL69
@@ -394,6 +436,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 	apiMux.HandleFunc("/api/autonomous/config", api.handleAutonomousConfig)
 	apiMux.HandleFunc("/api/autonomous/status", api.handleAutonomousStatus)
+	apiMux.HandleFunc("/api/autonomous/generated-artefacts", api.handleGeneratedArtefacts)
 	apiMux.HandleFunc("/api/autonomous/prds/aggregated", api.handleAggregatedPRDs) // BL312 S5
 	apiMux.HandleFunc("/api/autonomous/prds", api.handleAutonomousPRDs)
 	apiMux.HandleFunc("/api/autonomous/prds/", api.handleAutonomousPRDs)
@@ -403,17 +446,72 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/templates/", api.handleAutonomousTemplates)
 	// BL221 (v6.2.0) Phase 3 — scan config endpoint.
 	apiMux.HandleFunc("/api/autonomous/scan/config", api.handleAutonomousScanConfig)
+	// decompose-lint — config read/replace + per-PRD stored record / dry run.
+	apiMux.HandleFunc("/api/autonomous/decompose-lint/config", api.handleAutonomousDecomposeLintConfig)
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/decompose-lint", api.handleAutonomousDecomposeLintPRD)
+	// Planning routing: config, test and scorecard.
+	apiMux.HandleFunc("/api/autonomous/planning-routing", api.handleAutonomousPlanningRouting)
+	apiMux.HandleFunc("/api/autonomous/planning-routing/test", api.handleAutonomousPlanningRoutingTest)
+	apiMux.HandleFunc("/api/autonomous/planning-routing/scorecard", api.handleAutonomousPlanningScorecard)
 	// BL221 (v6.2.0) Phase 4 — type registry endpoint.
 	apiMux.HandleFunc("/api/autonomous/types", api.handleAutonomousTypes)
+	// Tag registry endpoints.
+	apiMux.HandleFunc("/api/autonomous/tags", api.handleAutonomousTags)
+	apiMux.HandleFunc("/api/autonomous/tags/", api.handleAutonomousTags)
+	// Tag sweep: apply the in-force tag settings to everything that already
+	// exists (POST, dry_run optional) — re-derives the owned sessions'
+	// and records' system tags from their stored facts.
+	apiMux.HandleFunc("/api/autonomous/tags/sweep", api.handleTagSweep)
+	apiMux.HandleFunc("/api/autonomous/tags/sweep/", api.handleTagSweep)
+	// Shared tag registry: the keeper snapshot, forwarded peer writes and the
+	// merge-note dismissal. The exact paths win over the /tags/ subtree above.
+	apiMux.HandleFunc("/api/autonomous/tags/registry", api.handleTagRegistrySnapshot)
+	apiMux.HandleFunc("/api/autonomous/tags/registry/write", api.handleTagRegistryWrite)
+	apiMux.HandleFunc("/api/autonomous/tags/registry/notes/", api.handleTagRegistryNotes)
+	apiMux.HandleFunc("/api/autonomous/attention", api.handleAutonomousAttention)
+	// Standard task listing: GET /api/autonomous/standard-tasks[?project=…].
+	apiMux.HandleFunc("/api/autonomous/standard-tasks", api.handleAutonomousStandardTasks)
+	// Shipped-state backfill: POST /api/autonomous/shipped/backfill
+	// [?dry_run=true] — one pass over the base repository's main branch.
+	apiMux.HandleFunc("/api/autonomous/shipped/backfill", api.handleAutonomousShippedBackfill)
+	// Shipped-state read: GET /api/autonomous/shipped/counts — the per-state
+	// count pair (PRD + Automation buckets) under the in-force
+	// autonomous.shipped settings; shipped is a status-like bucket only while
+	// enabled + count_separately hold, and never moves a stored status.
+	apiMux.HandleFunc("/api/autonomous/shipped/counts", api.handleAutonomousShippedCounts)
+	// Defect queue: intake, open batches, split-out, tiny-fix check.
+	apiMux.HandleFunc("/api/autonomous/defects/intake", api.handleDefectIntake)
+	apiMux.HandleFunc("/api/autonomous/defects/batches", api.handleDefectBatches)
+	apiMux.HandleFunc("/api/autonomous/defects/batches/", api.handleDefectBatchSplit)
+	apiMux.HandleFunc("/api/autonomous/defects/tiny-fix/check", api.handleDefectTinyFixCheck)
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
+	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
+	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
+	// Operator question channel (raise, read, answer, withdraw): one
+	// generic question record, label-is-type, never expiring. /answer,
+	// /withdraw and /answers under a question id serve the answer flow;
+	// other sub-paths 404.
+	apiMux.HandleFunc("/api/questions", api.handleQuestions)
+	apiMux.HandleFunc("/api/questions/stats", api.handleQuestionStats)     // worker question marker counters (exact path wins over the /api/questions/ subtree)
+	apiMux.HandleFunc("/api/questions/quality", api.handleQuestionQuality) // effective question quality policy (exact path wins over the /api/questions/ subtree)
+	apiMux.HandleFunc("/api/questions/", api.handleQuestions)
+	apiMux.HandleFunc("/api/autonomous/events", api.handleAutonomousEvents)
+	// Automata event log read: merged watch, retry, check, maintenance and error
+	// events, newest first, with kind/project/q filters and cursor paging.
+	apiMux.HandleFunc("/api/autonomous/event-log", api.handleAutomataEventLog)
+	// Branch refresh numbers: setting, results by Automaton, stopped count.
+	apiMux.HandleFunc("/api/autonomous/branch-refresh/stats", api.handleBranchRefreshStats)
+	// BL427 phase 5 — receiving endpoint for peer-forwarded lifecycle events.
+	apiMux.HandleFunc(autonomous.ForwardedEventsPath, api.handleAutonomousForwardedEvents)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)
 	// BL410 Phase 1 — retry profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/retry_profiles", api.handleAutonomousRetryProfiles)
 	apiMux.HandleFunc("/api/autonomous/retry_profiles/", api.handleAutonomousRetryProfiles)
 	// Automation orchestration — CRUD.
 	apiMux.HandleFunc("/api/automations", api.handleAutomations)
+	apiMux.HandleFunc("/api/automations/merged-members", api.handleMergedMembers) // read-only merged-member decisions of all Automata (exact path wins over the subtree)
 	apiMux.HandleFunc("/api/automations/", api.handleAutomations)
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	apiMux.HandleFunc("/api/plugins", api.handlePlugins)
@@ -438,6 +536,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// because the trailing path varies: "", "{name}", "{name}/stats").
 	apiMux.HandleFunc("/api/observer/peers", api.handleObserverPeers)
 	apiMux.HandleFunc("/api/observer/peers/", api.handleObserverPeers)
+	// Observer pull protocol (pull mode) — live per-peer pull state.
+	apiMux.HandleFunc("/api/observer/pull", api.handleObserverPull)
 	apiMux.HandleFunc("/api/federation/meta-peers", api.handleFederationMetaPeers)     // alpha.24 #231 — merged-by-ComputeNode view
 	apiMux.HandleFunc("/api/marketplace/ollama/catalog", api.handleMarketplaceCatalog) // alpha.33 #244 — embedded curated model catalog
 	apiMux.HandleFunc("/api/marketplace/ollama/tasks/", api.handleMarketplaceTask)     // alpha.33 #244 — pull progress poll
@@ -453,6 +553,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates) // BL5 (with name)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
+	// Structured result panel — per-schedule result history.
+	apiMux.HandleFunc("/api/schedule-results", api.handleScheduleResultsList)
+	apiMux.HandleFunc("/api/schedule-results/", api.handleScheduleResultsDispatch)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
 	apiMux.HandleFunc("/api/filters", api.handleFilters)
 	apiMux.HandleFunc("/api/alerts/aggregated", api.handleAggregatedAlerts) // BL312 S5
@@ -460,6 +563,57 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/alerts/count", api.handleAlertsCount)           // BL432 / GH#242
 	apiMux.HandleFunc("/api/alerts", api.handleAlerts)
 	apiMux.HandleFunc("/api/capacity", api.handleCapacity) // admission ledger: pools, holders, wait queue
+	apiMux.HandleFunc("/api/autonomous/progress", api.handleAutonomousProgress)
+	apiMux.HandleFunc("/api/autonomous/progress/trend", api.handleAutonomousProgressTrend)
+	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill)                         // lane fill status: lanes, decisions, alerts
+	apiMux.HandleFunc("/api/autonomous/infra-retries", api.handleAutonomousInfraRetries)                 // infrastructure retry policy and the tasks retried or held, newest first
+	apiMux.HandleFunc("/api/automation/onboarding-report", api.handleOnboardingReport)                   // Automation onboarding report: what is configured, what is missing, what to try next (?format=text for plain text)
+	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline)                         // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
+	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord)            // PUT sets and DELETE removes a project's daemon-held pipeline record
+	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate)        // POST checks a pipeline body or a repository file without saving
+	apiMux.HandleFunc("/api/autonomous/release-readiness", api.handleReleaseReadiness)                 // release readiness for one size: record, conflict and PWA counts against the bar, zeros included
+	apiMux.HandleFunc("/api/autonomous/checks", api.handleAutonomousChecks)                              // resolved checks policy + recorded check findings
+	apiMux.HandleFunc("/api/autonomous/restart-interruptions", api.handleAutonomousRestartInterruptions) // what a restart now would interrupt + the restart policy
+	apiMux.HandleFunc("/api/autonomous/ship", api.handleAutonomousShip)                                  // resolved ship policy + recorded push/tag/CI-watch outcomes
+	apiMux.HandleFunc("/api/autonomous/rules-context", api.handleAutonomousRulesContext)                 // GET config + resolved policy + planning record; PUT replaces the config
+	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                              // triage records: the Automata waiting (failed/blocked), newest first
+	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)                        // decisions: operator questions with their tasks and answers, newest first
+	apiMux.HandleFunc("/api/autonomous/decision-records", api.handleDecisionRecords)                     // decision records: create and list (exact path wins over the subtree)
+	apiMux.HandleFunc("/api/autonomous/decision-records/", api.handleDecisionRecords)                    // decision records: one by id, update, withdraw
+	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                         // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
+	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                            // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
+	apiMux.HandleFunc("/api/supervisor-loop/jobs", api.handleSupervisorLoopJobs)                         // supervisor loop jobs: style, backend, model, enabled, last outcome
+	apiMux.HandleFunc("/api/supervisor-loop/jobs/", api.handleSupervisorLoopJobRun)                      // POST .../{name}/run runs one job now
+	apiMux.HandleFunc("/api/supervisor-loop/eval", api.handleSupervisorLoopEval)                         // POST runs a model job's eval cases against listed models
+	apiMux.HandleFunc("/api/supervisor-loop/runs", api.handleSupervisorLoopRuns)                         // supervisor loop run records, newest first
+	apiMux.HandleFunc("/api/supervisor-loop/stats", api.handleSupervisorLoopStats)                       // supervisor loop numbers: jobs, run counts by outcome, retries, last run age
+	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                                // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
+	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                   // shadow merge plans, comparisons and matched/different counts per release size
+	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                         // run a merge through the resolved pipeline, recording each step
+	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)                // safe-to-delete report of finished Automaton branches and worktrees
+	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                // cleanup status: both passes, disk readings, rate-limited disk-alert flag
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                     // uncommitted-work holds: policy, scope, held tasks and Automata
+	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                           // Housekeeping: unlanded branch list
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/keep", api.handleUnlandedAction("keep"))            // keep a branch
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/archive-branch", api.handleUnlandedAction("archive")) // archive a branch
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/delete-worktree", api.handleUnlandedAction("delete")) // back up and delete
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work/diff", api.handleUncommittedDiff)                // diff a worktree's uncommitted files
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work/commit", api.handleUncommittedCommit)            // commit a worktree's uncommitted files
+	apiMux.HandleFunc("/api/autonomous/cleanup/fix-permissions", api.handleFixPermissions)               // restore owner write permission
+	apiMux.HandleFunc("/api/autonomous/request-watch", api.handleRequestWatch)                           // request watch: state of the in-flight model request of watched worker and verifier sessions
+	apiMux.HandleFunc("/api/autonomous/overlap", api.handleAutonomousOverlap)                            // search before create: overlaps for a title and spec
+	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)                   // stored security failure reports with their run identity, newest first
+	apiMux.HandleFunc("/api/autonomous/supervisor-watch", api.handleSupervisorWatch)                     // supervisor watch state: mode, last poll, findings, comparison
+	apiMux.HandleFunc("/api/autonomous/supervisor-watch/stats", api.handleSupervisorWatchStats)          // supervisor watch numbers: mode, poll age, finding counts, agreed days
+	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)                            // read-only admission query
+
+	// Requirements surfaces: the capability minimum-backend-versions /
+	// automation backend minimums report, the model-pull consent policy
+	// (get/set), and a compute node's backend version.
+	apiMux.HandleFunc("/api/automation/requirements-report", api.handleRequirementsReport)
+	apiMux.HandleFunc("/api/automation/model-consent", api.handleModelConsent)
+	apiMux.HandleFunc("/api/compute/nodes/{name}/versions", api.handleNodeBackendVersions) // the compute node's backend name and version, with the recorded time
+	apiMux.HandleFunc("/api/autonomous/protected-paths", api.handleProtectedPaths)         // protected-paths holds: action, rules source, effective list, held tasks, authorised Automata
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
@@ -471,6 +625,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/security/wipe-plaintext", api.handleSecurityWipePlaintext)
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
 	apiMux.HandleFunc("/api/update/check", api.handleUpdateCheck)
+	apiMux.HandleFunc("/api/llm/classifier", api.handleClassifierStatus)
+	apiMux.HandleFunc("/api/llm/classifier/publishers", api.handleClassifierPublishers)
+	apiMux.HandleFunc("/api/llm/classifier/verdicts", api.handleClassifierVerdicts)
 	apiMux.HandleFunc("/api/llm/claude/models", api.handleClaudeModels)
 	apiMux.HandleFunc("/api/llm/claude/efforts", api.handleClaudeEfforts)
 	apiMux.HandleFunc("/api/llm/claude/permission_modes", api.handleClaudePermissionModes)
@@ -524,10 +681,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/websearch/providers", api.handleWebSearchProviders)
 	apiMux.HandleFunc("/api/websearch/providers/", api.handleWebSearchProviders)
 	apiMux.HandleFunc("/api/websearch/stats", api.handleWebSearchStatsV2)
+	apiMux.HandleFunc("/api/git/secret-scan/stats", api.handleGitSecretScanStats)
 	apiMux.HandleFunc("/api/websearch/history", api.handleWebSearchHistory)
 	apiMux.HandleFunc("/api/sessions/aggregated", api.handleAggregatedSessions)
-	apiMux.HandleFunc("/api/sessions/self", api.handleSessionSelf)          // BL349
-	apiMux.HandleFunc("/api/sessions/orphaned", api.handleSessionsOrphaned) // BL350
+	apiMux.HandleFunc("/api/sessions/self", api.handleSessionSelf)            // BL349
+	apiMux.HandleFunc("/api/sessions/self/scope", api.handleSessionSelfScope) // BL463
+	apiMux.HandleFunc("/api/sessions/orphaned", api.handleSessionsOrphaned)   // BL350
 	apiMux.HandleFunc("/api/memory/stats", api.handleMemoryStats)
 	apiMux.HandleFunc("/api/memory/list", api.handleMemoryList)
 	apiMux.HandleFunc("/api/memory/search", api.handleMemorySearch)
@@ -706,7 +865,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           securityHeadersMiddleware(cfg, mux),
-		ReadTimeout:       15 * time.Second,
+		ReadTimeout:       voiceUploadReadTimeout, // was 15 s — aborted in-flight long-audio uploads (docs/plans/2026-10-20-voice-long-recording-rootcause.md)
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      0, // 0 = no timeout for WebSocket
 		IdleTimeout:       60 * time.Second,
@@ -749,6 +908,18 @@ func (s *HTTPServer) SetResultStore(store *session.ResultStore) {
 	s.api.SetResultStore(store)
 }
 
+// SetScheduleResultStore wires the per-schedule result history store behind
+// the result panel endpoints (POST /api/sessions/{id}/result, GET /api/schedule-results*).
+func (s *HTTPServer) SetScheduleResultStore(store *session.ScheduleResultStore) {
+	s.api.SetScheduleResultStore(store)
+}
+
+// SetTraceRecorder wires the session trace recorder (observe only).
+func (s *HTTPServer) SetTraceRecorder(r SessionTraceRecorder) { s.api.SetTraceRecorder(r) }
+
+// SetTraceStore wires the trace store behind the /api/trace/* read routes.
+func (s *HTTPServer) SetTraceStore(st *trace.Store) { s.api.SetTraceStore(st) }
+
 // SetSessionTokenStore wires the Design A3 per-session scoped-credential
 // store so fedAuthMiddleware can recognize a session's token.
 func (s *HTTPServer) SetSessionTokenStore(store *auth.SessionTokenStore) {
@@ -758,6 +929,25 @@ func (s *HTTPServer) SetSessionTokenStore(store *auth.SessionTokenStore) {
 // SetEncKey wires the Argon2id-derived key for file-persisted handlers
 // that encrypt discussion WAL, participants, and channel routing (BL334 T43a).
 func (s *HTTPServer) SetEncKey(key []byte) { s.api.SetEncKey(key) }
+
+// Handler returns the HTTP handler the server serves (routes, auth and
+// security headers), for tests that drive the real mux without listening.
+func (s *HTTPServer) Handler() http.Handler { return s.srv.Handler }
+
+// SetDefectQueue installs the defect queue backend and its intake decision
+// log on the REST API. Until it is called the /api/autonomous/defects/
+// endpoints that need the queue answer 503 "defect queue unavailable".
+func (s *HTTPServer) SetDefectQueue(b DefectQueueBackend, log autonomous.IntakeLog) {
+	s.api.SetDefectQueue(b, log)
+}
+
+// SetConfigAuditor wires the shared config-write audit sink (BL110
+// extension) into the REST config-write routes (PUT /api/config, PUT
+// /api/cost/rates — surface "rest"). Nil (the default) means those
+// routes produce no audit record.
+func (s *HTTPServer) SetConfigAuditor(a *federation.ConfigAuditor) {
+	s.api.configAudit = a
+}
 
 // SetMatrixBackend wires the Matrix messaging backend for /api/matrix/* endpoints (BL241).
 func (s *HTTPServer) SetMatrixBackend(b matrixBackendAPI) { s.api.SetMatrixBackend(b) }
@@ -844,11 +1034,36 @@ func (s *HTTPServer) SetInference(reg *inference.Registry, disp *inference.Dispa
 	}
 }
 
+// SetClassifierStatus wires the classifier status source (probe and calibration
+// status) into the REST surface.
+func (s *HTTPServer) SetClassifierStatus(src ClassifierStatusSource) {
+	if s.api != nil {
+		s.api.SetClassifierStatus(src)
+	}
+}
+
+// CheckRoleContention runs the LLM role contention check (see Server.CheckRoleContention).
+func (s *HTTPServer) CheckRoleContention() []string {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.CheckRoleContention()
+}
+
 // SetServerStore (BL312 S1) — wires the runtime multi-server registry.
 func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	if s.api != nil {
 		s.api.SetServerStore(st)
 	}
+}
+
+// FederationSessions returns this host's sessions and each enabled peer's, with
+// a per-peer error for each peer that could not be read.
+func (s *HTTPServer) FederationSessions() FederationResponse {
+	if s.api == nil {
+		return FederationResponse{Proxied: map[string][]*session.Session{}, Errors: map[string]string{"local": "server not ready"}}
+	}
+	return s.api.FederationSessions()
 }
 
 // ServerStore returns the multi-server registry (BL317 — for MCP fed-auth wiring).
@@ -857,6 +1072,22 @@ func (s *HTTPServer) ServerStore() *multiserver.Store {
 		return nil
 	}
 	return s.api.serverStore
+}
+
+// SetFingerprintExporter wires the fingerprint reconciliation exporter
+// (design §3c) behind GET /api/federation/fingerprints.
+func (s *HTTPServer) SetFingerprintExporter(x *fingerprint.Exporter) {
+	if s.api != nil {
+		s.api.SetFingerprintExporter(x)
+	}
+}
+
+// SetFingerprintMatchStore wires the match store behind the
+// /api/federation/fingerprint-matches handlers.
+func (s *HTTPServer) SetFingerprintMatchStore(ms *fingerprint.MatchStore) {
+	if s.api != nil {
+		s.api.SetFingerprintMatchStore(ms)
+	}
 }
 
 // SetFedGroupStore (BL316) — wires the custom capability group store.
@@ -1014,6 +1245,11 @@ func (s *HTTPServer) SetRestartFunc(fn func()) {
 	s.api.SetRestartFunc(fn)
 }
 
+// SetRestartFuncForce wires the force-aware restart guard for /api/restart.
+func (s *HTTPServer) SetRestartFuncForce(fn func(force bool)) {
+	s.api.SetRestartFuncForce(fn)
+}
+
 // SetACMEManager wires the ACME subsystem (BL397) into the server.
 func (s *HTTPServer) SetACMEManager(m *acme.Manager) {
 	s.api.SetACMEManager(m)
@@ -1063,6 +1299,50 @@ func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 	s.api.SetAutonomousAPI(api)
 }
 
+// SetCostReportLedger wires the spend ledger GET /api/cost/report reads.
+func (s *HTTPServer) SetCostReportLedger(l *spendledger.Ledger) {
+	s.api.SetCostReportLedger(l)
+}
+
+// SetTagRegistry wires the shared Automata tag registry and the function that
+// starts its sync loop. See Server.SetTagRegistry.
+func (s *HTTPServer) SetTagRegistry(r *tagregistry.Registry, startSync func()) {
+	s.api.SetTagRegistry(r, startSync)
+}
+
+// SetAutonomousSubscriptions (BL427 phase 3) wires the lifecycle event
+// subscription store for /api/autonomous/subscriptions. Nil disables the
+// endpoints (handlers return 503).
+func (s *HTTPServer) SetAutonomousSubscriptions(api LifecycleSubscriptionsAPI) {
+	s.api.SetAutonomousSubscriptions(api)
+}
+
+// SetQuestions wires the operator question channel (raise + read,
+// /api/questions) into the API server.
+func (s *HTTPServer) SetQuestions(api QuestionsAPI) {
+	s.api.SetQuestions(api)
+}
+
+// SetSupervisorLoop wires the supervisor loop control behind the
+// /api/supervisor-loop endpoints. Nil leaves them without run history.
+func (s *HTTPServer) SetSupervisorLoop(c SupervisorLoopControl) {
+	s.api.SetSupervisorLoop(c)
+}
+
+// SetAutonomousEvents wires the pending-events queue behind the mcp_queue
+// subscription sink for /api/autonomous/events. Nil disables the endpoint
+// (the handler returns 503).
+func (s *HTTPServer) SetAutonomousEvents(api PendingEventsAPI) {
+	s.api.SetAutonomousEvents(api)
+}
+
+// SetAutonomousForwardedEvents (BL427 phase 5) wires the receiving side of peer
+// forwarding for POST /api/autonomous/events/forward. Nil disables the endpoint
+// (the handler returns 503).
+func (s *HTTPServer) SetAutonomousForwardedEvents(api ForwardedEventsAPI) {
+	s.api.SetAutonomousForwardedEvents(api)
+}
+
 // SetGitTokenMinter (v5.26.24) wires the BL113 token broker for
 // daemon-side clone. Optional — when nil, clones use the
 // DATAWATCH_GIT_TOKEN env / local-creds fallback (v5.26.22 path).
@@ -1094,11 +1374,31 @@ func (s *HTTPServer) SetPluginsAPI(api PluginsAPI) {
 	s.api.SetPluginsAPI(api)
 }
 
+// SetModelNodeRecorder wires the model-node recorder (see
+// Server.SetModelNodeRecorder).
+func (s *HTTPServer) SetModelNodeRecorder(rec *plugins.ServiceEventRecorder) {
+	s.api.SetModelNodeRecorder(rec)
+}
+
+// StartModelNodeEvents starts the background model-node events task (see
+// Server.StartModelNodeEvents); it owns the model_node_unreachable
+// raise and clear, once per transition.
+func (s *HTTPServer) StartModelNodeEvents(ctx context.Context, servicePlugins func() []string) {
+	s.api.StartModelNodeEvents(ctx, servicePlugins)
+}
+
 // SetPluginWidgets (BL403) wires plugin widget values: manifest lookup,
 // value store and push-token registry. Any nil argument disables
 // /api/plugins/{name}/widgets* (handlers return 503).
 func (s *HTTPServer) SetPluginWidgets(src PluginWidgetSource, store *plugins.WidgetStore, tokens PluginTokensAPI) {
 	s.api.SetPluginWidgets(src, store, tokens)
+}
+
+// SetPluginTokens wires the per-plugin token-usage listing
+// (GET /api/plugins/{name}/tokens): manifest secret-ref scan +
+// service-token names. Nil disables the endpoint (handlers return 503).
+func (s *HTTPServer) SetPluginTokens(src PluginTokensSource) {
+	s.api.SetPluginTokens(src)
 }
 
 // AuditPluginService records a managed plugin service lifecycle event in
@@ -1134,6 +1434,16 @@ func (s *HTTPServer) SetPeerRegistry(r PeerRegistryAPI) {
 	s.api.SetPeerRegistry(r)
 }
 
+// PeerRegistry returns the wired Shape B/C peer registry (nil when not
+// set). Lazy readers such as fingerprint identity resolution call this at
+// request time, so a registry wired after server.New still reaches them.
+func (s *HTTPServer) PeerRegistry() PeerRegistryAPI {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.peerRegistry
+}
+
 // SetFederationSelfName — S14a (v4.8.0) loop-prevention: the
 // peer-push handler rejects pushes whose chain already contains
 // this primary's name. Empty disables the check.
@@ -1163,6 +1473,10 @@ func (s *HTTPServer) SetMCPBridge(b mcpBridgeAPI) { s.api.SetMCPBridge(b) }
 // SetMCPAuthRequired records whether mcp.token is configured (SEC-002).
 func (s *HTTPServer) SetMCPAuthRequired(configured bool) { s.api.SetMCPAuthRequired(configured) }
 
+// SetMCPSSEStateFn wires the MCP SSE listener state reporter into
+// /api/health's mcp_sse field (disabled|retrying|listening|failed).
+func (s *HTTPServer) SetMCPSSEStateFn(fn func() string) { s.api.SetMCPSSEStateFn(fn) }
+
 // SetMCPSamplingDispatcher wires the sampling dispatcher (BL302 S3).
 func (s *HTTPServer) SetMCPSamplingDispatcher(d MCPSamplingAPI) {
 	s.api.SetMCPSamplingDispatcher(d)
@@ -1172,8 +1486,10 @@ func (s *HTTPServer) SetMCPSamplingDispatcher(d MCPSamplingAPI) {
 func (s *HTTPServer) SetMCPElicitationDispatcher(d MCPElicitationAPI) {
 	s.api.SetMCPElicitationDispatcher(d)
 }
-func (s *HTTPServer) SetStatsCollector(c *stats.Collector)           { s.api.statsCollector = c }
-func (s *HTTPServer) SetTestMessageHandler(fn func(string) []string) { s.api.SetTestMessageHandler(fn) }
+func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
+func (s *HTTPServer) SetTestMessageHandler(fn func(text string, at TestMessageAttribution) []string) {
+	s.api.SetTestMessageHandler(fn)
+}
 
 // SetSmokeForward (#54) — wires cross-instance smoke-run forwarding.
 func (s *HTTPServer) SetSmokeForward(url, token string) {
@@ -1188,18 +1504,45 @@ func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {
 }
 
 // NotifyStateChange broadcasts a session state change to all WS clients.
-// v8.37.0 (GH#162) — also emits the lighter-weight single-session
-// session_state message alongside the existing full-list broadcast; see
-// Hub.BroadcastSessionState's doc comment.
+// Emits the lighter-weight single-session session_state
+// message; only a legacy full client also gets the (bounded, default-view)
+// sessions frame. Window and delta clients cost one session copy, never a
+// walk of the session list. See Hub.BroadcastSessionState's doc comment.
 func (s *HTTPServer) NotifyStateChange(sess *session.Session, oldState session.State) {
-	s.hub.BroadcastSessions(s.manager.ListSessions())
-	s.hub.BroadcastSessionState(sess)
+	s.notifySessionChanged(sess, true)
 }
 
 // NotifyNeedsInput broadcasts a needs-input event to all WS clients
 func (s *HTTPServer) NotifyNeedsInput(sess *session.Session, prompt string) {
 	s.hub.BroadcastNeedsInput(sess.FullID, prompt)
-	s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.notifySessionChanged(sess, false)
+}
+
+// notifySessionChanged streams one changed session. A legacy client gets
+// the bounded sessions frame (built from the default-view sessions only,
+// which also streams any other change to window and delta clients), then,
+// when withState, the legacy session_state. With no legacy client connected
+// the changed session alone is streamed. Finished sessions older than the
+// default-view window are never sent, and no work is done with no client.
+func (s *HTTPServer) notifySessionChanged(sess *session.Session, withState bool) {
+	if s.hub == nil || s.manager == nil || sess == nil {
+		return
+	}
+	if s.hub.ClientCount() == 0 {
+		s.hub.resetSessionSnapshot()
+		return
+	}
+	snap := s.manager.SessionSnapshot(sess)
+	legacy := s.hub.hasLegacyClient()
+	if legacy {
+		s.hub.BroadcastSessionView()
+		if !withState {
+			return
+		}
+	}
+	if inDefaultView(&snap, time.Now(), s.hub.recentWindow()) {
+		s.hub.BroadcastSessionState(&snap)
+	}
 }
 
 // NotifyOutput broadcasts new output lines for a session
@@ -1244,6 +1587,12 @@ func (s *HTTPServer) BroadcastChannelReply(sessionID, text string) {
 // (e.g. "127.0.0.1,203.0.113.5"). Each address gets its own listener.
 func (s *HTTPServer) Start(ctx context.Context) error {
 	go s.hub.Run()
+
+	// The Claude lane history samples with the daemon and stops when ctx ends.
+	s.StartUsageLaneHistory(ctx)
+
+	// The observer pull collector starts with the daemon and stops with ctx.
+	s.api.StartObserverPull(ctx)
 
 	// Wire real-time stats broadcast — fires on every collection (every 5s).
 	// Chain with any existing onCollect (e.g. Prometheus metrics update).

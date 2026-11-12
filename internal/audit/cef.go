@@ -55,6 +55,13 @@ func FormatCEFLine(e Entry) string {
 			"deviceCustomString2="+cefExtEscape(e.SessionID))
 	}
 
+	if e.Subject != "" {
+		// Fixed at cs6 so the detail slots below keep their positions whether
+		// or not an event carries a subject.
+		ext = append(ext, "deviceCustomString6Label=subject",
+			"deviceCustomString6="+cefExtEscape(e.Subject))
+	}
+
 	// Known Details keys map to real CEF standard keys where one fits;
 	// everything else falls back to numbered custom strings, sorted for
 	// deterministic output (Details is a map).
@@ -86,13 +93,19 @@ func FormatCEFLine(e Entry) string {
 		ext = append(ext, "deviceCustomNumber1Label=status",
 			fmt.Sprintf("deviceCustomNumber1=%v", v))
 	}
+	var overflow []string // details past the three custom-string slots
 	for _, k := range rest {
 		if csSlot > 5 {
-			break // CEF custom strings only go to cs6; cs1/cs2 already used above
+			overflow = append(overflow, k+"="+fmt.Sprintf("%v", e.Details[k]))
+			continue // cs1/cs2 are taken above and cs6 carries the subject
 		}
 		ext = append(ext, fmt.Sprintf("deviceCustomString%dLabel=%s", csSlot, cefExtEscape(k)),
 			fmt.Sprintf("deviceCustomString%d=%s", csSlot, cefExtEscape(fmt.Sprintf("%v", e.Details[k]))))
 		csSlot++
+	}
+
+	if len(overflow) > 0 {
+		ext = append(ext, "msg="+cefExtEscape(strings.Join(overflow, "; ")))
 	}
 
 	return header + strings.Join(ext, " ")
@@ -119,6 +132,8 @@ func cefSignature(action string) (int, string, int) {
 		return 20, "SessionStart", 3
 	case "kill":
 		return 21, "SessionKill", 4
+	case "session_end_reap":
+		return 69, "SessionEndReap", 4
 	case "send_input":
 		return 22, "SessionSendInput", 2
 	case "configure":
@@ -137,6 +152,134 @@ func cefSignature(action string) (int, string, int) {
 		return 29, "AutomationUpdated", 3
 	case "automation_delete":
 		return 30, "AutomationDeleted", 5
+	case ActionUsageBackoffSet:
+		return 31, "AutonomousUsageBackoffSet", 4
+	case ActionUsageBackoffCleared:
+		return 32, "AutonomousUsageBackoffCleared", 3
+	case ActionUsageBackoffAutoCleared:
+		return 33, "AutonomousUsageBackoffAutoCleared", 2
+	case ActionUsageBackoffPatternsRechecked:
+		return 34, "AutonomousUsageBackoffPatternsRechecked", 3
+	case ActionBudgetCeilingWait:
+		return 35, "AutonomousBudgetCeilingWait", 4
+	case ActionBudgetWindowResumed:
+		return 36, "AutonomousBudgetWindowResumed", 2
+	case ActionAutomationBudgetBreach:
+		return 37, "AutomationBudgetBreach", 5
+	case ActionAutomationBudgetResumed:
+		return 38, "AutomationBudgetResumed", 2
+	case ActionCapacityWait:
+		return 39, "AutonomousCapacityWait", 3
+	case ActionCapacityAdmitted:
+		return 40, "AutonomousCapacityAdmitted", 2
+	case ActionBudgetWindowRollover:
+		return 41, "AutonomousBudgetWindowRollover", 2
+	case ActionFingerprintMatchConfirmed:
+		return 42, "FingerprintMatchConfirmed", 4
+	case ActionFingerprintMatchRejected:
+		return 43, "FingerprintMatchRejected", 2
+	case ActionReleaseModeChanged:
+		return 84, "ReleaseModeChanged", 3
+	case ActionAutomationImportGraph:
+		return 44, "AutomationImportGraph", 3
+	case ActionNotifyEventsChanged:
+		return 45, "NotifyEventsChanged", 3
+	case ActionLifecycleWebhookDelivery:
+		return 46, "AutonomousLifecycleWebhookDelivery", 2
+	case ActionLifecycleWebhookFailed:
+		return 47, "AutonomousLifecycleWebhookFailed", 6
+	case ActionLifecycleForwardDelivery:
+		return 48, "AutonomousLifecycleForwardDelivery", 3
+	case ActionLifecycleForwardReceive:
+		return 49, "AutonomousLifecycleForwardReceive", 3
+	case ActionQuestionRaised:
+		return 50, "QuestionRaised", 3
+	case ActionQuestionAnswered:
+		return 51, "QuestionAnswered", 3
+	case ActionQuestionWithdrawn:
+		return 52, "QuestionWithdrawn", 3
+	case ActionQuestionExpired:
+		return 53, "QuestionExpired", 4
+	case ActionAnswerSuperseded:
+		return 54, "AnswerSuperseded", 4
+	case ActionQuestionAnswerRefused:
+		return 55, "QuestionAnswerRefused", 6
+	case ActionUsageReadingAdded:
+		return 56, "UsageReadingAdded", 3
+	case ActionUsageReadingDeleted:
+		return 57, "UsageReadingDeleted", 4
+	case ActionUsageExtraCreditSet:
+		return 58, "UsageExtraCreditSet", 3
+	case ActionUsageRemainingWorkSet:
+		return 59, "UsageRemainingWorkSet", 2
+	case ActionStuckRunningBlocked:
+		return 60, "AutonomousStuckRunningBlocked", 5
+	case ActionQuestionMarkerRefused:
+		return 61, "QuestionMarkerRefused", 4
+	case ActionLaneFillMode:
+		return 62, "AutonomousLaneFillMode", 3
+	case ActionUIPromptDismissed:
+		return 62, "UIPromptDismissed", 2
+	case ActionUIPromptNotCleared:
+		return 63, "UIPromptNotCleared", 3
+	case ActionUIPromptRefused:
+		return 64, "UIPromptRefused", 4
+	case ActionLLMSecretAccess:
+		return 65, "LLMSecretAccess", 5
+	case "regenerate_artefact":
+		return 66, "AutomatonArtefactRegenerated", 3
+	case ActionSecretScanRefused:
+		return 67, "SecretScanRefused", 6
+	case ActionSecretScanShadow:
+		return 68, "SecretScanShadow", 4
+	case ActionQuestionUpdated:
+		return 69, "QuestionUpdated", 3
+	case ActionPluginServiceDown:
+		return 70, "PluginServiceDown", 4
+	case ActionPluginServiceTokenRejected:
+		return 71, "PluginServiceTokenRejected", 5
+	case ActionPluginServiceEnrichmentBacklog:
+		return 72, "PluginServiceBacklog", 4
+	case ActionPluginServiceModelNodeUnreachable:
+		return 73, "PluginModelNodeUnreachable", 4
+	case ActionPluginServiceStart:
+		return 74, "PluginServiceStart", 2
+	case ActionPluginServiceStop:
+		return 75, "PluginServiceStop", 2
+	case ActionPluginServiceRestart:
+		return 76, "PluginServiceRestart", 4
+	case ActionPluginServiceHealthFail:
+		return 77, "PluginServiceHealthFail", 4
+	case ActionPluginWidgetRegistered:
+		return 78, "PluginWidgetRegistered", 2
+	case ActionPluginWidgetPush:
+		return 79, "PluginWidgetPush", 2
+	case ActionPluginWidgetTokenIssue:
+		return 80, "PluginWidgetTokenIssue", 2
+	case ActionPluginTokenRotate:
+		return 81, "PluginTokenRotate", 2
+	case ActionPluginTokenRemove:
+		return 82, "PluginTokenRemove", 2
+	case ActionPluginWidgetPullFailed:
+		return 83, "PluginWidgetPullFailed", 3
+	case ActionReleasePush:
+		return 84, "ReleasePush", 3
+	case ActionReleaseTag:
+		return 85, "ReleaseTag", 3
+	case "autonomous.verifier_run_cap":
+		return 86, "AutonomousVerifierRunCap", 4
+	case ActionConfigWrite:
+		return 87, "ConfigWrite", 5
+	case ActionPlacementAsked:
+		return 88, "PlacementAsked", 3
+	case ActionPlacementApproved:
+		return 89, "PlacementApproved", 2
+	case ActionPlacementDenied:
+		return 90, "PlacementDenied", 4
+	case ActionPlacementLoaded:
+		return 91, "PlacementLoaded", 2
+	case ActionPlacementRefused:
+		return 92, "PlacementRefused", 5
 	default:
 		return 0, "AuditEvent", 3
 	}

@@ -230,6 +230,18 @@ Verified together, serial lane, against a real sandbox daemon
 bash scripts/run-tests.sh --stories=TS-787,TS-788,TS-789,TS-790,TS-791,TS-792,TS-793,TS-794,TS-795
 ```
 
+### PWA terminal live update
+
+| TS# | Description | Release | Status | Notes |
+|---|---|---|---|---|
+| TS-798 | PWA terminal view live-updates: a command typed into a live shell session shows its output in the terminal within 3 s, before and after a forced WebSocket close and automatic reconnect, with no page reload | next patch | not yet run | `surface:pwa feature:terminal-live-update conflict:pwa-pwa` — creates its own shell session inline and always deletes it; PWA story `scripts/test-stories/pwa/TS-798.mjs` |
+
+Run it with:
+
+```bash
+bash scripts/run-tests.sh --story=TS-798
+```
+
 ### Verification LLM override (v9.0.72)
 
 | TS# | Description | Release | Status | Notes |

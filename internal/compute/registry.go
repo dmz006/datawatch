@@ -152,6 +152,25 @@ func (r *Registry) Update(n *Node) error {
 	return r.persistLocked()
 }
 
+// RecordBackendVersion stamps a version probe result onto the named
+// Node and persists it. Returns ErrNotFound if absent. Used by the
+// save-time wiring in internal/server so operators can see the
+// captured backend version in the node detail payload.
+func (r *Registry) RecordBackendVersion(name string, vr VersionResult) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.nodes[name]
+	if !ok {
+		return ErrNotFound
+	}
+	cp := *n
+	cp.RecordBackendVersion(vr)
+
+	cp.UpdatedAt = time.Now().UTC()
+	r.nodes[name] = &cp
+	return r.persistLocked()
+}
+
 // Delete removes the named Node. Returns ErrNotFound if absent.
 func (r *Registry) Delete(name string) error {
 	r.mu.Lock()
@@ -160,6 +179,42 @@ func (r *Registry) Delete(name string) error {
 		return ErrNotFound
 	}
 	delete(r.nodes, name)
+	return r.persistLocked()
+}
+
+// SetDrain sets or clears the drain state of the named Node under the
+// registry lock and persists through the same save path the other node
+// mutators use. now is a parameter so tests can use fixed times:
+//
+//   - drained=true marks the node drained. If until is non-zero it
+//     bounds the drain (expired drains read as not active but the stored
+//     fields are kept). A non-zero until that is not after now is
+//     rejected with a clear error, so the caller gets a definite answer
+//     for a past end time.
+//   - drained=false (undrain) clears Drained, DrainUntil and DrainReason.
+//
+// InMaintenance and AllowsConsumer behaviour is unchanged by draining.
+func (r *Registry) SetDrain(name string, drained bool, until time.Time, now time.Time, reason string) error {
+	if drained && !until.IsZero() && !until.After(now) {
+		return fmt.Errorf("compute node %q: drain_until %s must be after now %s", name,
+			until.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339))
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.nodes[name]
+	if !ok {
+		return ErrNotFound
+	}
+	if drained {
+		n.Drained = true
+		n.DrainUntil = until
+		n.DrainReason = reason
+	} else {
+		n.Drained = false
+		n.DrainUntil = time.Time{}
+		n.DrainReason = ""
+	}
+	n.UpdatedAt = now
 	return r.persistLocked()
 }
 

@@ -25,6 +25,11 @@ type LifecycleLevel string
 const (
 	LevelPRD  LifecycleLevel = "prd"
 	LevelTask LifecycleLevel = "task"
+	// LevelAutomation is the level of an Automation reaching a terminal
+	// status (kinds "automation.completed" / "automation.blocked" /
+	// "automation.cancelled"). The coordinator uses it to route a nested
+	// child's outcome back to the parent graph; AutomationID names the child.
+	LevelAutomation LifecycleLevel = "automation"
 )
 
 // Event kinds. Status-change kinds are "<level>.<new_status>" and are
@@ -37,14 +42,45 @@ const (
 	// KindTaskSessionCleared fires when Task.SessionID is cleared
 	// (before a respawn or on reset).
 	KindTaskSessionCleared = "task.session_cleared"
+	// KindScopeWarning is an opt-in warning that a task touched files
+	// outside its declared scope. It carries no status prefix because it
+	// is not a status transition; Files lists the offending files. It is
+	// informational only and never blocks or alters any work.
+	KindScopeWarning = "scope_warning"
+	// KindGuardrailWarn is an opt-in warning that a guardrail returned a
+	// warn outcome. Bare name (no level prefix) because a guardrail can
+	// warn at task, story or Automaton level; the event's Level field
+	// carries the level and Guardrail names the guardrail. It is
+	// informational only and never blocks or alters any work.
+	KindGuardrailWarn = "guardrail_warn"
 	// KindPRDUpdated is the generic "this PRD was persisted" notification
 	// (the WS refresh broadcast subscribes to it).
 	KindPRDUpdated = "prd.updated"
+	// KindTaskLooping fires when the executor's periodic progress poll
+	// detected a worker loop (loop_rescue.go) and the matching rescue
+	// fired (warning recorded + corrective message sent, or the one-shot
+	// worker stopped for retry). Non-status: the task stays in_progress.
+	KindTaskLooping = "task.looping"
+	// KindQuestionAnswered fires when an open operator question is
+	// answered. Non-status: it names the question (QuestionID) and the
+	// answer record (AnswerID). A question never expires by a clock, so
+	// there is no question.expired kind and never will be.
+	KindQuestionAnswered = "question.answered"
+	// KindQuestionWithdrawn fires when an open operator question is
+	// withdrawn before an answer. Non-status: QuestionID names the
+	// withdrawn question; AnswerID is empty.
+	KindQuestionWithdrawn = "question.withdrawn"
 )
 
 // PRDStatusKind returns the event kind for a PRD entering status s,
 // e.g. "prd.completed".
 func PRDStatusKind(s PRDStatus) string { return string(LevelPRD) + "." + string(s) }
+
+// AutomationStatusKind returns the event kind for an Automation entering status
+// s, e.g. "automation.completed".
+func AutomationStatusKind(s AutomationStatus) string {
+	return string(LevelAutomation) + "." + string(s)
+}
 
 // TaskStatusKind returns the event kind for a task entering status s,
 // e.g. "task.verifying".
@@ -64,25 +100,56 @@ func TerminalPRDKinds() []string {
 
 // LifecycleEvent is one Automaton or task lifecycle transition.
 type LifecycleEvent struct {
-	ID          string            `json:"id"`
-	At          time.Time         `json:"at"`
-	Kind        string            `json:"kind"`
-	Level       LifecycleLevel    `json:"level"`
-	PRDID       string            `json:"prd_id"`
-	ParentPRDID string            `json:"parent_prd_id,omitempty"`
-	StoryID     string            `json:"story_id,omitempty"`
-	TaskID      string            `json:"task_id,omitempty"`
-	OldStatus   string            `json:"old_status,omitempty"`
-	NewStatus   string            `json:"new_status,omitempty"`
-	SessionID   string            `json:"session_id,omitempty"`
-	Decision    *Decision         `json:"decision,omitempty"`
-	Verdict     *GuardrailVerdict `json:"verdict,omitempty"`
-	Host        string            `json:"host,omitempty"`
+	ID          string         `json:"id"`
+	At          time.Time      `json:"at"`
+	Kind        string         `json:"kind"`
+	Level       LifecycleLevel `json:"level"`
+	PRDID       string         `json:"prd_id"`
+	ParentPRDID string         `json:"parent_prd_id,omitempty"`
+	// AutomationID names the Automation an automation-level event is about
+	// (the child of a nested member). Empty for PRD and task events.
+	AutomationID string `json:"automation_id,omitempty"`
+	StoryID      string `json:"story_id,omitempty"`
+	TaskID       string `json:"task_id,omitempty"`
+	// QuestionID and AnswerID name the operator question and the answer
+	// record the event is about (kinds question.answered /
+	// question.withdrawn). Empty for every other kind.
+	QuestionID string `json:"question_id,omitempty"`
+	AnswerID   string `json:"answer_id,omitempty"`
+	OldStatus  string `json:"old_status,omitempty"`
+	NewStatus  string `json:"new_status,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
+	// Details is a short, single-line description of what the event
+	// says (loop warning text for task.looping; empty for other kinds).
+	Details  string            `json:"details,omitempty"`
+	Decision *Decision         `json:"decision,omitempty"`
+	Verdict  *GuardrailVerdict `json:"verdict,omitempty"`
+	Host     string            `json:"host,omitempty"`
+	// Files, Guardrail and Link are the payload of the opt-in warning
+	// kinds (KindScopeWarning, KindGuardrailWarn): the files outside the
+	// declared scope, the guardrail name, and an optional PWA deep-link
+	// target. The only deep-link forms the PWA handles today are
+	// "?alert=<id>" (opens one alert) and "?automation=<id>" (opens one
+	// chain Automation); there is no route for an Automaton or task
+	// detail page, and none is invented here. Emitters therefore set Link
+	// to "?alert=<id>" for the alert they raise alongside the warning, or
+	// leave it empty.
+	Files     []string `json:"files,omitempty"`
+	Guardrail string   `json:"guardrail,omitempty"`
+	Link      string   `json:"link,omitempty"`
 	// Deleted is set only on KindPRDUpdated events for a PRD that no
 	// longer loads (deleted). The legacy WS prd_update frame carries
 	// {"deleted": true} in that case and NewStatus alone can't express
 	// it (an existing PRD may legitimately have an empty status).
 	Deleted bool `json:"deleted,omitempty"`
+	// Test marks a synthetic event fired by a subscription test; it is
+	// never emitted by the executor.
+	Test bool `json:"test,omitempty"`
+	// Forward is set only on an event a peer forwarded to this daemon (the
+	// receiving side re-emits it with the chain from the envelope). A non-nil
+	// Forward marks the event as forwarded: a daemon never forwards it on.
+	// Nil on every locally originated event.
+	Forward *ForwardChain `json:"forward,omitempty"`
 }
 
 // PRDUpdatePayload maps a KindPRDUpdated event to the legacy WS
@@ -107,6 +174,12 @@ type LifecycleFilter struct {
 	Level  LifecycleLevel `json:"level,omitempty"`
 	PRDID  string         `json:"prd_id,omitempty"`
 	TaskID string         `json:"task_id,omitempty"`
+	// AutomationID optionally scopes the subscription to the Automata
+	// owned by one Automation (BL431). LifecycleEvent carries no
+	// Automation membership, so Matches treats a non-empty value as a
+	// wildcard; the resyncing engine resolves membership at dispatch
+	// time via AutomationStore.OwnerOf(prdID).
+	AutomationID string `json:"automation_id,omitempty"`
 }
 
 // Matches reports whether ev passes the filter.
@@ -345,24 +418,38 @@ func (m *Manager) emitPRDStatus(prd *PRD, old PRDStatus, dec *Decision, v *Guard
 	if m == nil || prd == nil {
 		return
 	}
-	ev := LifecycleEvent{
-		Kind:        PRDStatusKind(prd.Status),
-		Level:       LevelPRD,
-		PRDID:       prd.ID,
-		ParentPRDID: prd.ParentPRDID,
-		OldStatus:   string(old),
-		NewStatus:   string(prd.Status),
-	}
-	if dec != nil {
-		d := *dec
-		ev.Decision = &d
-	}
-	if v != nil {
-		vc := *v
-		vc.Issues = append([]string(nil), v.Issues...)
-		ev.Verdict = &vc
-	}
+	var ev LifecycleEvent
+	m.readLocked(func() {
+		ev = LifecycleEvent{
+			Kind:        PRDStatusKind(prd.Status),
+			Level:       LevelPRD,
+			PRDID:       prd.ID,
+			ParentPRDID: prd.ParentPRDID,
+			OldStatus:   string(old),
+			NewStatus:   string(prd.Status),
+		}
+		if dec != nil {
+			d := *dec
+			ev.Decision = &d
+		}
+		if v != nil {
+			vc := *v
+			vc.Issues = append([]string(nil), v.Issues...)
+			ev.Verdict = &vc
+		}
+	})
 	m.emit(ev)
+}
+
+// readLocked runs f under the store lock so the event builders read PRD
+// and Task fields that executeOne goroutines write; without a store (bare
+// test Managers) it just runs f.
+func (m *Manager) readLocked(f func()) {
+	if m.store == nil {
+		f()
+		return
+	}
+	m.store.WithLock(f)
 }
 
 // lastDecision returns a pointer to the most recent Decision of kind on
@@ -399,22 +486,31 @@ func (m *Manager) emitTaskStatus(prd *PRD, t *Task, old TaskStatus, dec *Decisio
 	if m == nil || t == nil {
 		return
 	}
-	old, cur := normTaskStatus(old), normTaskStatus(t.Status)
-	if old == cur {
+	var ev LifecycleEvent
+	same := false
+	m.readLocked(func() {
+		var cur TaskStatus
+		old, cur = normTaskStatus(old), normTaskStatus(t.Status)
+		if old == cur {
+			same = true
+			return
+		}
+		ev = newTaskEvent(prd, t)
+		ev.Kind = TaskStatusKind(cur)
+		ev.OldStatus = string(old)
+		ev.NewStatus = string(cur)
+		if dec != nil {
+			d := *dec
+			ev.Decision = &d
+		}
+		if v != nil {
+			vc := *v
+			vc.Issues = append([]string(nil), v.Issues...)
+			ev.Verdict = &vc
+		}
+	})
+	if same {
 		return
-	}
-	ev := newTaskEvent(prd, t)
-	ev.Kind = TaskStatusKind(cur)
-	ev.OldStatus = string(old)
-	ev.NewStatus = string(cur)
-	if dec != nil {
-		d := *dec
-		ev.Decision = &d
-	}
-	if v != nil {
-		vc := *v
-		vc.Issues = append([]string(nil), v.Issues...)
-		ev.Verdict = &vc
 	}
 	m.emit(ev)
 }
@@ -425,17 +521,28 @@ func (m *Manager) emitTaskStatus(prd *PRD, t *Task, old TaskStatus, dec *Decisio
 // save that persisted the new SessionID succeeded. For a cleared event
 // SessionID carries the session that was cleared.
 func (m *Manager) emitTaskSession(prd *PRD, t *Task, oldSession string) {
-	if m == nil || t == nil || oldSession == t.SessionID {
+	if m == nil || t == nil {
 		return
 	}
-	ev := newTaskEvent(prd, t)
-	ev.OldStatus = string(normTaskStatus(t.Status))
-	ev.NewStatus = ev.OldStatus
-	if t.SessionID == "" {
-		ev.Kind = KindTaskSessionCleared
-		ev.SessionID = oldSession
-	} else {
-		ev.Kind = KindTaskSessionStarted
+	var ev LifecycleEvent
+	same := false
+	m.readLocked(func() {
+		if oldSession == t.SessionID {
+			same = true
+			return
+		}
+		ev = newTaskEvent(prd, t)
+		ev.OldStatus = string(normTaskStatus(t.Status))
+		ev.NewStatus = ev.OldStatus
+		if t.SessionID == "" {
+			ev.Kind = KindTaskSessionCleared
+			ev.SessionID = oldSession
+		} else {
+			ev.Kind = KindTaskSessionStarted
+		}
+	})
+	if same {
+		return
 	}
 	m.emit(ev)
 }

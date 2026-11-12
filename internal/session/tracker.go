@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/platformcontext"
 	"github.com/dmz006/datawatch/internal/secfile"
 )
 
@@ -108,6 +109,24 @@ func (t *Tracker) RecordNeedsInput(prompt string) error {
 	return t.commitAll("session: waiting for input — " + truncateStr(prompt, 50))
 }
 
+// RecordUIPrompt appends exactly one timestamped ui-prompt line to
+// timeline.md (recognised or cleared), in the style of RecordNeedsInput.
+// Callers invoke it at most once per occurrence — the screen-capture tick
+// that recognises the prompt and the tick that clears it — never per tick.
+func (t *Tracker) RecordUIPrompt(kind, selected, event string) error {
+	line := fmt.Sprintf("%s | ui-prompt | %s | kind=%s", timestamp(), event, kind)
+	if selected != "" {
+		line += " | selected=" + truncateStr(selected, 60)
+	}
+	if err := t.appendTimeline(line); err != nil {
+		return err
+	}
+	if err := t.updateReadme(); err != nil {
+		return err
+	}
+	return t.commitAll("session: " + event)
+}
+
 // RecordInputSent appends the user's response to conversation.md, commits.
 // source identifies where the input came from (e.g. "signal", "web", "mcp", "filter", "schedule").
 func (t *Tracker) RecordInputSent(input, source string) error {
@@ -129,8 +148,17 @@ func (t *Tracker) RecordInputSent(input, source string) error {
 	return t.commitAll("session: input sent")
 }
 
-// RecordComplete marks the session done, makes final commit.
+// RecordComplete marks the session done, makes final commit. The timeline line
+// carries no attribution; use RecordCompleteWithReason where the end is known.
 func (t *Tracker) RecordComplete(finalState State) error {
+	return t.RecordCompleteWithReason(finalState, EndReason{})
+}
+
+// RecordCompleteWithReason is RecordComplete, plus the `by=<caller> | reason=<text>`
+// fields on the timeline line when why is set. Existing timeline readers split on
+// " | " and treat everything after the event as detail, so the extra fields are
+// safe to append.
+func (t *Tracker) RecordCompleteWithReason(finalState State, why EndReason) error {
 	t.session.State = finalState
 	t.session.UpdatedAt = time.Now()
 	if err := t.updateReadme(); err != nil {
@@ -139,10 +167,20 @@ func (t *Tracker) RecordComplete(finalState State) error {
 	if err := t.writeSessionJSON(); err != nil {
 		return err
 	}
-	if err := t.appendTimeline(fmt.Sprintf("%s | %s | session ended", timestamp(), finalState)); err != nil {
+	line := fmt.Sprintf("%s | %s | session ended", timestamp(), finalState)
+	if why != (EndReason{}) {
+		line += fmt.Sprintf(" | by=%s | reason=%s", timelineField(why.Caller), timelineField(why.Reason))
+	}
+	if err := t.appendTimeline(line); err != nil {
 		return err
 	}
 	return t.commitAll(fmt.Sprintf("session: %s", finalState))
+}
+
+// timelineField keeps one timeline value on one line: a newline in a reason
+// would start a new timeline entry.
+func timelineField(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // RecordRateLimit records that the session is paused due to API rate limiting.
@@ -178,6 +216,19 @@ type GuardrailsOptions struct {
 	MemoryEnabled       bool
 	RTKEnabled          bool
 	CrossSessionEnabled bool
+	// PlatformContextEnabled upserts the versioned platform context section
+	// into the project's rules file.
+	PlatformContextEnabled bool
+	// PlatformContextText is the section body (text plus optional operator
+	// note). Empty falls back to the bare platform context text.
+	PlatformContextText string
+}
+
+func (o GuardrailsOptions) platformContextBody() string {
+	if o.PlatformContextText != "" {
+		return o.PlatformContextText
+	}
+	return platformcontext.PlatformContext
 }
 
 // WriteSessionGuardrails writes a guardrails file to the session tracking folder and,
@@ -291,6 +342,17 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 		} else {
 			// No file exists — write the full template
 			os.WriteFile(targetFile, []byte(content), 0644) //nolint:errcheck
+		}
+
+		// The platform context block never goes into a tracked project file:
+		// it lives in the untracked CLAUDE.local.md. The flag records whether
+		// the local file is in place so delivery can fall back when it is not.
+		sess.PlatformContextLocalFile = false
+		if opt.PlatformContextEnabled {
+			_, werr := platformcontext.WritePlatformContextLocalFile(sess.ProjectDir, opt.platformContextBody(), platformcontext.PlatformContextVersion)
+			sess.PlatformContextLocalFile = werr == nil
+		} else {
+			platformcontext.RemovePlatformContextLocalFile(sess.ProjectDir) //nolint:errcheck
 		}
 	}
 
@@ -417,6 +479,8 @@ Session: %s | Task: %s
 - Do not run git add or git commit — your work is committed automatically when you finish
 - If rate limited: output DATAWATCH_RATE_LIMITED: resets at <time>
 - If needing input: output DATAWATCH_NEEDS_INPUT: <question>
+- Any CPU-load or stress step a task asks for — a busy loop, a stress test, a load or soak test, or any other command that pins the CPU — must be bounded before it runs: run it niced (nice -n 19) so it yields to the system's other work; use at most a quarter of the cores (cap the worker count at nproc/4, minimum one); give it its own hard timeout (a bounded `+"`timeout <duration> ...`"+` wrapper) so it always dies on its own; clean up its children with a trap on EXIT INT TERM so no orphaned load survives; and it must never outlive its owning task — when the task ends, the load ends with it. Automaton plans tasks to leave the host as it found it, so an unbounded load step is a defect in the plan.
+- Design choice for the operator: when the task and the code cannot settle a design choice that only the operator can make, you may print the marker `+"`DATAWATCH_QUESTION:`"+` followed by one line of JSON with the keys question, options, recommendation, default and blocked. Set blocked to true only when the task cannot go on without the answer; otherwise keep working on the rest of the task. The daemon acts on that line only when the operator has turned the worker marker on, so keep using the needs-input line for anything that is not a design choice.
 - When done: output DATAWATCH_COMPLETE: <summary>
 `, sess.FullID, sess.Task, sess.ProjectDir)
 }

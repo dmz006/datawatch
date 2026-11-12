@@ -22,7 +22,7 @@ type TmuxAPI interface {
 	ResizePane(session string, cols, rows int) error
 	WindowSize(session string) (cols, rows int, err error) // v8.37.3 — lets ResizeTmux skip a no-op resize
 	CapturePaneVisible(session string) (string, error)
-	CapturePaneLiveTail(session string) (string, error)      // v5.27.6 — state detection
+	CapturePaneLiveTail(session string) (string, error)              // v5.27.6 — state detection
 	CapturePaneScrollback(session string, lines int) (string, error) // v8.20.11 — scrollback for one-shot completion
 	CapturePaneANSI(session string) (string, error)
 	PipeOutput(session, logFile string) error
@@ -30,6 +30,7 @@ type TmuxAPI interface {
 	KillSession(name string) error
 	SetEnvironment(session string, env map[string]string) error
 	PaneTTY(session string) string
+	PaneCommand(session string) string // foreground command of the pane — "" when unknown
 	ListSessions(prefix string) ([]string, error)
 	DisableAlternateScreen(session string) error
 	SendTrustPromptAccept(session string) error
@@ -57,20 +58,94 @@ func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
 	if rows <= 0 {
 		rows = 24
 	}
+	return t.NewSessionWithPaneCommand(name, cols, rows, nil)
+}
+
+// PaneLauncher is the optional TmuxAPI extension the manager uses to start a
+// session whose pane runs a given command (the scope-wrapped pane shell)
+// instead of tmux's default shell.
+type PaneLauncher interface {
+	NewSessionWithPaneCommand(name string, cols, rows int, paneCmd []string) error
+}
+
+// PanePIDer is the optional TmuxAPI extension that reports a pane's PID, used
+// by the watchdog fallback to find the process group to watch.
+type PanePIDer interface {
+	PanePID(session string) int
+}
+
+// NewSessionWithPaneCommand creates a detached tmux session like
+// NewSessionWithSize. A non-empty paneCmd becomes the pane's command, built as
+// one shell-quoted string after the tmux flags. Only the pane program is
+// wrapped by the caller; the tmux invocation itself, and so the tmux server,
+// is never placed inside a scope.
+func (t *TmuxManager) NewSessionWithPaneCommand(name string, cols, rows int, paneCmd []string) error {
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
 	colStr := fmt.Sprintf("%d", cols)
 	rowStr := fmt.Sprintf("%d", rows)
-	if err := exec.Command("tmux", "new-session", "-d", "-s", name, "-x", colStr, "-y", rowStr).Run(); err != nil {
+	if err := exec.Command("tmux", newSessionArgs(name, colStr, rowStr, paneCmd)...).Run(); err != nil {
 		return err
 	}
-	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()  //nolint:errcheck
-	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run()  //nolint:errcheck
+	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()     //nolint:errcheck
+	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run() //nolint:errcheck
 	return nil
 }
 
+// newSessionArgs builds the tmux new-session argument list.
+func newSessionArgs(name, cols, rows string, paneCmd []string) []string {
+	args := []string{"new-session", "-d", "-s", name, "-x", cols, "-y", rows}
+	if len(paneCmd) > 0 {
+		args = append(args, shellJoin(paneCmd))
+	}
+	return args
+}
+
+// shellJoin quotes each word for a POSIX shell and joins them with spaces.
+func shellJoin(words []string) string {
+	q := make([]string, len(words))
+	for i, w := range words {
+		q[i] = "'" + strings.ReplaceAll(w, "'", `'\''`) + "'"
+	}
+	return strings.Join(q, " ")
+}
+
+// PanePID returns the PID of the first pane's process, or 0 on any error.
+func (t *TmuxManager) PanePID(session string) int {
+	out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_pid}").Output()
+	if err != nil {
+		return 0
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]))
+	return pid
+}
+
 // SendTrustPromptAccept accepts Claude Code's workspace-trust TUI dialog.
-// The dialog shows "❯ No, exit" pre-selected. Sends Down to move to
-// "Yes, I trust this folder" then Enter to confirm.
+// claude renders the preselected option with the ❯ cursor on the same
+// line. In the builds observed up to claude v2.1.306 the accept option
+// ("Yes, I trust this folder") is already preselected, where a plain Enter
+// confirms it and "Down Enter" selects the neighboring "No, exit" option
+// and exits claude — that stale hard-coded sequence killed one-shot
+// sessions during the round-2 live validation (docs/plans/
+// 2026-10-20-oneshot-startup-dialog-dismiss.md). In the earlier builds it
+// was "❯ No, exit" that was preselected and a Down was needed first. Read
+// the rendered pane and pick the confirm sequence it actually wants.
 func (t *TmuxManager) SendTrustPromptAccept(session string) error {
+	if out, err := exec.Command("tmux", "capture-pane", "-pt", session).Output(); err == nil {
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.Contains(line, "Yes, I trust this folder") {
+				if strings.Contains(line, "❯") {
+					return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
+				}
+				break // accept option one row from the cursor → fall through to Down+Enter
+			}
+		}
+	}
+	// Pane unreadable, or older claude layout with decline preselected.
 	if err := exec.Command("tmux", "send-keys", "-t", session, "Down").Run(); err != nil {
 		return err
 	}
@@ -430,25 +505,25 @@ func (t *TmuxManager) SetEnvironment(session string, env map[string]string) erro
 }
 
 // AttachCommand returns the shell command a user should run to attach to the session.
-func (t *TmuxManager) AttachCommand(session string) string {
-	return TmuxAttachCommand(session)
+// dataDir is the daemon's configured data directory (already expanded).
+func (t *TmuxManager) AttachCommand(session, dataDir string) string {
+	return TmuxAttachCommand(session, dataDir)
 }
 
-// TmuxSocketDir returns the TMUX_TMPDIR datawatch sessions live under, or ""
-// for tmux's default socket. The daemon gets it from its environment (set by
-// the datawatch-tmux.service / datawatch.env pair so the session tmux server
-// is owned by systemd rather than whichever login happened to start it
+// TmuxSocketDirFor returns the TMUX_TMPDIR datawatch sessions live under, or
+// "" for tmux's default socket. The daemon gets it from its environment (set
+// by the datawatch-tmux.service / datawatch.env pair so the session tmux
+// server is owned by systemd rather than whichever login happened to start it
 // first). CLI processes run from an operator shell don't inherit that, so
-// fall back to the conventional ~/.datawatch/tmux when its socket exists.
-func TmuxSocketDir() string {
+// fall back to the <dataDir>/tmux socket directory when its socket exists.
+// dataDir is the daemon's configured, already-expanded data directory — the
+// fallback is deliberately anchored there rather than to $HOME, so a custom
+// data_dir config points at the socket its own tmux server actually owns.
+func TmuxSocketDirFor(dataDir string) string {
 	if d := os.Getenv("TMUX_TMPDIR"); d != "" {
 		return d
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	d := filepath.Join(home, ".datawatch", "tmux")
+	d := filepath.Join(dataDir, "tmux")
 	if _, err := os.Stat(filepath.Join(d, fmt.Sprintf("tmux-%d", os.Getuid()), "default")); err == nil {
 		return d
 	}
@@ -457,8 +532,9 @@ func TmuxSocketDir() string {
 
 // TmuxAttachCommand returns the operator-facing attach command for a tmux
 // session, including TMUX_TMPDIR when sessions run on a dedicated socket.
-func TmuxAttachCommand(session string) string {
-	if d := TmuxSocketDir(); d != "" {
+// dataDir is the daemon's configured data directory (already expanded).
+func TmuxAttachCommand(session, dataDir string) string {
+	if d := TmuxSocketDirFor(dataDir); d != "" {
 		return fmt.Sprintf("TMUX_TMPDIR=%s tmux attach -t %s", d, session)
 	}
 	return fmt.Sprintf("tmux attach -t %s", session)
@@ -475,5 +551,16 @@ func (t *TmuxManager) PaneTTY(session string) string {
 	if len(lines) == 0 {
 		return ""
 	}
+	return strings.TrimSpace(lines[0])
+}
+
+// PaneCommand returns the foreground command name of the first pane of the
+// given tmux session (e.g. "claude", "bash"). Returns "" on any error.
+func (t *TmuxManager) PaneCommand(session string) string {
+	out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_current_command}").Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	return strings.TrimSpace(lines[0])
 }

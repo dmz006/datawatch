@@ -77,32 +77,46 @@ func (s *Server) handleCostRates(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"rates": out})
 	case http.MethodPut:
-		if !s.fedCap(w, r, federation.CapConfigWrite) {
-			return
-		}
-		var req struct {
-			Rates map[string]session.CostRate `json:"rates"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		s.manager.SetCostRates(req.Rates)
-		// Persist to config.
-		if s.cfg != nil && s.cfgPath != "" {
-			s.cfg.Session.CostRates = map[string]config.CostRateConfig{}
-			for name, r := range req.Rates {
-				s.cfg.Session.CostRates[name] = config.CostRateConfig{
-					InPerK: r.InPerK, OutPerK: r.OutPerK,
-				}
+		// BL110 extension — the single REST audit point for config writes,
+		// wrapping the capability gate AND the handler (one record per
+		// call, allowed or denied), shared sink with the MCP and comm
+		// surfaces.
+		s.auditConfigPut("/api/cost/rates", func(w http.ResponseWriter, r *http.Request) {
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
 			}
-			_ = config.Save(s.cfg, s.cfgPath)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			s.handleCostRatesPut(w, r)
+		})(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleCostRatesPut is the PUT /api/cost/rates body: apply the rate
+// patch and persist it. Split out of handleCostRates so the shared
+// config-write audit point (auditConfigPut) can buffer the request body
+// for its record without touching this handler.
+func (s *Server) handleCostRatesPut(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Rates map[string]session.CostRate `json:"rates"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.manager.SetCostRates(req.Rates)
+	// Persist to config.
+	if s.cfg != nil && s.cfgPath != "" {
+		s.cfg.Session.CostRates = map[string]config.CostRateConfig{}
+		for name, rate := range req.Rates {
+			s.cfg.Session.CostRates[name] = config.CostRateConfig{
+				InPerK: rate.InPerK, OutPerK: rate.OutPerK,
+			}
+		}
+		_ = config.Save(s.cfg, s.cfgPath)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // exposedRate returns the effective rate the manager will use for a

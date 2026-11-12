@@ -70,7 +70,7 @@ datawatch reload
 curl -sk \
   -H "Authorization: Bearer $TOKEN" \
   https://datawatch.local:8443/api/files/meta | jq .root
-# "/home/operator/.datawatch/files"
+# "/home/<user>/.datawatch/files"
 
 # CLI
 datawatch files list
@@ -148,7 +148,8 @@ curl -sk \
   https://datawatch.local:8443/api/files/peers/nas-peer | jq .
 # [{"name":"build-output.txt","size":4096,"modified":"2026-05-19T12:00:00Z"}]
 
-# List files under discussions/<id>/.
+# List files under discussions/<id>/. The id must be 1-128 characters of letters, digits, '.', '_' or '-';
+# anything else returns 400 "invalid discussion id".
 curl -sk \
   -H "Authorization: Bearer $TOKEN" \
   https://datawatch.local:8443/api/files/discussions/disc-abc123 | jq .
@@ -157,8 +158,20 @@ curl -sk \
 curl -sk \
   -H "Authorization: Bearer $TOKEN" \
   https://datawatch.local:8443/api/files/meta | jq .
-# {"root":"/home/operator/.datawatch/files","peer_count":2,"discussion_count":1,"disk_bytes":8192}
+# {"root":"/home/<user>/.datawatch/files","peer_count":2,"discussion_count":1,"disk_bytes":8192}
 ```
+
+The discussion folder route follows the discussion id rule: a discussion id is a whole name of
+1 to 128 characters from letters, digits, dot, underscore and hyphen, and the names `.` and `..`
+are never accepted. Any other id answers HTTP 400 with the plain text `invalid discussion id`
+before anything is read or written. Because an accepted id can never carry a path separator,
+the folder path built from it always resolves as a direct child of the base directory
+(`<file_service_root>/discussions`), so the listing can never resolve outside the discussion
+folder. The check and the containment verification run in the shared `discussionFolderPath`
+helper (`internal/server/discussion_folder.go`) at the point where the folder path is built —
+the same helper the discussion memory routes use — so the guard is visible right at the join.
+See [discussion-scopes.md](discussion-scopes.md) for the same
+rule on the discussion memory routes.
 
 ### CLI
 

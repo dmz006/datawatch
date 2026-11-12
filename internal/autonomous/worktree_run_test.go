@@ -18,6 +18,7 @@ func TestRun_CreatesWorktreeWhenConfigured(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
 	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {
@@ -94,6 +95,7 @@ func TestRun_ExplicitProjectDirSkipsWorktree(t *testing.T) {
 	baseRepo := scratchGitRepo(t)
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = t.TempDir()
 	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {

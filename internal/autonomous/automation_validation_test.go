@@ -251,3 +251,121 @@ func TestValidateAutomationBudgetPolicy(t *testing.T) {
 		}
 	}
 }
+
+// TestValidateAutomationRefusesEntryKindsItCannotStart covers the refusal
+// rules for an entry member the activation cannot start: a fork entry without
+// branches, a fork entry with no paired join, an automation entry without a
+// child, and an entry of an unknown kind. Every error must name the member
+// ID and the reason.
+func TestValidateAutomationRefusesEntryKindsItCannotStart(t *testing.T) {
+	entryCase := func(kinds ...AutomationMember) *Automation {
+		return &Automation{
+			ID:            "a1",
+			Name:          "entry",
+			Status:        AutomationActive,
+			EntryMemberID: "n1",
+			Members:       kinds,
+		}
+	}
+
+	t.Run("fork entry lists no branches", func(t *testing.T) {
+		a := forkJoinAutomation(t)
+		memberAt(t, a, "f1").ForkMembers = nil
+		err := validateAutomation(a)
+		if err == nil || !strings.Contains(err.Error(), "fork f1 needs at least 2 branch members") {
+			t.Fatalf("got %v, want an error naming fork f1 and its missing branches", err)
+		}
+	})
+
+	t.Run("fork entry has no paired join", func(t *testing.T) {
+		a := forkJoinAutomation(t)
+		kept := a.Members[:0]
+		for _, m := range a.Members {
+			if m.ID != "j1" {
+				kept = append(kept, m)
+			}
+		}
+		a.Members = kept
+		err := validateAutomation(a)
+		if err == nil || !strings.Contains(err.Error(), "fork f1 has 0 paired joins") {
+			t.Fatalf("got %v, want an error naming fork f1 and its missing join", err)
+		}
+	})
+
+	t.Run("automation entry without a child", func(t *testing.T) {
+		if err := validateAutomation(entryCase(AutomationMember{ID: "n1", Kind: MemberKindAutomation})); err == nil {
+			t.Fatal("automation entry without automation_id accepted")
+		}
+	})
+
+	t.Run("entry of unknown kind", func(t *testing.T) {
+		if err := validateAutomation(entryCase(AutomationMember{ID: "n1", Kind: "gate"})); err == nil {
+			t.Fatal("unknown entry kind accepted")
+		}
+	})
+}
+
+// TestValidateAutomationAcceptsForkAndNestedEntries pins the acceptance
+// side: a well-formed fork entry and a well-formed nested-automation entry
+// are valid, so the refusals above are not over-broad.
+func TestValidateAutomationAcceptsForkAndNestedEntries(t *testing.T) {
+	if err := validateAutomation(forkJoinAutomation(t)); err != nil {
+		t.Fatalf("valid fork entry rejected: %v", err)
+	}
+	nested := &Automation{
+		ID:            "a1",
+		Name:          "nested",
+		Status:        AutomationActive,
+		EntryMemberID: "n1",
+		Members:       []AutomationMember{{ID: "n1", Kind: MemberKindAutomation, AutomationID: "c1"}},
+	}
+	if err := validateAutomation(nested); err != nil {
+		t.Fatalf("valid nested entry rejected: %v", err)
+	}
+}
+
+// TestStoreRefusesAnUnstartableEntryOnCreateAndUpdate proves the create and
+// update save paths refuse a fork entry whose paired join is being dropped
+// before anything is persisted.
+func TestStoreRefusesAnUnstartableEntryOnCreateAndUpdate(t *testing.T) {
+	lookup := func(id string) (*PRD, bool) { return &PRD{ID: id}, id == "p1" || id == "p2" }
+	s, err := NewAutomationStore(t.TempDir(), lookup)
+	if err != nil {
+		t.Fatalf("NewAutomationStore: %v", err)
+	}
+
+	broken := forkJoinAutomation(t)
+	kept := broken.Members[:0]
+	for _, m := range broken.Members {
+		if m.ID != "j1" {
+			kept = append(kept, m)
+		}
+	}
+	broken.Members = kept
+	if _, err := s.Create(broken); err == nil || !strings.Contains(err.Error(), "fork f1 has 0 paired joins") {
+		t.Fatalf("create: got %v, want the paired-join refusal", err)
+	}
+
+	valid, err := s.Create(forkJoinAutomation(t))
+	if err != nil {
+		t.Fatalf("create valid: %v", err)
+	}
+	_, err = s.Update(valid.ID, valid.Version, func(a *Automation) error {
+		kept := a.Members[:0]
+		for _, m := range a.Members {
+			if m.ID != "j1" {
+				kept = append(kept, m)
+			}
+		}
+		a.Members = kept
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "fork f1 has 0 paired joins") {
+		t.Fatalf("update: got %v, want the paired-join refusal", err)
+	}
+	// The stored Automation is unchanged by the refused update.
+	got, ok := s.Get(valid.ID)
+	if !ok || len(got.Members) != 4 {
+		t.Fatalf("refused update changed the store: %+v (ok=%v)", got, ok)
+	}
+}

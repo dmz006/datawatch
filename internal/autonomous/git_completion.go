@@ -53,6 +53,11 @@ func (m *Manager) handleWorktreeCompletion(prd *PRD) {
 		// handleClusterCompletion handles their PR instead.
 		return
 	}
+	// Ship step: push, tag and push the tag per the project's ship policy.
+	// Failures are recorded on the triage record and never fail the PRD.
+	if ship := m.runShipStep(prd); ship != nil {
+		m.runShipCIWatch(prd, ShipPolicyFor(prd.ProjectDir), ship, nil)
+	}
 	if prd.Git.Branch == "" || !prd.Git.AutoPR {
 		return
 	}
@@ -158,12 +163,14 @@ func (m *Manager) openCompletionPR(prd *PRD, url, bodyNote string) (string, erro
 		return "", err
 	}
 
-	prd.Git.PRURL = prURL
-	prd.Git.URL = url
-	if prd.Git.Provider == "" {
-		prd.Git.Provider = provider
-	}
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "git_pr_opened", Actor: "autonomous", Note: prURL})
+	m.store.WithLock(func() {
+		prd.Git.PRURL = prURL
+		prd.Git.URL = url
+		if prd.Git.Provider == "" {
+			prd.Git.Provider = provider
+		}
+		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "git_pr_opened", Actor: "autonomous", Note: prURL})
+	})
 	if serr := m.store.SavePRD(prd); serr != nil {
 		log.Printf("[autonomous] prd=%s save after PR open: %v", prd.ID, serr)
 	}
@@ -202,7 +209,9 @@ func (m *Manager) cleanupOrphanedWorktree(prd *PRD) {
 }
 
 func (m *Manager) recordGitCompletionFailure(prd *PRD, note string) {
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "git_pr_failed", Actor: "autonomous", Note: note})
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "git_pr_failed", Actor: "autonomous", Note: note})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] prd=%s save after git completion failure: %v", prd.ID, err)
 	}

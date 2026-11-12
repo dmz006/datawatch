@@ -7,4 +7,5 @@
 #
 # Or copy into your existing pre-commit chain.
 
-exec ./scripts/check-docs-sync.sh
+./scripts/check-docs-sync.sh || exit $?
+exec bash ./scripts/check-no-unscoped-tmux.sh

@@ -51,7 +51,7 @@ func Register(ctx context.Context, homeserver, username, password string) (*BotC
 	}
 	client.Client = &http.Client{}
 
-	creds, err := client.RegisterDummy(ctx, &mautrix.ReqRegister{
+	creds, err := client.RegisterDummy(ctx, &mautrix.ReqRegister[any]{
 		Username: username,
 		Password: password,
 		Auth:     map[string]interface{}{"type": "m.login.dummy"},

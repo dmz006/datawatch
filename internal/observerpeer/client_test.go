@@ -251,11 +251,80 @@ func TestPush_SurfacesNon401Errors(t *testing.T) {
 }
 
 func TestHostInfo_PopulatesBasicFields(t *testing.T) {
+	// Stub the GPU probe so the test neither shells out to a real
+	// nvidia-smi nor reads a real instance id on the dev box.
+	probe := gpuUUIDProbe
+	gpuUUIDProbe = func() []string { return nil }
+	defer func() { gpuUUIDProbe = probe }()
+
+	path := nodeInstanceIDPath
+	nodeInstanceIDPath = func() string { return filepath.Join(t.TempDir(), "state", "node_instance_id") }
+	defer func() { nodeInstanceIDPath = path }()
+
 	hi := HostInfo()
 	for _, key := range []string{"hostname", "os", "arch"} {
 		if hi[key] == nil || hi[key] == "" {
 			t.Errorf("HostInfo missing %s: %+v", key, hi)
 		}
+	}
+}
+
+// The node-instance id must persist across HostInfo calls — first
+// call generates, later calls read the same value back — and live in
+// a 0600 file next to the stats agent's state.
+func TestHostInfoNodeInstanceIDPersisted(t *testing.T) {
+	probe := gpuUUIDProbe
+	gpuUUIDProbe = func() []string { return nil }
+	defer func() { gpuUUIDProbe = probe }()
+
+	same := t.TempDir()
+	path := nodeInstanceIDPath
+	nodeInstanceIDPath = func() string { return filepath.Join(same, "nested", "node_instance_id") }
+	defer func() { nodeInstanceIDPath = path }()
+
+	first := HostInfo()["node_instance_id"].(string)
+	if len(first) != 32 {
+		t.Fatalf("node_instance_id = %q want 32 hex chars (128-bit)", first)
+	}
+	second := HostInfo()["node_instance_id"].(string)
+	if second != first {
+		t.Fatalf("later HostInfo call read %q, want the same %q", second, first)
+	}
+	onDisk, err := os.ReadFile(filepath.Join(same, "nested", "node_instance_id"))
+	if err != nil {
+		t.Fatalf("read persisted id: %v", err)
+	}
+	if strings.TrimSpace(string(onDisk)) != first {
+		t.Fatalf("on-disk id = %q want %q", strings.TrimSpace(string(onDisk)), first)
+	}
+	info, err := os.Stat(filepath.Join(same, "nested", "node_instance_id"))
+	if err != nil {
+		t.Fatalf("stat id file: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("id file perm = %v want 0600", info.Mode().Perm())
+	}
+}
+
+// GPU UUIDs flow from the injected probe straight into the host
+// envelope.
+func TestHostInfoGPUUIDsFromTool(t *testing.T) {
+	probe := gpuUUIDProbe
+	gpuUUIDProbe = func() []string {
+		return []string{"GPU-0f88de7f-9c8b-0d4a-c6e0-ba9e5c1d0a2f", "GPU-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"}
+	}
+	defer func() { gpuUUIDProbe = probe }()
+
+	path := nodeInstanceIDPath
+	nodeInstanceIDPath = func() string { return filepath.Join(t.TempDir(), "node_instance_id") }
+	defer func() { nodeInstanceIDPath = path }()
+
+	uuids, ok := HostInfo()["gpu_uuids"].([]string)
+	if !ok || len(uuids) != 2 {
+		t.Fatalf("gpu_uuids = %#v want the tool's two UUIDs", HostInfo()["gpu_uuids"])
+	}
+	if uuids[0] != "GPU-0f88de7f-9c8b-0d4a-c6e0-ba9e5c1d0a2f" || uuids[1] != "GPU-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d" {
+		t.Fatalf("gpu_uuids = %v want the injected tool output in order", uuids)
 	}
 }
 

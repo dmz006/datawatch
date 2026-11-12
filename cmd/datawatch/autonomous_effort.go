@@ -83,6 +83,27 @@ func autonomousClaudeEffortApplies(reqBackend, defaultBackend string) bool {
 	return b == "claude-code"
 }
 
+// Autonomous session names carry a kind prefix. Four kinds exist;
+// the first three live inline in main.go and are deliberately left
+// as is:
+//
+//   - "autonomous:decompose"                 — plan decomposition
+//   - "autonomous:verify:" + task.ID         — per-task verification
+//   - "autonomous:guardrail:" + req.UnitID   — per-unit guardrail (the
+//     previously undocumented fourth kind)
+//   - "autonomous:task:" + title             — task execution (this file,
+//     and the agent-virtual session in main.go)
+//
+// Only the task kind is built at two call sites, so it gets the helper
+// below.
+const autonomousTaskSessionPrefix = "autonomous:task:"
+
+// autonomousTaskSessionName returns the "task"-kind autonomous session
+// name: the kind prefix plus the task title.
+func autonomousTaskSessionName(title string) string {
+	return autonomousTaskSessionPrefix + title
+}
+
 // buildAutonomousSessionBody builds the /api/sessions/start request body
 // for autonomousSpawn's local-session path. spec is the fully decorated
 // task text; defaultBackend is cfg.Session.LLMBackend.
@@ -92,22 +113,41 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 		"project_dir":     req.ProjectDir,
 		"project_profile": req.ProjectProfile,
 		"backend":         req.Backend,
-		"name":            "autonomous:" + req.Title,
+		"name":            autonomousTaskSessionName(req.Title),
 		"effort":          mapAutonomousEffortToSession(req.Effort),
 		"permission_mode": req.PermissionMode,
 		"model":           req.Model,
+		"thinking_level":  req.ThinkingLevel, // empty = session manager's pi.thinking_level config applies
 		"lsp_language":    req.LSPLanguage,
 		"one_shot":        true,
 		"prd_id":          req.PRDID,
 		"task_id":         req.TaskID,
 		"story_id":        req.StoryID, // BL385 Phase 4 — memory scope routing
+		// PRD-owned worker: keep its tmux commands off the production server.
+		"scrub_tmux_env": true,
 	}
+	// Owner stamped at start: Automaton, task and the worker role.
+	workerAttr(req).apply(sessionBody)
 	// Write scope (auto-commit leak fix): the task's effective write
 	// directories. The session manager uses them to stage only in-scope
 	// files for the automatic pre-session snapshot and completion commit
 	// instead of `git add -A` across the whole repo.
 	if len(req.WriteScope) > 0 {
 		sessionBody["write_scope"] = req.WriteScope
+	}
+	// Held compute node: the capacity lease granted this task a node, so the
+	// session starts there, with the backend it was admitted on. Absent when
+	// no node was held, and the session resolves its node as before.
+	if req.ComputeNode != "" {
+		sessionBody["compute_node"] = req.ComputeNode
+		// The scheduler's node is advisory: the spawn handler re-places it
+		// when the node has left the entry's compute_nodes list.
+		sessionBody["compute_node_advisory"] = true
+	}
+	// Bare task title, so the completion commit can use it without
+	// parsing the "autonomous:"-prefixed name.
+	if req.Title != "" {
+		sessionBody["task_title"] = req.Title
 	}
 	// Real claude --effort pass-through (additive to "effort" above).
 	// session.Manager.Start applies ClaudeEffort via an interface check
@@ -123,6 +163,26 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 		if ce := mapAutonomousEffortToClaude(req.Effort); ce != "" {
 			sessionBody["claude_effort"] = ce
 		}
+	}
+	// Applied worker profile: only the claude-code launch applies one, and it
+	// is passed per launch (never set on the shared backend).
+	if req.WorkerProfileApplied && autonomousClaudeEffortApplies(req.Backend, defaultBackend) {
+		sessionBody["worker_profile"] = req.WorkerProfile
+	}
+	// Git (PRD-owned git sessions): when the PRD has git settings (prd.Git
+	// populated or a project profile), forward StartOptions.Git=true so the
+	// session manager runs git activity — pre-session snapshot, checkpoint
+	// tag and the completion commit — because PRDs are development work.
+	// Absent for PRDs without git settings, so existing flows are unchanged.
+	if req.Git {
+		sessionBody["git"] = true
+	}
+	// Worktree mode (SkipDirtyCapture means ProjectDir is an Automaton-owned
+	// linked worktree): Start must refuse a missing or non-worktree
+	// directory instead of creating and initialising it. The refusal
+	// reaches the executor as the spawn error.
+	if req.SkipDirtyCapture {
+		sessionBody["require_existing_worktree"] = true
 	}
 	return sessionBody
 }

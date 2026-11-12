@@ -37,11 +37,11 @@ type SystemStats struct {
 	DiskFree  uint64 `json:"disk_free"`
 
 	// GPU (optional — empty if no GPU detected)
-	GPUName       string  `json:"gpu_name,omitempty"`
-	GPUTemp       int     `json:"gpu_temp,omitempty"`       // Celsius
-	GPUUtilPct    int     `json:"gpu_util_pct,omitempty"`   // 0-100
-	GPUMemUsedMB  int     `json:"gpu_mem_used_mb,omitempty"`
-	GPUMemTotalMB int     `json:"gpu_mem_total_mb,omitempty"`
+	GPUName       string `json:"gpu_name,omitempty"`
+	GPUTemp       int    `json:"gpu_temp,omitempty"`     // Celsius
+	GPUUtilPct    int    `json:"gpu_util_pct,omitempty"` // 0-100
+	GPUMemUsedMB  int    `json:"gpu_mem_used_mb,omitempty"`
+	GPUMemTotalMB int    `json:"gpu_mem_total_mb,omitempty"`
 	// GPUError explains why the GPU fields above are empty when nvidia-smi
 	// exists but failed (e.g. a driver/library version mismatch after an
 	// unattended driver update, before a reboot) — as opposed to being empty
@@ -58,26 +58,26 @@ type SystemStats struct {
 	TotalSessions  int `json:"total_sessions"`
 
 	// Tmux
-	TmuxSessions    int      `json:"tmux_sessions"`              // total tmux sessions with cs- prefix
-	OrphanedTmux    []string `json:"orphaned_tmux,omitempty"`    // tmux sessions with no matching datawatch session
-	UptimeSeconds   int      `json:"uptime_seconds"`
+	TmuxSessions  int      `json:"tmux_sessions"`           // total tmux sessions with cs- prefix
+	OrphanedTmux  []string `json:"orphaned_tmux,omitempty"` // tmux sessions with no matching datawatch session
+	UptimeSeconds int      `json:"uptime_seconds"`
 
 	// eBPF status
-	EBPFEnabled  bool   `json:"ebpf_enabled"`
-	EBPFActive   bool   `json:"ebpf_active"`    // true if BPF programs are loaded
-	EBPFMessage  string `json:"ebpf_message,omitempty"` // status/warning message
+	EBPFEnabled bool   `json:"ebpf_enabled"`
+	EBPFActive  bool   `json:"ebpf_active"`            // true if BPF programs are loaded
+	EBPFMessage string `json:"ebpf_message,omitempty"` // status/warning message
 
 	// Network
 	BoundInterfaces []string `json:"bound_interfaces,omitempty"`
-	NetRxBytes      uint64   `json:"net_rx_bytes"`  // total received bytes (all interfaces)
-	NetTxBytes      uint64   `json:"net_tx_bytes"`  // total transmitted bytes
+	NetRxBytes      uint64   `json:"net_rx_bytes"` // total received bytes (all interfaces)
+	NetTxBytes      uint64   `json:"net_tx_bytes"` // total transmitted bytes
 
 	// Server interfaces (for infrastructure card)
-	WebPort     int    `json:"web_port,omitempty"`
-	TLSEnabled  bool   `json:"tls_enabled,omitempty"`
-	TLSPort     int    `json:"tls_port,omitempty"`
-	MCPSSEHost  string `json:"mcp_sse_host,omitempty"`
-	MCPSSEPort  int    `json:"mcp_sse_port,omitempty"`
+	WebPort    int    `json:"web_port,omitempty"`
+	TLSEnabled bool   `json:"tls_enabled,omitempty"`
+	TLSPort    int    `json:"tls_port,omitempty"`
+	MCPSSEHost string `json:"mcp_sse_host,omitempty"`
+	MCPSSEPort int    `json:"mcp_sse_port,omitempty"`
 	// GH#192 D78a — Observer's Daemon/Infrastructure cards had neither
 	// hostname nor the running daemon version anywhere. Populated via
 	// SetServerIdentity, the same pattern as SetServerInterfaces below.
@@ -85,27 +85,27 @@ type SystemStats struct {
 	DaemonVersion string `json:"daemon_version,omitempty"`
 
 	// RTK (Rust Token Killer) integration stats
-	RTKInstalled    bool    `json:"rtk_installed,omitempty"`
-	RTKVersion      string  `json:"rtk_version,omitempty"`
-	RTKHooksActive  bool    `json:"rtk_hooks_active,omitempty"`
-	RTKTotalSaved   int     `json:"rtk_total_saved,omitempty"`     // total tokens saved
-	RTKAvgSavings   float64 `json:"rtk_avg_savings_pct,omitempty"` // average savings percentage
+	RTKInstalled       bool    `json:"rtk_installed,omitempty"`
+	RTKVersion         string  `json:"rtk_version,omitempty"`
+	RTKHooksActive     bool    `json:"rtk_hooks_active,omitempty"`
+	RTKTotalSaved      int     `json:"rtk_total_saved,omitempty"`     // total tokens saved
+	RTKAvgSavings      float64 `json:"rtk_avg_savings_pct,omitempty"` // average savings percentage
 	RTKTotalCmds       int     `json:"rtk_total_commands,omitempty"`
 	RTKLatestVersion   string  `json:"rtk_latest_version,omitempty"`   // latest available version from GitHub
 	RTKUpdateAvailable bool    `json:"rtk_update_available,omitempty"` // true if newer version exists
 
 	// Episodic Memory stats
-	MemoryEnabled     bool   `json:"memory_enabled,omitempty"`
-	MemoryBackend     string `json:"memory_backend,omitempty"`     // "sqlite" or "postgres"
-	MemoryEmbedder    string `json:"memory_embedder,omitempty"`    // e.g. "ollama:nomic-embed-text"
-	MemoryTotalCount  int    `json:"memory_total_count,omitempty"` // total memories across all projects
-	MemoryManualCount int    `json:"memory_manual_count,omitempty"`
-	MemorySessionCount int   `json:"memory_session_count,omitempty"`
-	MemoryLearningCount int  `json:"memory_learning_count,omitempty"`
-	MemoryChunkCount  int    `json:"memory_chunk_count,omitempty"`
-	MemoryDBSizeBytes  int64  `json:"memory_db_size_bytes,omitempty"`
-	MemoryEncrypted    bool   `json:"memory_encrypted,omitempty"`
-	MemoryKeyFP        string `json:"memory_key_fingerprint,omitempty"`
+	MemoryEnabled       bool   `json:"memory_enabled,omitempty"`
+	MemoryBackend       string `json:"memory_backend,omitempty"`     // "sqlite" or "postgres"
+	MemoryEmbedder      string `json:"memory_embedder,omitempty"`    // e.g. "ollama:nomic-embed-text"
+	MemoryTotalCount    int    `json:"memory_total_count,omitempty"` // total memories across all projects
+	MemoryManualCount   int    `json:"memory_manual_count,omitempty"`
+	MemorySessionCount  int    `json:"memory_session_count,omitempty"`
+	MemoryLearningCount int    `json:"memory_learning_count,omitempty"`
+	MemoryChunkCount    int    `json:"memory_chunk_count,omitempty"`
+	MemoryDBSizeBytes   int64  `json:"memory_db_size_bytes,omitempty"`
+	MemoryEncrypted     bool   `json:"memory_encrypted,omitempty"`
+	MemoryKeyFP         string `json:"memory_key_fingerprint,omitempty"`
 
 	// Ollama server stats (BL71)
 	OllamaStats *OllamaStats `json:"ollama_stats,omitempty"`
@@ -120,14 +120,111 @@ type SystemStats struct {
 	MCPStats *MCPStatsBlock `json:"mcp_stats,omitempty"`
 
 	// BL367 — autonomous quality gate aggregate stats.
-	QualityGateRuns        int `json:"quality_gate_runs,omitempty"`
-	QualityGatePass        int `json:"quality_gate_pass,omitempty"`
-	QualityGateFail        int `json:"quality_gate_fail,omitempty"`
+	QualityGateRuns int `json:"quality_gate_runs,omitempty"`
+	QualityGatePass int `json:"quality_gate_pass,omitempty"`
+	QualityGateFail int `json:"quality_gate_fail,omitempty"`
 
 	// BL382 — cancel/requeue lifecycle operation totals.
 	StoriesCancelled int64 `json:"stories_cancelled,omitempty"`
 	TasksCancelled   int64 `json:"tasks_cancelled,omitempty"`
 	TasksRequeued    int64 `json:"tasks_requeued,omitempty"`
+
+	// Worker questions (the DATAWATCH_QUESTION: marker), counted since daemon
+	// start: lines raised as questions, repeats of an open question, lines
+	// refused, tasks parked on a blocking question and tasks resumed.
+	WorkerQuestionsRaised    int64 `json:"worker_questions_raised,omitempty"`
+	WorkerQuestionsDuplicate int64 `json:"worker_questions_duplicate,omitempty"`
+	WorkerQuestionsRefused   int64 `json:"worker_questions_refused,omitempty"`
+	WorkerQuestionsParked    int64 `json:"worker_questions_parked,omitempty"`
+	WorkerQuestionsResumed   int64 `json:"worker_questions_resumed,omitempty"`
+
+	// Safe-to-delete report (autonomous manager): duration in
+	// milliseconds of the most recent safe-to-delete computation, and the
+	// totals of computations over the warning threshold and of failed
+	// computations. Populated in the autonomous stats callback.
+	SafeDeleteLastMS          int64  `json:"safe_delete_last_ms,omitempty"`
+	SafeDeleteSlowReports     uint64 `json:"safe_delete_slow_reports,omitempty"`
+	SafeDeleteRefreshFailures uint64 `json:"safe_delete_refresh_failures,omitempty"`
+
+	// Branch refresh (autonomous.branch_refresh_enabled): Automata by the
+	// result of their latest refresh, and how many are stopped by a conflict.
+	BranchRefreshClean    int `json:"branch_refresh_clean,omitempty"`
+	BranchRefreshConflict int `json:"branch_refresh_conflict,omitempty"`
+	BranchRefreshError    int `json:"branch_refresh_error,omitempty"`
+	BranchRefreshStopped  int `json:"branch_refresh_stopped,omitempty"`
+
+	// Agent tracing (tracing.* settings): store totals and write counters.
+	// Present only while tracing is on. Populated by the trace stats callback.
+	TraceEnabled      bool   `json:"trace_enabled,omitempty"`
+	TraceSessions     int    `json:"trace_sessions,omitempty"`
+	TraceEvents       int    `json:"trace_events,omitempty"`
+	TraceErrorEvents  int    `json:"trace_error_events,omitempty"`
+	TraceAppended     uint64 `json:"trace_appended_total,omitempty"`
+	TraceAppendErrors uint64 `json:"trace_append_errors_total,omitempty"`
+	TracePruned       uint64 `json:"trace_pruned_total,omitempty"`
+	TraceLastEventAge int64  `json:"trace_last_event_age_seconds,omitempty"`
+
+	// UI prompt interstitials (ui_prompt.* settings): the daemon-side
+	// dismissal outcome counters for recognised interstitial prompts, since
+	// daemon start (in-memory only — reset on restart). Filled by the
+	// session manager through SetUIPromptsFunc; nil when the daemon never
+	// wired it.
+	UIPrompts *UIPromptStats `json:"ui_prompts,omitempty"`
+
+	// Supervisor watch: the mode in effect, seconds since the coordinator
+	// last polled (-1 when it never has), the unresolved findings (and
+	// how many of them are would-alert or alerted) and the days of full
+	// agreement with the supervisor script.
+	SupervisorWatchMode               string `json:"supervisor_watch_mode,omitempty"`
+	SupervisorWatchLastPollAgeSeconds int64  `json:"supervisor_watch_last_poll_age_seconds,omitempty"`
+	SupervisorWatchFindingsOpen       int    `json:"supervisor_watch_findings_open,omitempty"`
+	SupervisorWatchFindingsWouldAlert int    `json:"supervisor_watch_findings_would_alert,omitempty"`
+	SupervisorWatchFindingsAlerted    int    `json:"supervisor_watch_findings_alerted,omitempty"`
+	SupervisorWatchAgreedDays         int    `json:"supervisor_watch_agreed_days,omitempty"`
+
+	// Supervisor loop: whether it is on, its job counts, the stored run
+	// counts by outcome, the retries used and the seconds since the last run
+	// (-1 when none has run).
+	SupervisorLoopEnabled           bool  `json:"supervisor_loop_enabled,omitempty"`
+	SupervisorLoopJobs              int   `json:"supervisor_loop_jobs,omitempty"`
+	SupervisorLoopJobsEnabled       int   `json:"supervisor_loop_jobs_enabled,omitempty"`
+	SupervisorLoopRuns              int   `json:"supervisor_loop_runs,omitempty"`
+	SupervisorLoopRunsOK            int   `json:"supervisor_loop_runs_ok,omitempty"`
+	SupervisorLoopRunsValidatorFail int   `json:"supervisor_loop_runs_validator_failed,omitempty"`
+	SupervisorLoopRunsEscalated     int   `json:"supervisor_loop_runs_escalated,omitempty"`
+	SupervisorLoopRunsError         int   `json:"supervisor_loop_runs_error,omitempty"`
+	SupervisorLoopRetries           int   `json:"supervisor_loop_retries,omitempty"`
+	SupervisorLoopLastRunAgeSeconds int64 `json:"supervisor_loop_last_run_age_seconds,omitempty"`
+
+	// Host load check (autonomous.host_load_alert): the effective mode,
+	// the last successful load reading against its threshold (multiple x
+	// core count), whether that reading is over the threshold (a breach
+	// streak in progress), when the last reading was, and how many
+	// leftover processes the reaper has ended for ended sessions since
+	// the check started (reap mode; the alert fires on the same tick as
+	// the reap). Populated in the autonomous stats callback from the
+	// check's Status (); zero/empty until the first successful reading
+	// after startup, and Mode stays "off" while disabled.
+	HostLoadMode          string    `json:"host_load_mode,omitempty"`
+	HostLoadLast          float64   `json:"host_load_last,omitempty"`
+	HostLoadLimit         float64   `json:"host_load_limit,omitempty"`
+	HostLoadBreached      bool      `json:"host_load_breached"`
+	HostLoadLastCheckAt   time.Time `json:"host_load_last_check_at,omitempty"`
+	HostLoadOrphansReaped int       `json:"host_load_orphans_reaped,omitempty"`
+
+	// Burn guard (usage.burn_guard): ladder state, projection and counters.
+	BurnGuardState         string  `json:"burn_guard_state,omitempty"`
+	BurnGuardLevel         int     `json:"burn_guard_level,omitempty"`
+	BurnGuardProjected     float64 `json:"burn_guard_projected_percent,omitempty"`
+	BurnGuardTarget        float64 `json:"burn_guard_target_percent,omitempty"`
+	BurnGuardOverBy        float64 `json:"burn_guard_over_by_points,omitempty"`
+	BurnGuardPointsPerHour float64 `json:"burn_guard_points_per_hour,omitempty"`
+	BurnGuardLastTickAge   int64   `json:"burn_guard_last_tick_age_seconds,omitempty"`
+	BurnGuardTicks         int64   `json:"burn_guard_ticks,omitempty"`
+	BurnGuardClimbs        int64   `json:"burn_guard_climbs,omitempty"`
+	BurnGuardStepBacks     int64   `json:"burn_guard_step_backs,omitempty"`
+	BurnGuardRefits        int64   `json:"burn_guard_refits,omitempty"`
+	BurnGuardErrors        int64   `json:"burn_guard_errors,omitempty"`
 
 	// BL372 — web search MCP injection stats.
 	WebSearchEnabled      bool      `json:"web_search_enabled,omitempty"`
@@ -144,12 +241,23 @@ type SystemStats struct {
 	AccessLogEnabled           bool  `json:"access_log_enabled,omitempty"`
 	AccessLogEventsTotal       int64 `json:"access_log_events_total,omitempty"`
 	AccessLogAuthFailuresTotal int64 `json:"access_log_auth_failures_total,omitempty"`
+
+	// Pre-push secret-scan counters (runs, findings, shadow reports,
+	// refusals, last-run/last-refusal times), since daemon start. Filled
+	// by the git package's counters through SetSecretScanStatsFunc; nil
+	// (and therefore omitted from JSON) when the daemon never scanned.
+	SecretScan *SecretScanStats `json:"secret_scan,omitempty"`
+
+	// WorkerStartup is the average startup token size per worker profile
+	// and per role (see WorkerStartupStats). Always present; both maps are
+	// empty when no attempt carries a startup size.
+	WorkerStartup WorkerStartupStats `json:"worker_startup"`
 }
 
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.
 type CommChannelStat struct {
 	Name     string `json:"name"`
-	Type     string `json:"type"`     // "messaging", "llm", "infra"
+	Type     string `json:"type"` // "messaging", "llm", "infra"
 	Enabled  bool   `json:"enabled"`
 	Endpoint string `json:"endpoint,omitempty"` // connection endpoint (group, channel, URL)
 
@@ -173,21 +281,66 @@ type CommChannelStat struct {
 }
 
 // SessionStat holds resource usage for a single session.
+// UIPromptKindStats is one dismissal outcome row for interstitial UI
+// prompts (see UIPromptStats).
+type UIPromptKindStats struct {
+	// Dismissed counts prompt occurrences whose safe dismiss key cleared the
+	// prompt (the daemon pressed it and the screen got back to work).
+	Dismissed int `json:"dismissed"`
+	// NotCleared counts occurrences where the attempts cap was used up with
+	// the prompt still on screen (the daemon gave up on keys for it).
+	NotCleared int `json:"not_cleared"`
+	// Refused counts dismiss keys the send-site guard refused to send
+	// (safety events: the guard worked, nothing was sent).
+	Refused int `json:"refused"`
+}
+
+// UIPromptStats is the daemon-side in-memory dismissal outcome snapshot for
+// interstitial UI prompts: totals plus one row per prompt kind. All fields
+// are counted since daemon start and reset on restart.
+type UIPromptStats struct {
+	// Dismissed is the total across kinds.
+	Dismissed int `json:"dismissed"`
+	// NotCleared is the total across kinds.
+	NotCleared int `json:"not_cleared"`
+	// Refused is the total across kinds.
+	Refused int `json:"refused"`
+	// ByKind breaks the totals down per interstitial prompt kind (e.g.
+	// autocompact).
+	ByKind map[string]UIPromptKindStats `json:"by_kind,omitempty"`
+}
+
 type SessionStat struct {
 	SessionID  string  `json:"session_id"`
 	Name       string  `json:"name"`
 	Backend    string  `json:"backend"`
 	State      string  `json:"state"`
 	PanePID    int     `json:"pane_pid"`
-	RSSBytes   uint64  `json:"rss_bytes"`       // resident set size of process tree
+	RSSBytes   uint64  `json:"rss_bytes"` // resident set size of process tree
 	CPUPercent float64 `json:"cpu_percent"`
-	Uptime     string  `json:"uptime"`           // elapsed time
-	NetTxBytes uint64  `json:"net_tx_bytes"`     // per-session TCP TX (eBPF, 0 if disabled)
-	NetRxBytes uint64  `json:"net_rx_bytes"`     // per-session TCP RX (eBPF, 0 if disabled)
+	Uptime     string  `json:"uptime"`       // elapsed time
+	NetTxBytes uint64  `json:"net_tx_bytes"` // per-session TCP TX (eBPF, 0 if disabled)
+	NetRxBytes uint64  `json:"net_rx_bytes"` // per-session TCP RX (eBPF, 0 if disabled)
 	// RTK token savings for this session's project
 	RTKSavedTokens int     `json:"rtk_saved_tokens,omitempty"`
 	RTKSavingsPct  float64 `json:"rtk_savings_pct,omitempty"`
 	RTKCommands    int     `json:"rtk_commands,omitempty"`
+}
+
+// SecretScanStats is the pre-push secret-scan counter block surfaced in
+// SystemStats.SecretScan: how many scans executed, how many findings they
+// produced, how many shadow reports and enforce refusals, plus the times
+// of the last of each. Mirrors the git package's SecretScanStats json tags
+// (the two packages cannot import each other, so the shape is duplicated
+// here and the wiring callback copies field by field). Counts are since
+// daemon start and reset on restart.
+type SecretScanStats struct {
+	Runs          int64     `json:"runs"`
+	Findings      int64     `json:"findings"`
+	ShadowReports int64     `json:"shadow_reports"`
+	Refusals      int64     `json:"refusals"`
+	LastRunAt     time.Time `json:"last_run_at"`
+	LastRefusalAt time.Time `json:"last_refusal_at"`
 }
 
 // Collector periodically samples system metrics and stores them in a ring buffer.
@@ -217,10 +370,10 @@ type Collector struct {
 	// boundInterfaces returns the list of bound interface addresses
 	boundInterfaces []string
 
-	startTime    time.Time
-	ebpfEnabled  bool
-	ebpfActive   bool
-	ebpfMessage  string
+	startTime   time.Time
+	ebpfEnabled bool
+	ebpfActive  bool
+	ebpfMessage string
 
 	// daemonNetFn returns (tx, rx) bytes for the daemon process tree via eBPF
 	daemonNetFn func() (uint64, uint64)
@@ -231,6 +384,14 @@ type Collector struct {
 	// memoryStatsFn populates episodic memory metrics
 	memoryStatsFn func(*SystemStats)
 
+	// burnGuardStatsFn populates the burn guard fields.
+	burnGuardStatsFn func(*SystemStats)
+	// supervisorLoopStatsFn populates the supervisor loop fields.
+	supervisorLoopStatsFn func(*SystemStats)
+
+	// traceStatsFn populates the agent tracing fields.
+	traceStatsFn func(*SystemStats)
+
 	// accessLogStatsFn (GH#201) populates HTTP access / WS lifecycle /
 	// auth-failure log fields.
 	accessLogStatsFn func(*SystemStats)
@@ -240,6 +401,18 @@ type Collector struct {
 
 	// webSearchStatsFn populates web search stats (BL372)
 	webSearchStatsFn func(*SystemStats)
+
+	// secretScanStatsFn populates the pre-push secret-scan counters
+	// (SecretScan field).
+	secretScanStatsFn func(*SystemStats)
+
+	// workerStartupStatsFn populates the worker_startup block (WorkerStartup
+	// field) from the attempt startup records.
+	workerStartupStatsFn func(*SystemStats)
+
+	// uiPromptsFn returns the daemon-side in-memory interstitial UI-prompt
+	// dismissal outcome counters (from the session manager).
+	uiPromptsFn func() *UIPromptStats
 
 	// ollamaHost is the Ollama API URL for stats polling
 	ollamaHost string
@@ -287,6 +460,15 @@ func (c *Collector) SetSessionStatsFunc(fn func() []SessionStat) {
 	c.sessionStatsFn = fn
 }
 
+// SetUIPromptsFunc sets the callback that returns the daemon-side in-memory
+// interstitial UI-prompt dismissal outcome counters (dismissed /
+// not_cleared / refused, with a by-kind breakdown). It is snapshotted into
+// the ui_prompts field of every collected SystemStats, so it is visible in
+// GET /api/stats and the get_stats MCP tool.
+func (c *Collector) SetUIPromptsFunc(fn func() *UIPromptStats) {
+	c.uiPromptsFn = fn
+}
+
 // SetEBPFStatus sets the eBPF status for display in the dashboard.
 func (c *Collector) SetEBPFStatus(enabled, active bool, message string) {
 	c.ebpfEnabled = enabled
@@ -331,6 +513,21 @@ func (c *Collector) SetAccessLogStatsFunc(fn func(*SystemStats)) {
 	c.accessLogStatsFn = fn
 }
 
+// SetTraceStatsFunc sets a callback that populates the agent tracing fields on each snapshot.
+func (c *Collector) SetTraceStatsFunc(fn func(*SystemStats)) {
+	c.traceStatsFn = fn
+}
+
+// SetBurnGuardStatsFunc sets a callback that populates the burn guard fields on each snapshot.
+func (c *Collector) SetBurnGuardStatsFunc(fn func(*SystemStats)) {
+	c.burnGuardStatsFn = fn
+}
+
+// SetSupervisorLoopStatsFunc sets a callback that populates the supervisor loop fields on each snapshot.
+func (c *Collector) SetSupervisorLoopStatsFunc(fn func(*SystemStats)) {
+	c.supervisorLoopStatsFn = fn
+}
+
 // SetMemoryStatsFunc sets a callback that populates episodic memory stats on each snapshot.
 func (c *Collector) SetMemoryStatsFunc(fn func(*SystemStats)) {
 	c.memoryStatsFn = fn
@@ -344,6 +541,20 @@ func (c *Collector) SetAutonomousStatsFunc(fn func(*SystemStats)) {
 // SetWebSearchStatsFunc sets a callback that populates web search stats on each snapshot (BL372).
 func (c *Collector) SetWebSearchStatsFunc(fn func(*SystemStats)) {
 	c.webSearchStatsFn = fn
+}
+
+// SetWorkerStartupStatsFunc sets a callback that populates the worker
+// startup averages (SystemStats.WorkerStartup) on each snapshot.
+func (c *Collector) SetWorkerStartupStatsFunc(fn func(*SystemStats)) {
+	c.workerStartupStatsFn = fn
+}
+
+// SetSecretScanStatsFunc sets a callback that populates the pre-push
+// secret-scan counters (SystemStats.SecretScan) on each snapshot. The
+// callback is expected to leave the field nil when the daemon has never
+// scanned, so the key is omitted from the JSON output entirely.
+func (c *Collector) SetSecretScanStatsFunc(fn func(*SystemStats)) {
+	c.secretScanStatsFn = fn
 }
 
 // SetOllamaHost sets the Ollama API URL for stats polling.
@@ -421,8 +632,8 @@ func (c *Collector) History(minutes int) []SystemStats {
 
 func (c *Collector) collect() {
 	s := SystemStats{
-		Timestamp: time.Now(),
-		CPUCores:  runtime.NumCPU(),
+		Timestamp:  time.Now(),
+		CPUCores:   runtime.NumCPU(),
 		Goroutines: runtime.NumGoroutine(),
 	}
 
@@ -465,6 +676,9 @@ func (c *Collector) collect() {
 	if c.commStatsFn != nil {
 		s.CommStats = c.commStatsFn()
 	}
+	if c.uiPromptsFn != nil {
+		s.UIPrompts = c.uiPromptsFn()
+	}
 	if c.accessLogStatsFn != nil {
 		c.accessLogStatsFn(&s)
 	}
@@ -475,6 +689,15 @@ func (c *Collector) collect() {
 	}
 
 	// Episodic memory stats
+	if c.supervisorLoopStatsFn != nil {
+		c.supervisorLoopStatsFn(&s)
+	}
+	if c.burnGuardStatsFn != nil {
+		c.burnGuardStatsFn(&s)
+	}
+	if c.traceStatsFn != nil {
+		c.traceStatsFn(&s)
+	}
 	if c.memoryStatsFn != nil {
 		c.memoryStatsFn(&s)
 	}
@@ -487,6 +710,18 @@ func (c *Collector) collect() {
 	// BL372 — web search stats
 	if c.webSearchStatsFn != nil {
 		c.webSearchStatsFn(&s)
+	}
+
+	// Pre-push secret-scan counters
+	if c.secretScanStatsFn != nil {
+		c.secretScanStatsFn(&s)
+	}
+
+	// Worker startup averages per profile and role: the block always
+	// carries empty maps, never nil ones, so its JSON shape is stable.
+	s.WorkerStartup = BuildWorkerStartupStats(nil)
+	if c.workerStartupStatsFn != nil {
+		c.workerStartupStatsFn(&s)
 	}
 
 	// Ollama server stats (BL71) — poll every collection cycle

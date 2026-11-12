@@ -14,14 +14,20 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tooling"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // SpawnRequest is what the executor hands to SpawnFn for each task.
@@ -40,6 +46,11 @@ type SpawnRequest struct {
 	Backend    string
 	Effort     Effort
 	Model      string
+	// ThinkingLevel — pi --thinking level (off|minimal|low|medium|high),
+	// resolved per-task → per-story → per-PRD by the executor. Empty =
+	// no override; the session manager then applies its configured
+	// pi.thinking_level (lowest precedence in the chain).
+	ThinkingLevel string
 	// PermissionMode (v5.27.5) — claude-code --permission-mode forwarded
 	// to the worker session. Resolved per-task → per-PRD → empty (use
 	// global cfg.Session.permission_mode default) by the executor before
@@ -62,6 +73,17 @@ type SpawnRequest struct {
 	// 1's EnsureWorktree or this phase's cluster-mode counterpart
 	// (e.g. AutoPR-less PRDs with an explicit ProjectDir).
 	Branch string
+	// WorkerProfile is the profile applied to this launch; it is meaningful
+	// only when WorkerProfileApplied is true. A launch with no applied
+	// profile leaves both unset.
+	WorkerProfile        workerprofile.WorkerProfile
+	WorkerProfileApplied bool
+	// Git — true when the PRD has git settings (prd.Git populated — a
+	// worktree-set PRD has Branch — or a project profile, i.e. it runs
+	// against a project repo). The local-session SpawnFn passes this to
+	// StartOptions.Git so PRD task sessions get git activity (pre-session
+	// snapshot + completion commit), because PRDs are development work.
+	Git bool
 	// BL244 — plugin session injection. Non-empty when a plugin declares
 	// session_injection for the PRD's type; prepended to the task spec
 	// by the SpawnFn so plugin context arrives in the worker session.
@@ -93,6 +115,42 @@ type SpawnRequest struct {
 	// attempt-work restore when set; the executor clears the task's flag once
 	// this spawn has run.
 	CleanRestart bool
+	// ComputeNode — the compute node this task's worker lease was granted on
+	// (capacity.Lease.Node, read after admit succeeds). The local-session
+	// SpawnFn forwards it as compute_node with the backend, so the session
+	// runs on the node the ledger placed the task on. With a placement advisor
+	// the gate in admitPreferring chose this node and loaded the model before
+	// the lease, so the session always starts on a node that placement
+	// approved. Empty when capacity is off or the lease names no node; the
+	// session then resolves its node as it always has.
+	ComputeNode string
+}
+
+// prdHasGit reports whether a PRD has git settings: prd.Git populated
+// (provider/url/base_branch/branch/auto_pr or a project repo) or a
+// project profile, i.e. the PRD runs against a project repo. PRDs with
+// git settings are development work, so their task sessions opt into
+// git activity (StartOptions.Git).
+func prdHasGit(prd *PRD) bool {
+	if prd == nil {
+		return false
+	}
+	return prd.Git != (GitWorkflow{}) || prd.ProjectProfile != ""
+}
+
+// prdAutoCommits reports whether the PRD should give its task sessions git
+// activity (StartOptions.Git), which auto-commits the run's work. Rule: a PRD
+// gets a session auto-commit only when it has git settings AND either runs in
+// worktree mode (its commit scope is the worktree itself) or declares the
+// write dirs a commit may cover. A direct-mode PRD (no worktree) with no
+// declared write dirs must NOT auto-commit: with no declared scope the commit
+// would widen to the whole project directory and stage everything changed
+// there, committing work the PRD never claimed ownership of.
+func prdAutoCommits(prd *PRD) bool {
+	if !prdHasGit(prd) {
+		return false
+	}
+	return prd.Git.Branch != "" || len(prd.WriteDirs) > 0
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
@@ -114,7 +172,15 @@ type SpawnResult struct {
 	// git diff --name-only --cached HEAD) captured alongside PreTaskSHA.
 	// Used by the foreign-file-drift check (DetectForeignFileDrift).
 	PreTaskDirtyFiles []string
-	Err               error
+	// ComputeNode is the compute node the start handler placed the worker on,
+	// which differs from SpawnRequest.ComputeNode when the handler re-placed
+	// the session. Empty when the spawn path does not report one.
+	ComputeNode string
+	// ProfileFallbackReason is set when the worker profile the launch was
+	// asked to apply could not be applied and the worker started with no
+	// profile instead (see noteProfileFallback). Empty when it applied.
+	ProfileFallbackReason string
+	Err                   error
 }
 
 // SpawnFn is the indirection used by the executor to start a worker.
@@ -131,6 +197,9 @@ type VerifyFn func(ctx context.Context, prd *PRD, task *Task) (VerificationResul
 // cfg.MaxConcurrentTasks) is > 1, independent tasks are fanned out with
 // a semaphore-bounded goroutine pool.
 func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify VerifyFn) error {
+	// wake carries operator review decisions to a live executor. It is nil
+	// outside one, and a nil channel never delivers a decision.
+	wake := reviewWakeFrom(ctx)
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
@@ -168,9 +237,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		m.mu.Unlock()
 		return err
 	}
+	// Model/backend preflight — refuse to start a PRD whose task would spawn
+	// a pair that cannot run (e.g. pi-prompt + bare claude-haiku-5-5). The
+	// PRD stays approved and nothing is dispatched.
+	if err := m.preflightModelBackend(prdID, prd); err != nil {
+		m.mu.Unlock()
+		return err
+	}
 	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
 	runOld := prd.Status
-	prd.Status = PRDRunning
+	m.store.WithLock(func() { prd.Status = PRDRunning })
 	m.mu.Unlock()
 	// BL427 — the running event fires only once the "run" Decision
 	// below is saved; an early return (worktree setup) emits nothing.
@@ -195,7 +271,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	} else if created {
 		log.Printf("[autonomous] prd=%s worktree created at %s (branch=%s)", prdID, prd.ProjectDir, prd.Git.Branch)
 	}
-	// BL407 Phase 4 — cluster-dispatched counterpart to the worktree
+	// carried through the snapshot — cluster-dispatched counterpart to the worktree
 	// branch above. No local worktree to create here (the worker's
 	// own container does the real clone — Phase 3), but the PRD still
 	// needs its own dedicated branch name decided up front, by the
@@ -208,8 +284,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// worktree branch is: only fires while Git.Branch is still empty,
 	// so a resumed run never regenerates a second name.
 	if prd.ClusterProfile != "" && prd.Git.Branch == "" {
-		prd.Git.Branch = branchNameFor(prd)
-		log.Printf("[autonomous] prd=%s cluster-mode branch assigned: %s", prdID, prd.Git.Branch)
+		clusterBranch := branchNameFor(prd)
+		m.store.WithLock(func() { prd.Git.Branch = clusterBranch })
+		log.Printf("[autonomous] prd=%s cluster-mode branch assigned: %s", prdID, clusterBranch)
 	}
 	// 2026-10-07 — gitignore datawatch's own PRD scratch artifacts
 	// (.decompose-output-*.json, CHECKPOINT.md) as defense-in-depth for
@@ -219,7 +296,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// rather than registering a pseudo-entry in BackendArtifacts (which
 	// QueryAllStatus assumes is exclusively real backends).
 	if isFirstRun && prd.ProjectDir != "" {
-		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, automatonScratchIgnorePatterns); err != nil {
 			log.Printf("[autonomous] EnsureIgnoredPatterns for %s: %v", prd.ProjectDir, err)
 		}
 		// 2026-10-15 — BL449 incident: a task with its own ProjectDir
@@ -235,13 +312,15 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					continue
 				}
 				seen[dir] = true
-				if _, err := tooling.EnsureIgnoredPatterns(dir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+				if _, err := tooling.EnsureIgnoredPatterns(dir, automatonScratchIgnorePatterns); err != nil {
 					log.Printf("[autonomous] EnsureIgnoredPatterns for task dir %s: %v", dir, err)
 				}
 			}
 		}
 	}
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
@@ -263,12 +342,15 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 	}
 	m.loadSkillGuardrails(prd) // BL303 S2 T08
+	// A dependency that recovered since the last pass releases the dependents
+	// failed behind it, so they run in this pass.
+	m.recoverInfraDependents(prd)
 	tasks := flattenTasks(prd)
 	order, err := topoSort(tasks)
 	if err != nil {
 		return err
 	}
-	retries := m.cfg.AutoFixRetries
+	retries := m.effectiveSpawnRetries(prd)
 	if retries < 0 {
 		retries = 0
 	}
@@ -276,29 +358,100 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	qgCfg := m.resolveQualityGates(prd)
 	var qgBaseline *pipeline.TestResult
 	if qgCfg.Enabled && qgCfg.TestCommand != "" && prd.ProjectDir != "" {
-		r := runQualityGateTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.Timeout)
+		r := runQualityGateTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.EffectiveTimeout(), m.allowedProjectRoots())
 		qgBaseline = &r
 		log.Printf("[autonomous] %s quality-gate baseline: %d pass / %d fail", prdID, r.PassCount, r.FailCount)
+		// Validate the baseline before trusting it. An invalid one
+		// (command/build/environment failure, e.g. a generated file missing
+		// from a worktree) is recorded on the PRD with the plain reason and
+		// logged as a warning; from here on the gate warns only and never
+		// blocks or retries a task on numbers we cannot trust.
+		if valid, reason := pipeline.ClassifyBaseline(r); !valid {
+			m.markGateInvalid(prdID, prd, reason)
+			log.Printf("[autonomous] %s WARNING: quality-gate baseline invalid (%s) — gate warns only and never blocks a task", prdID, reason)
+		}
 	}
 	// BL447: the PRD-level baseline is only comparable for tasks that run
 	// in prd.ProjectDir; tasks with another resolved dir get a lazily
 	// captured, per-dir baseline cached for the rest of this run.
-	qgBaselines := newQualityGateBaselines(qgCfg, prd.ProjectDir, qgBaseline)
+	qgBaselines := newQualityGateBaselines(qgCfg, prd.ProjectDir, qgBaseline, m.allowedProjectRoots())
+	// Lazily captured per-dir baselines get the same validation.
+	qgBaselines.onInvalid = func(dir, reason string) {
+		m.markGateInvalid(prdID, prd, fmt.Sprintf("task dir %s: %s", dir, reason))
+		log.Printf("[autonomous] %s WARNING: quality-gate baseline for dir %s invalid (%s) — gate warns only and never blocks a task", prdID, dir, reason)
+	}
+	// Gate scope: when the resolved scope is non-full, capture the vet
+	// baseline in the PRD's own dir now (other resolved task dirs capture
+	// theirs lazily in the same cache), so new in-scope vet failures can
+	// be judged regressions against it.
+	if qgCfg.Enabled && qgCfg.TestCommand != "" && prd.ProjectDir != "" {
+		if scope, _, _ := m.resolveGateScopeSettings(prd); scope != pipeline.GateScopeFull {
+			qgBaselines.vetForDir(prd.ProjectDir)
+		}
+	}
 
 	// BL370 — resolve concurrency limit: per-PRD overrides global config.
 	// 0 or 1 = sequential (existing behaviour); > 1 = concurrent pool.
-	m.mu.Lock()
-	globalConc := m.cfg.MaxConcurrentTasks
-	m.mu.Unlock()
-	concurrency := effectiveTaskConcurrency(prd.MaxConcurrentTasks, globalConc)
+	concurrency := m.resolveTaskConcurrency(prd)
 	if concurrency <= 1 {
 		// Sequential path (default) — tasks run in dependency order.
 		// failedIDs tracks tasks that failed so dependents can be skipped.
 		failedIDs := make(map[string]bool)
-		for _, tid := range order {
+		// heldIDs holds the tasks held for operator review, and the tasks
+		// waiting behind one. Neither runs nor counts as failed.
+		heldIDs := make(map[string]bool)
+		for i := 0; ; i++ {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+			// An operator review decision (a retry or a cancel) landed while
+			// a task ran. Re-read the Automaton and rebuild the order, then
+			// walk it again from the top. Terminal tasks are skipped, held
+			// tasks stay pending, and the first task that is neither runs
+			// next. The check also runs after the last task, so a decision
+			// made during it is not lost before the walk returns.
+			nudged := reviewWakeNudged(wake)
+			// The walk is done but a task waits on an operator decision. The
+			// executor stays alive and walks again when the decision is
+			// answered, so the task starts with no second Run.
+			if !nudged && i >= len(order) && m.decisionWaitPending(prd) {
+				if awaitDecisionAnswer(ctx, wake) {
+					if st, ok := m.prdStatusOf(prdID); !ok || st != PRDRunning {
+						return nil
+					}
+					nudged = true
+				} else if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
+			// The walk is done but a task waits for an earlier merge to land.
+			if !nudged && i >= len(order) && m.mergeHoldPending(prd) {
+				if !m.awaitMergeLanding(ctx, prd, wake) {
+					return ctx.Err()
+				}
+				nudged = true
+			}
+			if nudged {
+				if latest, _ := m.store.GetPRD(prdID); latest != nil {
+					prd = latest
+				}
+				m.recoverInfraDependents(prd)
+				var tasks []*Task
+				m.store.WithLock(func() { tasks = flattenTasks(prd) })
+				if o, err := topoSort(tasks); err != nil {
+					log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
+				} else {
+					order = o
+				}
+				failedIDs = make(map[string]bool)
+				heldIDs = make(map[string]bool)
+				i = -1
+				continue
+			}
+			if i >= len(order) {
+				break
+			}
+			tid := order[i]
 			t := lookupTask(prd, tid)
 			if t == nil {
 				continue
@@ -314,10 +467,15 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			// recommendations" completed depending on two never-produced
 			// files from a cancelled story. A cancelled dependency was never
 			// fulfilled either; it must propagate the same as a failed one.
-			if isTaskTerminal(t.Status) {
+			if m.taskTerminal(t) {
 				if t.Status == TaskFailed || t.Status == TaskCancelled {
 					failedIDs[tid] = true
 				}
+				continue
+			}
+			// A held task, or one waiting behind a held task, stays pending.
+			if m.taskOnReview(t) || m.waitsOnReview(prd, t, heldIDs) {
+				heldIDs[tid] = true
 				continue
 			}
 			// Skip tasks whose dependencies failed — propagate failure forward.
@@ -330,33 +488,57 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 			if depFailed != "" {
 				oldStatus := t.Status
-				t.Status = TaskFailed
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+				})
 				verb := "failed"
-				if dt := lookupTask(prd, depFailed); dt != nil && dt.Status == TaskCancelled {
+				depTask := lookupTask(prd, depFailed)
+				if depTask != nil && depTask.Status == TaskCancelled {
 					verb = "was cancelled"
 				}
-				t.Error = "dependency " + depFailed + " " + verb
+				infraReason := m.infraDependentReason(depTask)
+				m.store.WithLock(func() {
+					t.Error = "dependency " + depFailed + " " + verb
+					if infraReason != nil {
+						t.FailureReason = infraReason
+					}
+				})
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
 				m.releaseCapacity(t.ID)
 				failedIDs[tid] = true
+			} else if m.decisionGateHold(prd, t) {
+				// The spec names a decision that is not answered. The task
+				// stays parked and its dependents wait behind it.
+				heldIDs[tid] = true
+				continue
+			} else if m.mergeHold(prd, t) {
+				// An earlier task's branch is not merged yet. The task stays
+				// pending and the walk looks again once the merge lands.
+				heldIDs[tid] = true
+				continue
 			} else {
 				// Mark the owning story in_progress when its first task begins.
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
-					s.Status = StoryInProgress
+					m.store.WithLock(func() { s.Status = StoryInProgress })
 					_ = m.store.SavePRD(prd)
 				}
 				if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaselines); err != nil {
 					m.releaseCapacity(t.ID)
 					oldStatus := t.Status
-					t.Status = TaskFailed
-					t.Error = err.Error()
+					m.store.WithLock(func() {
+						t.Status = TaskFailed
+						t.Error = err.Error()
+					})
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 					}
 				}
 			}
+			// Gap between tasks: bring the branch up to date with its base
+			// when it has fallen behind (branch_refresh.go).
+			m.maybeRefreshBranch(ctx, prd)
 			// Re-read authoritative status: executeOne returns nil even after
 			// exhausting retries (it saves TaskFailed itself), so we must
 			// inspect the stored record rather than relying on the error return.
@@ -366,30 +548,40 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if lt.Status == TaskFailed {
 						failedIDs[tid] = true
 					}
+					if lt.Status == TaskReviewNeeded {
+						heldIDs[tid] = true
+					}
 					// BL191 Q6 (v5.10.0) — when a task lands in TaskBlocked from a
 					// per-task guardrail block verdict, halt the walk so the
 					// operator can review before more tasks run.
 					if lt.Status == TaskBlocked {
 						old := latest.Status
-						latest.Status = PRDBlocked
+						m.store.WithLock(func() {
+							latest.Status = judgeHoldOrBlocked(lastBlockVerdict(lt.Verdicts))
+							latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
+						})
 						if m.store.SavePRD(latest) == nil {
 							m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
+							m.EmitPRDUpdate(latest.ID)
 						}
 						return nil
 					}
 				}
 				// Roll up story status when all its tasks reached a terminal state.
-				if s := lookupStoryByTaskID(latest, tid); s != nil && storyAllTasksDone(s) {
-					s.Status = storyRollupStatus(s)
+				if s := lookupStoryByTaskID(latest, tid); s != nil && m.storyDone(s) {
+					m.store.WithLock(func() { s.Status = storyRollupStatus(s) })
 					// A story failure halts the PRD by default so the operator
 					// can re-edit/rerun the failed story instead of the executor
 					// barreling ahead into later, independent stories unattended.
 					// Opt out per-PRD or globally via ContinueOnStoryFailure.
-					if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && anyNonTerminalTasksRemain(latest) {
+					if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && m.nonTerminalRemain(latest) {
 						old := latest.Status
-						latest.Status = PRDBlocked
+						m.store.WithLock(func() {
+							latest.Status = PRDBlocked
+						})
 						if m.store.SavePRD(latest) == nil {
 							m.emitPRDStatus(latest, old, nil, nil)
+							m.EmitPRDUpdate(latest.ID)
 						}
 						return nil
 					}
@@ -410,6 +602,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		completedIDs := make(map[string]bool, len(order))
 		failedIDs := make(map[string]bool, len(order))
 		inFlight := make(map[string]bool, concurrency)
+		// heldIDs holds the tasks held for operator review. They are never
+		// completed, so their dependents never become ready.
+		heldIDs := make(map[string]bool, len(order))
 		remaining := len(order)
 
 		// v8.36.5 — seed tracking for tasks that are already terminal before
@@ -425,7 +620,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// deps, failed/cancelled ones propagate as unmet.
 		for _, tid := range order {
 			t := lookupTask(prd, tid)
-			if t == nil || !isTaskTerminal(t.Status) {
+			if t == nil || !m.taskTerminal(t) {
 				continue
 			}
 			completedIDs[tid] = true
@@ -437,7 +632,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 
 		isReady := func(tid string) bool {
 			t := lookupTask(prd, tid)
-			if t == nil || completedIDs[tid] || inFlight[tid] {
+			if t == nil || completedIDs[tid] || inFlight[tid] || heldIDs[tid] {
 				return false
 			}
 			for _, dep := range t.DependsOn {
@@ -468,8 +663,14 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 				if depFailed != "" {
 					oldStatus := t.Status
-					t.Status = TaskFailed
-					t.Error = "dependency " + depFailed + " failed"
+					infraReason := m.infraDependentReason(lookupTask(prd, depFailed))
+					m.store.WithLock(func() {
+						t.Status = TaskFailed
+						t.Error = "dependency " + depFailed + " failed"
+						if infraReason != nil {
+							t.FailureReason = infraReason
+						}
+					})
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 					}
@@ -496,8 +697,18 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if t == nil {
 					continue
 				}
+				// A task whose spec names an unanswered decision stays parked.
+				// It never completes, so its dependents never become ready.
+				if m.decisionGateHold(prd, t) {
+					continue
+				}
+				// An earlier task's branch is not merged yet: skip, stay
+				// pending, and look again on the next pass.
+				if m.mergeHold(prd, t) {
+					continue
+				}
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
-					s.Status = StoryInProgress
+					m.store.WithLock(func() { s.Status = StoryInProgress })
 					_ = m.store.SavePRD(prd)
 				}
 				inFlight[tid] = true
@@ -507,6 +718,78 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					results <- taskResult{tid, err}
 				}(tid, t)
 			}
+		}
+
+		// reviewDecisions brings the coordinator in line with an operator
+		// review decision made while tasks were running. The order is fixed
+		// when the pass starts, so a task the operator retried, or cancelled,
+		// is found here by re-reading the Automaton. remaining is recounted
+		// rather than adjusted, because a task held when the pass started was
+		// never in the order and never took a slot in remaining. The decision
+		// never starts a second executor: launch() stays the only place a task
+		// starts.
+		reviewDecisions := func() {
+			latest, _ := m.store.GetPRD(prdID)
+			if latest == nil || latest.Status == PRDPaused {
+				// A paused Automaton launches nothing. The result path drains
+				// the tasks in flight and returns.
+				return
+			}
+			prd = latest
+			// A dependency the operator retried releases the dependents
+			// failed behind it.
+			m.recoverInfraDependents(latest)
+			// The order leaves out tasks held for review, so a task the
+			// operator has since retried is not in it. Rebuild the order from
+			// the Automaton as it stands now. A cycle keeps the old order.
+			var tasks []*Task
+			m.store.WithLock(func() { tasks = flattenTasks(latest) })
+			if o, err := topoSort(tasks); err != nil {
+				log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
+			} else {
+				order = o
+			}
+			for _, tid := range order {
+				if inFlight[tid] {
+					continue
+				}
+				lt := lookupTask(latest, tid)
+				if lt == nil {
+					continue
+				}
+				switch {
+				case lt.Status == TaskReviewNeeded:
+					// Still held for review; the operator has not acted yet.
+				case m.taskTerminal(lt):
+					// Cancelled or otherwise finished by the operator. Mark it
+					// finished so its dependents resolve, and fail them when it
+					// did not succeed.
+					delete(heldIDs, tid)
+					completedIDs[tid] = true
+					if lt.Status == TaskFailed || lt.Status == TaskCancelled {
+						failedIDs[tid] = true
+					} else {
+						delete(failedIDs, tid)
+					}
+				case normTaskStatus(lt.Status) == TaskPending:
+					// Retried by the operator. It runs again, so it is no
+					// longer finished or held. An empty status reads as pending.
+					delete(heldIDs, tid)
+					delete(completedIDs, tid)
+					delete(failedIDs, tid)
+				}
+			}
+			// Every task in flight, and every task in the order that is not
+			// finished or held, still owes a result. Only results and
+			// autoFailDeps move remaining, so it is set from that count.
+			remaining = len(inFlight)
+			for _, tid := range order {
+				if !completedIDs[tid] && !heldIDs[tid] && !inFlight[tid] {
+					remaining++
+				}
+			}
+			autoFailDeps()
+			launch()
 		}
 
 		// Propagate failure from any task whose only dependency is one of
@@ -527,10 +810,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if dr.err == nil {
 				return
 			}
-			if t := lookupTask(prd, dr.tid); t != nil && !isTaskTerminal(t.Status) {
+			if t := lookupTask(prd, dr.tid); t != nil && !m.taskTerminal(t) {
 				oldStatus := t.Status
-				t.Status = TaskFailed
-				t.Error = dr.err.Error()
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = dr.err.Error()
+				})
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
@@ -544,10 +829,54 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		launch()
 
 		for remaining > 0 {
+			// A dependency that completed, or was retried, releases the
+			// dependents failed behind it without a new run.
+			if len(m.recoverInfraDependents(prd)) > 0 {
+				reviewDecisions()
+			}
 			if len(inFlight) == 0 {
+				// A decision can land just before the coordinator would exit.
+				// Process it, so a task it made ready is not left behind.
+				if reviewWakeNudged(wake) {
+					reviewDecisions()
+					continue
+				}
+				// A task waits on an operator decision. Wait for the answer
+				// instead of leaving; reviewDecisions launches the task once
+				// the gate lets it through.
+				if m.decisionWaitPending(prd) {
+					if awaitDecisionAnswer(ctx, wake) {
+						if st, ok := m.prdStatusOf(prdID); !ok || st != PRDRunning {
+							return nil
+						}
+						reviewDecisions()
+						continue
+					}
+					if err := ctx.Err(); err != nil {
+						return err
+					}
+				}
+				// A task waits for an earlier task's merge. Wait for it to land,
+				// then launch again.
+				if m.mergeHoldPending(prd) {
+					if !m.awaitMergeLanding(ctx, prd, wake) {
+						return ctx.Err()
+					}
+					if st, ok := m.prdStatusOf(prdID); !ok || st != PRDRunning {
+						return nil
+					}
+					reviewDecisions()
+					continue
+				}
 				// No ready tasks and nothing in-flight — dependency deadlock
 				// should not happen with a valid topo sort.
 				break
+			}
+			// A held task needs a periodic look while others run: the merge
+			// can land from the retry timer with no task result to report it.
+			var holdTick <-chan time.Time
+			if m.mergeHoldPending(prd) {
+				holdTick = time.After(mergeHoldPoll)
 			}
 			select {
 			case <-ctx.Done():
@@ -557,6 +886,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					delete(inFlight, r.tid)
 				}
 				return ctx.Err()
+			case <-holdTick:
+				if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
+					log.Printf("[autonomous] %s merge hold pass: %v", prdID, merr)
+				}
+				reviewDecisions()
+			case <-wake:
+				// An operator review decision landed while tasks were running.
+				// Re-read the Automaton and launch what it made ready. Tasks
+				// still in flight keep running and report through results.
+				reviewDecisions()
 			case r := <-results:
 				delete(inFlight, r.tid)
 				remaining--
@@ -564,16 +903,24 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if t := lookupTask(prd, r.tid); t != nil {
 						m.releaseCapacity(t.ID)
 						oldStatus := t.Status
-						t.Status = TaskFailed
-						t.Error = r.err.Error()
+						m.store.WithLock(func() {
+							t.Status = TaskFailed
+							t.Error = r.err.Error()
+						})
 						if m.store.SaveTask(t) == nil {
 							m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 						}
 					}
 					failedIDs[r.tid] = true
 				}
-				completedIDs[r.tid] = true
 				latest, _ := m.store.GetPRD(prdID)
+				// A task held for operator review is neither completed nor
+				// failed, so its dependents stay unready behind it.
+				if latest != nil && m.taskHeldIn(latest, r.tid) {
+					heldIDs[r.tid] = true
+				} else {
+					completedIDs[r.tid] = true
+				}
 				if latest != nil {
 					// GH#172 D52 — operator paused this PRD while tasks were
 					// in flight. Let already-launched goroutines finish
@@ -596,9 +943,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						}
 						if lt.Status == TaskBlocked {
 							old := latest.Status
-							latest.Status = PRDBlocked
+							m.store.WithLock(func() {
+								latest.Status = PRDBlocked
+								latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
+							})
 							if m.store.SavePRD(latest) == nil {
 								m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
+								m.EmitPRDUpdate(latest.ID)
 							}
 							// Drain remaining goroutines.
 							for len(inFlight) > 0 {
@@ -609,13 +960,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 							return nil
 						}
 					}
-					if s := lookupStoryByTaskID(latest, r.tid); s != nil && storyAllTasksDone(s) {
-						s.Status = storyRollupStatus(s)
-						if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && anyNonTerminalTasksRemain(latest) {
+					if s := lookupStoryByTaskID(latest, r.tid); s != nil && m.storyDone(s) {
+						m.store.WithLock(func() { s.Status = storyRollupStatus(s) })
+						if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && m.nonTerminalRemain(latest) {
 							old := latest.Status
-							latest.Status = PRDBlocked
+							m.store.WithLock(func() {
+								latest.Status = PRDBlocked
+							})
 							if m.store.SavePRD(latest) == nil {
 								m.emitPRDStatus(latest, old, nil, nil)
+								m.EmitPRDUpdate(latest.ID)
 							}
 							// Drain remaining goroutines already in flight — they were
 							// launched before this failure was known, so let them
@@ -641,16 +995,20 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// settle first; story-level block also halts the PRD.
 	for i := range prd.Story {
 		s := &prd.Story[i]
-		if !storyAllTasksDone(s) {
+		if !m.storyDone(s) {
 			continue
 		}
 		if blocked, contentFixVerdict, err := m.runPerStoryGuardrails(ctx, prd, s); err != nil {
 			return err
 		} else if blocked {
 			old := prd.Status
-			prd.Status = PRDBlocked
+			m.store.WithLock(func() {
+				prd.Status = judgeHoldOrBlocked(lastBlockVerdict(s.Verdicts))
+				prd.BlockedReason = blockedReasonFromVerdicts(s.Verdicts)
+			})
 			if m.store.SavePRD(prd) == nil {
 				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(s.Verdicts))
+				m.EmitPRDUpdate(prd.ID)
 			}
 			return nil
 		} else if contentFixVerdict != nil {
@@ -667,6 +1025,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			return m.Run(ctx, prd.ID, spawn, verify)
 		}
 	}
+	// A task held for operator review keeps the Automaton open. Every task that
+	// can run has run by now, so the Automaton blocks until the operator acts,
+	// and the roll-up below neither completes nor fails it.
+	if held := m.reviewHeldTaskID(prd); held != "" {
+		m.blockForTaskReview(prd, held)
+		return nil
+	}
 	// Roll up PRD status: completed/failed once every task is in a terminal state.
 	//
 	// v8.36.3 — found live on PRD a2833a5e: isTaskTerminal treats
@@ -677,15 +1042,17 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// failure — only an actual TaskFailed should mark the PRD failed.
 	allDone := true
 	anyFailed := false
-	for _, s := range prd.Story {
-		for _, t := range s.Tasks {
-			if !isTaskTerminal(t.Status) {
-				allDone = false
-			} else if t.Status == TaskFailed {
-				anyFailed = true
+	m.store.WithLock(func() {
+		for _, s := range prd.Story {
+			for _, t := range s.Tasks {
+				if !isTaskTerminal(t.Status) {
+					allDone = false
+				} else if t.Status == TaskFailed {
+					anyFailed = true
+				}
 			}
 		}
-	}
+	})
 	if !allDone {
 		return m.store.SavePRD(prd)
 	}
@@ -704,7 +1071,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		return ok && cur.Status == observed && prdAllTasksTerminal(cur)
 	}
 	if anyFailed {
-		old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDFailed, "failed")
+		old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDFailed, "failed", "")
 		if ok {
 			m.emitPRDStatus(prd, old, nil, nil)
 		}
@@ -718,20 +1085,41 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// project rule firing is itself the signal, same PRDBlocked
 		// status the task/story guardrail "block" outcome already
 		// uses above.
-		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "project_rules_block"); ok {
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "project_rules_block", ""); ok {
 			m.emitPRDStatus(prd, old, lastDecision(prd, "project_rules_block"), nil)
 		}
 		return nil
 	}
+	// Merge the task change records and write the enabled generated
+	// artefacts before the review so it can read them.
+	m.writeGeneratedArtefacts(prd)
 	if blocked, contentFixVerdict, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
 		return err
 	} else if blocked {
 		// B124 extension — the judgment-based sibling of the
-		// deterministic check just above. Same PRDBlocked signal;
-		// see rules_review.go's own doc comment for why this is a
-		// judgment review against whatever rules file the operator
-		// configured, not a second hardcoded checklist.
-		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "rules_review_block"); ok {
+		// deterministic check just above. See rules_review.go's own doc
+		// comment for why this is a judgment review against whatever
+		// rules file the operator configured.
+		var bv GuardrailVerdict
+		if lv := lastBlockVerdict(prd.Verdicts); lv != nil {
+			bv = *lv
+		}
+		if bv.Category == "" {
+			// A content block that cannot be auto-fixed (retries spent,
+			// auto-fix off, or the total ceiling reached) holds in
+			// needs_review: the operator or supervisor adds a corrective
+			// task and runs the review again. A blocked Automaton would
+			// refuse that structural edit.
+			m.holdRulesReviewForOperator(prd, bv)
+			if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDNeedsReview, "rules_review_retries_spent", blockedReasonFromVerdicts(prd.Verdicts)); ok {
+				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
+			}
+			return nil
+		}
+		// A judge that timed out on every backend holds the PRD in
+		// needs_review instead; other categories (infra) stay blocked.
+		status, reason := rulesReviewBlockStatus(prd)
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), status, reason, blockedReasonFromVerdicts(prd.Verdicts)); ok {
 			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
 		}
 		return nil
@@ -739,18 +1127,74 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// BL410 Phase 2 — no single task/story owns a PRD-wide
 		// rules-review finding: synthesize a new, standalone
 		// corrective story+task on this SAME PRD, then recurse.
-		// Run() re-flattens tasks, executes the new one, and
-		// re-reaches this exact completion check once it's done.
+		// The retry budget is consumed only after the task exists.
 		// BL451 — skip if a concurrent reset/cancel moved the PRD.
 		if !stillRunning() {
 			m.recordRollupAborted(prd.ID, "corrective_work(rules_review)")
 			return nil
 		}
-		if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, ""); serr != nil {
-			return serr
+		attempt := prd.RetryCountsByCategory["content"] + 1
+		story, serr := m.synthesizeRulesReviewFix(prd, *contentFixVerdict, attempt)
+		if serr != nil {
+			if !stillRunning() {
+				m.recordRollupAborted(prd.ID, "corrective_work(rules_review)")
+				return nil
+			}
+			spent := prd.RetryCountsByCategory["content"]
+			failedOutcome := newRulesReviewOutcome(*contentFixVerdict, RulesReviewActionFixTaskFailed, serr.Error(),
+				attempt, m.resolveRetryPolicy(prd, "content"), spent, m.reviewNow())
+			m.store.WithLock(func() {
+				prd.Decisions = append(prd.Decisions, Decision{
+					At: m.reviewNow(), Kind: "rules_review_fix_failed", Actor: "autonomous",
+					Note: fmt.Sprintf("corrective task could not be created: %s", serr.Error()), FailureCategory: "content",
+				})
+				prd.RulesReviewOutcome = failedOutcome
+			})
+			_ = m.savePRDOwn(prd)
+			// A partly created story bumped the store revision outside this
+			// rollup's own saves; the save above replaced it, so rebase.
+			baseRev, _ = m.store.PRDRev(prd.ID)
+			baseOwn = m.rollupOwnSaves(prd.ID)
+			if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDNeedsReview, "rules_review_fix_failed", blockedReasonFromVerdicts(prd.Verdicts)); ok {
+				m.emitPRDStatus(prd, old, lastDecision(prd, "rules_review_fix_failed"), lastBlockVerdict(prd.Verdicts))
+			}
+			return nil
 		}
-		_ = m.store.SavePRD(prd)
+		if err := m.consumeRetryBudget(prd, "content"); err != nil {
+			return err
+		}
+		spent := prd.RetryCountsByCategory["content"]
+		m.recordAutoRetryDecision(prd, prd.ID, "content", spent, false)
+		createdOutcome := newRulesReviewOutcome(*contentFixVerdict, RulesReviewActionFixTaskCreated, "",
+			spent, m.resolveRetryPolicy(prd, "content"), spent, m.reviewNow())
+		m.store.WithLock(func() { prd.RulesReviewOutcome = createdOutcome })
+		if story != nil && story.Status == StoryAwaitingApproval {
+			// Nothing would run on recursion: the corrective story waits for
+			// approval, so hold the Automaton for the operator instead.
+			var old PRDStatus
+			m.store.WithLock(func() {
+				prd.Decisions = append(prd.Decisions, Decision{
+					At: m.reviewNow(), Kind: "rules_review_fix_awaiting_approval", Actor: "autonomous",
+					Note: fmt.Sprintf("corrective story %s waits for approval before it runs", story.ID), FailureCategory: "content",
+				})
+				old = prd.Status
+				prd.Status = PRDNeedsReview
+				prd.BlockedReason = blockedReasonFromVerdicts(prd.Verdicts)
+			})
+			if err := m.store.SavePRD(prd); err != nil {
+				return err
+			}
+			m.emitPRDStatus(prd, old, lastDecision(prd, "rules_review_fix_awaiting_approval"), lastBlockVerdict(prd.Verdicts))
+			return nil
+		}
+		_ = m.savePRDOwn(prd)
 		return m.Run(ctx, prd.ID, spawn, verify)
+	}
+	// The completion review passed (or did not apply): a stale block record
+	// must not stay on the view.
+	if prd.RulesReviewOutcome != nil {
+		m.store.WithLock(func() { prd.RulesReviewOutcome = nil })
+		_ = m.savePRDOwn(prd)
 	}
 	if blocked, contentFixVerdict, err := m.runPRDCompletionCIWatch(ctx, prd); err != nil {
 		return err
@@ -765,7 +1209,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// inside the PRDCompleted branch (handleWorktreeCompletion),
 		// so for them HEAD is usually unpushed here and ci-watch
 		// records a skip — see ci_watch.go's header.
-		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "ci_watch_block"); ok {
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "ci_watch_block", blockedReasonFromVerdicts(prd.Verdicts)); ok {
 			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
 		}
 		return nil
@@ -784,12 +1228,32 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		_ = m.store.SavePRD(prd)
 		return m.Run(ctx, prd.ID, spawn, verify)
 	}
+	// Last check before the Automaton is reported finished: the whole
+	// worktree must be committed, or the operator must decide. A blocked
+	// Automaton is never PRDCompleted, so the merge-pending pass never lists
+	// it as merge ready.
+	if blocked, err := m.checkWorktreeUncommittedAtFinish(ctx, prd); err != nil {
+		return err
+	} else if blocked {
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, uncommittedRollupReason, uncommittedRollupBlockedReason(prd)); ok {
+			m.emitPRDStatus(prd, old, lastDecision(prd, uncommittedHeldDecisionKind), nil)
+		}
+		return nil
+	}
 	// BL451 — commit PRDCompleted first; completion side effects only
 	// run once the status actually landed.
-	completedOld, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDCompleted, "completed")
+	completedOld, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDCompleted, "completed", "")
 	if !ok {
 		return nil
 	}
+	// Phase 4 shadow merge — record what the daemon's merge of this
+	// Automaton would do. Runs in the background and never changes the
+	// repository; a no-op unless autonomous.merge_shadow is enabled.
+	m.startMergeShadow(prd)
+	// prd is the shared stored pointer; mutate under the store lock
+	// (same discipline as the memory-report write below).
+	m.store.WithLock(func() { applyParallelMetrics(prd) })
+	m.recordProgressMilestone(prd.ID)
 	// BL387 Phase 3 — fire auto-report asynchronously on completion.
 	m.mu.Lock()
 	reportFn := m.memoryReportFn
@@ -797,7 +1261,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if reportFn != nil && prd.MemorySeed.Enabled {
 		prdID := prd.ID
 		projectDir := prd.ProjectDir
+		// Track the report goroutine so a caller can deterministically wait for
+		// it to finish (reportFn + PRD write) instead of racing it (BL387
+		// known flake: the report could still be writing when the test ended).
+		m.memoryReportWG.Add(1)
 		go func() { // #nosec G118 -- background report after PRD completion; request context already done
+			defer m.memoryReportWG.Done()
 			report, rerr := reportFn(context.Background(), prdID, projectDir)
 			if rerr != nil {
 				log.Printf("[autonomous] memory-report: prd=%s: %v", prdID, rerr)
@@ -808,8 +1277,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 			if p, ok := m.store.GetPRD(prdID); ok {
 				now := time.Now().UTC()
-				p.MemoryReport = report
-				p.MemoryReportAt = &now
+				m.store.WithLock(func() {
+					p.MemoryReport = report
+					p.MemoryReportAt = &now
+				})
 				if serr := m.store.SavePRD(p); serr != nil {
 					log.Printf("[autonomous] memory-report save: prd=%s: %v", prdID, serr)
 				}
@@ -830,12 +1301,29 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// already returned to its own caller is unsafe against
 	// anything else reading the same PRD concurrently (e.g. a
 	// REST GET while a background goroutine is still writing).
+	// Push-on-complete (final): every task is terminal and the
+	// status above really landed as PRDCompleted — rules review,
+	// CI watch and quality gates all passed — so push the work to
+	// the remote per the effective policy: the branch policy pushes
+	// the work branch, the default_branch policy fast-forwards the
+	// remote's default branch. Before handleWorktreeCompletion so
+	// its own AutoPR push (unchanged) happens after the harness
+	// push. Never changes the PRD outcome; the SavePRD below
+	// persists whatever push state was recorded.
+	m.pushValidatedWork(prd, true)
 	m.handleWorktreeCompletion(prd)
 	// BL407 Phase 3 — cluster-dispatched counterpart. Also
 	// synchronous and for the same reason: fast, bounded
 	// (open-PR only, no local push) network calls, run before
 	// anything else can observe *prd concurrently.
 	m.handleClusterCompletion(prd)
+	// Worktree cleanup — completion end path: release the work
+	// branch and its work tree when the commits are already on the
+	// base branch. The cleanup's safety criteria still apply (live
+	// session or lease, dirty work tree, retention window), and an
+	// entry they hold is left alone with the reason recorded; the
+	// coordinator's periodic cleanup pass retries later.
+	m.ReleaseAutomatonWorktree(prd)
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
@@ -878,6 +1366,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	if t.SpawnPRD {
 		return m.recurseChildPRD(ctx, prd, t, spawn, verify, retries)
 	}
+	// A daemon-run template task is performed by the daemon: no session is spawned.
+	if handled, err := m.runDaemonTemplateTask(ctx, prd, t); handled {
+		return err
+	}
+	// A final gate whose checks the daemon can run is run by the daemon too.
+	if handled, err := m.runScriptGateTask(ctx, prd, t); handled {
+		return err
+	}
+	// A restart drain holds a task that has not started until the drain ends.
+	if err := m.waitLaunchDrain(ctx); err != nil {
+		return err
+	}
 	// v8.36.1 — a fresh Run() (operator reset_task, boot-resume) starts
 	// executeOne with no in-loop retry history, but the task itself may
 	// carry context from a previous, separately-triggered attempt (see
@@ -886,7 +1386,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// own lifecycle.
 	hint := t.PriorAttemptHint
 	if hint != "" {
-		t.PriorAttemptHint = ""
+		m.store.WithLock(func() { t.PriorAttemptHint = "" })
 		_ = m.store.SaveTask(t)
 	}
 	// BL410 Phase 3 — tracks the most recent failure's category across
@@ -896,7 +1396,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// actually just happened, not a stale/zero-value vr left over from
 	// a branch that never touched it.
 	lastFailureCategory := ""
+	scopeTooBroad, scopeNote := false, ""
 	defer m.releaseCapacity(t.ID)
+	m.noteTaskStart(ctx, prd, t) // remember the base ref for the change record
 	// BL428 §3a — per-canonical-tree advisory write lock. Admit order:
 	// capacity (m.admit, per attempt) → refuse-dirty-tree gate → tree
 	// lock → spawn. The lock is held across spawn, verify and the retry
@@ -910,21 +1412,75 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if treeRelease != nil {
 			treeRelease()
 		}
+		m.detachTreeRelease(t.ID)
 	}()
+	// A read-only task (flagged, with the setting on) never takes the write
+	// lock, so it runs in the pool beside other tasks. Writers always lock.
+	readOnly := m.readOnlyTaskSkipsLock(prd, t)
 	holdTree := func() error {
 		if treeRelease != nil {
 			return nil // already held for this executeOne (idempotent)
+		}
+		if readOnly {
+			return nil
+		}
+		if werr := m.ensureTaskWorktreeFor(prd, t); werr != nil {
+			return werr
 		}
 		rel, terr := m.acquireTreeWritersLock(ctx, prd, t)
 		if terr != nil {
 			return terr
 		}
 		treeRelease = rel
+		// Design §6.ii — register the release closure so an await-external
+		// cycle (m.AwaitExternal) can release this lock while the task waits
+		// on an external condition when the tree is fully pushed, and point
+		// it at the re-claimed lock on re-admission.
+		m.attachTreeRelease(t.ID, &treeRelease)
 		return nil
 	}
 	spawn = m.capacityRetrySpawn(t, spawn)
-	for attempt := 0; attempt <= retries; attempt++ {
+	// Attempt budget. With failure escalation on, the task gets MaxFailures
+	// failed attempts counted from the last operator action. With it off, the
+	// legacy bound applies: one attempt plus auto_fix_retries.
+	esc := m.resolveFailureEscalation(prd, t)
+	budget := retries + 1
+	if esc.Enabled {
+		budget = esc.MaxFailures - m.escalationFailureCount(t)
+	}
+	var run attemptRun
+	// An executor cancelled mid-attempt (operator cancel or daemon restart)
+	// still closes the attempt it left open.
+	defer func() {
+		if ctx.Err() != nil {
+			m.recordInterruptedAttempt(prd, t, run)
+		}
+	}()
+	// inherited is true only on the first pass: a task that arrives with a
+	// session and an in-flight status was left that way by an earlier daemon
+	// run. Later passes (including re-queued ones) carry their own session.
+	inherited := true
+	// verifierRetryPending is set only when the previous attempt ended with a
+	// failed verification; it lets the next attempt consider resuming that
+	// session (see tryRetryResume). Stalls, start and infra failures never set it.
+	verifierRetryPending := false
+	for attempt := 0; attempt < budget; attempt++ {
+		// Ceiling step of the retry policy: a second ceiling failure in a row
+		// moves the task to review instead of another attempt.
+		if attempt > 0 {
+			if held, herr := m.holdAfterCeilingFailures(prd, t); held {
+				m.relocateCheckpoint(prd, t)
+				return herr
+			}
+		}
 		var err error
+		run = attemptRun{RefsBefore: len(t.AttemptRefs), AttemptsBefore: len(t.Attempts)}
+		inheritedSession := inherited
+		inherited = false
+		resumeCandidate := verifierRetryPending
+		verifierRetryPending = false
+		// Tree state before a read-only task starts; compared after it ends.
+		roBaseline, roBaselineOK := "", false
 
 		// On daemon restart the task may already be in TaskVerifying with a
 		// session that survived the restart. Skip the spawn so we don't create
@@ -932,18 +1488,144 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// the first attempt (attempt > 0 means the previous session already
 		// finished and failed verification, so we must spawn a new one).
 		skipSpawn := false
-		if attempt == 0 && t.Status == TaskVerifying && t.SessionID != "" {
+		// A live worker of this task already owns its worktree (a restart left it
+		// running while the first attempt was recorded failed): adopt it instead
+		// of spawning a second one. The attempt number and counters are kept.
+		adoptedLive := false
+		if !readOnly && t.Status != TaskVerifying {
+			adoptedLive = m.adoptLiveWorkerBeforeSpawn(prd, t, attempt, m.resolveTaskProjectDir(prd, t)) != ""
+			if adoptedLive {
+				_ = m.store.SaveTask(t)
+			}
+		}
+		if (attempt == 0 || adoptedLive) && t.SessionID != "" && (t.Status == TaskVerifying || (t.Status == TaskInProgress && t.AdoptedSession)) {
 			m.mu.Lock()
-			aliveFn := m.sessionAliveFn
+			aliveFn, outputFn, waitFn := m.sessionAliveFn, m.sessionOutputFn, m.sessionWaitFn
 			m.mu.Unlock()
-			if aliveFn != nil && aliveFn(t.SessionID) {
+			alive := aliveFn != nil && aliveFn(t.SessionID)
+			switch {
+			case alive && t.Status == TaskVerifying:
 				log.Printf("[autonomous] executeOne: task %s resuming verify for live session %s (daemon restart)", t.ID, t.SessionID)
 				m.adoptCapacity(prd, t)
 				skipSpawn = true
+				run.SessionID, run.Adopted = t.SessionID, true
+			case alive:
+				// Adopted at boot-resume: never spawn (and never reach the
+				// kill-before-respawn block). Wait for the session's completion
+				// marker, then verify it like a freshly finished worker.
+				log.Printf("[autonomous] executeOne: task %s waiting on adopted session %s (daemon restart)", t.ID, t.SessionID)
+				m.adoptCapacity(prd, t)
+				skipSpawn = true
+				run.SessionID, run.Adopted = t.SessionID, true
+				adopted := AdoptedWait{PRDID: prd.ID, TaskID: t.ID, SessionID: t.SessionID, NudgedAt: t.NudgeTimeForSession(t.SessionID)}
+				startConfirm := m.adoptedStartWatchFor(t)
+				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, adopted, startConfirm); werr != nil {
+					if ctx.Err() != nil {
+						return nil
+					}
+					m.releaseCapacity(t.ID)
+					if errors.Is(werr, ErrSessionNeverStarted) {
+						// The adopted session never produced its first assistant turn:
+						// a START failure, counted against SessionStartRetryBudget the
+						// same way as the worker path below. The normal retry budget is
+						// left untouched.
+						m.store.WithLock(func() {
+							t.AdoptedSession = false
+							t.StartFailureTail = startConfirm.failureTail()
+						})
+						exhausted, serr := m.countSessionStartFailure(ctx, prd, t, run, werr)
+						if serr != nil || exhausted {
+							return serr
+						}
+						attempt-- // offset the loop's post-iteration attempt++
+						continue
+					}
+					// A transient infrastructure failure retries the attempt on a
+					// back-off without costing the task a failure.
+					m.store.WithLock(func() { t.AdoptedSession = false })
+					act, ierr := m.handleInfraFailure(ctx, prd, t, run, werr)
+					switch act {
+					case infraFailureRetry:
+						_ = m.store.SaveTask(t)
+						attempt-- // offset the loop's post-iteration attempt++
+						continue
+					case infraFailureStop:
+						return ierr
+					}
+					// A stall or a failed/killed session takes the normal retry path:
+					// free the lease; the retry kills the leftover session and
+					// re-admits a fresh spawn like any other failed attempt.
+					lastFailureCategory = "infra"
+					hint = werr.Error()
+					if act != infraFailureCounted {
+						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeForError(werr), Category: lastFailureCategory, Summary: hint})
+					}
+					m.store.WithLock(func() { t.Error = hint; t.AdoptedSession = false })
+					_ = m.store.SaveTask(t)
+					continue
+				}
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.AdoptedSession = false
+					t.Status = TaskVerifying
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+			case t.Status == TaskVerifying:
+				// Finished while the daemon was down (boot-resume kept it
+				// verifying): its recorded output holds the marker, or the task
+				// carries a recorded worker result, so verify it instead of
+				// killing and respawning.
+				finished := t.Verification == nil && taskHasWorkerResult(t)
+				if !finished && outputFn != nil {
+					if out, ok := outputFn(t.SessionID); ok && outputHasCompletionMarker(out) {
+						finished = true
+					}
+				}
+				if finished {
+					log.Printf("[autonomous] executeOne: task %s verifying finished session %s from recorded result (daemon restart)", t.ID, t.SessionID)
+					skipSpawn = true
+					run.SessionID, run.Adopted = t.SessionID, true
+				}
 			}
 		}
 
+		// prevNode is the node the previous attempt's lease named, passed to
+		// admission as the tie breaker for this attempt's placement.
+		// Retry after a verifier failure: resume the previous session with the
+		// failure summary when the retry decision says so. A resumed attempt
+		// spawns nothing and waits on the same session, like a live session
+		// adopted on restart. The decision's outcome is carried on the run so the
+		// attempt's record says whether it resumed and why.
+		if !skipSpawn && resumeCandidate && attempt > 0 {
+			run.Resumed, run.ResumeReason = m.tryRetryResume(prd, t, hint)
+		}
+		if run.Resumed {
+			skipSpawn = true
+			run.SessionID, run.Adopted = t.SessionID, false
+			m.adoptCapacity(prd, t)
+			now := m.attemptNow()
+			oldStatus := t.Status
+			m.store.WithLock(func() {
+				t.StartedAt = &now
+				t.Status = TaskVerifying
+				t.RetryCount = attempt
+				t.PriorAttemptCount++
+			})
+			if m.store.SaveTask(t) == nil {
+				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+			}
+		}
+		prevNode := ""
 		if !skipSpawn {
+			// Never reset or restore a worktree a live session of this task owns
+			// while it holds uncommitted changes; a CleanRestart ends it first.
+			if !readOnly {
+				if gerr := m.guardLiveWorktree(ctx, prd, t, m.resolveTaskProjectDir(prd, t)); gerr != nil {
+					return fmt.Errorf("spawn: %w", gerr)
+				}
+			}
 			// Kill any session left over from a previous attempt (a failed-
 			// verification retry within this call, or a session inherited from
 			// disk after a daemon restart whose liveness check above came back
@@ -952,51 +1634,177 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// running as an orphan — wasting resources and confusing session
 			// tracking — while t.SessionID gets silently overwritten below.
 			oldStatus, oldSession := t.Status, t.SessionID
+			// The daemon restarted under this task: it holds a session and an
+			// in-flight status from the earlier run, and the liveness check
+			// above found no live worker. That is an infrastructure retry, not
+			// a failed attempt, and waits no longer than the first delay.
+			if inheritedSession && t.SessionID != "" && (t.Status == TaskInProgress || t.Status == TaskVerifying) {
+				retried, stop := m.retryAfterDaemonRestart(ctx, prd, t)
+				if stop {
+					return nil
+				}
+				if retried {
+					// Offset the loop's post-iteration attempt++: the restart
+					// costs the task no attempt. The next pass spawns the
+					// replacement (inherited is false by then).
+					attempt--
+					continue
+				}
+			}
 			if t.SessionID != "" {
 				m.mu.Lock()
 				killerFn := m.sessionKillerFn
 				m.mu.Unlock()
 				if killerFn != nil {
-					if err := killerFn(t.SessionID); err != nil {
+					why := fmt.Sprintf("task %s relaunch: the session of its previous attempt is replaced (task was %s)", t.ID, oldStatus)
+					if err := killerFn(t.SessionID, "autonomous.executor.respawn", why); err != nil {
 						log.Printf("[autonomous] executeOne: kill stale session %s for task %s before respawn: %v", t.SessionID, t.ID, err)
 					} else {
 						log.Printf("[autonomous] executeOne: killed stale session %s for task %s before respawn", t.SessionID, t.ID)
 					}
 				}
-				t.SessionID = ""
+				m.store.WithLock(func() { t.SessionID = "" })
 			}
-			now := time.Now()
-			t.StartedAt = &now
-			t.Status = TaskInProgress
-			t.RetryCount = attempt
-			// A genuine in-loop retry (attempt > 0) follows a prior attempt that
-			// already ran, so it registers as one for the verifier's already-landed
-			// check. attempt 0 is the first run and adds nothing.
-			if attempt > 0 {
-				t.PriorAttemptCount++
+			// End every other live session of this task or its worktree so the
+			// replacement is the only one.
+			if ended := m.endLiveSessionsOfTask(prd, t, "", "autonomous.executor.respawn", fmt.Sprintf("task %s relaunch: other live sessions of the task or its worktree end so the replacement is the only one", t.ID)); len(ended) > 0 {
+				m.store.WithLock(func() { recordEndedSessions(prd, t, ended, "replacement session launching") })
+				_ = m.store.SavePRD(prd)
 			}
+			// The old engine process is gone, so its slot can be freed. The
+			// lease is released here, not at the end of the attempt, because
+			// Acquire returns at once for a holder that is already admitted and
+			// the relaunch would keep the previous node without placement.
+			if prevNode = m.releaseForRelaunch(t); prevNode != "" {
+				log.Printf("[autonomous] task %s relaunch: previous attempt held node %s; admitting through placement", t.ID, prevNode)
+			}
+			now := m.attemptNow()
+			m.store.WithLock(func() {
+				t.StartedAt = &now
+				t.Status = TaskInProgress
+				t.RetryCount = attempt
+				// A genuine in-loop retry (attempt > 0) follows a prior attempt that
+				// already ran, so it registers as one for the verifier's already-landed
+				// check. attempt 0 is the first run and adds nothing.
+				if attempt > 0 {
+					t.PriorAttemptCount++
+				}
+			})
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskSession(prd, t, oldSession)
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 			}
 
 			// BL203 (v5.4.0) + BL381 — most-specific LLM override wins.
-			// per-task → per-story → per-PRD → cfg.ExecutionBackend → global session.llm_backend.
+			// per-task → per-story → per-PRD → Automation → cfg.ExecutionBackend → global session.llm_backend.
 			story := findStory(prd, t.StoryID)
-			backend, model := resolveTaskBackendModel(t, story, prd, m.cfg.ExecutionBackend)
-			effort := t.Effort
-			if effort == "" && story != nil {
-				effort = story.Effort
+			auto := m.AutomationForPRD(prd)
+			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+			// autonomous.first_attempt: a first attempt of a kind with a
+			// configured pair runs on that pair, unless the task or its
+			// Automaton pinned a worker. Retries never use it.
+			var firstAttemptReason string
+			backend, model, execSource, firstAttemptReason = applyFirstAttempt(m.cfg, t, m.escalationFailureCount(t), backend, model, execSource)
+			if firstAttemptReason != "" {
+				log.Printf("[autonomous] prd=%s task=%s %s: backend=%s model=%s", prd.ID, t.ID, firstAttemptReason, backend, model)
 			}
-			if effort == "" {
-				effort = prd.Effort
+			effort := resolveTaskEffort(t, story, prd, auto)
+			// Failure escalation: the ladder step that the failed attempts so
+			// far select replaces the worker for this attempt only. Backend,
+			// model and effort come from the same step (a model never cascades
+			// from another level), and t.Backend/t.Model are not written. A
+			// worker the operator chose in a review retry is kept instead.
+			escalated, stepIdx := false, -1
+			if esc.Enabled && !t.OperatorWorkerSet {
+				if step, idx, ok := selectEscalationStep(esc, m.escalationFailureCount(t)); ok {
+					backend, model, execSource = step.Backend, step.Model, ExecutorSourceEscalation
+					if step.Effort != "" {
+						effort = step.Effort
+					}
+					escalated, stepIdx = true, idx
+				}
+				if note := m.escalationWorkerChangeNote(t, backend, model, stepIdx); note != "" {
+					m.recordFailureEscalationDecision(prd.ID, t.ID, note, backend, model)
+				}
 			}
+			// Burn guard: an effort ceiling lowers the effort (or moves a Claude
+			// task to the cheaper backend), and the Claude retry limit routes a
+			// task off Claude or holds it once its retries are used up.
+			var ceilThinking string
+			{
+				var cheaper bool
+				effort, ceilThinking, cheaper = ApplyEffortCeiling(t, auto, effort, resolveThinkingLevel(t, story, prd, ""))
+				if cheaper && IsClaudeBackend(backend) {
+					backend, model, execSource = cheaperBackendFor, "", ExecutorSourceBurnGuard
+				}
+				var held error
+				var routed string
+				m.store.WithLock(func() {
+					routed, held = ApplyClaudeRetryLimit(t, backend, attempt > 0)
+				})
+				if held != nil {
+					oldStatus := t.Status
+					m.store.WithLock(func() {
+						t.Status = TaskWaitingDecision
+						t.WaitReason = ClaudeRetryHoldQuestion(t, currentBurnGuardLimits().RetryLimitClaude)
+						t.Error = held.Error()
+					})
+					if m.store.SaveTask(t) == nil {
+						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+					}
+					m.raiseClaudeRetryHoldQuestion(prd, t, currentBurnGuardLimits().RetryLimitClaude)
+					return held
+				}
+				if routed != backend {
+					backend, model, execSource = routed, "", ExecutorSourceBurnGuard
+				}
+			}
+			// Backstop for the Run preflight: never spawn an invalid pair.
+			if merr := validateModelForBackend(backend, model); merr != nil {
+				mismatch := fmt.Errorf("task %s not spawned: %w", t.ID, merr)
+				log.Printf("[autonomous] prd=%s task=%s model/backend mismatch, not spawning: %v", prd.ID, t.ID, merr)
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = mismatch.Error()
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+				return mismatch
+			}
+			// One model value from here on. The pairing check above judged the
+			// model as written; a pi-family model with no provider now takes the
+			// launch's provider, so admission picks the node the session runs on
+			// and the spawn, the lease and the session start all agree.
+			model = m.qualifyPiFamilyModel(backend, model)
+			// Record which level supplied the backend before the session is
+			// spawned, so it is visible while the task runs; a later attempt
+			// overwrites it.
+			m.store.WithLock(func() {
+				t.ExecutorSource = execSource
+				recordAdmittedWorker(t, execSource, backend, model)
+			})
+			_ = m.store.SaveTask(t)
+			run.Backend, run.Model, run.Effort, run.StartedAt = backend, model, effort, now
+			run.Escalated = escalated
+			run.BackendReason = describeAttemptBackendReason(execSource, taskAttemptKind(t), m.escalationFailureCount(t))
+			// Launch record: the worker profile the launch names (most-specific
+			// task-level name first) and the starting context it generates. The
+			// attempt record estimates the worker's startup token size from it
+			// (the estimated source); a launch without a named profile carries
+			// both empty and records zero tokens.
+			spawnProfile, profileApplied := m.applyWorkerProfileToRun(prd, t, &run)
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode
 			if permMode == "" {
 				permMode = prd.PermissionMode
 			}
+			// Most-specific pi --thinking override wins: per-task →
+			// per-story → per-PRD → the session manager's configured
+			// pi.thinking_level (applied when the resolved value is empty).
+			thinkingLevel := ceilThinking
 			lspLang := t.LSPLanguage
 			if lspLang == "" {
 				lspLang = prd.LSPLanguage
@@ -1007,11 +1815,46 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				contextPrepend = m.contextFn(prd.Type)
 			}
 			m.mu.Unlock()
-			if aerr := m.admit(ctx, prd, t, backend, model, capacity.RoleWorker); aerr != nil {
+			m.resetCapacityWait(t.ID) // each relaunch is a new admission
+			if aerr := m.admitPreferring(ctx, prd, t, backend, model, capacity.RoleWorker, prevNode); aerr != nil {
 				if errors.Is(aerr, errCancelledWhileWaiting) {
 					return nil
 				}
 				return aerr
+			}
+			// A fall-through admission leased the alternate's pools: spawn there.
+			if alt, ok := m.fallthroughOf(t.ID); ok {
+				backend, model = alt.Backend, alt.Model
+			}
+			// A multi-node LLM entry needs its model resident on the leased node
+			// before the spawn; a single-node entry skips this step entirely.
+			lerr := m.loadWorkerNode(ctx, prd, t, backend, model)
+			m.resetCapacityWait(t.ID) // admission, failover included, is over
+			if lerr != nil {
+				if errors.Is(lerr, errCancelledWhileWaiting) {
+					return nil
+				}
+				return lerr
+			}
+			// The node the lease was granted on decides where the worker runs.
+			if rerr := m.replaceStaleLease(ctx, prd, t, backend, model); rerr != nil {
+				if errors.Is(rerr, errCancelledWhileWaiting) {
+					return nil
+				}
+				return rerr
+			}
+			heldNode := m.heldNode(t.ID)
+			if nerr := m.requireLeasedNode(t, backend, model, heldNode); nerr != nil {
+				log.Printf("[autonomous] prd=%s task=%s no node leased, not spawning: %v", prd.ID, t.ID, nerr)
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = nerr.Error()
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+				return nerr
 			}
 			// BL428 §3a — tree lock after capacity, before spawn: a second
 			// writer on the same canonical tree waits here (visible as a
@@ -1023,36 +1866,87 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return terr
 			}
+			if readOnly {
+				roBaseline, roBaselineOK = m.readOnlyTreeStatus(ctx, prd, t)
+			}
 			// BL447: lint against the task's own resolved dir/write scope.
-			if problems := LintTaskScopeFor(prd, t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
-				return fmt.Errorf("scope: %s (edit the task or widen the PRD read/write dirs)", strings.Join(problems, "; "))
+			// scope_lint decides what a hit does: enforce blocks the task,
+			// warn records it and spawns anyway, off skips the lint.
+			if mode := m.effectiveScopeLint(prd); mode != scopeLintOff {
+				if problems := LintTaskScopeFor(prd, t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
+					if mode == scopeLintEnforce {
+						return fmt.Errorf("scope: %s (task not spawned)", strings.Join(problems, "; "))
+					}
+					m.recordScopeLintWarn(prd, t, problems)
+				}
 			}
 			// BL447: cwd, scope block and pre-task capture anchor to the
 			// task's resolved dir (override or PRD.ProjectDir).
 			taskDir := m.resolveTaskProjectDir(prd, t)
+			// Never start a worker in a directory that is not a real worktree.
+			if rerr := m.refuseLaunchOutsideWorktree(prd, t, taskDir); rerr != nil {
+				return rerr
+			}
+			// Pre-start verifier check: a task whose verification script is
+			// missing, not executable, shebang-less or outside the project is
+			// blocked (mode on) before any worker starts.
+			if verr := m.gateVerifierPrestart(prd, t, taskDir); verr != nil {
+				return verr
+			}
+			// retryHint is the fix context this spawn carries (a failed
+			// verification, a guardrail's findings, or a prior attempt's
+			// report). A non-empty hint is what marks the launch as an
+			// auto-fix attempt: TaskLaunchKind reads the same value as the
+			// launch session's kind.
+			retryHint := m.escalationRetryHint(prd, t, hint)
+			// prd is the shared map pointer: while this task builds its spawn
+			// request a sibling task of the same PRD may be writing
+			// prd.Git.PushState/PushWarning via recordPushOutcome under
+			// store.WithLock. The raw reads of prd.Git, prd.ProjectProfile and
+			// prd.WriteDirs below would race that write under -race, so take a
+			// value snapshot under the store lock (TaskSnapshot discipline) and
+			// build the git-related spawn fields from it.
+			var snapGit GitWorkflow
+			var snapProjectProfile string
+			var snapWriteDirs []string
+			m.store.WithLock(func() {
+				snapGit = prd.Git
+				snapProjectProfile = prd.ProjectProfile
+				snapWriteDirs = append([]string(nil), prd.WriteDirs...)
+			})
+			snapAutoCommits := prdAutoCommits(&PRD{
+				Git:            snapGit,
+				ProjectProfile: snapProjectProfile,
+				WriteDirs:      snapWriteDirs,
+			})
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
-				TaskID:           t.ID,
-				StoryID:          t.StoryID,
-				PRDID:            t.PRDID,
-				Title:            t.Title,
-				Spec:             TaskScopeBlock(prd, t) + "\n" + t.Spec,
-				ProjectDir:       taskDir,
-				Backend:          backend,
-				Effort:           effort,
-				Model:            model,
-				PermissionMode:   permMode,
-				RetryHint:        hint,
-				ProjectProfile:   prd.ProjectProfile, // v5.26.19
-				ClusterProfile:   prd.ClusterProfile, // v5.26.19
-				Branch:           prd.Git.Branch,     // BL407 Phase 4
-				ContextPrepend:   contextPrepend,     // BL244
-				LSPLanguage:      lspLang,
-				MemorySeed:       prd.MemorySeed,                 // BL386 Phase 1
-				SkipDirtyCapture: prd.Git.Branch != "",           // worktree mode: nothing pre-dirty to protect
-				WriteScope:       EffectiveTaskWriteDirs(prd, t), // auto-commit staging scope
-				AttemptRefs:      t.AttemptRefs,                  // preserved attempt work to restore
-				CleanRestart:     t.CleanRestart,                 // operator clean restart: skip the restore once
+				TaskID:               t.ID,
+				StoryID:              t.StoryID,
+				PRDID:                t.PRDID,
+				Title:                t.Title,
+				Spec:                 m.withRulesContextBlock(TaskScopeBlock(prd, t)+"\n"+t.Spec, taskDir, backend),
+				ProjectDir:           taskDir,
+				Backend:              backend,
+				Effort:               effort,
+				Model:                model,
+				PermissionMode:       permMode,
+				ThinkingLevel:        thinkingLevel,
+				RetryHint:            retryHint,
+				ProjectProfile:       snapProjectProfile,           // v5.26.19
+				ClusterProfile:       prd.ClusterProfile,           // v5.26.19
+				Branch:               snapGit.Branch,               // BL407 Phase 4
+				Git:                  snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				ContextPrepend:       contextPrepend,               // BL244
+				LSPLanguage:          lspLang,
+				WorkerProfile:        spawnProfile,
+				WorkerProfileApplied: profileApplied,
+				MemorySeed:           prd.MemorySeed,                                               // BL386 Phase 1
+				SkipDirtyCapture:     snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
+				WriteScope:           readOnlyWriteScope(readOnly, EffectiveTaskWriteDirs(prd, t)), // auto-commit staging scope
+				AttemptRefs:          t.AttemptRefs,                                                // preserved attempt work to restore
+				CleanRestart:         t.CleanRestart,                                               // operator clean restart: skip the restore once
+				ComputeNode:          heldNode,                                                     // capacity lease's node: where the worker runs
 			})
 			if err != nil && errors.Is(err, errCancelledWhileWaiting) {
 				return nil
@@ -1060,15 +1954,59 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// The spawn ran with the restore skipped (if clean restart was set),
 			// so the request is spent. Clear it, success or failure, so later
 			// automatic retries restore again.
-			t.CleanRestart = false
+			m.store.WithLock(func() { t.CleanRestart = false })
 			if err != nil {
+				// A spawn error means the worker never started, so it is judged as
+				// an infrastructure failure. The wrap is for classification only:
+				// the error returned when it is not retried keeps its own text. A
+				// capacity, workspace-lock or cooldown refusal is a wait, not a
+				// fault, and is never wrapped.
+				if !isSpawnWaitError(err) {
+					spawnErr := &InfraSpawnError{Cause: err}
+					act, ierr := m.handleInfraFailure(ctx, prd, t, run, spawnErr)
+					switch act {
+					case infraFailureRetry:
+						attempt-- // offset the loop's post-iteration attempt++
+						continue
+					case infraFailureStop:
+						return ierr
+					case infraFailureCounted:
+						// The retries are used up and the failure is booked as an
+						// ordinary one that ends the task here. Say why it failed,
+						// so the tasks behind it are marked and recover with it.
+						m.markInfraCounted(t, spawnErr)
+					}
+				}
 				return fmt.Errorf("spawn: %w", err)
+			}
+			run.SessionID = sr.SessionID
+			run.Adopted = false
+			if sr.ProfileFallbackReason != "" {
+				m.noteProfileFallback(&run, sr.ProfileFallbackReason)
 			}
 			if led := m.Capacity(); led != nil {
 				led.Bind(t.ID, sr.SessionID)
 			}
-			oldSession = t.SessionID
-			t.SessionID = sr.SessionID
+			placedNode := sr.ComputeNode
+			if placedNode == "" {
+				placedNode = heldNode
+			}
+			m.store.WithLock(func() {
+				oldSession = t.SessionID
+				t.SessionID = sr.SessionID
+				t.ComputeNode = placedNode
+			})
+			// placement-tags: the session's system tags now say where it runs —
+			// which node, which backend and model, which lane and role, which
+			// project, under which automation. A retry on another node re-tags
+			// the same session: SetSystemTags replaces the whole list, so the
+			// old node's compute and peer tags are gone. Master switch off
+			// clears the list instead of writing (TagTaskPlacement).
+			// An auto-fix launch is read as an auto-fix, not a task: a
+			// re-run carrying the fix context (retryHint) or a synthesized
+			// "Auto-fix: " corrective task gets kind auto-fix; an ordinary
+			// first run keeps kind task.
+			m.TagTaskPlacement(t.ID, sr.SessionID, m.workerLaunchPlacement(prd, placedNode, backend, model, path.Base(taskDir), TaskLaunchKind(t, retryHint)))
 			// persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskSession(prd, t, oldSession)
@@ -1084,14 +2022,22 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					}
 				}
 			}
-			t.PreTaskSHA = sr.PreTaskSHA // BL366: persisted for verifier diff grounding
-			if t.BaseSHA == "" && sr.PreTaskSHA != "" {
-				t.BaseSHA = sr.PreTaskSHA // per-task anchor: only the first attempt sets it; retries never overwrite
-			}
-			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
-			t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
-			oldStatus = t.Status
-			t.Status = TaskVerifying
+			m.store.WithLock(func() { t.PreTaskSHA = sr.PreTaskSHA }) // BL366: persisted for verifier diff grounding
+			// BaseSHA anchors the task's FIRST attempt only. Gate on attempt == 0,
+			// not on BaseSHA being empty: when attempt 1 captured no HEAD (no
+			// commits yet) BaseSHA stays empty, and a retry would otherwise adopt
+			// its own pre-task HEAD, which already includes attempt 1's commit.
+			// Repro: TestBaseSHA_RetryDoesNotAdoptRetryHeadWhenFirstAttemptHadNoHead
+			// (task_base_sha_retry_test.go).
+			m.store.WithLock(func() {
+				if attempt == 0 && t.BaseSHA == "" && sr.PreTaskSHA != "" {
+					t.BaseSHA = sr.PreTaskSHA // per-task anchor: set once on the first attempt, never by retries
+				}
+				t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
+				t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
+				oldStatus = t.Status
+				t.Status = TaskVerifying
+			})
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 			}
@@ -1112,10 +2058,38 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 
 		var vr VerificationResult
 		if verify != nil {
-			vr, err = verify(ctx, prd, t)
+			var idleHeld bool
+			vr, idleHeld, err = m.verifyRetryingIdle(ctx, prd, t, verify)
+			if idleHeld {
+				return err
+			}
 			if err != nil {
 				if errors.Is(err, errCancelledWhileWaiting) {
 					return nil
+				}
+				// A spawned session that never produced its first assistant
+				// turn (or whose prompt was never submitted) is a START
+				// failure, not a verification failure — checked before the stall
+				// branch because the daemon's wait loop wraps BOTH sentinels in
+				// the same stall error (ErrSessionNeverStarted must win).
+				if errors.Is(err, ErrSessionNeverStarted) {
+					exhausted, serr := m.countSessionStartFailure(ctx, prd, t, run, err)
+					if serr != nil || exhausted {
+						return serr
+					}
+					attempt-- // offset the loop's post-iteration attempt++
+					continue
+				}
+				// A session killed before delivery (a launch failure arrives as a
+				// stall too) or a storage write error is an infrastructure failure:
+				// retry it before the generic stall retry sees it.
+				act, ierr := m.handleInfraFailure(ctx, prd, t, run, err)
+				switch act {
+				case infraFailureRetry:
+					attempt-- // offset the loop's post-iteration attempt++
+					continue
+				case infraFailureStop:
+					return ierr
 				}
 				if errors.Is(err, ErrWorkerStalled) {
 					// A stall (SSE, or no log output past stale_task_seconds) is a
@@ -1126,11 +2100,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// free its capacity lease now; the retry re-admits through
 					// the normal queue like any other waiting task.
 					m.releaseCapacity(t.ID)
+					log.Printf("[autonomous] task %s/%s: stall retry %d of %d after session %s (%s)", prd.ID, t.ID, attempt+1, budget-attempt-1, t.SessionID, StallRetryReason(err))
 					hint = err.Error()
+					if act != infraFailureCounted {
+						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeStalled, Category: lastFailureCategory, Summary: hint})
+					}
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {
 						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 					}
-					t.Error = hint
+					m.store.WithLock(func() {
+						t.Error = hint
+					})
 					_ = m.store.SaveTask(t)
 					continue
 				}
@@ -1139,11 +2119,81 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		} else {
 			vr = VerificationResult{OK: true, Summary: "no verifier configured", VerifiedAt: time.Now()}
 		}
-		t.Verification = &vr
-		// Foreign-file drift: deterministic, once per worker attempt.
-		// Warn-only by default; a strict-mode block halts the walk the
-		// same way a per-task guardrail block does below.
+		// A read-only task must leave the tree as it found it. Checked here, after
+		// verify has waited for the worker to finish: spawn only starts the session,
+		// so an earlier check would miss changes the worker makes while it runs.
+		// The baseline is the tree status taken before spawn; a writer running
+		// beside this task on the same tree (no lock is held) can also make the
+		// status differ, which fails the task. Operators who flag a task read-only
+		// should not run writers on the same tree at the same time.
+		if readOnly && roBaselineOK {
+			// Report files a read-only task left under docs/plans/reports/ are
+			// moved (or deleted, on a name clash) into .datawatch/reports/ first,
+			// so they do not count as a change; anything else still fails below.
+			m.settleReadOnlyReportFiles(ctx, prd, t, roBaseline)
+			if verr := m.readOnlyViolation(ctx, prd, t, roBaseline); verr != nil {
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = verr.Error()
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+				return verr
+			}
+		}
+
+		// The attempt got past delivery and produced a verification result, so an
+		// earlier infrastructure incident is over. A failed result the verifier
+		// itself marks as an infrastructure failure, and whose summary reports a
+		// storage write error, is still that incident. A content failure is never
+		// read as one, even when its text quotes such a phrase.
+		infraText := ""
+		if !vr.OK && vr.Category == "infra" && isInfraText(vr.Summary) {
+			infraText = vr.Summary
+		}
+		textCounted := false
+		if infraText != "" {
+			act, ierr := m.handleInfraFailure(ctx, prd, t, run, errors.New(infraText))
+			switch act {
+			case infraFailureRetry:
+				attempt-- // offset the loop's post-iteration attempt++
+				continue
+			case infraFailureStop:
+				return ierr
+			}
+			textCounted = act == infraFailureCounted
+		} else {
+			m.store.WithLock(func() { clearInfraRetryCount(t) })
+		}
+		vrFinal := vr
+		m.store.WithLock(func() { t.Verification = &vrFinal })
+		// Protected paths: deterministic, once per worker attempt, whatever
+		// the verifier said and in direct and worktree mode alike. A hold
+		// parks the task (the way the uncommitted-work hold does); the block
+		// action leaves it blocked with no question and the walk stops here,
+		// as it does for a file-drift block.
+		if held, perr := m.checkProtectedPaths(ctx, prd, t); perr != nil {
+			return perr
+		} else if held {
+			return nil
+		}
+		if m.protectedPathsBlockedTask(t) {
+			return m.store.SaveTask(t)
+		}
+		// File drift: deterministic, once per worker attempt.
+		// Pre-existing findings block under DriftMode "block" (the default)
+		// unless the PRD/profile explicitly opts out; in-run findings
+		// (the worker's own commits) never block. A block halts the walk
+		// the same way a per-task guardrail block does below.
 		if m.checkForeignFileDrift(ctx, prd, t) {
+			return m.store.SaveTask(t)
+		}
+		// Undeclared edits: the worker's own edits outside
+		// FilesPlanned ∪ FilesGenerated. Runs after the drift step, so a
+		// drift block fires first and this is not reached that attempt.
+		if m.checkUndeclaredEdits(ctx, prd, t) {
 			return m.store.SaveTask(t)
 		}
 		if vr.OK {
@@ -1153,45 +2203,122 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// captured in that same dir (qualityGateBaselines.forDir).
 			qgDir := m.resolveTaskProjectDir(prd, t)
 			if base, ok := qgBaselines.forDir(qgDir); ok {
-				current := runQualityGateTests(qgCfg.TestCommand, qgDir, qgCfg.Timeout)
-				cmp := pipeline.CompareResults(base, current)
-				t.QualityGateResult = &cmp
+				// Gate scope: plan (final gate tasks and full scopes run the
+				// configured command with the full baseline; scoped plans run
+				// the scoped command against the restricted baseline, falling
+				// back to the full run with the reason kept on the plan),
+				// evaluate, and for non-full scopes also run vet, folding new
+				// vet failures in as regressions. The plan is persisted on the
+				// result for later tracing (QualityGateResult.ScopePlan).
+				cmp := m.runScopedQualityGate(prd, t, qgDir, qgCfg, qgBaselines, base)
+				storedGate := cmp
+				m.store.WithLock(func() { t.QualityGateResult = &storedGate })
 				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
 				metrics.QualityGateRunsTotal.Inc()
-				if cmp.Regression {
+				// The verifier PASSED, so whatever the gate reports
+				// (confirmed regression or unusable) is a disagreement the
+				// operator's gate_disagreement policy decides.
+				policy := m.gateDisagreementPolicy()
+				switch {
+				case cmp.Invalid:
+					// An unusable baseline or run never blocks under ANY
+					// policy: it warns only, and counts as neither a pass nor
+					// a regression in the metrics.
+					cmp.Summary = "gate invalid (warning): " + cmp.InvalidReason
+					m.store.WithLock(func() {
+						t.QualityGateResult = &cmp
+						t.GateDisagreement = &GateDisagreement{
+							VerifierOK: true, GateInvalid: true,
+							Policy: policy, Summary: cmp.Summary,
+						}
+					})
+					log.Printf("[autonomous] %s/%s WARNING: quality-gate invalid (policy=%s, never blocks): %s", prd.ID, t.ID, policy, cmp.InvalidReason)
+					m.recordGateDisagreementDecision(prd.ID, t.ID, policy, "invalid gate (never blocks): "+cmp.InvalidReason)
+				case cmp.Regression:
 					metrics.QualityGateRegressionTotal.Inc()
-				} else {
+					m.store.WithLock(func() {
+						t.GateDisagreement = &GateDisagreement{
+							VerifierOK: true, GateRegression: true,
+							Policy: policy, Summary: cmp.Summary,
+						}
+					})
+					if policy == "block" {
+						// Confirmed regression from a valid baseline: fail the
+						// task with no auto-fix retry. The operator chose block
+						// on this disagreement, so an automated rewrite must
+						// not get to re-pass the verifier with the gate still
+						// red. Run re-reads the stored task and rolls the
+						// Automaton up from the TaskFailed status.
+						m.recordGateDisagreementDecision(prd.ID, t.ID, policy, "blocked: verifier ok, gate regression — "+cmp.Summary)
+						oldStatus := t.Status
+						m.store.WithLock(func() {
+							t.Status = TaskFailed
+							t.Error = "gate_disagreement: " + cmp.Summary
+						})
+						m.releaseCapacity(t.ID)
+						if m.store.SaveTask(t) == nil {
+							m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+						}
+						return nil
+					}
+					// Policy "warn" (default): record and let the task
+					// complete, unless the per-Automaton knob below says
+					// regressions are fatal.
+					log.Printf("[autonomous] %s/%s WARNING: verifier passed but quality gate reports a regression (policy=%s): %s", prd.ID, t.ID, policy, cmp.Summary)
+					m.recordGateDisagreementDecision(prd.ID, t.ID, policy, "warn: verifier ok, gate regression — "+cmp.Summary)
+					if qgCfg.BlockOnRegression {
+						lastFailureCategory = "policy" // BL410 Phase 3
+						oldStatus := t.Status
+						m.store.WithLock(func() {
+							t.Status = TaskFailed
+							t.Error = "quality_gate_regression: " + cmp.Summary
+						})
+						if m.store.SaveTask(t) == nil {
+							m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+						}
+						// Fold regression summary into retry hint so the next attempt
+						// knows what broke.
+						hint = "quality gate regression: " + cmp.Summary
+						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: hint, Verification: vr, EndReason: attemptEndVerifierFailed})
+						if cp := m.relocateCheckpoint(prd, t); cp != "" {
+							hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
+						}
+						_ = m.store.SaveTask(t)
+						continue // try auto-fix retry with regression context
+					}
+				default:
 					metrics.QualityGatePassTotal.Inc()
 				}
-				if cmp.Regression && qgCfg.BlockOnRegression {
-					lastFailureCategory = "policy" // BL410 Phase 3
-					oldStatus := t.Status
-					t.Status = TaskFailed
-					t.Error = "quality_gate_regression: " + cmp.Summary
-					if m.store.SaveTask(t) == nil {
-						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
-					}
-					// Fold regression summary into retry hint so the next attempt
-					// knows what broke.
-					hint = "quality gate regression: " + cmp.Summary
-					if cp := m.relocateCheckpoint(prd, t); cp != "" {
-						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
-					}
-					_ = m.store.SaveTask(t)
-					continue // try auto-fix retry with regression context
-				}
+			}
+			// A task whose work is not committed is not complete. The check
+			// commits the task's own leftover files and holds the task (the
+			// way the setup-fault hold above does, consuming none of the
+			// auto_fix_retries budget) when files stay uncommitted. It runs
+			// before the post-verify SHA is captured so a rescue commit is
+			// the commit that gets pinned.
+			if held, herr := m.checkUncommittedWork(ctx, prd, t); herr != nil {
+				return herr
+			} else if held {
+				return nil
 			}
 			done := time.Now()
-			t.CompletedAt = &done
+			m.store.WithLock(func() {
+				t.CompletedAt = &done
+				clearInfraRetryCount(t)
+			})
 			// Pin this task's own commit (HEAD in its resolved dir — BL465
 			// fires the deterministic commit at DATAWATCH_COMPLETE, before
 			// verify) so the PRD-completion CI guardrail watches that commit
 			// instead of whatever live HEAD is at roll-up time. Best-effort:
 			// a capture failure leaves PostVerifySHA empty and the guardrail
 			// falls back to live HEAD; it must never fail the task.
-			t.PostVerifySHA = CapturePostVerifySHA(ctx, m.resolveTaskProjectDir(prd, t), m.driftGit)
-			preDoneStatus := t.Status
-			t.Status = TaskCompleted
+			postSHA := CapturePostVerifySHA(ctx, m.resolveTaskProjectDir(prd, t), m.driftGit)
+			var preDoneStatus TaskStatus
+			m.store.WithLock(func() {
+				t.PostVerifySHA = postSHA
+				preDoneStatus = t.Status
+				t.Status = TaskCompleted
+			})
 			// Sweep any leftover CHECKPOINT.md out of the shared
 			// project_dir now that the task is done — nothing will ever
 			// need to resume it again.
@@ -1202,7 +2329,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if blocked, contentHint, err := m.runPerTaskGuardrails(ctx, prd, t); err != nil {
 				return err
 			} else if blocked {
-				t.Status = TaskBlocked
+				m.store.WithLock(func() {
+					t.Status = TaskBlocked
+				})
 				if err := m.store.SaveTask(t); err != nil {
 					return err
 				}
@@ -1216,10 +2345,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// quality-gate regression already does above.
 				lastFailureCategory = "" // BL410 Phase 3 — content
 				hint = contentHint
-				t.Error = hint
+				m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: hint, Verification: vr, EndReason: attemptEndVerifierFailed})
+				m.store.WithLock(func() {
+					t.Error = hint
+				})
 				_ = m.store.SaveTask(t)
 				continue
 			}
+			// Build and save the task's change record (never fails the task).
+			m.recordTaskChange(prd, t)
 			// BL386 Phase 2 — harvest session-local memories after task completes.
 			if t.SessionID != "" && prd.MemoryHarvest.Enabled {
 				m.mu.Lock()
@@ -1234,6 +2368,19 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if err := m.store.SaveTask(t); err != nil {
 				return err
 			}
+			// Fold the task branch into the PRD branch (no-op without one).
+			if _, merr := m.MergeTaskBranch(ctx, prd, t); merr != nil {
+				log.Printf("[autonomous] %s/%s task merge: %v", prd.ID, t.ID, merr)
+				// Leave the task visibly waiting, not without a merge state.
+				if t.WorktreeBranch != "" && t.MergeState == "" {
+					m.setMergeState(t, MergeStatePending, "")
+				}
+			}
+			// A task deferred behind an earlier sibling or dependency may be
+			// mergeable now: run the ordered pass over the whole PRD.
+			if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
+				log.Printf("[autonomous] %s task merge pass: %v", prd.ID, merr)
+			}
 			// v9.2.1 — passing-script retry: verification passed via the
 			// unmodified-retry escape hatch (the retry itself produced no diff;
 			// already-committed work passed the verification script). Append the
@@ -1246,6 +2393,25 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 			m.emitTaskStatus(prd, t, preDoneStatus, nil, nil)
+			// Push-on-complete (per task): the task is verified and saved
+			// as TaskCompleted, so harness-push the work per the effective
+			// policy. Release the per-task tree-writers lock FIRST (the
+			// defer below would otherwise hold it across the push): a slow
+			// remote push must not extend the tree critical section — the
+			// lock serializes tree WRITES only, and this push is read-only
+			// on the tree (no new commits, no file writes), so releasing
+			// early is safe and keeps sibling workers from ever seeing
+			// this lock as an over-held (stale) record.
+			if treeRelease != nil {
+				treeRelease()
+				treeRelease = nil
+			}
+			// pushValidatedWork never returns an error and never mutates
+			// task state — a push problem is recorded on the PRD
+			// (PushState/PushWarning + alert) and the task outcome stands.
+			// One call site serves both the sequential walk and the
+			// concurrent-pool path (both funneled through executeOne).
+			m.pushValidatedWork(prd, false)
 			m.deleteTaskSession(t.SessionID)
 			return nil
 		}
@@ -1273,12 +2439,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// the auto_fix_retries budget.
 		if vr.Category == "setup" {
 			oldStatus := t.Status
-			t.Status = TaskBlocked
-			t.Error = vr.Summary
-			t.FailureReason = &FailureReason{
-				Category: "setup", Source: "setup-fault", Retryable: false,
-				Detail: vr.Summary, OccurredAt: time.Now(),
-			}
+			m.store.WithLock(func() {
+				t.Status = TaskBlocked
+				t.Error = vr.Summary
+			})
+			m.store.WithLock(func() {
+				t.FailureReason = &FailureReason{
+					Category: "setup", Source: "setup-fault", Retryable: false,
+					Detail: vr.Summary, OccurredAt: time.Now(),
+				}
+			})
 			if err := m.store.SaveTask(t); err != nil {
 				return err
 			}
@@ -1286,6 +2456,26 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return nil
 		}
 		lastFailureCategory = vr.Category // BL410 Phase 3
+		// Scope-breadth read: content failures only, before the retry decision.
+		// Never blocks; an error leaves the flag false with an infra note.
+		if tb, note := m.scopeBreadthFor(ctx, prd, t, vr); tb || note != "" {
+			scopeTooBroad, scopeNote = tb, note
+		}
+		// No-retry: if this failure has no route to a fix through another
+		// attempt, record the attempt carrying the reason and hold the task for
+		// operator review without starting another attempt. This runs before the
+		// attempt is recorded below, so the recorded failures it sees are exactly
+		// the ones before this one. Only with the escalation (review-hold) policy
+		// on; otherwise the task takes the ordinary retry/failed path.
+		if esc.Enabled {
+			if reason, noRetry := m.noRetryFailHold(prd, t, vr); noRetry {
+				return m.holdForNoRetry(ctx, prd, t, run, lastFailureCategory, vr.Summary, reason)
+			}
+		}
+		if !textCounted {
+			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr, EndReason: attemptEndVerifierFailed})
+		}
+		verifierRetryPending = true
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
 			hint += "\nIssues:\n- " + joinLines(vr.Issues)
@@ -1294,16 +2484,30 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 		}
 	}
+	// Failure escalation: with the policy on, the task is held for operator
+	// review rather than marked failed. Disabled, the legacy path below runs.
+	if esc.Enabled {
+		// No more attempts are coming, so sweep any leftover CHECKPOINT.md,
+		// as the legacy exhaustion path does.
+		m.relocateCheckpoint(prd, t)
+		return m.holdTaskForReview(prd, t, lastFailureCategory, hint)
+	}
 	exhaustedOld := t.Status
-	t.Status = TaskFailed
+	m.store.WithLock(func() {
+		t.Status = TaskFailed
+	})
 	// A budget-exhausted task must carry the final failing verdict's output
 	// (summary + issues — e.g. a failed verification script's output) into
 	// Task.Error, not just a bare status: FailureReason.Detail already does,
 	// and Task.Error is where operators look first.
 	if hint != "" {
-		t.Error = "verification failed after retries\n" + hint
+		m.store.WithLock(func() {
+			t.Error = "verification failed after retries\n" + hint
+		})
 	} else {
-		t.Error = "verification failed after retries"
+		m.store.WithLock(func() {
+			t.Error = "verification failed after retries"
+		})
 	}
 	// BL410 Phase 3 — Learning writer revival: record the final,
 	// budget-exhausted failure for future pattern analysis. Fires once,
@@ -1315,10 +2519,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// task.failurereason/story.failurereason?"). Same data
 	// recordFailureLearning already has, structured instead of a bare
 	// string, additive alongside the existing t.Error.
-	t.FailureReason = &FailureReason{
-		Category: orContentCategory(lastFailureCategory), Detail: hint,
-		Source: "task-exhausted", Retryable: false, OccurredAt: time.Now(),
-	}
+	m.store.WithLock(func() {
+		t.FailureReason = &FailureReason{
+			Category: orContentCategory(lastFailureCategory), Detail: hint,
+			Source: "task-exhausted", Retryable: false, OccurredAt: time.Now(),
+			ScopeTooBroad: scopeTooBroad, ScopeBreadthNote: scopeNote,
+		}
+	})
 	// No more attempts coming — sweep any leftover CHECKPOINT.md too.
 	m.relocateCheckpoint(prd, t)
 	if err := m.store.SaveTask(t); err != nil {
@@ -1331,6 +2538,129 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 
 // deleteTaskSession calls sessionDeleteFn (if wired) to remove an ephemeral
 // executor session from the session list after its task reaches terminal state.
+// countSessionStartFailure books one session start failure of t against
+// SessionStartRetryBudget. Below the budget the task keeps cause as its error
+// and the caller re-queues the same attempt. Past the budget the task fails
+// with the standard exhaustion shape, keeping its StartFailureTail for
+// post-mortem, and its session is deleted; exhausted reports that. The normal
+// PRD retry budget is never touched here.
+func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Task, run attemptRun, cause error) (exhausted bool, err error) {
+	var startFailures int
+	m.store.WithLock(func() {
+		t.StartFailures++
+		startFailures = t.StartFailures
+	})
+	if startFailures > SessionStartRetryBudget {
+		oldStatus := t.Status
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = SessionStartFailureReason
+			t.FailureReason = &FailureReason{
+				Category:   "infra",
+				Detail:     fmt.Sprintf("%s (%d consecutive start failures)", SessionStartFailureReason, t.StartFailures),
+				Source:     "session-start",
+				Retryable:  false,
+				OccurredAt: time.Now(),
+			}
+		})
+		log.Printf("[autonomous] task %s failed: %s after %d consecutive start failures",
+			t.ID, SessionStartFailureReason, t.StartFailures)
+		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), EndReason: attemptEndLaunchRefused, EndDetail: cause.Error()})
+		m.recordFailureLearning(prd, t.ID, "infra", t.FailureReason.Detail)
+		m.relocateCheckpoint(prd, t)
+		if serr := m.store.SaveTask(t); serr != nil {
+			return true, serr
+		}
+		m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+		m.deleteTaskSession(t.SessionID)
+		return true, nil
+	}
+	// Below budget: re-queue the SAME attempt. The normal retry budget is left
+	// untouched and no RetryPolicy category is recorded.
+	log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
+		t.ID, t.StartFailures, SessionStartRetryBudget)
+	m.store.WithLock(func() { t.Error = cause.Error() })
+	m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), Requeue: true, EndReason: attemptEndLaunchRefused, EndDetail: cause.Error()})
+	_ = m.store.SaveTask(t)
+	return false, nil
+}
+
+// infraFailureAction is what handleInfraFailure decided for one failed attempt.
+type infraFailureAction int
+
+const (
+	// infraFailureNone: not retried; the caller follows its existing failure path.
+	infraFailureNone infraFailureAction = iota
+	// infraFailureRetry: the attempt is recorded and waited out; run it again.
+	infraFailureRetry
+	// infraFailureStop: the caller returns the accompanying error (nil when the
+	// context ended during the wait).
+	infraFailureStop
+	// infraFailureCounted: the retries are used up and the failure was counted as
+	// one normal failed attempt; the caller continues its failure path without
+	// recording the attempt again.
+	infraFailureCounted
+)
+
+// handleInfraFailure decides what the error that ended one attempt means for
+// the infrastructure retry. A retried failure releases the capacity lease,
+// records the attempt as re-queued (it does not count toward the task's
+// failures, auto_fix_retries or the Automaton's retry ceiling), records the
+// retry and waits out the back-off. Anything else, including a disabled
+// feature or an error that is not transient, returns infraFailureNone.
+func (m *Manager) handleInfraFailure(ctx context.Context, prd *PRD, t *Task, run attemptRun, err error) (infraFailureAction, error) {
+	if err == nil || ctx.Err() != nil {
+		return infraFailureNone, nil
+	}
+	if plan, ok := m.planInfraRetry(prd, t, err); ok {
+		m.releaseCapacity(t.ID)
+		log.Printf("[autonomous] prd=%s task=%s: infrastructure failure (%s), retry %d of %d in %s: %v",
+			prd.ID, t.ID, plan.Class, plan.Number, plan.MaxTries, plan.Delay, err)
+		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{
+			Outcome: attemptOutcomeForError(err), Category: infraRetryFailureCategory, Summary: plan.Reason, Requeue: true,
+		})
+		m.store.WithLock(func() { t.Error = plan.Reason })
+		m.recordInfraRetry(prd, t, plan)
+		if werr := m.waitInfraRetry(ctx, prd, t, plan); werr != nil {
+			return infraFailureStop, nil
+		}
+		return infraFailureRetry, nil
+	}
+	if m.infraRetriesUsedUp(t, err) {
+		if handled, rerr := m.infraRetriesExhausted(ctx, prd, t, run, err); handled {
+			return infraFailureStop, rerr
+		}
+		if m.infraRetryConfig().EffectiveExhaustedAction() == config.ExhaustedActionCount {
+			return infraFailureCounted, nil
+		}
+	}
+	return infraFailureNone, nil
+}
+
+// retryAfterDaemonRestart records a daemon restart under a task whose worker is
+// gone as an infrastructure retry (class daemon_restart), not as a failed
+// attempt, and waits at most the first configured delay before the caller
+// launches the replacement. It reports retried when the restart was recorded
+// and waited out (the caller offsets its attempt counter) and stop when the
+// context ended during the wait. With the feature off, or the class not
+// retried, it does nothing.
+func (m *Manager) retryAfterDaemonRestart(ctx context.Context, prd *PRD, t *Task) (retried, stop bool) {
+	plan, ok := m.planInfraRetry(prd, t, ErrDaemonRestart)
+	if !ok {
+		return false, false
+	}
+	if first := infraBackoffDelay(m.infraRetryConfig(), 1); plan.Delay > first {
+		plan.Delay = first
+	}
+	log.Printf("[autonomous] prd=%s task=%s: daemon restarted while the task was running, retry %d of %d in %s",
+		prd.ID, t.ID, plan.Number, plan.MaxTries, plan.Delay)
+	m.recordInfraRetry(prd, t, plan)
+	if m.waitInfraRetry(ctx, prd, t, plan) != nil {
+		return false, true
+	}
+	return true, false
+}
+
 func (m *Manager) deleteTaskSession(sessionID string) {
 	if sessionID == "" {
 		return
@@ -1363,6 +2693,11 @@ func flattenTasks(prd *PRD) []*Task {
 			// re-entered when ApproveTask transitions it back to
 			// pending (see ApproveTask).
 			if prd.Story[i].Tasks[j].Status == TaskAwaitingApproval {
+				continue
+			}
+			// A task held for operator review does not run again until the
+			// operator resolves it (see ResolveTaskReview).
+			if prd.Story[i].Tasks[j].Status == TaskReviewNeeded {
 				continue
 			}
 			out = append(out, &prd.Story[i].Tasks[j])
@@ -1489,21 +2824,27 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	maxDepth := m.cfg.MaxRecursionDepth
 	if maxDepth <= 0 {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = "recursion disabled (autonomous.max_recursion_depth=0); set spawn_prd=false or raise the limit"
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = "recursion disabled (autonomous.max_recursion_depth=0); set spawn_prd=false or raise the limit"
+		})
 		return emitSaved(old)
 	}
 	if parent.Depth+1 > maxDepth {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = fmt.Sprintf("recursion depth %d would exceed autonomous.max_recursion_depth=%d", parent.Depth+1, maxDepth)
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("recursion depth %d would exceed autonomous.max_recursion_depth=%d", parent.Depth+1, maxDepth)
+		})
 		return emitSaved(old)
 	}
 
 	now := time.Now()
-	t.StartedAt = &now
+	m.store.WithLock(func() { t.StartedAt = &now })
 	old = t.Status
-	t.Status = TaskInProgress
+	m.store.WithLock(func() {
+		t.Status = TaskInProgress
+	})
 	_ = emitSaved(old)
 
 	// Inherit LLM defaults from parent task → parent PRD; the child PRD
@@ -1528,13 +2869,17 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	child, err := m.store.CreatePRDWithParent(t.Spec, m.resolveTaskProjectDir(parent, t), backend, model, effort, parent.ID, t.ID, parent.Depth+1)
 	if err != nil {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = "spawn child PRD: " + err.Error()
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = "spawn child PRD: " + err.Error()
+		})
 		return emitSaved(old)
 	}
-	t.ChildPRDID = child.ID
+	m.store.WithLock(func() { t.ChildPRDID = child.ID })
 	old = t.Status
-	t.Status = TaskInProgress
+	m.store.WithLock(func() {
+		t.Status = TaskInProgress
+	})
 	_ = emitSaved(old)
 
 	// BL387 Phase 1b — inherit parent prd-shared memories into child so the
@@ -1556,15 +2901,23 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	// operators can flip it off for high-stakes pipelines.
 	if _, err := m.Decompose(child.ID); err != nil {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = fmt.Sprintf("child PRD %s decompose: %v", child.ID, err)
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("child PRD %s decompose: %v", child.ID, err)
+		})
 		return emitSaved(old)
 	}
 	if m.cfg.AutoApproveChildren {
-		if _, err := m.Approve(child.ID, "autonomous", fmt.Sprintf("auto-approve from parent task %s/%s", parent.ID, t.ID)); err != nil {
+		// approveAuto (not plain Approve): child plans that fail the stored
+		// plan-coverage gate in block mode are auto-acknowledged with an
+		// auditable record rather than failing the parent task — the
+		// operator explicitly enabled this automation.
+		if _, err := m.approveAuto(child.ID, "autonomous", fmt.Sprintf("auto-approve from parent task %s/%s", parent.ID, t.ID)); err != nil {
 			old = t.Status
-			t.Status = TaskFailed
-			t.Error = fmt.Sprintf("child PRD %s auto-approve: %v", child.ID, err)
+			m.store.WithLock(func() {
+				t.Status = TaskFailed
+				t.Error = fmt.Sprintf("child PRD %s auto-approve: %v", child.ID, err)
+			})
 			return emitSaved(old)
 		}
 	} else {
@@ -1573,34 +2926,43 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		// the usual /approve endpoint; the parent's loop tick re-checks
 		// child status and unblocks when the child reaches PRDCompleted.
 		old = t.Status
-		t.Status = TaskBlocked
-		t.Error = fmt.Sprintf("waiting for operator approval on child PRD %s", child.ID)
+		m.store.WithLock(func() {
+			t.Status = TaskBlocked
+			t.Error = fmt.Sprintf("waiting for operator approval on child PRD %s", child.ID)
+		})
 		return emitSaved(old)
 	}
 	if err := m.Run(ctx, child.ID, spawn, verify); err != nil {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = fmt.Sprintf("child PRD %s run: %v", child.ID, err)
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("child PRD %s run: %v", child.ID, err)
+		})
 		return emitSaved(old)
 	}
 
 	// Roll up child outcome onto the parent task.
 	updated, _ := m.store.GetPRD(child.ID)
 	done := time.Now()
-	t.CompletedAt = &done
+	m.store.WithLock(func() { t.CompletedAt = &done })
 	if updated == nil || updated.Status != PRDCompleted {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = fmt.Sprintf("child PRD %s ended with status %s", child.ID, statusOrUnknown(updated))
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("child PRD %s ended with status %s", child.ID, statusOrUnknown(updated))
+		})
 		return emitSaved(old)
 	}
 	old = t.Status
-	t.Status = TaskCompleted
-	t.Verification = &VerificationResult{
+	m.store.WithLock(func() {
+		t.Status = TaskCompleted
+	})
+	childVerification := &VerificationResult{
 		OK:         true,
 		Summary:    fmt.Sprintf("child PRD %s completed (%d stories)", child.ID, len(updated.Story)),
 		VerifiedAt: time.Now(),
 	}
+	m.store.WithLock(func() { t.Verification = childVerification })
 	return emitSaved(old)
 }
 
@@ -1636,8 +2998,13 @@ func statusOrUnknown(p *PRD) PRDStatus {
 func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (blocked bool, contentHint string, err error) {
 	m.mu.Lock()
 	fn := m.guardrail
-	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
+	// v9.10.18 — judge resolution: model resolution is paired with the
+	// resolved backend and NEVER falls back to the backend's built-in
+	// default. An unresolvable route does not run a judge — it records
+	// a loud, non-retried infra-category block so the misconfiguration
+	// is visible instead of evicting the operator's pinned model.
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(t, prd)
 
 	guardrails := m.resolveGuardrails(prd, "task")
 	if len(guardrails) == 0 {
@@ -1652,8 +3019,16 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		ProjectDir: m.resolveTaskProjectDir(prd, t), // BL447: judge the task in its own dir
 		OwnerPeer:  prd.OwnerPeer,                   // BL369 Layer 3 — federation trust boundary
 	}
-	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(t, prd, globalBackend, globalModel)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
+	}
+	inv.scriptLaunch = m.planVerifyLaunch(prd, t)
 	scriptPassed := prepareScriptEvidence(&inv, t.VerificationScript, inv.ProjectDir) // BL447
+	if inv.ScriptRan {
+		m.recordVerifyCeiling(t, inv.scriptLaunch)
+		m.noteTaskCommand(t.ID, t.VerificationScript, inv.ScriptExitCode, inv.ScriptOutput)
+	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
@@ -1663,12 +3038,21 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		} else if scriptPassed {
 			v = scriptPassVerdict(t.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
-			// BL410 Phase 1 — bounded, escalating auto-retry for an
-			// infra-category block (the guardrail session itself
-			// failed, no real judgment ran). A content/scope/policy
-			// block, or infra once the budget is exhausted, falls
-			// through unchanged to the TaskBlocked handling below.
-			v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+			if resErr != nil {
+				// v9.10.18 — no judge model resolvable at any level: loud,
+				// non-retried infra block (constructed directly, never via
+				// runGuardrailWithInfraRetry — retrying cannot configure a
+				// model that is not configured).
+				v = NoGuardrailModelVerdict(g, resErr)
+			} else {
+				// BL410 Phase 1 — bounded, escalating auto-retry for an
+				// infra-category block (the guardrail session itself
+				// failed, no real judgment ran). A content/scope/policy
+				// block, or infra once the budget is exhausted, falls
+				// through unchanged to the TaskBlocked handling below.
+				v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+				v = m.classifyGate(ctx, inv, v)
+			}
 		} else {
 			continue // silent no-op: scan not in lib + no GuardrailFn
 		}
@@ -1679,7 +3063,10 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 			v.VerdictAt = time.Now()
 		}
 		v.Guardrail = g
-		t.Verdicts = append(t.Verdicts, v)
+		if err := m.recordGuardrailVerdict(prd, t.ID, v); err != nil {
+			return false, "", err
+		}
+		m.store.WithLock(func() { t.Verdicts = append(t.Verdicts, v) })
 		if v.Outcome == "block" {
 			// BL410 Phase 2 — a content-category block (a real judgment,
 			// not an exhausted infra retry) gets one auto-fix attempt
@@ -1695,10 +3082,12 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 			blocked = true
 			m.recordFailureLearning(prd, t.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 			// BL410 remediation (2026-10-13)
-			t.FailureReason = &FailureReason{
-				Category: orContentCategory(v.Category), Detail: contentFixHint(v),
-				Source: "guardrail-task-block", Retryable: false, OccurredAt: time.Now(),
-			}
+			m.store.WithLock(func() {
+				t.FailureReason = &FailureReason{
+					Category: orContentCategory(v.Category), Detail: contentFixHint(v),
+					Source: "guardrail-task-block", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
 		}
 	}
 	return blocked, contentHint, nil
@@ -1728,8 +3117,12 @@ func contentFixHint(v GuardrailVerdict) string {
 func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story) (blocked bool, contentFixVerdict *GuardrailVerdict, err error) {
 	m.mu.Lock()
 	fn := m.guardrail
-	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
+	// v9.10.18 — see runPerTaskGuardrails: paired model resolution, no
+	// backend-default fallback, loud non-retried infra block on failure.
+	// No story-level guardrail routing exists, so an empty Task means
+	// no task-level tier for this call.
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
 
 	guardrails := m.resolveGuardrails(prd, "story")
 	if len(guardrails) == 0 {
@@ -1744,9 +3137,10 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		ProjectDir: storyEvidenceDir(prd, s), // BL447: see storyEvidenceDir
 		OwnerPeer:  prd.OwnerPeer,            // BL369 Layer 3 — federation trust boundary
 	}
-	// No story-level guardrail routing exists, so an empty Task makes
-	// resolution fall through to PRD → global.
-	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
+	}
 	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, inv.ProjectDir) // BL447
 	for _, g := range guardrails {
 		inv.Guardrail = g
@@ -1757,8 +3151,14 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		} else if scriptPassed {
 			v = scriptPassVerdict(s.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
-			// BL410 Phase 1 — see runPerTaskGuardrails' identical comment.
-			v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+			if resErr != nil {
+				// v9.10.18 — see runPerTaskGuardrails for the identical block.
+				v = NoGuardrailModelVerdict(g, resErr)
+			} else {
+				// BL410 Phase 1 — see runPerTaskGuardrails' identical comment.
+				v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+				v = m.classifyGate(ctx, inv, v)
+			}
 		} else {
 			continue // silent no-op
 		}
@@ -1769,7 +3169,10 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 			v.VerdictAt = time.Now()
 		}
 		v.Guardrail = g
-		s.Verdicts = append(s.Verdicts, v)
+		if err := m.recordGuardrailVerdict(prd, s.ID, v); err != nil {
+			return false, nil, err
+		}
+		m.store.WithLock(func() { s.Verdicts = append(s.Verdicts, v) })
 		if v.Outcome == "block" {
 			// BL410 Phase 2 — same content-auto-fix eligibility check as
 			// runPerTaskGuardrails, but hands the verdict back for the
@@ -1785,10 +3188,12 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 			blocked = true
 			m.recordFailureLearning(prd, s.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 			// BL410 remediation (2026-10-13)
-			s.FailureReason = &FailureReason{
-				Category: orContentCategory(v.Category), Detail: contentFixHint(v),
-				Source: "guardrail-story-block", Retryable: false, OccurredAt: time.Now(),
-			}
+			m.store.WithLock(func() {
+				s.FailureReason = &FailureReason{
+					Category: orContentCategory(v.Category), Detail: contentFixHint(v),
+					Source: "guardrail-story-block", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
 		}
 	}
 	return blocked, contentFixVerdict, nil
@@ -1804,7 +3209,7 @@ func prepareScriptEvidence(inv *GuardrailInvocation, script, projectDir string) 
 	if script == "" {
 		return false
 	}
-	output, exitCode, err := runVerificationScript(script, projectDir)
+	output, exitCode, err := runVerificationScriptCapped(script, projectDir, inv.scriptLaunch)
 	inv.ScriptRan = true
 	inv.ScriptExitCode = exitCode
 	inv.ScriptOutput = output
@@ -1835,6 +3240,25 @@ func scriptPassVerdict(script string) GuardrailVerdict {
 // transition further without operator intervention.
 func isTaskTerminal(s TaskStatus) bool {
 	return s == TaskCompleted || s == TaskFailed || s == TaskCancelled
+}
+
+// storyDone, nonTerminalRemain and taskTerminal are storyAllTasksDone,
+// anyNonTerminalTasksRemain and isTaskTerminal evaluated under the store
+// lock, for the Run coordinator reading status fields that concurrent
+// executeOne goroutines write.
+func (m *Manager) storyDone(s *Story) (done bool) {
+	m.store.WithLock(func() { done = storyAllTasksDone(s) })
+	return done
+}
+
+func (m *Manager) nonTerminalRemain(prd *PRD) (remain bool) {
+	m.store.WithLock(func() { remain = anyNonTerminalTasksRemain(prd) })
+	return remain
+}
+
+func (m *Manager) taskTerminal(t *Task) (term bool) {
+	m.store.WithLock(func() { term = isTaskTerminal(t.Status) })
+	return term
 }
 
 // storyAllTasksDone returns true when every task in the story has reached
@@ -1889,8 +3313,88 @@ func findStory(prd *PRD, storyID string) *Story {
 	return nil
 }
 
-// resolveTaskBackendModel resolves a task's effective backend and model
-// (BL203 + BL381, most-specific wins: task → story → PRD → fallback).
+// Execution-source values: the level that supplied a task's execution
+// backend (recorded as Task.ExecutorSource). "global" means no level set a
+// backend and the fallback backend was used. Mirrors verifier_source.
+const (
+	ExecutorSourceTask       = "task"
+	ExecutorSourceStory      = "story"
+	ExecutorSourcePRD        = "prd"
+	ExecutorSourceAutomation = "automation"
+	ExecutorSourceGlobal     = "global"
+	// ExecutorSourceEscalation marks an attempt whose worker was chosen by a
+	// failure escalation step rather than by the levels above.
+	ExecutorSourceEscalation = "escalation"
+	// ExecutorSourceFirstAttempt marks a first attempt whose worker was chosen
+	// by autonomous.first_attempt for the task's kind.
+	ExecutorSourceFirstAttempt = "first_attempt"
+)
+
+// recordAdmittedWorker stores the worker an attempt is admitted with on a task
+// that has its own backend. A task whose own backend supplied the worker (the
+// operator's choice in a review retry included) also keeps the model admission
+// used, so the persisted Backend and Model match the lease and the spawn; a
+// worker chosen by escalation or routing for this attempt only is not written
+// to Backend/Model. A task with no backend of its own records nothing, so its
+// admission keeps following the story, PRD and Automation. The caller holds
+// the store lock.
+func recordAdmittedWorker(t *Task, source, backend, model string) {
+	if t.Backend == "" {
+		t.AdmittedBackend, t.AdmittedModel = "", ""
+		t.AdmittedTaskBackend, t.AdmittedTaskModel = "", ""
+		return
+	}
+	t.AdmittedBackend, t.AdmittedModel = backend, model
+	// Snapshot the task's own worker as it was chosen at admission, before
+	// the task-source branch below rewrites t.Model to the admitted one.
+	// admittedWorker treats the recorded pair as stale once the task's
+	// Backend/Model differ from this snapshot (an operator re-overrode the
+	// worker); a still-running attempt, whose fields are unchanged, keeps
+	// its recorded pair.
+	t.AdmittedTaskBackend, t.AdmittedTaskModel = t.Backend, t.Model
+	if source == ExecutorSourceTask {
+		t.Model = model
+	}
+}
+
+// admittedWorker is the worker capacity admission places a task with: for a
+// task with its own backend, the pair its current attempt was admitted with
+// when one is recorded; otherwise the resolved worker. Re-admission, lease
+// adoption and reporting use it so they never re-derive a different worker
+// than the attempt started with.
+func admittedWorker(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model string) {
+	if t.Backend != "" && t.AdmittedBackend != "" && admittedPairStillValid(t) {
+		return t.AdmittedBackend, t.AdmittedModel
+	}
+	return resolveTaskBackendModel(t, story, prd, auto, fallbackBackend)
+}
+
+// admittedPairStillValid reports whether a task's recorded admitted pair may
+// still stand for it. A record made before the snapshot fields existed
+// carries an empty snapshot and always stands: a running attempt keeps the
+// pair it was admitted with. Once the snapshot is set, the pair stands only
+// while the task's own Backend/Model are the ones it was admitted with — an
+// operator re-override of the task's worker (set_task_llm, a review requeue)
+// is newer than the record and admission must follow the override instead.
+func admittedPairStillValid(t *Task) bool {
+	if t.AdmittedTaskBackend == "" && t.AdmittedTaskModel == "" {
+		return true
+	}
+	return t.AdmittedTaskBackend == t.Backend && t.AdmittedTaskModel == t.Model
+}
+
+// resolveTaskBackendModel resolves a task's effective backend and model.
+// It is resolveTaskExecutionLLM without the source.
+func resolveTaskBackendModel(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model string) {
+	backend, model, _ = resolveTaskExecutionLLM(t, story, prd, auto, fallbackBackend)
+	return backend, model
+}
+
+// resolveTaskExecutionLLM resolves a task's effective backend and model
+// (BL203 + BL381, most-specific wins: task → story → PRD → Automation →
+// fallback) and reports which level supplied the backend (one of the
+// ExecutorSource* values). auto is the Automation the task's PRD belongs
+// to, or nil for a standalone PRD.
 //
 // v8.37.2 — model is resolved from the SAME level backend was found at,
 // not independently. A model string belongs to whichever backend it was
@@ -1904,88 +3408,110 @@ func findStory(prd *PRD, storyID string) *Story {
 // stale "ollama/qwen3.8:27b" model string through to the claude-code
 // session, which doesn't understand it and got stuck on its own
 // interactive "unknown model" prompt instead of completing.
-func resolveTaskBackendModel(t *Task, story *Story, prd *PRD, fallbackBackend string) (backend, model string) {
+func resolveTaskExecutionLLM(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model, source string) {
 	backend, model = t.Backend, t.Model
 	switch {
 	case backend != "":
 		// task-level backend override: model is the task's own
 		// (possibly empty = that backend's default).
+		source = ExecutorSourceTask
 	case story != nil && story.Backend != "":
 		backend = story.Backend
+		source = ExecutorSourceStory
 		if model == "" {
 			model = story.Model
 		}
 	case prd.Backend != "":
 		backend = prd.Backend
+		source = ExecutorSourcePRD
 		if model == "" {
 			model = prd.Model
 		}
+	case auto != nil && auto.Backend != "":
+		backend = auto.Backend
+		source = ExecutorSourceAutomation
+		if model == "" {
+			model = auto.Model
+		}
 	default:
 		backend = fallbackBackend
+		source = ExecutorSourceGlobal
 		if model == "" && story != nil {
 			model = story.Model
 		}
 		if model == "" {
 			model = prd.Model
 		}
+		if model == "" && auto != nil {
+			model = auto.Model
+		}
 	}
-	return backend, model
+	if to, ok := routeBackend(backend); ok {
+		// The burn guard routes new work meant for this backend elsewhere. The
+		// model belongs to the backend it was set for, so it is dropped (empty =
+		// the target backend's default).
+		backend, model, source = to, "", ExecutorSourceBurnGuard
+	}
+	return backend, model, source
 }
 
-// resolveGuardrailBackendModel resolves a task's effective guardrail
-// backend and model (BL416 Phase 1, most-specific wins: task → PRD →
-// global; there is no story level for guardrail routing).
-//
-// Same v8.37.2 rule as resolveTaskBackendModel: model is resolved from
-// the SAME level backend was found at, never cascading past a level
-// that overrides backend, so a stale model is never paired with an
-// incompatible backend. The guardrail fields are independent of the
-// task's execution Backend/Model.
-//
-// globalBackend/globalModel are the EXISTING autonomous
-// verification_backend/verification_model config
-// (Config.VerificationBackend / Config.VerificationModel in manager.go)
-// — no new global config key. The empty-global case ("ollama" default)
-// and the ask-compatible check remain the caller's responsibility,
-// exactly as main.go's autonomousGuardrail closure does today.
-//
-// Used by runPerTaskGuardrails/runPerStoryGuardrails (BL416 Phase 3).
-func resolveGuardrailBackendModel(t *Task, prd *PRD, globalBackend, globalModel string) (backend, model string) {
-	backend, model = t.GuardrailBackend, t.GuardrailModel
-	switch {
-	case backend != "":
-		// task-level guardrail backend override: model is the task's
-		// own (possibly empty = that backend's default).
-	case prd.GuardrailBackend != "":
-		backend = prd.GuardrailBackend
-		if model == "" {
-			model = prd.GuardrailModel
-		}
-	default:
-		backend = globalBackend
-		if model == "" {
-			model = prd.GuardrailModel
-		}
-		// No globalModel fallback here — found live (2026-10-12, BL418
-		// live validation): this function's own doc comment above
-		// already says the empty-global case is the caller's
-		// responsibility, but this branch baked it in anyway. A B124
-		// session-routed guardrail call (main.go's autonomousGuardrail
-		// closure) treats a non-empty GuardrailInvocation.GuardrailModel
-		// as a genuine per-unit override and sends it straight to a
-		// real tool-using session; the flat ask-only VerificationModel
-		// (e.g. an Ollama model name) baked in here reached that path
-		// with nothing configured anywhere, and a real claude-code
-		// session rejected it outright and hung for its full 10-minute
-		// timeout — the exact bug class B124 already fixed in
-		// resolveVerifierBackendModel for verify, unfixed here for
-		// guardrails. Leaving model empty lets each path apply its own
-		// correct fallback: the ask path's guardrailBackendModel still
-		// falls through to globalModel itself; the session path falls
-		// through to the backend's own registry-default model instead.
+// ExecutorSourceBurnGuard marks a task whose backend the burn guard routed.
+const ExecutorSourceBurnGuard = "burn_guard"
+
+var backendRoute atomic.Pointer[func(backend string) (string, bool)]
+
+// SetBackendRoute wires the route lookup consulted when a task's backend is
+// resolved: it returns the backend new work meant for backend goes to, if any.
+// Nil clears it. It changes where new work is placed and never touches a session.
+func SetBackendRoute(fn func(backend string) (string, bool)) {
+	if fn == nil {
+		backendRoute.Store(nil)
+		return
 	}
-	return backend, model
+	backendRoute.Store(&fn)
 }
+
+func routeBackend(backend string) (string, bool) {
+	fn := backendRoute.Load()
+	if fn == nil || backend == "" {
+		return "", false
+	}
+	to, ok := (*fn)(backend)
+	if !ok || to == "" || to == backend {
+		return "", false
+	}
+	return to, true
+}
+
+// resolveTaskEffort resolves a task's execution effort: task → story → PRD →
+// Automation. Empty when no level sets one; the global effort fallback is
+// applied downstream.
+func resolveTaskEffort(t *Task, story *Story, prd *PRD, auto *Automation) Effort {
+	effort := t.Effort
+	if effort == "" && story != nil {
+		effort = story.Effort
+	}
+	if effort == "" {
+		effort = prd.Effort
+	}
+	if effort == "" && auto != nil {
+		effort = auto.Effort
+	}
+	return effort
+}
+
+// resolveGuardrailBackendModel (BL416 Phase 1) was removed in v9.10.18:
+// its model half returned an empty model whenever nothing was pinned and
+// left the fallback to the execution path, so a pi-family judge launched
+// with no override silently ran on the backend's built-in default model.
+// Its successor is ResolveGuardrailModel (guardrail_model.go), which
+// resolves the model at resolution time — PRD guardrail_model → task
+// guardrail_model → autonomous.guardrail_model →
+// autonomous.verification_model → autonomous.planning_model — paired
+// with the resolved backend, and fails loudly (ErrNoGuardrailModel) when
+// no tier resolves, instead of returning a judge with an empty model.
+// The backend half (task → PRD → global verification_backend) is preserved
+// verbatim inside resolveUnitGuardrailModelLocked (guardrail_model.go).
 
 // prdAllTasksTerminal reports whether every task in every story of p is
 // in a terminal state.
@@ -2003,28 +3529,78 @@ func prdAllTasksTerminal(p *PRD) bool {
 // commitRollupStatus (BL451) commits the completion-rollup status via
 // Store.CommitPRDIfRev: only if the PRD's Rev is still expectedRev, its
 // status is still observed and every task is still terminal — all
-// re-checked under the store lock. On a stale commit nothing is set, a
-// rollup_aborted_stale decision is recorded and ok=false is returned:
-// the concurrent writer (reset_task, cancel, another Run) is
+// re-checked under the store lock. blockedReason is written together with
+// status, so a guardrail block carries its reason in the same commit; pass
+// "" for every status that is not a guardrail block. On a stale commit
+// nothing is set, a rollup_aborted_stale decision is recorded and ok=false
+// is returned: the concurrent writer (reset_task, cancel, another Run) is
 // authoritative.
-func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev int, status PRDStatus, reason string) (old PRDStatus, ok bool) {
-	err := m.store.CommitPRDIfRev(prd.ID, expectedRev, func(p *PRD) bool {
-		if p.Status != observed || !prdAllTasksTerminal(p) {
-			return false
+//
+// 2026-11-09 fix — a stale commit is retried a bounded number of times with
+// the expected Rev refreshed: the predicate (status still observed, every
+// task still terminal) is re-checked under the store lock on each attempt, so
+// a reset_task/cancel write still loses as before — but a writer that only
+// bumped the Rev (decision notes, audit, its own uncounted saves) no longer
+// strands the Automaton in "running" forever, which the 2026-11-09 restart
+// matrix hit live (rollup_aborted_stale became terminal: the entry PRD of
+// an Automation never reached completed and its fork never fired).
+const commitRollupMaxAttempts = 3
+
+func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev int, status PRDStatus, reason, blockedReason string) (old PRDStatus, ok bool) {
+	for attempt := 0; attempt < commitRollupMaxAttempts; attempt++ {
+		err := m.store.CommitPRDIfRev(prd.ID, expectedRev, func(p *PRD) bool {
+			if p.Status != observed || !prdAllTasksTerminal(p) {
+				return false
+			}
+			old = p.Status
+			p.Status = status
+			p.BlockedReason = blockedReason
+			return true
+		})
+		if err == nil {
+			return old, true
 		}
-		old = p.Status
-		p.Status = status
-		return true
-	})
-	if err == nil {
-		return old, true
-	}
-	if errors.Is(err, ErrPRDStale) {
+		if !errors.Is(err, ErrPRDStale) {
+			log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
+			return "", false
+		}
+		if attempt+1 < commitRollupMaxAttempts {
+			// Re-read the current Rev and try again; the under-lock predicate
+			// decides whether the concurrent write invalidated the rollup.
+			if fresh, ok := m.store.PRDRev(prd.ID); ok {
+				expectedRev = fresh
+			}
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
 		m.recordRollupAborted(prd.ID, fmt.Sprintf("%s -> %s", reason, status))
-	} else {
-		log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
+		return "", false
 	}
 	return "", false
+}
+
+// recordGateDisagreementDecision appends a gate_disagreement entry to the
+// PRD's decision log (append-only operator timeline) and saves the PRD.
+// The PRD is re-fetched from the store: the in-flight prd snapshot passed
+// by executeOne may not carry the task's latest saved state, and saving the
+// stale snapshot would clobber task rows. Never mutates task state — the
+// caller already recorded the outcome on the task itself.
+func (m *Manager) recordGateDisagreementDecision(prdID, taskID, policy, note string) {
+	p, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	m.store.WithLock(func() {
+		p.Decisions = append(p.Decisions, Decision{
+			At:    time.Now(),
+			Kind:  "gate_disagreement",
+			Actor: "autonomous",
+			Note:  fmt.Sprintf("task %s (policy=%s): %s", taskID, policy, note),
+		})
+	})
+	if err := m.store.SavePRD(p); err != nil {
+		log.Printf("[autonomous] prd=%s save gate_disagreement decision: %v", prdID, err)
+	}
 }
 
 // recordRollupAborted appends a rollup_aborted_stale decision to the
@@ -2036,7 +3612,9 @@ func (m *Manager) recordRollupAborted(prdID, note string) {
 	if !ok {
 		return
 	}
-	p.Decisions = append(p.Decisions, Decision{At: time.Now(), Kind: "rollup_aborted_stale", Actor: "autonomous", Note: note})
+	m.store.WithLock(func() {
+		p.Decisions = append(p.Decisions, Decision{At: time.Now(), Kind: "rollup_aborted_stale", Actor: "autonomous", Note: note})
+	})
 	if err := m.store.SavePRD(p); err != nil {
 		log.Printf("[autonomous] rollup_aborted_stale save: prd=%s: %v", prdID, err)
 	}
@@ -2051,9 +3629,27 @@ func (m *Manager) rollupOwnSaves(prdID string) int {
 	return m.ownSaves[prdID]
 }
 
+// noteOwnSaves counts n saves of the Automaton that a hook made on the
+// executor's behalf as its own writes (see savePRDOwn).
+func (m *Manager) noteOwnSaves(prdID string, n int) {
+	if n <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ownSaves == nil {
+		m.ownSaves = map[string]int{}
+	}
+	m.ownSaves[prdID] += n
+}
+
 // savePRDOwn saves prd and counts it as an executor-owned write.
 func (m *Manager) savePRDOwn(prd *PRD) error {
-	err := m.store.SavePRD(prd)
+	save := m.store.SavePRD
+	if m.savePRDHook != nil {
+		save = m.savePRDHook
+	}
+	err := save(prd)
 	if err == nil {
 		m.mu.Lock()
 		if m.ownSaves == nil {
@@ -2063,4 +3659,166 @@ func (m *Manager) savePRDOwn(prd *PRD) error {
 		m.mu.Unlock()
 	}
 	return err
+}
+
+// --- Recording the staging-guard skip list on the task result -------------
+//
+// The session commit helpers (internal/session.ProjectGit: CommitSessionWork,
+// CommitTaskWork, PostSessionCommit) return the list of candidate files the
+// staging guard refused to add and keep it readable afterwards via
+// ProjectGit.LastStagingSkipped. The autonomous attempt-snapshot path
+// (SnapshotAttemptWork) applies the same guard (gitguard.Policy.Keep) to
+// its candidates. These helpers populate Task.SkippedSnapshotPaths from
+// either skip list and render the counts-only gate report line for it.
+
+// TaskSnapshotSkippedFrom converts the skip list returned by the session
+// commit helpers (session.StagingSkip) into task result entries, preserving
+// order. nil or empty input stays nil so the field keeps omitempty and the
+// JSON stays clean when the guard skipped nothing. Never logs paths: they
+// are recorded on the task, and the gate reports below are counts-only.
+func TaskSnapshotSkippedFrom(skipped []session.StagingSkip) []SnapshotSkippedPath {
+	if len(skipped) == 0 {
+		return nil
+	}
+	out := make([]SnapshotSkippedPath, 0, len(skipped))
+	for _, sk := range skipped {
+		out = append(out, SnapshotSkippedPath{Path: sk.Path, Reason: sk.Reason})
+	}
+	return out
+}
+
+// TaskSnapshotSkippedFromGuard does the same conversion for the skip list
+// returned by the autonomous attempt-snapshot path (gitguard.Skip, whose
+// file field is named File).
+func TaskSnapshotSkippedFromGuard(skipped []gitguard.Skip) []SnapshotSkippedPath {
+	if len(skipped) == 0 {
+		return nil
+	}
+	out := make([]SnapshotSkippedPath, 0, len(skipped))
+	for _, sk := range skipped {
+		out = append(out, SnapshotSkippedPath{Path: sk.File, Reason: sk.Reason})
+	}
+	return out
+}
+
+// stagingGuardCounts renders a skip list's reasons as the counts-only gate
+// report: one "reason=count" pair per distinct reason, sorted so the line is
+// stable, e.g. "ignored=1, never-stage=2, size=3". By construction it never
+// contains a path name — the report is exactly the counts per the staging
+// guard's per-reason classification. Empty input gives "".
+func stagingGuardCounts(reasons []string) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+	counts := make(map[string]int)
+	for _, r := range reasons {
+		counts[r]++
+	}
+	sorted := make([]string, 0, len(counts))
+	for r := range counts {
+		sorted = append(sorted, r)
+	}
+	sort.Strings(sorted)
+	parts := make([]string, 0, len(sorted))
+	for _, r := range sorted {
+		parts = append(parts, fmt.Sprintf("%s=%d", r, counts[r]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// TaskSnapshotSkippedCounts is the gate report for a session commit
+// helper's skip list: counts per reason only ("ignored=1, never-stage=2"),
+// no path names, "" when nothing was skipped.
+func TaskSnapshotSkippedCounts(skipped []session.StagingSkip) string {
+	reasons := make([]string, 0, len(skipped))
+	for _, sk := range skipped {
+		reasons = append(reasons, sk.Reason)
+	}
+	return stagingGuardCounts(reasons)
+}
+
+// TaskSnapshotSkippedGuardCounts is the gate report for the attempt-snapshot
+// path's skip list (gitguard.Skip): same counts-only format.
+func TaskSnapshotSkippedGuardCounts(skipped []gitguard.Skip) string {
+	reasons := make([]string, 0, len(skipped))
+	for _, sk := range skipped {
+		reasons = append(reasons, sk.Reason)
+	}
+	return stagingGuardCounts(reasons)
+}
+
+// synthesizeRulesReviewFix creates the corrective story and task for a
+// blocked completion rules review, through the test seam when set.
+func (m *Manager) synthesizeRulesReviewFix(prd *PRD, v GuardrailVerdict, attempt int) (*Story, error) {
+	m.mu.Lock()
+	fn := m.synthesizeFn
+	m.mu.Unlock()
+	if fn != nil {
+		story, _, err := fn(prd, v, "")
+		return story, err
+	}
+	story, _, err := m.synthesizeCorrectiveWorkAttempt(prd, v, "", attempt)
+	return story, err
+}
+
+// holdRulesReviewForOperator records why a content-category rules review
+// block gets no automatic fix (auto-fix disabled, content retries spent, or
+// the total retry ceiling reached) and attaches the findings, ahead of the
+// rollup's needs_review commit.
+func (m *Manager) holdRulesReviewForOperator(prd *PRD, v GuardrailVerdict) {
+	spent := prd.RetryCountsByCategory["content"]
+	budget := m.resolveRetryPolicy(prd, "content")
+	kind, action := "rules_review_retries_spent", RulesReviewActionRetriesSpent
+	note := fmt.Sprintf("content retries spent %d of %d", spent, budget)
+	if !m.resolveContentAutoFixEnabled(prd) {
+		kind, action = "rules_review_auto_fix_disabled", RulesReviewActionAutoFixDisabled
+		note = fmt.Sprintf("content auto-fix is disabled; content retries spent %d of %d", spent, budget)
+	} else if spent < budget {
+		total := 0
+		for _, n := range prd.RetryCountsByCategory {
+			total += n
+		}
+		note += fmt.Sprintf("; total retry ceiling reached (%d of %d)", total, m.resolveRetryCeiling(prd))
+	}
+	heldOutcome := newRulesReviewOutcome(v, action, note, spent, budget, spent, m.reviewNow())
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: m.reviewNow(), Kind: kind, Actor: "autonomous", Note: note, FailureCategory: "content",
+		})
+		prd.RulesReviewOutcome = heldOutcome
+	})
+	_ = m.savePRDOwn(prd)
+}
+
+// applyWorkerProfileToRun resolves the worker profile for a launch and fills
+// the attempt run's profile name, role and starting context. It returns the
+// applied profile and true for the spawn request; with no applied profile it
+// leaves the run's profile and context empty and returns false. An unknown
+// requested name is recorded on the task and in the decision list. Nothing
+// is stored on a shared object.
+func (m *Manager) applyWorkerProfileToRun(prd *PRD, t *Task, run *attemptRun) (workerprofile.WorkerProfile, bool) {
+	in := m.workerLaunchInput()
+	in.Role = "worker"
+	in.Kind = t.Kind
+	in.TaskName = t.WorkerProfile
+	in.AutomatonName = prd.WorkerProfile
+	p, applied, d := workerprofile.ResolveForLaunch(in)
+	run.WorkerRole = "worker"
+	run.WorkerProfile, run.LaunchContext = "", ""
+	var out workerprofile.WorkerProfile
+	if applied {
+		out = p
+		run.WorkerProfile = p.Name
+		run.LaunchContext = BuildWorkerStartingContext(StartingContextInput{
+			Role:     run.WorkerRole,
+			Profile:  p,
+			TaskSpec: t.Spec,
+		})
+	}
+	// A requested-but-unfound name falls back to the role default: record it
+	// (the task field is overwritten by each attempt).
+	if d.Requested != "" {
+		m.recordWorkerProfileDecisionFrom(prd, t, d)
+	}
+	return out, applied
 }

@@ -1,0 +1,44 @@
+# Gate report {{.ID}}
+
+| Count | Value |
+|---|---|
+| Commands run | {{.CommandsRun}} |
+| Commands passed | {{.CommandsPassed}} |
+| Commands failed | {{.CommandsFailed}} |
+| Tests passed | {{.TestsPassed}} |
+| Tests failed | {{.TestsFailed}} |
+| Files changed | {{.FilesChanged}} |
+| Packages touched | {{.PackagesTouched}} |
+| Tests added | {{.TestsAdded}} |
+| Settings added | {{.SettingsAdded}} |
+| Routes added | {{.RoutesAdded}} |
+| Locale keys added | {{.LocaleKeysAdded}} |
+{{- if .Cost}}
+
+## Cost
+
+| Cost | Value |
+|---|---|
+| Sessions | {{.Cost.Sessions}} |
+| Tokens in | {{.Cost.TokensIn}} |
+| Tokens out | {{.Cost.TokensOut}} |
+| Cache read | {{.Cost.CacheRead}} |
+| Cache creation | {{.Cost.CacheCreation}} |
+| Tool calls | {{.Cost.ToolCalls}} |
+| Span | {{.Cost.Span}} |
+{{- if .Cost.Estimate}}
+| {{.Cost.Label}} | {{.Cost.Estimate}} |
+{{- end}}
+{{- if .Cost.SessionIDs}}
+
+Sessions: {{range $i, $id := .Cost.SessionIDs}}{{if $i}}, {{end}}{{$id}}{{end}}
+{{- end}}
+{{- if .Cost.WindowNote}}
+
+Window: {{.Cost.WindowNote}}
+{{- end}}
+{{- if .Cost.UnknownNote}}
+
+Unknown spend: {{.Cost.UnknownNote}}
+{{- end}}
+{{- end}}

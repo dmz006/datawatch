@@ -81,14 +81,14 @@ func (s *Server) handleAgentSpawn(_ context.Context, req mcpsdk.CallToolRequest)
 		"task":            req.GetString("task", ""),
 	}
 	if body["project_profile"] == "" || body["cluster_profile"] == "" {
-		return mcpsdk.NewToolResultError("project_profile and cluster_profile are required"), nil
+		return toolErrorf("agent_spawn", "project_profile and cluster_profile are required"), nil
 	}
 	resp, respBody, err := s.agentCall("POST", "", body)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("agent_spawn", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("spawn: HTTP %d: %s", resp.StatusCode, respBody)), nil
+		return toolHTTPError("spawn", resp, []byte(respBody)), nil
 	}
 	return mcpsdk.NewToolResultText(respBody), nil
 }
@@ -96,10 +96,10 @@ func (s *Server) handleAgentSpawn(_ context.Context, req mcpsdk.CallToolRequest)
 func (s *Server) handleAgentList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	resp, body, err := s.agentCall("GET", "", nil)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("agent_list", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("list: HTTP %d: %s", resp.StatusCode, body)), nil
+		return toolHTTPError("list", resp, []byte(body)), nil
 	}
 	return mcpsdk.NewToolResultText(body), nil
 }
@@ -107,14 +107,14 @@ func (s *Server) handleAgentList(_ context.Context, _ mcpsdk.CallToolRequest) (*
 func (s *Server) handleAgentGet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultError("id is required"), nil
+		return toolErrorf("agent_get", "id is required"), nil
 	}
 	resp, body, err := s.agentCall("GET", id, nil)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("agent_get", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("get: HTTP %d: %s", resp.StatusCode, body)), nil
+		return toolHTTPError("get", resp, []byte(body)), nil
 	}
 	return mcpsdk.NewToolResultText(body), nil
 }
@@ -122,7 +122,7 @@ func (s *Server) handleAgentGet(_ context.Context, req mcpsdk.CallToolRequest) (
 func (s *Server) handleAgentLogs(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultError("id is required"), nil
+		return toolErrorf("agent_logs", "id is required"), nil
 	}
 	n := int(req.GetFloat("lines", 200))
 	if n <= 0 {
@@ -131,10 +131,10 @@ func (s *Server) handleAgentLogs(_ context.Context, req mcpsdk.CallToolRequest) 
 	path := fmt.Sprintf("%s/logs?lines=%d", id, n)
 	resp, body, err := s.agentCall("GET", path, nil)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("agent_logs", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("logs: HTTP %d: %s", resp.StatusCode, body)), nil
+		return toolHTTPError("logs", resp, []byte(body)), nil
 	}
 	return mcpsdk.NewToolResultText(body), nil
 }
@@ -142,14 +142,14 @@ func (s *Server) handleAgentLogs(_ context.Context, req mcpsdk.CallToolRequest) 
 func (s *Server) handleAgentTerminate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultError("id is required"), nil
+		return toolErrorf("agent_terminate", "id is required"), nil
 	}
 	resp, body, err := s.agentCall("DELETE", id, nil)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("agent_terminate", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("terminate: HTTP %d: %s", resp.StatusCode, body)), nil
+		return toolHTTPError("terminate", resp, []byte(body)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Agent %s terminated", id)), nil
 }
@@ -157,7 +157,7 @@ func (s *Server) handleAgentTerminate(_ context.Context, req mcpsdk.CallToolRequ
 func (s *Server) handleSessionBindAgent(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("session_id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultError("session_id is required"), nil
+		return toolErrorf("session_bind_agent", "session_id is required"), nil
 	}
 	body := map[string]string{
 		"id":       id,
@@ -165,10 +165,10 @@ func (s *Server) handleSessionBindAgent(_ context.Context, req mcpsdk.CallToolRe
 	}
 	resp, respBody, err := s.sessionsCall("POST", "bind", body)
 	if err != nil {
-		return mcpsdk.NewToolResultError(err.Error()), nil
+		return toolError("session_bind_agent", err), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("bind: HTTP %d: %s", resp.StatusCode, respBody)), nil
+		return toolHTTPError("bind", resp, []byte(respBody)), nil
 	}
 	return mcpsdk.NewToolResultText(respBody), nil
 }

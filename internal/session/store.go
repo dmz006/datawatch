@@ -5,17 +5,45 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/secfile"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // lockFileName is the sidecar advisory-lock file used by flockAcquire.
 // A sidecar avoids locking the file being written (which secfile.WriteFile
 // replaces via atomic rename, breaking any lock held on the old inode).
 const lockFileName = "sessions.json.lock"
+
+// UIPromptInfo describes a recognised interstitial UI prompt (see
+// interstitial_prompt.go) that is on a session's pane while the daemon
+// blocks the session on it and owns its dismissal. The detection-only
+// phase sets this and records nothing else: DismissAttempts is 0 and
+// LastKeyAt is nil until the follow-up phase actually sends a key.
+type UIPromptInfo struct {
+	Kind InterstitialKind `json:"kind"`
+	// Since is when the prompt was first recognised on this occurrence.
+	Since time.Time `json:"since"`
+	// SelectedOption is the option row the cursor would confirm with Enter
+	// ("" when the cursor row cannot be read).
+	SelectedOption string `json:"selected_option,omitempty"`
+	// DismissAttempts counts safe dismiss keys sent for this occurrence.
+	// The detection-only phase never sends a key, so this is 0.
+	DismissAttempts int `json:"dismiss_attempts"`
+	// LastKeyAt is when the last dismiss key was sent, if any.
+	LastKeyAt *time.Time `json:"last_key_at,omitempty"`
+	// QuestionID is the id of the open question the daemon raised for this
+	// occurrence when its dismiss rules could not clear it (UI prompt
+	// escalation). "" until the escalation fires successfully — when the
+	// question channel was off or the raise failed the daemon fell back to
+	// its one alert and this stays empty.
+	QuestionID string `json:"question_id,omitempty"`
+}
 
 // State represents the lifecycle state of a claude-code session.
 type State string
@@ -27,11 +55,22 @@ const (
 	StateFailed       State = "failed"
 	StateKilled       State = "killed"
 	StateRateLimited  State = "rate_limited"
+	// StateStalled — the record is open but the process has died, or the print
+	// session's process is alive yet silent beyond the window. It is NOT
+	// terminal (IsTerminal is false): when activity resumes the session returns
+	// to StateRunning, and it must never be counted as waiting-for-input in any
+	// counter or alert (waiting-input handling gates on StateWaitingInput
+	// explicitly and excludes it). It is not in the set Restart accepts either —
+	// a stalled session resumes via back-to-running, not relaunch.
+	StateStalled State = "stalled"
 )
 
 // IsTerminal reports whether the session has finished for good: complete,
 // failed or killed. This is the same set RestartSession accepts. A
 // rate_limited session is paused, not finished, so it is not terminal.
+// StateStalled is also non-terminal: the record is still resumable — output
+// (or a state override) returns it to StateRunning, so every site that keys
+// off !IsTerminal keeps treating a stalled session as live.
 func (s State) IsTerminal() bool {
 	switch s {
 	case StateComplete, StateFailed, StateKilled:
@@ -42,7 +81,7 @@ func (s State) IsTerminal() bool {
 
 // KnownStates lists every session lifecycle state.
 func KnownStates() []State {
-	return []State{StateRunning, StateWaitingInput, StateComplete, StateFailed, StateKilled, StateRateLimited}
+	return []State{StateRunning, StateWaitingInput, StateStalled, StateComplete, StateFailed, StateKilled, StateRateLimited}
 }
 
 // Session holds metadata about a single claude-code session.
@@ -79,6 +118,16 @@ type Session struct {
 	// Empty for legacy sessions and for kinds that don't bind to a node
 	// (e.g. claude-code on local host).
 	ComputeNodeRef string `json:"compute_node_ref,omitempty"`
+	// LaunchRole, LaunchKind and LaunchStage record the placement facts a
+	// session was launched with. Optional: records written before these
+	// fields existed load with empty values. Recorded by
+	// Manager.SetLaunchFacts; Start and Restart do not read them yet.
+	LaunchRole  string `json:"launch_role,omitempty"`
+	LaunchKind  string `json:"launch_kind,omitempty"`
+	LaunchStage string `json:"launch_stage,omitempty"`
+	// Priority orders this session's calls in the capacity wait queue (higher
+	// first; default 0). Same shape as autonomous.PRD.Priority.
+	Priority int `json:"priority,omitempty"`
 	// PendingInput is set when the session is waiting for user input
 	PendingInput string `json:"pending_input,omitempty"`
 	// LastPrompt is the last prompt text that triggered waiting_input
@@ -86,6 +135,13 @@ type Session struct {
 	// PromptContext holds non-empty screen lines surrounding the detected prompt,
 	// giving context about what the prompt is asking the user to confirm/decide.
 	PromptContext string `json:"prompt_context,omitempty"`
+	// UIPrompt is set while a recognised interstitial UI prompt (the
+	// auto-compact nudge family, interstitial_prompt.go) is on the pane and
+	// the daemon has parked the session on it for its own dismissal. Nil for
+	// every session that is not blocked on one — the field is omitempty, so
+	// stored and REST serialisation of such sessions is byte-identical to
+	// pre-field sessions.
+	UIPrompt *UIPromptInfo `json:"ui_prompt,omitempty"`
 	// RateLimitResetAt is set when the session is in rate_limited state.
 	// The daemon will retry automatically after this time.
 	RateLimitResetAt *time.Time        `json:"rate_limit_reset_at,omitempty"`
@@ -100,7 +156,19 @@ type Session struct {
 	ChannelPort      int               `json:"channel_port,omitempty"`  // per-session MCP channel HTTP port
 	ThreadIDs        map[string]string `json:"thread_ids,omitempty"`    // per-backend thread IDs for threaded messaging
 	Profile          string            `json:"profile,omitempty"`       // named profile used to launch this session
-	FallbackOf       string            `json:"fallback_of,omitempty"`   // session ID this is a fallback for
+	// AppliedFields records, per worker-profile field (mcp, tools, skills,
+	// context, model, effort), what the launch backend actually did with it
+	// at start time (workerprofile.RecordApplied). Set from
+	// StartOptions.WorkerProfile for backends that implement the duck-typed
+	// `RecordApplied(workerprofile.WorkerProfile)` optional interface; empty
+	// when the session was started without a worker profile, or on backends
+	// (such as Claude Code) that apply the profile in their own launch path.
+	AppliedFields []workerprofile.FieldOutcome `json:"applied_fields,omitempty"`
+	FallbackOf    string                       `json:"fallback_of,omitempty"` // session ID this is a fallback for
+	// ProfileFallbackReason is set when the launch's worker profile could not
+	// be applied and the session started with no profile instead: the apply
+	// error text. Empty when the profile applied or no profile was requested.
+	ProfileFallbackReason string `json:"profile_fallback_reason,omitempty"`
 	// LastResponse holds the short LLM summary (or raw tmux capture when no
 	// summarizer is configured), captured on running→waiting_input transitions.
 	// Used for /copy, push alerts, mobile notifications, and Android Auto.
@@ -141,6 +209,16 @@ type Session struct {
 	// Never mutated after creation.
 	ParentID string `json:"parent_id,omitempty"`
 
+	// ScheduleName (GH#204 Phase 1) — the name of the schedule entry that
+	// SPAWNED this session. Set server-side at spawn time from the
+	// originating DeferredSession (which carried it in via AddSpawn) or the
+	// ScheduledCommand itself — never self-reported by the job. Persisted
+	// with the session so a later result panel can group results per
+	// schedule_name, and so `memory_recall`-style lookups can find which
+	// scheduled job produced a given run. Empty for sessions not spawned
+	// by a schedule.
+	ScheduleName string `json:"schedule_name,omitempty"`
+
 	// KillChildren (BL347) — when true, killing THIS session also kills all
 	// sessions whose ParentID equals this session's FullID (direct children only).
 	// Default false: children survive the parent and are shown as orphaned
@@ -162,6 +240,11 @@ type Session struct {
 	// session signalled done (the post-session commit that DiffSummary
 	// describes). Empty when there was nothing to commit.
 	CommitSHA string `json:"commit_sha,omitempty"`
+
+	// StagingSkipped holds the candidate files the completion commit did
+	// not stage and why (the last staging pass of the session's git).
+	// Empty when nothing was skipped or there was no commit.
+	StagingSkipped []StagingSkip `json:"staging_skipped,omitempty"`
 
 	// CompletionSummary holds the one-line summary the worker gave when
 	// the session signalled done. Empty if the worker didn't provide one.
@@ -197,6 +280,12 @@ type Session struct {
 	UsageLastIn    int `json:"usage_last_in,omitempty"`
 	UsageLastOut   int `json:"usage_last_out,omitempty"`
 
+	// Cache and tool-call totals read from the claude-code transcript.
+	// They feed the spend ledger; TokensIn stays the non-cache input.
+	CacheReadTokens     int `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
+	ToolCalls           int `json:"tool_calls,omitempty"`
+
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
 	// session.default_effort (config). It is metadata only: no backend
@@ -211,6 +300,18 @@ type Session struct {
 	// directory after killing the session. Operator-supplied
 	// project_dirs are never reaped (flag is false by default).
 	EphemeralWorkspace bool `json:"ephemeral_workspace,omitempty"`
+
+	// ScrubTmuxEnv records that the pane shell was told to unset TMUX and
+	// TMUX_TMPDIR before launching the LLM (see scrubTmuxEnvCommand); a
+	// restart re-applies it to the new pane shell.
+	ScrubTmuxEnv bool `json:"scrub_tmux_env,omitempty"`
+
+	// CeilingPath records which memory-ceiling mechanism the worker pane
+	// used: "scope" (systemd user scope), "watchdog" (/proc watchdog) or
+	// "none". Empty for sessions that are not worker panes.
+	CeilingPath string `json:"ceiling_path,omitempty"`
+	// CeilingMB is the resolved memory ceiling in MB (0 when none).
+	CeilingMB int `json:"ceiling_mb,omitempty"`
 
 	// LastChannelEventAt (BL266 v6.11.24) — wall time of the last channel
 	// event (ACP/MCP message, chat_message, structured status, or
@@ -238,6 +339,14 @@ type Session struct {
 	// self-terminates after the task is done.
 	OneShot bool `json:"one_shot,omitempty"`
 
+	// Git — when true, the session owns git activity in its project dir:
+	// Start runs `git init` (if needed) + the pre-session snapshot commit +
+	// the pre-checkpoint tag, and commitOnCompletion is allowed to run its
+	// completion commit. Default false: no git init, no snapshot, no
+	// completion commit. Persisted so the monitor/reaper/restart paths,
+	// which only have the stored Session, see the same decision.
+	Git bool `json:"git,omitempty"`
+
 	// TaskDeliveredAt — when Task was first typed into a OneShot session by
 	// handleChannelReady. Set once, before the send (cleared again only if
 	// the send fails), so the channel bridge's 60 s ready heartbeat can
@@ -247,13 +356,47 @@ type Session struct {
 	// 2026-10-14). Nil = not delivered yet.
 	TaskDeliveredAt *time.Time `json:"task_delivered_at,omitempty"`
 
+	// PlatformContextDelivered — true once the platform context text has been
+	// prepended to this session's first prompt (first_prompt delivery modes).
+	// Persisted so a relaunch or restart never prepends it a second time.
+	PlatformContextDelivered bool `json:"platform_context_delivered,omitempty"`
+
+	// PlatformContextLocalFile — true when the platform context block was
+	// written to the untracked CLAUDE.local.md in the project directory. False
+	// when it was not written (disabled, refused, or no project dir), so the
+	// caller can fall back to another delivery channel.
+	PlatformContextLocalFile bool `json:"platform_context_local_file,omitempty"`
+
 	// PRDID, TaskID, and StoryID link this session to the autonomous executor
 	// that spawned it. Set by the autonomousSpawn function in main.go so the
 	// PWA detail view can filter sessions by PRD and display the active task.
 	// StoryID added BL385 Phase 4 for memory scope routing.
-	PRDID   string `json:"prd_id,omitempty"`
-	TaskID  string `json:"task_id,omitempty"`
-	StoryID string `json:"story_id,omitempty"`
+	PRDID string `json:"prd_id,omitempty"`
+	// AutomatonID and SpendRole attribute the session's spend in the spend
+	// ledger. TaskID (above) is the owning task.
+	AutomatonID string `json:"automaton_id,omitempty"`
+	SpendRole   string `json:"spend_role,omitempty"`
+	TaskID      string `json:"task_id,omitempty"`
+	StoryID     string `json:"story_id,omitempty"`
+	// TaskTitle is the bare autonomous task title (no "autonomous:" prefix),
+	// so the completion commit can use it without parsing Name.
+	TaskTitle string `json:"task_title,omitempty"`
+
+	// Tags (BL461) are the IDs of the managed tags this session carries
+	// itself. Persisted with the record so they survive a daemon restart.
+	// The tags a session inherits from the Automaton that spawned it are
+	// never stored here; Manager.InheritedTags computes them on read.
+	Tags []string `json:"tags,omitempty"`
+
+	// SystemTags are the tags the system writes for this session
+	// (placement tags: where the task ran, which backend and model, which
+	// lane or role it held, which project it served) — not operator-
+	// selected tag IDs. They live in their own list so the machine-managed
+	// tags never mix with the operator tags in Tags and so the PWA detail
+	// view can group them separately. Replacing SystemTags (Manager.
+	// SetSystemTags) never touches Tags, and vice versa. Empty/nil =
+	// nothing placed, or the placement master switch is off.
+	SystemTags []string `json:"system_tags,omitempty"`
 
 	// WriteScope (auto-commit leak fix): the session's effective write
 	// directories (PRD.WriteDirs or task ProjectDir override). Automatic
@@ -270,6 +413,27 @@ type Session struct {
 	// ValidationResult records the validation gate outcome: "passed",
 	// "failed: ..." or "unvalidated: ...". Empty = gate not reached.
 	ValidationResult string `json:"validation_result,omitempty"`
+
+	// PushState records the push-on-complete outcome for a one-shot's
+	// completion commit: "pushed" or "not_pushed". Empty = no push was
+	// attempted (policy "never", nothing committed, or a PRD task session
+	// whose push the autonomous executor handles).
+	PushState string `json:"push_state,omitempty"`
+
+	// PushWarning holds the operator-visible reason a one-shot commit was
+	// not pushed, in the form "not pushed: <reason>". Empty when the push
+	// succeeded or was never attempted.
+	PushWarning string `json:"push_warning,omitempty"`
+
+	// PushedSHA holds the sha of the commit that reached the remote when
+	// the one-shot's push succeeded. Empty when nothing was pushed.
+	PushedSHA string `json:"pushed_sha,omitempty"`
+
+	// SkipSnapshot: planning/judgment one-shot sessions must never stage or
+	// commit the repo. When set, Start skips the pre-session snapshot commit
+	// and commitOnCompletion skips the completion commit (and its checkpoint
+	// tag). Task-execution sessions leave this false.
+	SkipSnapshot bool `json:"skip_snapshot,omitempty"`
 
 	// Subprocess — when true, Task is executed directly as a child process
 	// via bash -c instead of through a Claude Code tmux session. Completion
@@ -296,12 +460,24 @@ type Session struct {
 	// Written to <projectDir>/opencode.json as provider.ollama.apiUrl at launch.
 	OllamaURL string `json:"ollama_url,omitempty"`
 
+	// NodeAddress — the address (scheme://host:port) of the compute node the
+	// session was placed on, for pi-family and opencode sessions. Stored so a
+	// resume or restart reuses the same host rather than re-resolving it.
+	NodeAddress string `json:"node_address,omitempty"`
+
 	// BL331 — federation peer that owns or originated this session via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`
 
 	// ClaudeAlive (BL355) — true when the AI process is alive in the tmux pane.
 	// nil means not yet probed. False for a running/waiting-input session means zombie.
 	ClaudeAlive *bool `json:"claude_alive,omitempty"`
+
+	// FailureExitCode (BL468) — exit code reported by the pi failure line
+	// (zero = no failure reported). Set when a one-shot session transitions
+	// to StateFailed on the pi launch wrapper's non-zero-exit
+	// DATAWATCH_PI_FAILED marker; the terminal state plus this code carry
+	// the exit status per the store's design (0 = complete, non-zero = failed).
+	FailureExitCode int `json:"failure_exit_code,omitempty"`
 }
 
 // UnmarshalJSON accepts both the v7.0.0-alpha.27 field name
@@ -347,30 +523,95 @@ type Store struct {
 	lockPath string              // advisory lock sidecar file (sessions.json.lock)
 	encKey   []byte              // nil = no encryption
 	sessions map[string]*Session // key: full ID
+	tagSigs  map[string]tagSig   // guarded by mu: PRDID/SystemTags last seen by Save, per full ID
+	tagGen   atomic.Uint64       // system tag index generation (see tagGeneration)
+
+	// Deferred persistence. Save/Delete/Mutate mark the store dirty and wake
+	// one background writer, which writes at most once per flushInterval.
+	// flushInterval <= 0 means write-through (every Save writes inline).
+	flushInterval time.Duration // guarded by mu
+	closed        bool          // guarded by mu; true after Close, writes go inline
+	started       bool          // guarded by mu; writer goroutine launched
+	dirty         atomic.Bool   // in-memory state not yet on disk
+	writes        atomic.Int64  // completed file writes (observed by tests)
+	writeMu       sync.Mutex    // serialises file writes (one temp file name)
+
+	// Per-session record layout (store_records.go). records is fixed before
+	// the store is shared; the id sets and scan flag are guarded by mu,
+	// written and layoutReady by writeMu.
+	records      bool
+	dirtyIDs     map[string]struct{} // FullIDs to (re)write
+	deletedIDs   map[string]struct{} // FullIDs whose record must go
+	scan         bool                // a Mutate ran: compare every session to its last write
+	written      map[string][32]byte // FullID -> hash of the last persisted JSON
+	layoutReady  bool
+	bytesWritten atomic.Int64  // record bytes handed to the file system
+	recordWrites atomic.Int64  // record files written
+	arc          archiveState  // archive file and per-field cap (store_archive.go)
+	wake         chan struct{} // cap 1: "store went dirty"
+	stopCh       chan struct{}
+	doneCh       chan struct{}
+}
+
+// DefaultFlushInterval is how long the background writer coalesces changes
+// before writing sessions.json. A variable so the package tests can run
+// write-through; production never changes it.
+var DefaultFlushInterval = time.Second
+
+// StoreOption configures a Store at construction.
+type StoreOption func(*Store)
+
+// WithFlushInterval sets the write-coalescing interval. Zero or negative
+// means write-through: every Save/Delete writes synchronously (tests).
+func WithFlushInterval(d time.Duration) StoreOption {
+	return func(s *Store) { s.flushInterval = d }
 }
 
 // NewStore creates a new Store backed by the file at path (no encryption).
 // If the file does not exist, an empty store is created.
-func NewStore(path string) (*Store, error) {
-	return newStoreWithKey(path, nil)
+func NewStore(path string, opts ...StoreOption) (*Store, error) {
+	return newStoreWithKey(path, nil, opts...)
 }
 
 // NewStoreEncrypted creates a Store with AES-256-GCM encryption at rest.
 // key must be exactly 32 bytes (use config.DeriveKey to produce one).
-func NewStoreEncrypted(path string, key []byte) (*Store, error) {
-	return newStoreWithKey(path, key)
+func NewStoreEncrypted(path string, key []byte, opts ...StoreOption) (*Store, error) {
+	return newStoreWithKey(path, key, opts...)
 }
 
-func newStoreWithKey(path string, key []byte) (*Store, error) {
+func newStoreWithKey(path string, key []byte, opts ...StoreOption) (*Store, error) {
 	s := &Store{
-		path:     path,
-		lockPath: filepath.Join(filepath.Dir(path), lockFileName),
-		encKey:   key,
-		sessions: make(map[string]*Session),
+		path:          path,
+		lockPath:      filepath.Join(filepath.Dir(path), lockFileName),
+		encKey:        key,
+		sessions:      make(map[string]*Session),
+		dirtyIDs:      make(map[string]struct{}),
+		deletedIDs:    make(map[string]struct{}),
+		written:       make(map[string][32]byte),
+		flushInterval: DefaultFlushInterval,
+		wake:          make(chan struct{}, 1),
+		stopCh:        make(chan struct{}),
+		doneCh:        make(chan struct{}),
+	}
+	s.SetArchiveAfter(DefaultArchiveAfter)
+	s.SetFieldCap(DefaultFieldCap)
+	for _, o := range opts {
+		o(s)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("create store dir: %w", err)
+	}
+
+	// An existing record layout is authoritative; sessions.json is only read
+	// when there is none (the old format, migrated below).
+	if recordsLayoutPresent(s.recordsDir()) {
+		if err := s.openRecords(); err != nil {
+			return nil, err
+		}
+		s.mergeSessionDirsAndPersist(filepath.Dir(path))
+		s.liveGuardRegister()
+		return s, nil
 	}
 
 	data, err := secfile.ReadFile(path, key)
@@ -395,7 +636,10 @@ func newStoreWithKey(path string, key []byte) (*Store, error) {
 			ts := time.Now().Unix()
 			corruptedPath := fmt.Sprintf("%s.corrupted-%d", path, ts)
 			_ = os.WriteFile(corruptedPath, data, 0600)
-			fmt.Printf("[warn] sessions store %s was corrupted (likely a non-atomic write killed mid-flush in a pre-v6.15.1 daemon). Recovered %d sessions from JSON prefix; original body saved to %s.\n", path, n, corruptedPath)
+			// BL463 — log to stderr, never stdout: in `datawatch mcp` (stdio)
+			// mode stdout is the JSON-RPC protocol channel and any log line on
+			// it corrupts the framing (detected by release-smoke §7r).
+			fmt.Fprintf(os.Stderr, "[warn] sessions store %s was corrupted (likely a non-atomic write killed mid-flush in a pre-v6.15.1 daemon). Recovered %d sessions from JSON prefix; original body saved to %s.\n", path, n, corruptedPath)
 			sessions = recovered
 		}
 		for _, sess := range sessions {
@@ -414,10 +658,65 @@ func newStoreWithKey(path string, key []byte) (*Store, error) {
 	// is lost on any daemon restart, so subdir merge captures everything
 	// that was persistable in the first place.
 	if added := s.mergeFromSessionDirs(filepath.Dir(path)); added > 0 {
-		fmt.Printf("[recovery] merged %d session(s) from per-session subdirectories not present in sessions.json\n", added)
+		fmt.Fprintf(os.Stderr, "[recovery] merged %d session(s) from per-session subdirectories not present in sessions.json\n", added)
 	}
 
+	if err == nil {
+		// An old-format file exists: move it to the record layout. On failure
+		// the store keeps the old format and the file is left as it was.
+		if merr := s.migrateToRecords(); merr != nil {
+			s.records = false
+			fmt.Fprintf(os.Stderr, "[warn] sessions store: record migration skipped, staying on %s: %v\n", path, merr)
+		}
+	} else {
+		// No store yet: a new store starts in the record layout.
+		s.records = true
+		if len(s.sessions) > 0 { // recovered from per-session directories only
+			for id := range s.sessions {
+				s.dirtyIDs[id] = struct{}{}
+			}
+			s.dirty.Store(true)
+			if ferr := s.flush(false); ferr != nil {
+				fmt.Fprintf(os.Stderr, "[warn] sessions store flush: %v\n", ferr)
+			}
+		}
+	}
+	s.liveGuardRegister()
 	return s, nil
+}
+
+// liveGuardRegister / liveGuardUnregister plug the leak guard (see
+// store_leak_guard.go) into the store lifecycle. Production cost: one map
+// entry per live store.
+func (s *Store) liveGuardRegister() {
+	liveStoreRegister(s, liveTestCreator())
+}
+
+func (s *Store) liveGuardUnregister() {
+	liveStoreUnregister(s)
+}
+
+// mergeSessionDirsAndPersist is the per-session-directory merge for a store
+// already in the record layout: sessions it adds are written at once.
+func (s *Store) mergeSessionDirsAndPersist(dataDir string) {
+	before := make(map[string]struct{}, len(s.sessions))
+	for id := range s.sessions {
+		before[id] = struct{}{}
+	}
+	added := s.mergeFromSessionDirs(dataDir)
+	if added == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[recovery] merged %d session(s) from per-session subdirectories not present in the session records\n", added)
+	for id := range s.sessions {
+		if _, ok := before[id]; !ok {
+			s.dirtyIDs[id] = struct{}{}
+		}
+	}
+	s.dirty.Store(true)
+	if err := s.flush(false); err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] sessions store flush: %v\n", err)
+	}
 }
 
 // mergeFromSessionDirs walks <dataDir>/sessions/<id>/session.json and
@@ -439,6 +738,9 @@ func (s *Store) mergeFromSessionDirs(dataDir string) int {
 		if _, exists := s.sessions[fullID]; exists {
 			continue
 		}
+		if s.IsArchived(fullID) { // archived on purpose, not lost
+			continue
+		}
 		metaPath := filepath.Join(sessRoot, fullID, "session.json")
 		raw, err := os.ReadFile(metaPath)
 		if err != nil {
@@ -446,7 +748,7 @@ func (s *Store) mergeFromSessionDirs(dataDir string) int {
 		}
 		var sess Session
 		if err := json.Unmarshal(raw, &sess); err != nil {
-			fmt.Printf("[recovery] skipping %s: parse %s: %v\n", fullID, metaPath, err)
+			fmt.Fprintf(os.Stderr, "[recovery] skipping %s: parse %s: %v\n", fullID, metaPath, err)
 			continue
 		}
 		if sess.FullID == "" {
@@ -518,12 +820,138 @@ func recoverSessionStore(data []byte) ([]*Session, int, error) {
 	return sessions, len(sessions), nil
 }
 
-// Save stores or updates a session.
+// Save stores or updates a session. The write to disk is deferred to the
+// background writer (see SetFlushInterval); with a non-positive interval or
+// after Close it happens before Save returns.
 func (s *Store) Save(sess *Session) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Bump the tag generation only when the answer of the system tag index
+	// could change: a new session, or a changed PRDID / SystemTags. Callers
+	// often mutate the stored pointer in place, so the previous values are
+	// kept in tagSigs rather than read back from s.sessions.
+	if prev, ok := s.tagSigs[sess.FullID]; !ok || s.sessions[sess.FullID] == nil ||
+		prev.prdID != sess.PRDID || !equalTagLists(prev.tags, sess.SystemTags) {
+		if s.tagSigs == nil {
+			s.tagSigs = map[string]tagSig{}
+		}
+		s.tagSigs[sess.FullID] = tagSig{prdID: sess.PRDID, tags: append([]string(nil), sess.SystemTags...)}
+		s.tagGen.Add(1)
+	}
 	s.sessions[sess.FullID] = sess
-	return s.persist()
+	s.markRecordDirtyLocked(sess.FullID)
+	inline := s.markDirtyLocked()
+	s.mu.Unlock()
+	if inline {
+		return s.flush(false)
+	}
+	return nil
+}
+
+// Mutate runs fn with the store's write lock held. Session pointers are
+// shared with the monitor goroutines, and the writer marshals them under
+// the read lock, so a field write made outside it races with the marshal.
+// Call Save after Mutate returns, not inside fn: Save takes the same lock.
+// Mutate marks the store dirty, so the change reaches disk on the next
+// flush even when no Save follows.
+func (s *Store) Mutate(fn func()) {
+	s.mu.Lock()
+	fn()
+	s.scan = s.records // fn may have touched any session
+	s.markDirtyLocked()
+	s.mu.Unlock()
+}
+
+// SetFlushInterval changes the write-coalescing interval. Zero or negative
+// switches to write-through. Pending changes are flushed by the writer on
+// its next cycle (or immediately by the next Save in write-through mode).
+func (s *Store) SetFlushInterval(d time.Duration) {
+	s.mu.Lock()
+	s.flushInterval = d
+	s.mu.Unlock()
+}
+
+// markDirtyLocked records an unwritten change and, in deferred mode, wakes
+// the writer (starting it on first use so read-only users never spawn one).
+// It reports whether the caller must write inline. Call with mu held.
+func (s *Store) markDirtyLocked() (inline bool) {
+	s.dirty.Store(true)
+	if s.closed || s.flushInterval <= 0 {
+		return true
+	}
+	if !s.started {
+		s.started = true
+		go s.writer()
+	}
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+	return false
+}
+
+// writer is the single background goroutine. After a change wakes it, it
+// waits one flush interval so a burst coalesces, then writes once.
+func (s *Store) writer() {
+	defer close(s.doneCh)
+	for {
+		select {
+		case <-s.wake:
+		case <-s.stopCh:
+			return
+		}
+		s.mu.RLock()
+		d := s.flushInterval
+		s.mu.RUnlock()
+		if d > 0 {
+			t := time.NewTimer(d)
+			select {
+			case <-t.C:
+			case <-s.stopCh:
+				t.Stop()
+				return
+			}
+		}
+		if err := s.flush(false); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] sessions store flush: %v\n", err)
+		}
+		if d > 0 && s.dirty.Load() {
+			// Write failed or was skipped (lock timeout): retry next cycle.
+			select {
+			case s.wake <- struct{}{}:
+			default:
+			}
+		}
+	}
+}
+
+// Snapshot returns a copy of sess taken under the read lock, for readers
+// that must not race with Mutate (the copy is shallow; map fields are
+// shared).
+func (s *Store) Snapshot(sess *Session) Session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return *sess
+}
+
+// SnapshotFiltered returns copies of the sessions keep selects by state and
+// update time, plus the ID of every session held. One pass under the read
+// lock: the cheap state / UpdatedAt check runs first and only the selected
+// sessions are copied (shallow, like Snapshot), so a caller that needs a
+// small slice of a large store never copies or marshals the rest.
+func (s *Store) SnapshotFiltered(keep func(State, time.Time) bool) ([]*Session, map[string]struct{}) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	held := make(map[string]struct{}, len(s.sessions))
+	var out []*Session
+	for id, sess := range s.sessions {
+		held[id] = struct{}{}
+		if keep(sess.State, sess.UpdatedAt) {
+			cp := *sess
+			out = append(out, &cp)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].FullID < out[j].FullID })
+	return out, held
 }
 
 // Get returns a session by full ID.
@@ -556,64 +984,165 @@ func (s *Store) List() []*Session {
 	for _, sess := range s.sessions {
 		out = append(out, sess)
 	}
+	// Map iteration order is random; a stable order keeps list responses
+	// reproducible between calls.
+	sort.Slice(out, func(i, j int) bool { return out[i].FullID < out[j].FullID })
 	return out
 }
 
-// Delete removes a session from the store.
+// Delete removes a session from the store. Like Save, the write to disk is
+// deferred to the background writer.
 func (s *Store) Delete(fullID string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.sessions, fullID)
-	return s.persist()
-}
-
-// Flush forces an immediate write of the current in-memory session
-// set to disk. Save/Delete already write through synchronously so
-// callers normally do not need to call Flush; it exists so external
-// reconcilers (BL93/BL94) and shutdown hooks can guarantee the file
-// reflects the in-memory state without performing another mutation.
-func (s *Store) Flush() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.persist()
-}
-
-// persist writes the current sessions to disk.
-// Must be called with mu held.
-//
-// BL294 — an exclusive advisory flock on sessions.json.lock serialises
-// concurrent persist() calls from two Manager instances that briefly
-// co-exist during the daemon re-exec path (capability elevation).
-// The lock is held only for the duration of the atomic write and
-// released immediately after. A 5-second timeout prevents deadlock:
-// if the lock cannot be acquired within that window the persist is
-// skipped (the ReconcileSessions boot call recovers any missed writes).
-func (s *Store) persist() error {
-	// Acquire cross-process advisory lock on the sidecar lock file.
-	// flockAcquire returns (nil, nil) on timeout — caller skips the persist.
-	lockFile, lockErr := flockAcquire(s.lockPath)
-	if lockErr != nil {
-		return fmt.Errorf("acquire sessions lock: %w", lockErr)
+	delete(s.tagSigs, fullID)
+	s.tagGen.Add(1)
+	s.markRecordDeletedLocked(fullID)
+	inline := s.markDirtyLocked()
+	s.mu.Unlock()
+	if inline {
+		return s.flush(false)
 	}
-	if lockFile == nil {
-		// Timed out — skip this persist cycle rather than risk a deadlock.
-		// The warning was already printed by flockAcquire.
+	return nil
+}
+
+// tagSig is what the system tag index reads from a session.
+type tagSig struct {
+	prdID string
+	tags  []string
+}
+
+func equalTagLists(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// tagGeneration is the system tag index generation: it changes whenever a
+// session is added, removed, moved to or from the archive, or has its PRDID or
+// SystemTags changed. The Manager cache is stale when its recorded value
+// differs from this one.
+func (s *Store) tagGeneration() uint64 { return s.tagGen.Load() }
+
+// Flush synchronously writes the current in-memory session set to disk,
+// waiting for any write the background writer has in progress. Callers
+// that are about to read the file (or exit) use it so the file reflects
+// the in-memory state.
+func (s *Store) Flush() error {
+	return s.flush(true)
+}
+
+// FlushIfDirty is Flush that skips the write when nothing changed since the
+// last one.
+func (s *Store) FlushIfDirty() error {
+	return s.flush(false)
+}
+
+// Path is the store's backing file (diagnostics; tests name it in
+// failures so the leaking store is unambiguous).
+func (s *Store) Path() string { return s.path }
+
+// WriterRunning reports whether the background flush may still fire for
+// this store (constructed, writer started, not yet Closed). Tests use it
+// to fail the offending test by name instead of blaming a bystander.
+func (s *Store) WriterRunning() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.started && !s.closed
+}
+
+// IsClosed reports whether Close has run (idempotent; false before it).
+func (s *Store) IsClosed() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.closed
+}
+
+// Close flushes pending changes and stops the background writer. The store
+// stays usable afterwards: later Saves write through synchronously.
+func (s *Store) Close() error {
+	if s == nil {
 		return nil
 	}
-	defer flockRelease(lockFile)
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = true
+	started := s.started
+	s.mu.Unlock()
+	close(s.stopCh)
+	if started {
+		<-s.doneCh
+	}
+	s.arc.wg.Wait()
+	err := s.flush(false)
+	s.liveGuardUnregister()
+	return err
+}
 
+// flush writes the store to disk. force writes even when not dirty.
+// The marshal happens under the read lock only (session pointers are
+// shared with Mutate writers); the file write, flock and fsync happen
+// outside the store lock so API calls never wait on the disk.
+func (s *Store) flush(force bool) error {
+	if s.records {
+		return s.flushRecords(force)
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if !s.dirty.Swap(false) && !force {
+		return nil
+	}
+	s.mu.RLock()
 	sessions := make([]*Session, 0, len(s.sessions))
 	for _, sess := range s.sessions {
 		sessions = append(sessions, sess)
 	}
-
-	data, err := json.MarshalIndent(sessions, "", "  ")
+	data, err := json.Marshal(sessions)
+	s.mu.RUnlock()
 	if err != nil {
+		s.dirty.Store(true)
 		return fmt.Errorf("marshal sessions: %w", err)
 	}
+	wrote, err := s.writeFile(data)
+	if err != nil || !wrote {
+		s.dirty.Store(true)
+	}
+	return err
+}
+
+// writeFile writes data to the store file under the cross-process flock.
+//
+// BL294 — an exclusive advisory flock on sessions.json.lock serialises
+// concurrent writes from two Manager instances that briefly co-exist
+// during the daemon re-exec path (capability elevation). The lock is
+// held only for the duration of the atomic write (temp file in the same
+// directory + rename, via secfile.WriteFile) and released immediately
+// after. A 5-second timeout prevents deadlock: if the lock cannot be
+// acquired within that window the write is skipped and reported as not
+// written, so the caller keeps the store dirty and retries.
+func (s *Store) writeFile(data []byte) (bool, error) {
+	// flockAcquire returns (nil, nil) on timeout.
+	lockFile, lockErr := flockAcquire(s.lockPath)
+	if lockErr != nil {
+		return false, fmt.Errorf("acquire sessions lock: %w", lockErr)
+	}
+	if lockFile == nil {
+		return false, nil
+	}
+	defer flockRelease(lockFile)
 
 	if err := secfile.WriteFile(s.path, data, 0644, s.encKey); err != nil {
-		return fmt.Errorf("write sessions %s: %w", s.path, err)
+		return false, fmt.Errorf("write sessions %s: %w", s.path, err)
 	}
-	return nil
+	s.writes.Add(1)
+	return true, nil
 }

@@ -17,6 +17,7 @@ import (
 func TestEnsureExtracted_SHA256_Rewrite(t *testing.T) {
 	t.Setenv("DATAWATCH_NODE_BIN", "/bin/sh")
 	dir := t.TempDir()
+	isolateNodeCompileCache(t, dir)
 
 	// First extraction — should succeed.
 	dst, err := EnsureExtracted(dir)
@@ -52,6 +53,7 @@ func TestEnsureExtracted_SHA256_Rewrite(t *testing.T) {
 func TestEnsureExtracted_NoRewrite_WhenCorrect(t *testing.T) {
 	t.Setenv("DATAWATCH_NODE_BIN", "/bin/sh")
 	dir := t.TempDir()
+	isolateNodeCompileCache(t, dir)
 
 	// First extraction.
 	dst, err := EnsureExtracted(dir)
@@ -69,6 +71,21 @@ func TestEnsureExtracted_NoRewrite_WhenCorrect(t *testing.T) {
 	if info2.ModTime() != mtime1 {
 		t.Errorf("channel.js was rewritten unnecessarily (mtime changed)")
 	}
+}
+
+// isolateNodeCompileCache keeps the Node compile cache out of $TMPDIR.
+// EnsureExtracted runs `npm install`, and the npm-bundled node (v24)
+// defaults its compile cache to $TMPDIR/node-compile-cache — a directory
+// the test process cannot clean up (observed leaked in the tmp-prefix
+// survey). Pointing NODE_COMPILE_CACHE at a dir under t.TempDir keeps it
+// in the auto-removed test directory.
+func isolateNodeCompileCache(t *testing.T, dir string) {
+	t.Helper()
+	cacheDir := filepath.Join(dir, "node-compile-cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir node-compile-cache: %v", err)
+	}
+	t.Setenv("NODE_COMPILE_CACHE", cacheDir)
 }
 
 // TestSweepUserScopeMCPConfig_WritesWhenMissing verifies that the sweep creates

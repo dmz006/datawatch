@@ -103,7 +103,7 @@ A session is in WaitingInput, you're typing, it goes Running, then
 flips back to WaitingInput within seconds. Walk:
 
 ```sh
-SID=ralfthewise-abcd
+SID=peer-d-abcd
 
 # Pane 1: confirm output IS arriving on the log file.
 tail -F ~/.datawatch/sessions/$SID/output.log

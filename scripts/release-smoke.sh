@@ -49,6 +49,17 @@
 # variable name. See docs/howto/testing-against-a-running-daemon.md
 # for the full reference (both mechanisms, side by side).
 #
+# §79 runs the eleven PWA slow-network load scenarios (TS-802..TS-812) against this smoke daemon itself (never a second daemon).
+# The shared navigation section after it runs the phone-width navigation scenario the same way.
+# §92 covers the Claude Code interstitial-prompt dismissal settings: the four session.*
+# prompt keys at their defaults, a changed-value PUT read back applied, bad values
+# (zero attempts, a negative delay, a non-integer) refused without any change, and the
+# ui_prompts counters object in GET /api/stats — writing only against this script's
+# own isolated daemon, never an external one.
+#
+# The Supervisor loop section covers the supervisor-loop jobs, runs and stats reads and the
+# unknown-outcome, unknown-job and empty-eval refusals (reads and refusals only; no job is run).
+#
 # Returns 0 on success, non-zero on first failure.
 
 set -uo pipefail
@@ -57,10 +68,76 @@ SMOKE_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_DIR=$(cd "$SMOKE_DIR/.." && pwd)
 REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)
 
+# --- shared daemon lifecycle (source scripts/test-daemon-lib.sh first) ----
+# Any test daemon this script starts in local-daemon mode is ended on EVERY
+# exit path (normal, failure, INT, TERM, HUP): its live sessions are ended
+# through the daemon's own API, then its process is signalled by the exact
+# PID recorded at start (only while its recorded marker is still in the
+# cmdline). The library's two cleanup hooks split smoke's cleanup around
+# that stop:
+#   TD_PRE_STOP_CLEANUP (smoke_pre_stop_cleanup) runs BEFORE td_stop_all,
+#     while the daemon is still alive: cleanup_all's per-ID API deletes
+#     (sessions by id, PRDs, peers, ...) must land while the daemon is up.
+#     In external-daemon mode they are sent to the external daemon, which
+#     this script never signals.
+#   TD_EXTRA_CLEANUP (smoke_extra_cleanup) runs AFTER td_stop_all and
+#     removes the scratch dirs, so the data dir is never deleted while its
+#     daemon is still running.
+source "$SMOKE_DIR/test-daemon-lib.sh"
+smoke_pre_stop_cleanup() {
+  # API cleanup while the smoke daemon is still alive. cleanup_all only
+  # exists once the test dir is set up; guard both.
+  if declare -F cleanup_all >/dev/null 2>&1 && [[ -n "${CLEANUP_LOG:-}" ]]; then
+    cleanup_all
+  fi
+}
+smoke_extra_cleanup() {
+  # Runs on every exit, after td_stop_all has ended recorded daemons.
+  if [[ -n "${TMPD:-}" ]]; then
+    rm -rf "$TMPD" 2>/dev/null
+  fi
+  if [[ -n "${TEST_WORK_DIR:-}" ]]; then
+    if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
+      echo "Test data kept: $TEST_WORK_DIR"
+    else
+      rm -rf "$TEST_WORK_DIR" 2>/dev/null || true
+    fi
+  fi
+}
+TD_PRE_STOP_CLEANUP=smoke_pre_stop_cleanup
+TD_EXTRA_CLEANUP=smoke_extra_cleanup
+td_install_traps "$@"
+
 # --- static source lints (no daemon required) --------------------------------
 # v6.11.25 — keep docs/plans/ clean before every release.
+# The daily plans-tidy Automation writes a run stamp (ran_at in UTC, result).
+# A stamp with result "ok" and ran_at under 24 hours old lets the smoke skip the
+# --check. Any other result, an old stamp, or a missing/unreadable stamp keeps
+# the --check and its abort. DW_SKIP_TIDY_CHECK=1 still skips the whole gate.
+TIDY_STAMP_FILE="$REPO_DIR/.datawatch/reports/plans-tidy-last-run.json"
+tidy_stamp_fresh() {
+  # Returns 0 only when the stamp is ok and fresh; otherwise returns 1.
+  local stamp="$1" ran_at result ran_epoch now_epoch age
+  [ -f "$stamp" ] || return 1
+  ran_at=$(sed -n 's/.*"ran_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$stamp" | head -n 1)
+  result=$(sed -n 's/.*"result"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$stamp" | head -n 1)
+  [ "$result" = "ok" ] || return 1
+  [ -n "$ran_at" ] || return 1
+  command -v date >/dev/null 2>&1 || return 1
+  ran_epoch=$(date -u -d "$ran_at" +%s 2>/dev/null) || return 1
+  now_epoch=$(date -u +%s 2>/dev/null) || return 1
+  [ -n "$ran_epoch" ] && [ -n "$now_epoch" ] || return 1
+  age=$(( now_epoch - ran_epoch ))
+  [ "$age" -ge 0 ] && [ "$age" -lt 86400 ] || return 1
+  TIDY_STAMP_RAN_AT="$ran_at"
+  return 0
+}
 if [ "${DW_SKIP_TIDY_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/tidy-plans.sh" ]; then
-  "$SMOKE_DIR/tidy-plans.sh" --check >&2 || exit 1
+  if tidy_stamp_fresh "$TIDY_STAMP_FILE"; then
+    echo "tidy gate: daily Automation ran at $TIDY_STAMP_RAN_AT (result ok, under 24h) — skipping --check" >&2
+  else
+    "$SMOKE_DIR/tidy-plans.sh" --check >&2 || exit 1
+  fi
 fi
 # v6.12.1 — keep the embedded /docs/ mirror current.
 if [ "${DW_SKIP_DOCS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/sync-docs-to-webfs.sh" ]; then
@@ -69,6 +146,15 @@ fi
 # v6.18.0 — internal-ref leak audit.
 if [ "${DW_SKIP_INTERNAL_REFS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-no-internal-refs.sh" ]; then
   "$SMOKE_DIR/check-no-internal-refs.sh" >&2 || exit 1
+fi
+# — whole-tree local-environment leak audit. The check prints only
+# path:line: class report lines (plus its per-class count summary) and
+# never prints matched text; a failing exit fails the smoke.
+if [ "${DW_SKIP_LOCAL_LEAKS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-no-local-leaks.sh" ]; then
+  if ! "$SMOKE_DIR/check-no-local-leaks.sh" "$REPO_DIR"; then
+    echo "local-environment leak check failed — reproduce with: make check-leaks" >&2
+    exit 1
+  fi
 fi
 # 2026-10-07 — version-bump/reuse audit. Compares against the most
 # recent release tag so a release never reuses an already-shipped
@@ -199,6 +285,11 @@ YAML
   "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!
+  # Record it with the shared daemon-lifecycle library so every exit path
+  # ends it: marker = the config path, which stays in the daemon's cmdline
+  # for its whole life (recycled PIDs are left alone).
+  td_track_pid "$TEST_DAEMON_PID" "$TEST_CONFIG" \
+    || echo "warn: could not record test daemon pid $TEST_DAEMON_PID" >&2
 
   # Wait up to 30 s for the daemon to answer health.
   echo "Waiting for test daemon..."
@@ -210,7 +301,10 @@ YAML
   if [[ $_ready -eq 0 ]]; then
     echo "ERROR: test daemon did not start within 30 s. Log:" >&2
     tail -30 "$TEST_WORK_DIR/daemon.log" >&2
-    kill "$TEST_DAEMON_PID" 2>/dev/null || true
+    # End the recorded daemon (marker check + TERM + KILL + wait) before
+    # leaving; the EXIT trap would do this anyway, but do it explicitly so
+    # the data dir removal below cannot race a still-running daemon.
+    td_stop_one "$TEST_DAEMON_PID" || echo "warn: test daemon $TEST_DAEMON_PID still running" >&2
     rm -rf "$TEST_WORK_DIR"
     exit 1
   fi
@@ -219,6 +313,10 @@ YAML
 
   BASE="https://127.0.0.1:${SMOKE_TLS_PORT}"
   TOK=""   # test daemon starts with no auth token
+  # Remember its API: on stop the library ends this daemon's live sessions
+  # through the API before signalling the PID, even on abrupt exits.
+  td_set_api "$TEST_DAEMON_PID" "$BASE" "$TOK" 2>/dev/null \
+    || echo "warn: could not set the test daemon's API base" >&2
   # CLI commands use -u + --config so the TLS cert path and token are read from
   # the smoke daemon's config (not from ~/.datawatch which points at production).
   DW_CLI="$_DW_BIN --config $TEST_CONFIG -u $BASE"
@@ -235,28 +333,21 @@ CLEANUP_LOG="$TMPD/cleanup.log"
 : >"$CLEANUP_LOG"
 add_cleanup() { echo "$1 $2" >> "$CLEANUP_LOG"; }
 
-# v5.26.18 — operator-reported (multiple times): smoke runs leave
-# orphaned `autonomous:*` tmux sessions because the executor goroutine
-# can have a spawn HTTP call already in flight when cancel propagates.
-# Capture a baseline of "autonomous-named" session IDs that exist
-# BEFORE smoke runs; in cleanup_all we list them again and kill any
-# new ones (i.e. created during smoke). This catches the race.
-BASELINE_AUTO_SESSIONS="$TMPD/baseline_auto.txt"
-curl_args_baseline=(-sk --max-time 10)
-[[ -n "$TOK" ]] && curl_args_baseline+=(-H "Authorization: Bearer $TOK")
-curl "${curl_args_baseline[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c '
-import json, sys
-try:
-  d = json.load(sys.stdin)
-  ss = d.get("sessions") if isinstance(d, dict) else d
-  for s in (ss or []):
-    if (s.get("name") or "").startswith("autonomous:") and s.get("state") in ("running","waiting_input","rate_limited"):
-      print(s.get("full_id",""))
-except Exception:
-  pass
-' > "$BASELINE_AUTO_SESSIONS" 2>/dev/null || : > "$BASELINE_AUTO_SESSIONS"
-
 cleanup_all() {
+  # Tracked-resource cleanup: end every session and DELETE every PRD,
+  # peer, and other entity that add_cleanup recorded at creation time, in
+  # reverse order (children before parents). Runs on EVERY exit path as
+  # the library's TD_PRE_STOP_CLEANUP hook — before td_stop_all ends the
+  # smoke daemon (local mode), and against the external daemon (external
+  # mode), which this script never signals.
+  #
+  # No name-based session sweep: the operator rule is that smoke cleans
+  # up EXACTLY what it created via add_cleanup — nothing more — and the
+  # session kills below go by the exact id recorded at creation.
+  #
+  # Scratch-dir removal (TMPD, TEST_WORK_DIR) happens in
+  # smoke_extra_cleanup, which the library runs AFTER td_stop_all, so the
+  # data dir is never deleted while its daemon still runs.
   local printed_header=0
   if [[ -s "$CLEANUP_LOG" ]]; then
     printed_header=1
@@ -280,91 +371,42 @@ cleanup_all() {
         compute-node)    curl "${curl_args[@]}" -X DELETE "$BASE/api/compute/nodes/$id" >/dev/null 2>&1 && echo "  removed compute node $id" || echo "  (already gone) compute-node $id" ;;
         llm)             curl "${curl_args[@]}" -X DELETE "$BASE/api/llms/$id" >/dev/null 2>&1 && echo "  removed llm $id" || echo "  (already gone) llm $id" ;;
         smoke-file)      curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" -d "{\"path\":\"$id\"}" "$BASE/api/files" >/dev/null 2>&1 && echo "  deleted file $id" || echo "  (already gone) file $id" ;;
+        # Clears only the named backend's flag (never "all"), so pre-existing
+        # operator flags survive the smoke run.
+        usage-backoff)   [[ -n "$id" ]] && curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" -d "{\"backend\":\"$id\"}" "$BASE/api/usage-backoff" >/dev/null 2>&1 && echo "  cleared usage back-off $id" || echo "  (already gone) usage-backoff $id" ;;
+        # Usage calculator: exact-id reading delete, and exact-value restores of the
+        # pre-smoke extra credit and usage.calculator.variant (never a pattern sweep).
+        usage)           UXQ=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(str(sys.argv[1])))' "$id" 2>/dev/null || echo "$id"); curl "${curl_args[@]}" -X DELETE "$BASE/api/usage/readings?id=$UXQ" >/dev/null 2>&1 && echo "  deleted usage reading $id" || echo "  (already gone) usage reading $id" ;;
+        usage-credit)    [[ -n "$id" ]] && curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"points\": $id}" "$BASE/api/usage/extra-credit" >/dev/null 2>&1 && echo "  restored usage extra credit to $id" || echo "  (already gone) usage-credit $id" ;;
+        usage-variant)   UC=$(echo "$id" | tr -d '"'); curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\": \"$UC\"}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.variant to ${UC:-<unset/default>}" || echo "  (already gone) usage-variant ${UC:-<unset/default>}" ;;
+        # Exact-value restore of usage.calculator.reset_zone (section 85): the id carries
+        # the raw JSON token (\"Zone\" or "") so an unset zone restores to "', never a guessed one.
+        usage-zone)      URZ=$(echo "$id" | tr -d ' '); [[ -n "$URZ" ]] || URZ='""'; curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.reset_zone\": $URZ}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.reset_zone to ${URZ:-<unset/default>}" || echo "  (already gone) usage-zone" ;;
+        # Exact-value restore of autonomous.stuck_running_seconds (section 86); never a pattern sweep.
+        stuck-running)   SRV=$(echo "$id" | tr -dc '0-9'); curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"autonomous.stuck_running_seconds\": ${SRV:-0}}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored autonomous.stuck_running_seconds to ${SRV:-0}" || echo "  (already gone) stuck-running ${SRV:-0}" ;;
+        # Section 87 (operator questions step 2): the lifecycle subscription is deleted by its
+        # exact id, each config key the section changed is restored to the exact value read
+        # first (id is key=value, value a JSON literal), and the alert it raised is marked
+        # read by its exact id (the alert store has no delete; a smoke daemon is discarded).
+        qsub)            curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/subscriptions/$id" >/dev/null 2>&1 && echo "  removed question subscription $id" || echo "  (already gone) question subscription $id" ;;
+        qcfg)            QCK="${id%%=*}"; QCV="${id#*=}"; curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"$QCK\": $QCV}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored $QCK to $QCV" || echo "  (already gone) qcfg $id" ;;
+        qalert)          curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$id\"}" "$BASE/api/alerts" >/dev/null 2>&1 && echo "  marked alert $id read" || echo "  (already gone) alert $id" ;;
+        # Cancel first (a draft refuses it, which is fine), then delete.
+        automation)      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"cancel_in_flight":true}' "$BASE/api/automations/$id/cancel" >/dev/null 2>&1; curl "${curl_args[@]}" -X DELETE "$BASE/api/automations/$id" >/dev/null 2>&1 && echo "  removed automation $id" || echo "  (already gone) automation $id" ;;
         device)          curl "${curl_args[@]}" -X DELETE "$BASE/api/devices/$id" >/dev/null 2>&1 && echo "  removed device $id" || echo "  (already gone) device $id" ;;
         *)               echo "  (unknown kind) $kind $id" ;;
       esac
     done
   fi
-
-  # v5.26.18 — race-condition orphan sweep. After every PRD has been
-  # hard-deleted, list autonomous-named running sessions and kill any
-  # that weren't in the pre-smoke baseline (i.e. were spawned during
-  # smoke and somehow survived hard-delete's session-kill walk).
-  # Baseline tracking means real operator-initiated autonomous runs
-  # that pre-existed are NOT touched.
-  local NEW_ORPHANS
-  NEW_ORPHANS=$(curl "${curl_args[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    ss = d.get('sessions') if isinstance(d, dict) else d
-    baseline = set()
-    try:
-        with open('$BASELINE_AUTO_SESSIONS') as f:
-            baseline = set(line.strip() for line in f if line.strip())
-    except Exception:
-        pass
-    for s in (ss or []):
-        name = (s.get('name') or '')
-        # v6.11.26 — operator-directed: sweep BOTH autonomous race-
-        # survivors AND any session named smoke-* so smoke runs never
-        # leak debug sessions into the daemon.
-        #
-        # v7.0.0-alpha.14 (operator-flagged 2026-05-09): the rule is
-        # smoke cleans up EXACTLY what it created via add_cleanup —
-        # nothing more. Earlier this version widened the sweep to
-        # include 'council-*' / 'llm_backend == council-virtual', which
-        # killed an operator-attached live session (the active host
-        # session was named with 'council-' because the operator was
-        # debugging Council Mode). Reverted: do NOT broaden the orphan
-        # sweep to entity types the operator may legitimately create.
-        # New entity types (Council runs, ComputeNodes, LLMs) MUST use
-        # add_cleanup at creation time so the tracked-cleanup loop
-        # above (cleanup_all switch) handles them. The orphan sweep
-        # below is purely a race-condition safety net for the two
-        # patterns that demonstrably leak: autonomous:* and smoke-*.
-        is_smoke = name.startswith('autonomous:') or name.startswith('smoke-')
-        if not is_smoke:
-            continue
-        # State filter only applies to autonomous race-sweep; smoke-*
-        # gets killed in any state.
-        if name.startswith('autonomous:') and s.get('state') not in ('running','waiting_input','rate_limited'):
-            continue
-        fid = s.get('full_id','')
-        if fid and fid not in baseline:
-            print(fid)
-except Exception:
-    pass
-" 2>/dev/null || true)
-  if [[ -n "$NEW_ORPHANS" ]]; then
-    if [[ "$printed_header" == "0" ]]; then
-      echo ""; echo "== Cleanup =="; printed_header=1
-    fi
-    while IFS= read -r sid; do
-      [[ -z "$sid" ]] && continue
-      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$sid\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1
-      echo "  killed orphan smoke/autonomous session $sid"
-    done <<< "$NEW_ORPHANS"
-  fi
-
-  rm -rf "$TMPD" 2>/dev/null
-
-  # Shut down the test daemon and delete its data dir.
-  # Resources were already cleaned via API above; this is the final sweep.
-  if [[ -n "${TEST_DAEMON_PID:-}" ]]; then
-    kill "$TEST_DAEMON_PID" 2>/dev/null || true
-    wait "$TEST_DAEMON_PID" 2>/dev/null || true
-  fi
-  # Kill any tmux sessions the smoke daemon created (cs-dw-smoke-test-*).
-  env -u TMUX tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-smoke-test-' | \
-    while read -r s; do env -u TMUX tmux kill-session -t "$s" 2>/dev/null || true; done
-  if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
-    echo "Test data kept: $TEST_WORK_DIR"
-  else
-    rm -rf "$TEST_WORK_DIR" 2>/dev/null || true
-  fi
+  return 0
 }
-trap cleanup_all EXIT
+# Traps: installed by the shared daemon-lifecycle library above — on every
+# exit path it runs smoke_pre_stop_cleanup (per-ID API cleanup while the
+# daemon is still alive), then td_stop_all (ends the daemon's live sessions
+# via its own API, then signals the recorded PID marker-verified and waits
+# for it), then smoke_extra_cleanup (scratch dirs). Nothing above signals
+# a daemon, and no session is killed by name: only the exact id recorded
+# at creation is ever sent to the API.
 
 PASS=0
 FAIL=0
@@ -1402,9 +1444,57 @@ H "7r. Stdio-mode MCP tools (when wrapper available)"
 # Spawns `datawatch mcp` as a subprocess, sends JSON-RPC initialize +
 # tools/list + tools/call(memory_recall), validates each response.
 # Closes mempalace-audit partial: "memory_recall not in stdio surface".
+# 9.5.29 (BL463) — adds the live get_my_scope probe (a session calls it and
+# gets its scope back) and the failing-call contract: both in-process and
+# loopback-proxy failures must come back isError=true with status + body,
+# holding MCP to REST's reliability bar.
 STDIO_MCP_SCRIPT="$(dirname "$0")/release-smoke-stdio-mcp.sh"
 if [[ -x "$STDIO_MCP_SCRIPT" ]]; then
-  if STDIO_OUT=$(bash "$STDIO_MCP_SCRIPT" 2>&1); then
+  # Give the probe its context. Local smoke mode: point the spawned
+  # `datawatch mcp` at the smoke daemon's config so its loopback proxies hit
+  # SMOKE_PORT against the isolated data dir (and the failing proxy call
+  # gets a real HTTP status + body). External-daemon mode: use the binary
+  # we already resolved for the CLI if we have one.
+  STDIO_ENV=()
+  STDIO_HINT=""
+  if [[ "$EXTERNAL_DAEMON" -eq 0 && -n "${TEST_CONFIG:-}" && -n "${_DW_BIN:-}" ]]; then
+    STDIO_ENV=("DW_BIN=$_DW_BIN" "DW_CONFIG=$TEST_CONFIG" "DW_REQUIRE_HTTP_STATUS=1")
+    # Positive probe needs a known session: reuse one if the smoke daemon
+    # already has one, else start a throwaway fixture session (shell backend
+    # preferred — free, local, no LLM quota).
+    STDIO_HINT=$(curl "${curl_args[@]}" -s "$BASE/api/sessions" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin); ss=d.get("sessions") if isinstance(d,dict) else d
+for s in (ss or []):
+    fid=s.get("full_id") or s.get("id")
+    if fid: print(fid); break' 2>/dev/null || echo "")
+    if [[ -z "$STDIO_HINT" ]]; then
+      FIX_BACKEND=$(curl "${curl_args[@]}" -s "$BASE/api/backends" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin); llm=d.get("llm") or []
+prefer=["shell","opencode-acp","opencode","claude-code"]
+avail=[b.get("name") for b in llm if b.get("available") and b.get("name")]
+for p in prefer:
+    if p in avail: print(p); break
+else: print(avail[0] if avail else "")' 2>/dev/null || echo "")
+      if [[ -n "$FIX_BACKEND" ]]; then
+        FIX_RESP=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" \
+          -d "{\"task\":\"smoke fixture: stdio get_my_scope check\",\"llm_backend\":\"$FIX_BACKEND\",\"project_dir\":\"/tmp\",\"name\":\"smoke-stdio-scope-$RUN_ID\"}" \
+          "$BASE/api/sessions/start" 2>/dev/null || echo "")
+        STDIO_HINT=$(echo "$FIX_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("full_id",""))' 2>/dev/null || echo "")
+      fi
+      [[ -n "$STDIO_HINT" ]] && add_cleanup sess "$STDIO_HINT"
+    fi
+  elif [[ -n "${_DW_BIN:-}" ]]; then
+    STDIO_ENV=("DW_BIN=$_DW_BIN")
+    STDIO_HINT=$(curl "${curl_args[@]}" -s "$BASE/api/sessions" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin); ss=d.get("sessions") if isinstance(d,dict) else d
+for s in (ss or []):
+    fid=s.get("full_id") or s.get("id")
+    if fid: print(fid); break' 2>/dev/null || echo "")
+  fi
+  if STDIO_OUT=$(env DW_SESSION_HINT="$STDIO_HINT" "${STDIO_ENV[@]}" bash "$STDIO_MCP_SCRIPT" 2>&1); then
     ok "$STDIO_OUT"
   else
     rc=$?
@@ -1413,6 +1503,7 @@ if [[ -x "$STDIO_MCP_SCRIPT" ]]; then
     else
       ko "$STDIO_OUT"
     fi
+    [ -n "$STDIO_HINT" ] && echo "  (probe session hint: $STDIO_HINT)" >&2
   fi
 else
   skip "release-smoke-stdio-mcp.sh missing; stdio MCP probe deferred"
@@ -2071,22 +2162,53 @@ else
 fi
 
 H "13. v6.8.0 BL257 P1 — Identity / Telos: GET → PATCH round-trip"
+# The write steps run only against the scratch daemon this script started
+# (EXTERNAL_DAEMON=0). With DW_BASE set the daemon may be the operator's live
+# one, so that mode reads the identity and writes nothing. No step here ever
+# sends an empty body to the identity route.
+ID_IS_EMPTY='import json,sys
+d=json.load(sys.stdin)
+keys=("role","north_star_goals","current_projects","values","current_focus","context_notes")
+sys.exit(0 if not any(d.get(k) for k in keys) else 1)'
 ID_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/identity" 2>/dev/null || echo "000")
 if [[ "$ID_GET" != "200" ]]; then
   skip "identity disabled or endpoint unreachable (HTTP $ID_GET)"
 else
   ok "identity GET reachable"
-  PATCH_RESP=$(curl "${curl_args[@]}" -X PATCH -H "Content-Type: application/json" \
-    -d '{"role":"smoke-test-role"}' "$BASE/api/identity")
-  ROLE_BACK=$(echo "$PATCH_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "")
-  if [[ "$ROLE_BACK" == "smoke-test-role" ]]; then
-    ok "identity PATCH round-trip: role merged"
+  if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+    skip "identity PATCH round-trip: external daemon (DW_BASE set) may hold the operator's live identity; write steps not run"
   else
-    ko "identity PATCH round-trip: got role=$ROLE_BACK"
+    ID_SAVED=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null || echo "")
+    if echo "$ID_SAVED" | python3 -c "$ID_IS_EMPTY" 2>/dev/null; then
+      ID_WAS_EMPTY=1
+    else
+      ID_WAS_EMPTY=0
+    fi
+    PATCH_RESP=$(curl "${curl_args[@]}" -X PATCH -H "Content-Type: application/json" \
+      -d '{"role":"smoke-test-role"}' "$BASE/api/identity")
+    ROLE_BACK=$(echo "$PATCH_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "")
+    if [[ "$ROLE_BACK" == "smoke-test-role" ]]; then
+      ok "identity PATCH round-trip: role merged"
+    else
+      ko "identity PATCH round-trip: got role=$ROLE_BACK"
+    fi
+    # Put back what the daemon held: the saved identity when it had content,
+    # the explicit reset when it was empty.
+    if [[ "$ID_WAS_EMPTY" -eq 1 ]]; then
+      curl "${curl_args[@]}" -X POST -o /dev/null "$BASE/api/identity/reset" 2>/dev/null || true
+    else
+      curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+        --data-binary "$ID_SAVED" -o /dev/null "$BASE/api/identity" 2>/dev/null || true
+    fi
+    ID_AFTER=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null || echo "")
+    ID_ROLE_AFTER=$(echo "$ID_AFTER" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "?")
+    ID_ROLE_SAVED=$(echo "$ID_SAVED" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "?")
+    if [[ "$ID_ROLE_AFTER" == "$ID_ROLE_SAVED" ]]; then
+      ok "identity PATCH round-trip: saved identity put back"
+    else
+      ko "identity PATCH round-trip: role after restore '$ID_ROLE_AFTER', saved '$ID_ROLE_SAVED'"
+    fi
   fi
-  # Cleanup: clear the role so subsequent runs don't accumulate state.
-  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
-    -d '{}' "$BASE/api/identity" >/dev/null 2>&1 || true
 fi
 
 # ---------------------------------------------------------------------------
@@ -2499,6 +2621,86 @@ except Exception:
   esac
 else
   skip "no Compute Nodes registered — skipping observer_peer schema check"
+fi
+
+# ---------------------------------------------------------------------------
+H "28b. Pulled peers bind to Compute Nodes like pushed peers; shadow peers 409"
+# A peer opted into observer pull attaches/detaches on a Compute Node
+# exactly like a pushed peer, leaves the free list while bound, and lands
+# in the by-node grouping. A shadow peer (federated, observer_pull off,
+# never pushed) has no data to bind and is rejected with a 409 whose body
+# says pull is disabled. Skipped when the peer registry is off (same 503
+# posture as section 27).
+PB_FREE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/observer/peers/free" 2>/dev/null || echo "000")
+case "$PB_FREE" in
+  200) PB_OK=1 ;;
+  *)   PB_OK=0; skip "peer registry disabled — pulled-peer attach/detach skipped" ;;
+esac
+if [[ "${PB_OK:-0}" == "1" ]]; then
+  PB_NODE="smoke-pullbind-$$"
+  PB_PULL="smoke-pullpeer-$$"
+  PB_SHADOW="smoke-shadowpeer-$$"
+  PB_NCODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/compute/nodes?probe=skip" -H "Content-Type: application/json" -d "{\"name\":\"$PB_NODE\",\"kind\":\"ollama\",\"address\":\"http://127.0.0.1:1\"}" 2>/dev/null || echo "000")
+  case "$PB_NCODE" in
+    200|201)
+      add_cleanup compute-node "$PB_NODE"
+      add_cleanup fedpeer "$PB_PULL"
+      add_cleanup fedpeer "$PB_SHADOW"
+      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"name\":\"$PB_PULL\",\"url\":\"http://127.0.0.1:1\",\"token\":\"smoke-pb-pull-token-$$\",\"enabled\":true,\"federated\":true,\"observer_pull\":true,\"observer_pull_interval_s\":30}" "$BASE/api/federation/peers" >/dev/null 2>&1
+      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"name\":\"$PB_SHADOW\",\"url\":\"http://127.0.0.1:1\",\"token\":\"smoke-pb-shadow-token-$$\",\"enabled\":true,\"federated\":true}" "$BASE/api/federation/peers" >/dev/null 2>&1
+
+      PB_ACODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"peer\":\"$PB_PULL\"}" "$BASE/api/compute/nodes/$PB_NODE/observer-peer" 2>/dev/null || echo "000")
+      case "$PB_ACODE" in
+        200) ok "attach pulled peer to Compute Node (200)" ;;
+        *)   ko "attach pulled peer to Compute Node = HTTP $PB_ACODE, want 200" ;;
+      esac
+
+      PB_SCODE=$(curl "${curl_args[@]}" -o /tmp/pb-shadow-$$ -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"peer\":\"$PB_SHADOW\"}" "$BASE/api/compute/nodes/$PB_NODE/observer-peer" 2>/dev/null || echo "000")
+      PB_SBODY=$(cat /tmp/pb-shadow-$$ 2>/dev/null || echo "")
+      case "$PB_SCODE" in
+        409)
+          if echo "$PB_SBODY" | grep -qi "pull disabled"; then
+            ok "shadow peer attach rejected 409 with \"pull disabled\" message"
+          else
+            ko "shadow peer attach 409 but body lacks the pull-disabled explanation: $PB_SBODY"
+          fi
+          ;;
+        *)   ko "shadow peer attach = HTTP $PB_SCODE, want 409" ;;
+      esac
+
+      PB_FREE=$(curl "${curl_args[@]}" "$BASE/api/observer/peers/free" 2>/dev/null || echo "")
+      echo "$PB_FREE" | grep -q "\"$PB_PULL\""   && PB_P=1 || PB_P=0
+      echo "$PB_FREE" | grep -q "\"$PB_SHADOW\"" && PB_S=1 || PB_S=0
+      [[ "$PB_P" == "0" ]] && ok "bound pulled peer excluded from /api/observer/peers/free" \
+        || ko "free list still contains the bound pulled peer $PB_PULL"
+      [[ "$PB_S" == "1" ]] && ok "shadow peer stays in /api/observer/peers/free (never auto-bound)" \
+        || ko "free list lost the shadow peer $PB_SHADOW"
+
+      PB_BN=$(curl "${curl_args[@]}" "$BASE/api/observer/peers/by-node" 2>/dev/null || echo "")
+      PB_BNG=$(echo "$PB_BN" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+g = d.get('by_node', {}) or {}
+row = next((r for r in g.get('$PB_NODE', []) if r.get('name') == '$PB_PULL'), None)
+unb = d.get('unbound', []) or []
+print('ok' if row is not None and any(r.get('name') == '$PB_SHADOW' for r in unb) else 'err')" 2>/dev/null || echo "err")
+      case "$PB_BNG" in
+        ok)  ok "by-node: pulled peer under node, shadow peer unbound" ;;
+        err) ko "by-node grouping wrong: pulled peer not under node or shadow peer not unbound" ;;
+      esac
+
+      PB_DCODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/compute/nodes/$PB_NODE/observer-peer" 2>/dev/null || echo "000")
+      case "$PB_DCODE" in
+        200) ok "detach pulled peer (200)" ;;
+        *)   ko "detach pulled peer = HTTP $PB_DCODE, want 200" ;;
+      esac
+      PB_FREE=$(curl "${curl_args[@]}" "$BASE/api/observer/peers/free" 2>/dev/null || echo "")
+      echo "$PB_FREE" | grep -q "\"$PB_PULL\"" && ok "detached pulled peer back in free list" \
+        || ko "free list lost the detached pulled peer $PB_PULL"
+      rm -f /tmp/pb-shadow-$$
+      ;;
+    *)   skip "could not create scratch compute node for pulled-peer binding (HTTP $PB_NCODE)" ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -3921,6 +4123,2959 @@ else
   else
     ko "autonomous.max_concurrent_tasks is $MCT_FINAL, expected $MCT_BEFORE"
   fi
+fi
+
+# ---------------------------------------------------------------------------
+H "75. Result panel — spawned subprocess posts its result; readable via schedule-results (GH#204)"
+# Spawns an ephemeral subprocess session through the schedules API (the
+# schedule timer ticks every 30 s; run_at=now fires on the first tick).
+# The task shell uses the daemon-injected scoped credential
+# (DATAWATCH_SESSION_ID / DATAWATCH_BASE_URL / DATAWATCH_RESULT_TOKEN)
+# to POST its own structured result; the operator token reads it back
+# through GET /api/schedule-results and /api/schedule-results/{name}.
+# A second (decoy) subprocess session plus the first session's scoped
+# token assert the 403 cross-session identity gate — that sub-check skips
+# when the smoke script and the daemon don't share a filesystem
+# (remote external-daemon mode), same as the other file-dependent sections.
+SRP_NAME="smoke-result-panel-$(date +%s)"
+SRP_SCRATCH="$(mktemp -u /tmp/datawatch-smoke-srp.XXXXXX)"
+SRP_BODY_A=$(SRP_NAME="$SRP_NAME" SRP_SCRATCH="$SRP_SCRATCH" python3 - <<'PY'
+import json, os
+name = os.environ["SRP_NAME"]
+scratch = os.environ["SRP_SCRATCH"]
+payload = json.dumps({"title": "Release smoke result", "status": "ok",
+                      "summary": "smoke run", "metrics": {"smoke": 1}})
+task = (
+    "sleep 1; "
+    "T=${DATAWATCH_RESULT_TOKEN:-}; S=${DATAWATCH_SESSION_ID:-}; B=${DATAWATCH_BASE_URL:-}; "
+    "mkdir -p __SCRATCH__ 2>/dev/null; "
+    "if [ -n \"$S\" ]; then printf %s \"$S\" > __SCRATCH__/sid_A; fi; "
+    "if [ -n \"$T\" ]; then printf %s \"$T\" > __SCRATCH__/tok_A; fi; "
+    "if [ -n \"$T\" ] && [ -n \"$S\" ] && [ -n \"$B\" ]; then "
+    "curl -sS -m 10 -X POST \"$B/api/sessions/$S/result\" "
+    '-H "Authorization: Bearer $T" -H "Content-Type: application/json" '
+    "-d '__PAYLOAD__' >/dev/null 2>&1; fi; exit 0"
+).replace("__SCRATCH__", scratch).replace("__PAYLOAD__", payload)
+print(json.dumps({"type": "spawn", "subprocess": True, "schedule_name": name,
+                  "name": name, "project_dir": "/tmp", "run_at": "now",
+                  "command": task}))
+PY
+) || true
+SRP_BODY_B=$(SRP_SCRATCH="$SRP_SCRATCH" python3 - <<'PY'
+import json, os
+scratch = os.environ["SRP_SCRATCH"]
+task = (
+    "sleep 1; S=${DATAWATCH_SESSION_ID:-}; "
+    "mkdir -p __SCRATCH__ 2>/dev/null; "
+    "if [ -n \"$S\" ]; then printf %s \"$S\" > __SCRATCH__/sid_B; fi; exit 0"
+).replace("__SCRATCH__", scratch)
+print(json.dumps({"type": "spawn", "subprocess": True,
+                  "name": "smoke-result-panel-decoy", "project_dir": "/tmp",
+                  "run_at": "now", "command": task}))
+PY
+) || true
+SRP_R=$(curl -s -X POST -H "Content-Type: application/json" -d "$SRP_BODY_A" \
+  "${curl_args[@]:+${curl_args[@]}}" "$BASE/api/schedules" -w "\n__HTTP_%{http_code}__" 2>/dev/null)
+if [[ "$SRP_R" != *"__HTTP_2"* ]]; then
+  skip "result panel spawn: POST /api/schedules rejected (${SRP_R:0:120})"
+else
+  # Decoy session for the cross-session identity check (best effort —
+  # the main assertions don't need it).
+  curl -s -X POST -H "Content-Type: application/json" -d "$SRP_BODY_B" \
+    "${curl_args[@]:+${curl_args[@]}}" "$BASE/api/schedules" >/dev/null 2>&1 || true
+  SRP_OK=0
+  for _i in $(seq 1 24); do
+    if SRP_NAME="$SRP_NAME" curl -s --max-time 10 "${curl_args[@]:+${curl_args[@]}}" "$BASE/api/schedule-results" 2>/dev/null \
+        | SRP_NAME="$SRP_NAME" python3 -c "
+import json, os, sys
+groups = json.load(sys.stdin)
+for g in (groups if isinstance(groups, list) else []):
+    if g.get('schedule_name') == os.environ['SRP_NAME']:
+        st = (g.get('latest') or {}).get('payload', {}).get('status')
+        if st == 'ok':
+            sys.exit(0)
+sys.exit(1)" 2>/dev/null; then
+      SRP_OK=1; break
+    fi
+    sleep 5
+  done
+  if [[ "$SRP_OK" -eq 1 ]]; then
+    ok "spawned subprocess posted its result with the scoped token; listed with status ok"
+    SRP_HIST=$(curl -s --max-time 10 "${curl_args[@]:+${curl_args[@]}}" "$BASE/api/schedule-results/$SRP_NAME" 2>/dev/null || echo "")
+    if echo "$SRP_HIST" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+assert isinstance(d, list) and len(d) >= 1
+assert d[-1].get('payload', {}).get('status') in ('ok', 'warn', 'error')
+assert d[-1].get('session_id')" 2>/dev/null; then
+      ok "GET /api/schedule-results/{name} returns the retained history with provenance"
+    else
+      ko "GET /api/schedule-results/$SRP_NAME history malformed: ${SRP_HIST:0:120}"
+    fi
+    if [[ -s "$SRP_SCRATCH/tok_A" && -s "$SRP_SCRATCH/sid_B" ]]; then
+      SRP_TOK=$(cat "$SRP_SCRATCH/tok_A" 2>/dev/null || true)
+      SRP_SB=$(cat "$SRP_SCRATCH/sid_B" 2>/dev/null || true)
+      SRP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Authorization: Bearer $SRP_TOK" -H "Content-Type: application/json" \
+        -d '{"title":"must be rejected"}' \
+        "$BASE/api/sessions/$SRP_SB/result" 2>/dev/null || echo "000")
+      if [[ "$SRP_CODE" == "403" ]]; then
+        ok "cross-session post with a scoped token rejected (403)"
+      else
+        ko "cross-session post expected 403, got HTTP $SRP_CODE"
+      fi
+    else
+      skip "cross-session 403 gate (smoke script and daemon don't share a filesystem)"
+    fi
+  else
+    skip "result panel: posted result not observed within ~120 s (schedule 30 s tick + spawn latency)"
+  fi
+  # Best-effort teardown of the two spawned sessions.
+  for _f in sid_A sid_B; do
+    [[ -s "$SRP_SCRATCH/$_f" ]] && curl -s -X POST -H "Content-Type: application/json" \
+      -d "{\"id\":\"$(cat \"$SRP_SCRATCH/$_f\" 2>/dev/null)\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1 || true
+  done
+  rm -rf "$SRP_SCRATCH" 2>/dev/null || true
+fi
+
+H "76. Usage back-off — status, manual set, confirm active, clear, confirm empty"
+# Uses a unique backend name so it never touches a pre-existing operator
+# flag; cleanup clears exactly that backend (DELETE with a non-empty
+# backend), never "all".
+UB_BACKEND="smoke-backoff-$$-$(date +%s)"
+UB0=$(curl "${curl_args[@]}" "$BASE/api/usage-backoff" || true)
+if echo "$UB0" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d,dict)' 2>/dev/null; then
+  ok "GET /api/usage-backoff returns a JSON object"
+  add_cleanup usage-backoff "$UB_BACKEND"
+  UBS=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"backend\":\"$UB_BACKEND\",\"minutes\":5,\"reason\":\"release smoke\"}" \
+    "$BASE/api/usage-backoff" || true)
+  UB1=$(curl "${curl_args[@]}" "$BASE/api/usage-backoff" || true)
+  if [[ -n "$UB1" ]] && echo "$UB1" | grep -q "$UB_BACKEND"; then
+    ok "POST /api/usage-backoff set a flag; GET shows it active"
+  else
+    ko "usage back-off flag not visible after set: ${UB1:0:160} (set: ${UBS:0:120})"
+  fi
+  curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" \
+    -d "{\"backend\":\"$UB_BACKEND\"}" "$BASE/api/usage-backoff" >/dev/null 2>&1 || true
+  UB2=$(curl "${curl_args[@]}" "$BASE/api/usage-backoff" || true)
+  if [[ -n "$UB2" ]] && ! echo "$UB2" | grep -q "$UB_BACKEND"; then
+    ok "DELETE /api/usage-backoff cleared exactly the smoke flag; GET no longer lists it"
+  else
+    ko "smoke usage back-off flag still present after DELETE: ${UB2:0:160}"
+  fi
+else
+  skip "usage back-off: GET /api/usage-backoff unavailable (${UB0:0:80})"
+fi
+
+H "77. Capacity visibility and audit - admission wait and release, back-off set and clear, budget wait and rollover"
+# Sandbox daemon only, REST only. Every throwaway name carries the process id
+# and a timestamp, and its cleanup is registered before the change is made.
+# No config value is changed: the throwaway LLM entries are created and then
+# deleted by the cleanup mechanism, and the back-off cleanup clears exactly the
+# unique backend, never "all". A step the public surface cannot produce is a
+# skip that names it; the unit tests with an injectable clock cover it.
+UC_TAG="$$-$(date +%s)"
+UC_LLM="smoke-cap-llm-$UC_TAG"
+UC_BUD="smoke-cap-bud-$UC_TAG"
+UC_BO="smoke-cap-backoff-$UC_TAG"
+UC_TASK_B=""   # task id of the second (waiting) task, when part (a) produced one
+UC_BO_SET=0    # 1 when part (b) saw the back-off set entry
+
+# uc_cap_find <waiting|running> <task id>: print that task's view from
+# GET /api/capacity tasks.<list>; exit 1 when it is not listed.
+uc_cap_find() {
+  curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_LIST="$1" UC_TID="$2" python3 -c '
+import json, os, sys
+try:
+  d = json.load(sys.stdin)
+  for t in ((d.get("tasks") or {}).get(os.environ["UC_LIST"]) or []):
+    if t.get("task_id") == os.environ["UC_TID"]:
+      print(json.dumps(t)); sys.exit(0)
+except Exception:
+  pass
+sys.exit(1)'
+}
+
+# uc_audit_has <query> [actor] [subject]: succeed when GET /api/audit?<query>
+# returns an entry with that actor and subject (each optional).
+uc_audit_has() {
+  curl "${curl_args[@]}" "$BASE/api/audit?$1&limit=500" 2>/dev/null | UC_ACTOR="${2:-}" UC_SUBJ="${3:-}" python3 -c '
+import json, os, sys
+try:
+  d = json.load(sys.stdin)
+  a = os.environ.get("UC_ACTOR", ""); s = os.environ.get("UC_SUBJ", "")
+  es = d.get("entries") or []
+  sys.exit(0 if any((not a or e.get("actor") == a) and (not s or e.get("subject") == s) for e in es) else 1)
+except Exception:
+  sys.exit(1)'
+}
+
+# uc_audit_wait <tries> <query> [actor] [subject]: uc_audit_has, retried once
+# a second, because the audit line is written just after the state change.
+uc_audit_wait() {
+  local n="$1"; shift
+  local i
+  for ((i = 0; i < n; i++)); do
+    uc_audit_has "$@" && return 0
+    sleep 1
+  done
+  return 1
+}
+
+UC_CAP0=$(curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null || true)
+if ! echo "$UC_CAP0" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("tasks"),dict) and isinstance(d.get("backoff"),list) and isinstance(d.get("budgets"),list)' 2>/dev/null; then
+  skip "capacity visibility: GET /api/capacity has no tasks/backoff/budgets (${UC_CAP0:0:80})"
+elif ! curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/audit?limit=1" 2>/dev/null | grep -q '^200$'; then
+  skip "capacity visibility: GET /api/audit unavailable (audit log not enabled)"
+else
+  ok "GET /api/capacity carries tasks, backoff and budgets; GET /api/audit answers"
+
+  # (a) Admission wait and release.
+  # A throwaway LLM entry capped at one in-flight session is the throwaway
+  # pool (llm:<name>); the entry copies the kind, nodes and models of an
+  # enabled LLM already in the sandbox (local ollama preferred, the least
+  # invasive), and two throwaway Automata name it as their backend.
+  UC_SRC=$(curl "${curl_args[@]}" "$BASE/api/llms" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  ls = [l for l in (d.get("llms") or []) if not l.get("disabled")]
+  ls.sort(key=lambda l: 0 if l.get("kind") == "ollama" else 1)
+  if ls:
+    l = ls[0]
+    out = {"kind": l.get("kind", "ollama")}
+    if l.get("compute_nodes"): out["compute_nodes"] = l["compute_nodes"]
+    if l.get("models"): out["models"] = l["models"]
+    print(json.dumps(out))
+except Exception:
+  pass' || true)
+  if [[ -z "$UC_SRC" ]]; then
+    skip "capacity admission wait/release: no enabled LLM entry to copy for a throwaway pool"
+  else
+    UC_BODY=$(echo "$UC_SRC" | UC_NAME="$UC_LLM" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin); d["name"] = os.environ["UC_NAME"]; d["max_inflight"] = 1
+print(json.dumps(d))')
+    UC_MODEL=$(echo "$UC_SRC" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+print(((d.get("models") or [{}])[0]).get("model", ""))' 2>/dev/null || true)
+    add_cleanup llm "$UC_LLM"
+    UC_MK=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$UC_BODY" "$BASE/api/llms" 2>/dev/null || true)
+    if ! echo "$UC_MK" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("ok")==True' 2>/dev/null; then
+      skip "capacity admission wait/release: throwaway LLM create refused (${UC_MK:0:100})"
+    else
+      # The ledger limit follows the registry on a short ticker; wait for it.
+      UC_LIMIT_OK=0
+      for _ in $(seq 1 30); do
+        if curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_POOL="llm:$UC_LLM" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(p.get("name") == os.environ["UC_POOL"] and p.get("limit") == 1 for p in (d.get("pools") or [])) else 1)' 2>/dev/null; then
+          UC_LIMIT_OK=1; break
+        fi
+        sleep 1
+      done
+      if [[ "$UC_LIMIT_OK" == "1" ]]; then
+        ok "throwaway pool llm:$UC_LLM limited to one slot in GET /api/capacity pools"
+      else
+        skip "throwaway pool llm:$UC_LLM never showed limit 1 in /api/capacity (ledger sync not observed); admission wait not exercised"
+      fi
+    fi
+    if [[ "${UC_LIMIT_OK:-0}" == "1" ]]; then
+      # Create the way sections 6 and 7b do: spec + project_dir + backend,
+      # then decompose and approve. Decompose needs a reachable planner LLM;
+      # when it fails the section skips naming exactly that.
+      UC_IDS=()
+      UC_PLAN_FAIL=""
+      for UC_N in a b; do
+        mkdir -p "$TMPD/uc-$UC_N"
+        UC_PB=$(UC_N="$UC_N" UC_TAG="$UC_TAG" UC_LLM="$UC_LLM" UC_DIR="$TMPD/uc-$UC_N" python3 -c '
+import json, os
+n = os.environ["UC_N"]
+print(json.dumps({
+  "spec": "smoke probe - capacity visibility %s (%s): write one line to a scratch file" % (n, os.environ["UC_TAG"]),
+  "project_dir": os.environ["UC_DIR"],
+  "backend": os.environ["UC_LLM"],
+  "effort": "low"}))')
+        UC_PID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$UC_PB" "$BASE/api/autonomous/prds" 2>/dev/null \
+          | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || true)
+        if [[ -z "$UC_PID" ]]; then
+          UC_IDS+=("")
+          continue
+        fi
+        add_cleanup prd "$UC_PID"
+        UC_IDS+=("$UC_PID")
+        UC_DEC=$(curl "${curl_args[@]}" --max-time 300 -X POST -H "Content-Type: application/json" -d '{}' \
+          "$BASE/api/autonomous/prds/$UC_PID/decompose" -w "\n__HTTP_%{http_code}__" 2>/dev/null || true)
+        if ! echo "$UC_DEC" | grep -q "__HTTP_200__"; then
+          UC_PLAN_FAIL="decompose of $UC_PID failed"
+          continue
+        fi
+        curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+          -d '{"actor":"smoke","note":"capacity smoke"}' "$BASE/api/autonomous/prds/$UC_PID/approve" >/dev/null 2>&1 || true
+      done
+      UC_PA="${UC_IDS[0]:-}"; UC_PB_ID="${UC_IDS[1]:-}"
+      if [[ -z "$UC_PA" || -z "$UC_PB_ID" ]]; then
+        skip "capacity admission wait/release: could not create the two throwaway Automata (autonomous subsystem may be off)"
+      elif [[ -n "$UC_PLAN_FAIL" ]]; then
+        skip "capacity admission wait/release: $UC_PLAN_FAIL (planner LLM unreachable?); wait and release not exercised"
+      else
+        UC_TASK_A=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$UC_PA" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["stories"][0]["tasks"][0]["id"])' 2>/dev/null || true)
+        UC_TASK_B2=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$UC_PB_ID" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["stories"][0]["tasks"][0]["id"])' 2>/dev/null || true)
+        # Pin the backend (and model) explicitly, as section 6 does.
+        for UC_X in "$UC_PA" "$UC_PB_ID"; do
+          curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+            -d "{\"backend\":\"$UC_LLM\",\"effort\":\"low\",\"model\":\"$UC_MODEL\",\"actor\":\"smoke\"}" \
+            "$BASE/api/autonomous/prds/$UC_X/set_llm" >/dev/null 2>&1 || true
+        done
+        if [[ -z "$UC_TASK_A" || -z "$UC_TASK_B2" ]]; then
+          skip "capacity admission wait/release: throwaway Automata have no task ids to follow"
+        else
+          curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/autonomous/prds/$UC_PA/run" >/dev/null 2>&1 || true
+          UC_A_RUN=0
+          for _ in $(seq 1 90); do
+            if uc_cap_find running "$UC_TASK_A" >/dev/null; then UC_A_RUN=1; break; fi
+            sleep 1
+          done
+          if [[ "$UC_A_RUN" != "1" ]]; then
+            skip "capacity admission wait/release: first task $UC_TASK_A never showed as running holding llm:$UC_LLM; waiting and release not exercised"
+          else
+            curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/autonomous/prds/$UC_PB_ID/run" >/dev/null 2>&1 || true
+            UC_B_VIEW=""
+            for _ in $(seq 1 60); do
+              UC_B_VIEW=$(uc_cap_find waiting "$UC_TASK_B2" || true)
+              [[ -n "$UC_B_VIEW" ]] && break
+              sleep 1
+            done
+            if [[ -z "$UC_B_VIEW" ]]; then
+              skip "capacity admission wait/release: second task $UC_TASK_B2 never listed under tasks.waiting (first task may have ended already); wait text not exercised"
+            else
+              UC_B_REASON=$(echo "$UC_B_VIEW" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("reason",""))' 2>/dev/null || true)
+              if echo "$UC_B_VIEW" | UC_HOLD="$UC_TASK_A" python3 -c '
+import json, os, sys
+v = json.load(sys.stdin); r = v.get("reason", ""); h = v.get("holder", "")
+sys.exit(0 if r and "held by" in r and (os.environ["UC_HOLD"] in r or (h and h in r)) else 1)' 2>/dev/null; then
+                ok "GET /api/capacity tasks.waiting lists the second task with a reason naming the holder: ${UC_B_REASON:0:120}"
+              else
+                ko "waiting task reason is empty or does not name the holder $UC_TASK_A: ${UC_B_REASON:0:160}"
+              fi
+              UC_ST_REASON=$(curl "${curl_args[@]}" "$BASE/api/autonomous/status" 2>/dev/null | UC_TID="$UC_TASK_B2" python3 -c '
+import json, os, sys
+try:
+  d = json.load(sys.stdin)
+  for t in (d.get("queue") or []):
+    if t.get("task_id") == os.environ["UC_TID"]:
+      print(t.get("reason", "")); break
+except Exception:
+  pass' || true)
+              if [[ -n "$UC_ST_REASON" && "$UC_ST_REASON" == "$UC_B_REASON" ]]; then
+                ok "GET /api/autonomous/status queue carries the same wait reason"
+              else
+                ko "autonomous status reason differs from capacity reason: status='${UC_ST_REASON:0:100}' capacity='${UC_B_REASON:0:100}'"
+              fi
+              # Release: cancel the first task and expect the second admitted.
+              curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+                -d "{\"task_id\":\"$UC_TASK_A\",\"actor\":\"smoke\",\"reason\":\"capacity smoke release\"}" \
+                "$BASE/api/autonomous/prds/$UC_PA/cancel_task" >/dev/null 2>&1 || true
+              UC_B_ADMIT=0
+              for _ in $(seq 1 120); do
+                if ! uc_cap_find waiting "$UC_TASK_B2" >/dev/null; then UC_B_ADMIT=1; break; fi
+                sleep 1
+              done
+              if [[ "$UC_B_ADMIT" == "1" ]]; then
+                ok "second task left tasks.waiting once the first task released the slot"
+                UC_TASK_B="$UC_TASK_B2"
+              else
+                ko "second task $UC_TASK_B2 still waiting 120s after the first task was cancelled"
+              fi
+              if uc_audit_wait 15 "action=autonomous_capacity_wait&subject=$UC_TASK_B2"; then
+                ok "GET /api/audit?action=autonomous_capacity_wait returns an entry for the waiting task"
+              else
+                ko "no autonomous_capacity_wait audit entry with subject $UC_TASK_B2"
+              fi
+              if [[ "$UC_B_ADMIT" == "1" ]]; then
+                if uc_audit_wait 15 "action=autonomous_capacity_admitted&subject=$UC_TASK_B2"; then
+                  ok "GET /api/audit?action=autonomous_capacity_admitted returns an entry for the admitted task"
+                else
+                  ko "no autonomous_capacity_admitted audit entry with subject $UC_TASK_B2"
+                fi
+              else
+                skip "autonomous_capacity_admitted audit entry not asserted: the second task was never admitted"
+              fi
+            fi
+          fi
+          # Stop whatever the throwaway Automata still run; hard delete is in cleanup.
+          for UC_X in "$UC_PA" "$UC_PB_ID"; do
+            curl "${curl_args[@]}" -X POST "$BASE/api/autonomous/prds/$UC_X/cancel" >/dev/null 2>&1 || true
+          done
+        fi
+      fi
+    fi
+  fi
+
+  # (b) Back-off set and clear, on a unique backend.
+  add_cleanup usage-backoff "$UC_BO"
+  curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"backend\":\"$UC_BO\",\"minutes\":5,\"reason\":\"release smoke capacity audit\"}" \
+    "$BASE/api/usage-backoff" >/dev/null 2>&1 || true
+  if curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_B="$UC_BO" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(b.get("backend") == os.environ["UC_B"] and b.get("until") and b.get("reason") for b in (d.get("backoff") or [])) else 1)' 2>/dev/null; then
+    ok "GET /api/capacity backoff lists the set flag with an until time and its reason"
+  else
+    ko "capacity backoff does not list $UC_BO with until and reason after POST /api/usage-backoff"
+  fi
+  if uc_audit_wait 10 "action=autonomous_usage_backoff_set&subject=$UC_BO" operator "$UC_BO"; then
+    ok "audit autonomous_usage_backoff_set for $UC_BO has actor operator"
+    UC_BO_SET=1
+  else
+    ko "no autonomous_usage_backoff_set audit entry with actor operator for $UC_BO"
+  fi
+  curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" \
+    -d "{\"backend\":\"$UC_BO\"}" "$BASE/api/usage-backoff" >/dev/null 2>&1 || true
+  if curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_B="$UC_BO" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(1 if any(b.get("backend") == os.environ["UC_B"] for b in (d.get("backoff") or [])) else 0)' 2>/dev/null; then
+    ok "DELETE /api/usage-backoff for exactly $UC_BO removed it from capacity backoff"
+  else
+    ko "capacity backoff still lists $UC_BO after DELETE"
+  fi
+  if uc_audit_wait 10 "action=autonomous_usage_backoff_cleared&subject=$UC_BO" operator "$UC_BO"; then
+    ok "audit autonomous_usage_backoff_cleared for $UC_BO has actor operator"
+  else
+    ko "no autonomous_usage_backoff_cleared audit entry for $UC_BO"
+  fi
+
+  # (c) Budget wait and rollover, on a throwaway LLM with a tiny rolling ceiling.
+  add_cleanup llm "$UC_BUD"
+  UC_BMK=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}]}" "$BASE/api/llms" 2>/dev/null || true)
+  if ! echo "$UC_BMK" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("ok")==True' 2>/dev/null; then
+    skip "capacity budget: throwaway LLM create refused (${UC_BMK:0:100})"
+  else
+    UC_BPUT=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+      -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}],\"budget\":{\"ceiling_usd\":0.01,\"hours\":1}}" \
+      "$BASE/api/llms/$UC_BUD" 2>/dev/null || true)
+    UC_BST=$(curl "${curl_args[@]}" "$BASE/api/budget?llm=$UC_BUD" 2>/dev/null || true)
+    if echo "$UC_BST" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d.get("ceiling_usd") == 0.01 and isinstance(d.get("spend_usd"), (int, float)) and d.get("window_end") and d.get("window") and d.get("full") is False' 2>/dev/null; then
+      ok "GET /api/budget?llm= shows spend, ceiling and window end for the throwaway budget"
+      if echo "$UC_BST" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("rolls_over_at")' 2>/dev/null; then
+        ok "GET /api/budget shows the rollover time"
+      else
+        skip "budget rollover time not asserted: a rolling window with no recorded spend has no rolls_over_at until it fills"
+      fi
+    else
+      ko "GET /api/budget?llm=$UC_BUD does not show the budget (PUT: ${UC_BPUT:0:80}) got ${UC_BST:0:160}"
+    fi
+    if curl "${curl_args[@]}" "$BASE/api/budget" 2>/dev/null | UC_L="$UC_BUD" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(b.get("llm") == os.environ["UC_L"] and b.get("ceiling_usd") == 0.01 for b in (d.get("budgets") or [])) else 1)' 2>/dev/null; then
+      ok "GET /api/budget lists the throwaway budget"
+    else
+      ko "GET /api/budget does not list $UC_BUD"
+    fi
+    if curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_L="$UC_BUD" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(b.get("llm") == os.environ["UC_L"] and b.get("ceiling_usd") == 0.01 and "spend_usd" in b and b.get("window_end") for b in (d.get("budgets") or [])) else 1)' 2>/dev/null; then
+      ok "GET /api/capacity budgets array carries the throwaway budget with spend, ceiling and window end"
+    else
+      ko "GET /api/capacity budgets array does not carry $UC_BUD"
+    fi
+    skip "budget window full reason and autonomous_budget_ceiling_wait audit entry not exercised: the public REST surface has no way to record spend (GET /api/budget is read-only, spend comes only from real session usage); unit tests with an injectable clock cover it"
+    skip "autonomous_budget_window_rollover audit entry not exercised: it needs a filled window and a boundary passing, which cannot be produced without recording spend; unit tests with an injectable clock cover it"
+  fi
+
+  # Prefix filter: autonomous_* returns the entries from (a) and (b).
+  if [[ -n "$UC_TASK_B" ]]; then
+    if uc_audit_has "action=autonomous_*" "" "$UC_TASK_B"; then
+      ok "GET /api/audit?action=autonomous_* includes the admission entries for the task from (a)"
+    else
+      ko "autonomous_* prefix query returned no entry for task $UC_TASK_B"
+    fi
+  else
+    skip "autonomous_* prefix filter not asserted for part (a): no admitted task id was produced"
+  fi
+  if [[ "$UC_BO_SET" == "1" ]]; then
+    if uc_audit_has "action=autonomous_*" operator "$UC_BO"; then
+      ok "GET /api/audit?action=autonomous_* includes the back-off entries for the backend from (b)"
+    else
+      ko "autonomous_* prefix query returned no entry for backend $UC_BO"
+    fi
+  else
+    skip "autonomous_* prefix filter not asserted for part (b): the back-off set entry was not seen"
+  fi
+fi
+
+H "78. Automation chain, fork and join - create, pause, resume, skip, audit, cleanup"
+# Sandbox daemon, REST only, no real LLM work: the Automata are drafts that are
+# never approved or run, and the Automation is never activated. Every throwaway
+# is registered for cleanup right after it is created. A control step the
+# Automation state does not allow is a skip that names the reason, never a pass.
+AU_TAG="$$-$(date +%s)"
+AU_PRD_A=""; AU_PRD_B=""; AU_PRD_G=""; AU_ID=""; AU_GRAPH=""
+
+# au_json <python expr over d>: read JSON on stdin, print the expression.
+au_json() { python3 -c "import json,sys
+try:
+  d=json.load(sys.stdin); print($1)
+except Exception:
+  print('')" 2>/dev/null; }
+
+# au_code <method> <path> [json body]: print the HTTP status only.
+au_code() {
+  if [[ -n "${3:-}" ]]; then
+    curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X "$1" -H "Content-Type: application/json" -d "$3" "$BASE$2" 2>/dev/null
+  else
+    curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X "$1" "$BASE$2" 2>/dev/null
+  fi
+}
+
+# au_audit_has <action> <subject>: succeed when GET /api/audit?action=<action>
+# lists an entry with that subject (retried, the audit line lands just after
+# the state change).
+au_audit_has() {
+  local i
+  for i in 1 2 3; do
+    curl "${curl_args[@]}" "$BASE/api/audit?action=$1&limit=500" 2>/dev/null | AU_SUBJ="$2" python3 -c '
+import json, os, sys
+try:
+  d = json.load(sys.stdin)
+  sys.exit(0 if any(e.get("subject") == os.environ["AU_SUBJ"] for e in (d.get("entries") or [])) else 1)
+except Exception:
+  sys.exit(1)' && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# au_new_prd <label>: create a draft Automaton and print its id.
+au_new_prd() {
+  curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"spec\":\"smoke probe - automation chain $1 $AU_TAG\",\"project_dir\":\"/tmp\",\"effort\":\"low\"}" \
+    "$BASE/api/autonomous/prds" 2>/dev/null | au_json 'd.get("id","")'
+}
+
+AU_PROBE=$(au_code GET /api/automations)
+if [[ "$AU_PROBE" == "503" ]]; then
+  skip "Automation chain: autonomous manager disabled (GET /api/automations 503)"
+elif [[ "$AU_PROBE" != "200" ]]; then
+  skip "Automation chain: GET /api/automations unavailable (HTTP $AU_PROBE)"
+else
+  ok "GET /api/automations answers"
+  AU_PRD_A=$(au_new_prd a); [[ -n "$AU_PRD_A" ]] && add_cleanup prd "$AU_PRD_A"
+  AU_PRD_B=$(au_new_prd b); [[ -n "$AU_PRD_B" ]] && add_cleanup prd "$AU_PRD_B"
+  if [[ -n "$AU_PRD_A" && -n "$AU_PRD_B" ]]; then
+    ok "created two throwaway Automata: $AU_PRD_A, $AU_PRD_B"
+  else
+    ko "could not create the two throwaway Automata (a='$AU_PRD_A' b='$AU_PRD_B')"
+  fi
+fi
+
+if [[ -n "$AU_PRD_A" && -n "$AU_PRD_B" ]]; then
+  # Members: branches ba and bb, a fork (entry) over them, a join paired to it.
+  AU_BODY=$(cat <<JSON
+{"name":"smoke-automation-$AU_TAG","description":"release smoke fork and join","entry_member_id":"aaaa0001",
+ "actor":"operator","reason":"release smoke",
+ "members":[
+  {"id":"aaaa0001","kind":"fork","fork_members":["aaaa0002","aaaa0003"]},
+  {"id":"aaaa0002","prd_id":"$AU_PRD_A"},
+  {"id":"aaaa0003","prd_id":"$AU_PRD_B"},
+  {"id":"aaaa0004","kind":"join","join_members":["aaaa0002","aaaa0003"],"on_branch_failure":"all_must_succeed"}]}
+JSON
+)
+  AU_RESP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$AU_BODY" "$BASE/api/automations" 2>/dev/null || true)
+  AU_ID=$(echo "$AU_RESP" | au_json 'd.get("id","")')
+  if [[ -n "$AU_ID" ]]; then
+    add_cleanup automation "$AU_ID"
+    ok "created Automation with a fork and join over the two Automata: $AU_ID"
+  else
+    ko "Automation create failed: ${AU_RESP:0:200}"
+  fi
+fi
+
+if [[ -n "$AU_ID" ]]; then
+  AU_GET=$(curl "${curl_args[@]}" "$BASE/api/automations/$AU_ID" 2>/dev/null || true)
+  if echo "$AU_GET" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+ms = {m["id"]: m for m in d["members"]}
+f = ms["aaaa0001"]; j = ms["aaaa0004"]
+assert d["entry_member_id"] == "aaaa0001"
+assert f.get("kind") == "fork" and j.get("kind") == "join"
+assert sorted(f["fork_members"]) == sorted(j["join_members"]) == ["aaaa0002", "aaaa0003"]
+' 2>/dev/null; then
+    ok "GET /api/automations/$AU_ID shows fork and join members with paired sets"
+  else
+    ko "Automation $AU_ID does not show a fork and join with paired sets: ${AU_GET:0:200}"
+  fi
+  AU_STATUS=$(echo "$AU_GET" | au_json 'd.get("status","")')
+
+  # import-graph, dry run, on a throwaway one-node orchestrator graph.
+  AU_O=$(curl "${curl_args[@]}" "$BASE/api/orchestrator/config" 2>/dev/null | au_json '"yes" if d.get("enabled") else "no"')
+  if [[ "$AU_O" != "yes" ]]; then
+    skip "Automation import-graph dry run not exercised: the orchestrator is disabled, so no throwaway graph can be created"
+  else
+    AU_PRD_G=$(au_new_prd graph); [[ -n "$AU_PRD_G" ]] && add_cleanup prd "$AU_PRD_G"
+    AU_GR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"name\":\"smoke-import-$AU_TAG\",\"prds\":[\"$AU_PRD_G\"]}" "$BASE/api/orchestrator/graphs" 2>/dev/null || true)
+    AU_GRAPH=$(echo "$AU_GR" | au_json 'd.get("id","")')
+    if [[ -z "$AU_GRAPH" ]]; then
+      skip "Automation import-graph dry run not exercised: the throwaway orchestrator graph could not be created (${AU_GR:0:100})"
+    else
+      add_cleanup graph "$AU_GRAPH"
+      AU_IMP=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST -H "Content-Type: application/json" \
+        -d '{"dry_run":true}' "$BASE/api/automations/import-graph/$AU_GRAPH" 2>/dev/null || true)
+      AU_IMP_CODE="${AU_IMP##*$'\n'}"
+      case "$AU_IMP_CODE" in
+        200) if echo "${AU_IMP%$'\n'*}" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("dry_run") is True' 2>/dev/null; then
+               ok "import-graph dry run on the one-node graph succeeded and reported dry_run"
+             else
+               ko "import-graph dry run answered 200 without dry_run true: ${AU_IMP:0:160}"
+             fi ;;
+        422) ok "import-graph dry run refused the one-node graph as not representable (HTTP 422)" ;;
+        503) skip "Automation import-graph dry run not exercised: graph import unavailable (HTTP 503)" ;;
+        *)   ko "import-graph dry run answered HTTP $AU_IMP_CODE: ${AU_IMP:0:160}" ;;
+      esac
+      if au_code GET "/api/orchestrator/graphs/$AU_GRAPH" | grep -q '^200$'; then
+        ok "source orchestrator graph $AU_GRAPH is still present after the dry run"
+      else
+        ko "source orchestrator graph $AU_GRAPH is gone after the dry run"
+      fi
+      if curl "${curl_args[@]}" "$BASE/api/automations" 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+xs = d.get("automations") if isinstance(d, dict) else d
+sys.exit(0 if len(xs or []) >= 1 else 1)' 2>/dev/null; then
+        ok "import-graph dry run left the Automation list intact"
+      fi
+    fi
+  fi
+
+  # Control steps. They need an active (pause, skip_member) or paused (resume)
+  # Automation; activating would start real work, so a draft is only exercised
+  # as far as its state allows.
+  AU_RAN=""
+  if [[ "$AU_STATUS" == "draft" ]]; then
+    skip "Automation pause not exercised: the Automation is a draft and only an active one can be paused; activating it would start member work"
+    skip "Automation resume not exercised: nothing was paused, and a draft cannot be resumed"
+    skip "Automation skip_member not exercised: the Automation is a draft with no running member to skip; activating it would start member work"
+  else
+    AU_PC=$(au_code POST "/api/automations/$AU_ID/pause" '{"actor":"operator","reason":"release smoke"}')
+    if [[ "$AU_PC" == "200" ]]; then ok "POST pause accepted"; AU_RAN="$AU_RAN pause"
+    else skip "Automation pause not exercised: HTTP $AU_PC in state $AU_STATUS"; fi
+    AU_RC=$(au_code POST "/api/automations/$AU_ID/resume" '{"actor":"operator","reason":"release smoke"}')
+    if [[ "$AU_RC" == "200" ]]; then ok "POST resume accepted"; AU_RAN="$AU_RAN resume"
+    else skip "Automation resume not exercised: HTTP $AU_RC in state $AU_STATUS"; fi
+    AU_SC=$(au_code POST "/api/automations/$AU_ID/skip_member" '{"actor":"operator","member_id":"aaaa0002","edge":"on_complete"}')
+    if [[ "$AU_SC" == "200" ]]; then ok "POST skip_member accepted"; AU_RAN="$AU_RAN skip_member"
+    else skip "Automation skip_member not exercised: HTTP $AU_SC in state $AU_STATUS"; fi
+  fi
+
+  # Audit: each event that was produced carries the Automation id as subject.
+  AU_AC=$(au_code GET "/api/audit?limit=1")
+  if [[ "$AU_AC" != "200" ]]; then
+    skip "Automation audit events not asserted: GET /api/audit unavailable (audit log not enabled)"
+  else
+    if au_audit_has "automation_*" "$AU_ID"; then
+      ok "GET /api/audit?action=automation_* lists entries for the Automation"
+    else
+      ko "GET /api/audit?action=automation_* has no entry with subject $AU_ID"
+    fi
+    if au_audit_has automation_create "$AU_ID"; then
+      ok "audit automation_create has the Automation id as subject"
+    else
+      ko "audit automation_create missing for $AU_ID"
+    fi
+    for AU_PAIR in pause:automation_pause resume:automation_resume skip_member:automation_skip_member; do
+      AU_OP="${AU_PAIR%%:*}"; AU_ACT="${AU_PAIR#*:}"
+      if [[ " $AU_RAN " == *" $AU_OP "* ]]; then
+        if au_audit_has "$AU_ACT" "$AU_ID"; then
+          ok "audit $AU_ACT has the Automation id as subject"
+        else
+          ko "audit $AU_ACT missing for $AU_ID"
+        fi
+      else
+        skip "Automation audit $AU_ACT not asserted: the $AU_OP step did not run (see above)"
+      fi
+    done
+    for AU_EV in automation_fork automation_join; do
+      if au_audit_has "$AU_EV" "$AU_ID"; then
+        ok "audit $AU_EV has the Automation id as subject"
+      else
+        skip "audit $AU_EV not asserted: it is written only when the coordinator advances an active Automation, which this section never starts"
+      fi
+    done
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "79. Web UI slow-network load scenarios - cold load, empty, failed, stale, offline, reload"
+# Runs the eleven slow-network load scenarios (TS-802..TS-812) via the PWA
+# runner's load group (added by the "Wire the load scenarios into the PWA
+# runner" task — requires `node run-all.mjs --group load`). Against THIS
+# smoke daemon only ($BASE/$TOK) — this section never starts a second
+# daemon. node and the Playwright install (scripts/test-stories/pwa/
+# node_modules) must be present or the section SKIPs with a reason, never
+# a silent pass. Runner exit 0 with at least one pass → ok (pass count);
+# exit 0 with only skipped scenarios, or exit 2 → skip with the runner's
+# reason; exit 1 (or the timeout bound) → ko with the last output lines.
+# Environment is scrubbed of TMUX/TMUX_TMPDIR for the node invocation, and
+# the run is bounded by SMOKE_LOAD_TIMEOUT (default 900s) through the
+# `timeout` command when it is available, with a plain run as fallback.
+PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
+if ! command -v node >/dev/null 2>&1; then
+  skip "load scenarios: node not found on PATH — cannot run scripts/test-stories/pwa"
+elif [[ ! -d "$PWA_DIR/node_modules" ]]; then
+  skip "load scenarios: Playwright install missing (scripts/test-stories/pwa/node_modules) — run: (cd scripts/test-stories/pwa && npm ci)"
+else
+  LOAD_EVD="$TMPD/load-evidence.$$"
+  rm -rf "$LOAD_EVD"
+  mkdir -p "$LOAD_EVD"
+  LOAD_OUT_FILE="$TMPD/load-out.$$"
+  LOAD_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+  if [[ -n "$LOAD_TO_BIN" ]]; then
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$LOAD_EVD" \
+      "$LOAD_TO_BIN" "${SMOKE_LOAD_TIMEOUT:-900}" node "$PWA_DIR/run-all.mjs" --group load >"$LOAD_OUT_FILE" 2>&1
+  else
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$LOAD_EVD" \
+      node "$PWA_DIR/run-all.mjs" --group load >"$LOAD_OUT_FILE" 2>&1
+  fi
+  LOAD_RC=$?
+  tail -20 "$LOAD_OUT_FILE"
+  LOAD_SUMMARY="$(grep -E '^summary: ' "$LOAD_OUT_FILE" | tail -1)"
+  LOAD_PASSED="$(printf '%s' "$LOAD_SUMMARY" | awk '{print $2}')"
+  if [[ "$LOAD_RC" -eq 0 ]]; then
+    if [[ "${LOAD_PASSED:-""}" == "0" ]]; then
+      skip "load scenarios: runner exited 0 but every scenario was skipped ($LOAD_SUMMARY)"
+    else
+      ok "load scenarios (TS-802..TS-812): $LOAD_PASSED passed (${LOAD_SUMMARY#summary: })"
+    fi
+  elif [[ "$LOAD_RC" -eq 2 ]]; then
+    skip "load scenarios: runner exited 2 ("$(tail -1 "$LOAD_OUT_FILE")")"
+  elif [[ "$LOAD_RC" -eq 124 ]]; then
+    ko "load scenarios timed out after ${SMOKE_LOAD_TIMEOUT:-900}s: $(tail -1 "$LOAD_OUT_FILE")"
+  else
+    ko "load scenarios failed (run-all.mjs rc=$LOAD_RC): $(tail -5 "$LOAD_OUT_FILE" | tr '\n' ' ' | head -c 400)"
+  fi
+  rm -rf "$LOAD_EVD"
+fi
+
+# ---------------------------------------------------------------------------
+H "Shared navigation bar fits phone widths in light and dark"
+# Runs the shared-nav scenario (scripts/test-stories/pwa/shared-nav-mobile-fit.mjs)
+# through the PWA runner's shared-nav group (`node run-all.mjs --group shared-nav`),
+# same helper pattern as the load section above: this smoke daemon only
+# ($BASE/$TOK), TMUX scrubbed, bounded by SMOKE_SHARED_NAV_TIMEOUT (default 600s)
+# through `timeout` when available. Unlike the load section, a navigation layout
+# finding at phone widths is a failure (ko), never a skip. The section SKIPs only
+# when the scenario reports that no browser or daemon is available: it exits 2,
+# which the runner counts as skipped, so the run ends with 0 passed and 0 failed.
+PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
+NAV_EVD="$TMPD/shared-nav-evidence.$$"
+rm -rf "$NAV_EVD"
+mkdir -p "$NAV_EVD"
+NAV_OUT_FILE="$TMPD/shared-nav-out.$$"
+NAV_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+if [[ -n "$NAV_TO_BIN" ]]; then
+  env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
+    "$NAV_TO_BIN" "${SMOKE_SHARED_NAV_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+else
+  env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
+    node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+fi
+NAV_RC=$?
+tail -20 "$NAV_OUT_FILE"
+NAV_SUMMARY="$(grep -E '^summary: ' "$NAV_OUT_FILE" | tail -1)"
+NAV_PASSED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $2}')"
+NAV_FAILED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $4}')"
+if [[ "$NAV_RC" -eq 0 ]]; then
+  if [[ "${NAV_PASSED:-""}" == "0" && "${NAV_FAILED:-0}" == "0" ]]; then
+    skip "shared navigation: scenario skipped, no browser or daemon available ($NAV_SUMMARY)"
+  else
+    ok "shared navigation fits phone widths: ${NAV_SUMMARY#summary: }"
+  fi
+elif [[ "$NAV_RC" -eq 124 ]]; then
+  ko "shared navigation timed out after ${SMOKE_SHARED_NAV_TIMEOUT:-600}s: $(tail -1 "$NAV_OUT_FILE")"
+else
+  ko "shared navigation layout findings at phone widths (run-all.mjs rc=$NAV_RC): $(tail -5 "$NAV_OUT_FILE" | tr '\n' ' ' | head -c 400)"
+fi
+rm -rf "$NAV_EVD"
+
+# ---------------------------------------------------------------------------
+H "79b. Autonomous priority-by-kind + defect-intake settings (PWA)"
+# Renders the two new automated-settings rows on the PWA Settings (Automata
+# tab — autonomous.priority_by_kind, the kind → capacity-queue priority table,
+# and autonomous.defect_intake_automation, the Automation that new kind-bug
+# defect filings are offered to) and verifies the config contract the fields
+# write (PUT /api/config, the GET /api/config read back effective, a non-integer
+# table refused with 400 and nothing stored, an empty value clearing the table
+# back to the shipped defaults bug=80, maintenance=70, feature=20, other=0, and
+# the intake name round-tripping and clearing). Runs the TS-841 story through
+# the PWA runner's priority-source group (`node run-all.mjs --group
+# priority-source`). Needs node and the PWA story directory; the runner's
+# dependencies are installed if missing. SMOKE_PRIORITY_SOURCE=0 skips the
+# whole section.
+PWA_DIR="$SMOKE_DIR/test-stories/pwa"
+PSRC_EVD="$TMPD/priority-source-evidence$$"
+PSRC_OUT_FILE="$TMPD/priority-source-out.$$"
+if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
+  : # SMOKE_ONLY excludes this section
+elif [[ "${SMOKE_PRIORITY_SOURCE:-1}" == "0" ]]; then
+  skip "priority-source: disabled by SMOKE_PRIORITY_SOURCE=0"
+elif [[ ! -d "$PWA_DIR" || ! -f "$PWA_DIR/lib.mjs" ]]; then
+  skip "priority-source: PWA story directory not found"
+elif ! command -v node >/dev/null 2>&1; then
+  skip "priority-source: node not found"
+elif [[ ! -d "$PWA_DIR/node_modules" ]]; then
+  (cd "$PWA_DIR" && npm ci --silent --no-fund --no-audit) || ko "priority-source: npm ci failed"
+  [[ -d "$PWA_DIR/node_modules" ]] || ko "priority-source: npm ci reported success but no node_modules"
+fi
+if [[ -d "$PWA_DIR/node_modules" && "${SMOKE_PRIORITY_SOURCE:-1}" != "0" ]]; then
+  PSRC_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+  PSRC_RESULT="ok"
+  if [[ -n "$PSRC_TO_BIN" ]]; then
+    env -u TMUX -u TMUX_TMPDIR "$PSRC_TO_BIN" "${SMOKE_PRIORITY_SOURCE_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
+  else
+    env -u TMUX -u TMUX_TMPDIR node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
+  fi
+  PSRC_RC=$?
+  if [[ $PSRC_RC -eq 0 ]]; then
+    ok "PWA shows the priority-by-kind + defect-intake settings rows and the config contract verifies (write/read/refuse/clear)"
+  else
+    ko "PWA priority-source story failed (run-all.mjs rc=$PSRC_RC): $(tail -5 "$PSRC_OUT_FILE" | tr '\n' ' ' | head -c 400)"
+  fi
+fi
+rm -rf "$PSRC_EVD"
+SMOKE_PASS=$((SMOKE_PASS+1))
+
+# ---------------------------------------------------------------------------
+H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
+# Runs scripts/restart-matrix.sh --strict, one state at a time, for the rows
+# that must survive a daemon restart (worker-node-placement among them: two
+# pi-prompt workers on two compute nodes keep their node pools, lease nodes and
+# sessions across the restart). The matrix starts its own throwaway
+# daemons (own config, data dir, free ports, TLS off, own multiplexer socket
+# dir) and refuses to start when a target matches the production daemon, so
+# this section never touches this smoke's daemon or production. Rows still
+# marked OPERATOR PICK in docs/plans/restart-matrix-findings.md are skipped
+# with a reason, not run, because their outcome is an undecided design choice.
+# Needs jq, curl, python3, tmux and git, and a daemon binary ($_DW_BIN). Each
+# state is bounded by SMOKE_RESTART_TIMEOUT (default 900s) through `timeout`
+# when available. SMOKE_RESTART_MATRIX=0 skips the whole section.
+RM_SURVIVE_STATES=(worker-running waiting-capacity waiting-external git-operation automation-branches scheduled-due websocket-clients worker-node-placement)
+RM_PICK_STATES=(
+  "planning|OPERATOR PICK: a planning PRD is reset to draft on restart and the operator re-plans; the fix is not chosen"
+  "verify-script|OPERATOR PICK: the verification script is a daemon child that runs again after a restart; where it runs is not chosen"
+  "verify-script-mid|OPERATOR PICK: the verification script is a daemon child that runs again after a restart; where it runs is not chosen"
+  "final-gate|OPERATOR PICK: the final gate script is a daemon child that runs again after a restart; where it runs is not chosen"
+  "verify-session|the live verifier session is not adopted after a restart and the verifier runs once more; adopting it needs a consumer for its output, not built"
+)
+RM_MISSING=""
+for RM_T in jq curl python3 tmux git; do
+  command -v "$RM_T" >/dev/null 2>&1 || RM_MISSING="$RM_MISSING $RM_T"
+done
+if [[ "$SECTION_SKIP" == "1" ]]; then
+  : # SMOKE_ONLY excludes this section: do not start the throwaway restart daemons
+elif [[ "${SMOKE_RESTART_MATRIX:-1}" == "0" ]]; then
+  skip "restart matrix: disabled by SMOKE_RESTART_MATRIX=0"
+elif [[ ! -x "$SMOKE_DIR/restart-matrix.sh" ]]; then
+  skip "restart matrix: scripts/restart-matrix.sh not found or not executable"
+elif [[ -n "$RM_MISSING" ]]; then
+  skip "restart matrix: required tool(s) missing:$RM_MISSING"
+elif [[ -z "${_DW_BIN:-}" ]]; then
+  skip "restart matrix: no datawatch binary (build it or set DATAWATCH_BIN)"
+else
+  RM_BASE="$(mktemp -d "${TMPDIR:-/tmp}/rms.XXXXXX")" # short path: the multiplexer socket path has a length limit
+  RM_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+  for RM_S in "${RM_SURVIVE_STATES[@]}"; do
+    RM_OUT="$RM_BASE/$RM_S.out"
+    if [[ -n "$RM_TO_BIN" ]]; then
+      env -u TMUX -u TMUX_TMPDIR DATAWATCH_BIN="$_DW_BIN" RM_TMP_BASE="$RM_BASE" RM_KILL_MODE=control-group \
+        "$RM_TO_BIN" "${SMOKE_RESTART_TIMEOUT:-900}" bash "$SMOKE_DIR/restart-matrix.sh" --strict --only "$RM_S" >"$RM_OUT" 2>&1
+    else
+      env -u TMUX -u TMUX_TMPDIR DATAWATCH_BIN="$_DW_BIN" RM_TMP_BASE="$RM_BASE" RM_KILL_MODE=control-group \
+        bash "$SMOKE_DIR/restart-matrix.sh" --strict --only "$RM_S" >"$RM_OUT" 2>&1
+    fi
+    RM_RC=$?
+    RM_RESULT="$(grep -E '^  -> ' "$RM_OUT" | tail -1 | sed -E 's/^  -> //; s/, record:.*//')"
+    case "$RM_RC" in
+      0) ok "restart matrix $RM_S: survives a restart (${RM_RESULT:-strict clean})" ;;
+      1) ko "restart matrix $RM_S: ${RM_RESULT:-failed}; failing checks: $(grep -E '^  FAIL ' "$RM_OUT" | sed -E 's/^  FAIL +//' | head -3 | tr '\n' ';' | head -c 400)" ;;
+      124) ko "restart matrix $RM_S: timed out after ${SMOKE_RESTART_TIMEOUT:-900}s" ;;
+      *) ko "restart matrix $RM_S: harness fault (rc=$RM_RC): $(tail -2 "$RM_OUT" | tr '\n' ' ' | head -c 300)" ;;
+    esac
+  done
+  for RM_P in "${RM_PICK_STATES[@]}"; do
+    skip "restart matrix ${RM_P%%|*}: ${RM_P#*|}"
+  done
+  rm -rf "$RM_BASE"
+fi
+H "81. Mobile-fit view runner (release smoke)"
+# Runs the mobile-fit view harness (observer view, quick profile, Playwright)
+# via release-smoke-mobile-fit.sh, which derives TEST_HTTP / TEST_TLS /
+# TEST_TOKEN from this script's BASE/TOK and prints the report path.
+# Skips (not a failure) when the daemon is unreachable, node or Playwright
+# are missing, or no browser could be launched.
+MOBILE_FIT_SCRIPT="$(dirname "$0")/release-smoke-mobile-fit.sh"
+if [[ -f "$MOBILE_FIT_SCRIPT" ]]; then
+  # The runner gets its own daemon-lifecycle state dir (-u TD_STATE_DIR -u
+  # TD_OWNER): its EXIT trap ends every process recorded in the state dir it
+  # sees, and the inherited one holds this script's isolated daemon, which
+  # would be ended the moment the runner exits (even on a clean skip).
+  if MF_OUT=$(env -u TD_STATE_DIR -u TD_OWNER DATAWATCH_BASE="$BASE" DATAWATCH_TOKEN="$TOK" bash "$MOBILE_FIT_SCRIPT" 2>&1); then
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      [[ "$line" == OK:* ]] && continue
+      ok "$line"
+    done <<< "$MF_OUT"
+  else
+    rc=$?
+    if [[ $rc -eq 2 ]]; then
+      skip "mobile-fit runner skipped: $(echo "$MF_OUT" | grep -F 'SKIP:' | tail -1 | sed 's/^SKIP: //')"
+    else
+      ko "mobile-fit runner failed: $(echo "$MF_OUT" | grep -Ev '^$' | tail -3 | tr '\n' ' ')"
+    fi
+  fi
+else
+  skip "release-smoke-mobile-fit.sh missing; mobile-fit probe deferred"
+fi
+
+# ---------------------------------------------------------------------------
+H "82. notify_events — resolved notify set (Automaton > guardrail profile > global)"
+# REST-only round-trip, no LLM work: the Automaton is a draft that is never
+# approved or run. Every throwaway is registered for cleanup on creation
+# and also deleted explicitly below. A missing autonomous surface (503) is
+# a skip that names the reason, never a fail.
+NE_TAG="$$-$(date +%s)"
+NE_PROBE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/autonomous/prds" 2>/dev/null)
+if [[ "$NE_PROBE" == "503" ]]; then
+  skip "notify_events: autonomous subsystem disabled (GET /api/autonomous/prds 503)"
+else
+  NE_PRD=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"spec\":\"smoke probe — notify_events $NE_TAG\",\"project_dir\":\"/tmp\",\"actor\":\"smoke\"}" \
+    "$BASE/api/autonomous/prds" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+  if [[ -z "$NE_PRD" ]]; then
+    skip "notify_events: POST /api/autonomous/prds returned no id (HTTP $NE_PROBE)"
+  else
+    add_cleanup prd "$NE_PRD"
+
+    # 82.1 explicit Automaton list wins — source=automaton, opt-in kind present
+    NE_BODY=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d '{"notify_events":["prd.blocked","prd.completed","task.session_started"]}' \
+      "$BASE/api/autonomous/prds/$NE_PRD/set_notify_events" 2>/dev/null || echo "")
+    NE_SET_OK=false
+    grep -q '"source":"automaton"' <<<"$NE_BODY" && NE_SET_OK=true
+    if [[ "$NE_SET_OK" == "true" ]]; then
+      ok "set_notify_events: explicit list resolves (source=automaton)"
+    else
+      ko "set_notify_events: explicit list (body: ${NE_BODY:0:120})"
+    fi
+
+    # 82.2 GET shows the resolved set with the opt-in task kind
+    NE_GET=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$NE_PRD" 2>/dev/null | grep -c '"task.session_started"' || true)
+    if [[ "${NE_GET:-0}" -ge 1 ]]; then
+      ok "GET prd: task.session_started (opt-in kind) present in notify_events_effective"
+    else
+      ko "GET prd: resolved set missing task.session_started"
+    fi
+
+    # 82.3 unknown kind is rejected with 400
+    NE_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" \
+      -d '{"notify_events":["bogus.kind"]}' "$BASE/api/autonomous/prds/$NE_PRD/set_notify_events" 2>/dev/null || echo 000)
+    if [[ "$NE_BAD" == "400" ]]; then
+      ok "set_notify_events: unknown kind rejected (400)"
+    else
+      ko "set_notify_events: unknown kind not rejected (HTTP $NE_BAD)"
+    fi
+
+    # 82.4 clear (empty list) — the Automaton inherits the profile/global tier
+    NE_CLR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d '{"notify_events":[]}' "$BASE/api/autonomous/prds/$NE_PRD/set_notify_events" 2>/dev/null || echo "")
+    if [[ "$(<<<"$NE_CLR" grep -c '"source":"automaton"')" -eq 0 ]] && [[ "$(<<<"$NE_CLR" grep -c '"source":"global"')" -ge 1 ]]; then
+      ok "set_notify_events: [] clears to inherit (source=global)"
+    else
+      ko "set_notify_events: clear did not return to the global tier (body: ${NE_CLR:0:120})"
+    fi
+
+    # 82.5 guardrail profile tier: create with notify_events, assign, resolved
+    NE_PROFILE_NAME="smoke-notify-events-$NE_TAG"
+    NE_PROFILE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"name\":\"$NE_PROFILE_NAME\",\"guardrails\":[],\"notify_events\":[\"prd.failed\",\"prd.completed\"]}" \
+      "$BASE/api/autonomous/guardrail_profiles" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+    if [[ -z "$NE_PROFILE" ]]; then
+      ko "guardrail profile notify_events: POST /api/autonomous/guardrail_profiles returned no id"
+    else
+      # Explicit delete at the end of the section (cleanup kind not registered).
+      NE_ASSIGN=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+        -d "{\"guardrail_profile\":\"$NE_PROFILE_NAME\"}" "$BASE/api/autonomous/prds/$NE_PRD/guardrails" 2>/dev/null || echo 000)
+      NE_EFF=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$NE_PRD" 2>/dev/null || echo "")
+      if [[ "$NE_ASSIGN" == "200" ]] && grep -q '"source":"profile"' <<<"$NE_EFF"; then
+        ok "profile tier: assigned profile resolves (source=profile)"
+      else
+        ko "profile tier: assign=$NE_ASSIGN; $(grep -o '"source":"[a-z]*"' <<<"$NE_EFF" | head -1)"
+      fi
+      # Clear the profile list — the Automaton falls back to the global tier.
+      NE_PCLR=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+        -d "{\"name\":\"$NE_PROFILE_NAME\",\"notify_events\":[]}" "$BASE/api/autonomous/guardrail_profiles/$NE_PROFILE" 2>/dev/null || echo 000)
+      NE_EFF2=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$NE_PRD" 2>/dev/null || echo "")
+      if [[ "$NE_PCLR" == "200" ]] && grep -q '"source":"global"' <<<"$NE_EFF2"; then
+        ok "profile tier: cleared profile falls back to global tier"
+      else
+        ko "profile tier: clear=$NE_PCLR; $(grep -o '"source":"[a-z]*"' <<<"$NE_EFF2" | head -1)"
+      fi
+      curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/guardrail_profiles/$NE_PROFILE" >/dev/null 2>&1
+    fi
+
+    # 82.6 set/clear left an audit entry for the round-trip
+    NE_AUDIT=$(curl "${curl_args[@]}" "$BASE/api/audit?action=autonomous_notify_events_changed&limit=500" 2>/dev/null | grep -c 'autonomous_notify_events_changed' || true)
+    curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$NE_PRD?hard=true" >/dev/null 2>&1
+    if [[ "${NE_AUDIT:-0}" -ge 1 ]]; then
+      ok "audit: autonomous_notify_events_changed entries present ($NE_AUDIT)"
+    else
+      skip "audit: autonomous_notify_events_changed not visible via /api/audit (may need higher privilege)"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "83. operator questions — /api/questions behind autonomous.questions.enabled"
+# REST-only round-trip on this script's own sandbox daemon (or the dedicated
+# DW_BASE sandbox), never production. Off by default: with the switch off every
+# endpoint is 503 and names the switch. The original switch value is read first
+# and restored at the end of the section. The throwaway question is answered
+# in 83.7, so the sandbox store holds no open smoke question afterwards.
+OQ_ORIG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys
+try:
+  c=json.load(sys.stdin); print("true" if (c.get("autonomous",{}).get("questions",{}) or {}).get("enabled") else "false")
+except Exception:
+  print("")' 2>/dev/null || echo "")
+if [[ -z "$OQ_ORIG" ]]; then
+  skip "operator questions: GET /api/config unreadable, switch state unknown"
+else
+  oq_put() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"autonomous.questions.enabled\":$1}" "$BASE/api/config" 2>/dev/null || echo 000; }
+  oq_code() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo 000; }
+
+  # 83.1 switch off: list and raise both 503 and the body names the switch
+  oq_put false >/dev/null
+  OQ_OFF_LIST=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/questions" 2>/dev/null || echo "")
+  OQ_OFF_POST=$(oq_code -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/questions")
+  if [[ "$(tail -n1 <<<"$OQ_OFF_LIST")" == "503" && "$OQ_OFF_POST" == "503" ]] && grep -q 'autonomous.questions.enabled' <<<"$OQ_OFF_LIST"; then
+    ok "questions: switch off -> GET and POST /api/questions are 503 naming autonomous.questions.enabled"
+  else
+    ko "questions: switch off did not 503 (list=$(tail -n1 <<<"$OQ_OFF_LIST") post=$OQ_OFF_POST)"
+  fi
+
+  # 83.2 a non-boolean value is refused and not stored
+  OQ_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.questions.enabled":"yes"}' "$BASE/api/config" 2>/dev/null || echo 000)
+  if [[ "$OQ_BAD" == "400" ]]; then
+    ok "questions: PUT /api/config with a non-boolean switch value rejected (400)"
+  else
+    ko "questions: non-boolean switch value not rejected (HTTP $OQ_BAD)"
+  fi
+
+  # 83.3 switch on: GET /api/config reads true, list is 200
+  OQ_ON_PUT=$(oq_put true)
+  OQ_ON_CFG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("autonomous",{}).get("questions",{}).get("enabled"))' 2>/dev/null || echo "")
+  OQ_ON_LIST=$(oq_code "$BASE/api/questions")
+  if [[ "$OQ_ON_PUT" == "200" && "$OQ_ON_CFG" == "True" && "$OQ_ON_LIST" == "200" ]]; then
+    ok "questions: switch on reads back true and GET /api/questions is 200 (no restart)"
+  else
+    ko "questions: switch on (put=$OQ_ON_PUT cfg=$OQ_ON_CFG list=$OQ_ON_LIST)"
+  fi
+
+  # 83.4 raise, list, get
+  OQ_TAG="$$-$(date +%s)"
+  OQ_ID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"label\":\"decision\",\"context\":\"none\",\"text\":\"smoke probe $OQ_TAG: cap retry backoff?\",\"options\":[{\"id\":\"yes\",\"label\":\"Yes\"},{\"id\":\"no\",\"label\":\"No\"}],\"default\":\"yes\",\"asked_by\":\"smoke\"}" \
+    "$BASE/api/questions" 2>/dev/null | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("question",{}).get("id",""))
+except Exception: print("")' 2>/dev/null || echo "")
+  if [[ -z "$OQ_ID" ]]; then
+    ko "questions: POST /api/questions returned no question id"
+  else
+    ok "questions: POST /api/questions raised a question ($OQ_ID)"
+    OQ_LISTED=$(curl "${curl_args[@]}" "$BASE/api/questions?state=open" 2>/dev/null | grep -c "$OQ_ID" || true)
+    OQ_GOT=$(oq_code "$BASE/api/questions/$OQ_ID")
+    if [[ "${OQ_LISTED:-0}" -ge 1 && "$OQ_GOT" == "200" ]]; then
+      ok "questions: raised question appears in GET /api/questions?state=open and GET /api/questions/{id} is 200"
+    else
+      ko "questions: raised question not readable (listed=$OQ_LISTED get=$OQ_GOT)"
+    fi
+
+    # 83.5 a malformed raise is a 400, an unknown id a 404
+    OQ_MAL=$(oq_code -X POST -H "Content-Type: application/json" -d '{"text":"no options"}' "$BASE/api/questions")
+    OQ_404=$(oq_code "$BASE/api/questions/q-does-not-exist-$OQ_TAG")
+    if [[ "$OQ_MAL" == "400" && "$OQ_404" == "404" ]]; then
+      ok "questions: malformed raise 400, unknown id 404"
+    else
+      ko "questions: validation statuses (malformed=$OQ_MAL unknown=$OQ_404)"
+    fi
+
+    # 83.6 an answer that looks like a secret is refused 422 and the question stays open
+    OQ_SEC=$(oq_code -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"yes","quote":"use AKIAIOSFODNN7EXAMPLE","surface":"cli"}' "$BASE/api/questions/$OQ_ID/answer")
+    OQ_STATE=$(curl "${curl_args[@]}" "$BASE/api/questions/$OQ_ID" 2>/dev/null | grep -c '"state":"open"' || true)
+    if [[ "$OQ_SEC" == "422" && "${OQ_STATE:-0}" -ge 1 ]]; then
+      ok "questions: secret-looking answer refused (422), question still open"
+    else
+      ko "questions: secret answer (HTTP $OQ_SEC, still open=$OQ_STATE)"
+    fi
+
+    # 83.7 a real answer is recorded (201) and shows in the answer log
+    OQ_ANS=$(oq_code -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"no","quote":"no, leave it uncapped","surface":"cli"}' "$BASE/api/questions/$OQ_ID/answer")
+    OQ_LOG=$(curl "${curl_args[@]}" "$BASE/api/questions/$OQ_ID/answers" 2>/dev/null | grep -c 'no, leave it uncapped' || true)
+    if [[ "$OQ_ANS" == "201" && "${OQ_LOG:-0}" -ge 1 ]]; then
+      ok "questions: answer recorded (201) and verbatim quote present in the answer log"
+    else
+      ko "questions: answer flow (HTTP $OQ_ANS, quote in log=$OQ_LOG)"
+    fi
+  fi
+
+  # 83.8 restore the original switch value; the section leaves no state behind
+  OQ_REST=$(oq_put "$OQ_ORIG")
+  if [[ "$OQ_REST" == "200" ]]; then
+    ok "questions: switch restored to $OQ_ORIG"
+  else
+    ko "questions: could not restore the switch (HTTP $OQ_REST)"
+  fi
+fi
+
+H "84. Capacity ledger — node pools, pi leases, waiter placement"
+# Read-only checks against GET /api/capacity of the running daemon:
+# (a) no node pool holds above its limit, (b) every running pi or pi-prompt
+# lease also holds a node:<name> lease (a lease without a node placement
+# cannot be attributed to any node), (c) no request waits for a busy node
+# while another candidate node sits idle (delegated to
+# check-waiter-nodes.sh). The whole section SKIPS (not fails) when the
+# endpoint reports no capacity data or the backend is single-node.
+CAP=$(curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null || true)
+if ! echo "$CAP" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("pools"),list) and isinstance(d.get("leases"),list)' 2>/dev/null; then
+  skip "capacity ledger: /api/capacity did not report capacity data"
+else
+  CNODES=$(echo "$CAP" | python3 -c 'import json,sys;print(sum(1 for p in json.load(sys.stdin).get("pools",[]) if str(p.get("name","")).startswith("node:")))' 2>/dev/null || echo 0)
+  if ! [[ "${CNODES:-0}" =~ ^[0-9]+$ ]] || [[ "${CNODES:-0}" -eq 0 ]]; then
+    skip "capacity ledger: no node pools in the snapshot (single-node backend)"
+  else
+    # 84.1 no node pool holds above its limit (limit 0 = unlimited, passes)
+    CAP_OL=$(echo "$CAP" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for p in d.get("pools", []):
+    if not str(p.get("name", "")).startswith("node:"):
+        continue
+    lim = p.get("limit") or 0
+    used = (p.get("held") or 0) + (p.get("external") or 0)
+    if lim > 0 and used > lim:
+        print("%s holds %d of %d (held=%d external=%d)" % (p.get("name"), used, lim, p.get("held") or 0, p.get("external") or 0))' 2>/dev/null)
+    if [[ -z "${CAP_OL:-}" ]]; then
+      ok "no node pool holds above its limit"
+    else
+      ko "node pool(s) over limit: $(echo "$CAP_OL" | tr '\n' '; ')"
+    fi
+
+    # 84.2 every running pi / pi-prompt lease also holds a node:<name> lease
+    # (line 1 = count of such leases, line 2 = the ones missing a node lease)
+    CAP_PI=$(echo "$CAP" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+total, bad = 0, []
+for l in d.get("leases", []):
+    pools = [str(p) for p in l.get("pools") or []]
+    if not ({"llm:pi", "llm:pi-prompt"} & set(pools)):
+        continue
+    total += 1
+    if not any(p.startswith("node:") for p in pools):
+        bad.append(str(l.get("holder") or l.get("session_id") or "?"))
+print(total)
+print("; ".join(bad))' 2>/dev/null)
+    CAP_PI_N=$(echo "$CAP_PI" | sed -n '1p')
+    CAP_PI_BAD=$(echo "$CAP_PI" | sed -n '2p')
+    if [[ -z "${CAP_PI_BAD:-}" ]]; then
+      ok "all ${CAP_PI_N:-0} running pi/pi-prompt lease(s) hold a node lease"
+    else
+      ko "pi/pi-prompt lease(s) missing a node lease: $CAP_PI_BAD"
+    fi
+
+    # 84.3 waiter placement via check-waiter-nodes.sh (rc 2 = the daemon-bound
+    # waiter / over-limit symptom, rc 1 = the script could not fetch or parse)
+    WAITER_OUT=$(env -u TMUX -u TMUX_TMPDIR DATAWATCH_URL="${BASE%/}" DATAWATCH_TOKEN="${TOK:-}" bash "$SMOKE_DIR/check-waiter-nodes.sh" 2>&1)
+    WAITER_RC=$?
+    case "$WAITER_RC" in
+      0)
+        ok "waiter placement clean: $(echo "$WAITER_OUT" | sed -n 's/^summary: //p' | tail -1)"
+        ;;
+      2)
+        ko "waiter placement: $(echo "$WAITER_OUT" | grep -E '^ *(SYMPTOM|OVERLIMIT):' | tail -3 | tr '\n' '; ')"
+        ;;
+      *)
+        skip "waiter placement: check-waiter-nodes.sh could not report against the daemon (rc=$WAITER_RC)"
+        ;;
+    esac
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "85. Usage calculator (advice, readings, verdict, policy/variant, extra credit, pasted gate, config, comm, CLI)"
+# Typed readings are the source for now; the advice answers with the numbers, the
+#   verdict, by_lanes, the text forms, and (when things are not set) a needs marker:
+#   GET    /api/usage/advice            [variant=V] [policy=P] [lanes=N] [cost=C] — per-call overrides
+#   GET    /api/usage/readings          full log, latest first
+#   POST   /api/usage/readings          {"at", "percent"|"spend_usd", "source"}; typed now,
+#                                       pasted | account planned; the response carries the
+#                                       stored reading (id) for precise cleanup
+#   DELETE /api/usage/readings?id=      exact removal by id
+#   PUT    /api/usage/extra-credit      ceiling = 100 points + credit; negative is refused
+#
+# The empty state answers with a needs marker (not an error); typed readings drive the
+# verdict and by_lanes; per-call policy and variant overrides are honored and unknown
+# values refused with 400; extra credit shifts the ceiling by exactly its amount and is
+# reset to 0 afterwards; the config variant round-trips through GET /api/config and is
+# restored exactly (empty when this script owns a fresh daemon, so the daemon's config
+# is left untouched); pasted and account sources stay 501 (planned, never emulated)
+# and unknown kinds are 400; the comm text renders within 50 columns over both
+# the advice and the test-message route; the CLI verdict is compared with the API
+# verdict, not just grepped.
+#
+# Everything this section creates is cleaned up by exact id / exact restore (cleanup_all
+# cases: usage, usage-credit, usage-variant); one reading is also deleted at the end of
+# the section through DELETE ?id= (its cleanup entry then no-ops). No name-pattern
+# sweeps, no tracker IDs in names. Sandbox-only assertions (default max_lanes, our 45%
+# reading being the newest) hold only when this script controls a fresh daemon.
+#
+# Evidence — SMOKE_ONLY=85 against the section's own isolated sandbox daemon
+# (fresh daemon, auto-generated self-signed cert, env -u TMUX -u TMUX_TMPDIR,
+# unrelated release pre-gates skipped: DW_SKIP_TIDY_CHECK/DOCS_CHECK/INTERNAL_REFS_CHECK/
+# VERSION_BUMP_CHECK/DOCKERFILE_GO_VERSION_CHECK/DOCS_AS_MCP_CHECK; no production),
+# run 2026-10-28 on a freshly built binary; the exact `== Summary ==` lines were
+#   Pass:  16
+#   Fail:  0
+#   Skip:  0
+# and `== Cleanup ==` then deleted both readings by exact id, restored
+# usage.calculator.variant to <unset/default> and the extra credit to 0 — no
+# residue left in the sandbox data dir. The run takes about three minutes because
+# the sections before 85 still run their setup side effects under SMOKE_ONLY (only
+# their ok/ko/skip lines are muted); section 80's restart matrix, which would add
+# up to 7 x SMOKE_RESTART_TIMEOUT, is now gated on SECTION_SKIP.
+# The comm route passes over the real path (POST /api/test/message): the test
+# router gets the daemon's web port at startup (main.go, SetWebPort), and the
+# in-process loopback client skips certificate verification for the daemon's own
+# 127.0.0.1 auto-generated cert (internal/router/sx2_parity.go) — the same
+# trust posture the smoke script's curl -sk takes for the local daemon.
+ux_adv() { curl "${curl_args[@]}" -s "$1" 2>/dev/null; }
+ux_code() { curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || echo 000; }
+ux_num() { python3 -c "import json, sys
+try:
+    print(json.load(sys.stdin)['advice']['$1'])
+except Exception:
+    pass" 2>/dev/null || true; }
+ux_readid() { python3 -c 'import json, sys
+try:
+    r = (json.load(sys.stdin).get("reading") or {})
+    i = r.get("id")
+    print(i if i else "")
+except Exception:
+    pass' 2>/dev/null || true; }
+ux_verdict() { python3 -c 'import json, sys
+try:
+    print(json.load(sys.stdin)["advice"].get("verdict", ""))
+except Exception:
+    pass' 2>/dev/null || true; }
+UX_EXT=""
+[[ -n "${DW_BASE:-}" ]] && UX_EXT=1
+
+# --- baseline advice: 200, a needs marker or a latest reading, ceiling, both texts -----
+UX_A0BODY="$TMPD/ux_a0"
+UX_A0CODE=$(curl "${curl_args[@]}" -s -o "$UX_A0BODY" -w '%{http_code}' "$BASE/api/usage/advice" 2>/dev/null || echo 000)
+UX_A0=$(cat "$UX_A0BODY" 2>/dev/null || true)
+UX_CEIL0=$(echo "$UX_A0" | ux_num ceiling); UX_CEIL0=${UX_CEIL0:-100}
+UX_CRED0=$(echo "$UX_A0" | ux_num extra_credit_points); UX_CRED0=${UX_CRED0:-0}
+# The section resets the credit to 0 itself (asserted), so the safety-net cleanup
+# kind also holds 0: an exact-value restore, never a pattern sweep.
+add_cleanup usage-credit 0
+UX_CONF0=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_V0=$(echo "$UX_CONF0" | python3 -c 'import json, sys; v = json.load(sys.stdin)["usage"]["calculator"]["variant"]; print(v if v else "all")' 2>/dev/null || true)
+UX_V0=${UX_V0:-all}
+# Restore target: on a daemon this script owns, the stored variant was unset (GET shows
+# the effective default "all"), so restore EMPTY — the default applies again and the
+# daemon's config is left exactly as found. On an external daemon restore the exact
+# value that was effective before the smoke.
+if [[ -z "$UX_EXT" ]]; then UX_VRESTORE=""; else UX_VRESTORE="$UX_V0"; fi
+add_cleanup usage-variant "$UX_VRESTORE"
+if [[ "$UX_A0CODE" == "200" ]] && echo "$UX_A0" | UX_EXT="$UX_EXT" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+a = d["advice"]
+if os.environ.get("UX_EXT"):
+    assert a.get("needs") in ("reading", "reset", "percent") or a.get("read_at"), \
+        "neither a needs marker nor a latest reading: %r" % a.get("needs")
+else:
+    # Fresh smoke daemon: the readings store is empty and the reset is set,
+    # so the empty state must answer needs=reading — with no verdict yet
+    # (the needs marker is the answer; a verdict cannot precede it).
+    assert a.get("needs") == "reading", "expected the empty state needs=reading, got needs=%r read_at=%r" % (a.get("needs"), a.get("read_at"))
+    assert not a.get("verdict"), "a verdict cannot precede any reading: %r" % a.get("verdict")
+t = d.get("text") or {}
+assert t.get("cli") and t.get("comm"), "text forms missing"
+if not os.environ.get("UX_EXT"):
+    assert "no weekly readings yet" in t["comm"], t["comm"][:160]
+' 2>/dev/null; then
+  ok "usage baseline: advice answers 200; on the fresh daemon the empty state answers needs=reading with no verdict (the comm form says so); ceiling set; both text forms present"
+else
+  ko "usage baseline: not well-formed (code=$UX_A0CODE): $(head -c 200 "$UX_A0BODY" 2>/dev/null)"
+fi
+
+# --- per-call validation: unknown variant / policy / negative lanes all 400 ------------
+UX_VBAD=$(ux_code "$BASE/api/usage/advice?variant=bogus")
+UX_PBAD=$(ux_code "$BASE/api/usage/advice?policy=bogus")
+UX_LBAD=$(ux_code "$BASE/api/usage/advice?lanes=-1")
+if [[ "$UX_VBAD" == "400" && "$UX_PBAD" == "400" && "$UX_LBAD" == "400" ]]; then
+  ok "usage validation: ?variant=bogus, ?policy=bogus and ?lanes=-1 each answered 400"
+else
+  ko "usage validation: expected 400/400/400 for bogus variant / policy / negative lanes, got $UX_VBAD / $UX_PBAD / $UX_LBAD"
+fi
+
+# --- source gate: pasted + account stay planned (501); unknown kind 400 ---------------
+UX_T1=$(python3 -c 'import time; print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 48 * 3600)))' 2>/dev/null || true)
+UX_T2=$(python3 -c 'import time; print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 24 * 3600)))' 2>/dev/null || true)
+UX_PSB="$TMPD/ux_pasted"
+UX_PS=$(curl "${curl_args[@]}" -s -o "$UX_PSB" -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":10,\"source\":\"pasted\"}" "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+UX_ASB="$TMPD/ux_account"
+UX_AS=$(curl "${curl_args[@]}" -s -o "$UX_ASB" -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":10,\"source\":\"account\"}" "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+UX_UB="$TMPD/ux_unknown"
+UX_UK=$(curl "${curl_args[@]}" -s -o "$UX_UB" -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":10,\"source\":\"carrier-pigeon\"}" "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+if [[ "$UX_PS" == "501" && "$UX_AS" == "501" && "$UX_UK" == "400" ]]; then
+  ok "usage source gate: pasted=501 and account=501 (planned sources, never emulated), unknown kind=400"
+else
+  ko "usage source gate: expected pasted=501 account=501 unknown=400, got pasted=$UX_PS account=$UX_AS unknown=$UX_UK: $(head -c 120 "$UX_PSB" 2>/dev/null)"
+fi
+
+# --- two typed readings; both exact ids come from the POST response, nothing else ----
+UX_R1=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T1\",\"percent\":30,\"source\":\"typed\"}" "$BASE/api/usage/readings" 2>/dev/null || true)
+UX_R2=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":45,\"source\":\"typed\"}" "$BASE/api/usage/readings" 2>/dev/null || true)
+UX_ID1=$(echo "$UX_R1" | ux_readid)
+UX_ID2=$(echo "$UX_R2" | ux_readid)
+if echo "$UX_R1" | grep -q '"ok":true' && echo "$UX_R2" | grep -q '"ok":true' \
+   && [[ -n "$UX_ID1" && -n "$UX_ID2" && "$UX_ID1" != "$UX_ID2" ]]; then
+  add_cleanup usage "$UX_ID1"
+  add_cleanup usage "$UX_ID2"
+  ok "usage readings: two typed readings accepted; both exact ids captured for precise cleanup"
+else
+  ko "usage readings: typed add failed or ids not retrievable: r1=$UX_R1 r2=$UX_R2"
+fi
+
+# --- GET list: both ids present, typed, one after the other in time -------------------
+UX_LIST=$(curl "${curl_args[@]}" -s "$BASE/api/usage/readings" 2>/dev/null || true)
+if [[ -n "$UX_ID1" && -n "$UX_ID2" ]] && echo "$UX_LIST" | UX_ID1="$UX_ID1" UX_ID2="$UX_ID2" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+rs = d.get("readings") or []
+ids = [r.get("id") for r in rs]
+i1, i2 = os.environ["UX_ID1"], os.environ["UX_ID2"]
+assert i1 in ids and i2 in ids, (i1, i2, ids)
+assert ids.index(i1) < ids.index(i2), (ids.index(i1), ids.index(i2))
+byid = {r.get("id"): r for r in rs}
+for x in (i1, i2):
+    r = byid[x]
+    assert r.get("source") == "typed", r
+    assert r.get("at"), r
+' 2>/dev/null; then
+  ok "usage list: GET /api/usage/readings carries both new readings as typed, oldest before newest"
+else
+  ko "usage list: both ids not present in time order: $(echo "$UX_LIST" | head -c 240)"
+fi
+
+# --- advice with readings: verdict self-consistent, by_lanes one row per lane count ----
+UX_A=$(ux_adv "$BASE/api/usage/advice")
+if echo "$UX_A" | UX_EXT="$UX_EXT" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+a = d["advice"]
+assert not a.get("needs"), "expected numbers after adding readings, got needs=%r" % a.get("needs")
+assert (a["verdict"] == "over") == (a["projected_end_recent"] > a["ceiling"]), (a["verdict"], a["projected_end_recent"], a["ceiling"])
+va = a.get("verdict_avg")
+if va in ("within", "over"):
+    assert (va == "over") == (a["projected_end_avg"] > a["ceiling"]), (va, a["projected_end_avg"], a["ceiling"])
+assert a["recent_burn_per_24h"] >= 0 and a["week_avg_burn_per_24h"] >= 0
+if not os.environ.get("UX_EXT"):
+    # Fresh smoke daemon: our 45% reading is the newest and defaults are untouched.
+    assert abs(a["percent"] - 45) < 0.001, a["percent"]
+    assert a["max_lanes"] == 3, a["max_lanes"]
+rows = a["by_lanes"]
+assert isinstance(rows, list) and len(rows) >= 1, rows
+assert rows[0]["lanes"] == 0 and rows[-1]["lanes"] == a["max_lanes"], (a["max_lanes"], len(rows))
+if not os.environ.get("UX_EXT"):
+    assert len(rows) == a["max_lanes"] + 1, len(rows)
+assert a["chosen"]["lanes"] == a["lanes"] and a["lanes"] <= a["max_lanes"], (a["chosen"], a["lanes"])
+assert a["advice"]["headline"], "no headline"
+' 2>/dev/null; then
+  ok "usage advice: verdict within/over self-consistent with the projection, by_lanes one row per lane count, chosen lane row coherent"
+else
+  ko "usage advice: verdict/by_lanes not as expected: $(echo "$UX_A" | head -c 240)"
+fi
+
+# --- policy override per call: labels/lanes/finish move, the numbers do not ------------
+UX_PU=$(ux_adv "$BASE/api/usage/advice?policy=use-all")
+UX_PP=$(ux_adv "$BASE/api/usage/advice?policy=pace")
+UX_PF=$(ux_adv "$BASE/api/usage/advice?policy=finish-early")
+if UX_PU="$UX_PU" UX_PP="$UX_PP" UX_PF="$UX_PF" python3 -c '
+import json, os
+du = json.loads(os.environ["UX_PU"])
+dp = json.loads(os.environ["UX_PP"])
+df = json.loads(os.environ["UX_PF"])
+assert du["policy"] == "use-all", du.get("policy")
+assert dp["policy"] == "pace" and df["policy"] == "finish-early"
+aw = (du["advice"], dp["advice"], df["advice"])
+assert all(w["advice"]["headline"] for w in aw), "a policy call has no headline"
+assert aw[1]["advice"]["policy"] == "pace" and aw[2]["advice"]["policy"] == "finish-early"
+def nums(w):
+    return (w["percent"], w["recent_burn_per_24h"], w["week_avg_burn_per_24h"], w["ceiling"], w["projected_end_recent"])
+n = [nums(w) for w in aw]
+assert n[0] == n[1] == n[2], "the policy must not move the numbers: " + str(n)
+# finish-early runs every lane and reports when the work finishes.
+assert aw[2]["advice"]["lanes_suggested"] == aw[2]["max_lanes"], (aw[2]["advice"]["lanes_suggested"], aw[2]["max_lanes"])
+assert aw[2]["advice"].get("finish") is None or isinstance(aw[2]["advice"]["finish"], dict)
+# use-all / pace suggest a fitting lane count, always in range.
+for w in (aw[0], aw[1]):
+    ls = w["advice"]["lanes_suggested"]
+    assert 1 <= ls <= w["max_lanes"], (ls, w["max_lanes"])
+' 2>/dev/null; then
+  ok "usage policy: use-all / pace / finish-early honored per call (labels, lanes, finish) while the numbers stay put"
+else
+  ko "usage policy: override not honored correctly (use-all=$(echo "$UX_PU" | head -c 120) | pace=$(echo "$UX_PP" | head -c 120) | finish-early=$(echo "$UX_PF" | head -c 120) ...)"
+fi
+
+# --- variant override: accepted + echoed (bogus already 400 above) --------------------
+UX_VR=$(ux_adv "$BASE/api/usage/advice?variant=lane-planner")
+if echo "$UX_VR" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["variant"] == "lane-planner", d["variant"]
+assert d["advice"]["advice"]["headline"], "no headline"
+' 2>/dev/null; then
+  ok "usage variant: ?variant=lane-planner accepted and echoed in the advice"
+else
+  ko "usage variant: lane-planner not honored: $(echo "$UX_VR" | head -c 160)"
+fi
+
+# --- extra credit: shifts the ceiling by exactly its amount, then restores -------------
+UX_EC1=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d '{"points":80}' "$BASE/api/usage/extra-credit" 2>/dev/null || true)
+UX_EN=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"points":-5}' "$BASE/api/usage/extra-credit" 2>/dev/null || echo 000)
+UX_AC=$(ux_adv "$BASE/api/usage/advice")
+if echo "$UX_EC1" | grep -q '"ok":true' && [[ "$UX_EN" == "400" ]] \
+   && echo "$UX_AC" | UX_CEIL0="$UX_CEIL0" python3 -c '
+import json, os, sys
+a = json.load(sys.stdin)["advice"]
+assert abs(a["extra_credit_points"] - 80) < 0.001, a["extra_credit_points"]
+assert abs(a["ceiling"] - (float(os.environ["UX_CEIL0"]) + 80)) < 0.001, (a["ceiling"], os.environ["UX_CEIL0"])
+' 2>/dev/null; then
+  ok "usage extra credit: PUT +80 raises the ceiling by exactly 80 (was $UX_CEIL0, now $(echo "$UX_AC" | ux_num ceiling)); PUT -5 refused with 400"
+  UX_EC2=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d '{"points": 0}' "$BASE/api/usage/extra-credit" 2>/dev/null || true)
+  UX_AR=$(ux_adv "$BASE/api/usage/advice")
+  if echo "$UX_EC2" | grep -q '"ok":true' && echo "$UX_AR" | UX_CEIL0="$UX_CEIL0" python3 -c '
+import json, os, sys
+a = json.load(sys.stdin)["advice"]
+assert abs(a["extra_credit_points"] - 0) < 0.001, a["extra_credit_points"]
+assert abs(a["ceiling"] - float(os.environ["UX_CEIL0"])) < 0.001, (a["ceiling"], os.environ["UX_CEIL0"])
+' 2>/dev/null; then
+    ok "usage extra credit: reset to 0 afterwards (credit 0, ceiling back to $UX_CEIL0)"
+  else
+    ko "usage extra credit: reset to 0 failed (ceiling=$(echo "$UX_AR" | ux_num ceiling), wanted $UX_CEIL0)"
+  fi
+else
+  ko "usage extra credit: PUT +80 did not raise the ceiling by 80 (was $UX_CEIL0 => $(echo "$UX_AC" | ux_num ceiling)), negative status=$UX_EN: $UX_EC1"
+fi
+
+# --- config round-trip: stored variant applies live, then restored to the exact original
+UX_CONF1=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d '{"usage.calculator.variant":"burn-ledger"}' "$BASE/api/config" 2>/dev/null || true)
+UX_ADB=""
+UX_CONF2=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_ADV=$(ux_adv "$BASE/api/usage/advice")
+if echo "$UX_CONF2" | python3 -c 'import json, sys; assert json.load(sys.stdin)["usage"]["calculator"]["variant"] == "burn-ledger"' 2>/dev/null \
+   && echo "$UX_ADV" | python3 -c 'import json, sys; assert json.load(sys.stdin)["variant"] == "burn-ledger"' 2>/dev/null; then
+  ok "usage config round-trip: usage.calculator.variant PUT lands in GET /api/config and applies live to advice"
+  curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\":\"$UX_VRESTORE\"}" "$BASE/api/config" >/dev/null 2>&1
+  UX_CONF3=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+  UX_ADB=$(ux_adv "$BASE/api/usage/advice")
+  # The config display is the EFFECTIVE value: an empty restore reads back the default
+  # ("all"), so compare the display against the pre-smoke effective value UX_V0.
+  if echo "$UX_CONF3" | UX_V0="$UX_V0" python3 -c 'import json, os, sys; assert (json.load(sys.stdin)["usage"]["calculator"]["variant"] or "all") == os.environ["UX_V0"]' 2>/dev/null \
+     && echo "$UX_ADB" | UX_V0="$UX_V0" python3 -c 'import json, os, sys; assert json.load(sys.stdin)["variant"] == os.environ["UX_V0"]' 2>/dev/null; then
+    ok "usage config round-trip: variant restored (stored=\"$UX_VRESTORE\") and live advice is back to the pre-smoke value ($UX_V0)"
+  else
+    ko "usage config round-trip: variant not restored (saved \"$UX_VRESTORE\", effective still != $UX_V0): conf=$(echo "$UX_CONF3" | head -c 160)"
+  fi
+else
+  ko "usage config round-trip: variant set/change not visible or live: conf=$(echo "$UX_CONF2" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("usage", {}))' 2>/dev/null || echo '?') adv=$(echo "$UX_ADV" | head -c 120)"
+fi
+
+# --- reset-zone contract: config display shows the effective zone + source, advice
+#     carries zone + server_zone, both texts carry the "(server zone)" marker only when
+#     the zone follows the daemon (never a bare value it chose); an explicit zone pins.
+UX_ZBASE=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_ZADV=$(ux_adv "$BASE/api/usage/advice")
+# The decisive assertion set (config/advice consistency + text marker when server-sourced):
+if echo "$UX_ZBASE" | UX_ZADV="" python3 -c '
+import json, sys
+c = json.load(sys.stdin)["usage"]["calculator"]
+assert isinstance(c.get("reset_zone"), str) and c["reset_zone"], "reset_zone display missing: %r" % c.get("reset_zone")
+assert c.get("reset_zone_source") in ("configured", "server"), "bad source: %r" % c.get("reset_zone_source")
+assert isinstance(c.get("reset_zone_fell_back"), bool), "fell_back flag missing"
+' 2>/dev/null \
+   && echo "$UX_ZBASE" | UX_ZADV="$UX_ZADV" python3 -c '
+import json, os, sys
+c = json.load(sys.stdin)["usage"]["calculator"]
+adv = json.loads(os.environ["UX_ZADV"])
+a = adv["advice"]
+assert a.get("zone") == c["reset_zone"], "advice zone %r != config %r" % (a.get("zone"), c["reset_zone"])
+assert a.get("server_zone") == (c["reset_zone_source"] == "server"), "advice server_zone %r inconsistent" % a.get("server_zone")
+marker = "(server zone)"
+for name, form in (("cli", adv["text"]["cli"]), ("comm", adv["text"]["comm"])):
+    if c["reset_zone_source"] == "server":
+        assert marker in form, "%s form lacks the server-zone marker: %s" % (name, form[:160])
+' 2>/dev/null; then
+  ok "usage reset-zone: config GET shows the effective zone with reset_zone_source/fell_back; advice zone + server_zone agree with it; the texts mark the zone as the daemon's when the operator left it unset"
+else
+  ko "usage reset-zone: contract fields inconsistent: conf=$(echo "$UX_ZBASE" | head -c 160) adv=$(echo "$UX_ZADV" | head -c 160)"
+fi
+if curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"usage.calculator.reset_zone":"America/New_York"}' "$BASE/api/config" 2>/dev/null | grep -q '^2' \
+   && curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys; c=json.load(sys.stdin)["usage"]["calculator"]; assert c["reset_zone"]=="America/New_York" and c["reset_zone_source"]=="configured"' 2>/dev/null \
+   && UX_ZS=$(ux_adv "$BASE/api/usage/advice") \
+   && echo "$UX_ZS" | python3 -c 'import json,sys; a=json.load(sys.stdin)["advice"]; assert a["zone"]=="America/New_York" and a["server_zone"] is False' 2>/dev/null \
+   && echo "$UX_ZS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "(server zone)" not in d["text"]["cli"] and "(server zone)" not in d["text"]["comm"]' 2>/dev/null; then
+  ok "usage reset-zone: an explicit zone (America/New_York) pins — source configured, marker gone from advice zone/text"
+else
+  ko "usage reset-zone: explicit zone pin failed — see responses above"
+fi
+# Restore the pre-smoke stored state: an effective source "server" means the zone was
+# unset (empty PUT), a source "configured" means the displayed zone IS the stored one.
+UX_ZSRC0=$(echo "$UX_ZBASE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["usage"]["calculator"].get("reset_zone_source",""))' 2>/dev/null || true)
+UX_ZZONE0=$(echo "$UX_ZBASE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["usage"]["calculator"].get("reset_zone",""))' 2>/dev/null || true)
+if [[ "$UX_ZSRC0" == "server" ]]; then UX_ZRESTORE='""'; else UX_ZRESTORE="\"$UX_ZZONE0\""; fi
+add_cleanup usage-zone "$UX_ZRESTORE"
+curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.reset_zone\":$UX_ZRESTORE}" "$BASE/api/config" >/dev/null 2>&1
+UX_ZR=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_ZRA=$(ux_adv "$BASE/api/usage/advice")
+if echo "$UX_ZR" | UX_ZRA="$UX_ZRA" python3 -c '
+import json, os, sys
+c = json.load(sys.stdin)["usage"]["calculator"]
+adv = json.loads(os.environ["UX_ZRA"])
+assert adv["advice"].get("zone") == c["reset_zone"], "advice zone %r != config %r after restore" % (adv["advice"].get("zone"), c["reset_zone"])
+assert adv["advice"].get("server_zone") == (c["reset_zone_source"] == "server")
+if c["reset_zone_source"] == "server":
+    for name in ("cli", "comm"):
+        assert "(server zone)" in adv["text"][name], "%s form lost the server-zone marker after restore" % name
+' 2>/dev/null; then
+  ok "usage reset-zone: restore lands — config and advice match again (stored value: ${UX_ZRESTORE:-<unset>})"
+else
+  ko "usage reset-zone: restore inconsistent: conf=$(echo "$UX_ZR" | head -c 160) adv=$(echo "$UX_ZRA" | head -c 160)"
+fi
+# --- CLI config get: the zone marker lives in the CLI too (sandbox daemon + CLI binary) --
+if [[ -z "${DW_BASE:-}" && -n "${DW_CLI:-}" ]]; then
+  UX_CG1=$($DW_CLI config get usage.calculator.reset_zone 2>&1 | head -c 400 || true)
+  # After the restore above: a server-sourced zone carries the marker, a configured one does not.
+  UX_ZSRC1=$(echo "$UX_ZR" | python3 -c 'import json,sys; print(json.load(sys.stdin)["usage"]["calculator"].get("reset_zone_source",""))' 2>/dev/null || true)
+  if [[ "$UX_ZSRC1" == "server" ]]; then
+    if printf '%s\n' "$UX_CG1" | grep -q "(server zone)"; then
+      ok "usage CLI config get: reset_zone shows '<zone> (server zone)' when the zone follows the daemon"
+    else
+      ko "usage CLI config get: expected the (server zone) marker: $(printf '%s' "$UX_CG1" | head -c 240)"
+    fi
+  else
+    if ! printf '%s\n' "$UX_CG1" | grep -q "(server zone)" && printf '%s\n' "$UX_CG1" | grep -q "$UX_ZZONE0"; then
+      ok "usage CLI config get: a configured reset_zone prints the value without the marker"
+    else
+      ko "usage CLI config get: configured zone output unexpected: $(printf '%s' "$UX_CG1" | head -c 240)"
+    fi
+  fi
+else
+  skip "usage CLI config get: external daemon mode (DW_BASE) or no CLI binary"
+fi
+
+# --- comm text: <= 50 columns per line, carries the verdict language -------------------
+if echo "$UX_ADB" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+comm = d["text"]["comm"]
+assert comm.strip(), "empty comm text"
+lines = comm.splitlines()
+assert max(len(l) for l in lines) <= 50, max(len(l) for l in lines)
+v = d["advice"].get("verdict")
+if v in ("within", "over"):
+    label = "over budget" if v == "over" else "within budget"
+    assert label in comm, (v, comm[:200])
+else:
+    assert "no weekly reading" in comm or "weekly reset is not set" in comm or "weekly percentage is needed" in comm, comm[:200]
+' 2>/dev/null; then
+  ok "usage comm: text.comm renders within 50 columns per line and carries the verdict language"
+else
+  ko "usage comm: text.comm missing, wider than 50 columns or without the verdict: $(echo "$UX_ADB" | head -c 240)"
+fi
+
+# --- comm path over the real route: POST /api/test/message "usage advice" --------------
+UX_TM=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d '{"text":"usage advice"}' "$BASE/api/test/message" 2>/dev/null || true)
+# 'REST loopback not configured' is the documented isolated-env caveat (same rule as 7aa):
+# a SKIP, not a FAIL. A missing responses array or a lost 'usage advice' input is a FAIL.
+if echo "$UX_TM" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d.get("input") == "usage advice", d.get("input")
+rs = d.get("responses") or []
+assert d.get("count") == len(rs) >= 1, (d.get("count"), rs)
+joined = "\n".join(rs)
+assert "usage advice" in joined, joined[:200]
+' 2>/dev/null; then
+  if echo "$UX_TM" | python3 -c 'import json, sys; assert "loopback" not in (json.load(sys.stdin)["responses"] or [""])[0].lower()' 2>/dev/null; then
+    if echo "$UX_TM" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+lines = [l for r in (d.get("responses") or []) for l in r.splitlines()]
+joined = "\n".join(d.get("responses") or [])
+assert lines and max(len(l) for l in lines) <= 50, max((len(l) for l in lines), default=0)
+assert ("over budget" in joined) or ("within budget" in joined) or ("no weekly reading" in joined) or ("weekly reset is not set" in joined), joined[:240]
+' 2>/dev/null; then
+      ok "usage comm route: POST /api/test/message 'usage advice' replies with the verdict language, every line within 50 columns"
+    else
+      ko "usage comm route: reply lacks the advice verdict/needs language or exceeds 50 columns: $(echo "$UX_TM" | head -c 240)"
+    fi
+  else
+    skip "usage comm route: loopback unavailable in this env (route wired; same caveat as 7aa)"
+  fi
+else
+  ko "usage comm route: test/message reply not well-formed: $(echo "$UX_TM" | head -c 240)"
+fi
+
+# --- DELETE by exact id: one reading goes, the rest of the state stays put -------------
+UX_D1B="$TMPD/ux_del1"
+UX_D1=$(curl "${curl_args[@]}" -s -o "$UX_D1B" -w '%{http_code}' -X DELETE "$BASE/api/usage/readings?id=$UX_ID1" 2>/dev/null || echo 000)
+UX_DNF=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/usage/readings?id=u-definitely-not-there" 2>/dev/null || echo 000)
+UX_DNOID=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+UX_LIST2=$(curl "${curl_args[@]}" -s "$BASE/api/usage/readings" 2>/dev/null || true)
+if [[ "$UX_D1" == "200" ]] && grep -q '"ok":true' "$UX_D1B" 2>/dev/null \
+   && [[ "$UX_DNF" == "404" && "$UX_DNOID" == "400" ]] \
+   && echo "$UX_LIST2" | UX_ID1="$UX_ID1" UX_ID2="$UX_ID2" python3 -c '
+import json, os, sys
+ids = [r.get("id") for r in (json.load(sys.stdin).get("readings") or [])]
+assert os.environ["UX_ID1"] not in ids, ids
+assert os.environ["UX_ID2"] in ids, "the other reading must survive until cleanup_all sweeps it: " + str(ids)
+' 2>/dev/null; then
+  ok "usage delete: DELETE ?id= removes exactly the one reading (200 + ok), unknown id 404, missing id 400, the rest of the log untouched"
+else
+  ko "usage delete: id1=$UX_ID1 id2=$UX_ID2 delete=$UX_D1 ($(head -c 80 "$UX_D1B" 2>/dev/null)) notfound=$UX_DNF no_id=$UX_DNOID list=$(echo "$UX_LIST2" | head -c 160)"
+fi
+
+# --- CLI: renders advice and carries the SAME verdict as the API, not just any verdict --
+if [[ -z "${DW_BASE:-}" && -n "${DW_CLI:-}" ]]; then
+  UX_A_CLI=$(ux_adv "$BASE/api/usage/advice")
+  UX_VV=$(echo "$UX_A_CLI" | ux_verdict)
+  UX_CLI=$($DW_CLI usage advice 2>&1 | head -c 2000 || true)
+  UX_WANT=""
+  case "$UX_VV" in
+    over)   UX_WANT="over budget" ;;
+    within) UX_WANT="within budget" ;;
+  esac
+  if [[ -n "$UX_WANT" ]]; then
+    if printf '%s\n' "$UX_CLI" | grep -qi "verdict:" && printf '%s\n' "$UX_CLI" | grep -q "$UX_WANT"; then
+      ok "usage CLI: 'usage advice' renders a verdict line matching the API verdict ($UX_VV: $UX_WANT)"
+    else
+      ko "usage CLI: output lacked the API verdict label ($UX_WANT): $(printf '%s' "$UX_CLI" | head -c 240)"
+    fi
+  else
+    if printf '%s\n' "$UX_CLI" | grep -Eq "no weekly reading|weekly reset is not set|weekly percentage is needed"; then
+      ok "usage CLI: 'usage advice' renders the needs state matching the API (no verdict set)"
+    else
+      ko "usage CLI: output did not render a verdict/needs state: $(printf '%s' "$UX_CLI" | head -c 240)"
+    fi
+  fi
+else
+  skip "usage CLI: external daemon mode (DW_BASE), CLI runs against the base daemon there"
+fi
+
+H "86. Stuck-running watchdog bound — autonomous.stuck_running_seconds on REST config"
+# The watchdog bound is an operator-facing setting. This section reads it from
+# GET /api/config, writes a new value through PUT /api/config, reads it back,
+# checks that 0 (use the default) is accepted and a negative value is ignored,
+# and restores the exact value found through add_cleanup (kind stuck-running).
+# The timing behaviour itself (re-fire once, then block) is covered by the
+# TestStuckRunningWatchdog_* tests; a smoke run must not wait out a bound.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  SR_GET() { curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);v=d.get("autonomous",{}).get("stuck_running_seconds");print("missing" if v is None else int(v))' 2>/dev/null || echo "missing"; }
+  SR_PUT() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"autonomous.stuck_running_seconds\": $1}" "$BASE/api/config" 2>/dev/null || echo "000"; }
+  SR0=$(SR_GET)
+  if [[ "$SR0" == "missing" ]]; then
+    ko "stuck-running: GET /api/config has no autonomous.stuck_running_seconds"
+  else
+    add_cleanup stuck-running "$SR0"
+    ok "stuck-running: GET /api/config exposes autonomous.stuck_running_seconds=$SR0"
+    if [[ "$(SR_PUT 1234)" == "200" && "$(SR_GET)" == "1234" ]]; then
+      ok "stuck-running: PUT /api/config 1234 reads back 1234"
+    else
+      ko "stuck-running: PUT /api/config 1234 did not read back 1234"
+    fi
+    if [[ "$(SR_PUT 0)" == "200" && "$(SR_GET)" == "0" ]]; then
+      ok "stuck-running: 0 is accepted (the default applies at read time)"
+    else
+      ko "stuck-running: PUT /api/config 0 was not accepted or did not read back 0"
+    fi
+    SR_PUT 1234 >/dev/null
+    SR_PUT -5 >/dev/null
+    if [[ "$(SR_GET)" == "1234" ]]; then
+      ok "stuck-running: a negative bound is ignored (the stored 1234 is unchanged)"
+    else
+      ko "stuck-running: a negative bound changed the stored value to $(SR_GET)"
+    fi
+    SR_PUT "$SR0" >/dev/null
+    if [[ "$(SR_GET)" == "$SR0" ]]; then
+      ok "stuck-running: the original bound $SR0 is restored"
+    else
+      ko "stuck-running: could not restore the original bound $SR0"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "87. operator questions step 2 — notification toggles, answered/withdrawn events, return path, polled GET"
+# Step 2 of the question channel on this script's own sandbox daemon (or the
+# dedicated DW_BASE sandbox), never production. It reads the switch and the three
+# notify toggles first and add_cleanup restores each exact value; the one
+# lifecycle subscription it creates (an mcp_queue sink, so the events read can
+# see the events) is deleted by its exact id; the high-priority alert is marked
+# read by its exact id. Every question it raises is answered or withdrawn, so no
+# open smoke question is left behind (questions are never deleted by design).
+# The events part needs the subscription engine (autonomous enabled on the
+# daemon); without it the section skips only those checks.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  Q2_JSON() { python3 -c 'import json,sys
+try:
+  d=json.load(sys.stdin)
+  for k in sys.argv[1].split("."):
+    d=d.get(k) if isinstance(d,dict) else None
+  print("" if d is None else (str(d).lower() if isinstance(d,bool) else d))
+except Exception:
+  print("")' "$1" 2>/dev/null || echo ""; }
+  Q2_CFG() { curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | Q2_JSON "autonomous.questions.$1"; }
+  Q2_PUT() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"autonomous.questions.$1\":$2}" "$BASE/api/config" 2>/dev/null || echo 000; }
+  Q2_CODE() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo 000; }
+  Q2_RAISE() { curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$1" "$BASE/api/questions" 2>/dev/null | Q2_JSON "question.id"; }
+
+  Q2_SW0=$(Q2_CFG enabled)
+  Q2_TOGGLES="notify_messaging notify_alert return_path"
+  declare -A Q2_ORIG
+  Q2_READ_OK=1
+  [[ -n "$Q2_SW0" ]] || Q2_READ_OK=0
+  for t in $Q2_TOGGLES; do Q2_ORIG[$t]=$(Q2_CFG "$t"); [[ -n "${Q2_ORIG[$t]}" ]] || Q2_READ_OK=0; done
+  if [[ "$Q2_READ_OK" != "1" ]]; then
+    skip "questions step 2: GET /api/config does not expose the switch and the three toggles (enabled='$Q2_SW0' messaging='${Q2_ORIG[notify_messaging]}' alert='${Q2_ORIG[notify_alert]}' return_path='${Q2_ORIG[return_path]}')"
+  else
+    add_cleanup qcfg "autonomous.questions.enabled=$Q2_SW0"
+    for t in $Q2_TOGGLES; do add_cleanup qcfg "autonomous.questions.$t=${Q2_ORIG[$t]}"; done
+
+    # 87.1 each toggle: boolean write reads back, non-boolean is refused (400) and not stored
+    Q2_TOG_OK=1
+    for t in $Q2_TOGGLES; do
+      [[ "$(Q2_PUT "$t" false)" == "200" && "$(Q2_CFG "$t")" == "false" ]] || Q2_TOG_OK=0
+      [[ "$(Q2_PUT "$t" '"no"')" == "400" && "$(Q2_CFG "$t")" == "false" ]] || Q2_TOG_OK=0
+      [[ "$(Q2_PUT "$t" true)" == "200" && "$(Q2_CFG "$t")" == "true" ]] || Q2_TOG_OK=0
+    done
+    if [[ "$Q2_TOG_OK" == "1" ]]; then
+      ok "questions step 2: notify_messaging, notify_alert and return_path each write false, read back, refuse a non-boolean (400) and write true"
+    else
+      ko "questions step 2: a notification toggle did not round-trip through PUT/GET /api/config"
+    fi
+
+    # 87.2 switch on, then the one subscription the events read needs (exact id recorded)
+    Q2_TAG="$$-$(date +%s)"
+    Q2_QUEUE="smoke-q2-$Q2_TAG"
+    Q2_SWON=$(Q2_PUT enabled true)
+    Q2_SUB=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"filter\":{\"kinds\":[\"question.answered\",\"question.withdrawn\"]},\"sink\":{\"type\":\"mcp_queue\",\"target\":\"$Q2_QUEUE\"}}" \
+      "$BASE/api/autonomous/subscriptions" 2>/dev/null | Q2_JSON "id")
+    [[ -n "$Q2_SUB" ]] && add_cleanup qsub "$Q2_SUB"
+    if [[ "$Q2_SWON" != "200" ]]; then
+      ko "questions step 2: could not turn the switch on (HTTP $Q2_SWON)"
+    else
+      # 87.3 validation on the new record fields: an unknown priority is 400, and a
+      # question that opts into the session line without naming a session is 400
+      Q2_OPTS='"options":[{"id":"yes","label":"Yes"},{"id":"no","label":"No"}],"default":"yes","context":"none","asked_by":"smoke"'
+      Q2_BADPRI=$(Q2_CODE -X POST -H "Content-Type: application/json" -d "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG bad priority\",$Q2_OPTS,\"priority\":\"urgent\"}" "$BASE/api/questions")
+      Q2_BADRP=$(Q2_CODE -X POST -H "Content-Type: application/json" -d "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG no session\",$Q2_OPTS,\"return_path\":true}" "$BASE/api/questions")
+      if [[ "$Q2_BADPRI" == "400" && "$Q2_BADRP" == "400" ]]; then
+        ok "questions step 2: an unknown priority and return_path without a session_id are both refused (400)"
+      else
+        ko "questions step 2: record-field validation (priority=$Q2_BADPRI return_path-without-session=$Q2_BADRP)"
+      fi
+
+      # 87.4 a high-priority raise alerts; a normal one does not (announce route, alert leg)
+      Q2_HI=$(Q2_RAISE "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG high priority\",$Q2_OPTS,\"priority\":\"high\"}")
+      Q2_NO=$(Q2_RAISE "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG normal priority\",$Q2_OPTS}")
+      if [[ -z "$Q2_HI" || -z "$Q2_NO" ]]; then
+        ko "questions step 2: could not raise the high and normal probe questions"
+      else
+        Q2_ALERT_ID=""
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+          Q2_ALERT_ID=$(curl "${curl_args[@]}" "$BASE/api/alerts" 2>/dev/null | python3 -c 'import json,sys
+want=sys.argv[1]
+try:
+  for a in json.load(sys.stdin).get("alerts") or []:
+    if want in (a.get("title") or ""): print(a.get("id","")); break
+except Exception: pass' "Operator question raised (high priority): $Q2_HI" 2>/dev/null || echo "")
+          [[ -n "$Q2_ALERT_ID" ]] && break
+          sleep 0.5
+        done
+        Q2_NO_ALERT=$(curl "${curl_args[@]}" "$BASE/api/alerts" 2>/dev/null | grep -c "$Q2_NO" || true)
+        if [[ -n "$Q2_ALERT_ID" ]]; then
+          add_cleanup qalert "$Q2_ALERT_ID"
+        fi
+        if [[ -n "$Q2_ALERT_ID" && "${Q2_NO_ALERT:-0}" -eq 0 ]]; then
+          ok "questions step 2: the high-priority raise left one alert naming its id; the normal raise left none"
+        else
+          ko "questions step 2: alert leg (high alert id='${Q2_ALERT_ID}', normal-question alert lines=${Q2_NO_ALERT:-0})"
+        fi
+
+        # 87.5 the polled single GET: no answer yet, then the standing answer's summary
+        Q2_GET0=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q2_HI" 2>/dev/null)
+        Q2_CNT0=$(Q2_JSON answer_count <<<"$Q2_GET0"); Q2_ST0=$(Q2_JSON question.state <<<"$Q2_GET0"); Q2_PRI=$(Q2_JSON question.priority <<<"$Q2_GET0")
+        Q2_ANS=$(Q2_CODE -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"no","quote":"no, keep it as is","surface":"cli"}' "$BASE/api/questions/$Q2_HI/answer")
+        Q2_GET1=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q2_HI" 2>/dev/null)
+        Q2_CNT1=$(Q2_JSON answer_count <<<"$Q2_GET1"); Q2_CUR=$(Q2_JSON current_answer_id <<<"$Q2_GET1"); Q2_QUOTE=$(Q2_JSON answer.quote <<<"$Q2_GET1")
+        if [[ "$Q2_ST0" == "open" && "$Q2_PRI" == "high" && "${Q2_CNT0:-0}" == "0" && "$Q2_ANS" == "201" && "$Q2_CNT1" == "1" && -n "$Q2_CUR" && "$Q2_QUOTE" == "no, keep it as is" ]]; then
+          ok "questions step 2: the polled GET shows an open question with no answer, then answer_count 1, current_answer_id and the verbatim quote"
+        else
+          ko "questions step 2: polled GET (state=$Q2_ST0 priority=$Q2_PRI count0=$Q2_CNT0 answer=$Q2_ANS count1=$Q2_CNT1 current=$Q2_CUR quote='$Q2_QUOTE')"
+        fi
+
+        # 87.6 withdraw the normal question (it was never answered)
+        Q2_WD=$(Q2_CODE -X POST -H "Content-Type: application/json" -d '{"actor":"smoke","reason":"probe done"}' "$BASE/api/questions/$Q2_NO/withdraw")
+        [[ "$Q2_WD" == "200" ]] && ok "questions step 2: the normal probe question was withdrawn (200)" || ko "questions step 2: withdraw returned HTTP $Q2_WD"
+
+        # 87.7 the events read: exactly one question.answered and one question.withdrawn
+        if [[ -z "$Q2_SUB" ]]; then
+          skip "questions step 2: no lifecycle subscription (autonomous disabled on this daemon); answered/withdrawn events not read"
+        else
+          Q2_EV_A=0; Q2_EV_W=0
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            Q2_EVS=$(curl "${curl_args[@]}" "$BASE/api/autonomous/events?queue=$Q2_QUEUE&limit=200" 2>/dev/null)
+            Q2_EV_A=$(python3 -c 'import json,sys
+try: print(sum(1 for e in json.load(sys.stdin).get("events") or [] if e.get("kind")=="question.answered" and e.get("question_id")==sys.argv[1]))
+except Exception: print(0)' "$Q2_HI" <<<"$Q2_EVS" 2>/dev/null || echo 0)
+            Q2_EV_W=$(python3 -c 'import json,sys
+try: print(sum(1 for e in json.load(sys.stdin).get("events") or [] if e.get("kind")=="question.withdrawn" and e.get("question_id")==sys.argv[1]))
+except Exception: print(0)' "$Q2_NO" <<<"$Q2_EVS" 2>/dev/null || echo 0)
+            [[ "$Q2_EV_A" -ge 1 && "$Q2_EV_W" -ge 1 ]] && break
+            sleep 0.5
+          done
+          if [[ "$Q2_EV_A" == "1" && "$Q2_EV_W" == "1" ]]; then
+            ok "questions step 2: GET /api/autonomous/events carries exactly one question.answered and one question.withdrawn for the probes"
+          else
+            ko "questions step 2: events read (answered=$Q2_EV_A withdrawn=$Q2_EV_W, want 1 and 1)"
+          fi
+        fi
+      fi
+
+      # 87.8 the return-path line: a question that opts in with a session that is gone is
+      # accepted, and its answer is still recorded (a lost line is one daemon warning,
+      # never a failed answer). The delivered line itself is pinned by the
+      # TestQuestionReturnPath* unit tests; a smoke run starts no worker session.
+      Q2_RP=$(Q2_RAISE "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG return path\",$Q2_OPTS,\"session_id\":\"smoke-gone-$Q2_TAG\",\"return_path\":true}")
+      if [[ -z "$Q2_RP" ]]; then
+        ko "questions step 2: a return_path question naming a session was not accepted"
+      else
+        Q2_RPA=$(Q2_CODE -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"yes","quote":"yes","surface":"cli"}' "$BASE/api/questions/$Q2_RP/answer")
+        Q2_RPN=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q2_RP" 2>/dev/null | Q2_JSON answer_count)
+        if [[ "$Q2_RPA" == "201" && "$Q2_RPN" == "1" ]]; then
+          ok "questions step 2: a return_path answer with its session gone still records (201, answer_count 1)"
+        else
+          ko "questions step 2: return_path answer (HTTP $Q2_RPA, answer_count=$Q2_RPN)"
+        fi
+      fi
+
+      # 87.9 a flip off then on again over PUT /api/config: the endpoints follow it at once
+      Q2_OFF=$(Q2_PUT enabled false); Q2_OFFC=$(Q2_CODE "$BASE/api/questions")
+      Q2_ON=$(Q2_PUT enabled true); Q2_ONC=$(Q2_CODE "$BASE/api/questions")
+      if [[ "$Q2_OFF" == "200" && "$Q2_OFFC" == "503" && "$Q2_ON" == "200" && "$Q2_ONC" == "200" ]]; then
+        ok "questions step 2: switching off 503s the endpoints and switching on serves them again, no restart"
+      else
+        ko "questions step 2: live switch (off put=$Q2_OFF list=$Q2_OFFC, on put=$Q2_ON list=$Q2_ONC)"
+      fi
+    fi
+
+    # 87.10 restore: delete the subscription now by its exact id, then the exact config
+    # values read first (add_cleanup repeats both on any abnormal exit)
+    if [[ -n "$Q2_SUB" ]]; then
+      Q2_SDEL=$(Q2_CODE -X DELETE "$BASE/api/autonomous/subscriptions/$Q2_SUB")
+      [[ "$Q2_SDEL" == "204" ]] && ok "questions step 2: the smoke subscription was deleted by its exact id" || ko "questions step 2: subscription delete returned HTTP $Q2_SDEL"
+    fi
+    Q2_RESTORE_OK=1
+    for t in $Q2_TOGGLES; do [[ "$(Q2_PUT "$t" "${Q2_ORIG[$t]}")" == "200" ]] || Q2_RESTORE_OK=0; done
+    [[ "$(Q2_PUT enabled "$Q2_SW0")" == "200" ]] || Q2_RESTORE_OK=0
+    if [[ "$Q2_RESTORE_OK" == "1" ]]; then
+      ok "questions step 2: the switch ($Q2_SW0) and the three toggles are restored to the values read first"
+    else
+      ko "questions step 2: could not restore the switch and toggles"
+    fi
+  fi
+fi
+
+H "88. operator questions step 4 — worker marker switch, question stats, REST-raised source"
+# The worker question marker on this script's own sandbox daemon (or the
+# dedicated DW_BASE sandbox), never production. REST only: it reads the switch
+# and the marker key first and add_cleanup restores each (an absent marker key
+# reads as off, so it is restored as false). The one question it raises is
+# answered, so no open smoke question is left behind. The marker line itself,
+# read from a live worker pane, is checked by the sandbox live check in
+# docs/plans/2026-10-29-operator-question-step4-live-check.md.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  Q4_JSON() { python3 -c 'import json,sys
+try:
+  d=json.load(sys.stdin)
+  for k in sys.argv[1].split("."):
+    d=d.get(k) if isinstance(d,dict) else None
+  print("" if d is None else (str(d).lower() if isinstance(d,bool) else d))
+except Exception:
+  print("")' "$1" 2>/dev/null || echo ""; }
+  Q4_CFG() { curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | Q4_JSON "autonomous.questions.$1"; }
+  Q4_PUT() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"autonomous.questions.$1\":$2}" "$BASE/api/config" 2>/dev/null || echo 000; }
+  Q4_CODE() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo 000; }
+
+  Q4_SW0=$(Q4_CFG enabled)
+  Q4_WM0=$(Q4_CFG worker_marker)
+  [[ -n "$Q4_WM0" ]] || Q4_WM0=false
+  if [[ -z "$Q4_SW0" ]]; then
+    skip "questions step 4: GET /api/config does not expose autonomous.questions.enabled"
+  else
+    add_cleanup qcfg "autonomous.questions.enabled=$Q4_SW0"
+    add_cleanup qcfg "autonomous.questions.worker_marker=$Q4_WM0"
+
+    # 88.1 the marker switch: boolean write reads back, non-boolean refused (400) and not stored
+    Q4_OK=1
+    [[ "$(Q4_PUT worker_marker true)" == "200" && "$(Q4_CFG worker_marker)" == "true" ]] || Q4_OK=0
+    [[ "$(Q4_PUT worker_marker '"yes"')" == "400" && "$(Q4_CFG worker_marker)" == "true" ]] || Q4_OK=0
+    [[ "$(Q4_PUT worker_marker false)" == "200" && "$(Q4_CFG worker_marker)" == "false" ]] || Q4_OK=0
+    if [[ "$Q4_OK" == "1" ]]; then
+      ok "questions step 4: autonomous.questions.worker_marker writes true, refuses a non-boolean (400) and writes false, each read back"
+    else
+      ko "questions step 4: the worker marker switch did not round-trip through PUT/GET /api/config"
+    fi
+
+    # 88.2 GET /api/questions/stats answers 200 with the five counters and the two switches,
+    # whether or not the channel is on
+    Q4_PUT enabled false >/dev/null
+    Q4_PUT worker_marker true >/dev/null
+    Q4_STATS=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/questions/stats" 2>/dev/null || echo "")
+    Q4_BODY=$(sed '$d' <<<"$Q4_STATS")
+    Q4_SHAPE=$(python3 -c 'import json,sys
+try:
+  d=json.loads(sys.stdin.read())
+  ks=["raised","duplicate","refused","parked","resumed"]
+  ok=all(isinstance(d.get(k),int) for k in ks) and isinstance(d.get("open_marker_questions"),int) and isinstance(d.get("open_blocking_questions"),int)
+  print("yes" if ok and d.get("questions_enabled") is False and d.get("worker_marker_enabled") is True else "no")
+except Exception:
+  print("no")' <<<"$Q4_BODY" 2>/dev/null || echo no)
+    if [[ "$(tail -n1 <<<"$Q4_STATS")" == "200" && "$Q4_SHAPE" == "yes" ]]; then
+      ok "questions step 4: GET /api/questions/stats is 200 with the five counters, the open counts and both switches while the channel is off"
+    else
+      ko "questions step 4: question stats (HTTP $(tail -n1 <<<"$Q4_STATS"), shape=$Q4_SHAPE)"
+    fi
+    [[ "$(Q4_CODE -X POST "$BASE/api/questions/stats")" == "405" ]] \
+      && ok "questions step 4: POST /api/questions/stats is 405" \
+      || ko "questions step 4: POST /api/questions/stats was not 405"
+
+    # 88.3 a question raised over REST says so: source "rest", no blocking flag; stats count it as
+    # neither a marker nor a blocking question while open
+    Q4_PUT enabled true >/dev/null
+    Q4_TAG="$$-$(date +%s)"
+    Q4_ID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"label\":\"decision\",\"context\":\"none\",\"text\":\"smoke probe $Q4_TAG: marker source?\",\"options\":[{\"id\":\"yes\",\"label\":\"Yes\"},{\"id\":\"no\",\"label\":\"No\"}],\"default\":\"yes\",\"asked_by\":\"smoke\"}" \
+      "$BASE/api/questions" 2>/dev/null | Q4_JSON "question.id")
+    if [[ -z "$Q4_ID" ]]; then
+      ko "questions step 4: POST /api/questions returned no question id"
+    else
+      Q4_REC=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q4_ID" 2>/dev/null)
+      Q4_SRC=$(Q4_JSON "question.source" <<<"$Q4_REC")
+      Q4_BLK=$(Q4_JSON "question.blocking" <<<"$Q4_REC")
+      if [[ "$Q4_SRC" == "rest" && ( -z "$Q4_BLK" || "$Q4_BLK" == "false" ) ]]; then
+        ok "questions step 4: a REST-raised question carries source rest and is not blocking"
+      else
+        ko "questions step 4: REST-raised question (source='$Q4_SRC' blocking='$Q4_BLK')"
+      fi
+      # the decision link reads the answer log: the answer's id and verbatim quote are there
+      Q4_ANS=$(Q4_CODE -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"no","quote":"no, keep the marker off","surface":"cli"}' "$BASE/api/questions/$Q4_ID/answer")
+      Q4_LOGID=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q4_ID/answers" 2>/dev/null | python3 -c 'import json,sys
+try:
+  a=json.load(sys.stdin).get("answers") or []
+  print(a[0].get("id","") if a and a[0].get("quote")=="no, keep the marker off" else "")
+except Exception:
+  print("")' 2>/dev/null || echo "")
+      if [[ "$Q4_ANS" == "201" && -n "$Q4_LOGID" ]]; then
+        ok "questions step 4: the answer log returns the answer id and the verbatim quote the decision link opens"
+      else
+        ko "questions step 4: answer log for the decision link (answer HTTP $Q4_ANS, id='$Q4_LOGID')"
+      fi
+    fi
+
+    # 88.4 restore the exact values read first (add_cleanup repeats both on any abnormal exit)
+    Q4_RESTORE_OK=1
+    [[ "$(Q4_PUT worker_marker "$Q4_WM0")" == "200" ]] || Q4_RESTORE_OK=0
+    [[ "$(Q4_PUT enabled "$Q4_SW0")" == "200" ]] || Q4_RESTORE_OK=0
+    if [[ "$Q4_RESTORE_OK" == "1" ]]; then
+      ok "questions step 4: the switch ($Q4_SW0) and the worker marker ($Q4_WM0) are restored to the values read first"
+    else
+      ko "questions step 4: could not restore the switch and the worker marker"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "89. Security failure report — REST route and comm verb (read only)"
+# The security failure report is a read: GET /api/autonomous/security-failures
+# returns the stored reports as a JSON list (empty on a fresh daemon), and the
+# comm verb `autonomous security-failure` answers the same read as text. The
+# smoke daemon stores no report, so this checks the route's shape and the comm
+# reply, not a particular run. Nothing is written, stopped or alerted here.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  SF_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/security-failures" 2>/dev/null || true)
+  SF_CODE=$(echo "$SF_BODY" | tail -n1)
+  SF_JSON=$(echo "$SF_BODY" | sed '$d')
+  if [[ "$SF_CODE" == "200" ]] && echo "$SF_JSON" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d,list)' 2>/dev/null; then
+    ok "security failure: GET /api/autonomous/security-failures answers 200 with a JSON list"
+  else
+    ko "security failure: REST route returned HTTP $SF_CODE or a non-list body: $(echo "$SF_JSON" | head -c 200)"
+  fi
+
+  SF_TM=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous security-failure"}' "$BASE/api/test/message")
+  if echo "$SF_TM" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'autonomous security-failure' in resp, 'comm reply lacks the verb header'
+assert 'HTTP 401' not in resp, 'comm verb was refused (HTTP 401)'
+" 2>/dev/null; then
+    ok "security failure: comm verb 'autonomous security-failure' answers the list (not refused)"
+  else
+    ko "security failure: comm verb reply failed: $(echo "$SF_TM" | head -c 200)"
+  fi
+
+  SF_UNKNOWN=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous security-failure 0"}' "$BASE/api/test/message")
+  if echo "$SF_UNKNOWN" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'No security failure report found for run 0.' in resp, 'unknown run not reported as not found'
+" 2>/dev/null; then
+    ok "security failure: comm verb reports an unknown run as not found"
+  else
+    ko "security failure: unknown-run reply failed: $(echo "$SF_UNKNOWN" | head -c 200)"
+  fi
+
+  SF_USAGE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous security-failure a b c"}' "$BASE/api/test/message")
+  if echo "$SF_USAGE" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'usage: autonomous security-failure' in resp, 'extra arguments not answered with usage'
+" 2>/dev/null; then
+    ok "security failure: comm verb answers extra arguments with its usage line"
+  else
+    ko "security failure: usage reply failed: $(echo "$SF_USAGE" | head -c 200)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "90. Supervisor watch — REST routes and comm verb (read only)"
+# The supervisor watch is a read: GET /api/autonomous/supervisor-watch returns
+# the mode in effect, the last poll, the findings and the comparison, and
+# GET /api/autonomous/supervisor-watch/stats returns the same state as numbers.
+# The comm verb `autonomous supervisor-watch` answers the read as text. The
+# smoke daemon's mode is whatever it runs with (an unset mode reads shadow), so
+# this checks the shape of the replies, not particular findings. Nothing is
+# written, changed or alerted here.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  SW_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/supervisor-watch" 2>/dev/null || true)
+  SW_CODE=$(echo "$SW_BODY" | tail -n1)
+  SW_JSON=$(echo "$SW_BODY" | sed '$d')
+  if [[ "$SW_CODE" == "200" ]] && echo "$SW_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert d["mode"] in ("off","shadow","on"), d["mode"]
+assert isinstance(d["findings"], list)
+assert "last_poll_at" in d and "comparison" in d
+assert isinstance(d["comparison"]["agreed_days"], int)
+' 2>/dev/null; then
+    ok "supervisor watch: GET /api/autonomous/supervisor-watch answers 200 with the mode, last poll, findings list and comparison"
+  else
+    ko "supervisor watch: REST read returned HTTP $SW_CODE or a malformed body: $(echo "$SW_JSON" | head -c 200)"
+  fi
+
+  SW_ST=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/supervisor-watch/stats" 2>/dev/null || true)
+  SW_ST_CODE=$(echo "$SW_ST" | tail -n1)
+  SW_ST_JSON=$(echo "$SW_ST" | sed '$d')
+  if [[ "$SW_ST_CODE" == "200" ]] && echo "$SW_ST_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert d["mode"] in ("off","shadow","on"), d["mode"]
+for k in ("last_poll_age_seconds","findings_open","findings_would_alert","findings_alerted","findings_resolved","agreed_days"):
+    assert isinstance(d[k], int), k
+assert d["findings_open"] >= d["findings_would_alert"] + d["findings_alerted"]
+' 2>/dev/null; then
+    ok "supervisor watch: GET /api/autonomous/supervisor-watch/stats answers 200 with the mode and the counts"
+  else
+    ko "supervisor watch: stats read returned HTTP $SW_ST_CODE or a malformed body: $(echo "$SW_ST_JSON" | head -c 200)"
+  fi
+
+  SW_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/supervisor-watch" 2>/dev/null || true)
+  if [[ "$SW_POST" == "405" ]]; then
+    ok "supervisor watch: the route is read only (POST answers 405)"
+  else
+    ko "supervisor watch: POST answered HTTP $SW_POST, expected 405"
+  fi
+
+  SW_TM=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous supervisor-watch"}' "$BASE/api/test/message")
+  if echo "$SW_TM" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'autonomous supervisor-watch' in resp, 'comm reply lacks the verb header'
+assert 'Supervisor watch mode:' in resp, 'comm reply lacks the mode line'
+assert 'HTTP 401' not in resp, 'comm verb was refused (HTTP 401)'
+" 2>/dev/null; then
+    ok "supervisor watch: comm verb 'autonomous supervisor-watch' answers the mode line (not refused)"
+  else
+    ko "supervisor watch: comm verb reply failed: $(echo "$SW_TM" | head -c 200)"
+  fi
+
+  SW_USAGE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous supervisor-watch a b"}' "$BASE/api/test/message")
+  if echo "$SW_USAGE" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'usage: autonomous supervisor-watch' in resp, 'extra arguments not answered with usage'
+" 2>/dev/null; then
+    ok "supervisor watch: comm verb answers extra arguments with its usage line"
+  else
+    ko "supervisor watch: usage reply failed: $(echo "$SW_USAGE" | head -c 200)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "91. Identity backups: backup on write, empty-write refusal, restore"
+# Writes the identity on the scratch daemon this script started, so it runs
+# only when EXTERNAL_DAEMON=0. The identity is left reset at the end. The
+# empty-write step sends an all-empty body to prove the daemon refuses it; that
+# one line carries the identity-wipe-ok marker so the identity-wipe checker
+# knows it is a refusal assertion, not a wipe.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+    skip "identity backups: external daemon (DW_BASE set) may hold the operator's live identity; write steps not run"
+  else
+    _id_role() { python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "?"; }
+    _id_put() { curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "$1" -o /dev/null -w '%{http_code}' "$BASE/api/identity" 2>/dev/null || echo "000"; }
+
+    A_CODE=$(_id_put '{"role":"smoke-role-a","north_star_goals":["smoke goal"]}')
+    B_CODE=$(_id_put '{"role":"smoke-role-b"}')
+    if [[ "$A_CODE" == "200" && "$B_CODE" == "200" ]]; then
+      ok "identity backups: two writes (A then B) accepted"
+    else
+      ko "identity backups: PUT A answered HTTP $A_CODE, PUT B answered HTTP $B_CODE (expected 200 and 200)"
+    fi
+
+    BK_JSON=$(curl "${curl_args[@]}" "$BASE/api/identity/backups" 2>/dev/null || echo "")
+    if echo "$BK_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert any(b.get("role")=="smoke-role-a" for b in d["backups"]), "no backup with role smoke-role-a"
+' 2>/dev/null; then
+      ok "identity backups: GET /api/identity/backups lists a backup whose role is smoke-role-a"
+    else
+      ko "identity backups: no backup with role smoke-role-a: $(echo "$BK_JSON" | head -c 200)"
+    fi
+
+    EMPTY_RESP=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"role":"","north_star_goals":[],"values":[]}' "$BASE/api/identity" 2>/dev/null || true) # identity-wipe-ok: asserts the refusal
+    EMPTY_CODE=$(echo "$EMPTY_RESP" | tail -n1)
+    EMPTY_BODY=$(echo "$EMPTY_RESP" | sed '$d')
+    EMPTY_ERRCODE=$(echo "$EMPTY_BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("code",""))' 2>/dev/null || echo "")
+    ROLE_NOW=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null | _id_role)
+    if [[ "$EMPTY_CODE" == "409" && "$EMPTY_ERRCODE" == "identity_wipe_refused" && "$ROLE_NOW" == "smoke-role-b" ]]; then
+      ok "identity backups: an all-empty write is refused (409 identity_wipe_refused) and the identity is kept"
+    else
+      ko "identity backups: empty write answered HTTP $EMPTY_CODE code='$EMPTY_ERRCODE', role now '$ROLE_NOW' (expected 409, identity_wipe_refused, smoke-role-b)"
+    fi
+
+    RS_CODE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"backup":"latest"}' -o /dev/null -w '%{http_code}' "$BASE/api/identity/restore" 2>/dev/null || echo "000")
+    ROLE_NOW=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null | _id_role)
+    if [[ "$RS_CODE" == "200" && "$ROLE_NOW" == "smoke-role-a" ]]; then
+      ok "identity backups: restore latest brings back smoke-role-a"
+    else
+      ko "identity backups: restore latest answered HTTP $RS_CODE, role now '$ROLE_NOW' (expected 200, smoke-role-a)"
+    fi
+
+    RST_CODE=$(curl "${curl_args[@]}" -X POST -o /dev/null -w '%{http_code}' "$BASE/api/identity/reset" 2>/dev/null || echo "000")
+    if [[ "$RST_CODE" == "200" ]] && curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null | python3 -c "$ID_IS_EMPTY" 2>/dev/null; then
+      ok "identity backups: POST /api/identity/reset leaves an empty identity"
+    else
+      ko "identity backups: reset answered HTTP $RST_CODE or the identity still has content"
+    fi
+
+    BK_JSON=$(curl "${curl_args[@]}" "$BASE/api/identity/backups" 2>/dev/null || echo "")
+    if echo "$BK_JSON" | python3 -c 'import json,sys;assert len(json.load(sys.stdin)["backups"])>0' 2>/dev/null; then
+      ok "identity backups: the backups list is still non-empty after the reset"
+    else
+      ko "identity backups: backups list empty after the reset: $(echo "$BK_JSON" | head -c 200)"
+    fi
+
+    RS_CODE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"backup":"latest"}' -o /dev/null -w '%{http_code}' "$BASE/api/identity/restore" 2>/dev/null || echo "000")
+    ROLE_NOW=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null | _id_role)
+    if [[ "$RS_CODE" == "200" && -n "$ROLE_NOW" && "$ROLE_NOW" != "?" ]]; then
+      ok "identity backups: restore latest after the reset brings a role back ($ROLE_NOW)"
+    else
+      ko "identity backups: restore latest after the reset answered HTTP $RS_CODE, role '$ROLE_NOW'"
+    fi
+
+    # Leave the scratch daemon's identity reset.
+    curl "${curl_args[@]}" -X POST -o /dev/null "$BASE/api/identity/reset" 2>/dev/null || true
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "92. Claude Code interstitial prompt dismissal — session.ui_prompt* config keys + stats ui_prompts"
+# The four settings (see session/ui_prompt_settings.go):
+#   session.dismiss_ui_prompts                bool,   default true
+#   session.ui_prompt_dismiss_delay_seconds   0+,     default 5
+#   session.ui_prompt_clear_bound_seconds     1+,     default 30
+#   session.ui_prompt_max_attempts            1+,     default 2
+# This section runs ONLY against this script's own isolated daemon (never an
+# external / production daemon, whose operator values it would overwrite):
+#   1) GET /api/config shows the four keys at their defaults
+#      (dismiss_ui_prompts true, delay 5, clear bound 30, max attempts 2)
+#   2) a PUT of changed values reads back and is applied
+#   3) a bad value (zero attempts, a negative delay, a non-integer) is
+#      refused with a 4xx and nothing changes
+#   4) GET /api/stats is well-formed and, whenever the ui_prompts counters
+#      object is present, it carries zero counts and the by-kind map (on a
+#      fresh daemon it is legitimately absent — the in-memory counters start
+#      at zero and the field is only emitted into the stats snapshot after
+#      the first dismissal, which needs a live Claude Code interstitial)
+#   5) every value the section changed is restored to its original value;
+#      it creates no entity, so no add_cleanup kind is needed, and it never
+#      widens the orphan sweep.
+if [[ "$SECTION_SKIP" == "1" ]]; then
+  :
+elif [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+  skip "ui_prompt config keys: external daemon (DW_BASE set) may hold the operator's live settings; the section runs only against this script's own isolated daemon"
+else
+  # Read one session.* key from GET /api/config (booleans as true/false, a
+  # missing key as the empty string).
+  _ip_val() {
+    curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c "
+import json,sys
+v=json.load(sys.stdin).get('session',{}).get('$1')
+if v is True: print('true')
+elif v is False: print('false')
+elif v is None: print('')
+else: print(v)
+" 2>/dev/null || echo "?"
+  }
+  # PUT /api/config with a JSON body, answering the HTTP status code.
+  _ip_put() {
+    curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "$1" \
+      -o /dev/null -w '%{http_code}' "$BASE/api/config" 2>/dev/null || echo "000"
+  }
+
+  # -- 1) the four keys at their defaults -------------------------------------
+  if curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c '
+import json,sys
+s=json.load(sys.stdin).get("session",{})
+assert s.get("dismiss_ui_prompts") is True
+assert s.get("ui_prompt_dismiss_delay_seconds")==5
+assert s.get("ui_prompt_clear_bound_seconds")==30
+assert s.get("ui_prompt_max_attempts")==2
+' 2>/dev/null; then
+    ok "defaults: dismiss_ui_prompts=true, dismiss_delay_seconds=5, clear_bound_seconds=30, max_attempts=2"
+  else
+    ko "defaults: a session.ui_prompt* key is missing or not at its default"
+  fi
+
+  # -- 2) a PUT of changed values reads back and is applied --------------------
+  _IP_DISMISS=$(_ip_val dismiss_ui_prompts)
+  _IP_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+  _IP_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+  _IP_MAX=$(_ip_val ui_prompt_max_attempts)
+  if [[ -z "$_IP_DISMISS" || "$_IP_DISMISS" == "?" || -z "$_IP_DELAY" || -z "$_IP_BOUND" || -z "$_IP_MAX" ]]; then
+    skip "changed-value round-trip: GET /api/config could not resolve all four keys; skipping the write steps"
+  else
+    # Changed values: the boolean flipped; each number moved to another
+    # value inside its allowed range (delay >= 0, bound >= 1, attempts >= 1)
+    # that is guaranteed to differ from whatever the daemon holds.
+    _ip_flip() { [[ "$1" == "true" ]] && echo false || echo true; }
+    _ip_diff() { [[ "$1" == "$2" ]] && echo "$3" || echo "$2"; }
+    _N_DISMISS=$(_ip_flip "$_IP_DISMISS")
+    _N_DELAY=$(_ip_diff "$_IP_DELAY" 3 7)
+    _N_BOUND=$(_ip_diff "$_IP_BOUND" 45 60)
+    _N_MAX=$(_ip_diff "$_IP_MAX" 3 4)
+    _N_CODE=$(_ip_put "{\"session.dismiss_ui_prompts\": $_N_DISMISS, \"session.ui_prompt_dismiss_delay_seconds\": $_N_DELAY, \"session.ui_prompt_clear_bound_seconds\": $_N_BOUND, \"session.ui_prompt_max_attempts\": $_N_MAX}")
+    _R_DISMISS=$(_ip_val dismiss_ui_prompts)
+    _R_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+    _R_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+    _R_MAX=$(_ip_val ui_prompt_max_attempts)
+    if [[ "$_N_CODE" == "200" && "$_R_DISMISS" == "$_N_DISMISS" && "$_R_DELAY" == "$_N_DELAY" && "$_R_BOUND" == "$_N_BOUND" && "$_R_MAX" == "$_N_MAX" ]]; then
+      ok "changed values PUT ($_N_DISMISS/$_N_DELAY/$_N_BOUND/$_N_MAX) answered 200 and read back applied"
+    else
+      ko "changed-value PUT answered HTTP $_N_CODE or did not apply (read back $_R_DISMISS/$_R_DELAY/$_R_BOUND/$_R_MAX, wanted $_N_DISMISS/$_N_DELAY/$_N_BOUND/$_N_MAX)"
+    fi
+
+    # -- 3) bad values: refused 4xx, nothing changes ---------------------------
+    _B1_CODE=$(_ip_put '{"session.ui_prompt_max_attempts": 0}')
+    if [[ "$_B1_CODE" == "400" ]]; then ok "max_attempts=0 (below the minimum of 1) refused with 400"; else ko "max_attempts=0 answered HTTP $_B1_CODE (expected 400)"; fi
+    _B2_CODE=$(_ip_put '{"session.ui_prompt_dismiss_delay_seconds": -8}')
+    if [[ "$_B2_CODE" == "400" ]]; then ok "negative delay (-8) refused with 400"; else ko "negative delay answered HTTP $_B2_CODE (expected 400)"; fi
+    _B3_CODE=$(_ip_put '{"session.ui_prompt_clear_bound_seconds": 1.5}')
+    if [[ "$_B3_CODE" == "400" ]]; then ok "non-integer clear bound (1.5) refused with 400"; else ko "non-integer clear bound answered HTTP $_B3_CODE (expected 400)"; fi
+    # Every refused PUT above must have left the config exactly where step 2
+    # left it.
+    _U_DISMISS=$(_ip_val dismiss_ui_prompts)
+    _U_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+    _U_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+    _U_MAX=$(_ip_val ui_prompt_max_attempts)
+    if [[ "$_U_DISMISS" == "$_N_DISMISS" && "$_U_DELAY" == "$_N_DELAY" && "$_U_BOUND" == "$_N_BOUND" && "$_U_MAX" == "$_N_MAX" ]]; then
+      ok "the refused bad-value PUTs changed nothing (values are still $_N_DISMISS/$_N_DELAY/$_N_BOUND/$_N_MAX)"
+    else
+      ko "a refused bad-value PUT changed the config (read back $_U_DISMISS/$_U_DELAY/$_U_BOUND/$_U_MAX, wanted $_N_DISMISS/$_N_DELAY/$_N_BOUND/$_N_MAX)"
+    fi
+
+    # -- 5) restore every value the section changed ----------------------------
+    _RS_CODE=$(_ip_put "{\"session.dismiss_ui_prompts\": $_IP_DISMISS, \"session.ui_prompt_dismiss_delay_seconds\": $_IP_DELAY, \"session.ui_prompt_clear_bound_seconds\": $_IP_BOUND, \"session.ui_prompt_max_attempts\": $_IP_MAX}")
+    _S_DISMISS=$(_ip_val dismiss_ui_prompts)
+    _S_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+    _S_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+    _S_MAX=$(_ip_val ui_prompt_max_attempts)
+    if [[ "$_RS_CODE" == "200" && "$_S_DISMISS" == "$_IP_DISMISS" && "$_S_DELAY" == "$_IP_DELAY" && "$_S_BOUND" == "$_IP_BOUND" && "$_S_MAX" == "$_IP_MAX" ]]; then
+      ok "all four keys restored to their original values ($_IP_DISMISS/$_IP_DELAY/$_IP_BOUND/$_IP_MAX)"
+    else
+      ko "restore answered HTTP $_RS_CODE or the original values did not hold (read back $_S_DISMISS/$_S_DELAY/$_S_BOUND/$_S_MAX)"
+    fi
+  fi
+
+  # -- 4) the ui_prompts counters object in GET /api/stats ----------------------
+  STATS92=$(curl "${curl_args[@]}" "$BASE/api/stats" 2>/dev/null || echo "")
+  if echo "$STATS92" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+u=d.get("ui_prompts")
+# On a fresh daemon the in-memory counters start at zero and the field is
+# only emitted into the stats snapshot after the first dismissal, so absent
+# is the expected, correct shape here; present with non-zero counts would
+# mean the daemon already saw an interstitial — also acceptable, malformed
+# is not.
+if u is not None:
+    assert isinstance(u.get("dismissed"),int) and isinstance(u.get("not_cleared"),int) and isinstance(u.get("refused"),int)
+    assert isinstance(u.get("by_kind"),dict)
+' 2>/dev/null; then
+    ok "stats: ui_prompts object absent (nothing dismissed yet) or well-shaped (dismissed/not_cleared/refused counts + by_kind map)"
+  else
+    ko "stats: ui_prompts present but malformed or the stats snapshot is broken: $(echo "$STATS92" | head -c 200)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "95. Autonomous host load alert — autonomous.host_load_alert config + status read"
+# The three keys (see config/host_load_alert.go):
+#   autonomous.host_load_alert.mode      off|alert|reap, default alert
+#   autonomous.host_load_alert.multiple  load-to-cores multiple, default 1.5
+#   autonomous.host_load_alert.minutes   sustained-breach window, default 10
+# This section runs ONLY against this script's own isolated daemon (never an
+# external / production daemon, whose live host-load settings a bad-value
+# probe is best not touching and whose operator state a GET would read):
+#   1) GET /api/config shows the three keys at their effective defaults
+#      (mode alert, multiple 1.5, minutes 10)
+#   2) a bad value is refused with a 400: a mode other than off/alert/reap
+#      (or empty), a multiple below 1 (negative), and minutes below 1 (a
+#      negative or a non-whole value)
+#   3) the host load status read answers — GET /api/autonomous/status is 200
+#      and carries the host load check snapshot when autonomous is wired
+# It writes only bad values (each refused with a 400), so it creates no
+# entity and leaves the daemon's config unchanged; no add_cleanup kind is
+# needed and it never widens the orphan sweep.
+if [[ "$SECTION_SKIP" == "1" ]]; then
+  :
+elif [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+  skip "autonomous.host_load_alert: external daemon (DW_BASE set) holds the operator's live settings; the section runs only against this script's own isolated daemon"
+else
+  # Read the autonomous.host_load_alert object from GET /api/config and print
+  # mode, multiple and minutes space-separated (a missing field as empty).
+  _hla_get() {
+    curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c '
+import json,sys
+h=json.load(sys.stdin).get("autonomous",{}).get("host_load_alert",{})
+print(h.get("mode",""),h.get("multiple",""),h.get("minutes",""),sep=" ")
+' 2>/dev/null || echo ""
+  }
+  # PUT /api/config with a JSON body, answering the HTTP status code.
+  _hla_put() {
+    curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "$1" \
+      -o /dev/null -w '%{http_code}' "$BASE/api/config" 2>/dev/null || echo "000"
+  }
+
+  # -- 1) the three keys at their effective defaults -------------------------
+  read -r _HLA_MODE _HLA_MULT _HLA_MIN <<< "$(_hla_get)" || true
+  if [[ "$_HLA_MODE" == "alert" && "$_HLA_MULT" == "1.5" && "$_HLA_MIN" == "10" ]]; then
+    ok "defaults: host_load_alert mode=alert, multiple=1.5, minutes=10"
+  else
+    ko "defaults: host_load_alert not at its effective defaults (got mode=$_HLA_MODE multiple=$_HLA_MULT minutes=$_HLA_MIN)"
+  fi
+
+  # -- 2) bad values: refused with a 400, nothing changes ---------------------
+  _HLA_B1=$(_hla_put '{"autonomous.host_load_alert.mode": "bogus"}')
+  if [[ "$_HLA_B1" == "400" ]]; then ok "mode=bogus (not off|alert|reap) refused with 400"; else ko "mode=bogus answered HTTP $_HLA_B1 (expected 400)"; fi
+  _HLA_B2=$(_hla_put '{"autonomous.host_load_alert.mode": ""}')
+  if [[ "$_HLA_B2" == "400" ]]; then ok "empty mode (no mode) refused with 400"; else ko "empty mode answered HTTP $_HLA_B2 (expected 400)"; fi
+  _HLA_B3=$(_hla_put '{"autonomous.host_load_alert.multiple": -1}')
+  if [[ "$_HLA_B3" == "400" ]]; then ok "multiple below 1 (-1) refused with 400"; else ko "multiple=-1 answered HTTP $_HLA_B3 (expected 400)"; fi
+  _HLA_B4=$(_hla_put '{"autonomous.host_load_alert.minutes": -1}')
+  if [[ "$_HLA_B4" == "400" ]]; then ok "minutes below 1 (-1) refused with 400"; else ko "minutes=-1 answered HTTP $_HLA_B4 (expected 400)"; fi
+  _HLA_B5=$(_hla_put '{"autonomous.host_load_alert.minutes": 1.5}')
+  if [[ "$_HLA_B5" == "400" ]]; then ok "minutes below 1 (1.5, not a whole number) refused with 400"; else ko "minutes=1.5 answered HTTP $_HLA_B5 (expected 400)"; fi
+  # Every refused PUT must have left the setting at its (step-1) defaults.
+  read -r _HLA_MODE2 _HLA_MULT2 _HLA_MIN2 <<< "$(_hla_get)" || true
+  if [[ "$_HLA_MODE2" == "$_HLA_MODE" && "$_HLA_MULT2" == "$_HLA_MULT" && "$_HLA_MIN2" == "$_HLA_MIN" ]]; then
+    ok "the refused bad-value PUTs changed nothing (still mode=$_HLA_MODE2 multiple=$_HLA_MULT2 minutes=$_HLA_MIN2)"
+  else
+    ko "a refused bad-value PUT changed the config (now mode=$_HLA_MODE2 multiple=$_HLA_MULT2 minutes=$_HLA_MIN2, was mode=$_HLA_MODE multiple=$_HLA_MULT minutes=$_HLA_MIN)"
+  fi
+
+  # -- 3) the host load status read answers -----------------------------------
+  _HLA_ST=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/status" 2>/dev/null || true)
+  _HLA_ST_CODE=$(echo "$_HLA_ST" | tail -n1)
+  _HLA_ST_JSON=$(echo "$_HLA_ST" | sed '$d')
+  if [[ "$_HLA_ST_CODE" == "200" ]] && echo "$_HLA_ST_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+hl=d.get("host_load")
+assert isinstance(hl, dict), hl
+assert hl.get("mode") in ("off","alert","reap"), hl
+assert isinstance(hl.get("last_load"),(int,float)) and isinstance(hl.get("last_limit"),(int,float)), hl
+assert isinstance(hl.get("breached"), bool) and isinstance(hl.get("orphans_reaped"), int), hl
+' 2>/dev/null; then
+    ok "host load status read: GET /api/autonomous/status answers 200 with the host load snapshot (mode, last_load, last_limit, breached, orphans_reaped)"
+  else
+    ko "host load status read: returned HTTP $_HLA_ST_CODE or a malformed host_load snapshot: $(echo "$_HLA_ST_JSON" | head -c 200)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "94. Lane fill eligibility — refusal codes, lane counts, per-lane-kind mode"
+# The Automata checks and ship status reads: both answer 200 with a JSON object.
+# They are read-only and change nothing.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  for CS_ROUTE in checks ship; do
+    CS_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/$CS_ROUTE" 2>/dev/null || true)
+    CS_CODE=$(echo "$CS_BODY" | tail -n1)
+    CS_JSON=$(echo "$CS_BODY" | sed '$d')
+    if [[ "$CS_CODE" == "200" ]] && echo "$CS_JSON" | python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin), dict)' 2>/dev/null; then
+      ok "automata $CS_ROUTE: GET /api/autonomous/$CS_ROUTE answers 200 with a JSON object"
+    else
+      ko "automata $CS_ROUTE: read returned HTTP $CS_CODE or a malformed body: $(echo "$CS_JSON" | head -c 200)"
+    fi
+  done
+fi
+
+# The lane fill read GET /api/autonomous/lane-fill carries, beside the base
+# mode, the mode in effect for each lane kind (`modes`), the effective and the
+# configured lane count for each kind (`lane_counts`), and on a refused
+# Automaton's `blocked` decision a stable `eligibility_reason` code. This checks
+# the shape of the read, that a bad per-kind mode is refused with a 400 naming
+# the key and stores nothing, and (scratch daemon only) that a per-kind mode set
+# to shadow reads back in `modes` and the original value is restored. It never
+# sets a mode to `on`, so nothing is started here; shadow stays the default.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  LF_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/lane-fill?limit=50" 2>/dev/null || true)
+  LF_CODE=$(echo "$LF_BODY" | tail -n1)
+  LF_JSON=$(echo "$LF_BODY" | sed '$d')
+  if [[ "$LF_CODE" == "200" ]] && echo "$LF_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+modes=("off","shadow","on")
+assert d["mode"] in modes, d["mode"]
+assert d["modes"]["gpu"] in modes and d["modes"]["claude"] in modes, d["modes"]
+for kind in ("gpu","claude"):
+    c=d["lane_counts"][kind]
+    assert isinstance(c["effective"], int) and isinstance(c["configured"], int), c
+    assert c["source"] in ("config","llm_caps"), c["source"]
+codes={"stale","held","sequenced_after_unshipped","proposal_not_confirmed","proposal_missing","main_carries_work","worktree_invalid"}
+for dec in d.get("decisions") or []:
+    r=dec.get("eligibility_reason","")
+    assert r=="" or r in codes, r
+    assert r=="" or dec["action"]=="blocked", dec
+' 2>/dev/null; then
+    ok "lane fill: GET /api/autonomous/lane-fill answers 200 with the mode, the per-kind modes, the lane counts and only known refusal codes"
+  else
+    ko "lane fill: read returned HTTP $LF_CODE or a malformed body: $(echo "$LF_JSON" | head -c 300)"
+  fi
+
+  LF_BAD=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.lane_fill.gpu_mode":"auto"}' "$BASE/api/config" 2>/dev/null || true)
+  LF_BAD_CODE=$(echo "$LF_BAD" | tail -n1)
+  if [[ "$LF_BAD_CODE" == "400" ]] && echo "$LF_BAD" | grep -q "autonomous.lane_fill.gpu_mode"; then
+    ok "lane fill: a bad gpu_mode is refused with a 400 that names the key"
+  else
+    ko "lane fill: bad gpu_mode answered HTTP $LF_BAD_CODE, expected 400 naming autonomous.lane_fill.gpu_mode: $(echo "$LF_BAD" | head -c 200)"
+  fi
+
+  LF_NEG=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.lane_fill.stale_after_hours":-1}' "$BASE/api/config" 2>/dev/null || true)
+  if [[ "$LF_NEG" == "400" ]]; then
+    ok "lane fill: a negative stale_after_hours is refused with a 400"
+  else
+    ko "lane fill: negative stale_after_hours answered HTTP $LF_NEG, expected 400"
+  fi
+
+  LF_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/lane-fill" 2>/dev/null || true)
+  if [[ "$LF_POST" == "405" ]]; then
+    ok "lane fill: the status route is read only (POST answers 405)"
+  else
+    ko "lane fill: POST answered HTTP $LF_POST, expected 405"
+  fi
+
+  if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+    skip "lane fill: external daemon (DW_BASE set); the per-kind mode round trip is not run"
+  else
+    LF_ORIG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("autonomous",{}).get("lane_fill",{}).get("gpu_mode",""))' 2>/dev/null || echo "")
+    LF_SET=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.lane_fill.gpu_mode":"shadow"}' "$BASE/api/config" 2>/dev/null || echo "000")
+    LF_GPU=$(curl "${curl_args[@]}" "$BASE/api/autonomous/lane-fill" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["modes"]["gpu"])' 2>/dev/null || echo "?")
+    if [[ "$LF_SET" == "200" && "$LF_GPU" == "shadow" ]]; then
+      ok "lane fill: gpu_mode set to shadow reads back in modes.gpu"
+    else
+      ko "lane fill: gpu_mode PUT answered HTTP $LF_SET and modes.gpu reads '$LF_GPU' (expected 200 and shadow)"
+    fi
+    # Restore the original value (empty means inherit the base mode).
+    curl "${curl_args[@]}" -o /dev/null -X PUT -H "Content-Type: application/json" -d "{\"autonomous.lane_fill.gpu_mode\":\"$LF_ORIG\"}" "$BASE/api/config" 2>/dev/null || true
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "93. Self-config audit trail — REST view and CLI read"
+# GET /api/audit/self-config lists every attempt that went through the
+# self-config path (config-write MCP tools, session/peer REST config PUTs,
+# comm configure) newest-first, with count/entries/path. Read-only and
+# capability-gated (CapAuditRead); the CLI `datawatch audit self-config`
+# reads the same route. This section never changes a setting — it only
+# reads the trail (earlier sections' config writes are what fills it).
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  SA_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/audit/self-config" 2>/dev/null || true)
+  SA_CODE=$(echo "$SA_BODY" | tail -n1)
+  SA_JSON=$(echo "$SA_BODY" | sed '$d')
+  if [[ "$SA_CODE" == "200" ]] && echo "$SA_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert isinstance(d["count"], int), d
+assert isinstance(d["entries"], list), d
+assert d["count"] == len(d["entries"]), d
+assert d["count"] <= 100, d["count"]
+for e in d["entries"]:
+    assert e["surface"] in ("mcp","rest","comm"), e
+    assert isinstance(e["allowed"], bool), e
+    assert isinstance(e["time"], str) and e["time"], e
+' 2>/dev/null; then
+    ok "self-config audit: GET /api/audit/self-config answers 200 with count/entries/path and known surfaces"
+  else
+    ko "self-config audit: read returned HTTP $SA_CODE or a malformed body: $(echo "$SA_JSON" | head -c 300)"
+  fi
+
+  SA_LIM=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/audit/self-config?limit=1" 2>/dev/null || true)
+  if [[ "$SA_LIM" == "200" ]]; then
+    ok "self-config audit: limit=1 is accepted"
+  else
+    ko "self-config audit: limit=1 answered HTTP $SA_LIM, expected 200"
+  fi
+
+  SA_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/audit/self-config?limit=0" 2>/dev/null || true)
+  if [[ "$SA_BAD" == "400" ]]; then
+    ok "self-config audit: limit=0 is refused with a 400"
+  else
+    ko "self-config audit: limit=0 answered HTTP $SA_BAD, expected 400"
+  fi
+
+  SA_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/audit/self-config" 2>/dev/null || true)
+  if [[ "$SA_POST" == "405" ]]; then
+    ok "self-config audit: the route is read only (POST answers 405)"
+  else
+    ko "self-config audit: POST answered HTTP $SA_POST, expected 405"
+  fi
+
+  if [[ -z "$DW_CLI" ]]; then
+    skip "self-config audit: CLI not available in this mode"
+  else
+    SA_CLI=$($DW_CLI audit self-config 2>&1); SA_CLI_RC=$?
+    if [[ $SA_CLI_RC -eq 0 && -n "$SA_CLI" ]]; then
+      ok "self-config audit: datawatch audit self-config reads the trail"
+    else
+      ko "self-config audit: datawatch audit self-config failed (rc=$SA_CLI_RC): $(echo "$SA_CLI" | head -c 300)"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "Burn guard (usage.burn_guard)"
+# GET /api/usage/burn-guard, GET/PUT /api/usage/burn-guard/config and POST
+# /api/usage/burn-guard/run. The config round trip is skipped on an external daemon.
+BG_STATE=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["state"])' 2>/dev/null || echo "")
+if [[ "$BG_STATE" =~ ^(off|idle|guarding|waiting)$ ]]; then
+  ok "burn guard: status answers with state '$BG_STATE'"
+else
+  ko "burn guard: GET /api/usage/burn-guard did not return a known state (got '$BG_STATE')"
+fi
+
+BG_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/usage/burn-guard" 2>/dev/null || echo "000")
+if [[ "$BG_POST" == "405" ]]; then
+  ok "burn guard: the status route is read only (DELETE answers 405)"
+else
+  ko "burn guard: DELETE answered HTTP $BG_POST, expected 405"
+fi
+
+# ---------------------------------------------------------------------------
+H "93. git.secret_scan — pre-push secret scan (shadow + enforce, sandbox repo)"
+#
+# v9.0.0: the pre-push secret scan (internal/git) runs inside the daemon on
+# every push path — session teardown and autonomous ship (git.push_on_
+# complete) — over the commits about to be pushed. The config block is
+# git.secret_scan (mode off|shadow|enforce, detectors, allow_list); the
+# effective mode defaults to shadow. This section proves that surface on
+# THIS script's own smoke daemon:
+#
+#   * a scratch sandbox repo — work repo + bare remote, both under the
+#     script's own mktemp'd $TEST_DATA_DIR, a throwaway git identity (local
+#     user.name/user.email, empty GIT_CONFIG_GLOBAL, GIT_TERMINAL_PROMPT=0)
+#     — commits one secret-shaped line assembled from random fragments at
+#     runtime, so no contiguous secret literal lives in this file; the
+#     sandbox is torn down before the section ends and is never pushed;
+#   * shadow and enforce modes are each applied via PUT /api/config and
+#     read back through GET /api/config and GET /api/git/secret-scan/stats
+#     (the stats endpoint must carry mode + the runs/findings/
+#     shadow_reports/refusals/last_run_at/last_refusal_at counters);
+#   * the mode is restored to its exact pre-section value afterwards.
+#
+# What this section does NOT do:
+#   * it never touches operator repos, git config, $HOME, or the production
+#     daemon; in external-daemon mode (DW_BASE set) it skips rather than
+#     mutate an operator daemon's git.secret_scan;
+#   * it does not drive an actual push — the daemon exposes no REST or CLI
+#     surface that triggers a git push, so the push portion is marked SKIP
+#     with that reason; the scan's shadow-report (finding recorded, push
+#     proceeds) and enforce-refusal (push refused, counters bumped) behavior
+#     is covered by the go tests (internal/git/secretscan_push_test.go).
+if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
+  skip "git.secret_scan: daemon unavailable — config + push sub-checks not run (section skipped at daemon start)"
+elif [[ "$EXTERNAL_DAEMON" == "1" ]]; then
+  skip "git.secret_scan: external-daemon mode (DW_BASE set) — smoke never mutates an operator daemon's git.secret_scan, so the section is skipped"
+  skip "git.secret_scan push (shadow + enforce): skipped — no daemon REST/CLI surface drives a git push, and an external daemon is never mutated by smoke"
+else
+  SS_SCRATCH="$TEST_DATA_DIR/git-secret-scan-$$"
+  mkdir -p "$SS_SCRATCH"
+  # --- sandbox repo: work repo + bare remote, throwaway identity ----------
+  : > "$SS_SCRATCH/gitconfig"   # empty throwaway GIT_CONFIG_GLOBAL
+  SS_GIT_ENV=(env "GIT_CONFIG_GLOBAL=$SS_SCRATCH/gitconfig" GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0)
+  if "${SS_GIT_ENV[@]}" git init --quiet --bare "$SS_SCRATCH/remote.git" 2>/dev/null \
+     && "${SS_GIT_ENV[@]}" git init --quiet "$SS_SCRATCH/work" 2>/dev/null; then
+    git -C "$SS_SCRATCH/work" config user.name "smoke-sandbox"
+    git -C "$SS_SCRATCH/work" config user.email "smoke@example.invalid"
+    git -C "$SS_SCRATCH/work" remote add origin "$SS_SCRATCH/remote.git"
+    # one line that looks like a committed credential, assembled from
+    # random fragments at runtime (never a literal in this file)
+    SS_FAKE_A="$(openssl rand -hex 12 2>/dev/null || head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    SS_FAKE_B="$(openssl rand -hex 4 2>/dev/null || head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    printf 'export GITHUB_TOKEN=ghp_%s%s\n' "$SS_FAKE_A" "$SS_FAKE_B" > "$SS_SCRATCH/work/fixture"
+    SS_COMMIT_OK=0
+    if "${SS_GIT_ENV[@]}" git -C "$SS_SCRATCH/work" add fixture 2>/dev/null \
+       && "${SS_GIT_ENV[@]}" git -C "$SS_SCRATCH/work" commit --quiet -m "sandbox fixture (smoke, never pushed)" 2>/dev/null; then
+      SS_COMMIT_OK=1
+    fi
+    if [[ "$SS_COMMIT_OK" == "1" ]]; then
+      ok "sandbox repo: work repo + bare remote under the script's temp dir, one committed secret-shaped line"
+    else
+      ko "sandbox repo: git init/commit in the sandbox failed (git missing or broken?) — continuing with the config-surface checks"
+    fi
+  else
+    ko "sandbox repo: git init failed — git is not available for the sandbox fixture — continuing with the config-surface checks"
+  fi
+  # --- remember the pre-section mode so the section leaves it as found ---
+  SS_ORIG_MODE="$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("git") or {}).get("secret_scan",{}).get("mode",""))' 2>/dev/null || echo "")"
+  # --- shadow mode: apply, read back, stats surface -----------------------
+  SS_SHADOW_PUT=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+    -d '{"git.secret_scan.mode":"shadow"}' "$BASE/api/config" 2>/dev/null || echo 000)
+  if [[ "$SS_SHADOW_PUT" == "200" ]]; then
+    ok "shadow: PUT /api/config git.secret_scan.mode=shadow accepted (HTTP 200)"
+  else
+    ko "shadow: PUT /api/config git.secret_scan.mode=shadow answered HTTP $SS_SHADOW_PUT (want 200)"
+  fi
+  SS_SHADOW_MODE="$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("git") or {}).get("secret_scan",{}).get("mode",""))' 2>/dev/null || echo "")"
+  if [[ "$SS_SHADOW_MODE" == "shadow" ]]; then
+    ok "shadow: GET /api/config reports effective git.secret_scan.mode=shadow"
+  else
+    ko "shadow: GET /api/config reports mode '$SS_SHADOW_MODE' (want shadow)"
+  fi
+  SS_STATS_CODE=$(curl "${curl_args[@]}" -o "$SS_SCRATCH/stats-shadow.json" -w '%{http_code}' "$BASE/api/git/secret-scan/stats" 2>/dev/null || echo 000)
+  SS_STATS_KEYS="$(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+missing=[k for k in ("mode","stats") if k not in d]
+st=d.get("stats") or {}
+missing+=[k for k in ("runs","findings","shadow_reports","refusals","last_run_at","last_refusal_at") if k not in st]
+print("missing:"+",".join(missing) if missing else "ok")' "$SS_SCRATCH/stats-shadow.json" 2>/dev/null || echo unreadable)"
+  if [[ "$SS_STATS_CODE" == "200" && "$SS_STATS_KEYS" == "ok" ]]; then
+    ok "shadow: GET /api/git/secret-scan/stats answers with mode + runs/findings/shadow_reports/refusals/last_run_at/last_refusal_at"
+  else
+    ko "shadow: GET /api/git/secret-scan/stats HTTP $SS_STATS_CODE, keys: $SS_STATS_KEYS"
+  fi
+  skip "shadow push: SKIP — the daemon exposes no REST/CLI surface to drive a git push (pushes run at session teardown / autonomous ship under git.push_on_complete); the shadow-report path (finding recorded, push proceeds) is covered by the go tests (internal/git/secretscan_push_test.go)"
+  # --- enforce mode: apply, read back, stats surface ----------------------
+  SS_ENFORCE_PUT=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+    -d '{"git.secret_scan.mode":"enforce"}' "$BASE/api/config" 2>/dev/null || echo 000)
+  if [[ "$SS_ENFORCE_PUT" == "200" ]]; then
+    ok "enforce: PUT /api/config git.secret_scan.mode=enforce accepted (HTTP 200)"
+  else
+    ko "enforce: PUT /api/config git.secret_scan.mode=enforce answered HTTP $SS_ENFORCE_PUT (want 200)"
+  fi
+  SS_ENFORCE_MODE="$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("git") or {}).get("secret_scan",{}).get("mode",""))' 2>/dev/null || echo "")"
+  if [[ "$SS_ENFORCE_MODE" == "enforce" ]]; then
+    ok "enforce: GET /api/config reports effective git.secret_scan.mode=enforce"
+  else
+    ko "enforce: GET /api/config reports mode '$SS_ENFORCE_MODE' (want enforce)"
+  fi
+  SS_STATS_CODE=$(curl "${curl_args[@]}" -o "$SS_SCRATCH/stats-enforce.json" -w '%{http_code}' "$BASE/api/git/secret-scan/stats" 2>/dev/null || echo 000)
+  SS_STATS_MODE="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("mode",""))' "$SS_SCRATCH/stats-enforce.json" 2>/dev/null || echo "")"
+  if [[ "$SS_STATS_CODE" == "200" && "$SS_STATS_MODE" == "enforce" ]]; then
+    ok "enforce: GET /api/git/secret-scan/stats answers 200 and reports the effective mode (enforce)"
+  else
+    ko "enforce: GET /api/git/secret-scan/stats HTTP $SS_STATS_CODE, mode '$SS_STATS_MODE' (want 200 / enforce)"
+  fi
+  skip "enforce push: SKIP — no daemon REST/CLI surface drives a git push, so the enforce-refusal path (push refused, remote ref unchanged, refusals counter bumped) is covered by the go tests (internal/git/secretscan_push_test.go)"
+  # --- restore the pre-section mode exactly, tear down the sandbox --------
+  SS_RESTORE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+    -d "{\"git.secret_scan.mode\": \"$SS_ORIG_MODE\"}" "$BASE/api/config" 2>/dev/null || echo 000)
+  if [[ "$SS_RESTORE" == "200" ]]; then
+    ok "restore: git.secret_scan.mode returned to its pre-section value ('${SS_ORIG_MODE:-<unset/default>}')"
+  else
+    ko "restore: PUT /api/config git.secret_scan.mode='${SS_ORIG_MODE:-<unset/default>}' answered HTTP $SS_RESTORE (want 200)"
+  fi
+  rm -rf "$SS_SCRATCH"
+fi
+
+BG_CFG=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "margin_points" in d and "ladder" in d;print(d["margin_points"])' 2>/dev/null || echo "")
+if [[ -n "$BG_CFG" ]]; then
+  ok "burn guard: config answers (margin_points=$BG_CFG)"
+else
+  ko "burn guard: GET /api/usage/burn-guard/config did not return the settings"
+fi
+
+BG_CFG_API=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print("margin_points" in json.load(sys.stdin).get("usage",{}).get("burn_guard",{}))' 2>/dev/null || echo "")
+if [[ "$BG_CFG_API" == "True" ]]; then
+  ok "burn guard: GET /api/config carries usage.burn_guard"
+else
+  ko "burn guard: GET /api/config has no usage.burn_guard block"
+fi
+
+BG_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"margin_points":-1}' "$BASE/api/usage/burn-guard/config" 2>/dev/null || echo "000")
+if [[ "$BG_BAD" == "400" ]]; then
+  ok "burn guard: an invalid margin is refused with HTTP 400"
+else
+  ko "burn guard: an invalid margin answered HTTP $BG_BAD, expected 400"
+fi
+
+if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+  skip "burn guard: external daemon (DW_BASE set); the config round trip and run now are not run"
+else
+  BG_ORIG=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["margin_points"])' 2>/dev/null || echo "2")
+  BG_SET=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"margin_points":3.5}' "$BASE/api/usage/burn-guard/config" 2>/dev/null || echo "000")
+  BG_READ=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["margin_points"])' 2>/dev/null || echo "?")
+  if [[ "$BG_SET" == "200" && "$BG_READ" == "3.5" ]]; then
+    ok "burn guard: margin_points set to 3.5 reads back"
+  else
+    ko "burn guard: margin_points PUT answered HTTP $BG_SET and reads '$BG_READ' (expected 200 and 3.5)"
+  fi
+  curl "${curl_args[@]}" -o /dev/null -X PUT -H "Content-Type: application/json" -d "{\"margin_points\":$BG_ORIG}" "$BASE/api/usage/burn-guard/config" 2>/dev/null || true
+  BG_RUN=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/usage/burn-guard/run" 2>/dev/null || echo "000")
+  if [[ "$BG_RUN" == "200" || "$BG_RUN" == "503" ]]; then
+    ok "burn guard: run now answered HTTP $BG_RUN (503 only when the guard is not running)"
+  else
+    ko "burn guard: run now answered HTTP $BG_RUN, expected 200 or 503"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "93. Merge pipeline — project_required refusal when no project and no merge base repository"
+# Read-only, so it runs against an external daemon too. With no project name the
+# read resolves the merge base repository (autonomous.worktree_base_repo); when
+# that is not set either the answer is the structured 400
+# {"code":"project_required","error":"...worktree_base_repo..."} (other bad project
+# names stay plain-text 400). A daemon that HAS the base repository set answers
+# 200 with the resolved pipeline — the legitimate path — so both answers pass.
+MP_BODY_FILE=$(mktemp)
+MP_CODE=$(curl "${curl_args[@]}" -s -o "$MP_BODY_FILE" -w '%{http_code}' "$BASE/api/autonomous/merge-pipeline" 2>/dev/null || echo "000")
+if [[ "$MP_CODE" == "400" ]]; then
+  if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if d.get("code")=="project_required" and "worktree_base_repo" in d.get("error","") else 1)' "$MP_BODY_FILE" 2>/dev/null; then
+    ok "merge pipeline: no project and no merge base repository is a 400 with code project_required naming worktree_base_repo"
+  else
+    ko "merge pipeline: the no-project 400 is not the structured project_required body: $(head -c 120 "$MP_BODY_FILE")"
+  fi
+elif [[ "$MP_CODE" == "200" ]]; then
+  if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if d.get("project") else 1)' "$MP_BODY_FILE" 2>/dev/null; then
+    ok "merge pipeline: the merge base repository is set, so the bare read answers 200 with a project"
+  else
+    ko "merge pipeline: the bare read answered 200 without a project: $(head -c 120 "$MP_BODY_FILE")"
+  fi
+elif [[ "$MP_CODE" == "503" ]]; then
+  skip "merge pipeline: autonomous is disabled on this daemon (503)"
+else
+  ko "merge pipeline: the bare read answered HTTP $MP_CODE, expected 400 (project_required) or 200"
+fi
+rm -f "$MP_BODY_FILE"
+H "Agent tracing (tracing.*)"
+# GET /api/trace/{session/<id>,automaton/<id>,rollup,coverage} and GET /api/trace/stats.
+# All are read-only. Each answers 200 when the trace store is open, 404 for an
+# id that has no events, and 503 when tracing is off or the store could not open.
+for TR_ROUTE in rollup coverage stats session/smoke-no-such-id automaton/smoke-no-such-id; do
+  TR_CODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/trace/$TR_ROUTE" 2>/dev/null || echo "000")
+  if [[ "$TR_CODE" =~ ^(200|404|503)$ ]]; then
+    ok "tracing: GET /api/trace/$TR_ROUTE answered HTTP $TR_CODE"
+  else
+    ko "tracing: GET /api/trace/$TR_ROUTE answered HTTP $TR_CODE, expected 200, 404 or 503"
+  fi
+done
+TR_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/trace/rollup?loop_threshold=0" 2>/dev/null || echo "000")
+if [[ "$TR_BAD" =~ ^(400|503)$ ]]; then
+  ok "tracing: a bad loop_threshold answered HTTP $TR_BAD (400, or 503 when tracing is off)"
+else
+  ko "tracing: a bad loop_threshold answered HTTP $TR_BAD, expected 400 or 503"
+fi
+TR_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/trace/rollup" 2>/dev/null || echo "000")
+if [[ "$TR_POST" == "405" ]]; then
+  ok "tracing: POST /api/trace/rollup refused with 405 (read-only surface)"
+else
+  ko "tracing: POST /api/trace/rollup answered HTTP $TR_POST, expected 405"
+fi
+H "Classifier (llm.classifier read routes, verification_mode)"
+# Read-only. 200 when the classifier is wired; 404 or 503 when it is not.
+for CL_PATH in "/api/llm/classifier" "/api/llm/classifier/publishers" "/api/llm/classifier/verdicts?automaton=smoke-none"; do
+  CL_CODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE$CL_PATH" 2>/dev/null || echo "000")
+  if [[ "$CL_CODE" == "200" || "$CL_CODE" == "404" || "$CL_CODE" == "503" ]]; then
+    ok "classifier: GET $CL_PATH answered HTTP $CL_CODE"
+  else
+    ko "classifier: GET $CL_PATH answered HTTP $CL_CODE, expected 200, 404 or 503"
+  fi
+done
+CL_BODY=$(curl "${curl_args[@]}" "$BASE/api/llm/classifier" 2>/dev/null || echo "")
+if [[ -z "$CL_BODY" ]] || ! echo "$CL_BODY" | python3 -c 'import json,sys;json.load(sys.stdin)' >/dev/null 2>&1; then
+  skip "classifier: status route returned no JSON (classifier not wired)"
+elif echo "$CL_BODY" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "verification_modes" in d' >/dev/null 2>&1; then
+  ok "classifier: status lists verification_modes (verification_mode setting)"
+else
+  ko "classifier: status carries no verification_modes list"
+fi
+
+H "Supervisor loop (autonomous.supervisor_loop)"
+# GET /api/supervisor-loop/jobs, /runs and /stats, plus the refusals: an unknown
+# outcome filter is a 400, an unknown job's run is a 404, and an eval with no
+# models is a 400. Reads and refusals only; no job is run.
+SL_JOBS=$(curl "${curl_args[@]}" "$BASE/api/supervisor-loop/jobs" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d["jobs"]))' 2>/dev/null || echo "")
+if [[ "$SL_JOBS" == "11" ]]; then
+  ok "supervisor loop: GET /api/supervisor-loop/jobs lists 11 jobs"
+else
+  ko "supervisor loop: GET /api/supervisor-loop/jobs listed '$SL_JOBS' jobs (expected 11)"
+fi
+SL_RUNS=$(curl "${curl_args[@]}" "$BASE/api/supervisor-loop/runs?limit=5" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d["runs"],list);print("ok")' 2>/dev/null || echo "")
+if [[ "$SL_RUNS" == "ok" ]]; then
+  ok "supervisor loop: GET /api/supervisor-loop/runs returns a runs list"
+else
+  ko "supervisor loop: GET /api/supervisor-loop/runs did not return a runs list"
+fi
+SL_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/supervisor-loop/runs?outcome=bogus" 2>/dev/null || echo "000")
+if [[ "$SL_BAD" == "400" ]]; then
+  ok "supervisor loop: an unknown outcome filter is refused with HTTP 400"
+else
+  ko "supervisor loop: outcome=bogus answered HTTP $SL_BAD, expected 400"
+fi
+SL_STATS=$(curl "${curl_args[@]}" "$BASE/api/supervisor-loop/stats" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["jobs"]==11 and "runs" in d and "last_run_age_seconds" in d;print("ok")' 2>/dev/null || echo "")
+if [[ "$SL_STATS" == "ok" ]]; then
+  ok "supervisor loop: GET /api/supervisor-loop/stats returns the loop's numbers"
+else
+  ko "supervisor loop: GET /api/supervisor-loop/stats did not return the expected numbers"
+fi
+SL_STATS_CARD=$(curl "${curl_args[@]}" "$BASE/api/stats" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("supervisor_loop_jobs",0))' 2>/dev/null || echo "")
+if [[ "$SL_STATS_CARD" == "11" || "$SL_STATS_CARD" == "0" ]]; then
+  ok "supervisor loop: GET /api/stats carries supervisor_loop_jobs ('$SL_STATS_CARD'; 0 only when the loop is not wired)"
+else
+  ko "supervisor loop: GET /api/stats reported supervisor_loop_jobs '$SL_STATS_CARD'"
+fi
+SL_404=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/supervisor-loop/jobs/no_such_job/run" 2>/dev/null || echo "000")
+if [[ "$SL_404" == "404" ]]; then
+  ok "supervisor loop: running an unknown job answers HTTP 404"
+else
+  ko "supervisor loop: unknown job run answered HTTP $SL_404, expected 404"
+fi
+SL_EVAL=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d '{"job":"draft_spec","models":[]}' "$BASE/api/supervisor-loop/eval" 2>/dev/null || echo "000")
+if [[ "$SL_EVAL" == "400" ]]; then
+  ok "supervisor loop: an eval with no models is refused with HTTP 400"
+else
+  ko "supervisor loop: eval with no models answered HTTP $SL_EVAL, expected 400"
+fi
+
+# ---------------------------------------------------------------------------
+H "Branch refresh (autonomous.branch_refresh_*)"
+BR_STATS=$(curl "${curl_args[@]}" "$BASE/api/autonomous/branch-refresh/stats" 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert isinstance(d["enabled"], bool) and d["behind_limit"] >= 1
+nums = [d[k] for k in ("tracked", "clean", "conflict", "skipped", "error", "stopped", "override_on", "override_off")]
+assert all(isinstance(n, int) and n >= 0 for n in nums), d
+assert d["clean"] + d["conflict"] + d["skipped"] + d["error"] <= d["tracked"], d
+assert d["stopped"] <= d["tracked"], d
+print("ok")' 2>/dev/null || echo "")
+if [[ "$BR_STATS" == "ok" ]]; then
+  ok "branch refresh: GET /api/autonomous/branch-refresh/stats returns the setting, the limit and consistent counts"
+else
+  ko "branch refresh: GET /api/autonomous/branch-refresh/stats did not return the expected numbers"
+fi
+BR_405=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/branch-refresh/stats" 2>/dev/null || echo "000")
+if [[ "$BR_405" == "405" ]]; then
+  ok "branch refresh: POST to the stats route answers HTTP 405"
+else
+  ko "branch refresh: POST to the stats route answered HTTP $BR_405, expected 405"
+fi
+BR_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d '{"enabled":"yes"}' "$BASE/api/autonomous/prds/smoke-no-such-automaton/branch-refresh" 2>/dev/null || echo "000")
+if [[ "$BR_BAD" == "400" ]]; then
+  ok "branch refresh: an override that is not true, false or null is refused with HTTP 400"
+else
+  ko "branch refresh: override 'yes' answered HTTP $BR_BAD, expected 400"
+fi
+BR_404=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d '{"enabled":true}' "$BASE/api/autonomous/prds/smoke-no-such-automaton/branch-refresh" 2>/dev/null || echo "000")
+if [[ "$BR_404" == "404" ]]; then
+  ok "branch refresh: setting the override of an unknown Automaton answers HTTP 404"
+else
+  ko "branch refresh: override on an unknown Automaton answered HTTP $BR_404, expected 404"
+fi
+BR_CFG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c '
+import json, sys
+a = json.load(sys.stdin)["autonomous"]
+assert isinstance(a["branch_refresh_enabled"], bool) and isinstance(a["branch_refresh_behind_limit"], int)
+print("ok")' 2>/dev/null || echo "")
+if [[ "$BR_CFG" == "ok" ]]; then
+  ok "branch refresh: GET /api/config lists both branch refresh keys"
+else
+  ko "branch refresh: GET /api/config does not list both branch refresh keys"
+fi
+# Comm path over the real route; 'REST loopback not configured' is the isolated-env caveat (a SKIP).
+BR_TM=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d '{"text":"autonomous branch-refresh-stats"}' "$BASE/api/test/message" 2>/dev/null || true)
+if echo "$BR_TM" | python3 -c 'import json,sys; assert "loopback" in " ".join(json.load(sys.stdin).get("responses") or []).lower()' 2>/dev/null; then
+  skip "branch refresh: comm path needs the REST loopback (isolated environment)"
+elif echo "$BR_TM" | python3 -c '
+import json, sys
+j = "\n".join(json.load(sys.stdin).get("responses") or [])
+assert "branch refresh:" in j and "stopped by a conflict:" in j, j[:200]' 2>/dev/null; then
+  ok "branch refresh: chat 'autonomous branch-refresh-stats' replies with the numbers"
+else
+  ko "branch refresh: chat 'autonomous branch-refresh-stats' did not reply with the numbers"
 fi
 
 # ---------------------------------------------------------------------------

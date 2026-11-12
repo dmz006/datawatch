@@ -23,7 +23,7 @@ func TestGH162_BroadcastSessionState(t *testing.T) {
 	fakeCh := make(chan []byte, 16)
 	fakeC := &client{hub: hub, send: fakeCh, subscribed: make(map[string]bool)}
 	go hub.Run()
-	hub.register <- fakeC
+	registerTestClient(t, hub, fakeC)
 
 	sess := &session.Session{ID: "abcd", FullID: "h-abcd", State: session.StateRunning}
 	hub.BroadcastSessionState(sess)
@@ -37,8 +37,8 @@ func TestGH162_BroadcastSessionState(t *testing.T) {
 		if !strings.Contains(s, `"h-abcd"`) {
 			t.Errorf("expected the session's full_id in the payload, got: %s", s)
 		}
-	case <-time.After(500 * time.Millisecond):
-		t.Error("timeout: BroadcastSessionState did not fire within 500ms")
+	case <-time.After(wsTestFrameTimeout):
+		t.Fatalf("timeout: BroadcastSessionState did not fire within %s; client was registered and the hub held %d client(s)", wsTestFrameTimeout, hub.ClientCount())
 	}
 }
 
@@ -52,23 +52,31 @@ func TestGH162_NotifyStateChange_EmitsBothMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	mgr.WithFakeTmux()
+	t.Cleanup(func() { _ = mgr.Close() })
+	t.Cleanup(mgr.WaitBackground)
 
 	hub := NewHub()
 	fakeCh := make(chan []byte, 16)
 	fakeC := &client{hub: hub, send: fakeCh, subscribed: make(map[string]bool)}
 	go hub.Run()
-	hub.register <- fakeC
+	registerTestClient(t, hub, fakeC)
 
 	srv := &HTTPServer{hub: hub, manager: mgr}
 	sess := &session.Session{ID: "abcd", FullID: "h-abcd", State: session.StateRunning}
 	srv.NotifyStateChange(sess, session.StateRunning)
 
-	var sawSessions, sawSessionState bool
-	deadline := time.After(500 * time.Millisecond)
+	var frames []string
+	sawSessions, sawSessionState := false, false
+	deadline := time.After(wsTestFrameTimeout)
 	for !sawSessions || !sawSessionState {
 		select {
 		case msg := <-fakeCh:
 			s := string(msg)
+			frames = append(frames, s)
 			if strings.Contains(s, `"type":"sessions"`) {
 				sawSessions = true
 			}
@@ -76,7 +84,7 @@ func TestGH162_NotifyStateChange_EmitsBothMessages(t *testing.T) {
 				sawSessionState = true
 			}
 		case <-deadline:
-			t.Fatalf("timeout waiting for both broadcasts: sessions=%v session_state=%v", sawSessions, sawSessionState)
+			t.Fatalf("timeout waiting for both broadcasts within %s: sessions=%v session_state=%v; frames received so far: %v", wsTestFrameTimeout, sawSessions, sawSessionState, frames)
 		}
 	}
 }

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wide table inside its own horizontal scroll container</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { font: 16px/1.4 system-ui, sans-serif; background: #f4f5f7; }
+  .pad { padding: 12px; }
+  .table-wrap {
+    width: 100%; max-width: 336px; margin: 0 auto;
+    overflow-x: auto; border: 1px solid #d9dde5; border-radius: 10px;
+    background: #fff;
+  }
+  table { min-width: 900px; border-collapse: collapse; width: max-content; }
+  th, td { padding: 8px 14px; font-size: 14px; text-align: left; white-space: nowrap; }
+  th { background: #eef1f6; }
+</style>
+</head>
+<body>
+  <div class="pad">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Region</th><th>Requests</th><th>Error rate</th><th>P95 latency</th><th>Latency budget</th><th>Owner</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>us-east-1</td><td>1,204,311</td><td>0.42%</td><td>186 ms</td><td>200 ms</td><td>platform-ops</td></tr>
+          <tr><td>eu-west-2</td><td>918,770</td><td>0.61%</td><td>233 ms</td><td>250 ms</td><td>core-api</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

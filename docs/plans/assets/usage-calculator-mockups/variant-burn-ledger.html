@@ -1,0 +1,976 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Burn ledger mockup</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #1a1d27;
+  --bg3: #22263a;
+  --accent: #7c3aed;
+  --accent2: #a855f7;
+  --text: #e2e8f0;
+  --text2: #94a3b8;
+  --border: #2d3148;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+  --k0: #7c3aed;
+  --k1: #0ea5e9;
+  --k2: #14b8a6;
+  --k3: #e879f9;
+  --k4: #94a3b8;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc;
+    --bg2: #ffffff;
+    --bg3: #e2e8f0;
+    --accent: #7c3aed;
+    --accent2: #6d28d9;
+    --text: #0f172a;
+    --text2: #475569;
+    --border: #cbd5e1;
+    --ok: #15803d;
+    --warn: #b45309;
+    --bad: #b91c1c;
+    --k0: #6d28d9;
+    --k1: #0369a1;
+    --k2: #0f766e;
+    --k3: #a21caf;
+    --k4: #475569;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: 16px;
+}
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 6px; }
+h2 { font-size: 1.05rem; margin: 0 0 10px; }
+h3 { font-size: 0.95rem; margin: 14px 0 6px; }
+p { margin: 0 0 8px; }
+.page { max-width: 1200px; margin: 0 auto; }
+.kicker { color: var(--text2); font-size: 0.85rem; margin: 0 0 4px; }
+.caption { color: var(--text2); font-size: 0.92rem; }
+.note { color: var(--text2); font-size: 0.88rem; }
+.intro { margin-bottom: 14px; }
+
+.frames { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 14px; }
+.frames span { color: var(--text2); font-size: 0.9rem; margin-right: 4px; }
+.btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn[aria-pressed="true"], .btn[aria-checked="true"] {
+  border: 2px solid var(--accent2);
+  font-weight: 700;
+}
+.btn:focus-visible, input:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
+
+.device {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  container-type: inline-size;
+}
+.app {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "head"
+    "bars"
+    "cost"
+    "other"
+    "policy"
+    "text";
+}
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 0;
+}
+.z-head { grid-area: head; }
+.z-bars { grid-area: bars; }
+.z-cost { grid-area: cost; }
+.z-other { grid-area: other; }
+.z-policy { grid-area: policy; }
+.z-text { grid-area: text; }
+
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  background: var(--bg);
+  font-weight: 700;
+}
+.chip.over { color: var(--bad); }
+.chip.within { color: var(--ok); }
+.chip-small { font-size: 0.88rem; }
+.avg-line { color: var(--text2); font-size: 0.9rem; }
+.eyebrow { color: var(--text2); font-size: 0.9rem; margin-bottom: 8px; }
+.headline { font-size: 1.05rem; font-weight: 600; margin: 0 0 8px; }
+.notes { margin: 0 0 12px; padding-left: 1.2rem; color: var(--text2); font-size: 0.92rem; }
+.notes li + li { margin-top: 4px; }
+
+.fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; margin: 0; }
+.field dt, .field label { color: var(--text2); font-size: 0.82rem; display: block; }
+.field dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.field small { display: block; color: var(--text2); font-size: 0.8rem; font-weight: 400; }
+.field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+.error { color: var(--bad); font-weight: 600; font-size: 0.9rem; margin: 6px 0 0; }
+
+.bars { width: 100%; height: auto; display: block; }
+.c-axis { stroke: var(--border); stroke-width: 1; }
+.c-budget { stroke: var(--text2); stroke-width: 1; stroke-dasharray: 3 3; }
+.c-txt { fill: var(--text2); font-size: 10px; }
+.b-tot { fill: var(--text); font-size: 11px; font-weight: 700; }
+.k0 { fill: var(--k0); }
+.k1 { fill: var(--k1); }
+.k2 { fill: var(--k2); }
+.k3 { fill: var(--k3); }
+.k4 { fill: var(--k4); }
+.legend { list-style: none; margin: 10px 0 0; padding: 0; font-size: 0.9rem; color: var(--text2); }
+.legend li { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.sw { display: inline-block; width: 16px; height: 16px; flex: none; border-radius: 4px; }
+.sw-k0 { background: var(--k0); }
+.sw-k1 { background: var(--k1); }
+.sw-k2 { background: var(--k2); }
+.sw-k3 { background: var(--k3); }
+.sw-k4 { background: var(--k4); }
+.split-note {
+  margin: 12px 0 0;
+  padding: 10px;
+  border: 1px dashed var(--warn);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--text2);
+}
+.split-note strong { color: var(--warn); }
+
+.cost { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+.cost caption { text-align: left; color: var(--text2); font-size: 0.85rem; padding-bottom: 6px; }
+.cost thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.cost th { text-align: left; color: var(--text2); font-size: 0.82rem; font-weight: 600; }
+.cost tbody tr {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+}
+.cost td {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-weight: 600;
+}
+.cost td::before { content: attr(data-label); color: var(--text2); font-size: 0.85rem; font-weight: 400; }
+.queue {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.example-tag { color: var(--warn); font-size: 0.85rem; font-weight: 700; margin-bottom: 4px; }
+
+.others { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.other { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg); }
+.other h3 { margin: 2px 0 6px; font-size: 0.98rem; }
+.other dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 10px; margin: 0; }
+.other dt { color: var(--text2); font-size: 0.82rem; }
+.other dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.tag { color: var(--warn); font-size: 0.8rem; font-weight: 700; margin: 0; }
+
+.radios { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); margin-bottom: 6px; }
+.radios .btn { text-align: left; width: 100%; }
+.stepper { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0; }
+.stepper output { min-width: 3ch; text-align: center; font-size: 1.4rem; font-weight: 700; }
+.advice { margin: 0; font-weight: 600; }
+.projection { font-size: 0.95rem; margin: 8px 0 0; }
+.warn-note { color: var(--warn); font-weight: 600; font-size: 0.92rem; }
+
+.forms { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+pre {
+  margin: 0 0 8px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.label { color: var(--text2); font-size: 0.88rem; margin: 8px 0 4px; font-weight: 600; }
+
+@container (min-width: 600px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "head head"
+      "bars policy"
+      "cost other"
+      "text text";
+  }
+  .fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .forms { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cost thead {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
+  .cost tbody tr {
+    display: table-row;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
+  }
+  .cost td {
+    display: table-cell;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 6px;
+  }
+  .cost td::before { content: none; }
+  .cost th { padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  .other dl { grid-template-columns: minmax(0, 1fr); }
+}
+
+@container (min-width: 1000px) {
+  .app {
+    grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.4fr) minmax(250px, 1fr);
+    grid-template-areas:
+      "head head head"
+      "policy bars other"
+      "policy cost other"
+      "text text text";
+  }
+  .fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .other dl { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+</style>
+</head>
+<body data-variant="burn-ledger">
+<main class="page">
+  <header class="intro">
+    <p class="kicker">Usage calculator, variant three of three</p>
+    <h1>Burn ledger</h1>
+    <p class="caption">The numbers come from the operator-reported readings. This page is a mockup: the controls change only this page, and nothing is saved or sent.</p>
+    <div class="frames" role="group" aria-label="Preview frame">
+      <span>Preview frame</span>
+      <button type="button" class="btn" data-frame="phone" aria-pressed="false">Phone</button>
+      <button type="button" class="btn" data-frame="tablet" aria-pressed="false">Tablet</button>
+      <button type="button" class="btn" data-frame="desktop" aria-pressed="false">Desktop</button>
+    </div>
+  </header>
+
+  <div class="device">
+    <div class="app">
+
+      <section class="card z-head" aria-labelledby="h-head">
+        <h2 id="h-head">Verdict and reading</h2>
+        <p id="o-eyebrow" class="eyebrow">Weekly 72% at Fri 22:08</p>
+        <div class="chips">
+          <span id="o-verdict" class="chip over">&#x2716; Over budget</span>
+          <span class="avg-line">Week average: <span id="o-verdictAvg" class="chip within chip-small">&#x2714; Within budget</span></span>
+        </div>
+        <p id="o-headline" class="headline" aria-live="polite">Over budget for the week at 3 lanes (106% at the reset). 1 lane ends at 86.1%.</p>
+        <ul id="o-notes" class="notes">
+          <li>The operator chooses the number of lanes; this is advice only.</li>
+        </ul>
+        <dl class="fields">
+          <div class="field"><dt><label for="percent">Weekly percent</label></dt><dd><input id="percent" type="number" inputmode="numeric" min="67" max="100" step="1" value="72"></dd></div>
+          <div class="field"><dt>Read</dt><dd>Fri 22:08</dd></div>
+          <div class="field"><dt>Days since the reset</dt><dd id="o-days">5.59</dd><small>Last reset Sun 08:00; 1.41 days left, <span id="o-daysLeft">1.41</span></small></div>
+          <div class="field"><dt>Pace line</dt><dd id="o-pace">79.8%</dd><small id="o-headroom">headroom 7.8 points</small></div>
+          <div class="field"><dt>Burn per 24 hours, recent</dt><dd id="o-burnRecent">24.1</dd><small id="o-burnNote">from Fri 17:09, 4.98 hours before</small></div>
+          <div class="field"><dt>Burn per 24 hours, week average</dt><dd id="o-burnAvg">12.9</dd></div>
+          <div class="field"><dt>Projected end at the reset, recent</dt><dd id="o-projRecent">106.0% (over budget)</dd></div>
+          <div class="field"><dt>Projected end at the reset, week average</dt><dd id="o-projAvg">90.2% (within budget)</dd></div>
+          <div class="field"><dt>Run out, recent burn</dt><dd id="o-runRecent">Sun 02:02, about 6 hours early</dd></div>
+          <div class="field"><dt>Run out, week average</dt><dd id="o-runAvg">None before the reset</dd></div>
+          <div class="field"><dt>Ahead of pace</dt><dd id="o-ahead">No</dd></div>
+        </dl>
+        <p id="percentError" class="error" hidden>Enter a number from 67 to 100. The weekly percent cannot be lower than the 17:09 reading of 67.</p>
+      </section>
+
+      <section class="card z-bars" aria-labelledby="h-bars">
+        <h2 id="h-bars">Points used each day since the reset</h2>
+        <p class="caption">Estimated points of weekly allowance per day. Each day is the straight-line change between the readings at each 08:00 boundary, with the reset counted as 0. Fri 23 is partial: 08:00 to the 22:08 reading. The dashed line is 14.3 points per 24 hours, the even allowance.</p>
+        <div id="o-bars"><svg class="bars" viewBox="0 0 320 206" role="img" aria-label="Points of weekly allowance used each day since the reset, split by kind of work"><line class="c-axis" x1="30" y1="168" x2="310" y2="168"/><line class="c-budget" x1="30" y1="80.0" x2="310" y2="80.0"/><rect class="k0" x="38.3" y="136.9" width="30" height="31.1"/><rect class="k1" x="38.3" y="129.4" width="30" height="7.5"/><rect class="k2" x="38.3" y="123.0" width="30" height="6.4"/><rect class="k3" x="38.3" y="118.2" width="30" height="4.8"/><rect class="k4" x="38.3" y="114.4" width="30" height="3.8"/><text class="b-tot" x="53.3" y="110.4" text-anchor="middle">8.7</text><text class="c-txt" x="53.3" y="184" text-anchor="middle">Sun 18</text><rect class="k0" x="85.0" y="138.9" width="30" height="29.1"/><rect class="k1" x="85.0" y="131.8" width="30" height="7.0"/><rect class="k2" x="85.0" y="125.8" width="30" height="6.0"/><rect class="k3" x="85.0" y="121.3" width="30" height="4.5"/><rect class="k4" x="85.0" y="117.7" width="30" height="3.5"/><text class="b-tot" x="100.0" y="113.7" text-anchor="middle">8.2</text><text class="c-txt" x="100.0" y="184" text-anchor="middle">Mon 19</text><rect class="k0" x="131.7" y="133.0" width="30" height="35.0"/><rect class="k1" x="131.7" y="124.5" width="30" height="8.5"/><rect class="k2" x="131.7" y="117.3" width="30" height="7.2"/><rect class="k3" x="131.7" y="111.8" width="30" height="5.4"/><rect class="k4" x="131.7" y="107.6" width="30" height="4.2"/><text class="b-tot" x="146.7" y="103.6" text-anchor="middle">9.8</text><text class="c-txt" x="146.7" y="184" text-anchor="middle">Tue 20</text><rect class="k0" x="178.3" y="113.2" width="30" height="54.8"/><rect class="k1" x="178.3" y="99.9" width="30" height="13.2"/><rect class="k2" x="178.3" y="88.6" width="30" height="11.3"/><rect class="k3" x="178.3" y="80.1" width="30" height="8.5"/><rect class="k4" x="178.3" y="73.5" width="30" height="6.6"/><text class="b-tot" x="193.3" y="69.5" text-anchor="middle">15.3</text><text class="c-txt" x="193.3" y="184" text-anchor="middle">Wed 21</text><rect class="k0" x="225.0" y="99.0" width="30" height="69.0"/><rect class="k1" x="225.0" y="82.4" width="30" height="16.6"/><rect class="k2" x="225.0" y="68.1" width="30" height="14.3"/><rect class="k3" x="225.0" y="57.4" width="30" height="10.7"/><rect class="k4" x="225.0" y="49.1" width="30" height="8.3"/><text class="b-tot" x="240.0" y="45.1" text-anchor="middle">19.3</text><text class="c-txt" x="240.0" y="184" text-anchor="middle">Thu 22</text><rect class="k0" x="271.7" y="129.8" width="30" height="38.2"/><rect class="k1" x="271.7" y="120.6" width="30" height="9.2"/><rect class="k2" x="271.7" y="112.7" width="30" height="7.9"/><rect class="k3" x="271.7" y="106.8" width="30" height="5.9"/><rect class="k4" x="271.7" y="102.2" width="30" height="4.6"/><text class="b-tot" x="286.7" y="98.2" text-anchor="middle">10.7</text><text class="c-txt" x="286.7" y="184" text-anchor="middle">Fri 23</text><text class="c-txt" x="286.7" y="198" text-anchor="middle">partial</text><text class="c-txt" x="26" y="171.0" text-anchor="end">0</text><text class="c-txt" x="26" y="109.4" text-anchor="end">10</text><text class="c-txt" x="26" y="47.8" text-anchor="end">20</text></svg></div>
+        <ul class="legend" aria-label="Kinds of work">
+          <li><span class="sw sw-k0"></span><span>Build workers, 58%</span></li>
+          <li><span class="sw sw-k1"></span><span>Decompose, 14%</span></li>
+          <li><span class="sw sw-k2"></span><span>Verify, 12%</span></li>
+          <li><span class="sw sw-k3"></span><span>Supervision, 9%</span></li>
+          <li><span class="sw sw-k4"></span><span>Merges, 7%</span></li>
+        </ul>
+        <p class="split-note"><strong>Illustrative split: no real attribution exists yet.</strong> The readings give only totals, so each bar is divided by the fixed shares above. The day totals are real estimates; the split is a mockup.</p>
+      </section>
+
+      <section class="card z-cost" aria-labelledby="h-cost">
+        <h2 id="h-cost">Cost per Automaton</h2>
+        <p class="caption">Planning coefficients recorded on 2026-10-23: about 0.4 points per full Claude Automaton, 0.15 points per decompose or merge session, and a 3 point idle baseline per 24 hours.</p>
+        <table class="cost">
+          <caption>Points per 24 hours at each lane count</caption>
+          <thead>
+            <tr><th scope="col">Claude lanes</th><th scope="col">Planning, per 24 hours</th><th scope="col">Measured recent burn, per 24 hours</th></tr>
+          </thead>
+          <tbody>
+            <tr><td data-label="Claude lanes">0</td><td data-label="Planning, per 24 hours">3.0</td><td data-label="Measured recent burn, per 24 hours" id="o-measured0">3.0</td></tr>
+            <tr><td data-label="Claude lanes">1</td><td data-label="Planning, per 24 hours">3.7</td><td data-label="Measured recent burn, per 24 hours" id="o-measured1">10.0</td></tr>
+            <tr><td data-label="Claude lanes">2</td><td data-label="Planning, per 24 hours">4.4</td><td data-label="Measured recent burn, per 24 hours" id="o-measured2">17.1</td></tr>
+            <tr><td data-label="Claude lanes">3</td><td data-label="Planning, per 24 hours">5.1</td><td data-label="Measured recent burn, per 24 hours" id="o-measured3">24.1</td></tr>
+          </tbody>
+        </table>
+        <p class="note">Planning column: each lane is assumed to start one full Automaton, one decompose and one merge a day, which is 0.4 + 0.15 + 0.15 = 0.7 points per lane on top of the 3 point baseline. The measured column is the model's recent burn at each lane count for this reading. The two columns do not agree, so the planning column is not a forecast.</p>
+        <div class="queue">
+          <p class="example-tag">Example queue, not real data</p>
+          <p><strong>Queued Automata: 6, estimated 2.4 points plus decomposes.</strong></p>
+          <p class="note">Six full Automata at 0.4 is 2.4 points. If each has one decompose at 0.15, the decomposes add 0.9 points, so the example queue comes to 3.3 points.</p>
+          <p class="note">Run flat out uses 20 points of remaining work from the model input, the design's worked example. The example queue prices out at 3.3, not 20, so the two do not agree yet. The operator decides which figure to enter.</p>
+        </div>
+      </section>
+
+      <section class="card z-other" aria-labelledby="h-other">
+        <h2 id="h-other">Other consumers</h2>
+        <p class="caption">Kept apart from Automata work. Every other consumer of a tracked model reports its name, kind, model, node and whether it evicted another model. These rows are example rows, not measurements, and they are not in the bars or in the cost per Automaton figures.</p>
+        <ul class="others">
+          <li class="other">
+            <p class="tag">Example row</p>
+            <h3>Mail rules job</h3>
+            <dl>
+              <div><dt>Kind</dt><dd>Integrated service</dd></div>
+              <div><dt>Model</dt><dd>gemma3:12b (example)</dd></div>
+              <div><dt>Node</dt><dd>Node B (example)</dd></div>
+              <div><dt>Calls per day</dt><dd>24</dd></div>
+              <div><dt>Evicted another model</dt><dd>Yes</dd></div>
+            </dl>
+          </li>
+          <li class="other">
+            <p class="tag">Example row</p>
+            <h3>Summariser helper</h3>
+            <dl>
+              <div><dt>Kind</dt><dd>Helper</dd></div>
+              <div><dt>Model</dt><dd>small summary model (example)</dd></div>
+              <div><dt>Node</dt><dd>Node A (example)</dd></div>
+              <div><dt>Calls per day</dt><dd>60</dd></div>
+              <div><dt>Evicted another model</dt><dd>No</dd></div>
+            </dl>
+          </li>
+          <li class="other">
+            <p class="tag">Example row</p>
+            <h3>Embedder helper</h3>
+            <dl>
+              <div><dt>Kind</dt><dd>Helper</dd></div>
+              <div><dt>Model</dt><dd>embedding model (example)</dd></div>
+              <div><dt>Node</dt><dd>Node A (example)</dd></div>
+              <div><dt>Calls per day</dt><dd>300</dd></div>
+              <div><dt>Evicted another model</dt><dd>No</dd></div>
+            </dl>
+          </li>
+          <li class="other">
+            <p class="tag">Example row</p>
+            <h3>Web search plugin</h3>
+            <dl>
+              <div><dt>Kind</dt><dd>Plugin</dd></div>
+              <div><dt>Model</dt><dd>rerank model (example)</dd></div>
+              <div><dt>Node</dt><dd>Node B (example)</dd></div>
+              <div><dt>Calls per day</dt><dd>40</dd></div>
+              <div><dt>Evicted another model</dt><dd>Yes</dd></div>
+            </dl>
+          </li>
+        </ul>
+      </section>
+
+      <section class="card z-policy" aria-labelledby="h-policy">
+        <h2 id="h-policy">Usage policy and lanes</h2>
+        <div class="radios" role="radiogroup" aria-labelledby="h-policy">
+          <button type="button" class="btn" role="radio" aria-checked="false" tabindex="-1" data-policy="use-all">Run until used up</button>
+          <button type="button" class="btn" role="radio" aria-checked="true" tabindex="0" data-policy="pace">Pace to the week</button>
+          <button type="button" class="btn" role="radio" aria-checked="false" tabindex="-1" data-policy="finish-early">Run flat out</button>
+        </div>
+        <h3 id="h-lanes">Claude lanes running</h3>
+        <div class="stepper" role="group" aria-labelledby="h-lanes">
+          <button type="button" id="lanesMinus" class="btn" aria-label="Run one fewer lane">&minus;</button>
+          <output id="o-lanes" aria-live="polite">3</output>
+          <button type="button" id="lanesPlus" class="btn" aria-label="Run one more lane" disabled>+</button>
+          <p class="advice">Advice: <span id="o-advice">1 lane</span></p>
+        </div>
+        <p id="o-zeroNote" class="warn-note" hidden>Zero lanes is the operator's decision and is never advised.</p>
+        <p id="o-chosen" class="projection">3 lanes: 24.1 per 24 hours, ends at 106.0% (over), runs out Sun 02:02.</p>
+        <p id="o-finish" class="projection" hidden></p>
+      </section>
+
+      <section class="card z-text" aria-labelledby="h-text">
+        <h2 id="h-text">Text forms</h2>
+        <p class="caption">The commands are proposals; the final names are not decided. All six show the 22:08 reading at 72 percent, under each policy.</p>
+        <div class="forms">
+          <div>
+            <h3>Terminal (CLI)</h3>
+            <p class="label">Run until used up</p>
+<pre data-form="cli" data-policy="use-all">verdict: over budget at the recent burn; week average within budget
+usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since the reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+run out Sun 02:02, about 6 hours before the reset (recent burn)
+points per day since the reset:
+  Sun 18   8.7
+  Mon 19   8.2
+  Tue 20   9.8
+  Wed 21  15.3
+  Thu 22  19.3
+  Fri 23  10.7  partial, to the 22:08 reading
+cost per Automaton: 0.4 points; 0.15 per decompose or merge
+lanes 3 running, policy Run until used up
+advice: 2 lanes end at 96.1%; 3 lanes run out about 6 hours early
+example command: usage lanes 2 (example, not final)</pre>
+            <p class="label">Pace to the week</p>
+<pre data-form="cli" data-policy="pace">verdict: over budget at the recent burn; week average within budget
+usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since the reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+run out Sun 02:02, about 6 hours before the reset (recent burn)
+points per day since the reset:
+  Sun 18   8.7
+  Mon 19   8.2
+  Tue 20   9.8
+  Wed 21  15.3
+  Thu 22  19.3
+  Fri 23  10.7  partial, to the 22:08 reading
+cost per Automaton: 0.4 points; 0.15 per decompose or merge
+lanes 3 running, policy Pace to the week
+advice: over budget for the week at 3 lanes; 1 lane ends at 86.1%
+example command: usage lanes 1 (example, not final)</pre>
+            <p class="label">Run flat out</p>
+<pre data-form="cli" data-policy="finish-early">verdict: over budget at the recent burn; week average within budget
+usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since the reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+run out Sun 02:02, about 6 hours before the reset (recent burn)
+points per day since the reset:
+  Sun 18   8.7
+  Mon 19   8.2
+  Tue 20   9.8
+  Wed 21  15.3
+  Thu 22  19.3
+  Fri 23  10.7  partial, to the 22:08 reading
+cost per Automaton: 0.4 points; 0.15 per decompose or merge
+lanes 3 running, policy Run flat out
+work 20 points (model input): within budget, finishes Sat 20:54
+advice: 3 lanes, 22.8 hours, 5.2 points of allowance to spare
+example command: usage policy pace (example, not final)</pre>
+          </div>
+          <div>
+            <h3>Comm channel</h3>
+            <p class="label">Run until used up</p>
+<pre data-form="chat" data-policy="use-all">Weekly 72% (read Fri 22:08)
+Verdict: over budget at the recent burn
+Week average: within budget
+Over budget at the recent burn: 3 lanes
+run out about 6 hours before the reset.
+2 lanes end at 96.1%.
+Sun 18: 8.7 points
+Mon 19: 8.2 points
+Tue 20: 9.8 points
+Wed 21: 15.3 points
+Thu 22: 19.3 points
+Fri 23: 10.7 points, to 22:08
+Reply: lanes 2 (example, not final)</pre>
+            <p class="label">Pace to the week</p>
+<pre data-form="chat" data-policy="pace">Weekly 72% (read Fri 22:08)
+Verdict: over budget at the recent burn
+Week average: within budget
+Over budget for the week at 3 lanes
+(106% at the reset). 1 lane ends at 86.1%.
+Sun 18: 8.7 points
+Mon 19: 8.2 points
+Tue 20: 9.8 points
+Wed 21: 15.3 points
+Thu 22: 19.3 points
+Fri 23: 10.7 points, to 22:08
+Reply: lanes 1 (example, not final)</pre>
+            <p class="label">Run flat out</p>
+<pre data-form="chat" data-policy="finish-early">Weekly 72% (read Fri 22:08)
+Verdict: over budget at the recent burn
+Week average: within budget
+Within budget: the work finishes in about
+22.8 hours with 5.2 points to spare.
+Sun 18: 8.7 points
+Mon 19: 8.2 points
+Tue 20: 9.8 points
+Wed 21: 15.3 points
+Thu 22: 19.3 points
+Fri 23: 10.7 points, to 22:08
+Reply: policy pace (example, not final)</pre>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<script id="usage-model">
+// Reference model for the usage calculator mockups. Pure functions, no window or document use.
+// The three mockup pages embed this block unchanged inside <script id="usage-model"> so that
+// their numbers agree. The design document describes each formula in the same words.
+const UsageModel = (() => {
+  const DAY = 24 * 3600 * 1000;
+  const HOUR = 3600 * 1000;
+  const MIN_RECENT_GAP_HOURS = 2;
+  const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const num = (v, fallback) => (typeof v === "number" && isFinite(v) ? v : fallback);
+  const round1 = (v) => Math.round(v * 10) / 10;
+  const lanesWord = (n) => n + (n === 1 ? " lane" : " lanes");
+  const lanesEnd = (n) => lanesWord(n) + (n === 1 ? " ends" : " end");
+
+  // "Sun 02:08" for an ISO time, shown at a fixed offset from UTC (hours, for example -4).
+  function formatClock(iso, offsetHours) {
+    const shifted = new Date(Date.parse(iso) + num(offsetHours, 0) * HOUR);
+    const hh = String(shifted.getUTCHours()).padStart(2, "0");
+    const mm = String(shifted.getUTCMinutes()).padStart(2, "0");
+    return WEEKDAYS[shifted.getUTCDay()] + " " + hh + ":" + mm;
+  }
+
+  function advise(input) {
+    const readMs = Date.parse(input.readAt);
+    const lastResetMs = Date.parse(input.lastResetAt);
+    const nextResetMs = input.nextResetAt ? Date.parse(input.nextResetAt) : lastResetMs + 7 * DAY;
+    const percent = input.percent;
+    const maxLanes = num(input.maxLanes, 3);
+    const safety = num(input.safetyPoints, 5);
+
+    // Position in the week.
+    const daysSinceReset = (readMs - lastResetMs) / DAY;
+    const daysLeft = Math.max((nextResetMs - readMs) / DAY, 0);
+    const allowancePer24h = 100 / 7;
+    const paceLine = (daysSinceReset / 7) * 100;
+    const headroom = paceLine - percent;
+
+    // Burn: week average from the whole week, recent from the previous reading.
+    const weekAvgBurnPer24h = daysSinceReset > 0 ? percent / daysSinceReset : 0;
+    let recentBurnPer24h = weekAvgBurnPer24h;
+    let recentFallback = true;
+    if (input.previous) {
+      const hours = (readMs - Date.parse(input.previous.readAt)) / HOUR;
+      if (hours >= MIN_RECENT_GAP_HOURS) {
+        recentBurnPer24h = Math.max(((percent - input.previous.percent) / hours) * 24, 0);
+        recentFallback = false;
+      }
+    }
+
+    // Projection to the reset, and the moment the allowance would run out.
+    const runOutOf = (burn) => {
+      if (burn <= 0) return { at: null, hoursEarly: 0 };
+      const days = (100 - percent) / burn;
+      if (days >= daysLeft) return { at: null, hoursEarly: 0 };
+      return { at: new Date(readMs + days * DAY).toISOString(), hoursEarly: (daysLeft - days) * 24 };
+    };
+    const projectedEndRecent = percent + recentBurnPer24h * daysLeft;
+    const projectedEndAvg = percent + weekAvgBurnPer24h * daysLeft;
+    const runRecent = runOutOf(recentBurnPer24h);
+    const runAvg = runOutOf(weekAvgBurnPer24h);
+
+    // What each lane count would cost. The burn per lane is inferred from the recent burn,
+    // the idle baseline and the number of lanes that were running in that window.
+    const baseline = num(input.baselinePer24h, 3);
+    const recentLanes = num(input.recentLanes, num(input.lanes, maxLanes));
+    const perLane = num(
+      input.perLanePer24h,
+      recentLanes > 0 ? Math.max((recentBurnPer24h - baseline) / recentLanes, 0) : 0
+    );
+    const byLanes = [];
+    for (let l = 0; l <= maxLanes; l++) {
+      const burn = baseline + l * perLane;
+      const run = runOutOf(burn);
+      byLanes.push({
+        lanes: l,
+        burnPer24h: burn,
+        projectedEnd: percent + burn * daysLeft,
+        runOutAt: run.at,
+        hoursEarly: run.hoursEarly,
+      });
+    }
+
+    const verdict = projectedEndRecent > 100 ? "over" : "within";
+    const verdictAvg = projectedEndAvg > 100 ? "over" : "within";
+    const chosen = byLanes[Math.min(Math.max(num(input.lanes, maxLanes), 0), maxLanes)];
+
+    // Advice per policy. The advice never names zero lanes: stopping every lane is the
+    // operator's decision, not the calculator's.
+    const policy = input.policy || "use-all";
+    const largestFitting = (limit) => {
+      let best = 1;
+      for (const row of byLanes) if (row.lanes >= 1 && row.projectedEnd <= limit) best = row.lanes;
+      return best;
+    };
+    const notes = ["The operator chooses the number of lanes; this is advice only."];
+    let lanesSuggested = maxLanes;
+    let headline = "";
+    let finish = null;
+    const atMax = byLanes[maxLanes];
+
+    if (policy === "use-all") {
+      lanesSuggested = largestFitting(100);
+      const row = byLanes[lanesSuggested];
+      if (atMax.projectedEnd <= 100) {
+        headline = "Within budget: " + lanesEnd(maxLanes) + " the week at " + round1(atMax.projectedEnd) +
+          "%, " + round1(100 - atMax.projectedEnd) + " points unused at the reset.";
+        notes.push("Unused allowance is lost at the reset; there is room for more work.");
+      } else {
+        headline = "Over budget at the recent burn: " + lanesWord(maxLanes) + " run out about " +
+          round1(atMax.hoursEarly) + " hours before the reset. " + lanesEnd(lanesSuggested) + " at " +
+          round1(row.projectedEnd) + "%.";
+        notes.push("Running out early is allowed under this policy; the alternative is " + lanesWord(lanesSuggested) + " to the reset.");
+      }
+    } else if (policy === "pace") {
+      lanesSuggested = largestFitting(100 - safety);
+      const row = byLanes[lanesSuggested];
+      if (atMax.projectedEnd <= 100 - safety) {
+        headline = "Within budget: " + lanesEnd(maxLanes) + " the week at " + round1(atMax.projectedEnd) +
+          "%, inside the " + (100 - safety) + "% target.";
+      } else {
+        headline = "Over budget for the week at " + lanesWord(maxLanes) + " (" + round1(atMax.projectedEnd) +
+          "% at the reset). " + lanesEnd(lanesSuggested) + " at " + round1(row.projectedEnd) + "%.";
+      }
+      if (row.projectedEnd > 100 - safety) {
+        notes.push("Even " + lanesWord(lanesSuggested) + " does not reach the target; the allowance is the limit.");
+      }
+      if (percent > paceLine) notes.push("Usage is ahead of the pace line by " + round1(percent - paceLine) + " points.");
+    } else {
+      lanesSuggested = maxLanes;
+      const work = input.remainingWork;
+      if (typeof work !== "number") {
+        headline = "Enter the remaining work to see whether it finishes before the allowance does.";
+      } else {
+        const laneRate = maxLanes * perLane;
+        const days = laneRate > 0 ? work / laneRate : Infinity;
+        const endPercent = percent + work + baseline * days;
+        const spare = 100 - endPercent;
+        finish = {
+          hours: days * 24,
+          at: isFinite(days) ? new Date(readMs + days * DAY).toISOString() : null,
+          endPercent,
+          sparePoints: spare,
+          beforeAllowance: spare >= 0 && days <= daysLeft,
+        };
+        headline = finish.beforeAllowance
+          ? "Within budget: the work finishes in about " + round1(finish.hours) + " hours with " +
+            round1(spare) + " points of allowance to spare."
+          : "Over budget: the allowance runs out before the work finishes (" + round1(Math.min(spare, 0)) +
+            " points short). Consider pacing or running until used up.";
+      }
+      notes.push("All lanes run; the calculator does not slow them down under this policy.");
+    }
+
+    return {
+      daysSinceReset, daysLeft, allowancePer24h, paceLine, headroom,
+      recentBurnPer24h, weekAvgBurnPer24h, recentFallback,
+      projectedEndRecent, projectedEndAvg,
+      runOutAtRecent: runRecent.at, runOutAtAvg: runAvg.at,
+      hoursEarlyRecent: runRecent.hoursEarly, hoursEarlyAvg: runAvg.hoursEarly,
+      verdict, verdictAvg, aheadOfPace: percent > paceLine,
+      perLanePer24h: perLane, baselinePer24h: baseline,
+      byLanes, chosen,
+      advice: { policy, lanesSuggested, headline, notes, finish },
+    };
+  }
+
+  return { advise, formatClock };
+})();
+</script>
+<script id="usage-view">
+// Burn ledger view. Runs after the usage-model script and reads UsageModel.advise.
+const UsageView = (() => {
+  const HOUR = 3600 * 1000;
+  const OFFSET = -4;
+  const LAST_RESET = "2026-10-18T08:00:00-04:00";
+  const NEXT_RESET = "2026-10-25T08:00:00-04:00";
+  const READ_AT = "2026-10-23T22:08:00-04:00";
+  const PREVIOUS = { percent: 67, readAt: "2026-10-23T17:09:00-04:00" };
+  // Readings since the reset, as in the design document. The reading being shown is added after these.
+  const SERIES = [
+    ["2026-10-18T10:20:00-04:00", 2],
+    ["2026-10-18T14:30:00-04:00", 4],
+    ["2026-10-18T17:00:00-04:00", 5],
+    ["2026-10-18T21:05:00-04:00", 7],
+    ["2026-10-19T09:55:00-04:00", 9],
+    ["2026-10-19T17:50:00-04:00", 13],
+    ["2026-10-19T20:15:00-04:00", 14],
+    ["2026-10-20T04:31:00-04:00", 16],
+    ["2026-10-20T16:40:00-04:00", 19],
+    ["2026-10-21T14:40:00-04:00", 30],
+    ["2026-10-21T18:30:00-04:00", 33],
+    ["2026-10-21T19:40:00-04:00", 34],
+    ["2026-10-22T12:36:00-04:00", 45],
+    ["2026-10-22T20:44:00-04:00", 55],
+    ["2026-10-23T02:40:00-04:00", 58],
+    ["2026-10-23T17:09:00-04:00", 67],
+  ];
+  // Planning coefficients recorded on 2026-10-23.
+  const COEF = { automaton: 0.4, session: 0.15, baseline: 3 };
+  // The planning column assumes each lane starts one full Automaton, one decompose and one merge a day.
+  const PER_LANE_DAY = COEF.automaton + 2 * COEF.session;
+  // Illustrative shares of each day's points: build workers, decompose, verify, supervision, merges.
+  const SPLIT = [0.58, 0.14, 0.12, 0.09, 0.07];
+  const DAY_LABELS = ["Sun 18", "Mon 19", "Tue 20", "Wed 21", "Thu 22", "Fri 23"];
+  const ALLOWANCE_PER_DAY = 100 / 7;
+  const CH = { left: 30, right: 310, top: 14, bottom: 168, max: 25, bar: 30 };
+  const CHECK = "✔";
+  const CROSS = "✖";
+
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const f1 = (v) => v.toFixed(1);
+  const pct1 = (v) => v.toFixed(1) + "%";
+  const lanesWord = (n) => n + (n === 1 ? " lane" : " lanes");
+  const yOf = (v, max = CH.max) => CH.bottom - (clamp(v, 0, max) / max) * (CH.bottom - CH.top);
+
+  const state = { percent: 72, policy: "pace", lanes: 3 };
+
+  function inputFor(s) {
+    return {
+      percent: s.percent,
+      readAt: READ_AT,
+      lastResetAt: LAST_RESET,
+      nextResetAt: NEXT_RESET,
+      previous: PREVIOUS,
+      lanes: s.lanes,
+      recentLanes: 3,
+      maxLanes: 3,
+      baselinePer24h: COEF.baseline,
+      safetyPoints: 5,
+      remainingWork: 20,
+      policy: s.policy,
+    };
+  }
+
+  function compute(s) {
+    const input = inputFor(s);
+    return { input, r: UsageModel.advise(input) };
+  }
+
+  // Weekly percent at an hour since the reset, straight-line between the readings.
+  function weeklyAt(points, hours) {
+    for (let i = 1; i < points.length; i++) {
+      const [h0, v0] = points[i - 1];
+      const [h1, v1] = points[i];
+      if (hours <= h1) return v0 + ((v1 - v0) * (hours - h0)) / (h1 - h0);
+    }
+    return points[points.length - 1][1];
+  }
+
+  // Points used on each day since the reset, read off the 08:00 boundaries. The reset counts as 0.
+  function dailyTotals(percent) {
+    const start = Date.parse(LAST_RESET);
+    const readHours = (Date.parse(READ_AT) - start) / HOUR;
+    const points = [[0, 0]]
+      .concat(SERIES.map(([at, v]) => [(Date.parse(at) - start) / HOUR, v]))
+      .concat([[readHours, percent]]);
+    const edges = [0, 24, 48, 72, 96, 120, readHours].map((h) => weeklyAt(points, h));
+    return edges.slice(1).map((v, i) => v - edges[i]);
+  }
+
+  // One stacked bar per day, split by the illustrative shares.
+  function barsSvg(totals) {
+    const slot = (CH.right - CH.left) / totals.length;
+    const barX = (i) => CH.left + i * slot + (slot - CH.bar) / 2;
+    // The scale grows in steps of 5 points when a day runs past the default top.
+    const max = Math.max(CH.max, Math.ceil(Math.max(...totals) / 5) * 5 + 5);
+    const y = (v) => yOf(v, max);
+    const parts = [
+      `<line class="c-axis" x1="${CH.left}" y1="${CH.bottom}" x2="${CH.right}" y2="${CH.bottom}"/>`,
+      `<line class="c-budget" x1="${CH.left}" y1="${f1(y(ALLOWANCE_PER_DAY))}" x2="${CH.right}" y2="${f1(y(ALLOWANCE_PER_DAY))}"/>`,
+    ];
+    totals.forEach((total, i) => {
+      let base = 0;
+      SPLIT.forEach((share, k) => {
+        const top = y(base + total * share);
+        const bottom = y(base);
+        parts.push(`<rect class="k${k}" x="${f1(barX(i))}" y="${f1(top)}" width="${CH.bar}" height="${f1(bottom - top)}"/>`);
+        base += total * share;
+      });
+      const mid = barX(i) + CH.bar / 2;
+      parts.push(`<text class="b-tot" x="${f1(mid)}" y="${f1(y(total) - 4)}" text-anchor="middle">${f1(total)}</text>`);
+      parts.push(`<text class="c-txt" x="${f1(mid)}" y="184" text-anchor="middle">${DAY_LABELS[i]}</text>`);
+      if (i === totals.length - 1) {
+        parts.push(`<text class="c-txt" x="${f1(mid)}" y="198" text-anchor="middle">partial</text>`);
+      }
+    });
+    [0, 10, 20].forEach((v) => {
+      parts.push(`<text class="c-txt" x="${CH.left - 4}" y="${f1(y(v) + 3)}" text-anchor="end">${v}</text>`);
+    });
+    return `<svg class="bars" viewBox="0 0 320 206" role="img" aria-label="Points of weekly allowance used each day since the reset, split by kind of work">${parts.join("")}</svg>`;
+  }
+
+  function render() {
+    const { r } = compute(state);
+    const adv = r.advice;
+    const over = r.verdict === "over";
+    const at = (id) => document.getElementById(id);
+    const put = (id, text) => { at(id).textContent = text; };
+    const clock = (iso) => UsageModel.formatClock(iso, OFFSET);
+    const early = (hours) => {
+      const h = Math.round(hours);
+      return "about " + h + (h === 1 ? " hour early" : " hours early");
+    };
+    const runText = (iso, hours) => (iso ? clock(iso) + ", " + early(hours) : "None before the reset");
+    const chip = (el, verdict) => {
+      el.className = "chip " + verdict;
+      el.textContent = verdict === "over" ? CROSS + " Over budget" : CHECK + " Within budget";
+    };
+    const gapHours = (Date.parse(READ_AT) - Date.parse(PREVIOUS.readAt)) / HOUR;
+
+    chip(at("o-verdict"), r.verdict);
+    chip(at("o-verdictAvg"), r.verdictAvg);
+    put("o-eyebrow", "Weekly " + state.percent + "% at Fri 22:08");
+    put("o-headline", adv.headline);
+    at("o-notes").replaceChildren(...adv.notes.map((t) => {
+      const li = document.createElement("li");
+      li.textContent = t;
+      return li;
+    }));
+
+    at("o-bars").innerHTML = barsSvg(dailyTotals(state.percent));
+    r.byLanes.forEach((row) => put("o-measured" + row.lanes, f1(row.burnPer24h)));
+
+    put("o-days", r.daysSinceReset.toFixed(2));
+    put("o-daysLeft", r.daysLeft.toFixed(2));
+    put("o-pace", pct1(r.paceLine));
+    put("o-headroom", r.aheadOfPace ? "ahead of the pace line" : "headroom " + r.headroom.toFixed(1) + " points");
+    put("o-burnRecent", r.recentBurnPer24h.toFixed(1));
+    put("o-burnNote", r.recentFallback
+      ? "week average used: no earlier reading two hours or more before"
+      : "from " + clock(PREVIOUS.readAt) + ", " + gapHours.toFixed(2) + " hours before");
+    put("o-burnAvg", r.weekAvgBurnPer24h.toFixed(1));
+    put("o-projRecent", pct1(r.projectedEndRecent) + (over ? " (over budget)" : " (within budget)"));
+    put("o-projAvg", pct1(r.projectedEndAvg) + (r.verdictAvg === "over" ? " (over budget)" : " (within budget)"));
+    put("o-runRecent", runText(r.runOutAtRecent, r.hoursEarlyRecent));
+    put("o-runAvg", runText(r.runOutAtAvg, r.hoursEarlyAvg));
+    put("o-ahead", r.aheadOfPace ? "Yes" : "No");
+
+    document.querySelectorAll('[role="radio"]').forEach((b) => {
+      const on = b.dataset.policy === state.policy;
+      b.setAttribute("aria-checked", String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+    put("o-lanes", String(state.lanes));
+    at("lanesMinus").disabled = state.lanes === 0;
+    at("lanesPlus").disabled = state.lanes === 3;
+    at("o-zeroNote").hidden = state.lanes !== 0;
+    put("o-advice", lanesWord(adv.lanesSuggested));
+    const row = r.chosen;
+    put("o-chosen", lanesWord(row.lanes) + ": " + row.burnPer24h.toFixed(1) + " per 24 hours, ends at " +
+      pct1(row.projectedEnd) + (row.projectedEnd > 100 ? " (over)" : " (within)") +
+      (row.runOutAt ? ", runs out " + clock(row.runOutAt) : ", no run out before the reset") + ".");
+
+    const fin = adv.finish;
+    at("o-finish").hidden = !fin;
+    if (fin) {
+      put("o-finish", !fin.at
+        ? "No finish time: no lane is burning above the idle baseline."
+        : fin.beforeAllowance
+          ? "Work finishes " + clock(fin.at) + ", " + fin.sparePoints.toFixed(1) + " points to spare."
+          : "Work does not finish before the allowance runs out.");
+    }
+  }
+
+  function setPolicy(policy) {
+    state.policy = policy;
+    render();
+  }
+
+  function setLanes(n) {
+    state.lanes = clamp(n, 0, 3);
+    render();
+  }
+
+  function init() {
+    const device = document.querySelector(".device");
+    const frames = document.querySelectorAll("[data-frame]");
+    const widths = { phone: 390, tablet: 820, desktop: 1180 };
+    frames.forEach((btn) => btn.addEventListener("click", () => {
+      device.style.width = Math.min(widths[btn.dataset.frame], document.documentElement.clientWidth - 32) + "px";
+      frames.forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    }));
+
+    const radios = Array.from(document.querySelectorAll('[role="radio"]'));
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    radios.forEach((btn, i) => {
+      btn.addEventListener("click", () => setPolicy(btn.dataset.policy));
+      btn.addEventListener("keydown", (e) => {
+        if (!(e.key in step)) return;
+        e.preventDefault();
+        const next = radios[(i + step[e.key] + radios.length) % radios.length];
+        next.focus();
+        setPolicy(next.dataset.policy);
+      });
+    });
+
+    document.getElementById("lanesMinus").addEventListener("click", () => setLanes(state.lanes - 1));
+    document.getElementById("lanesPlus").addEventListener("click", () => setLanes(state.lanes + 1));
+
+    document.getElementById("percent").addEventListener("input", (e) => {
+      const raw = e.target.value;
+      const v = Number(raw);
+      const ok = raw !== "" && Number.isFinite(v) && v >= PREVIOUS.percent && v <= 100;
+      document.getElementById("percentError").hidden = ok;
+      if (ok) {
+        state.percent = v;
+        render();
+      }
+    });
+    render();
+  }
+
+  if (typeof document !== "undefined" && document.getElementById("o-bars")) init();
+  return { barsSvg, dailyTotals, compute, state };
+})();
+</script>
+</body>
+</html>

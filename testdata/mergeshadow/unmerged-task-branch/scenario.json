@@ -1,0 +1,52 @@
+{
+  "description": "An Automaton whose task branch never merged. The Automaton branch holds feat.go. Task branch automaton/aa000001--tasks-add-thing-aa000002 was cut from main and committed task.go, but was never merged back, so its commit is not reachable from the Automaton branch and the shadow plan must be blocked. Task branch automaton/aa000001--tasks-add-readme-aa000003 was cut from the Automaton branch and merged back, so it must not produce a finding.",
+  "automaton_id": "aa000001",
+  "project": "demo",
+  "branch": "automaton/aa000001",
+  "base_ref": "main",
+  "main": {
+    "message": "base",
+    "files": {
+      "version.go": "package main\n\nvar Version = \"1.2.0\"\n",
+      "CHANGELOG.md": "# Changelog\n\n## [1.2.0] - 2026-11-01\n\n- old\n",
+      "README.md": "# Demo\n",
+      "notes.txt": "base\n"
+    }
+  },
+  "automaton_commits": [
+    {
+      "message": "feature",
+      "files": {
+        "feat.go": "package main\n"
+      }
+    }
+  ],
+  "task_branches": [
+    {
+      "name": "automaton/aa000001--tasks-add-thing-aa000002",
+      "from": "main",
+      "merged": false,
+      "commits": [
+        {
+          "message": "task work never merged",
+          "files": {
+            "task.go": "package main\n\nvar task = true\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "automaton/aa000001--tasks-add-readme-aa000003",
+      "from": "automaton",
+      "merged": true,
+      "commits": [
+        {
+          "message": "readme task",
+          "files": {
+            "README.md": "# Demo\n\nSee the changelog.\n"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -600,7 +600,7 @@ func (s *Server) handleMemoryRecentResource(_ context.Context, req mcpsdk.ReadRe
 }
 
 func (s *Server) handleAutomataResource(_ context.Context, req mcpsdk.ReadResourceRequest) ([]mcpsdk.ResourceContents, error) {
-	raw, err := s.proxyGet("/api/autonomous/prds", nil)
+	raw, err := s.proxyGet("/api/autonomous/prds", url.Values{"full": {"1"}})
 	if err != nil {
 		out, _ := json.Marshal(map[string]interface{}{"automata": []interface{}{}})
 		return []mcpsdk.ResourceContents{

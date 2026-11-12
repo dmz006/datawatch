@@ -15,7 +15,7 @@ was out of scope to fix in that pass.
 The daemon's own journal shows, live, on this exact host tonight:
 
 ```
-[channel] ignoring ready for johnnyjohnny-ab22 on port 39381 — existing port 36777 is still alive (likely a stray duplicate bridge)
+[channel] ignoring ready for local-node-ab22 on port 39381 — existing port 36777 is still alive (likely a stray duplicate bridge)
 ```
 
 This log line is itself the *intended* dedup guard (`internal/server/api.go`'s

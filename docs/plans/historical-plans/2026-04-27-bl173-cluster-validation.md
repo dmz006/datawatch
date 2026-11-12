@@ -84,8 +84,8 @@ POST /api/observer/peers/thor/stats
       "name":"thor-test-backend",
       "rss_bytes":12345678,
       "cpu_pct":1.5,
-      "listen_addrs":[{"addr":"10.0.0.5","port":8443,"proto":"tcp"}],
-      "outbound_edges":[{"remote_addr":"10.0.0.6","remote_port":8443,"proto":"tcp"}]
+      "listen_addrs":[{"addr":"192.0.2.5","port":8443,"proto":"tcp"}],
+      "outbound_edges":[{"remote_addr":"192.0.2.6","remote_port":8443,"proto":"tcp"}]
     }] }
   }
   →   {"status":"ok"}

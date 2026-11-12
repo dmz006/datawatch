@@ -125,6 +125,7 @@ func TestPRDE2E_RunRejectsUnapprovedPRD(t *testing.T) {
 func TestPRDE2E_SpawnErrorFailsTask(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := NewManager(dir, DefaultConfig(), nil)
+	useInfraCountAction(m) // the legacy failed path, not a hold for review
 	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "do"}}}})
 	prd, _ = m.Store().GetPRD(prd.ID)
@@ -207,6 +208,8 @@ func TestPRDE2E_RetryExhaustedFails(t *testing.T) {
 	dir := t.TempDir()
 	cfg := DefaultConfig()
 	cfg.AutoFixRetries = 1 // only one retry allowed
+	// The auto_fix_retries bound applies only with failure escalation off.
+	cfg.FailureEscalation = FailureEscalationPolicy{Enabled: escalationOn(false)}
 	m, _ := NewManager(dir, cfg, nil)
 	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "do"}}}})

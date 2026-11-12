@@ -61,7 +61,7 @@ jobs:
           curl -fsSL -o ./kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x ./kubectl
           sudo mv ./kubectl /usr/local/bin/kubectl
-          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          sudo bash scripts/ci-install-helm.sh "$(cat scripts/helm-version.txt)" /usr/local/bin
 
       - name: Create kind cluster
         run: |

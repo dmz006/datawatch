@@ -5,6 +5,3503 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.147.0 — Projects as the first Automata sub-tab
+
+### Changed
+
+- **Projects is now the first sub-tab of Automata.** The Projects page moved from its own top-level button into the Automata view, to the left of Automation; the sub-tab order is Projects, Automation, Automata, Events, Templates. The top-level Projects navigation button is gone.
+- **Old Projects links and saved views still work.** A `#projects` link, a stored Projects view and any opener that used to go to the Projects page now land on the Projects sub-tab, with the selected project kept in the link.
+- **Leaving the Projects sub-tab stops its polling.** Switching to another sub-tab or leaving the Automata view ends every loader and timer the Projects page started, so nothing refreshes while it is hidden.
+- Docs: the Projects how-to, the Automation how-to, the definitions entry and the MCP reference now say where Projects lives.
+
+## v9.146.4 — One Trivy version, pinned helm install, retire the installer-drift watch
+
+### Changed
+
+- **One Trivy pin for every workflow.** The release, container build and image-refresh workflows now read the Trivy tag from `scripts/trivy-version.txt` (`v0.73.0`) and hand it to `scripts/ci-install-trivy.sh`; no workflow carries its own tag any more. `scripts/check-trivy-version-single.sh` guards the pin and runs in CI. The container build's Trivy moves from `v0.70.0` to `v0.73.0`, so its scan can report different findings than before.
+- **The upstream-watch job reads the pin from the version file.** The scanner-pin check compares `scripts/trivy-version.txt` with the latest `aquasecurity/trivy` release, and the installer-drift check is retired because the installer is no longer fetched from `main`. Docs: `docs/howto/container-image-refresh.md`, `docs/operations.md`, and the Trivy and Helm version pin entries in `docs/datawatch-definitions.md`.
+- **Migration:** none for operators. **For the operator to review:** the helm archive checksum is not verified, and the version guard does not cover the helm pin.
+
+### Fixed
+
+- **The kind smoke workflow installs helm from a pinned, retried download instead of a pipe-to-shell.** `scripts/ci-install-helm.sh` fetches the archive for the tag in `scripts/helm-version.txt` (`v3.17.3`) from `get.helm.sh`, retries five times and fails loudly, so a transient download error no longer breaks the smoke run silently or pulls whatever helm is newest.
+
+## v9.146.3 — Five open code scanner alerts addressed with inline path guards and a tick bound
+
+### Security
+
+- **Five open code scanner alerts are addressed with inline path guards and a bound on a start-time conversion.** The path checks in the cleanup **Fix permissions** action, the task-commit file list, the uncommitted-work check and the daemon-only-change check now sit inline at the point where the path is used, in the form the scanner recognises: a path with a NUL byte or a non-local form (absolute, or one that escapes upward with `..`) is refused before any file-system call. The process start time read for a recorded verification script is bounded before it is converted to a duration, so a huge value in a stat line cannot overflow; a start time that cannot be read, or is implausibly large, makes the recorded process untrusted, so a recycled process id is never waited on as if it were the script. Behavior for valid input is unchanged. Whether the scanner alerts close is only known after the next scanner run on main. Migration: none.
+  - **For the operator to review:** a path the guards reject is still skipped as before, and a recorded verification run whose start time cannot be read now runs from the start instead of being waited on. See [uncommitted work](docs/howto/automaton-uncommitted-work.md), [worktree cleanup](docs/howto/automaton-worktree-cleanup.md) and [restarting with work running](docs/howto/restart-with-work-running.md).
+
+## v9.146.2 — Drift checker git calls hardened against repository-configured programs
+
+### Security
+
+- **The file drift check and the undeclared-edit check no longer start programs named by a repository's own git configuration.** Every git call these checks make now passes `-c core.fsmonitor=false`, `-c core.hooksPath=` and `--no-optional-locks`, and `git diff` also gets `--no-ext-diff`, so a file-system monitor, a hooks directory or an external diff program set in a project's `.git/config` or attributes is never run by the check. A project folder that is empty, relative or starts with a dash is refused with an `invalid git directory` error and git is not run; that task gets no finding from the check. The calls stay read-only, and `drift_mode`, `undeclared_edit_mode` and what is flagged are unchanged. There is no new setting. Migration: none.
+  - **For the operator to review:** a project that relied on a custom `core.fsmonitor` or diff program to change what the check sees now gets plain git state. See [howto/file-drift-guardrail.md](docs/howto/file-drift-guardrail.md#how-the-checker-runs-git).
+
+## v9.146.1 — Path handling in the Automata package is hardened
+
+### Security
+
+- **Path handling in the Automata package is hardened without changing behavior for valid input.** Paths read from `git status` now pass one shared relative-path guard (no empty path, NUL byte, absolute path or `..` escape) before they are joined onto a worktree, in the uncommitted-work check, the daemon-only-change checks and the task-commit file list. The cleanup **Fix permissions** action checks that a path is inside the worktree base before any file-system call, so an outside path gets the same refusal whether or not it exists. Migration: none.
+  - **For the operator to review:** a path that the guard rejects is now skipped silently rather than read, so if a worktree holds an odd file name (for example one whose cleaned form is `.` or escapes upward), check that it still shows in the uncommitted-work list as you expect. The docs describe this from the code and its tests; they were not checked against a live run.
+
+## v9.146.0 — Every session kind carries the full set of placement tag axes
+
+### Changed
+
+- **Planner and operator-started sessions now carry the same placement tags as task sessions.** A planner session and a session the operator starts by hand (through the REST start endpoint, MCP `start_session`, or `datawatch session new`) get the same placement (system) tags a task session gets: compute node, backend, lane, project, and the role, kind, stage and automaton tags when launch facts are given. Their launch fields are documented in the OpenAPI specs, and the REST start endpoint now documents the 400 refusal for an unknown `launch_role` or `launch_kind`.
+- **Every session that carries a placement (system) tag now gets the full set of axes that apply to it.** A session started through `POST /api/sessions/start` gets its compute node (`compute:<node>`, `local` when none is stored), backend, lane and project tags. A session started with launch facts (`launch_role`, `launch_kind`, `launch_stage`, `launch_automaton`) also gets its `role:`, `kind:`, `stage:` and `automaton:` tags. An unknown role or kind is refused with 400 before the session starts. The daemon's start hook also stamps the placement tags on every other started session (scheduled starts and comm-channel starts), so no start path is left with a partial set.
+  - **How it shows up:** the new axes appear under “Placement tags (system)” in the Sessions Tags menu and in tag filters. The operator's supervisor session is started with `launch_role=supervisor` (MCP `start_session`, the `--launch-role` flag on `datawatch session new`, or the REST field), so it carries the supervisor role tag with no automaton tag. Omitting the fields keeps a plain session as before, plus its placement tags.
+  - **Migration:** none is required to keep existing sessions as they are. To bring sessions started before this change up to the full set, run the tag sweep: `datawatch autonomous tags sweep --dry-run` previews the tally without writing any tag, then `datawatch autonomous tags sweep` applies it (`tag-sweep` is an alias). MCP `autonomous_tag_sweep` with `dry_run=true` previews it; REST is `POST /api/autonomous/tags/sweep?dry_run=true`.
+
+### Fixed
+
+- **A restarted session gets its placement (system) tags re-derived from its record.** Restarting a session (`RestartSession`, and the restart path that reuses a completed or failed session's ID) now runs the same placement start hook a fresh start runs, so a restarted session keeps the role, kind, stage and automaton tags its record holds. A restart that fails does not run the hook.
+  - **How it shows up:** a restarted session's tags match its record without a tag sweep.
+  - **Migration:** none.
+
+## v9.145.1 — A daemon restart no longer loses planning or verification
+
+### Fixed
+
+- **A daemon restart no longer loses planning or verification.** An Automaton that was still planning when the daemon restarted is no longer thrown back to draft by default. The restarted daemon re-attaches to the live planner session, or ingests the plan the planner finished while the daemon was down, and only when nothing usable survives does it restart planning once (a decision records it). A task that was verifying, the completion review of a finished Automaton, and a running verification or final-gate script are picked back up the same way instead of being redone, so no second verifier or judge is spawned and no retry is counted.
+- **A restart that would interrupt live planning, verifying or judging work is refused unless it is forced.** The restart guard now counts planning, verifying and judging work as work in flight; a restart is refused with that list until `force` is given, on the REST restart call, the CLI, the chat `restart` verb and the MCP `restart_daemon` tool. The restart interruption report names planning, verifier and judge items too.
+
+### Added
+
+- **`autonomous.planning_restart_policy` chooses what a restart does to an Automaton still planning.** `reattach` (default) re-attaches to or ingests the planner's work, `restart` restarts planning once after the restart, and `draft` returns the Automaton to draft as before. An invalid value is refused on write. It is settable from config.yaml, `GET`/`PUT /api/config`, the CLI, the chat `configure` verb, the `config_set` tool and the web Settings page (two new strings in five locales). See [howto/restart-with-work-running.md](docs/howto/restart-with-work-running.md).
+- **Migration:** none. The default `reattach` changes behavior only for an Automaton that is planning at the moment of a restart; set `draft` to keep the old behavior.
+
+## v9.145.0 — Projects tab show-empty control
+
+### Changed
+
+- **The Projects tab hides empty lines and sections by default, and a show-empty checkbox brings them back.** Lines and sections with nothing in them no longer clutter the Projects tab; tick **Show empty lines and sections** to see them all. The choice is remembered per viewer, so each browser keeps its own setting.
+- **A missing weekly share is reported as an Events entry.** When the weekly share is missing, the Projects tab no longer leaves a silent gap; the problem is recorded as an entry on the Events tab so it is not missed.
+
+## v9.144.1 — A rejudge runs a fresh completion review
+
+### Changed
+
+- **A rejudge of a blocked Automaton reviews the real branch head and the rules text.** The completion review is anchored to the head of the Automaton's own working tree, and a hash of the rules and context text it reads is stored on the verdict as `rules_fingerprint`. The stored verdict is replayed only when both are unchanged; a verdict recorded before the fingerprint existed is judged again once. The recovery and judge-policy howtos, the operations guide and the glossary describe it.
+- **A reused completion verdict is recorded as a reuse, not as a second verdict.** Every rejudge now writes a `guardrail_rejudge` decision that names the commit it judged (`judged_commit_sha`) and says whether the stored verdict was reused (`verdict_reused`). When the stored verdict is reused it keeps its own time, commit and rules fingerprint, is not added to the Automaton's verdicts again and records no new `guardrail_verdict`; the completion review the daemon runs on its own records a `guardrail_reuse` decision the same way and does not classify the verdict a second time. When a new review runs the note starts `new review ran on commit`. Existing decision entries are unchanged; the two fields are omitted when empty or false. The completion rollup, including the stuck-running watchdog's one-time re-fire, follows the same rule: a moved head runs a new review (a pass or warn completes the Automaton and the watchdog does not block it), an unchanged head reuses the stored verdict.
+- **A rejudge says whether a new review ran or the stored verdict was reused, and the web app shows it.** The rejudge reply `message` (in the compact reply, `?view=compact`; the full reply has none) now names the judged commit: either `a new review ran on commit <sha>` (the verdict and outcome are in the decision log) or `the stored verdict was reused` because the head commit and the rules text are unchanged since it was made. The web app asks for the compact reply and shows that message in the toast for six seconds instead of a bare "complete" notice; with no message it keeps the short toast. The recovery how-to now explains that a rejudge is a fresh completion review and how to tell a fixed Automaton from a still-broken one by comparing the latest verdict's judged commit and time with the branch head and your fix (`verdict_reused` true on the latest `guardrail_rejudge` entry means you read a stored verdict). The MCP reference, the glossary and the OpenAPI description match. No new setting.
+
+### Fixed
+
+- **A rejudge of a blocked Automaton now runs a fresh completion review instead of replaying the old verdict.** The rejudge reviews the Automaton's current head commit, starts a judge session, records a new verdict with its own time and the commit it judged, and replaces the blocked state with the verdict's outcome. The stored verdict is reused only when the head commit and the rules text are both unchanged, and the reply then says that it was reused and why. A repeated rejudge no longer adds duplicate copies of an unchanged verdict. The completion rollup and its one-time re-fire follow the same rule. The decision log records each rejudge request with the commit judged and whether a new review ran.
+
+## v9.144.0 — Automaton branches refresh themselves from main
+
+### Added
+
+- **An Automaton's branch can now refresh itself from main between tasks, so a long-running Automaton no longer falls hundreds of commits behind.** In the gap after one task finishes and before the next starts, the daemon merges the base branch (usually `main`) into the Automaton's own branch when the branch is at or over a commits-behind limit, no task is running in its worktree, and refreshing has not been stopped. It is **off by default** and never fails the Automaton: a failed merge is logged, recorded with result `error`, and the next task starts as usual (a failure to count the commits behind is logged only). Each refresh that merges, conflicts or fails writes a `branch_refresh` entry to the Automaton's Decisions list.
+  - **Two settings:** `autonomous.branch_refresh_enabled` (default `false`) turns refreshing on for every Automaton that has no override of its own, and `autonomous.branch_refresh_behind_limit` (default 5; 0 or unset reads as 5) is how many commits behind the base a branch may be before it is refreshed. A per-Automaton override (`true`, `false` or cleared) wins over the daemon setting.
+  - **The conflict question:** a conflict confined to `CHANGELOG.md` takes the base branch's copy and counts as clean. Any other conflict is never resolved for you: the daemon backs the merge out so the branch is left exactly as it was, stops refreshing that Automaton, and raises one question (asked by `branch-refresh`) listing the conflicting files, with the options *resolve by hand*, *retry later* and *leave the branch alone* (the default). The same files raise only one open question at a time. Answering the question is applied to the Automaton at once: *retry later* allows refreshing again, *resolve by hand* and *leave the branch alone* keep it stopped, and each answer is written to the Decisions list. Setting the per-Automaton override again, with any value, also resets a stopped refresh, so a stopped Automaton can be brought back after you merge by hand.
+  - **Migration:** none. Refreshing stays off until you turn it on. See [howto/automaton-branch-refresh.md](docs/howto/automaton-branch-refresh.md) and the [Branch refresh](docs/datawatch-definitions.md#branch-refresh) glossary entry.
+- **Branch refresh can be watched across Automata.** `GET /api/autonomous/branch-refresh/stats` (also `datawatch autonomous branch-refresh-stats`, chat `autonomous branch-refresh-stats` and MCP `autonomous_branch_refresh_stats`) returns the daemon setting and limit, how many Automata have a recorded refresh by result (`clean`, `conflict`, `skipped`, `error`), how many are stopped by a conflict and how many carry an override. The live stats broadcast carries `branch_refresh_clean`, `branch_refresh_conflict`, `branch_refresh_error` and `branch_refresh_stopped`, and Prometheus has `datawatch_branch_refresh_automata{result}` and `datawatch_branch_refresh_stopped`. The Branch refresh card on the Automaton page now also shows whether refreshing is active or stopped by a conflict (new text in all five languages). Reuse audit: the numbers are read from the refresh state each Automaton already keeps, and the answer is applied through the question store's existing change hook, so there is no new store and no new counter. See [howto/automaton-branch-refresh.md](docs/howto/automaton-branch-refresh.md).
+- **Branch refresh is now settable from the operator surfaces.** `POST /api/autonomous/prds/{id}/branch-refresh` with `{"enabled": true|false|null}` sets or clears an Automaton's branch refresh override (`null` clears it so the daemon setting applies again), and the two daemon settings `autonomous.branch_refresh_enabled` and `autonomous.branch_refresh_behind_limit` are accepted on `PUT /api/config`, so `datawatch config set`, the comm channel's `configure` and MCP `config_set` all take them; a non-boolean enabled or a negative behind limit refuses the whole write. `GET /api/config` lists both keys. The Automaton `GET` reply (full detail) now always carries the refresh state: `branch_refresh` (the last refresh, `null` when none has run), `branch_refresh_override` (`true`, `false` or `null`) and `branch_refresh_enabled` (the setting in effect for that Automaton). The OpenAPI spec documents the route. See [howto/automaton-branch-refresh.md](docs/howto/automaton-branch-refresh.md).
+
+## v9.143.0 — Sensitive write class for MCP tools, with its own switch
+
+### Added
+
+- **A sensitive write class for MCP tools, with its own switch.** The MCP tool classification now has three classes: configuration writes, sensitive writes and everything else. The sensitive class holds `secret_set`, `secret_delete`, `secret_get` (it returns the secret value), the identity writers (`set_identity`, `update_identity`, `configure_identity`, `restore_identity`, `reset_identity`), `restart_daemon`, `reload`, `plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`, `tailscale_acl_push`, `tailscale_auth_key` and `acme_renew`; these tools were previously classed with the ordinary operational tools. The new setting `mcp.allow_sensitive_writes` is enabled by default (an absent key reads as on and no migration adds it); an explicit `false` makes the daemon refuse these tools for sessions and federation peers with a message naming the setting. Operator calls from the Web UI, REST, CLI and admin MCP are not affected. The switch is set from the operator surfaces described in the next entry.
+- **The sensitive-writes switch is reachable from every operator surface.** `mcp.allow_sensitive_writes` can be set in `config.yaml` (under the `mcp:` block) and is now in `GET /api/config` (the effective value, `true` when the key was never set) and `PUT /api/config`, so `datawatch config set` and `datawatch config get`, the comm `configure` verb and the `config_set` tool reach it, and the Settings page has an **Allow sensitive writes** toggle in the Self-config card with help text in English, German, Spanish, French and Japanese. A change is applied to the running daemon and saved, with no restart. Two things to know: the key is not bootstrap-protected like `mcp.allow_self_config`, so a session with self-config on can write it back through `config_set` (close `mcp.allow_self_config` as well for operator-only control); and the daemon reads only `true`, `yes` and `1` as on, so other text such as `on` turns the class off. The OpenAPI spec, the howto, the operations guide, the glossary, the setup guide and `config-reference.yaml` describe it; the mobile apps do not show the toggle yet. The key is also named where operators look it up: `configure list` on the comm channel lists it, `datawatch config set --help` names it beside `mcp.allow_self_config`, and the `get_config` tool with `section=mcp` reports its effective state next to `allow_self_config`. The comm `configure` confirmation still ends "Restart may be required.", which is generic wording; this key is applied live.
+- **Sensitive calls are audited.** Calls to the sensitive class from a session or peer are recorded in the existing self-config audit trail, allowed and refused, and every MCP audit record now carries a `class` field (`config` or `sensitive`; also in the CEF entry). Sensitive records keep the argument names and drop all values. Docs: the howto `howto/self-config-capability.md`, the operations guide, the glossary entry "Sensitive writes", the `self_config_audit` entry in `docs/mcp.md` and the `mcp:` block of `docs/config-reference.yaml`.
+
+## v9.142.1 — Code Scanning uploads no longer block a release
+
+### Fixed
+
+- The gosec and Trivy SARIF uploads to GitHub Code Scanning in the release workflow now retry up to four attempts with growing waits, and then print a warning instead of failing the job.
+- The release, security summary and container jobs no longer depend on an upload succeeding. The blocking gosec baseline-diff step and the blocking Trivy scan steps are unchanged, so a real finding still stops a release.
+- Why: a GitHub rate-limit answer on the upload cancelled the security summary and skipped goreleaser and the container jobs for two releases, so no assets were published.
+- New: a `make lint` check fails when a Code Scanning upload can block a job that publishes assets.
+- The one workflow that changed is `.github/workflows/release.yaml`. No other workflow uploads SARIF.
+
+## v9.142.0 — Sessions list tile mode, grouping and nesting
+
+### Added
+
+- **The Sessions page can be drawn as a List, as Tiles or as Compact cards.** A mode toggle sits at the top of the list. Tiles are the same work tiles the Automata and Automation lists use: the session name (or its task, or its short id), a state chip, backend and model, the node or peer, its tags, the last activity and a progress bar, with every action in a menu on the tile. Compact is a denser two-row grid that keeps its density when the window is resized. Until a button is pressed the mode follows the width (List below 600 px, Tiles above). The choice is a per-device setting kept in the browser.
+- **A state summary bar and Show more.** One chip per state present, each with its count and a total; a click on a chip filters the list to that state. The flat list and every group show 60 rows at a time with a shown and total counter and a Show more button, so a fleet of several hundred sessions stays responsive.
+- **Group by.** A picker groups the Sessions page by tag, tag prefix, state, node, project or Automaton. On the tag axis a session carrying several matching tags sits under one of them and keeps the rest as chips; a session with no match goes to an Ungrouped group. Group headers carry a collapse toggle, a count and a state mix, and the collapsed groups are remembered per device. The existing placement tag dropdown keeps working beside it.
+- **Sessions nest under their Automaton.** On the Automaton axis each Automaton is a block with its done and total session count, its sessions grouped under their story (the root block is labelled Story), and sessions that belong to no Automaton collect in their own block.
+- **Saved views.** A named capture of the view mode, the group axis (with prefix) and the session filter, kept per device, with Apply, Rename and Delete.
+- **The same grouped read on every surface.** `GET /api/sessions` accepts `group_by=tag|state|node|project|automaton` with an optional `tag_prefix=…` (for example `automation:`). It returns one group per key with its count, per-state mix and sessions, plus the per-state totals of the whole; `group_by=automaton` also carries each Automaton's stories and a done and total tally. An unknown axis is a 400, and without `group_by` the response is the unchanged JSON array. The session rows now carry the owning Automaton, story and task ids. The MCP `list_sessions` tool takes `group_by` and `tag_prefix`, `datawatch session list` takes `--group-by` and `--tag-prefix`, and the chat channels have the `sessions groups [axis] [tag-prefix]` verb.
+- **Thirty new interface strings in the five web bundles (German, English, Spanish, French and Japanese):** the `sessions_view_*`, `sessions_group_*`, `sessions_auto_*` and `sessions_tile_*` keys for the mode buttons, the Group by picker, the group headers, the Automaton blocks, Saved views and the tile menu.
+- **Operator documentation.** A new how-to, [Sessions: tiles, grouping and saved views](docs/howto/sessions-tiles-and-grouping.md), covers the three modes, every group axis, the Automaton nesting, saved views and each surface. No new setting; no migration.
+
+## v9.141.0 — Load a missing model on a node with resources, or refuse with a reason
+
+### Added
+
+- **Task admission applies the `compute_placement` policy when a model is missing.** When no node serves a worker's model, admission now asks the placement planner where it fits and applies `missing_model`: `refuse` fails the task with the planner's refusal lines; `ask` parks the task as waiting with the reason "model placement awaiting approval", raises one operator question per task, model and node (repeated attempts share it, and an answered approval stands), and resumes on the answer — a timeout counts as a refusal and a cancelled task withdraws the question without a refusal alert; `auto_load` pulls and loads the model on the chosen node through the model loader. The lease is then granted on that node only, so the worker session starts where the model is loaded. A node that already serves the model is left to the ledger as before. A task's node pin restricts the planner to that node, and placement never replaces a node's pinned model, whatever its `allow_model_swap` says. The planner reads each node's served models from the same `/api/tags` source as the compute API's node-models endpoint, and the observer's memory and disk. The gate is wired through `SetCapacity`, and the placement audit events above are emitted at each step.
+
+- **Placement decisions are recorded in the audit log.** The audit log gains five events for the lifecycle of a model placement decision: `placement_asked` (posed to the operator under the ask policy), `placement_approved` and `placement_denied` (the operator's answer to an ask), `placement_loaded` (a model loaded onto a node) and `placement_refused` (a placement refused under the refuse policy, or a load offered to no usable node). Every entry carries the node, the model, the placement policy in force (`ask`, `auto_load` or `refuse`) and the reason text, and each gets its own CEF signature (88–92) so SOC forwards distinguish them.
+
+- **The model loader pulls a model a node does not have, then loads it.** When admission picks a node and the worker's model is not downloaded on that node, `ModelLoader.Ensure` now pulls it first — bounded by the loader's wait, with progress reported through the wait callback — and only then loads it, so the worker never pays a not-found load after an implicit pick. Nodes that already have the model load it as before, and a pinned node still pulls and loads its pin first. The Ollama `/api/pull` streaming loop has one implementation in the inference package (`PullModel`) shared by the model loader and the marketplace pull task; the marketplace task keeps the same status values (`pending | in_progress | done | failed`), the same progress reports, and the same terminal error texts for a failed pull.
+- **The model placement surface is documented.** New operator how-to [`docs/howto/compute-placement-ask.md`](docs/howto/compute-placement-ask.md) with the five access methods for the placement policy and the one-shot placement ask queue (YAML, CLI, Web UI, REST, comm channel, plus MCP). `docs/datawatch-definitions.md` gains the glossary entries *model placement*, *placement policy*, *pending placement ask* and *placement refusal*. `docs/config-reference.yaml` gains the `compute_placement.*` block (`missing_model` `ask`, `mem_headroom_pct` 10, `disk_headroom_gb` 5, `ask_timeout_minutes` 30 with `0` = no timeout, `assume_model_size_gb` 0). `docs/implementation.md` gains the `compute_placement.*` config rows. `docs/operations.md` gains the *Model placement* section after the GPU pinning section.
+
+## v9.140.0 — Task merge-back failures are visible, retried and blocking
+
+### Fixed
+
+- **A task's merge that cannot land is now visible, retried on a timer, and holds the next task.** Per-task worktrees could fail to merge back into the Automaton branch without any sign: seven finished task branches stayed at merge state pending because a stale uncommitted edit in the Automaton worktree blocked the merge. Now the blocked merge shows on the task and on the Automaton card, with the reason (which files are uncommitted) and the action (commit or discard the edit), and it appears in the needs-attention Triage card until it merges. The daemon retries the merge on its own every `autonomous.parallel.merge_retry_seconds` (60 by default; `0` turns the retry off, shown in Settings as **Task merge retry interval**). While an earlier task's merge is pending, the next task waits, so nothing runs on top of work that has not landed. The new strings are in all five locale bundles. Migration: none; clear any stale uncommitted edit in an Automaton worktree that already shows a blocked merge, and the next retry merges it. How-to: [howto/automation-tab.md](docs/howto/automation-tab.md).
+
+## v9.139.2 — Boot-resume leases a resumed session from the backend it actually ran on
+
+### Fixed
+
+- **After a daemon restart, a resumed Automaton task is leased from the backend its session really runs.** Before, a task whose session was a pi session could be left holding a claude-code lease, because the lease followed the backend currently configured for the task instead of the session. This used up a claude-code lane slot while the work ran on pi. Now the lease comes from the session record. A lease that disagrees with the session's backend is released and taken again from the right one, and the operator sees the alert `Resumed session leased from a different backend`, raised once per task and session. No migration is needed. If you see the alert, check the task's configured backend against its session's; the steps are in [Leases after a daemon restart](docs/howto/automata-capacity.md#leases-after-a-daemon-restart).
+
+## v9.139.1 — Idle verifier retry and per-task override admission
+
+### Fixed
+
+- A verifier that goes idle no longer counts against the worker: the executor records a verifier incident and retries on a fresh verifier session (up to 3 retries), leaving the task's attempts and escalation failures untouched; when the cap is used up the task is held for operator review.
+- Verifier no-progress watchdog failures now have an exported error type and classifier: `autonomous.VerifierIdleError` (built with the standard watchdog text by `NewVerifierIdleError`) and `autonomous.IsVerifierIdleError`, which recognizes a tripped-watchdog failure — the new type, or the one-shot no-output error carrying the watchdog text — anywhere in the error chain, so callers can tell a verifier that went idle apart from a worker failure (timeout, ended state).
+- **The worker you chose for a waiting task is the worker it gets.** Overriding a task's backend and model while it is held for capacity — `set_llm` with queued retargeting on, a review retry with a chosen worker, or a re-queue after an escalation hold — now stands at admission: the task is admitted on the pair you set, on that pair's pool, and its wait reason names that pool instead of the pool a stale earlier admission had recorded.
+- **A task waiting for a capacity slot can be reset to re-admit it.** `reset_task` (REST `POST /api/autonomous/prds/{id}/reset_task`, MCP `autonomous_prd_reset_task`) now also accepts a `waiting-for-capacity` task, without `force`. Its reset re-admits it straight away — same capacity-queue position, retargeted to the pool its worker resolves to now, fresh wait budget — and counts no retry or failure. How-to: [automata-capacity](docs/howto/automata-capacity.md), [autonomous recovery](docs/howto/autonomous-recovery.md).
+- **No migration.** A task already running keeps the worker it started with; both fixes apply from the next admission or reset. Nothing to reconfigure.
+
+## v9.139.0 — The Housekeeping tab as an action list
+
+### Added
+
+- **The Housekeeping tab is now an action list.** A new **Unlanded work** card lists archived Automata whose branch has commits that never reached the default branch. Each row shows the title, the commit count, the last activity, a recommendation (already landed, superseded or needs a decision) with a one-line reason, and three buttons: **Keep** (records that the branch is left alone), **Archive branch** (moves it under `refs/archive/`, reversible) and **Delete worktree** (writes and verifies a git bundle backup first, removes nothing if the backup fails, and asks for confirmation). Running Automata are never listed, and the comparison is by commit content, so a merge that rewrote commits still counts as landed. The card is hidden until the list has a row and refreshes every 30 seconds.
+- **A Commit button on the uncommitted work card.** It opens a dialog with the diff of the held worktree and a message box, commits the changes, and shows the new commit id or the plain failure text.
+- **A permission problem is explained and fixable.** When a build or test leaves read-only files that stop cleanup from deleting a worktree, the Cleanup card on the Events tab shows one plain line instead of raw errors, a **Fix permissions** button restores owner write permission on those paths (inside the worktree base only, no links followed, nothing removed), and the card counts what cleanup left in place by reason (still running, live session, live lease, retained, dirty, commits not on the base branch, held, over the per-pass limit, permission denied).
+- **Surfaces for the unlanded work list.** REST `GET /api/autonomous/unlanded-work` with `POST .../keep`, `.../archive-branch` and `.../delete-worktree`; REST `GET /api/autonomous/uncommitted-work/diff` and `POST /api/autonomous/uncommitted-work/commit`; REST `POST /api/autonomous/cleanup/fix-permissions`; CLI `datawatch autonomous unlanded-work [--json]` with `keep`, `archive-branch` and `delete-worktree --confirm`; comm channel `autonomous unlanded-work` with the same three actions (delete needs the word `confirm`); MCP `autonomous_unlanded_work` (read-only). The Commit and the permission fix are REST and web app only. `scripts/branch-audit.py` prints the same branches as `UNLANDED`. There is no new configuration setting.
+- **Forty new interface strings in the five web bundles (German, English, Spanish, French and Japanese):** `unlanded_work_*`, `uncommitted_work_commit_*` and `cleanup_permission_*`, plus `cleanup_skip_reason_*` for the skipped-by-reason counts.
+- **Operator documentation.** [Automaton worktree cleanup](docs/howto/automaton-worktree-cleanup.md) covers the unlanded work card, its three actions, the permission fix and every surface; [Automaton uncommitted work](docs/howto/automaton-uncommitted-work.md) covers the Commit button; the Automation tab how-to, the Automata events how-to, the definitions, the operations guide, the API and MCP mapping, the command list and the OpenAPI description are updated.
+
+### Changed
+
+- **The safe-to-delete report and the cleanup history render as cards under the event stream on the Events tab.** The Housekeeping tab keeps only its action cards (unlanded work, uncommitted work and protected paths). Their loaders poll only while the Events tab is shown.
+
+## v9.138.1 — Fix three code scanning findings
+
+Three code scanning findings were fixed; no feature changed.
+
+- The self-config audit view no longer sizes its result list from the request's `limit` parameter. The limit is still clamped to the maximum of 1000, and a test now checks that a huge limit returns at most the maximum.
+- The config write audit recorder now sets `X-Content-Type-Options: nosniff` and a plain-text content type on any response that has none or an HTML one. The handlers it wraps only answer JSON or plain-text errors, so no real reflection existed; the recorder is now unambiguous about it.
+- The merge shadow plan and comparison stores check every Automaton id against a letters, digits, dash and underscore allowlist, and verify before every read, write and remove that the cleaned path stays inside the store directory. Tests cover separators, dots, spaces, NUL bytes and empty ids.
+
+## v9.138.0 — Automata configuration moves into Settings and the usage page becomes small cards
+
+### Changed
+
+- **All Automata configuration is now edited in Settings, and the Automata pages hold none.** Settings → General → Automata carries the merge pipeline settings (`autonomous.merge_pipeline.*`, with the per-project overrides), the decision record settings (`autonomous.decisions.*`) and a new **Usage reading and extra credit** entry whose forms post to the same endpoints as the old usage page, so lane advice and the burn guard see a saved figure at once. Only the place moved: every setting keeps its key and default and stays on all six surfaces (YAML, web app, CLI, REST, MCP and the comm channel), and the old keys still work unchanged. No setting was added.
+- **The Setup and policy sub-tab of the Automation view is removed.** What it showed that is not configuration now sits on the Events tab as cards that stay hidden while they are off, empty or have never run: Onboarding report, Supervisor loop (recent runs and escalation counts, polled only while Events is open), Merge shadow, Release readiness and Model request watch. A line on Events points to Settings under Automata for configuration. The **Decision records** card on Events now shows only when at least one decision record exists.
+- **The usage calculator page is replaced by one sentence and three small cards of a fixed size.** The sentence says *Within budget*, *Over budget* or that there is no verdict yet. The cards are **Weekly allowance**, **Pace line** and **Burn per day**; each states what it is for, its state, why and what to do next, with a **?** help control that links to the usage calculator guide, and an empty state that links to Settings when there are no readings. All three come from the same `GET /api/usage/advice` call as before. The same three cards are dashboard card types and a row at the top of the Resources tab.
+- **The lanes card and the progress and cost cards on the Resources and Progress and cost tabs are redesigned to be readable.** The lane fill card shows one row per lane with its node (or *Node: not reported*), its state and what it runs, and the bar is full when the lane works, half when it waits on a verifier and empty when idle. Progress, Cost and Forecast are three metric cards, each with one number, its unit, a trend word (Rising, Falling or Steady) and a **?** button; the Cost card says it is API-equivalent dollars and not what a flat plan costs.
+
+### Added
+
+- **Forty-nine new interface strings in the five web bundles (German, English, Spanish, French and Japanese):** `automata_events_config_in_settings`, `settings_usage_entry_*` (four), `usage_page_*` (the verdict, empty state, settings link and the three cards), `dash_card_usage_allowance`, `dash_card_usage_pace`, `dash_card_usage_burn`, `lane_fill_node`, `lane_fill_node_none`, `lane_fill_help_text`, `metric_trend_up`, `metric_trend_down`, `metric_trend_flat` and the `metric_progress_*`, `metric_cost_*` and `metric_forecast_*` title, unit and help keys.
+- **Operator documentation for the move.** New how-tos [Automata resources](docs/howto/automata-resources.md) and [Automata cost](docs/howto/automata-cost.md); [Automata events](docs/howto/automata-events.md) gains the status cards and the Settings pointer; the usage calculator, merge pipeline, burn guard, Automation tab, decision records, merge shadow and model request how-tos are rewritten for the new places; the definitions, operations and parity-status documents and the API reference are updated. A round-trip test proves every moved setting reads and writes under its old key on each surface, and web tests cover the removed tab, the Settings rows, the usage cards and the hidden Decision records card.
+
+## v9.137.0 — Tile, compact and group modes for Automata and Automation lists
+
+### Added
+
+- **The Automata and Automation lists can be drawn as a List, as Tiles or as Compact cards, and grouped.** A **View mode** toggle (List, Tiles, Compact) sits above each flat list. Until a button is pressed the mode follows the window width (wide: Tiles, mid: Compact, narrow: List) and keeps following it on resize; once a button is pressed that choice wins on that device. A **Group by** select groups the list by tag (an item with several tags appears under each), state, node, project, or a placement tag axis (`automation:`, `stage:`, `kind:`, `compute:`, `peer:`, `backend:`, `lane:`, `role:`, `project:`); items with no value on the axis fall under **No tag** or **None**. The tile, header and grouping helpers are shared by the Automata list, the Automation list and the Sessions list, so a change to one applies to all three.
+- **Group headers show a collapse toggle, a count and a state mix, and long groups page.** Each group header has a collapse toggle (the collapsed groups are remembered per list), the number of items in the group and a state mix (how many are running, blocked, failed and so on). A group draws its first 50 items and a **Show more** button adds the next 50 and says how many are left; changing the group-by choice starts every group back at 50. The Sessions list, when grouped by a placement axis, now uses the same group header, collapse and paging.
+- **The mode, the group-by and the collapsed groups are a per-device choice kept in the browser.** They are stored in local storage per list and device (`dw_list_mode_<scope>`, `dw_list_group_<scope>` and `dw_list_collapsed_<scope>`), not on the daemon, so they follow neither the operator to another browser nor to the mobile apps, and have no daemon setting, REST route, CLI command, MCP tool or messaging-channel verb. Clearing the site data resets them to the defaults.
+- **Eleven new interface strings in the five web bundles (German, English, Spanish, French and Japanese):** `list_mode_toggle`, `list_mode_list`, `list_mode_tiles`, `list_mode_compact`, `list_group_by`, `list_group_by_none`, `list_group_untagged`, `list_group_none`, `list_state_mix`, `list_show_more` and `list_overflow_menu`.
+- **Operator documentation for the list modes.** A new how-to, [List, Tiles and Compact modes, and grouping](docs/howto/list-tiles-and-grouping.md), covers the three modes and their width defaults, every group-by choice, the group header, Show more, grouping Sessions by placement, where the choices are kept and troubleshooting; the Automata tags how-to ([docs/howto/automata-tags.md](docs/howto/automata-tags.md)) gains a display mode and group-by section, the *List modes and group-by* glossary entry and the Automata and Automation list entries are added to [docs/datawatch-definitions.md](docs/datawatch-definitions.md), and the browser-only storage keys are recorded in [docs/operations.md](docs/operations.md) with how to reset them. Tests cover the mode logic, the grouping and paging, both lists and the locale keys.
+
+## v9.136.0 — Observer stats pull for federated peers
+
+### Added
+
+- **Observer pull mode: the daemon can fetch a federated peer's observer stats on a schedule instead of waiting for the peer to push them.** It is off by default (`observer.pull.enabled`); a peer opts in with `observer_pull`, with an optional per-peer interval and timeout (`0` uses the global default, interval minimum 5 seconds). `GET /api/observer/pull` (and the `observer_pull_status` MCP tool, `datawatch observer pull status`, and the `observer pull status` comm verb) report each pulled peer's live state and why a peer is stale; credentials are never returned. The merged peers list gains `source` (push, pull or shadow), `shadow` and a `pull` object per row, a peer that both pushes and is pulled appears once, pulled peers can be bound to Compute Nodes and shadow peers are refused. The Web UI federation peer form gains the pull opt-in, interval and timeout fields, and peer rows show a source badge and a stale chip (12 locale keys in all five bundles).
+
+- **Push-vs-pull operator documentation for the observer pull protocol.** The federated observer howto ([howto/federated-observer.md](docs/howto/federated-observer.md)) gains a *Pull mode* section: what pull mode is (the daemon fetches the peer's v2 stats on a schedule; the peer does nothing), a push-vs-pull comparison table (who initiates, the credential and where it is stored, firewall direction, what triggers a snapshot, the staleness rules, the shadow state, Compute Node binding, and the fact that pull is off by default), the configuration surface (global `observer.pull` block plus the per-peer opt-in, interval and timeout), a five-access-method table (YAML, CLI, Web UI, REST API, comm channel) and a *Where to see pull status* table (Web UI, REST API, comm, MCP). The API reference ([api/observer.md](docs/api/observer.md)) documents `GET /api/observer/pull` (response shape, the seven `stale_reason` values, the effective interval/timeout, no tokens ever returned), the merged peer list contract (`source`, `shadow` and the `pull` object on every `GET /api/observer/peers` row, a pull-only peer's `last_push_at` being its last successful pull, a peer that is both appearing exactly once, pull peers bindable to Compute Nodes while shadow peers are refused with `409`), the full pull configuration surface with defaults (`observer.pull.enabled` default `false`, `observer.pull.default_interval_s` default `30` minimum `5`, `observer.pull.default_timeout_s` default `5`, per-peer `observer_pull*` fields with `0` = global default), and the `observer_pull_status` MCP tool. [config-reference.yaml](docs/config-reference.yaml) records the `observer.pull` block with per-field comments and defaults. The testing tracker gains a pull section covering the pull endpoints, the changed peers list contract, the per-peer config persistence and token redaction, and the compute-node binding (test names per surface, validated **No** — unit tests only, no live check yet), and the parity table gains the observer pull row: PWA ✅ (federation peer form, source badge and stale chip, 12 locale keys in all five bundles), Android and iOS ❌ — not yet implemented, follows in a separate issue (draft on file at [plans/federated-observer-pull-parity-issue.md](docs/plans/federated-observer-pull-parity-issue.md), not filed).
+
+## v9.135.0 — Self-config is a built-in capability group
+
+### Added
+
+- **Self-config is now a built-in capability group, with one alias and one audit point.** A session or connected agent's ability to change the daemon's own non-secret configuration (session tuning, detection patterns, LLM registry entries, the usage budget and burn guard) is expressed as a builtin capability group named `self-config`, carrying `config:write`, `autonomous:write`, `observers:write`, `llms:write` and `usage:write` — and deliberately nothing under `secrets:` or `federation:`, no daemon-identity control. The existing operator switch `mcp.allow_self_config` (default enabled; an explicit `false` disables it) is now the **alias for the group** rather than a standalone gate: it decides whether MCP configuration-write tools (`config_set` and the other config-write tools) are allowed, whether the default capability grant of newly spawned sessions includes the group, and whether comm-channel `configure` writes are permitted — all refusals carrying the same reason. The alias itself is **bootstrap-protected**: a session's `config_set` with key `mcp.allow_self_config` is refused in every state, so a session that is self-configuring can never re-open the gate that closed it; re-enabling is a deliberate operator act (remove the `false` or set `true`, and restart). Existing configs keep their exact meaning — same key, same YAML, same enabled-by-default — while gaining the new ability to scope per session (`session.capabilities`, always used as written) and to define narrower custom groups via `datawatch federation group add`.
+- **One audit point for every configuration write a session or peer attempts, on every surface.** Allowed *and* refused attempts through the self-config path — an MCP config-write tool (surface `mcp`), `PUT /api/config` (surface `rest`), or the comm `configure` verb (surface `comm`) — now record into a single append-only JSONL audit file: one record per attempt with the time, the surface, the tool or route, the key(s) and (secret-redacted) value(s), the acting credential (`session:<id>` or `peer:<name>`), whether it was allowed, and the refusal reason when it was not. Recording refused attempts is on by default (`mcp.self_config_audit_denied`, set `false` to log only allowed writes); the file location is `mcp.self_config_audit_path` (default `<data dir>/audit/config-self-modify.jsonl`). Reading the audit is never gated by the alias, so the history is reviewable even while the gate is closed.
+- **The alias and the audit are reachable from every operator surface.** YAML (`mcp:` block), the CLI (`datawatch config set mcp.allow_self_config …`, plus a new `datawatch audit self-config` read), the PWA (**Self-config** card on Settings → General with the allow toggle, the audit path, the record-denied toggle, and a recent-records view; all strings localized in the five bundles), REST (`PUT`/`GET /api/config` now carries the three `mcp.*` fields, and a new read-only `GET /api/audit/self-config?limit=1..1000`, newest first), the comm channel (`configure mcp.allow_self_config=…`, admin), and MCP (`config_get` reads the alias; the read-only `self_config_audit` tool, `limit` 1–1000, default 100; `config_set` refuses the bootstrap-protected key). The OpenAPI spec documents all of it. Operator-facing docs: [howto/self-config-capability.md](docs/howto/self-config-capability.md) (walk-through of the group, the alias, the bootstrap rule, the audit, and the hardening steps with the exact refusal texts), the [Self-config](docs/datawatch-definitions.md#self-config) glossary entry, sections in [operations](docs/operations.md#self-config-what-sessions-may-change-about-this-daemon) and [setup](docs/setup.md), the fields in [config-reference.yaml](docs/config-reference.yaml) and [implementation.md](docs/implementation.md), and a note in [cursor-mcp.md](docs/cursor-mcp.md).
+
+## v9.134.1 — Go toolchain 1.26.11
+
+- The Go toolchain moved to 1.26.11, the patch release that fixes a standard library `net/http` vulnerability (GO-2026-6859). The release vulnerability scan found it in 1.26.10 and stopped the release before any assets were published; with 1.26.11 the scan reports no vulnerabilities, so the release pipeline passes again. The `go` directive in `go.mod` and every pinned Go build image now use 1.26.11.
+
+## v9.134.0 — Per-Automaton cost counts all of its spend
+
+### Per-Automaton cost now counts all of its spend
+
+An Automaton's cost now covers the tokens, time, sessions and tool calls of every session it launches, not just its worker sessions.
+
+- **What changed.** Each session records which Automaton and task it belongs to, stamped at every autonomous launcher (workers, verifiers, planner and decompose sessions). A new spend ledger keyed by session stores the tokens, time and tool calls, and the Claude usage reader now counts tool calls from the transcript.
+- **How it shows.** The per-Automaton cost totals include planning, verification and retry spend that was missing before, with the session and tool-call counts beside the tokens and time.
+- **Deleting sessions.** The ledger keeps the attribution after a session is deleted or cleaned up, so an Automaton's cost no longer drops when its sessions are removed.
+- **Cost report.** The cost report now reads the spend ledger, so its per-Automaton rows match the totals above.
+- **Web UI.** The Automaton detail view and the cost report view show the tokens, time, sessions and tool calls, with labels translated in English, German, Spanish, French and Japanese.
+- **Merge report.** The merge report now has a cost section with the same per-Automaton totals.
+- **Where to read it.** The per-Automaton cost (tokens, time, sessions and tool calls) is available over the REST API (documented in the OpenAPI spec), the MCP cost report tools, the `datawatch` CLI cost report and the comm-channel cost command, all from the same ledger.
+- **Attribution check.** A new check in the checks and ship status reports Automaton-launched sessions that have no attribution, so a launcher that misses the stamp shows up instead of silently under-counting.
+- **Migration.** None. Sessions that ran before this change have no attribution and stay uncounted; new sessions are counted from the first launch after the upgrade.
+
+## v9.133.1 — Retry and fail loudly on the Trivy install step in the workflows
+
+- **The CI "Install Trivy" steps retry the download and fail loudly, and fetch the installer for the pinned version tag.** The eight "Install Trivy" steps in `release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) used to pipe an installer fetched from the moving `main` branch straight into `sh`. A failed or partial download could finish the step green and leave the worker with no Trivy binary. Each step now runs `scripts/ci-install-trivy.sh <tag> <install-dir>`, which downloads `aquasecurity/trivy/<tag>/contrib/install.sh` for the pinned tag into a temp file, retries the download 5 times 10 seconds apart, and on a persistent failure exits non-zero, naming curl's status and the URL. The installer runs from that file, never from a pipe. Coverage is in `scripts/tests/ci-install-trivy_test.sh`; the operator-facing write-up is in [howto/container-image-refresh.md](docs/howto/container-image-refresh.md#how-ci-installs-trivy).
+  - **Migration:** none. The Trivy pins are unchanged: `containers.yaml` still uses `v0.70.0`, and `release.yaml` and `image-refresh.yaml` use `v0.73.0`. Unifying them is an operator decision.
+
+## v9.133.0 — Verifier run cap for verifier sessions
+
+- **Every verifier run now has a hard maximum run time, so one verifier cannot hold a worker slot for hours (found 2026-11-08).** A new setting, `autonomous.verifier_max_run_seconds`, caps the total run time of one verifier session. It defaults to 2700 seconds (45 minutes), `0` turns the cap off, and a negative value is refused when the config loads. Run time is counted from the verifier's capacity grant, so queue wait does not count, and the cap applies even when the verifier keeps producing output.
+  - **How it shows up:** a verifier that reaches the cap is ended and its worker slot is freed at once. The Automaton's decision log gets a `verifier_run_cap` entry, the task's last attempt ends with reason `verifier_max_run`, and the verification is retried once on the next backend in the verifier policy order (a single-backend policy gets no retry). A cut run is recorded as verifier infrastructure trouble, never as a content failure. The verifier stats count these ends as `run_cap`, shown as `run_cap N` in the status line and `run_cap_ends` in `GET /api/capacity`, where the same verifier block also reports the cap in effect as `run_cap_seconds` (0 = no cap).
+  - **Settable from:** the web Settings page (General), `datawatch config set autonomous.verifier_max_run_seconds <seconds>`, `PUT /api/config`, the comm `configure` verb, MCP `autonomous_config_set` (`verifier_max_run_seconds`), and the YAML `autonomous:` block. Negative or non-whole values are refused on every surface.
+  - **Migration:** no config change is needed; the 45-minute default applies on upgrade. A verification that legitimately runs longer than 45 minutes will now be cut, so raise the cap if that happens, or set `0` to keep the old unbounded behaviour. See [howto/automaton-verifier-run-cap.md](docs/howto/automaton-verifier-run-cap.md).
+
+## v9.132.0 — Peer silence alert replaces the PWA peer-stale nav badge
+
+- **Peer-stale badge replaced by a connectivity alert.** The Settings nav button no longer shows the peer-stale count badge, and the 30-second poll behind it is removed. Each peer row in the Observer list now shows an inline "Stale (age)" note when the peer last pushed over a minute ago, or "Never pushed" if it has not pushed yet (the daemon's own row is skipped; labels in en, de, es, fr, ja). The daemon now raises one system alert when a registered observer peer stays silent longer than `observer.peers.silent_alert_minutes` (default 5; 0 disables), and one recovery alert when it pushes again. Set the threshold from PWA Settings, the CLI, REST, MCP or the comm channel; see `docs/howto/federated-observer.md`. No migration step.
+
+## v9.131.0 — Vault unreachable alert
+
+### Added
+- **Vault unreachable alert.** When the Vault stays unreachable past a threshold, datawatch raises a real alert (shown in Alerts and sent to your messaging channels with the other system alerts) and raises a recovery alert when the Vault comes back. One alert is raised per outage, and token-like text is scrubbed from the last error it shows.
+- **Threshold.** `secrets.vault.unreachable_alert_after_seconds` sets how many whole seconds the Vault must be unreachable before the alert fires. Default 120; `0` turns the alert off. It is set in the config file, REST (`secrets.vault.unreachable_alert_after_seconds`), MCP, the CLI, the comm channel, and a new field in PWA Settings (en, de, es, fr, ja).
+- **Vault row.** The **Vault** row on the Settings page reports reachable or unreachable, shows the Vault address, and adds **Last success** (or "never") and **Last error** (or "none") lines, in English, German, Spanish, French and Japanese.
+
+### Changed
+- **The "Vault unreachable" badge is removed from the Settings nav button.** The alert and the Vault row replace it; the nav no longer reports Vault health.
+- **Migration:** none. Existing configs get the 120-second default; set `0` if you do not want the alert.
+- **Docs and checks.** The secrets-manager howto (`docs/howto/secrets-manager.md`) describes the alert and the threshold. The sandbox story `scripts/test-stories/pwa/vault-nav-label-clear.mjs` checks that the Settings nav label stays clear of any Vault badge.
+
+## v9.130.0 — Automata Events sub-tab
+
+### Added
+- Automata Events sub-tab: kind chips (watch, decision, retry, check, cleanup, alert, error) send `kind=`, a project dropdown sends `project=`, a debounced search box sends `q=`, and Load more follows `next_cursor` with `before=`.
+
+## v9.129.0 — Standard task list shows each task's real mode
+
+- **The daemon task-mode Settings help no longer says the daemon never runs `final_gate`.** In all five locales, `settings_daemon_task_modes_help` now says what actually happens: `final_gate` takes only `llm` or `off`, and when on it is carried out by the daemon's script gate, not by a model session. The **Standard task runner** glossary entry was re-checked against the PWA code at the same time — the Automata sub-tab still draws no runner column, so that entry stays as written. Copy change only.
+- **Standard-task docs: the comm channel is global-only.** The how-to said the per-project read was available on the comm channel; it is not. `standard tasks` always shows the global setting, and the how-to now says so in the surface table and the open items. Documentation only.
+- **The standard task list now reports each task's real mode and runner.** The list reports each task's actual mode (llm, daemon or off) and its runner, the final gate shows the script gate, and the PWA note describes the per-task modes. The surfaces are `GET /api/autonomous/standard-tasks`, the `autonomous_standard_tasks` MCP tool, the `datawatch autonomous standard-tasks` command, and the chat `standard tasks` word.
+
+## v9.128.1 — Correct the merge conflict mode label and hint text
+
+### Fixed
+
+- **The conflict mode setting's labels and hints name its real values.** The English label and hint of the merge conflict mode setting name `shadow` (the default) and `on`, and the German, Spanish, French and Japanese labels and hints name the same two values, so every shipped locale describes conflict mode the same way.
+
+## v9.128.0 — Rebuild Automata Inbox triage cards
+
+- Inbox triage cards rebuilt: the needs-attention card is now titled Triage and holds one card per Automaton that failed, is blocked, or has finished work ready to merge. Each card shows a headline, the recorded reason, Automaton and Automation chips and how long it has waited, with Open details, Retry, Resolve review and Cancel buttons.
+- Open questions and held questions now sit above Triage on Inbox, and an open question can be answered in place on its own card without opening the Automaton.
+- New Triage detail panel (reason, history, Automation), opened by the Open details button or a click on the card.
+- Repo CI watch polls that are overdue are now caught up on the next pass (`repo_ci_watch_poll_overdue.go`).
+- 23 new locale keys in all five bundles (the `triage_*` headline, action and detail keys, and two help-link labels); the required-key list in `internal/server/v5280_locales_test.go` now covers the triage headline and action keys.
+- Docs: the Automation tab how-to documents the Triage card, its buttons, the held-questions card and the Inbox order.
+
+## v9.127.0 — Projects tab
+
+### Added
+
+- **Projects tab how-to and reference.** New `docs/howto/projects-tab.md` walks through picking a project, reading its page, and setting its record: arcs with priority and state, target and definition of done, lane defaults, weekly share and branch retention, with REST, MCP, CLI and comm-channel calls for each step. Adds the `projects_defaults` block (`branch_retention_days`, `weekly_share_percent`, `major_trigger`) to `docs/config-reference.yaml`, glossary entries, and the arc and record endpoints to the OpenAPI specs (`PUT /api/projects/{name}/arcs`, `GET`/`DELETE /api/projects/{name}`, the record fields on `POST /api/projects`). The served OpenAPI copy also had malformed description scalars that stopped it parsing; they are quoted. Documentation only. Weekly share, branch retention and the project's major trigger are stored and shown; no scheduler, cleanup or release decision reads them yet.
+
+- **Project links (PWA).** The project page adds read-only sections: the effective project policy (from `GET /api/projects/{name}/policy/effective`, each value with its source, linking to the Settings policy card), the merge pipeline in effect (from `GET /api/autonomous/merge-pipeline?project=`, linking to the merge pipeline Settings), and the project's event stream (from `GET /api/autonomous/events` with `project=`). Each arc shows its plan and design document links and its linked datawatch-app issues from the arc record; only http(s) values become links. Nothing in these sections has an edit control. The arc record does not yet carry plan, design or issue fields, so those lines read "none recorded" until the record gains them. The event stream reads the `pwa` pending-events queue, which no subscription in this tree creates yet, so it stays empty until one feeds that queue.
+
+- **Project Gantt (PWA).** The project page draws a Gantt from the history endpoint's rows: one bar per Automaton and one per task, coloured by state with the same colours as the dashboard Timeline. A window selector shows the last 7, 30 or 90 days; bars still running run to now. At most 40 rows are drawn, newest Automata first, and a note says how many were left out. Covered by `app-projects-gantt.test.js`.
+
+- **Project page (PWA).** Selecting a project shows its header (description, owner, repository, default branch, target and definition of done, lane and backend defaults, weekly share) and its arcs from the project roll-up, in priority order with each arc's state. Each arc expands to its Automata and their sessions; rows open the existing Automaton and session views. A header field, arc or section that is off or empty is left out, and its line appears under Events on the page instead. The roll-up is read only for the selected project.
+
+- **Projects tab (PWA).** A top-level Projects nav button opens a picker fed by `GET /api/projects`. The first entry, Overview, is the cross-project in-flight view; each other entry shows that project's directory, default backend and description. The last choice is remembered in the browser and mirrored in the `#projects` / `#projects/<name>` hash. With no projects the tab points at Settings. Covered by `app-projects-nav.test.js`.
+
+- **Project roll-up read.** `GET /api/projects/{name}/rollup` reports each arc of a project and the whole project: the Automata each arc's Automation holds (with their session ids), task progress as done/total, cost in usage points and throughput per day over a `window` (days, 1–365, default 7). Automata of the project that no arc holds are listed as `unassigned`. Points come from the cost report's billing-profile point calibration; API dollars are never shown. No new storage. Contract in `docs/api/openapi.yaml`.
+
+## v9.126.0 — Merge shadow mode
+
+### Added
+
+- **Each difference from a merge comparison is kept as a defect candidate.** The merge shadow now turns every difference in a comparison into a candidate with a stable key (Automaton id, field, planned and landed values, release size, status and created_at) and stores it under the daemon data directory. Running the comparison again on unchanged data does not store a second copy: a candidate with the same content keeps the created_at and key it was first stored with. Candidates are recorded only; they are not filed into the defect queue, which stays with the existing defect intake (`internal/mergeshadow/defect_candidate.go`).
+- **An Automaton that finishes now gets a shadow merge plan.** When an Automaton reaches the finished state, the daemon runs the shadow merge in the background: a trial merge of its work branch into the default branch in a throwaway worktree, the conflicts classified by file class, the build, lint and test gates run on the trial tree, the changelog entry read from the entry task, and the release size worked out from the planned version against the base version. The plan is stored under the data directory with `applied` set to false. The project branch and the project checkout are never changed, and the finish path never waits on it. Controlled by `autonomous.merge_shadow.enabled` (default on). The runner is in `internal/mergeshadow/runner.go` and the hook in `internal/autonomous/merge_shadow_hook.go`.
+
+### Fixed
+
+- **A merge gate that times out now kills everything it started, not only its make process.** Each gate runs in its own process group (`internal/mergeshadow/gate_kill.go`), so when the gate timeout ends the whole group is killed and a hung test suite cannot leave child processes running. The gate still records status `timeout`. A test in `internal/mergeshadow/replay_hung_pwa_suite_test.go` runs a fake suite that sleeps far longer than the test timeout and checks that the gate ends as `timeout` within a bounded time with no process left behind. On platforms without process groups, a timed-out gate kills only make, as before.
+
+## v9.125.0 — Worker session profiles reach Automaton launches
+
+### Added
+
+- **An Automaton's own worker, verifier and judge launches now resolve and apply their worker session profile.** Each launch resolves the profile (task, Automaton, project, the daemon-wide profile name, then the configured role and task-kind defaults) and, when one applies, starts from it through the Claude Code launcher: the session's MCP servers, allowed tools, skills and starting context come from that profile instead of the full operator harness. The configured role and kind defaults and the daemon-wide profile name (`autonomous.worker_profile`) now take effect at these launches; the verifier and judge resolve theirs when they start their one-shot session.
+  - **How it shows up:** with nothing configured — no role, kind, task, Automaton, project or daemon-wide name — every launch starts exactly as before, with the full harness and the same command as before. A session you start yourself is unchanged.
+  - **Fallback:** if a launch cannot apply its profile (the per-session MCP config cannot be written, or the profile names an MCP server that is not configured), the launch does not fail the task. It starts again with the full harness, and the apply error is recorded on the task attempt as its profile fallback reason.
+  - **In-force read:** the profile in force is readable on every surface — the `in_force` block in `GET /api/config`, the `worker_profile` MCP tool, the `datawatch config` and chat `worker_profile` reads, and the daemon-wide worker profile setting on the PWA — showing, for each worker role and task kind, the profile it starts with now and the tier that set it (task, Automaton, project, daemon, role, kind, built-in, or none).
+  - **Migration:** none. Nothing is set by default; set `autonomous.worker_profile_defaults` or a profile name to opt in. See [docs/howto/worker-session-profiles.md](docs/howto/worker-session-profiles.md).
+
+- **Every worker session can start small, with context and tools chosen for its job — and it is configurable for every datawatch user.** Worker, verifier and judge sessions start from a **worker session profile** whenever a profile resolves for their launch: which MCP servers it may use (none, the datawatch server only, or a named list), which tools it may call (all, or an allow-list), whether skills are on, the level of starting context (`minimal`, `digest` or `full`), and the model and effort it runs at. The profiles, the defaults and every setting that names one (plus the `worker_profile` field and the planner's spec-line marker, and the resolution rule itself) are **in place now, built and tested**.
+  - Four built-in profiles ship — `minimal`, `digest`, `full` and `datawatch-tools` — and the defaults are the smallest profile that can do the job, with the full start one setting away: planner `full`; worker and verifier `digest`; judge and `note`-kind tasks `minimal`; implementation, docs and final-gate tasks `digest`. Define user profiles in `autonomous.worker_profiles` (a user profile may not reuse a built-in name), change the defaults per role and task kind in `autonomous.worker_profile_defaults`, and set the global-layer profile with `autonomous.worker_profile`. The settings live in the same config as every other autonomous setting and are read and set through the configuration channels a datawatch user already uses — the config file, the web settings, REST, the comm channel, the CLI and MCP. The role and kind defaults you set are validated, and a launch uses them: a configured role or kind default is applied in place of the built-in table entry.
+  - A task can name the profile its own job needs: the planner writes `worker_profile: <name>` into the task spec (or the task or Automaton carries a `worker_profile` field). Resolution checks the task, then the Automaton, then the project, then the global setting — and where none is named, the task-kind default, then the role default. A setting is refused at config load when a user profile is named like a built-in, a profile is invalid, a default or global name matches no built-in or user profile, or a role/kind key is unknown — the error names the offending key. A name the resolution cannot find (for example one removed from the config after it was named) falls back to the role default, with the decision recorded — that fallback is implemented and tested, and the launch then applies the role default.
+  - **How it shows up:** a session you start yourself is exactly as before — this covers worker, verifier and judge sessions only — and what a task finishes is unchanged. A worker, verifier or judge launch with a resolved profile starts with that profile's starting context and tool set instead of the full operator harness; a launch with no profile configured still starts with the full harness. That is a setting you can read and change per profile, role, task kind or individual task.
+  - **Migration:** none. Everything is new and unset: leaving it all unset keeps the full harness exactly as before, and a profile takes effect at the next worker, verifier or judge launch that resolves one. Guides and reference: [docs/howto/worker-session-profiles.md](docs/howto/worker-session-profiles.md), [docs/config-reference.yaml](docs/config-reference.yaml), [docs/implementation.md](docs/implementation.md).
+
+## v9.124.1 — Release push tests set their own git identity
+
+### Fixed
+
+- **The release push tests no longer depend on a git identity from the machine they run on.** The CI release run for v9.124.0 failed five tests in `internal/autonomous` (the direct push tests, the push audit test and the two host-backed CI fall-back tests) because `git tag -a` ran with no committer identity configured. The shared test helpers in `internal/autonomous/release_fake_host_test.go` now set the author and committer name and email for the duration of each test, and the temporary clones get a local `user.name` and `user.email`. No production code changed.
+
+## v9.124.0 — Release push and tag settings and machinery for Automata (not yet called by the daemon's ship path)
+
+### Added
+
+- **Release push and tag machinery for Automata, with three settings, in place but not yet called by the daemon's ship path.** The push and tag code, the settings, the refusal rule, the audit record shape and the tests are in this release; the daemon's ship path does not call the push and tag code yet, so turning the switch on stores the setting and nothing is pushed or tagged by the daemon. `autonomous.push_and_tag` (bool, default `false`) says whether the daemon publishes a finished release itself; `autonomous.release_path` (`direct_push` or `pull_request`, default `direct_push`; any other value is refused) picks how; `git.release_ci_window_minutes` (whole minutes, greater than 0, default 60) is how long the release CI is waited for. The code is `internal/autonomous/release_push.go` (direct push: fast-forward the default branch to the release commit, create the annotated tag, push both, never force), `release_pull_request.go` (pull request path: push the release branch, open a pull request, poll its checks, merge only when every check succeeded, via new provider calls in `internal/git`), `release_ci_fallback.go` (a red release CI inside the window falls the release approval mode back to ask and files a defect; the fall-back is held in memory only, so a daemon restart clears it) and `release_record.go` (the release record, one per project and tag, kept as a JSON-lines file). With the pre-push secret scan in enforce mode, a finding refuses the release push and writes one audit entry that carries only the credential source label, never a credential.
+- **`release_push_status` MCP tool, read-only.** It takes a project name and answers `push_and_tag`, `release_path`, `ci_window_minutes` and `last_release` (null when no record exists; this build installs no release record store, so it is null for every project). The tool is registered in the capability map as an autonomous read.
+- **The three release settings are on every settings surface.** The PWA Settings page has a *Push and tag finished releases* switch, a *Release path* select and a *CI window (minutes)* field, plus a `Last release:` line drawn only when a release record exists; `PUT /api/config`, `datawatch config set` and the comm channel `configure` verb take the three keys, and `GET /api/config` returns them. A new how-to, `docs/howto/release-push-and-tag.md`, starts with a *Status in this build* section that says what is not wired yet. There is no `datawatch release` subcommand and no per-project release-status REST endpoint.
+
+## v9.123.0 — Standard tasks: the built-in task pack is renamed and listed under Automata, Templates
+
+### Added
+
+- **`GET /api/autonomous/standard-tasks` lists the standard tasks the decomposer can add to a story.** The read returns `{enabled, tasks}`: `enabled` is the global `autonomous.task_templates.enabled`, and `tasks` holds one row per effective task template with the fields `id`, `title`, `kind`, `summary`, `offered_when`, `enabled`, `project_override` and `mode`. An optional `project` query parameter (a project directory or alias) selects that project's override. Rows come from `autonomous.ListStandardTasks` (`internal/server/autonomous_standard_tasks.go`), pinned by `TestStandardTaskRESTRead`. Read-only; other methods answer 405.
+
+### Changed
+
+- **The Automata page's Templates tab is split into sub-tabs, and the built-in task wording is no longer "task templates" anywhere operator-facing.** The tab now has two sub-tabs: **Automaton templates** (default — the reusable Automaton definitions, as before) and **Standard tasks**, a read-only table of the standard tasks the decomposer adds to a story (title, kind, summary, offered-when, on/off, mode) loaded from `GET /api/autonomous/standard-tasks` with the project's override applied; the sub-tab choice is persisted in the PWA. The tab itself is now labelled "Automaton templates" in the UI. Every PWA string that said "task template(s)" now reads "standard task(s)" (the toggle under Settings → General → Decompose lint, which gains a help line, and the new-Automaton modal and its actions), and "template" on the Automata page reads "Automaton template(s)"; strings added or reworded in all five locales (`automata_tab_templates` reworded, `automata_templates_subtab_automaton` / `automata_templates_subtab_standard`, `settings_decompose_lint_task_templates` reworded with `settings_decompose_lint_task_templates_help` new, `automata_std_*` new). Pinned by `internal/server/web/app-automation-templates-subtabs.test.js`, `internal/server/web/app-automation-standard-tasks.test.js` and `internal/server/standard_task_naming_test.go`; the how-to is [howto/automata-standard-tasks.md](docs/howto/automata-standard-tasks.md).
+- **The Templates tab's sub-tabs have empty states, and they fit a phone.** The Automaton templates sub-tab says what an Automaton template is and how to add one (save an Automaton as a template, or create one from the template store). The Standard tasks sub-tab, when its list is empty, says what the standard tasks are and that the decomposer adds them to every story when `autonomous.task_templates.enabled` is on, instead of drawing an empty table. The sub-tab bar wraps inside its own container, the standard tasks table stacks into labelled rows below 600px, and the Templates body keeps a 16px side gutter at phone width with no sideways page scroll. Strings added in all five locales (`automata_empty_templates` reworded, `automata_empty_std_tasks` new); pinned by `internal/server/web/app-automation-templates-subtabs.test.js`.
+
+### Fixed
+
+- **The locale key-coverage test accepts the standard-task column keys.** `automata_std_col_` is a dynamic prefix (the column name is appended at runtime); it is now listed with the other dynamic prefixes in `internal/server/v8_73_25_locale_key_coverage_test.go`.
+
+## v9.122.0 — Conflict resolution by file class, with the model gate and the confirm-first-N counter
+
+Merge conflicts are now resolved by file class, behind a model gate and a confirm-first-N counter.
+
+- Each conflicted file is sorted into a class (`internal/mergepipeline/conflict_class.go`), and a mechanical resolver handles the classes that need no model (`conflict_mechanical.go`). The model proposes a resolution only for the rest, and only when the model gate allows it (`conflict_gate.go`).
+- 2 new settings under `autonomous.merge_pipeline`: `conflict_mode` (`shadow`, the default, records the model's proposal without acting on it; `on` acts on it) and `conflict_confirm_first_n` (default 5; the first N conflict resolutions of a project wait for the operator to confirm them, 0 turns it off). Both are readable and settable on REST, MCP, the command line, chat and the PWA, and as per-project overrides.
+- A per-project confirmation counter (`conflict_counter.go`, `conflict_confirm.go`) shows how many confirmations are counted and how many remain.
+- 7 new locale keys in the 5 shipped locales.
+- Touches 7 packages: `cmd/datawatch`, `internal/autonomous`, `internal/config`, `internal/mcp`, `internal/mergepipeline`, `internal/router`, `internal/server`.
+- 27 tests added.
+
+## v9.121.0 — Release readiness evidence and recorded release approval mode changes
+
+- Release readiness evidence: a read of the stored shadow-merge comparisons that counts, for one release size (patch, minor or major), the records where the plan held up, the conflicts, the PWA changes and blocking defects against a bar, and says what is missing. It is available on REST, MCP, the CLI, chat and a PWA card.
+- Release approval mode changes are recorded: every change of a release approval mode on any surface writes a decision record stating the readiness counts at that moment and emits a `release_mode_changed` audit event. A write that leaves the mode in force unchanged is stored without a record.
+- Chat `configure` of a release approval key now goes through the same recorded path as the REST config write.
+- 13 new locale keys in all five bundles; the how-to explains moving from shadow to on.
+
+## v9.120.0 — Burn guard projection follows the usage readings
+
+### Changed
+
+- **The burn guard now follows the readings.** Its projection starts from the newest usage reading and carries the tokens used since then forward, scaled to the readings, and blends the burn between the last two readings with the token burn. A new `usage.burn_guard.max_projection_gap_points` setting (default 25, 0 to 100; 0 never compares) sets the largest gap allowed between the guard projection and the readings-only advice before the guard decides on the lower of the two. Each decision records both projections and the gap. The guard still never skips a rung when over the pace line.
+
+## v9.119.0 — Keep the plans folder and registry tidy automatically
+
+- Plans folder tidy now archives `docs/plans/reports` and `docs/plans/parity-issues` by month into `archive/YYYY-MM/` subfolders (`scripts/plans_monthly_archive.py`, wired into `scripts/tidy-plans.sh`); the broken-link check resolves the archive subfolders.
+- Closed registry rows move to a monthly roadmap archive (`docs/plans/roadmap-archive-YYYY-MM.md`) with one live link per archived month and links to archived rows rewritten.
+- New daily tidy runner `scripts/plans-tidy-daily.sh` (simulates in a throwaway worktree, commits only `docs/plans`, writes a daily report, an alert file on failure and a run stamp) and a daily Automation definition `scripts/plans-tidy-automation.json`.
+- The release smoke tidy gate accepts a fresh daily run.
+- New how-to `docs/howto/plans-folder-tidy.md` and glossary entries. No PWA or app surface.
+
+## v9.118.3 — Shell backend hands long script tasks over by file
+
+### Fixed
+
+- **The shell backend no longer refuses a long task in its script form.** A task longer than the tmux send-keys limit is now handed to the script as a file path instead of being refused: the daemon writes the task to an owner-only file in the project's `.datawatch` folder, passes that path to the script, and sweeps any leftover task files at daemon start. A short task is passed inline exactly as before, byte for byte. This let the sandbox restart matrix plan and run work. The interactive form still refuses an oversize task.
+
+## v9.118.2 — Fix a release push test that needed a git identity
+
+### Fixed
+
+- **The release build's Go test step passes on a clean runner.** Two push guard tests in the merge pipeline ran the real tag step, which needs a git author and committer identity. They passed on a machine with an identity configured and failed on a CI runner with none. The test now sets an identity for its own process. No behaviour change in the daemon.
+
+## v9.118.1 — Decompose lint card keeps the task template block
+
+### Fixed
+
+- Saving the decompose lint card in the web Settings page no longer resets the task template mode settings and overrides. The card sent only the enabled flag of the task template block, which erased the operator's per-template mode map and overrides on every save; it now sends back the block it loaded, with only the enabled checkbox changed. Found while filing the daemon task modes release.
+- The config reference now lists the task template mode setting (`autonomous.task_templates.mode`), its values, default and the surfaces that set it.
+
+## v9.118.0 — Merge lock, release validator and idempotent merge steps
+
+### Added
+
+- **The merge pipeline checks the release bump before it pushes.** A new built-in step, `validate-release-bump` (action `validate_release_bump`), runs between `tag-release` and `push-release` in the default pipeline. It runs the five release-bump checks: version files agree, the changelog's first heading is the release, the release is one step above the newest local tag, its tag is free on the remote, and the README's `Current release:` line names it. A failing check fails the step and names every check that failed, so `push-release` never runs. The result is stored on the run record as `validator` (`pass`, `version`, `checked_at`, `checks`).
+  - **Migration:** the built-in pipeline now rewrites the README `Current release:` line itself in a `set-readme-release-line` step, so the line must already have the `vX.Y.Z (YYYY-MM-DD)` shape (for example `**Current release: v1.2.3 (2026-11-08).**`); a line without a date stops the run and names it.
+
+- **Merge runs into the same repository are serialized by a merge lock.** Two merge runs can no longer ship into one base repository at the same time. A run takes a lock on its repository before it starts and releases it when it ends, and a second run is refused with a plain reason that names the run holding the lock.
+  - **How it shows up:** while a merge runs, the merge status shows the held lock (`Merge lock held: run <id> for Automaton <id> (branches …) since <time>`). A refused run's reason says the lock is held by the named run. The lock is kept in `merge-locks.json` in the daemon store directory, so it still shows as held after a daemon restart, and a resumed run takes its own lock back.
+  - **Migration:** none. If `merge-locks.json` is unreadable or corrupt, merge runs are refused rather than run unlocked; repair or restore that file in the daemon store directory.
+- **The daemon's merge run finishes version-safe against a moving main.** Before merging anything, the run fetches the main branch and rebases each branch onto it (a rebase that hits a conflict stops the run with that branch left untouched), and the release version is computed after the merge, from main's version as it stands at that point — not the version the branch was cut from. The push step is fast-forward-only: it checks the remote's head against the local one first and refuses to push a head that would rewrite the remote.
+  - **When the remote's main has moved since the merge, the run redoes instead of failing:** it undoes the merge, version bump and tag it made locally, brings the local main up to the remote's, and starts again from the rebase step so the version is recomputed from the new main. It redoes up to three times, then stops with a plain reason; a move to the local main it did not make itself stops the run instead of being undone.
+  - **The steps are safe to run twice:** a branch already based on main is left alone by the rebase, and the changelog heading insertion does nothing when the heading for that version is already there.
+  - **How it shows up:** the run record gains `release_version` (the version the run released) and one recorded step per redo (`main-moved-redo-1`, …), each with a plain note of what it did. A refused push says why: the remote's branch sits at a head the push would not contain, and nothing was pushed.
+  - **Migration:** none. A project with its own merge pipeline file keeps it as-is; the built-in pipeline now starts with the rebase step and computes the version after the merge.
+- **Bounded load-step rule.** A task that asks for a CPU-load or stress step must bound it before it runs: niced (`nice -n 19`), workers capped at a quarter of the cores (minimum one), a hard timeout, and cleanup of its children on exit. The rule is applied in three places: the built-in `bounded_load_step` task template, the rules block the decompose planner reads, and a warn-severity `unbounded_load_step` finding in decompose lint for a spec that asks for an unbounded load step.
+  - **How it shows up:** a spec that asks for an unbounded load step shows the `unbounded_load_step` warning in decompose lint.
+  - **Migration:** none.
+
+## v9.117.1 — Close the discussion folder path scanner alert
+
+### Fixed
+
+- **The high code scanning alert for the discussion folder path is closed by checking the cleaned path at the point of use.** Every discussion route that builds a folder from a discussion id now goes through one helper, `discussionFolderForID`, which validates the id, joins it to the discussions folder, cleans the result and refuses it unless it stays inside that folder. The discussions how-to has one added line saying so. There is no setting change and no behaviour change for valid ids; ids that were refused before are still refused.
+
+## v9.117.0 — Template tasks and script gates run in the daemon
+
+### Added
+
+- **The daemon now carries out template tasks and the closing script gate itself, so these no longer start a model session.** Measured on 2026-11-08, template task sessions (changelog entry, parity draft, docs set, bounded load note, release version note, final gate) cost about 19 percent of the week's Claude use, wrote no code and failed often. The daemon already generates the changelog draft, parity draft, registry row and tracker rows when an Automaton completes, so it now does that work for the template tasks too.
+  - **What no longer starts a session by default:** the changelog entry, parity issue draft, bounded load note and release version note tasks (mode `daemon`), and the final gate task (the daemon runs its script, with no worker session and no verifier). The docs set keeps its session (mode `llm`). In `daemon` mode the daemon writes the same artefact through the existing generator, marks the task completed with a decision that says the daemon did it, and the task counts toward its story as before. In `off` mode the task is not created.
+  - **How to turn a session back on:** set the template's mode to `llm`, for example `datawatch config set autonomous.task_templates.mode.changelog_entry llm`, or `configure autonomous.task_templates.mode.changelog_entry=llm` in chat, or `task_templates_mode` on the MCP `autonomous_config_set` tool, or the per-template select on the Settings page. The final gate has no session mode: `off` removes it, and a session-run closing check is a custom template of another kind. See `docs/howto/automaton-daemon-task-modes.md`.
+  - **Script gate:** a final gate task whose check is a script file in the project verify folder, or the project's configured build and test command, is run by the daemon with a hard time limit, its output is captured into the task report, and the task completes or fails by exit status. A gate the daemon cannot run fails with the reason, never left waiting. `autonomous.script_gate_timeout_seconds` (default 900, 0 means no cap, a negative or fractional value is refused) sets the limit.
+  - **Project gate command:** `autonomous.project_gate_command`, with a per-project override in the project policy, names the project's own build and test command so the gate is not tied to one language. When unset the gate uses the verification scripts the tasks already declare.
+  - **Decompose lint and plan coverage** no longer report findings for template tasks that run in daemon mode.
+  - **Surfaces:** the three new settings reach config.yaml, the Settings page (with help entries), `GET` and `PUT /api/config`, the comm channel `configure` verb, MCP `autonomous_config_get` and `autonomous_config_set`, and `datawatch config set`; an invalid write is refused on every surface.
+  - **Migration:** none needed, but note that new and existing Automata now get daemon-run template tasks by default; set the mode to `llm` per template to keep the old behaviour.
+
+## v9.116.0 — Release approval modes for the merge pipeline
+
+### Added
+
+- **Release approval is now a setting with one mode per size of release, as the first step of the daemon finishing review and merge by itself (Phase 4 of the autonomy handover plan).** Until now the approval of a release was convention: the supervisor decided minor releases by hand and left major releases to the operator by rule, with no setting behind either. The `autonomous.merge_pipeline` block now carries `release_approval`, with a mode for each size — `patch`, `minor`, `major` — each `auto` (ships without waiting), `ask` (asks the operator before the release ships) or `manual` (left for the operator to ship). Each size inherits when unset, and a project's value in `autonomous.merge_pipeline.projects.<name>.release_approval` takes precedence over the global one.
+  - **How it shows up:** `autonomous.merge_pipeline.release_approval.patch` / `.minor` / `.major` appear in YAML config, `datawatch config` and the config surfaces along with the rest of the merge pipeline block — including the web Settings page, where each size is a select over the three modes (label, hint and mode names translated in every locale). Each value is validated, so an unknown mode is refused with the key named rather than stored silently, and an empty value or null on a project key clears that size back to inheriting. The merge pipeline view (`GET /api/autonomous/merge-pipeline`) now names the mode in effect for the requested project in `release_approval_in_effect` (`patch`, `minor`, `major`, each always resolved), and its CLI, chat and MCP renderings show a `Release approval: patch …, minor …, major …` line; the OpenAPI spec documents both the new settings keys and the view field.
+  - **Defaults (today's behaviour):** patch `auto`, minor `auto`, major `ask` — a major release is never shipped quietly, and a release whose size is not understood resolves to `ask` rather than being shipped, so nothing goes out silently because a size was unread.
+  - **Scope of this step:** it lands the approval setting and its resolution (project override, then global, then the built-in defaults) that the daemon's review-and-merge path will honour. The daemon's own merge — which the plan runs in shadow beside the supervisor's manual merge, recording every difference as a defect — and its push-and-tag step come in later steps of the same Phase 4 work; until they do, releases are made exactly as before.
+  - **Migration:** none. The keys are unset until set, the defaults match today's behaviour, nothing is shipped by this change alone, and no existing setting changes meaning.
+  - **CLI:** `datawatch config set` takes `autonomous.merge_pipeline.release_approval.<patch|minor|major>` and `autonomous.merge_pipeline.projects.<project>.release_approval.<size>`; any value other than `auto`, `ask` or `manual` is refused with the key and the three modes named, before the daemon is called. `datawatch config set --help` lists the keys with the meaning of each mode and the defaults.
+  - **MCP:** `autonomous_config_set` takes `merge_pipeline_release_approval_patch`, `merge_pipeline_release_approval_minor` and `merge_pipeline_release_approval_major` (with `merge_pipeline_project` for one project); a bad mode is refused with its key named before any request is sent. `config_set` takes the same dotted keys, and `autonomous_merge_pipeline_get` reports the mode in effect for each size.
+
+## v9.115.2 — The CodeQL gate stops waiting when a rate limit cannot reset in time
+
+### Fixed
+
+- **The CodeQL alert gate stops at once when a rate limit cannot reset inside its wait budget.** Previously `wait-analyses` and `open-alerts` could sit waiting for a reset that landed after the remaining `WAIT_MAX_SECONDS` budget, so the wait could never finish in time. Now the gate exits 1 immediately with a `::error title=Rate limited::` line.
+  - **How it shows up:** the run fails straight away and is reported as a rate limit, never as an alert or analysis result. The line names the reset epoch; if the gate learned none (spent budget), it reads `core reset epoch: unknown`. Rate limits that reset inside the budget still wait and retry as before.
+  - **Migration:** none for the workflow. Wait until the named reset time, then rerun the check yourself.
+
+## v9.115.1 — Fix a lint failure in the cost report
+
+### Fixed
+
+- **The release build lint step passes again.** The cost report loaded its attempt list behind a nil check on a value it had already used, which the CI linter rejected. The list is now read directly and an empty report still returns an empty list. No behaviour change.
+
+## v9.115.0 — Worker session profiles and generated starting context
+
+### Added
+
+- **Every worker session can start small, with context and tools chosen for its job — and it is configurable for every datawatch user.** Worker, verifier and judge sessions **will** start from a **worker session profile** — once the sessions' own start work lands a launch resolves and applies one —: which MCP servers it may use (none, the datawatch server only, or a named list), which tools it may call (all, or an allow-list), whether skills are on, the level of starting context (`minimal`, `digest` or `full`), and the model and effort it runs at. The profiles, the defaults and every setting that names one (plus the `worker_profile` field and the planner's spec-line marker, and the resolution rule itself) are **in place now, built and tested**.
+  - Four built-in profiles ship — `minimal`, `digest`, `full` and `datawatch-tools` — and the defaults are the smallest profile that can do the job, with the full start one setting away: planner `full`; worker and verifier `digest`; judge and `note`-kind tasks `minimal`; implementation, docs and final-gate tasks `digest`. Define user profiles in `autonomous.worker_profiles` (a user profile may not reuse a built-in name), change the defaults per role and task kind in `autonomous.worker_profile_defaults`, and set the global-layer profile with `autonomous.worker_profile`. The settings live in the same config as every other autonomous setting and are read and set through the configuration channels a datawatch user already uses — the config file, the web settings, REST, the comm channel, the CLI and MCP. The role and kind defaults you set are validated now; the resolution starts using them where you have set them once the start work lands in a launch (until then it resolves against the built-in table).
+  - A task can name the profile its own job needs: the planner writes `worker_profile: <name>` into the task spec (or the task or Automaton carries a `worker_profile` field). Resolution checks the task, then the Automaton, then the project, then the global setting — and where none is named, the task-kind default, then the role default. A setting is refused at config load when a user profile is named like a built-in, a profile is invalid, a default or global name matches no built-in or user profile, or a role/kind key is unknown — the error names the offending key. A name the resolution cannot find (for example one removed from the config after it was named) falls back to the role default, with the decision recorded — that fallback is implemented and tested; the launch that would exercise it lands with the sessions' start work.
+  - **How it shows up:** a session you start yourself is exactly as before — this covers worker, verifier and judge sessions only — and what a task finishes is unchanged. Worker, verifier and judge launches still start with the full harness until the sessions' start work lands; when it has, what a worker begins with is smaller: instead of the full operator harness, its starting context and tool set are the ones its profile names, and that is a setting you can read and change per profile, role, task kind or individual task.
+  - **Migration:** none. Everything is new and unset: leaving it all unset keeps the built-in defaults (the small start), and the profiles take effect at worker launches from the point the sessions' start work ships. Guides and reference: [docs/howto/worker-session-profiles.md](docs/howto/worker-session-profiles.md), [docs/config-reference.yaml](docs/config-reference.yaml), [docs/implementation.md](docs/implementation.md).
+
+- **Stats now report the average startup size per worker profile and per role.** The stats snapshot (`GET /api/stats`, the `get_stats` MCP tool and `datawatch stats`) carries a `worker_startup` block with `average_startup_tokens_by_profile` and `average_startup_tokens_by_role` maps. The averages come from the same aggregation the cost report uses, so the two always agree; an attempt with no recorded size counts toward nothing, and a key with no sized attempt is left out rather than shown as zero. The block is always present, with empty maps when no attempt has a size yet. The text output of `datawatch stats` prints the same block.
+
+- **The worker session profile settings are now read and set on the REST config surface.** `GET /api/config` carries the three keys in the `autonomous` map — `worker_profiles` (the user profiles keyed by name; an empty object when unset), `worker_profile_defaults` (the `role` and `kind` maps, always present) and `worker_profile` (the global profile name; `""` when unset) — and `PUT /api/config` accepts all three. A PUT that would store a user profile named like a built-in (`minimal`, `digest`, `full`, `datawatch-tools`), reference a profile that is not built-in or user-defined, or use an unknown role/kind key is refused with HTTP 400 and the validation message, and nothing is applied — the same rule the config file load uses. The settings already documented in [docs/howto/worker-session-profiles.md](docs/howto/worker-session-profiles.md) and [docs/config-reference.yaml](docs/config-reference.yaml) are now reachable through every channel those pages list. Tests: `internal/server/worker_profile_config_api_test.go`.
+  - **How it shows up:** reading or writing the worker profile settings through the web settings, the comm channel, the CLI or MCP — everything that goes through `GET`/`PUT /api/config` — now works instead of silently dropping the keys; a bad write answers with the offending key named and leaves the config unchanged.
+  - **Migration:** none. Nothing stored changes; a config without the settings reads them as unset, exactly as the config file does.
+
+## v9.114.0 — Make a failed task attempt cost as little as possible
+
+### Added
+
+- **`datawatch config set` takes the per-kind first-attempt keys.** `datawatch config set autonomous.first_attempt.<kind>.backend <name>` and `... .model <name>` now reach the daemon, which folds them into the whole `autonomous.first_attempt` table and validates it with the shared attempt-cost validator. A bad kind, a model-needing backend with no model, or an out-of-range escalate/retry value is refused with the daemon's message and a non-zero exit. Defaults and how-to pointers are in `docs/config-reference.yaml`.
+
+- **Failed attempt records say whether the attempt resumed the previous session, and why.** Each failed attempt record now carries `resumed` (true when the attempt continued the previous worker session with the failure summary, instead of starting a fresh one) and `resume_reason` (the retry-resume decision's reason, such as `resumed previous session`, `context above the limit; starting a fresh attempt`, or `session ended; starting a fresh attempt`). A first attempt, which makes no retry decision, leaves both empty. The Automaton status view's held-task rows show the same two values for the task's last attempt as `last_resumed` and `last_resume_reason`. Records stored before these fields existed load with them false and empty; nothing needs migrating.
+
+- **Retry resume decision helper.** `internal/autonomous/retry_resume_decision.go` adds `decideRetryResume`, a pure function that decides whether a retried attempt resumes the previous backend session. It resumes only when the session is alive, the backend supports resume, resume is enabled (`MaxContextTokens > 0`), and the context is at or under the limit (an unknown context of 0 resumes). Each outcome returns an operator-readable reason. It is wired into the retry path by `tryRetryResume` in `internal/autonomous/retry_resume_flow.go`: on a decision to resume, the attempt types the framed failure summary (one line, capped at 4,000 bytes) into the still-open session and waits on that session; on a refusal, or a missing/failed send, it starts a fresh session instead. Only attempt failures verified by the verifier are candidates, and only the `claude-code` backend can resume. The outcome and its reason land on the attempt record (entry above).
+
+- **`autonomous.first_attempt` now picks the worker for a task's first attempt.** A first attempt whose task kind (`implementation`, `docs`, `note`, `final_gate`) has a configured backend runs on that backend and model. A task or Automaton that pins its own worker, a story or Automaton pin, and a burn-guard route all still win, and retries never use the first-attempt pair. Kinds with no entry keep today's choice.
+
+- **Config keys for the cost of a task's first attempt and its retries.** `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model its first attempt runs on; an absent or empty entry keeps today's choice. `autonomous.first_attempt_escalate_after_failures` (default `1`, range `0`–`20`) sets how many failures move the next attempt to the stronger choice. `autonomous.retry_resume_max_context_tokens` (default `150000`, range `0`–`2000000`) caps the prior context a retry may resume with; `0` starts every retry fresh. One shared validator refuses an unknown kind, a model-less backend that needs a model, and out-of-range numbers, naming the key each time.
+- **Those three keys are now settable and readable through the configuration API.** `GET /api/config` returns `first_attempt`, `first_attempt_escalate_after_failures` and `retry_resume_max_context_tokens` in the `autonomous` object. `PUT /api/config` accepts the three dotted keys and runs them through the same shared validator before writing anything: a value it refuses (out of range, an unknown task kind, or a model-less backend that needs a model) answers `400` with a message that names the key and the allowed values, and the stored value is left exactly as it was. A patch that omits one of the keys leaves that key's stored value untouched.
+- **A task that fails now costs as little as it can: each retry and escalation is priced on far less input than a full cold start, instead of re-paying the whole starting context on every one of the up-to-three tries.** Measured 2026-11-08: a task session starts with a median of about 85,000 tokens of context, and the MCP tool definitions alone are about 36,000 of them (56% of every session start); a bare `claude -p` in a task-like folder carries about 64,000 by default and about 28,000 with the MCP servers switched off. Because a failing task is tried up to three times before it is held (the failure policy's `max_failures` default), that fixed context used to be paid up to three times for an attempt that had already shown it would not succeed. The retry and escalation attempts are no longer each charged a full cold start, so the extra cost of a failed attempt is a fraction of the first attempt's rather than up to another two full 85,000-token starts.
+  - **How it shows up:** in the cost report and in the tokens an attempt is charged — a task that succeeds on the first try is unchanged, but a task that failed and was retried, or escalated to the next worker, no longer pays a full ~85,000-token starting context (and its ~36,000 of MCP tool definitions) on each non-final attempt. The failure and escalation flow itself (attempt order, the `review_needed` hold and its report) is exactly as before; only the cost of a non-final attempt is lower. The [failure escalation howto](docs/howto/failure-escalation.md) explains the rule in its "What a non-final attempt costs" section.
+  - **Migration:** none. It applies from the next retry or escalation with no setting to change; successful first-try runs are untouched.
+
+- **A failure no other attempt can fix no longer burns retries: the task is held for review at once, with the reason, and no further attempts are scheduled.** Three failures have no route to a fix through another attempt, and for them the daemon stops spending the budget on the issue: a task that writes nothing (read-only, or no planned files) is failed by the verifier on "no files changed"; the task's verification script is missing from the worktree; or the same failure summary has already failed twice.
+  - **How it shows up:** the failed attempt is recorded carrying the reason in a `no_retry_reason` field, and the task is held in the same review state a retry-limit hold uses — the same badge in the web UI, the same `review_needed` line in `datawatch autonomous status`, and the same actions to decide it (retry, edit spec, change worker, narrow scope, or cancel, on every surface). One alert, titled "Automaton task needs review (no retry)", names the reason — for example `verification script … is missing from the worktree` or `this failure summary has already failed twice; a third identical attempt will not change the outcome` — and tells what to do about it: give the task files to write, a verification script, or a changeable spec, and retry it, or cancel it. Every other failure keeps the retry and escalation flow exactly as before; see the [failure escalation howto](docs/howto/failure-escalation.md) for the hold and its actions.
+  - **Migration:** none. It applies from the next matching failure with no setting to change. A held task is resolved exactly like any other held task, so nothing stored needs moving; if you relied on identical failures eventually tripping the failed-attempt limit, the task now arrives at your review sooner, with the reason in place of the burned attempts.
+
+## v9.113.0 — Release size rules
+
+### Settings > Automation > Merge pipeline shows the release settings
+
+- **Four release settings are now editable in the web UI** on the Merge pipeline card: release size by kind (a row per Automaton kind with its size), major release trigger, release cadence and version scheme. Each has a `?` link to the Release size entry of the [definitions](docs/datawatch-definitions.md#release-size), and the new [release size and milestones](docs/howto/release-size-and-milestones.md) how-to explains them. Cadence `batch` and `manual`, and any version scheme other than `semver`, are shown but the save is refused with the daemon's reason.
+- Labels and help text are in all five locale bundles (en, de, es, fr, ja).
+
+### The release size a merge adds is now decided by rules, not by convention (part of finishing review and merge by the daemon, Phase 4)
+
+- **The release size of an Automaton — the version step its merge adds (patch, minor, major or none) — is resolved in layers, most specific first.** (1) An explicit `release_size` on the Automaton wins, including an explicit `none` and an explicit major. (2) When the Automation (arc) an Automaton belongs to is marked as a milestone and has completed, and the project's `major_trigger` is `milestone`, the step is raised to major — the arc is the major feature being grown out of the minors and patches that land under it. (3) The project's kind-to-size setting (`autonomous.merge_pipeline.release_size_map`, with the per-project override in `autonomous.merge_pipeline.projects`) — by default feature is a minor and bug is a patch. (4) The built-in default: feature minor, bug patch, anything else no release step.
+  - **A major is never inferred from a diff or a kind.** A `major` value written in the size map does not raise the release step on its own — a major comes only from an explicit `release_size` of `major` on the Automaton, or a completed milestone under the `milestone` trigger — and the breaking-change flag on an Automaton (`breaking_change`) raises its release to the major approval mode whatever the resolved size, so a breaking change is never merged quietly.
+  - **New settings, all overridable per project.** `autonomous.merge_pipeline.major_trigger` — `manual` (default), `milestone` or `never`: when a major release step is raised. `autonomous.merge_pipeline.release_size_map` — kind to size, adding to or overriding the built-in map. `autonomous.merge_pipeline.release_cadence` (default `per_merge`) and `autonomous.merge_pipeline.version_scheme` (default `semver`) are reserved: only `per_merge` and `semver` are accepted today; `batch`, `manual` and other schemes are refused until they exist, so a refused value names exactly what to change.
+  - **How it shows up:** an Automaton record now carries its explicit `release_size` and `breaking_change`, an Automation (arc) carries its `milestone` mark, and resolving one Automaton's size is a pure function of those values plus the project settings — the same answer on every surface, before the merge's version step consumes it. Setting an unknown size, an unknown major trigger or a not-yet-available cadence or scheme is refused at the setting's own path (for example `autonomous.merge_pipeline.projects.p.release_size_map.docs`) and nothing is stored; unset settings read the defaults above.
+  - **Migration:** none — every new setting is unset and reads the built-in defaults (feature minor, bug patch, major `manual`), so an existing project resolves exactly as it did before. Choose your milestone and size-map settings when you want a project or an arc to raise a major.
+  - **MCP:** `autonomous_config_set` takes `merge_pipeline_release_size_map`, `merge_pipeline_major_trigger`, `merge_pipeline_release_cadence` and `merge_pipeline_version_scheme` (with `merge_pipeline_project` for one project). `autonomous_merge_pipeline_get` shows the release settings in effect, in text and in JSON. A cadence or scheme that is not available yet is refused as a tool error that names the value to use.
+
+### Automata show their release size and breaking change in the web UI (part of finishing review and merge by the daemon, Phase 4)
+
+- **The Automaton list row and detail header show the release size and its source layer.** A `patch`, `minor` or `major` size shows as a chip naming the layer that decided it (set on this Automaton, Automation milestone, project size map, or built-in default). An Automaton with no size, or a size of `none`, shows nothing unless its breaking-change flag is set.
+- **A breaking-change badge** shows on the row and header when the flag is set, so a change that breaks users is visible before it merges.
+- **The settings modal sets both values:** the explicit release size (resolve again, patch, minor, major or none) and the breaking-change flag, through the existing `set_release_size` and `set_breaking_change` actions.
+- **Layers beyond the explicit size need a server field.** The web UI reads a resolved size from `release_size_resolved` and `release_size_source` when the server reports them. Until the server adds those fields, an Automaton with no explicit size shows no chip.
+- Labels are in all five locale bundles (en, de, es, fr, ja).
+
+## v9.112.11 — Planner age
+
+### Fixed
+
+- **Planning is no longer starved while workers keep every slot busy.** A planning request that waits ten minutes now competes with workers by priority instead of waiting behind them, so planning is no longer starved while workers keep every slot busy. Verifiers still go first, and a planner that has waited less than ten minutes still ranks after workers.
+  - **How it shows up:** a decompose request queued behind a steady stream of workers gets a slot after about ten minutes, in priority order with the workers, instead of waiting indefinitely.
+  - **Migration:** none. The ten minutes is a built-in default; there is no setting.
+
+## v9.112.10 — Built-in final gate and note tasks pass the verifier
+
+### Added
+- **A task template can state why its tasks have no verification script.** `TaskTemplateDef` gains a `verification_script_reason` field (YAML and JSON, optional). It is the explicit reason a task from the template has no verification script, and it is copied onto that task as `VerificationScriptReason`. It is a template field, not a new daemon setting.
+  - **How it shows up:** an operator template that sets `verification_script_reason` produces tasks that carry the same reason; templates without it are unchanged.
+  - **Migration:** none. The field is optional and absent from existing templates.
+
+### Fixed
+- **The decomposed Automaton's closing tasks pass the verifier instead of being rejected at prestart.** The built-in final-gate task template carried a command string (`go build ./... && go test ./...`) as its verification script; a verification script must be one repo-relative script file, and a command string is not one, so the verifier rejected the gate before it could run and the story could not close. The gate now verifies through its read-only report under `.datawatch/reports/` (its verdict file), and its closing note — including the release version note — carries no verification script at all, so it passes as a note. A guard now catches the same mistake in operator templates: a template whose `verification_script` is a command string is refused at config write with an error naming the template id, and if one still exists it is skipped when templates are applied, so it never becomes a task the verifier cannot start.
+  - **How it shows up:** a decomposed Automaton's final gate and version note run to a verdict and pass verification, instead of dying at the verifier prestart with a "not a file" rejection. Saving a template whose `verification_script` looks like a command (for example `go build ./... && go test ./...`) is refused with a single error naming the template id; a valid entry is one repo-relative script file (for example `scripts/verify.sh`).
+  - **Migration:** none. No setting changes, and the fixed built-in templates apply from the next decomposition; any operator template that carried a command string is refused on its next save and skipped in the meantime, so it is removed rather than half-used.
+
+## v9.112.9 — Switch the page to the chosen federated host from the server picker
+
+### Fixed
+
+- **Choosing a federated host in the per-tab server picker now actually switches the page you're on to that host.** Found 2026-11-08, reported by the operator. Before, the picker bar (Sessions, Alerts, Automata, Observer, Settings, Dashboard) set the active server and reconnected but the view you were looking at kept the previous server's data until you re-opened it. Selecting a federated host now re-renders the current page in place against that host (`internal/server/web/app.js`), so its content and "Showing: <name>" line reflect the chosen host. The local chip (labelled with the daemon's hostname, not the word "Local") or **All** takes you back; Observer and Settings only offer the local and federated chips (no **All**). Re-selecting the already-active host is a no-op; the "Connected to: <name>" toast and the **Back to <hostname>** button are unchanged.
+  - **How it shows up:** tap a federated-host chip on any picker tab and the current tab updates to that host's data — no need to leave and re-open it.
+  - **Migration:** none — applies from the next chip selection with no setting to change; the [multi-server howto](docs/howto/multi-servers.md) ("Switch between servers") already covers the picker chips and the "Showing: <name>" line. No live verification on a two-host setup had been run when this was recorded — the PWA tests cover the re-render (`internal/server/web/app-select-server-controls.test.js`) — so confirm it on the build in use first; the checklist is in [operations.md](docs/operations.md) ("Still to review (operator)", multi-server section).
+
+## v9.112.8 — Sessions tiles show every session's system tag chips on the first load
+
+### Fixed
+
+- **The Sessions page now shows every session's system tag chips on the first load — and keeps them instead of flickering them away on later updates.** The paged summary view of `GET /api/sessions` (the row shape the PWA list loads first) dropped each session's `system_tags`, so the machine-derived placement chips — `compute:<node>`, `peer:<name>`, `backend:<llm>`, `lane:<lane>`, `role:<role>`, `project:<name>` — were missing on first paint and only appeared once a full session record arrived. The summary row now carries `system_tags` (`sessionSummaryRow`, `internal/server/session_list_page.go`; pinned for every row shape the server emits by `internal/server/session_summary_row_system_tags_test.go`), and the PWA merge (`_mergeSessionFields`, `internal/server/web/app.js`) keeps a held session's chips when a later row or push omits the key, while a push that carries `system_tags` — even an empty array — still wins, so a session that genuinely loses its placement drops its chip.
+  - **How it shows up:** open the Sessions page (PWA, e.g. on the phone) and each session's ⚙️ placement chips are on its tile from the first paint, alongside the own-tag and inherited-tag chips — no waiting for session details, no flicker on list refreshes; a chip disappears only if the server explicitly reports the placement as gone.
+  - **Migration:** none. The field is additive — a session without system tags renders exactly as before — and no setting changes. Pinned by `internal/server/web/app-session-tags-first-load.test.js`.
+  - **Docs:** the [howto](docs/howto/automata-tags.md#placement-tags-the-system-tags) (chips on the session card, first-frame draw, hold rule), the *Placement axes* entry in [datawatch-definitions.md](docs/datawatch-definitions.md), the session-list section of [operations.md](docs/operations.md) (which also flags the still-unfiled parity drafts) and [api/sessions.md](docs/api/sessions.md) describe the first-load chip. Two datawatch-app parity drafts are tracked in `docs/plans/parity-issues/` (server row shape, PWA drawing discipline) and stay unfiled until the operator opens them on the app tracker.
+
+## v9.112.7 — Update dependencies and workflow action pins to the newest majors
+
+### Changed
+
+- **Go modules, the channel bridge and the workflow actions are updated to their newest majors, with the one code change the mcp-go major needed.** The mcp-go module moves from v0.46.0 to v1.5.0 (with the rest of the Go module group and the patch updates). Version 1 refuses server-initiated sampling and elicitation requests for clients on the 2026-07-28 protocol unless asked not to, so both the daemon and the channel bridge now pass the legacy server-initiated-requests option, and a refused request is treated like "no sampling-capable client" so callers degrade as before. A golden test now pins the registered MCP tool names and a test covers the refused-request path. The workflow actions move: `actions/upload-artifact` v5 to v7.0.2, `docker/setup-qemu-action` v3 to v4.4.0, `golangci/golangci-lint-action` v8 to v9, `zaproxy/action-baseline` v0.9.0 to v0.15.0 and `zaproxy/action-full-scan` v0.9.0 to v0.13.0 (the ZAP pins were corrected to real tags). Every pin keeps its existing form (a full commit hash with a version comment, except the golangci-lint action which stays a version tag as before), and no trigger, permission or workflow input changed.
+  - **How it shows up:** nothing changes in day-to-day use. MCP clients on the newer protocol keep working with sampling and elicitation; older clients behave as before. The CI, container, release and ZAP workflows run the newer action versions on the next run.
+  - **Migration:** none. A self-hosted runner needs the Node 24 runtime for the new upload-artifact major. The maintainer guide (`docs/plans/2026-11-01-upstream-monitoring-maintainer-guide.md`) lists which majors moved and what each upstream change meant, and the three review reports are kept under `docs/plans/reports/`. The ZAP API-scan action is still on v0.9.0 and is left for a separate decision.
+
+## v9.112.6 — Show each system tag once in the Sessions tag menu
+
+### Fixed
+
+- **Each system tag is listed once in the Sessions Tags menu.** The header Tags menu in the Sessions tab listed every placement system tag (the `axis:value` kind, such as an `automation:` or `kind:` value) twice: once under its axis heading in the “Placement tags (system)” section and once more in the general Tags section below it. The Tags section now skips the placement-drawn system tags, so each placement tag appears only in the “Placement tags (system)” section under its own axis heading, and the Tags section carries the axis-less system tags (with their padlock mark) plus all operator tags, exactly as before.
+  - **How it shows up:** open the Sessions Tags menu — every tag name now appears in exactly one place: placement tags under their axis headings in “Placement tags (system)”, the remaining system and operator tags in the Tags section beneath it. Selecting a placement tag still ticks its single row, and the match-mode (any/all) toggle and Clear act as before even with a placement tag selected; the tag filter rows elsewhere (Automata, tasks, facets) are unchanged and still show system tags with the padlock.
+  - **Migration:** none. It is a display-only change to how the menu is drawn; tags, stored selections and the results of an active tag filter are untouched. Refresh the PWA and the menu is correct.
+
+## v9.112.5 — Stop a slow image description from costing the operator an extra Enter
+
+### Fixed
+
+- **A message ending in an image tag no longer needs a second Enter once its tag has degraded to a file reference.** Found 2026-11-08, right after the per-image describe timeout landed: when vision is off or the describe times out, errors or comes back empty, a `[image:<path>]` tag at the very end of the message degrades to a bare `@<path>` reference that left an open file candidate behind, so the session's file autocomplete swallowed the first Enter. That trailing form now gets exactly one space after the path, which terminates the `@<path>` reference and closes the autocomplete — one Enter sends the message.
+  - **How it shows up:** in the PWA, terminal and comm channels, only sends whose last thing is an image tag that took the fallback path — those now go out with a single Enter. Tags in the middle of the text are unchanged (the following text supplies the separation); a successful description (`[image: <description> | path: <path>]`) carries no trailing space, and tags left unchanged (unreadable files, paths outside the file service) never got one. With the same tag twice at the end, only the last occurrence takes the space.
+  - **Migration:** none. It applies from the very next message, with no setting to change; the [vision image descriptions howto](docs/howto/vision-image-descriptions.md) states the rule.
+
+## v9.112.4 — Discussion folder paths are built through one cleaned-path helper for the last open CodeQL alert
+
+### Fixed
+
+- **The last open high code scanning alert (alert #768, go/path-injection) is fixed on main — the discussion id check now sits visibly where the folder path is built, and closing the alert is confirmed when the next "Open high/critical alerts" gate run reports it gone (operator-review item still open in `docs/operations.md`).** Building a path into the discussion folder now goes through one helper (`discussionFolderPath`, `internal/server/discussion_folder.go`): it validates the discussion id, refuses anything carrying a `/`, a `\`, or exactly `.`/`..`, and refuses the cleaned join unless it is still a direct child of the cleaned base folder — the containment check sits explicitly at the join, which is the guard the scanner reads on the data flow.
+  - **How it shows up:** day-to-day nothing changes — a valid discussion id behaves exactly as before, and a traversal or malformed id is still refused before any file is touched. On the scanner: alert #768 drops out of the open findings on the next code-scanning run of main; code-scanning engines report on the next analysis, not immediately, so until that gate run is confirmed green, nothing in this repository should be read as claiming it closed.
+  - **Migration:** none.
+  - **Docs:** the [discussion scopes](docs/howto/discussion-scopes.md) and [file service](docs/howto/file-service.md) how-tos name the shared helper and the cleaned-path containment check; `docs/operations.md` keeps the operator-review items open.
+
+## v9.112.3 — CodeQL gate runs only when code could change
+
+### Changed
+
+- **The CodeQL alert-gate workflow now runs only when a change could affect the code it checks, so it stops spending runs where it cannot find anything.** A push to `main` that changes only documents — `docs/**`, `CHANGELOG.md` and other `**/*.md` files — starts no run (`.github/workflows/codeql.yaml` push `paths-ignore`). A pull request starts a run only if it touches code: Go sources, `go.mod`/`go.sum`, `channel/**`, `internal/server/web/**`, `**/*.js`/`**/*.ts`/`**/*.mjs`/`**/*.py`, `.github/workflows/**` or `scripts/**` (pull_request `paths` list). The Monday schedule and manual dispatch are unchanged, so code that lands is still checked by the schedule.
+  - **How it shows up:** fewer CodeQL entries in the actions list — doc-only pushes to `main` and pull requests that don't touch the paths above no longer appear. Runs that do start behave exactly as before: the "Open high/critical alerts" gate fails with the open high/critical counts, the wait-for-analyses step and concurrency are unchanged.
+  - **Migration:** none; the triggers live in the workflow file and apply to the next run. One caveat the plan records — if you have made the "Open high or critical alerts" check a *required* check for pull requests on GitHub, drop that requirement: a documents-only pull request now starts no CodeQL run, and a required check that never appears waits for the merge forever (pushes are not gated by merge requirements). `make test` now includes `tests/test-codeql-trigger-listing.sh`, which asserts this trigger listing and the least-privilege permissions, so an edit that drops the narrowing fails the test suite rather than silently re-widening the runs.
+
+## v9.112.2 — Image sends no longer freeze the terminal
+
+### Fixed
+
+- **Sending an image no longer freezes the terminal.** The vision describe call in the websocket input path was unbounded: a slow or hung vision backend blocked the connection's read loop, so while one image send waited on the model, every other input on that terminal was stuck. Each describe request now runs under a per-request deadline — `vision.describe_timeout_seconds` (default 5 seconds; `0` or negative keeps the default) — enforced by the caller, so a backend that ignores cancellation cannot hold the wait past the deadline. On timeout or error the `[image:path]` tag degrades to the `@path` reference used when no vision backend is configured, so the session can still read the image itself. Image-bearing sends expand their tags on the connection's input worker instead of the read loop, so later messages keep being processed while an image send waits, and input order into the session is preserved.
+  - **How it shows up:** a PWA/terminal image send resolves within the describe timeout even when the vision backend hangs — a slow description becomes a `@<path>` reference instead of a frozen terminal — while the rest of the connection stays responsive.
+  - **Migration:** none. If your vision backend is routinely slower than 5 seconds, raise `vision.describe_timeout_seconds` so slow-but-valid descriptions are kept instead of falling back to `@path`.
+
+## v9.112.1 — Unedited daemon-generated documents no longer hold an Automaton at finish
+
+### Fixed
+
+- **The finish-time uncommitted-work check no longer holds an Automaton for documents the daemon itself generated.** Under the default policy `hold` (`autonomous.automation.uncommitted_work_policy`), an Automaton that finished with only daemon-generated documents still uncommitted (the gate report, the changelog draft, the tracker and registry rows, the parity issue draft) was held before `completed`. An unedited generated document — still carrying its generated marker, unmarked by any edited line, and matching the hash sidecar (`.genhash`) the daemon wrote beside it — no longer counts as uncommitted work, so an Automaton whose only dirt is the daemon's own documents completes and is listed as merge ready.
+  - **How it shows up:** the hold reason and the PWA's uncommitted-work listing no longer name an unedited daemon-generated document. A document a person edited (marker missing, an edited line, or a hash no longer matching or missing sidecar) still holds, under all three policies; every other uncommitted file is treated exactly as before, and the per-task check is unchanged.
+  - **Migration:** none. It applies from the next Automaton finish, with no setting to change; an Automaton already held whose hold covers only unedited daemon-generated documents passes the check again when it is re-run.
+
+## v9.112.0 — Leftover session processes are ended by evidence, a host load alert, and bounded load steps
+
+### Fixed
+
+- **Processes a worker started no longer outlive a cancelled task.** Before, ending a worker session (cancel, kill, failure) could leave the commands it had launched — test runs, servers, helper scripts — still running. Now every session end reaps what the session left behind. A process is attributed to a session only on evidence read from `/proc`: its working directory, executable or script lies in the session's worktree or scratch folder, its ancestry reaches the session, or its environment carries the session id. Nothing is ever ended by name, each process is signalled by exact pid with the evidence re-checked just before the signal, and the reap never fails or blocks the session end itself. A reap that ended anything writes one `session_end_reap` audit entry (and a `session_end_reap` decision on the task when the session was bound to one) showing how many it ended and how many survived; survivors are counted, not re-signalled, and nothing is written when it finds nothing. No migration step is needed — reaping is automatic and touches only what evidence proves it ended.
+- **Reuse audit.** The change extends three existing primitives rather than adding new ones: the recorded-descendant signalling in `cmd/datawatch/descendant_processes.go` (record pids + start times while the worker runs; end only the recorded pids, re-verified against `/proc` just before each signal), the daemon's audit log (one `session_end_reap` entry per reap that ended anything, in the same entry shape every other action uses), and the daemon's once-per-minute periodic-check pattern (the companion host load check, `internal/autonomous/host_load.go`, runs as the same kind of tick loop that reads the live config, so a setting change needs no restart).
+
+### Added
+
+- **Host load check (`autonomous.host_load_alert`).** When the load average stays above `multiple` times the core count (default 1.5) for `minutes` (default 10), the daemon raises one warning per episode — "Host load high: Automata may be slowed" — naming the busiest process groups and whether each belongs to a worktree or scratch folder of a running or ended session. `mode` is `off`, `alert` (default; reports only) or `reap` (also ends the leftover processes of ended sessions the evidence rule proves belong to them; a running session is never touched). The check runs from the daemon once a minute and reads the live setting, so a change needs no restart; set it in YAML config, the web General settings, or via REST, the comm channel, the CLI (`datawatch autonomous config-set`) or MCP.
+- **Bounded load step rule.** A task that asks for a CPU-load or stress step — a busy loop, a stress test, a load or soak test, any command that pins the cores — must be bounded before it runs: run it niced (`nice -n 19`), cap the workers at a quarter of the cores (nproc/4, minimum one), give it a hard timeout, trap `EXIT INT TERM` and clean up its children, and never let it outlive its owning task. One wording, three surfaces: the built-in `bounded_load_step` task template, the rules block appended to the decompose prompt the planner reads while planning, and a warn-severity `unbounded_load_step` finding in the decompose lint when a task spec asks for an unbounded load step. Its role is to keep the session-end reap and the host load check from ever having to finish a task's load after it — a bounded step dies with the task that started it.
+
+## v9.111.4 — Discussion ids are validated and the tag filter lookup set is unsized, closing three high code scanning alerts
+
+### Fixed
+
+- **The three high code scanning alerts open on main are closed, so the CodeQL alert gate stops failing.** The discussion routes (scope, sync and the file service folder handler) built file paths from the discussion id in the request URL without checking it, so an id such as `..` could point outside the discussion folder. Every one of those routes now checks the id first and answers `400 invalid discussion id` for a bad one. A valid id is 1 to 128 characters of ASCII letters, digits, dot, underscore and hyphen; `.` and `..` are never valid.
+  - **How it shows up:** a request with a traversal or otherwise malformed discussion id gets `400 invalid discussion id` and touches no files; requests with ordinary ids behave as before. The "Open high/critical alerts" check goes green once the next CodeQL analysis of main completes. Route tests cover traversal ids on every affected route.
+  - **Migration:** none. A discussion whose id uses characters outside the allowed set (spaces, slashes, non-ASCII) is no longer reachable through these routes; rename it to an allowed id.
+  - **Docs:** the [discussion scopes](docs/howto/discussion-scopes.md) and [file service](docs/howto/file-service.md) how-tos now state the discussion id rule, the `400 invalid discussion id` answer, and how to check an id before calling.
+  - **Tag filter:** the tag-selection match used by the Automaton, task and Automation list filters no longer sizes its lookup set from the input lengths, which clears the allocation-size alert on `internal/autonomous/object_tag_filter.go`. Filter results do not change; a 37-case table test (`TestMatchesObjectTagsResults`) now pins them.
+
+## v9.111.3 — Alerts header: the help link sits on the Last updated row
+
+- **PWA Alerts header layout fixed.** The round "?" help link on the Alerts tab no longer takes a separate top-right row above the list, which mis-rendered on narrow touch viewports (reported with a screenshot from Chrome on Android). It now sits at the right edge of the loader's meta row, beside the list's status text, and keeps its existing destination (the Alerts howto), tooltip and accessible name. On touch devices the link gets a 40px minimum tap target. No migration step: refresh the PWA and the new layout is in effect.
+
+## v9.111.2 — Release lint passes again: one test lookup no longer assigns to the blank identifier
+
+### Fixed
+
+- **The release workflow's lint step passes again, so the release builds, containers and scans run.** The tag-launch test in `cmd/datawatch/launch_tags_test.go` read a map entry with a needless blank-identifier assignment; the lint step in the release workflow pins golangci-lint v2.12.2, while a local build can run a different version, and the pinned version failed on it (staticcheck S1005), which skipped the release build, the container images and the vulnerability scan for the releases built from that code. The lookup is now a plain map read. No product behaviour changes. The releases made while the step was red have tags but no built files; this release carries everything from them.
+
+## v9.111.1 — Alert gate waits with a growing interval and reads rate limits as wait-and-retry
+
+### Fixed
+
+- **The "Open high/critical alerts" check no longer exhausts the repository's GitHub API rate limit and fails as a red check with no finding.** The CodeQL workflow's alert-gate job used to poll the code-scanning API on a fixed 30-second schedule while waiting for the analyses, and Dependabot rebases every open pull request on each push to main — so about fifteen jobs of the same installation polled the one rate limit at once, exhausted it, and the step failed with a rate-limit error that looked like a broken check. Waiting now backs off (60 s, doubling to 300 s, within a 25-minute budget), and both steps treat a rate-limited response as wait-and-retry: the gate asks GitHub for the core rate-limit reset time, waits until it, and retries within the budget. The open-alerts read is a single read, not a polling loop; it retries only on a rate limit, and a read failure is reported as a failure — never as a zero-alert result.
+  - **How it shows up:** a red check whose step log says `Rate limited` with a reset time is an API wait, not a code finding — wait until the reset time, then push a new commit or rerun the check. A `No analysis for` line is the real missing-analysis timeout and the one worth investigating. The gate's exit codes are unchanged, and it still fails on open high or critical alerts exactly as before; nothing in the log is a code finding unless it names an alert.
+  - **How it reads in CI watch:** such a red run is recorded by Automation the way any failing security run is recorded — as a record, with no special classification and no rerun; the job log is the check that tells the two reds apart.
+  - **Migration:** none; the defaults apply on upgrade. See the *Red check from a rate limit* section of [docs/howto/codeql-local-scan.md](docs/howto/codeql-local-scan.md) and the CI-watch how-to.
+
+## v9.111.0 — Automatic Claude lane count inside the operator's setting
+
+### Added
+
+- **Usage calculator auto lanes — plan, parity status and mobile parity text.** Recorded the auto-lanes feature in [docs/plans/2026-11-02-usage-auto-lanes.md](docs/plans/2026-11-02-usage-auto-lanes.md) (scope, phases, parity surface), added its row to `docs/parity-status.md`, and wrote the companion-app issue text in `docs/plans/parity-issues/2026-11-02-usage-auto-lanes.md`. No version change.
+
+- **Auto-lanes CLI and MCP status — `datawatch usage auto-lanes` and `usage_autolanes_status`.** Two new read paths over the existing auto-lanes surface: `datawatch usage auto-lanes status` reads `GET /api/usage/autolanes` (enabled, the policy in force, the operator maximum from `usage.calculator.auto_lanes_max`, the cap the daemon applies now, what a fresh advice's decision would do to that cap, the settings' last change, and the loop's recent decisions), and `datawatch usage auto-lanes set` writes its settings through the normal config set path — `--on`/`--off` for `usage.calculator.auto_lanes` and `--max N` (1 to 8) for `usage.calculator.auto_lanes_max`, each value validated by the daemon the way any `config set` value is, with a refused one storing nothing; `--on` and `--off` together are refused before any request, as are a `--max` outside 1–8. The read-only MCP tool `usage_autolanes_status` (no arguments, `usage:read`) returns the same status bytes, and `docs/mcp.md`, `docs/cursor-mcp.md` and the usage calculator howto ([howto/usage-calculator.md](docs/howto/usage-calculator.md), new *Auto-lanes* section) record both surfaces.
+
+## v9.110.1 — Server state paths follow the configured data directory
+
+### Changed
+
+- **The file secret provider's default folder is now derived from the configured data directory, not the home directory.** `secrets.NewFileProvider` no longer falls back to `~/.datawatch/secrets` when given an empty base directory — callers must pass the folder. A new `secrets.DefaultFileProviderDir(dataDir)` returns `<data_dir>/secrets` (with `~` expansion), and the daemon's startup wiring uses it, so the effective default location (`<data_dir>/secrets`, which is `~/.datawatch/secrets` under the default data directory) is unchanged.
+
+### Fixed
+
+- **The daemon's state paths now follow the configured data directory (GitHub issue 252).** A daemon started with its own `data_dir` used to read and write most of its state — channel routing, dashboard layout, smoke-run records, discussion history and participants, merge pipeline records, usage readings, encryption state, migration status, the default automaton worktree directory and the tmux socket directory — from the process home directory (`$HOME/.datawatch`, or the `DATAWATCH_DATA_DIR` environment variable) anyway, silently ignoring the configured data directory. Every datawatch-owned state path now resolves from the configured `data_dir` through a single helper, falling back to `~/.datawatch` only when no data directory is set, and the `DATAWATCH_DATA_DIR` environment fallback is gone. A static guard test blocks any new home-derived state path in the server package, an isolation test requires a decoy home tree to stay byte-identical across the full handler surface, and `scripts/state-data-dir-live-check.sh` proves it end to end against a sandbox daemon.
+  - **How it shows up:** a daemon started with a custom `data_dir` now serves its state from that directory — `GET /api/channel/routing`, `GET /api/dashboard/layout`, `GET /api/smoke/progress` and `GET /api/security/encryption/status` all reflect the files under the data directory — and the home tree is left untouched, while a daemon on the default data directory (`~/.datawatch`) looks exactly as it did before. The automaton worktree directory defaults to `<data_dir>/prd-worktrees` and the secrets file provider to `<data_dir>/secrets` (see the entry above).
+  - **Migration:** if you set `data_dir` and rely on state that used to live under `$HOME/.datawatch` (channel routing, dashboard layout, smoke runs, discussions, merge records, usage readings, encryption state, or the default worktree directory), move those files into the data directory before upgrading — otherwise the daemon starts with an empty state there. With the default `~/.datawatch` data directory there is nothing to do.
+
+## v9.110.0 — Tag everything the Automata system can tag
+
+### Added
+
+- **Tag everything that can be tagged, and make the tags carry what the work belongs to.** Machine-managed placement tags now extend from sessions to every object the Automata own — Automata, Automations, tasks, templates, decision records and held questions — each re-derived from its own facts on every save.
+- **Filter by tag or by axis on every list.** `GET /api/sessions` and `GET /api/autonomous/prds` accept repeatable `tag=axis:value` with `tag_match=any` (default) or `all` plus per-axis shortcut parameters; the PWA session list shows the tags in use as chips grouped by axis, and the CLI and the comm channel can list tags and filter by them. `GET /api/sessions/tags` (MCP `session_tag_list`) lists every tag in use with its count.
+- **A tag sweep for what already exists.** `POST /api/autonomous/tags/sweep` (MCP, CLI `datawatch autonomous tags sweep [--dry-run]`, comm `autonomous tags sweep [dry-run]`) re-derives the system tags of existing sessions and records and replies with a per-kind tally; it also runs automatically when the placement settings change or the daemon starts.
+- **Migration.** The project placement axis is now on by default (`autonomous.tags.placement`); run the sweep once — with `dry_run` first to preview — to tag the objects you already have. How-to: [Organise Automata and sessions with nested tags](docs/howto/automata-tags.md).
+
+## v9.109.1 — Keep the daemon's platform context section out of tracked rules files
+
+### Changed
+
+- **Platform context no longer dirties the tracked rules file of your repository.** For claude-code sessions, the daemon used to keep the platform context section inside the tracked rules file (`AGENT.md` or `CLAUDE.md`), which dirtied `git status` and could be picked into a commit. It is now delivered into an untracked `CLAUDE.local.md` next to the rules files: in a git repository the filename goes into the repository's `info/exclude` list — a per-clone ignore list that is itself untracked — so the write never dirties `git status` and never reaches a commit. If the project already tracks its own `CLAUDE.local.md`, datawatch refuses to write into it and that session receives the text as its first prompt, the same delivery as every other backend family. `CLAUDE.md` and `AGENT.md` are never edited for the platform context.
+- **Every tree-cleanliness check now ignores edits that touch only the daemon's own marked sections.** Across the uncommitted-work check, the read-only task check, the protected-paths gate, the merge preflight that folds a task branch back, the dirty-tree start guard, the await probe that decides when a tree may be taken again, and the dirty check when a worktree is cleaned up: the daemon's marked sections in the rules file (session guardrails header, memory, RTK, cross-session and platform context) are stripped from both sides before comparing. A task is no longer failed, held or left with leftover dirt when the only difference is the daemon writing to its own sections; the merge preflight additionally strips a rules-file commit that carries only daemon sections, while a real edit in the same file is kept. A real edit to the rules file is still failed, held or asked, exactly as before, and there is no new setting behind any of it.
+- **A platform context block that was already committed inside `AGENT.md` or `CLAUDE.md` is cleaned up on its own.** The marked block is stale by construction — the daemon owns the current text and delivers it at every session start — so at daemon start, and periodically after, the daemon removes it from those files for the projects of your stored Automata. The removal is made in the working copy only: the daemon never commits it, and the block simply leaves the file in the next commit you make for it. Each cleaned file is recorded in the audit event log, and once a file is clean the sweep is a no-op.
+  - **How it shows up:** `git status` in a claude-code project stays clean across session starts; tasks that only observe the tree — or whose only rules-file difference is the daemon's own write — pass their checks and their merges instead of failing or being parked; and an old platform context block in a committed rules file disappears from the working copy after the next daemon start, with no change coming from the daemon. The settings and controls are unchanged: `platform_context.enabled`, `platform_context.note` and the project override all keep working, and `platform_context_status` still reports which delivery path a backend uses.
+  - **Migration:** none. Nothing to switch or repair — on your next daemon start the old block is removed from any tracked rules file that carries it, and new sessions take the untracked-file delivery automatically. If you had switched `platform_context.enabled` off to avoid the dirty tree, you may switch it back on.
+
+The how-tos cover the two sides: [howto/sessions-deep-dive.md](docs/howto/sessions-deep-dive.md) (delivery) and [howto/automaton-protected-paths.md](docs/howto/automaton-protected-paths.md) (the checks and the migration sweep); the definitions entry is in [docs/datawatch-definitions.md](docs/datawatch-definitions.md).
+
+## v9.109.0 — Track imap-mcp as a service-kind plugin
+
+### Added
+
+- **Track imap-mcp inside datawatch as a service-kind plugin.** datawatch now watches and controls imap-mcp — or any `kind: service` plugin — without changing imap-mcp's code: attach to a process that already runs, or let the daemon start and supervise it in managed mode. What you see: a service status card in the PWA plugin manager, one alert and one audit entry each time any of the four conditions (service down, token rejected, growing enrichment backlog, unreachable model node) starts or clears, and a tokens panel to list, rotate or remove the manifest's secrets (values are never echoed). All of it is reachable from every surface — REST, the `plugin_service_*` MCP tools, `datawatch plugins service …`, the `plugin status` chat verb, the `plugins.services` config block, and the PWA — under the same capability and operator-token gating as the rest of the plugin surface. No migration: imap-mcp keeps running standalone; to track it, place the manifest, store its bearer in the vault and enable the plugin (managed mode additionally needs the manifest to declare it and the plugin in `plugins.managed`). Reference: [docs/plugins.md](docs/plugins.md) · walkthrough: [howto/imap-mcp-service.md](docs/howto/imap-mcp-service.md).
+
+- **MCP tools for the managed-plugin-service lifecycle and plugin token rotation.** `plugin_service_start` starts a plugin's managed service — `POST /api/plugins/{name}/enable` with `{"managed": true}`, launching the manifest's lifecycle entry under the supervisor (health checks, restart policy) — and `plugin_service_stop` (`{"managed": false}`; the plugin stays enabled) and `plugin_service_restart` (stop, then start, in order) do the same for stopping and restarting. All three refuse attach-only plugins, and any plugin that does not declare the managed lifecycle mode, with a clear error explaining it is attach-only and naming the managed lifecycle mode it would need to accept the call — and a refused restart never attempts its start leg. `plugin_token_rotate` rotates one secret the plugin's manifest references: the new value is sent to `POST /api/plugins/{name}/tokens/{secret}/rotate` where it is stored and, when the name is also a registered service token, the old token is revoked and a fresh one minted under the same name; the response carries only `status`, `plugin` and `secret` names — the new value is never returned, because the tool re-emits a fixed field list instead of passing the upstream body through. Each tool proxies the existing operator-facing REST route, so the daemon's own REST API is unchanged and the daemon's existing audit trail records what happened; the new tools hold the `plugin:write` capability (in no built-in group), not the config caps the other plugin tools carry; `plugin_token_rotate` is additionally operator-token-only because its upstream route is — a federation peer gets the 403 that route gives.
+- **Four read-only MCP tools for plugin services.** `plugin_service_status` reads one plugin's service object (lifecycle mode, state, address, version, uptime, last health check), `plugin_widget_list` lists its declared widgets with each widget's latest value, `plugin_widget_get` fetches one widget and latest value, and `plugin_token_list` lists the secret names a plugin references (with their manifest fields and existence) plus the service token names with creation times. Each is a read-only proxy of the corresponding REST endpoint — `GET /api/plugins/{name}`, `GET /api/plugins/{name}/widgets`, `GET /api/plugins/{name}/widgets/{widget_id}`, and `GET /api/plugins/{name}/tokens` — so the response is the endpoint's body verbatim, including its error codes (unknown plugin is a 404, a plugin without the widgets or surface is a 503). They gate on `plugin:read`, not the config caps the other plugin tools hold. `plugin_token_list` never returns a secret or token value and is operator-token-only, just like the REST route (a federation peer gets a 403).
+- **Service event recorder for plugin health.** A new `internal/plugins` recorder turns four named plugin-service conditions — **service is down** (a health probe fails enough times in a row), **token rejected** (the service answers a probe or a widget pull with 401/403), **enrichment backlog is growing** (its pending count keeps rising pull after pull), and **a model's Ollama node is unreachable** — into state transitions. Each condition raises one alert with plain, operator-readable text (it names the plugin and the next move) and one audit-log entry (`plugin_service_down`, `plugin_service_token_rejected`, `plugin_service_enrichment_backlog`, `plugin_service_model_node_unreachable`) when it starts, and a recovery alert plus a "cleared" audit entry when it ends. It fires once per transition — never on every poll — and its thresholds (how many probe failures, how many rising pulls, the minimum rise per pull) are parameters with sensible defaults rather than buried constants. The recorder is per-plugin by name and per-(plugin, model) for the node condition, so one plugin's failures never move another plugin's state.
+
+- **Per-plugin token usage listing (`GET /api/plugins/{name}/tokens`).** For a service plugin, the operator can now list each secret the manifest references — the manifest fields that carry the reference (`connection.auth.token`, `env.<KEY>`) and whether that secret exists in the store — plus the names and creation times of the service tokens minted for that service. The response carries names and fields only; it never returns a secret value or a service token value. Only the operator token may use the route: a missing or wrong token gets 401, and a federation peer (even with full control) or a session-scoped credential is refused with 403; an unknown plugin gets 404, a non-GET method gets 405, and with no plugin wiring the route reports 503.
+
+- **Per-plugin secret rotation and removal (`POST /api/plugins/{name}/tokens/{secret}/rotate`, `DELETE /api/plugins/{name}/tokens/{secret}`).** The operator can now rotate or delete one of the secrets a plugin's manifest references. A rotate takes the new value in the request body, stores it through the secrets store, and — when that secret is also a registered service token — revokes the old token and mints a fresh one under the same name, leaving every other token untouched. The rotate response carries only the plugin and secret names and never echoes a secret value. Both routes are operator-token-only (a federation peer or session-scoped credential is refused with 403), refuse a secret the plugin does not reference with 400, return 404 for an unknown plugin, and report 503 with no plugin or secret wiring; both actions land in the audit log.
+
+### Changed
+
+- **Operator documentation for plugin services.** Two new documents: `docs/plugins.md` — the operator reference for service-kind plugins: the two modes (attach_only vs managed, with the manifest ceiling and the operator opt-in), both connection blocks (`connect` with a named `auth` secret, `lifecycle` with entrypoint and the three default lifecycle parameters), choosing a mode per deployment, the daemon's behaviour in each mode (startup order, the backoff ladder, stop grace, the probe cadence), the six widget kinds with the two surfaces and the two data modes (push/pull, the 64 KiB payload limit, the one-minute snapshot), service tokens (vault storage, minting from a terminal only, the four-token families, rotation order — rotate then update the consumer — and revocation), the four service events with each one's next action, and every watch threshold with its default and range; and `docs/howto/imap-mcp-service.md` — the end-to-end walkthrough with imap-mcp as the worked example: running it standalone, attaching, optionally switching to managed, minting and rotating the service and push tokens, reading the status card, acting on each event, a verification loop that proves each mode, and a troubleshooting table. Both make clear that imap-mcp runs entirely on its own — datawatch never requires it to carry a datawatch mode: attach-only is datawatch observing a service that already runs, managed is datawatch launching and supervising the same binary. The existing surfaces are also brought up to date: `docs/operations.md` gains a *Plugin services: lifecycle semantics* section (process ownership, the state table, the daemon's hard limits, secrets and tokens in operation, the four events with their next actions, the threshold knobs), `docs/mcp.md` and `docs/cursor-mcp.md` document the eight plugin service tools (`plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list`, `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate`) with their parameters, the REST route each proxies, parameter types and error shapes, and `README.md` and `docs/README.md` link the new documents. No configuration, endpoint or default changed — this is the operator-facing documentation for plugin services that the feature work shipped in the entries above; the behaviour those entries describe is unchanged.
+
+## v9.108.2 — Daemon-written rules sections no longer trip the protected paths guard
+
+### Fixed
+
+- **The protected-paths guard no longer counts the daemon's own rules-file sections as a task change, so a task is no longer held on rules the task never edited.** The first false hold was found 2026-11-07 05:07, in the first hour after v9.107.0 shipped. Every session start, the daemon writes its own marked sections into the project rules file — the session guardrails header, the memory, RTK, cross-session and, new with v9.107.0, the platform context section — and the rules file (`AGENT.md`, or the file named by `autonomous.rules_file`) is a default protected path. The guard compares the rules file with the commit the work started from, and the daemon's own write registered as a change *made by the task*, so a task that started right after a session start was parked as blocked with a `protected_paths` question asking you to approve the daemon's own injection. The guard now strips the daemon's marked sections from both the base side and the task side before comparing: a protected rules file counts as changed only when its content changes outside those sections, and a real edit to the rules is still held and asked, exactly as before. The same protected list and the same `autonomous.automation.protected_paths_action` apply, and there is no new setting behind this.
+- **Tasks already parked by a false hold come back without an operator answer.** The daemon re-checks them on its next start every task held on a protected path against the commit stored on the hold: when none of the held paths shows a non-daemon difference against that base, the hold is treated as a false positive — its open `protected_paths` question is withdrawn with no new one raised, the hold and the task error are cleared, one `protected_paths_false_positive_released` decision is recorded on the Automaton, and the task is returned to the queue and runs on. Holds whose paths show a real change against the base commit, and holds from the `block` action (which store no base commit), are left held for an explicit operator decision, with a log line naming why. No migration step: the guard behaves correctly from the first task after you upgrade, the sweep runs itself at each daemon start, and once it ships the `platform_context.enabled` setting that you may have switched off while the false holds appeared can be switched back on by you — the daemon does not do that.
+
+The how-to covers both sides: [howto/automaton-protected-paths.md](docs/howto/automaton-protected-paths.md); the background is in `docs/plans/2026-11-07-daemon-sections-protected-paths.md`.
+
+## v9.108.1 — Read-only task check counts only new dirt
+
+### Fixed
+
+- **The read-only task check now fails a task only when it added dirt, not when pre-existing dirt went away.** The check compared `git status` after the task against the baseline from its start and failed on any difference, so a read-only task that changed nothing could still fail when dirt that existed before the task disappeared while it ran (for example a parallel task committing or cleaning it). It now fails only when a status entry in the after status was not in the before status: dirt already present at start keeps not counting against the task, and dirt that disappears during the run no longer counts either. When the tree cannot be inspected, no violation is reported, as before.
+  - **How it shows up:** a read-only task that merely observed the tree gets past the check; a task that still adds a file, an edit or a deletion fails exactly as before, with the same "read-only task changed the tree: git status is dirty after it finished (\<entry\>)" error. See [docs/howto/automaton-parallel-tasks.md](docs/howto/automaton-parallel-tasks.md).
+  - **Migration:** none; the check takes effect on the next read-only task after you update.
+
+## v9.108.0 — Grace period and unmerged-work guard for cancelled Automata
+
+### Added
+
+- **A grace period and an unmerged-work guard for cancelled Automata.** The supervisor loop used to archive a cancelled Automaton within seconds, which removed its record before you could reset or recover it. It now waits `supervisor_loop.archive_cancelled_after_minutes` (default 60, 0 archives at once) from the most recent cancel. A cancelled Automaton whose branch holds commits that are not on the base branch is not archived by the loop at all until you archive it, its work is merged, or its branch is deleted. The setting is on the config file, REST config, comm channel, MCP, CLI and the PWA Settings supervisor loop card in all five languages, and archiving now records who did it. A sandbox live check script and its passing report cover the behaviour end to end.
+
+## v9.107.1 — Judge prompt file route, infrastructure retry and outcome kinds
+
+### Fixed
+
+- **The guardrail judge can now review a large change.** A judge prompt for a big change used to be typed whole into the judge's session, so delivery failed and the same Automaton kept failing review. A prompt longer than `autonomous.judge_prompt_file_threshold_lines` (default 300) is now written to a file and the judge is told to read it. The judge also waits longer for a long prompt: `autonomous.judge_delivery_wait_per_thousand_lines_seconds` (default 60) adds that many seconds per 1000 prompt lines.
+  - **How it shows up:** a large change gets a real verdict instead of repeated infrastructure failures. The review state, Events entry and PWA review card show the judge outcome kind, so an infrastructure failure is told apart from a real block. Both settings are on every settings surface (YAML, `GET`/`PUT /api/config`, MCP, `datawatch config set`, the chat `configure` verb, PWA Settings).
+  - **Migration:** none; the defaults apply on upgrade. Set the threshold to `0` to always send the full prompt. See `docs/howto/automation-tab.md`.
+
+## v9.107.0 — Platform context awareness for every datawatch session
+
+### Added
+
+- **Every datawatch session now knows it runs on datawatch and what that gives it.** Each session, on every supported LLM backend, is given a short platform context describing the datawatch tools and services available to it. It reaches a session through the backend's rules file, the first prompt, or both; the `platform_context_status` MCP tool reports, for the calling session, whether it is enabled, the project's own override (if any), the text version and which delivery path that backend uses. Control it under the new `platform_context` Settings section (shown in all five web locales) or in config: `platform_context.enabled` (default `true`; `false` delivers nothing) and `platform_context.note` (optional text appended after the context, up to 2000 bytes). A project can override `enabled` with its own `platform_context_enabled` policy value. A change applies to sessions started afterwards. Documented in the sessions deep-dive, `docs/mcp.md`, `docs/cursor-mcp.md`, the definitions and the config reference. **Migration:** none; the context is on by default, so set `platform_context.enabled: false` to keep sessions as they were.
+
+## v9.106.0 — Memory ceiling for worker, verification and guardrail processes
+
+### Added
+
+- **Every worker pane and verification run now has a memory ceiling, so one runaway program can no longer take down the host.** The ceiling is a share of host memory (`resource_limits.memory_share_percent`, default 50), kept between `memory_floor_mb` (default 2048) and `memory_cap_mb` (default 16384). A project can override it with `memory_limit` in its project policy, and a task kind with `autonomous.memory_limit_by_kind`; each takes whole MB or `none` to opt out. It is held by a systemd user scope where one exists, otherwise by a daemon watchdog reading `/proc`; with neither, the run starts without a ceiling.
+  - **How it shows up:** the `memory_ceiling` object in `GET /api/autonomous/status` (and the `autonomous_status` MCP tool) reports the effective ceiling, its source and how it is enforced. A run that exceeds it is ended and the task attempt fails with "the process used more memory than the limit", with a `resource_ceiling_kill` entry in Events and a "Task stopped: memory ceiling exceeded" warning alert. The first such failure is retried; a second in a row moves the task to review.
+  - **Migration:** none is required; the defaults apply on upgrade. A task that legitimately needs more memory should get a higher `memory_limit` or `autonomous.memory_limit_by_kind` entry, or `none`. See `docs/operations.md#memory-ceiling`.
+
+## v9.105.1 — Automaton list and detail read the archive once for inherited tags
+
+### Fixed
+
+- **The Automaton list and detail no longer re-read the whole session archive once per Automaton.** Listing Automata — or opening one — used to walk every archived session again for each Automaton, so a large archive made the list and detail slow. The inherited (system) tags now come from one shared read of the live and archived sessions, taken when the list opens and reused when you open a single Automaton, and the archive is read pass by pass without blocking the live sessions. The tags shown are unchanged — only how quickly the list and detail come back.
+
+### Added
+
+- **`autonomous.inherited_tags_cache_seconds`.** Lifetime in seconds of that shared read. Default **15**; `0` keeps the default; a negative value turns the cache off. A tag change always shows on the next read — the kept result is dropped when a session is archived, deleted, restored, or its placement tags change. Settable on every settings surface (YAML, `GET`/`PUT /api/config`, MCP, `datawatch config set`, the chat `configure` verb, PWA Settings) without a restart.
+- **Documentation.** The tags how-to covers the shared read and the setting ([howto/automata-tags.md](docs/howto/automata-tags.md)); `docs/config-reference.yaml` lists the key.
+
+No migration step: the default lifetime is in place on upgrade, and the tags the list and detail show are identical to before.
+
+## v9.105.0 — Automata counts corrected and grouped by project, Automation and Automaton
+
+### Fixed
+
+- **The Automata progress counts now include finished work that was filed away, and can be grouped by project.** A cancelled or archived Automaton whose tasks all completed is merged work, so it now counts as done in every total, in the rates and in the estimate sample. Cancelled, archived or rejected Automata with unfinished or no tasks stay out. On the Progress card (Automation sub-tab, *Progress and cost*) a *Group the totals* selector switches the table between *Overall*, *By project*, *By Automation* and *By Automaton*; records with no project or Automation appear in one *(none)* row, last, so rows add up to the total. The card also says what the estimate rests on ("Estimate based on N finished records and M completed tasks") and has a purpose line with a help link. `GET /api/autonomous/progress` gains the `group` query, `grouped.*` maps and `completion.sample_records` / `sample_tasks`. The new labels ship in EN, DE, ES, FR and JA; the how-to and API mapping are updated, and a datawatch-app parity issue is filed. No migration step: counts are recomputed on read.
+
+## v9.104.2 — Pane process liveness for the zombie indicator
+
+### Fixed
+
+- **The zombie indicator no longer flags one-shot workers that are still running.** A session's liveness probe read its tmux pane's foreground command and treated a shell in the foreground as a dead worker. One-shot workers such as a pi run are started as a shell pipeline (`pi | tee`), so tmux reported `bash` as the foreground even while the worker and its pipe were still alive — the amber `⚠ zombie` badge in the web app, the `[ZOMBIE]` mark in the session lists, `claude_alive` set to false, the warn alert, and any session exit hook wired to `restart` all mis-fired on sessions that were doing work. A shell foreground now means zombie only when that shell has no live child process; a pipeline pane with live children stays marked alive until they finish, and a truly dead session — worker gone, only a bare shell left — is flagged exactly as before, with the same badge, alert and hook behaviour. Nothing to migrate: the probe takes effect on the first reconcile tick after you upgrade and restart the daemon, with no configuration change. The liveness rule is defined under *Session zombie detection* in [docs/datawatch-definitions.md](docs/datawatch-definitions.md), and the pipeline-pane and dead-pane cases are covered by `internal/session/pane_liveness_probe_test.go`.
+
+## v9.104.1 — Protected-paths restore commit needs no git identity
+
+### Fixed
+
+- **The protected-paths restore commit no longer needs a git identity on the host.** When you reject a held Automaton task that changed protected paths, the daemon puts the paths back to their base version and records that as a new commit. That commit was made without a git identity, so on a host with no global git user name and email (a CI runner, a fresh server, a container) the restore failed and the task stayed blocked with "the restore could not be committed ... Author identity unknown". The restore commit now uses the same identity fallback as the task merge: your repository's own git identity when it has one, the daemon's identity otherwise. This also repairs the v9.104.0 release, which failed its test run for this reason and was never published; v9.104.1 carries everything v9.104.0 announced.
+
+## v9.104.0 — Protect the project rules files from workers
+
+### Added
+
+- **Protected paths, one question per hold, and a rules judge that grades against the rules as they were before the work.** The daemon keeps a list of paths protected from an Automaton's tasks — by default the project rules file (`AGENT.md`, or the file named by `autonomous.rules_file`), `docs/plans/2026-10-17-supervisor-rules-and-lessons.md`, `CODEOWNERS`, and every workflow under `.github/workflows/` — and you can extend it with more file or directory entries, both repo-relative, a directory matching everything under it at any depth; the gate applies whatever the rules file is actually named in your project, and the settings take a whole list or an empty list to clear it, with absolute paths and escape entries refused. After each task attempt, the daemon checks with read-only git against the commit the work started from (the merge-base of the work branch in worktree mode, the task's own base in direct mode) whether the work changed a protected path; if it did and the Automaton is not authorised for it, `autonomous.automation.protected_paths_action` decides what happens: `hold` (the default) parks the task as blocked and raises one question; `warn` records the decision and an audit event and the task proceeds; `block` parks the task with an error and raises no question; `off` runs no check at all. The held task's question (label `protected_paths`) names the protected paths the work changed and offers three numbered answers: **Approve** keeps the change, completes the task, and authorises exactly the paths that were listed — nothing more; **Reject** restores every listed path to its state from before the work, in a *new commit* on top of the old history (never a rebase, force-push or history rewrite), and re-runs the task, and if the restore fails the task stays held and one fresh question is raised instead of a half-state where the change stayed applied and the task was completed; **Change the spec** leaves the task blocked awaiting an edit to the task and re-runs it once you have made one; nothing changes until an answer lands — a stale or withdrawn question is recorded as a no-op, a foreign or unknown option is recorded and changes nothing, and an answer for a task that is not held is a recorded no-op; every hold, warning, block, approve, reject and authorisation is written to the audit log with its actor. Each Automaton also carries its own list of authorised paths — paths its tasks may change without being held — set with `datawatch autonomous authorize-paths <automaton-id> [--path P …] [--clear]`, the chat command `autonomous authorize-paths`, the MCP tool, the REST write route, or the protected-paths card on the Automation's Overview in the web app: the list is repo-relative paths with no absolute entries, an empty list clears it, an unknown Automaton id or a wrong method is refused, and an authorisation only covers the exact paths that were listed. The rules judge now grades an Automaton against the project rules as they were before its work: it reads the project rules file from the commit the work started from (the *base commit*), not from the working tree where a task may have rewritten or deleted the rules to weaken the judgment it is itself subject to — the rules file is read from the base commit and never from the working copy in the meantime, a rules file with no base version (for example a brand-new file created by the work) is left out of the review rather than treated as an empty ruleset, and if the base commit is unresolvable or the read fails the review falls back to the working-tree read and records the fallback; `autonomous.automation.rules_review_source` sets which read the rules review uses — `base_commit` (the default) or `worktree`, which restores the older working-tree read for projects that keep their rules only in the working tree — and a re-judgment of the same run reads the same base version, so a review is stable across retries. All three settings — `protected_paths`, `protected_paths_action` and `rules_review_source` — sit under `autonomous.automation` and are read and set the same way as the rest of the config: the PWA Settings section, `PUT /api/config`, the MCP autonomous config set, `datawatch config set`, or the chat `configure` command; a change takes effect on the next task with no restart, an unknown word is refused, and a refused write saves nothing. The state — the action and rules source in effect, the effective protected list, every task that is held and why, with its question and base commit, and every Automaton with authorised paths — is readable with `GET /api/autonomous/protected-paths` (optionally filtered by `?automaton=<id>`), the MCP tool `autonomous_protected_paths`, `datawatch autonomous protected-paths [--automaton ID] [--json]`, the chat command `autonomous protected-paths`, and the protected-paths card on the Automation's Overview in the web app; a held task shows its hold and its question on the task view, and both routes are listed in the OpenAPI spec (`internal/server/web/openapi.yaml`). Operator guide: [howto/automaton-protected-paths.md](docs/howto/automaton-protected-paths.md); the reference section is in `docs/operations.md` under *Automaton protected paths*; the terms are defined in `docs/datawatch-definitions.md`.
+
+**Monitoring:** this step adds one new state of its own, and it is exposed: the protected-paths status — the action and rules source in effect, the effective protected list, every task held with its paths, action, reason, question and base commit, and every Automaton with authorised paths — is gauged by `GET /api/autonomous/protected-paths`, the MCP tool `autonomous_protected_paths`, `datawatch autonomous protected-paths`, the chat command `autonomous protected-paths`, and the protected-paths card in the PWA; a held task shows its hold and question on the task view. Every hold, warning, block, answer and authorisation-set is a decision and an audit event (kinds `protected_paths_held`, `protected_paths_warned`, `protected_paths_blocked`, `protected_paths_authorised_set`), each with its actor. There is no new `SystemStats` field, no new `/stats` endpoint, no new Monitor card and no new comm stats verb: the question, alert and audit machinery already announce all of it.
+
+**Reuse audit (new primitives):** nothing new was built where a primitive existed. The base-commit read rides the daemon's existing read-only git runner; the rules review still runs its existing once-per-pass review with the same single judge call — only the commit at which it reads the rules file moved; the park uses the existing task hold, the single question uses the existing question store and answer hook, the reject/restore commit reuses the same commit machinery the daemon already uses to commit a task's work, the per-Automaton authorised-paths list rides the existing Automaton record and the same REST / MCP / CLI / comm / PWA write surfaces as the other autonomous settings, the three settings apply through the existing config `PUT` apply path (validate first, apply, no restart), and the status read rides the same surface set as the other autonomous status reads. Genuinely new pieces: the protected-path matcher, the after-attempt gate check against the base commit, the hold state with its question, the restore-commit for reject, and the base-commit rules-file read for the review.
+
+## v9.103.1 — Container images drop the vulnerable x/net
+
+The container images no longer carry a vulnerable HTTP/HTML library, and the agent-base container scan passes again.
+
+- Trivy reported `golang.org/x/net` v0.60.0 (CVE-2026-78661, HIGH, a denial of service in `golang.org/x/net/html`, fixed in 0.62.0) in the agent-base image, and the container build step failed on it in the v9.103.0 Release run. The library was in the GitHub CLI built into the image, so the pin that forces its `golang.org/x/net` moved to 0.62.0.
+- datawatch's own `go.mod` moves to `golang.org/x/net` v0.62.0 as well, with the `x/crypto`, `x/sys`, `x/term`, `x/text`, `x/sync` and `x/tools` versions Go resolved for it. The build and vet are clean.
+
+## v9.103.0 — Read-only task recovery and unverifiable-task refusal
+
+- **A task held for review can be fixed in place.** `edit_task` (REST, MCP `autonomous_prd_edit_task`, CLI, chat) now accepts a `review_needed` task in a blocked Automaton, so its spec, read-only mark and report path can be corrected; running and pending tasks of a blocked Automaton and completed tasks are still refused, and an edit never changes the task's status. The retry decision (`resolve_task_review`, MCP `autonomous_prd_resolve_task_review`, `datawatch autonomous resolve-review --read-only --report-path`, chat `review-task read_only= report_path=`) also takes an optional `read_only` mark and `report_path`; every change is checked first, so a refused change leaves the task held. A refused edit no longer leaves the spec or read-only mark half-applied.
+
+## v9.102.1 — Decision record list no longer sizes memory from a request value
+
+- **Decision record list no longer sizes memory from a request value.** Listing decision records with a very large limit (for example from the REST query value) still returns at most 1000 records, newest first, with the same filters and order; the list now grows as records are found instead of reserving space from the limit you sent. This closes a code-scanning finding (uncontrolled allocation size) and changes nothing you can see.
+
+## v9.102.0 — Decision records: the daemon builds the operator question from a structured decision
+
+- **Decision records: write down a decision once and let the daemon ask you about it.** A decision record holds the situation, the question, two or more options with a one-line trade-off each, an optional recommendation and default, and an optional link to a document. The daemon builds the question that appears in the operator question queue from the record, so you no longer word the question by hand. There is exactly one question per record, kept in step: edit an open record and the same question changes; withdraw the record and its question is withdrawn. A record that has been answered cannot be edited.
+- **Clarity rules keep the questions readable.** Before you see a record, the daemon checks that the text is long enough, that every option has a trade-off, that the label is a human one, and that no internal tracker identifier slipped in. `autonomous.decisions.clarity_mode` is `warn` by default (the record is stored and the findings are shown), `refuse` rejects it with the findings, and `off` skips the check.
+- **Your answer is stored with your own words.** The answer keeps the option you chose, your quote exactly as written (line breaks included), who answered and from which surface. A task whose spec names the question waits until it is answered, then starts by itself.
+- **The status line of a linked document can be updated for you.** `autonomous.decisions.doc_status_mode` is `report` by default: the daemon shows the one line it would change and leaves the file alone. `on` rewrites that single line (the default pattern is a line starting with `Confirmed:`) and `off` does nothing. This is meant for documents such as the pre-10.0 design proposals index (`docs/plans/2026-10-29-pre-10-0-design-proposals-index.md`).
+- **Follow-ups never run unless you configure them.** An answer may ask for one named follow-up, such as starting a template or opening an Automaton, but only names listed in `autonomous.decisions.follow_ups` are accepted. The list is empty by default, so nothing runs.
+- **A folder of decision files can be watched.** Set `autonomous.decisions.folder` and the daemon raises a record for each file, updates the same question when a file changes and withdraws it when the file is deleted (`folder_withdraw_on_delete`, default on). A file that is not in the default format can still be read by changing the front-matter delimiter, separators and key names.
+- **Every surface can use them.** REST (`/api/autonomous/decision-records`), the MCP tools, `datawatch autonomous decisions`, the chat verbs, the web UI card on the Automata view and its settings, and `PUT /api/config`. The answer verb in chat has no follow-up option on purpose: a chat answer is a short reply, and the follow-up is chosen on the other surfaces.
+- **Settings under `autonomous.decisions`, with defaults:** `enabled` true; `folder` empty (watch off); `folder_glob` `*.md`; `front_matter_delimiter` `---`; `front_matter_separator` `:`; `front_matter_field_separator` `|`; `front_matter_keys` none; `folder_withdraw_on_delete` true; `clarity_mode` `warn`; `clarity_min_text_chars` 60; `clarity_require_tradeoffs` true; `clarity_require_label` true; `clarity_tracker_id_pattern` built-in; `doc_root` the daemon's working directory; `doc_status_mode` `report`; `doc_status_pattern` `^Confirmed:.*$`; `doc_status_template` `Confirmed: {choice} - "{quote}" ({actor}, {date})`; `follow_ups` empty. All apply with no restart.
+
+## v9.101.1 — Recovered back-off zone fix, task session names, question notify wait
+
+### Fixed
+
+- **The usage back-off now shows the provider's reset time in the daemon's own time zone.** When a provider's rate-limit message names a reset time in another zone (UTC or New York, for example), the back-off deadline and its "reset HH:MM" reason are converted to the daemon zone, both when the pause starts and when it is rebuilt after a restart. Back-off tests for the capacity card, the wiring and a browser story came along with the fix.
+- **Automaton task sessions are named `autonomous:task:<title>`.** The sessions an Automaton starts to do a task used to share the bare `autonomous:` prefix with nothing to tell them apart from other kinds; they now carry the task kind in the name, so the session list shows `autonomous:task:...` for them. The verifier, decompose and guardrail session names are unchanged.
+- **The daemon waits for in-flight question notifications before it exits.** A question-raise notification that was still being written to the alert store could be cut off at shutdown and made some tests flaky; shutdown now gives it a bounded wait, and a regression test covers it.
+
+## v9.101.0 — Post-ship hooks
+
+### Added
+
+- **Post-ship hooks — the hook steps a project runs after the ship, off by default.** A project lists its post-ship hook steps under `autonomous.merge_pipeline.post_ship`: the `enabled` switch (default off), an ordered `hooks` list of up to 20 entries where each is either a builtin — `registry_row` updates a registry row, `parity_issue` files an issue through the ship runner, `tag` adds a version tag that is not there yet, `notify` sends a rendered template — with its built-in target, or a `command` the daemon runs in the project, and each has its own `enabled`. After the merge pipeline ships (the push and the deploy), the daemon runs the enabled hooks in list order and records every result in the merge run record; a failed hook changes nothing about the ship, does not undo the deploy, does not stop the later hooks, and leaves one triage note with source `post_ship` only when the run belongs to an Automaton. The block and the hook list are readable and writable from every settings surface: YAML and `GET`/`PUT /api/config`, the `post_ship` block on the `autonomous_merge_pipeline_get` MCP tool, `datawatch autonomous merge-pipeline post-ship set|show` on the command line, `configure` and `help` on the comm channel, and the **Post-ship hooks** card in the PWA settings with the locale keys in all five bundles. How-to: [howto/post-ship-hooks.md](docs/howto/post-ship-hooks.md). Definitions: [Post-ship hooks](docs/datawatch-definitions.md#post-ship-hooks). Flow: [the post-ship hook flow](docs/flow/post-ship-hook-flow.md).
+
+## v9.100.2 — Accept five new unfixed HIGH container findings
+
+Adds traced accepted-risk entries, each expiring 2026-12-06, for five new HIGH findings that Trivy reported with no fixed Debian bookworm version in the agent-base image and that blocked the container images of the 9.100.1 release: CVE-2026-115506 (libexpat1), CVE-2026-119374 and CVE-2026-119379 (libsqlite3-0), CVE-2026-119741 (rsync) and CVE-2026-85091 (zlib1g). The traces found no reachable path for three of them; CVE-2026-115506 and CVE-2026-119374 are recorded as unknown for the Python-based worker images. No code change.
+
+## v9.100.1 — Fix two lint findings in the placement tag settings
+
+Fixes the two staticcheck findings (S1005, unnecessary assignment to the blank identifier) in `internal/config/tags_settings.go` that made the lint step of the 9.100.0 CI and Release runs fail, so the release artifacts were not built. No behaviour change.
+
+## v9.100.0 — Placement auto-tags on sessions and Automata
+
+Sessions and Automata now carry automatic placement tags that record where the work ran: the compute node, the federation peer, the backend, the lane, the role and the project.
+
+- **Placement tags.** Every session the executor starts is stamped with a system tag per enabled axis (`compute:<node>`, `peer:<name>` for federated work, `backend:<name>`, `lane:<name>`, `role:<name>`, `project:<name>`). The tags sit in the session's `system_tags`, apart from the operator's own `tags`, and a retry on another node replaces them with the new placement. Sessions already running at startup are backfilled.
+- **System tags.** Placement tags live in the tag registry as system tags: they cannot be renamed, moved or deleted, and an Automaton shows the union of the placement tags of its sessions as a read-only `inherited_tags` list.
+- **Settings.** `autonomous.tags.placement` has a master switch, an on/off switch and a template for each axis (compute, peer, backend, lane and role on, project off by default), and a `custom` list of operator-defined axes in the config file. A template that misses its axis placeholder is refused and nothing is written.
+- **Everywhere.** REST (`GET /api/autonomous/tags?system=true&axis=<name>`), MCP, the CLI, the chat channel, the config file and the web app (placement filter on the dashboard, tree and Gantt, a group-by-placement session list, a Placement tags group in Settings), with five locales.
+- **Documentation.** The tags how-to has a Placement tags section and the config reference lists the new block.
+
+## v9.99.0 — Requirements and model-pull consent
+
+Automation now reports what it needs against what is configured, and no model is pulled without the operator's consent.
+
+- **Requirements report.** `GET /api/automation/requirements-report` (MCP `automation_requirements_report`, CLI `datawatch automation requirements-report`, the chat verb and a Setup card in the web app) lists each capability with its minimum Ollama version, which compute nodes meet it, fail it or cannot be checked, the backends configured for each workload, and what is missing. The built-in minimum for classification verdicts is Ollama 0.35.0; `autonomous.requirements.min_ollama.<capability>` overrides it per capability, and a Settings field edits the overrides. A node that cannot be probed fails closed.
+- **Node backend versions.** Each compute node records its backend name and version with the time it was probed (`GET /api/compute/nodes/{name}/versions`, MCP `compute_node_backend_versions`, CLI `datawatch compute node versions`, a row in the node detail), and the onboarding report counts a node below a minimum.
+- **Model pull consent.** `autonomous.model_pull_consent` lists the models that may be pulled (each with an allow flag and a note) and the publishers allowed wholesale. It is default-deny: with nothing listed, no pull happens. The gate guards the compute node model pull and the marketplace task pull, and every allow, refusal and change is written to the audit log (`model_pull_allowed`, `model_pull_denied`, `model_pull_consent_changed`). Read and set it with `GET`/`PUT /api/automation/model-consent`, MCP `automation_model_pull_consent_get` and `_set`, `datawatch automation model-consent get|set`, the chat verbs, config keys and a Setup card.
+- **Settings and web app.** The Setup view has a Requirements report card and a Model pull consent card, and the Settings view has the minimum Ollama overrides. Five locales carry the new strings.
+- **Documentation.** Three how-tos: automation requirements, model pull consent and the major release requirements.
+
+## v9.98.1 — Phone-friendly Automaton detail tab strip
+
+### Fixed
+
+- **The Automaton detail tab strip fits a phone.** The eight tabs in the detail view now scroll sideways inside their own strip instead of widening the page, keep their natural width, and have a 40 px touch height on narrow or touch screens. Switching tabs scrolls the strip so the active tab is in view, and the detail wrappers can no longer push the page wider than the screen.
+- **Tests.** Unit tests cover the strip rules, the reveal and the tab switch, and a phone-width browser story (TS-850, widths 320, 390 and 430) checks that the strip scrolls inside itself, the tapped tab becomes active and the page never scrolls sideways.
+
+## v9.98.0 — Automatic grouping tags for Automation stages
+
+Every Automaton now carries automatic grouping tags for its Automation, its stage and its kind, and Automation members can be given a stage.
+
+- **Automatic tags.** The daemon keeps three system tags on each member Automaton and on its sessions: an automation tag, a stage tag and a kind tag, under system parents. The `autonomous.auto_tags` block holds the switch (`enabled`, on by default), the three templates (`automation_template`, `stage_template`, `kind_template`, using only `{automation}`, `{stage}` and `{kind}`) and the kind labels; an Automation can override the block for itself. The sync runs on every member change and never touches operator tags.
+- **Stages.** An Automation member takes an optional `stage` when it is inserted (at most 64 characters), and `POST /api/automations/{id}/stages/rename` (MCP, CLI `automation rename-stage` and the chat verb) renames a stage in place so the stage tag follows it.
+- **System tags are protected.** A system tag cannot be renamed, moved or deleted; recoloring stays allowed.
+- **Filters.** Progress and the progress trend accept several `tag` values with `tag_match=any|all` and report the scope they were counted over; the session list takes the same filter and matches a session's own and inherited tags, on REST, MCP, CLI and chat.
+- **Settings and web app.** The Settings view has an Automatic tags group, the Automation form has a stage field, a rename-stage action and the per-Automation override, and the tag filter groups its tags by automation, stage and kind. Five locales carry the new strings.
+- **Documentation.** A how-to covers the automatic tags, with the tag and tag registry how-tos linking to it.
+
+## v9.97.4 — Rejudge reviews the current branch head instead of replaying a stale verdict
+
+Rejudge now reviews the current branch head instead of replaying a stale verdict, and a rules-review hold accepts a rejudge once new commits have landed.
+
+- **Head-aware verdict.** The rules-review verdict records the commit it was judged on. A rejudge replays the stored verdict only when the branch head and the judge inputs (the judge policy and the guardrail's rules and prompt) are unchanged and the judge verdict cache is on; otherwise a fresh judge runs on the current head and its verdict replaces the stored one. With the cache off, every rejudge runs a fresh judge.
+- **Rules-review holds.** An Automaton held in `needs_review` after the retries were spent, or with auto-fix turned off, accepts a rejudge once new commits are on its branch, with no cancel, add-task or task reset. With the head unchanged the rejudge is refused before any judge runs, with the error `branch head "<sha>" is unchanged since the held verdict was made; new commits are needed before a rejudge`, and nothing is recorded.
+- **Docs.** The MCP reference and the operations guide describe the four paths and the fix, commit, rejudge routine.
+
+## v9.97.3 — Eval cases folder comes from the directory listing
+
+The eval cases folder in a request now has to name a real folder; the request text never reaches the file system.
+
+- **The change.** CodeQL still flagged `go/path-injection` where the supervisor loop eval reads a case file, even after the job name was mapped to a fixed list and the folder was confined under the working directory. `cases_dir` now has to name a folder that exists directly under the bundled cases folder, and the path is built from the directory listing. An unknown name is refused with a clear message.
+- **Behavior change.** `cases_dir` used to accept any relative folder; it is now the name of a folder under `internal/supervisorloop/testdata/eval`. Requests without `cases_dir` use the bundled cases as before. The MCP tool text, the docs, OpenAPI and the CLI `--cases` flag say so.
+- A test covers the empty name, a real folder, and traversal, absolute and nested names.
+
+## v9.97.2 — Eval cases folder stays inside the working directory
+
+The eval cases folder in a request can no longer leave the working directory.
+
+- CodeQL still flagged `go/path-injection` in the supervisor loop eval after the job name was fixed: the optional `cases_dir` from the request reached the folder read. The handler now resolves it under the working directory, with the relative part cleaned against a leading separator and a prefix check, so `..` and absolute-looking text can never leave it. Requests without `cases_dir` use the default folder as before.
+- A test covers traversal and absolute-looking text.
+
+## v9.97.1 — Eval job names cannot steer the cases path
+
+A model job name in an eval request can no longer steer the file path.
+
+- CodeQL flagged `go/path-injection` in the supervisor loop eval: the job name from the request was joined into the folder the eval cases are read from, so a name like `../secret` could have read `*.json` files outside it. The folder name now comes from a fixed list of the three model jobs (`draft_spec`, `classify_ci_failure`, `pick_backend`), and an unknown name is refused before any file is read.
+- Two tests cover traversal-shaped names and the three real jobs.
+
+## v9.97.0 — Supervisor loop in the daemon
+
+The daemon now runs a standing supervisor loop that keeps Automata moving without a live model session holding the context.
+
+- **Eight mechanical steps, no model call.** Each pass runs `close_finished_records`, `deploy_after_ship`, `retry_failed_infra`, `cleanup_sweep`, `apply_answers`, `lane_count`, `start_next_chain_step` and `run_merge_until_conflict`. A step that fails is recorded and not retried in the same pass; with no deploy step configured, deploy records "not configured" and does nothing.
+- **Three narrow model jobs.** `draft_spec`, `classify_ci_failure` and `pick_backend` each ask a model one question and check the answer with a validator before using it. Each runs on a selectable style (`oneshot` or `session`), backend and model, retries a failed check, and escalates to you after repeated failure. With no model configured a job escalates and never falls back to a hosted one. Every run is recorded.
+- **Settings and read-outs everywhere.** The `autonomous.supervisor_loop` block on the config file, REST (`GET /api/supervisor-loop/jobs`, `/runs`, `/stats`, `POST /api/supervisor-loop/jobs/{name}/run`, and `POST /api/supervisor-loop/eval` to compare models), MCP (`supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`), the CLI (`datawatch supervisor-loop`), the comm channel (`supervisor`) and the PWA (a Supervisor loop card on the Setup sub-tab of the Automation view, and a Settings group), in five locales, with a how-to.
+- **Monitoring.** `supervisor_loop_*` stats fields, a Supervisor loop card on the Monitor tab and Prometheus gauges for runs, enabled jobs and last-run age.
+- Known gaps: commit messages lack some tracker evidence trailers, and the phone-width browser story (TS-849) was not run against a daemon.
+
+## v9.96.5 — Plans resolve dependencies on their own ids
+
+New Automata plan when the task template pack is on: the third and last cause is fixed.
+
+- **The bug.** With ids assigned to the plan, the template tasks named the planner's tasks by id, but the store resolved those names only against plans that were already stored. A new plan's own ids were not known yet, so the plan was rejected as having an unresolvable dependency and the Automaton went back to draft.
+- **The fix.** A `depends_on` entry that names an id inside the plan being stored now resolves to that id. Existing behavior for titles, positions and stored ids is unchanged. The regression test resolves against empty store maps, as the real path does.
+- Known gap: a plan that still fails these checks returns to draft without raising an alert.
+
+## v9.96.4 — Plans get ids before the task templates apply
+
+New Automata now actually plan when the task template pack is on.
+
+- **The bug.** The previous fix let the template tasks past the verification script check, but a freshly parsed plan has no story or task ids yet (the store assigns them later). The templates therefore built the same id in every story and `depends_on` entries that were empty strings, and the store rejected the plan as having an unresolvable dependency, so the Automaton still went back to draft.
+- **The fix.** The decompose hook now gives the plan ids before the templates apply. The store keeps ids that are already set, so the planner's own tasks are unchanged, and each template task gets a unique id and real dependencies. A test covers a two-story plan with no ids.
+- Known gap: a plan that still fails the checks returns to draft without raising an alert.
+
+## v9.96.3 — Template tasks no longer fail decompose
+
+New Automata can plan again when the task template pack is on.
+
+- **The bug.** The built-in task templates (changelog entry, parity issue draft, docs set, final gate and version note) add tasks that list files but carry no verification script. The check that every file-changing task has a script then rejected the whole plan, so an Automaton created with a project directory went back to draft with no tasks and no alert.
+- **The fix.** Tasks the templates add are exempt from that check. The planner's own tasks are still held to it, and a plan whose only unscripted task is the planner's still fails and names only that task.
+- **Template text.** The templates now call the work by the Automaton's title (or the first line of its spec, at most 120 characters), not by its whole spec, so words in a long spec no longer end up in the template tasks.
+- Known gap: a plan that fails these checks still returns to draft without raising an alert.
+
+## v9.96.2 — Planning routing test no longer double-unescapes
+
+A test helper for the planning routing JSON editor decoded `&amp;` before the other entities, which CodeQL flagged as a double unescape. It now decodes it last. The version check also treats `*.test.js` files as test-only, like `*_test.js`, so a test-only change no longer needs a version bump.
+
+## v9.96.1 — Trace is a sub-tab under Status, not a card above the session
+
+The Trace card is now a Trace sub-tab, not a card above the session.
+
+- **Session.** The Trace card no longer sits in the session header above the output. It is a third sub-tab, Trace, beside Status and Stats under the session's Status tab.
+- **Automaton.** On an Automaton the Trace card is now a Trace tab in the detail tab strip, instead of showing on every tab.
+- **Polling.** The card loads and polls only while its tab is open.
+- No new strings; the docs describe the new place.
+
+## v9.96.0 — Planning routing and a retry ladder for plans
+
+Automata can now be sent to different planners by rule, and a plan that fails the checks gets a bounded recovery before it is given up on.
+
+- **Planning routing, off by default.** `autonomous.planning_routing` has no rules until you add them. Ordered rules (first match wins) match an Automaton's kind, tags, project, risk class and spec size and choose a planner (backend and model) plus a named ladder. Risk classes are set by tag and path pattern, with `security` and `design` built in. Settings on the Automaton itself still win over routing, and routing wins over the global planner.
+- **A retry ladder.** A plan that fails the decompose checks (scope lint, spec coverage and plan structure) gets a touch-up of only the flagged tasks, then a replan with the findings fed back, then escalation to the next planner in the ladder, each with its own budget. When everything is spent the ladder stops and keeps the last plan with the full attempt record.
+- **Shadow mode and a scorecard.** Shadow mode records which rule would have fired without changing the planner. A counts-only scorecard and gate report show first-attempt, touch-up, replan, escalation and error counts per planner and class, plus the would-route counts.
+- **Everywhere.** The config file, `datawatch autonomous planning-routing`, a Settings card, `GET` and `PUT /api/autonomous/planning-routing` with `/test` and `/scorecard`, the comm channel, and MCP tools `planning_routing_get`, `planning_routing_set`, `planning_routing_test` and `planning_scorecard`, in five locales, with a how-to. The two example rules in the docs are not active.
+- Known gaps: the live-daemon validation of the new routes is not done, and the commits lack the tracker and locale-guard trailers.
+
+## v9.95.1 — Accept the zlib1g Trivy finding in the agent images
+
+The agent container scan no longer blocks releases on a finding that cannot apply to the image.
+
+- **The finding.** Trivy reports `CVE-2026-76844` (HIGH) on `zlib1g 1:1.2.13.dfsg-1` with no fixed version. Its title names a Node.js package (webpack-dev-middleware), and the built image has no webpack and no Node.js runtime, so it looks like a vulnerability database mapping error.
+- **The acceptance.** It is recorded for 30 days in `security/accepted-risks.yml` with the trace from the built image; re-check for a corrected mapping each release.
+
+## v9.95.0 — Classification-based verdicts for verification and guardrails
+
+Verification and guardrail judges can now give a reproducible verdict by picking an option, instead of writing a sentence that has to be parsed.
+
+- **Two modes per LLM.** `verification_mode` on an LLM entry is `generate` (the default, nothing changes) or `classify`. In classify mode the judge picks one lettered option and datawatch reads the probability of each option; the verdict is a score vector you can reproduce, and the written explanation never changes it.
+- **Fails closed.** Missing scores, timeouts, transport errors and abstains become a block with the infrastructure category, a block is never downgraded, and there is no silent fallback to generate-and-parse. Low confidence below the calibrated threshold is a block with an explanatory category.
+- **Where it applies.** Task verdicts (ok and severity), per-task and per-story guardrail outcomes, and the final gate over the rules review and CI watch findings. A new scope-breadth check (off by default) can mark a failed task as bundling several units.
+- **Probe and calibration.** A per-model, per-node capability probe (supported, unsupported or unknown, never assumed) and per-model calibration with a fit and test split that goes stale when the model, prompt or node changes.
+- **Judge models only from publishers you allow.** The publisher allowlist is empty by default; adding a publisher needs an explicit confirmation and writes an audit entry. The daemon never adds or pulls a model.
+- **Settings and read-outs everywhere.** `classifier.*` on the config file, REST, MCP (`llm_classifier`), the CLI (`datawatch llm classifier`), the comm channel and the web settings, with a verification mode selector on the LLM form and the route and score vector shown on a verdict, in five locales, plus a how-to.
+- Known gaps: no Prometheus counters or Monitor card for the classifier yet, and the commits lack the section A audit tokens.
+
+## v9.94.0 — Requeue queued planning runs and tasks when the backend changes
+
+Changing where a queued run will execute now moves it in the queue instead of waiting for it to finish.
+
+- **Planning runs.** Changing an Automaton's decomposition backend or model with `set_llm` while its planning run is queued retargets that run's queue entry in place to the pool the new pair resolves to (`requeued`). A run that already started is left alone and the new pair applies from the next run (`deferred_to_next_run`); a change that moves nothing is stored and reported as `unchanged`. A requeued run starts no new attempt, so the decompose retry budget and the wait time it was admitted with are untouched, and changing the setting twice leaves exactly one queue entry.
+- **Worker tasks.** The same applies to tasks that are queued and not started: a task or story LLM override on a running Automaton now moves the queued task to the pool the new backend needs, and a task that already started keeps running as it is.
+- **The result is shown everywhere.** The outcome and the old and new pools come back on REST, MCP, the CLI and the comm channel, and the web UI shows a short toast with the result when you save a story or task LLM change.
+- **Docs.** The planning and capacity how-tos describe the three outcomes.
+- Known gaps: there is no web settings toggle for the feature, and two of the new toasts are not yet in the five locales.
+
+## v9.93.0 — Verifier slots per compute node
+
+Verifiers now run in their own per-node pool, so a verification no longer waits behind the workers on the same node.
+
+- **Verifier slots: a per-node pool for verifiers, a free-memory floor and an advice figure.** Each compute node that hosts a local engine now runs its verifiers in its own pool, separate from the workers' slots, so a verification no longer queues behind the worker count on the node. Three per-node keys control it: `verifier_slots` (how many verifiers run on the node at once — unset = 1 on an engine-hosting node, 0 on one that does not, and `0` set explicitly means a verifier for that node holds the worker pool as before), `verifier_min_free_mem_mb` (how much GPU memory the node must still have before a new verifier starts — unset = 1024 MB, `0` = check off) and `verifier_context_mb` (how much context one verifier context holds — used only for the advice figure, `suggested_verifier_slots`, how many verifiers the node's current free memory could hold; the figure is never applied and never raises the worker pool). Unset settings keep their defaults; all three are settable per node from the PWA node form, `datawatch compute node add|update --verifier-slots --verifier-min-free-mem-mb --verifier-context-mb`, REST `POST /api/compute/nodes` / `PUT /api/compute/nodes/{name}`, the MCP `compute_node_add` / `compute_node_update` tools and the comm channel's compute-node kv pairs, and the node detail on every surface reports each key beside its effective value, the last admission verdict (`headroom_ok`, `headroom_reason`) and the advice figure when one can be computed; negative values are refused on every surface.
+- **Operator documentation on every surface.** The compute-nodes how-to gains a *Verifier slots* section (the three keys, their defaults, how to choose a value, and what each surface accepts), the capacity how-to gains a *Verifier slots* subsection and an updated *Judges hold node leases* note, the operations manual's *Verifier node limit* section is rewritten for the new pools and its "keep one slot until waits dominate" rule of thumb, `docs/config-reference.yaml` records all three keys with their defaults and unset semantics, `docs/mcp.md` documents the new `compute_node_add` / `compute_node_update` parameters and the new `compute_node_detail` fields, `docs/api-mcp-mapping.md` gains a row for the verifier keys, and `docs/implementation.md` records the storage, the pool wiring and the admission headroom check.
+
+## v9.92.0 — Decompose follows project rules and context
+
+Planning now follows your rules and context files, and every plan records that it did.
+
+- **Rules and context are read for every plan.** The planner reads the rules file and the context files of the project, builds a digest cached by file hash, and puts a pointer and the digest into the planner, worker and verifier prompts. Backends without file tools get the digest; the digest mode (`off`, `no_tools` default, `all`) and its size cap are settings.
+- **A planning record.** Each Automaton keeps which rules and context files were read, their hashes and sizes, whether a digest was added to the prompt, and a clear warning when a named file was not found.
+- **A rules checklist in the plan.** The plan output carries a checklist of the rules it applies, and the plan rules check flags gaps (a rule with no task, or a task that breaks a rule) before approval.
+- **Settings on every surface.** `autonomous.rules_context` (rules file, context files, digest mode, digest size cap, and per-project overrides) on the config file, REST, MCP (`rules_context_status`, `rules_context_set`), the CLI (`autonomous rules-context`), the comm channel (`autonomous rules`) and a Rules and context card in the web settings, with the planning record on the Automaton detail. Five locales and an operator how-to.
+- Known gap: the live run of the web card against a sandbox daemon was not part of this release.
+
+## v9.91.1 — Trace store reads files only for indexed sessions
+
+A session id that arrives in a request can no longer shape the trace file path.
+
+- CodeQL flagged `go/path-injection` in the trace store: the id from a read reached the file open. The file path is now built from the stored index entry, and an id the store has not indexed reads nothing, so a traversal-shaped id never touches the file system.
+- A unit test covers traversal-shaped and empty ids.
+
+## v9.91.0 — Agent tracing for every supported LLM
+
+Agents leave a trace of what they did, readable for one session or a whole Automaton.
+
+- **Trace.** Tool calls and results, model requests, state changes, capability checks, permission decisions, loop warnings and errors are recorded in one normalized form from every backend (claude-code, pi, opencode, goose, aider, gemini through their transcripts; ollama, openwebui and shell as the daemon sees them). Secrets and home paths are redacted before anything is stored. Tracing only records and reads; it never changes how an agent runs.
+- **Read it everywhere.** `GET /api/trace/session/{id}`, `/api/trace/automaton/{id}`, `/api/trace/rollup` and `/api/trace/coverage`; MCP tools `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`; `datawatch trace ...`; the same verbs in chat; a Trace card in the session and Automaton views with filters, roll-up and a coverage badge per backend; a Tracing group in Settings. Five locales.
+- **Settings.** `tracing.mode` (`off`, `summary` default, `full`), `tracing.arg_cap_bytes` (512), `tracing.retention_days` (14), `tracing.backends` (a backend not listed is traced). An invalid value is refused with the allowed values named.
+- **Monitoring.** `GET /api/trace/stats` and the MCP tool `trace_stats`, `trace_*` fields on the system stats, a Tracing card on the Monitor tab and the Prometheus series `datawatch_trace_events_total`, `datawatch_trace_append_errors_total`, `datawatch_trace_stored_events` and `datawatch_trace_stored_sessions`.
+- **Docs and checks.** How-to `docs/howto/agent-tracing.md` (now carries `exec_steps`), operations, implementation, MCP and README entries, both openapi copies, a release smoke section, browser story TS-847, and the locale guard list extended with the new high-visibility keys.
+- **Reuse audit — what existing primitive does this extend?** The cost report's token roll-up, the stats collector and Prometheus mirror used by the burn guard, the PWA list loader, the `CapAnalyticsRead` gate and the per-backend transcript readers.
+- reuse-audit: cost-report roll-up, stats collector mirror, list loader, CapAnalyticsRead gate
+- skills-hook: N/A
+- locale-guard: added settings_tracing_group, trace_card_title, stats_trace
+- smoke-extended: Agent tracing
+- audit-tests: N/A (trace events are a redacted read-only copy; the denials they mirror keep their own audit entries; see docs/plans/2026-11-04-agent-tracing.md)
+- Live run on a sandbox daemon is owed at merge: the building automaton ran without a daemon.
+
+## v9.90.2 — Version check exempts the supervisor status script
+
+The CI version-bump check no longer fails on edits to `scripts/v10-status.py`.
+
+- **The change.** `scripts/v10-status.py`, the supervisor's progress report, joins `scripts/supervisor-watch.py` in the version check's list of files that change no daemon behaviour. A change to the report's lane count (now two GPU lanes and one Claude lane) failed the check on main.
+
+## v9.90.1 — Fix the daemon crash from unlocked writes to stored Automata
+
+The daemon crash from writes to a stored Automaton made without the store lock is fixed, and the race tests now pass.
+
+- **The crash.** On 2026-11-04 the daemon aborted with `panic: reflect: slice index out of range` in the store's deep copy, reached from `SavePRD`: another goroutine had shortened or replaced a slice of the same stored Automaton at that moment. systemd restarted it within seconds.
+- **The fix.** Every unlocked write to a stored Automaton, story or task that the audit found now runs inside the store lock (or on a copy that is saved), across the autonomous package: the push outcome and metrics, the retry and hold paths, the shipped backfill, tags, the verifier policy records, the uncommitted-work holds and others. The Store API is unchanged.
+- **Tests.** A regression test runs saves and the fixed writers concurrently under the race detector, and the two tests that failed under `-race` on main now pass. `go test -race ./internal/autonomous/` passes at `GOMAXPROCS=1` (196 seconds).
+- Known gaps: two readers (the boot-resume park and the task effort ceiling) still read shared fields outside the lock and are not covered; the package under the race detector takes about 10 minutes on a loaded host, close to the default test timeout; and one timing-sensitive safe-delete cache test flakes about 1 in 6 runs.
+
+## v9.90.0 — Configurable splash dwell with early dismiss
+
+The splash screen's on-screen time is now configurable, and a tap or key press dismisses it.
+
+- **Two settings.** `ui.splash_min_seconds` (default 6) and `ui.splash_min_seconds_new_version` (default 9) set how long the splash stays up before it fades, shown on first visit, when the daemon's version changed, or after 24 hours. Each is a whole number of seconds from 0 to 60; 0 keeps the legacy timing.
+- **Early dismiss.** Once the window is connected, a tap, click or any key press dismisses the splash with the same fade.
+- **Version line.** When the splash is shown for a new version, it also names the previous version.
+- On the config file, REST, MCP, CLI, comm channel and web settings, with five locales and docs. The splash reads the settings once per page load.
+
+## v9.89.0 — Secret scan follow-up: audit events, stats and smoke
+
+The pre-push secret scan gets its follow-up work: tests, audit events, stats, a smoke check and the decision on its default.
+
+- **Audit events.** A refused push (enforce mode) and a shadow-mode finding now write audit entries in JSON lines and CEF (`secret_scan_refused`, `secret_scan_shadow`), with format tests including log-injection escaping.
+- **Stats.** Scan runs, findings and refusals are counted: a `secret_scan` block on the system stats, `GET /api/git/secret-scan/stats` and the `secret_scan_stats` MCP tool.
+- **Tests.** Session and Automata push-path tests for the scan policy and shadow recording, MCP handler tests and a web settings test.
+- **Smoke.** A release smoke section for the secret scan settings and stats.
+- **Default.** The default stays `shadow` for the first release, as documented in the operations guide.
+- Known gaps: no Prometheus counter or web Monitor card yet, and the smoke section does not scan or push a sandbox repository (its push checks are skipped).
+
+## v9.88.0 — Project automation policy
+
+A project can now carry its own automation policy, between an Automaton's settings and the daemon's defaults.
+
+- **Per-project tier.** Policy keys stored under `projects.<alias>.policy` cover plan checks (`plan_coverage_check`, `plan_coverage_min_ratio`, `plan_review_mode`, `scope_lint`), retry and escalation (`retry_policy`, `retry_ceiling_total`, `auto_fix_retries`, `infra_retry_escalate_after`, `failure_escalation`), git defaults (`default_auto_pr`, parallel read-only and worktree-per-task), lane limits (`max_concurrent_tasks`, `plan_tier_max_inflight`, `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`), and the uncommitted-work and burn-guard keys.
+- **Inherit by default.** Every key is optional and inherits the daemon's value when unset, so a project with no policy reads exactly as before. A write to the project tier never touches the daemon tier, and an unset key never becomes a written zero.
+- **Surfaces.** YAML, the CLI (`datawatch projects policy show|set|unset`), REST (`POST /api/projects`, `GET /api/projects/{name}/policy/effective`), MCP (`project_upsert` with `policy`, `project_policy_effective`), the comm channel, and a Project policy panel in the web Settings with the effective value and a precedence badge (Automaton, Project or Daemon) per row. Five locales and an operator how-to.
+- Known gap: the final gate report was not produced (its task depended on the version-bump task, which the merge step does).
+
+## v9.87.0 — Configurable decompose lint, task templates and guidance
+
+Decompose output is now linted against a configurable rule pack, and task templates and guidance shape the plan.
+
+- **Decompose lint.** After a decompose, a rule pack checks the planned tasks (seven built-in rules: five that block, two that warn; operators can add rules, replace one by id or disable one). Modes: `off`, `shadow` (default: one pass, findings recorded, nothing re-run) and `enforce` (blocking findings are fed back for a re-run). The retry budget defaults to 2 (0 records without retrying, maximum 5, only blocking findings are retried).
+- **Task templates.** Built-in templates for recurring tasks are applied at decompose time (idempotent, with slots and `depends_on`), and can be turned on or off per project.
+- **Decompose guidance.** The planner gets guidance as literal text, as an existing readable file, or generated from the rules as a fallback.
+- On REST, MCP, the CLI, the comm channel, the config file and the web settings, with five locales and an operator how-to. Known gap: no stats counters yet for lint runs and findings.
+
+## v9.86.0 — Automation view in six sub-tabs
+
+The Automation view is split into six sub-tabs, with an Inbox that counts what is waiting on you.
+
+- **Six sub-tabs** under the Automation sub-tab, in order: **Inbox** (the needs-attention card, the questions, the held questions, the security failure report and the supervisor watch, with a count badge of everything waiting on the operator), **Automations** (the list, filters, release arc and Gantt), **Resources** (capacity, lane fill, usage against the plan, infrastructure retries, the checks and ship status cards), **Progress and cost**, **Setup and policy** (onboarding report, merge pipeline, model request watch) and **Housekeeping** (safe-to-delete report, cleanup, uncommitted work).
+- **Strip.** The sub-tab strip slides and reveals the active tab, and the tab you chose is remembered while the app stays open. The Automation view opens on Inbox.
+- Six new locale keys in the five bundles, a registry test, and the existing tab tests updated; the how-to describes where each card lives.
+
+## v9.85.3 — Locked store writes in the push path
+
+Two shared-store writes in the push path are now made under the store lock.
+
+- The push outcome and the completion metrics wrote to a stored Automaton without holding the store lock, which could race with a concurrent read and was the suspected cause of the intermittent `TestFailureEscalation_RetryPromptCarriesEarlierReports` failure in CI. Both writes now run under the store lock, including the shadow-mode secret-scan findings record.
+- Two regression tests cover the locked writes, and a reproduction loop script is kept with the Automaton. The failure itself could not be reproduced on demand (50 clean loops in three modes).
+- A bug entry in the testing guide records what was found.
+- Known: the full package under the race detector still reports two failures that also occur on main before this change (`TestInfraRetry_HoldResolvedElsewhereWithdrawsQuestion` and `TestShippedStartBackfillEnabledMarksWithoutBlocking`); they are filed for a separate fix.
+
+## v9.85.2 — Merge pipeline card empty state for a missing project
+
+The Merge pipeline card no longer shows "project is required" as an error.
+
+- **Structured refusal.** When no project is chosen and no merge base repository is set, the daemon's pipeline read answers 400 with a structured body (`code: project_required`) that names the project parameter and the `worktree_base_repo` setting. The MCP tool and the CLI surface the same refusal in plain words.
+- **Card empty state.** The Merge pipeline card on the Automation Overview treats that refusal as an empty state, with a clear message, a project choice and a link to the `worktree_base_repo` help, instead of the "Could not load the merge pipeline" banner. Any other failure still shows the banner. Five locales.
+- A browser story (TS-847) checks the empty state, and the release smoke check gains a section for it. How-to and docs updated.
+
+## v9.85.1 — Paged GitHub listings read correctly in the image cleanup steps
+
+The image-refresh and ghcr cleanup steps now read paged GitHub package listings correctly.
+
+- `gh api --paginate` prints one JSON array per page, which `jq` cannot read as a single document. The image-refresh cleanup step, the ghcr-cleanup listing and the dismissed-alerts watch now fold the pages with `jq -s` and flatten them into one list before using it.
+- A listing endpoint that answers with an error object (not found, no permission) no longer passes as an empty list: it falls through to the next endpoint, and a failure on both endpoints is reported with its real error line instead of being hidden.
+- The workflow steps count what they checked, found, deleted and failed to list or delete, so a throwaway-image cleanup that did nothing is visible.
+- Tests run against a fake `gh` that rejects unknown flags the way the real binary does, with two recorded pages of package versions, and a unit test covers the dismissed-alerts paging. Both are part of `make test`.
+
+## v9.85.0 — Fast, cached safe-to-delete report
+
+The safe-to-delete report is fast to repeat and honest about its age.
+
+- **Cached read.** Each repository's report is kept in the daemon's memory for 60 seconds. A read inside that time returns the stored result at once with no git work. A read past it still returns at once, marked `stale`, while at most one background refresh (bounded to 60 seconds) runs. A failed refresh keeps the last good report, so the read never fails when usable data exists.
+- **Honest fields.** Every result carries `computed_at`, and a `safe` entry carries `dirty_check_skipped` when the worktree's uncommitted-changes check was skipped because its Automaton is running.
+- **Slow reports counted.** A computation over 3 seconds is counted and logged once; the counters appear on the system stats as `safe_delete_last_ms`, `safe_delete_slow_reports` and `safe_delete_refresh_failures`.
+- **Web.** The card on the Automation Overview sub-tab shows the computed-at line and a stale badge, and its read has a 45-second timeout (up from 15), so a slow first computation is not mistaken for a failure. Five locales.
+- No new setting; the lifetime, the refresh bound and the threshold are code constants.
+
+## v9.84.2 — Accept the libexpat finding in agent-base for 30 days
+
+The agent-base container scan passes again.
+
+- Trivy reported CVE-2026-113351 (HIGH, libexpat1 2.5.0-1+deb12u5, no fixed version) in the agent-base image and the container build step failed on it in every Release run since. It is accepted for 30 days with the same trace as the earlier libexpat finding: only git links libexpat, through git-http-push, which datawatch never runs.
+- The entry expires 2026-12-04; re-check the Debian security tracker for a bookworm fix at each release and remove the entry when one ships.
+
+## v9.84.1 — A restart keeps the node lease of a pi-prompt task
+
+A restart no longer drops the node lease of a pi-prompt task.
+
+- After a daemon restart, adoption treated any task whose model name did not resolve to a hosting LLM entry as a backend that takes no node, and dropped its node lease. Tasks on pi-prompt with an unprefixed model name lost their node accounting, so both nodes read idle while six tasks waited behind a full pool.
+- Only hosted backends (such as claude-code) take the no-node path now; local-engine backends keep the node their task or live session names.
+- A unit test covers a pi-prompt task that recorded its node.
+
+## v9.84.0 — Completion review block recovery
+
+A blocked completion review no longer leaves an Automaton stuck.
+
+- **Fix task or hold.** A content block now creates a fix task from the findings and runs it, up to `autonomous.auto_fix_retries` (default 1, 0 turns it off). If the fix task cannot be created, or the retries are spent, the Automaton is held in `needs_review` with the reason or findings attached. A held Automaton accepts add-task and a re-run, so a corrective task can be added by hand.
+- **New `rules_review_outcome` field.** The attention list (`GET /api/autonomous/attention`, `autonomous_attention_list`, the CLI and chat `attention`) and the Automaton view show the action taken, the findings and the retries spent, with the findings and action in the web attention list and Automaton view.
+- On REST, MCP, the CLI, the comm channel, the config file and the web UI, with five locales and an operator how-to.
+
+## v9.83.1 — Node leases follow pool moves and wait reasons stay current
+
+Two capacity fixes: a task that moves between pools no longer holds the node lease of its old pool, and the wait reason of a queued task is always current.
+
+- **Node lease on pool moves.** When a task moves between pools, the node lease of its old pool is released, so a claude-code task never holds a local node engine. This includes work adopted after a daemon restart: if the task's backend takes no node, the stale `node:<name>` lease is dropped instead of keeping a node slot busy.
+- **Live wait reasons.** The reason shown for a queued task is recomputed on every read, not the one recorded when it entered the queue. When the restart adoption hold ends, the queue shows the node-engine reason, the same one the capacity admission answer gives, on REST, MCP, the CLI and the web capacity card.
+
+## v9.83.0 — Skipped snapshot paths recorded on every finish path
+
+A task's list of files the snapshot left out is now recorded on every finish path and shown everywhere.
+
+- **Skip record on every path.** The `skipped_snapshot_paths` record (files the snapshot deliberately did not stage, with a reason and a count) is now written by the normal completion commit, the stall-recovery commit and the attempt snapshot path, not only one of them.
+- **Shown on every surface.** The Automaton detail view carries it, the CLI and the comm channel print a counts-first "left unstaged" line, and the web task row shows a skipped-snapshot chip with the reasons. Five locales.
+- Operator docs now state which paths write the record.
+
+## v9.82.1 — Generated-artefact template path built from the fixed kind list
+
+A kind that arrives in a request can no longer shape the generated-artefact template path.
+
+- CodeQL flagged `go/path-injection` in the generated-artefact renderer: the override template path was built from the requested kind. The path is now built from the matching entry of the fixed kind list, and an unknown kind yields no path and an error.
+- A unit test covers an unknown kind and the path of every known kind.
+
+## v9.82.0 — Generated wrapping for changes
+
+The change record and its artefacts are now generated for you instead of being planned as tasks.
+
+- **Change record.** Each Automaton keeps a change record of what it changed. From it the daemon generates the changelog draft, the datawatch-app parity draft, the testing-tracker rows, the registry row and the counts-only gate report, instead of planning each as a separate task. A decompose lint drops tasks whose whole purpose is one of those artefacts.
+- **Switches.** Seven `autonomous.generated_artefacts` settings turn each artefact on or off.
+- **Surfaces.** `GET /api/automations`-style reads and a regenerate action on REST, four MCP tools (`generated_artefacts_get`, `autonomous_prd_change_record`, `autonomous_prd_generated_artefact`, `autonomous_prd_regenerate_artefact`), the CLI, the comm channel and the web settings and Automaton change-record panel, with five locales and an operator how-to.
+- Regenerating is audited (JSON-lines and CEF), and the REST guards run before any lookup so a peer without the capability cannot tell a missing id from an existing one.
+
+## v9.81.0 — Model-to-node routing visibility
+
+A pinned model is now checked against the compute nodes, and you can see which models each node serves.
+
+- **Pin check.** When you pin a task or story's model (or node), the daemon checks the registered compute nodes. If none serves the model, the pin is refused with a message naming the model and the nodes it checked; in warn mode the pin is applied and you get a warning instead (`model_routing` settings).
+- **Served models.** Each node's served models and the age of that reading are shown on `GET /api/compute/served-models`, the `compute_served_models` MCP tool, the CLI, the comm channel and the web UI.
+- **Node pins.** A task or story can be pinned to a node (`set-task-node`, `set-story-node`); the web task row shows a pin badge. A pinned worker skips the capacity fall-through, because the alternate backend would be placed without the pin.
+- On REST, MCP, CLI, comm channel, config file and web, with five locales and operator docs.
+
+## v9.80.0 — Defect queue: batches and a tiny-fix lane
+
+Related defects can now share one Automaton, and a tiny fix gets a one-task lane.
+
+- **Defect queue.** An intake step routes each incoming defect to the tiny-fix lane, to an open batch for its area, or to a new batch, and records the decision in `defect_intake_decisions.jsonl`. A batch is one Automaton with one story per defect plus a shared gate, documentation, changelog and parity-or-locale task, so a bug no longer costs a full set of wrapping tasks. A failed story can be split out into its own Automaton.
+- **Tiny-fix lane.** A classifier admits only small, code-or-test-only changes and refuses anything operator-visible (it then falls back to batching and records the refusal).
+- **Settings.** `autonomous.defect_queue.*` (batch size cap, allow unrelated, tiny-fix limits) on REST, MCP (`autonomous_defect_*` tools), the CLI, the comm channel, the config file and the web settings, with five locales and an operator how-to.
+- It sits beside the existing defect intake (`autonomous.defect_intake_automation`), which is unchanged.
+- Known gap: batches stay in draft until decomposed; there is no close-batch step yet, and no live daemon round trip was recorded.
+
+## v9.79.0 — Review-timed-out state and size-aware judge routing
+
+A review that times out is now a clear hold you can retry or reroute, and big changes go to a stronger judge first.
+
+- **Review-timed-out state.** When the completion review times out on every backend it tried, the Automaton is held with a `review_state` of `timed_out` instead of looking like a real block. The state names the cause and the next action: retry on the same backends, or reroute to the stronger judge (`autonomous.judge_strong_backend`).
+- **Size-aware judge routing.** `autonomous.judge_size_threshold_lines` (default 400, 0 = rule off) sends changes above that size to the stronger backend first.
+- **Judge verdict cache.** `autonomous.judge_verdict_cache_enabled` (default on) reuses a verdict for the same run, so a finished review is never judged twice.
+- On REST, MCP, the CLI, the comm channel, the config file and the web UI (a timed-out badge with Retry and Reroute buttons), with five locales.
+
+## v9.78.0 — Read-only tasks may write a declared report
+
+A read-only task can now write a declared report file, so a review or audit task can leave its findings behind without a write-capable tree.
+
+- New `report_path` on `add_task` and `edit_task` (REST, MCP, CLI, comm channel): the one path a read-only task may write, usually under `docs/plans/reports/`. It needs the read-only flag; a path without it, an invalid path or a path outside the allowed folder is refused with 400.
+- The dirty-tree check ignores that one declared file, so the task does not fail for writing its own report.
+- Operator how-to for read-only tasks and report paths, a glossary entry, and the OpenAPI and MCP docs.
+- Known gap: the web UI does not edit `report_path` yet, and the release smoke check was not extended.
+
+## v9.77.0 — Priority by kind and defect intake
+
+Automata now get a priority from their kind, and a defect can be filed straight into a bugs stage.
+
+- New `autonomous.priority_by_kind` table gives each Automaton a capacity priority by kind (shipped defaults: bug 80, maintenance 70, feature 20, other 0). An explicit priority always wins, even 0, and each Automaton shows where its priority came from (`priority_source`).
+- New `autonomous.defect_intake_automation` names the Automation that takes new `kind: bug` filings. They are offered to that Automation's bugs stage through the member insert. It is empty by default; an unset value records "not configured" and nothing is offered.
+- On REST (`GET`/`PUT /api/config`, with validation), MCP, the CLI, the comm channel, the config file and the web settings, with five locales and priority-source badges in the web UI.
+- Operator how-to: priority by kind and defect intake.
+
+## v9.76.0 — Secret scan before daemon push
+
+The daemon can scan a branch for secrets before it pushes, and the push can be refused.
+
+- New `git.secret_scan` settings: `mode` (`off`, `shadow` default, `enforce`), `detectors` (private key, AWS access key, GitHub token, generic token, Slack token), and allow lists by path and by fingerprint.
+- Shadow mode records findings and lets the push go; enforce mode refuses a push with a finding that is not allow-listed. Findings name the detector, file and line and a fingerprint, never the secret.
+- On REST (`GET`/`PUT /api/config`), MCP (`secret_scan_config_get` and `secret_scan_config_set`), the generic config surfaces, the config file and the web settings, with five locales and an operator how-to.
+- A misspelt detector name or a malformed fingerprint is refused on write, so the gate cannot be weakened by a typo.
+- Follow-up Automaton files the remaining unit tests, audit log entries, stats counters and a live smoke check.
+
+## v9.75.1 — Peer selection stays on the chosen peer
+
+Choosing a federated peer in the web UI now stays on that peer, and every page says which server it shows.
+
+- Selecting the already-active server is a no-op, so a second click no longer drops you back to the primary.
+- Every page has a "Showing: <name>" line (the host name, or "All servers" in all-servers mode).
+- When a peer cannot be reached the error panel offers a "Back to <host>" button.
+- The Settings picker bar and the About page use the same selection path.
+- Five locales, a node test for every picker control, and a browser story (TS-846) that uses two sandbox daemons; the story is written but was not run at merge. The story tooling raises the Playwright dependency from 1.50 to 1.64.
+
+## v9.75.0 — Drain compute nodes for maintenance
+
+A compute node can be drained for maintenance, and placement now skips nodes that refuse the work.
+
+- Drain a node so it takes no new work while running work finishes, with an optional end time and reason; undrain when done. A drain with an end time ends by itself.
+- On every surface: `datawatch compute node drain <name> --until ... --reason ...` and `undrain`, REST `POST`/`DELETE /api/compute/nodes/<name>/drain`, the MCP tools `compute_node_drain` and `compute_node_undrain`, the comm channel, and the Compute page, which also shows how many tasks are still finishing on a drained node. Five locales.
+- The capacity gate skips a node that is drained, denies the work's consumer or is in a maintenance window, and the wait reason names each refusal.
+- Known gap: no live smoke run against a running daemon for node persistence; the testing tracker marks it not validated.
+
+## v9.74.1 — Automaton specs read whole and truncated copies are refused
+
+The default Automaton read returns specs whole, and a write refuses text that was cut by a capped read.
+
+- `GET /api/autonomous/prds/{id}` caps only the heavy output fields (memory report, task error, prior attempt hint, start-failure tail, attempt refs, verdict and verifier text) to `autonomous.detail_text_cap_bytes` (default 4096). The Automaton spec, every story description and every task spec are always returned whole.
+- Each cut field still ends with the truncation marker and is listed in the record's `truncated` array with the URL of the full text (`?full=1` or `GET …/prds/{id}/outputs`).
+- Every spec and description write on REST, MCP, the CLI and the comm verbs now refuses (400) text that contains the truncation marker, with a message that names the field. The comm verbs refuse locally before anything reaches the daemon.
+- OpenAPI, the API and MCP docs and the testing tracker describe the contract. A datawatch-app parity issue is filed with this release.
+
+## v9.74.0 — Restarts keep running Automaton work
+
+A daemon restart no longer throws away running Automaton work, and the restart can wait for a quiet moment.
+
+- A launch refused because the daemon is shutting down is not an attempt. The task goes back to waiting and launches again after the restart.
+- After a restart a live worker session is adopted instead of replaced, keeping its attempt number. A worktree with uncommitted changes owned by a live session is never reset.
+- When two live sessions match one task the older is kept (`autonomous.duplicate_session_keep`: `older` or `newer`); the other is ended only after its exit is confirmed, and the decision is recorded on the task and in the audit log.
+- Each attempt records its session and why it ended, so a restart can be told from a failure.
+- New `autonomous.restart_policy`: `immediate` (default), `wait_quiet` (with `restart_quiet_timeout_seconds` and `restart_on_timeout`) or `drain`. Every restart reports how many running tasks and live sessions it interrupts, and `GET /api/autonomous/restart-interruptions` reads the count without restarting.
+- On REST, MCP, the CLI (`datawatch autonomous restart-interruptions`), the comm channel and the config file, with docs and a counts-only gate report.
+
+## v9.73.2 — Peer view no longer reloads to the primary
+
+Opening a federated peer in the web UI no longer reloads the page back to the primary.
+
+- The page tracks the daemon version per server. An update counts only when the same server reports a different version than it did before. Switching to a peer never triggers the update banner or a reload.
+- A peer on a different release shows a version-skew note on its About page.
+- Every About sub-page and Settings tab was audited with a peer selected and with the primary selected (`docs/plans/reports/version-skew-audit.md`); pages that read the primary's data in peer view were fixed to read the selected server's data and name it.
+- Five locales for the new text, operator docs on version skew between a primary and its peers, and a browser story (TS-845) that checks the flow on the sandbox.
+
+## v9.73.1 — Liveness settings on every surface
+
+The session liveness settings are now on every surface, and the state chips use locale keys.
+
+- `session.liveness_window_seconds` and `session.liveness_idle_timeout_overrides` are on the config read and write routes, MCP, the CLI, the comm channel and the web settings, with validation, hints and five locales, and in the config reference and operations docs.
+- The sessions state filter chips use locale keys, and a browser story covers the Stalled chip.
+- Known gap: the web test checks the locale lookups, the hints and the input checks, not a value round trip through the web fields.
+
+## v9.73.0 — Session state follows the real process for print-mode backends
+
+Sessions of print-mode backends (such as pi) no longer show "waiting for input" for their whole run.
+
+- A session is Running while its process is alive and its transcript or output file changed within a window. Waiting for input is reserved for a backend really at a prompt.
+- A session whose process is gone but whose record is still open shows a new Stalled state.
+- New settings `session.liveness_window_seconds` and `session.liveness_idle_timeout_overrides` set the window and the per-backend idle timeout; the idle timeout is off by default for print-mode backends.
+- The supervisor watch's silent-session check uses the same signal.
+- The Stalled filter chip is added to the sessions list. Known gap, filed as a follow-up: the two new settings are not yet on the config routes, the web settings, the CLI and the comm channel.
+
+## v9.72.0 — An Automation can start from a fork or a nested Automation
+
+### Added
+
+- **An Automation can start from a fork or a nested Automation, and that is now documented end to end.** The entry member of an Automation may be a fork or a nested Automation, not only a plain Automaton: activation enters the entry member through the same approval gate used between members, so a fork entry fires its branches in sorted order (each through its own gate, a denied branch recorded as failed while the others start) and evaluates the paired join, and a nested entry activates its child and follows the matching parent edge when the child settles. A plain entry the gate refuses to start blocks the Automation, names the reason in a decision note and raises one alert. [howto/automation-chains.md](docs/howto/automation-chains.md) gains the *Activate an Automation whose entry is a fork or a nested Automation* section covering the fork and nested entry behaviours, and both OpenAPI specs (this repo's `docs/api/openapi.yaml` and the web build's `internal/server/web/openapi.yaml`) now describe the entry-member kinds on `POST /api/automations/{id}/activate`.
+- **A blocked Automation that never started a member can go back to the draft it was created from, with docs and API spec for it.** The new return-to-draft operation (`datawatch automation return-to-draft <id>`, the `automation_return_to_draft` MCP tool, `automation return-to-draft <id>` on the comm channel, and `POST /api/automations/{id}/return_to_draft`) returns a blocked Automation that has never started a member to `draft`: the started time, cursors and budget episode of the blocked spell are cleared, every member is `pending` again with no timestamps, and activating it afterwards runs it as if it had never started. The call is refused with HTTP 409 when the Automation is not blocked or a member already started (a cursor sat on a member), in which case it must be cancelled with the `cancel_in_flight` choice, and a mismatching `expected_version` is the usual optimistic-lock 409. The same how-to gains the *Return a blocked Automation to the draft (before anything started)* section with the effects, the four access surfaces and the refusal table, both OpenAPI specs gain the `return_to_draft` path with its 409 responses, and [testing-tracker.md](docs/testing-tracker.md) records the tested coverage of the changed activate contract and the new endpoint.
+
+## v9.71.2 — Burn guard back-off shows the right end time and the rung
+
+The back-off line for a backend held by the burn guard is now correct and says why.
+
+- The hold ends when the guard steps back or at the next window boundary. It had shown a reset one year ahead.
+- Times are stored and shown in the daemon's time zone.
+- The capacity view, the MCP status, the CLI and the comm channel name the guard rung and its reason next to the back-off, and the web capacity card shows the rung.
+
+## v9.71.1 — Billing test helper no longer double-unescapes
+
+A CodeQL double-escaping alert in the usage billing test helper is fixed (the `&amp;` replacement now runs last); no behaviour change.
+
+## v9.71.0 — Billing profiles for the usage calculator and the cost report
+
+The usage calculator and the cost report now know which plan you are on.
+
+- A billing profile per provider (`usage.billing.<provider>`): a bundled plan, a metered API, or free local, with a price and a reset schedule. Other providers need configuration only.
+- The calculator uses the profile for the reset schedule and the cost of one usage point, shown as an estimate.
+- The cost report shows tokens and estimated usage points for a bundled plan, and labels API-rate dollars as "API-equivalent, not billed"; metered APIs keep dollars and free local shows tokens only.
+- The cost report groups correctly by Automaton and by Automation.
+- On REST, MCP, the CLI, the comm channel and the web settings, with five locales and operator how-tos for the calculator and the cost report.
+
+## v9.70.3 — Link-aware plans folder tidy
+
+The plans folder tidy no longer breaks links or moves documents that are still in use.
+
+- `scripts/tidy-plans.sh` keeps a dated plan in place while an open registry row, a script, a root rules file or another doc still references it. Only unreferenced plans past the age cutoff with a closed registry row move to the historical folder, and every link to a moved plan is rewritten.
+- `scripts/check-plans-links.sh` reports the number of references into the plans folder whose target no longer resolves (counts only). It runs in `make lint`.
+- Registry hygiene runs with every tidy: duplicate sections and rows are removed, closed tables are merged, verbose closed rows are trimmed to one line, and stale draft rows can be corrected from an Automaton list export.
+- `tests/test-tidy-plans.sh` covers the tidy and the hygiene with temporary repositories and runs in `make test`.
+- Counts-only output, `--dry-run` and `--check` modes; the release smoke script still checks the folder first.
+
+## v9.70.2 — The stats installer fetches the right archive
+
+### Added
+
+- **`install/install-stats.sh` gains `--archive PATH`.** The stats installer can now install `datawatch-stats` from a local tarball with no download and no latest-version fetch: the version is taken from `--version` when given, otherwise read out of the archive filename when it matches `datawatch(-stats)?_X.Y.Z_`, otherwise the built-in fallback version with a warning. The archive may be either the standalone `datawatch-stats_*` release asset or a legacy main `datawatch_*` archive — the binary is located by name either way.
+
+### Fixed
+
+- **The stats installer now resolves `datawatch-stats` against the release's standalone archive.** `install/install-stats.sh` previously only knew the main `datawatch_<version>_linux_<arch>.tar.gz` archive, so it broke on releases that publish `datawatch-stats` as its own goreleaser asset. It now downloads the standalone `datawatch-stats_*` archive first and falls back to the legacy main archive when the standalone one is missing or lacks the binary, and it names the archive actually tried when it cannot find the binary in either. A new Go test, `tests/ci/install_stats_archive_test.go`, cross-checks the installer's archive names against the goreleaser asset configuration so the two cannot silently drift apart again.
+
+## v9.70.1 — Secret references in LLM API keys are resolved at call time
+
+An LLM entry whose API key is a `${secret:name}` reference now works with every adapter.
+
+- The key reference is resolved from the secrets store at call time, for the OpenWebUI, Claude, Gemini and OpenCode API adapters. Before, the reference text itself was sent as the bearer token and the provider answered 401.
+- Every resolution is written to the audit log (JSON lines and CEF), without the secret value.
+- A missing secret fails the call with a message that names the secret, and nothing is sent.
+- The secrets how-to and the LLM registry how-to describe keeping keys out of configuration files.
+
+## v9.70.0 — Explicit retry backend honoured by capacity admission
+
+A task retried with an explicit backend now waits on the pool it asked for, and says so.
+
+- Admission and the task record use the explicit backend and model of a retry (`resolve-review --action retry --backend ... --model ...`), so a retry on the cloud backend no longer waits on a full local pool while the cloud lane is idle.
+- The wait reason names the requested pool, appended at the end so the existing reason prefixes and the classifier still match.
+- The capacity wait budget counts from the first admissible request and is carried across re-entry, so a node-load failover no longer restarts the 4-hour clock.
+- New setting `autonomous.capacity_fallthrough` (default off): when on, a worker may be admitted on another idle allowed pool when the requested one is full. It is on REST, MCP, the CLI, the comm channel and the web settings, with five locales, and is described in the capacity how-to.
+
+## v9.69.0 — Automation checks and ship steps
+
+### Added
+
+- **Automation checks and ship steps.** The daemon now reviews an Automaton's work with four automatic checks, each `off`, `shadow` (record only) or `on` (default `on`): the pre-start verifier (a task's verification script exists, is executable and starts with a shebang line, with `autonomous.checks.block_when_missing` to block a start), the plan rules, the after-done checklist (version files, change log, configuration reference, parity issue, registry row) and the registry check. When a release is finished it carries it out with three ship steps, also `off`, `shadow` or `on`: push to the remote, create and push an annotated tag named from `autonomous.ship.tag_format`, and watch the CI runs of the pushed commit and tag, limited to `autonomous.ship.ci_workflows`. Findings and outcomes are recorded on the Automaton's triage record. Settings: `autonomous.checks.pre_start_verifier`, `plan_rules`, `after_done`, `registry_readme`, `block_when_missing`, and `autonomous.ship.push`, `tag`, `ci_watch`, `tag_format`, `remote`, `ci_workflows`.
+- **Read the checks and ship status from every surface.** `GET /api/autonomous/checks` and `GET /api/autonomous/ship` (both take `prd_id` and `project_dir`), the MCP tools `checks_status` and `ship_status`, `datawatch autonomous checks` and `datawatch autonomous ship`, and the chat commands `autonomous checks` and `autonomous ship`. The PWA gains an Automata checks card and an Automata ship status card plus a Checks and a Ship steps group in Settings, with strings in all five locales. A how-to, the definitions glossary and the operations guide describe the modes and how to start in shadow mode.
+
+## v9.68.0 — Task-finish snapshots stage only the task's own files
+
+The snapshot commit taken when a task finishes no longer stages stray files.
+
+- It stages only paths inside the task's declared plan and the files the task changed, honours the repository ignore rules and a new never-stage pattern list (`autonomous.snapshot_never_stage`, defaults cover scratch, temporary and local data folders).
+- Skipped files are logged with a reason (outside the plan, ignored, never-stage) and a per-reason summary. The normal completion commit, the stall-recovery commit and the attempt snapshot path record them on the task result as `skipped_snapshot_paths`, shown on the PWA, CLI and comm channel surfaces.
+- The setting is on REST, MCP, the CLI, the comm channel and the web settings, with five locales, and documented in the autonomous how-to.
+
+## v9.67.1 — Smoke checks must not copy operator configuration
+
+A smoke or live check can no longer copy the operator's configuration or data into the repository.
+
+- A decompose lint rule flags a smoke task whose plan copies configuration or credentials into the tree.
+- `scripts/check-no-config-copies.sh` fails when a changed file looks like a copy of operator configuration or credentials (backup files, `.env` files, configuration copies, key and token files). It runs in `make lint` against the remote main.
+- A smoke-check task template steers such tasks to in-process tests, temporary directories and a scratch data folder outside the repository.
+- Operator documentation describes the rule and the template.
+
+## v9.67.0 — Cost report
+
+### Added
+
+- **Billing profiles (`usage.billing`) on the cost surfaces.** A per-provider billing profile describing how you actually pay — `usage.billing.<provider>.mode` is `bundled_plan` (a flat monthly subscription whose allowance resets on a schedule), `api_metered` (pay-per-use API spend) or `free_local` (local inference at no charge); with `plan`, `monthly_price` and `currency`, and an optional `reset_weekday` + `reset_time` and `allowance_unit` (`percent` default, `requests` or `tokens`) — every field optional and independent, a blank string or `0` clearing one back to unset. A provider with no profile reads back as the **assumed** `api_metered` / `percent` default, labeled "assumed" on every surface (and, carrying no price, its money figures read zero rather than inventing one); a `bundled_plan` profile is what makes a cost-report row carry the **"bundled plan — API-equivalent, not billed"** label plus `api_equivalent_usd`, `estimated_usage_points` and `share_of_monthly_price` — an API-equivalent estimate at the rate card's rates, never a charge and never a zero or a fallback price. Set without a restart from every surface: YAML, the PWA billing profile card in Settings (`app-usage-billing`), `datawatch config set`, the MCP `config_set` tool, the chat `configure` verb, and `PUT`/`GET /api/config` — an unknown mode, a negative or non-finite `monthly_price`, a bad `reset_weekday`/`reset_time` and an unknown `allowance_unit` are refused naming the key, with nothing applied. The usage calculator reads the point value of the same entry.
+- **Release grouping for the cost report (`group_by=release`).** A report grouped by the release an Automaton shipped in, exposed only where a shipped-units source is configured: `datawatch cost report --group-by release`, `cost report [group_by=release]` on the comm channel, and `GET /api/cost/report?group_by=release`; an Automaton without a shipped attribution lands under `unreleased`. The read-only MCP `cost_report` tool explicitly refuses `group_by=release` with a message naming the accepted groupings and the REST route (it exposes no shipped-units source), and a report requested without a shipped-units source is a surfaced error, never empty or zero-filled rows.
+- **Billing profiles and release grouping — docs and definitions.** The [usage calculator](docs/howto/usage-calculator.md) howto carries the "The billing profile (`usage.billing`)" section (the per-provider fields, the default assumption, and where setting it takes effect on the report and in the calculator); the [Cost report](docs/datawatch-definitions.md#cost-report) glossary entry carries the "Billing Profile (`usage.billing`)" entry under it; the `usage.billing.<provider>.*` keys are recorded in [config-reference](docs/config-reference.yaml); [cost report plan](docs/plans/2026-11-02-cost-report.md) carries the billing profile section, the release grouping and the parity surface; [the billing-profile parity draft](docs/plans/parity-issues/2026-11-03-billing-profile-parity.md) is on the record as the companion-parity filing (the shipped shape is final; its "still a draft" line is superseded).
+- **Documentation, definitions and parity for the cost report.** The cost report (`datawatch cost report`, the `cost_report` MCP tool, `cost report` on the comm channel, `GET /api/cost/report`, and the **Cost report** dashboard card) now has an operator how-to — [howto/cost-report.md](docs/howto/cost-report.md) — covering what a row is (sessions, tokens in/out first, a USD estimate only where configured cost rates cover every backend in the group, `rate_configured` false and no dollar value where a rate is missing), the four groupings (`automaton` default, `automation`, `backend`, `week`), the `since`/`until` window (RFC3339 or `YYYY-MM-DD`; an absent `until` is now, an absent `since` the daemon's default window), the 31-day retention the figures rest on with older spend visible only through lifetime totals (`retention_days`, `lifetime_fallback`), and the five `cost_report.*` settings and their defaults (`default_group_by`, `default_window_days`, `show_usd_estimates`, `week_start`, `include_peer_spend`). The [Cost report](docs/datawatch-definitions.md#cost-report) glossary entry now names the four groupings, the window semantics, the retention and lifetime-fallback fields and both peer-spend and USD-visibility settings, and the `cost_report` settings block, its defaults and all five access methods are recorded in [operations](docs/operations.md#cost-report) and [setup](docs/setup.md).
+
+## v9.66.0 — The burn guard alerts, and asks only if you want it to
+
+### Added
+
+- **Burn guard ask mode — `usage.burn_guard.ask_on_change` (default `false`).** The guard no longer raises one question per rung change by default: with the setting off it alerts only (one alert per change, no question), and each alert carries the one-line suggestion *Set usage.burn_guard.ask_on_change to true to get a question per change* so the questions can be turned on from it. When set to `true`, the per-change alert still goes out and the guard keeps at most one open question per change alongside it: a new rung change withdraws that open question first (reason: *superseded by a newer burn guard rung change*) and raises the question for the new step, a step that changed no setting (a hold, a cap left where it was, a step that only releases a hold, a disabled release) asks nothing, turning the setting back off withdraws the last open question at the next changed rung step (reason: *ask_on_change is off, so the burn guard alerts only*), and daemon start withdraws any guard question the current ladder state no longer supports. Settable without a restart from every surface: YAML (`usage.burn_guard.ask_on_change`), the PWA burn guard card and Settings, `datawatch config set` (or `datawatch usage burn-guard config`), the MCP `config_set` / `burn_guard_config_set` tools, the chat `configure` verb, and `PUT /api/config` / `PUT /api/usage/burn-guard/config`.
+- **Documentation for the ask mode.** The burn guard howto gains a *The question on top of the alert* section (the setting, its default, the at-most-one-open-question behaviour, the withdrawal reasons and how to set it from every surface), the Burn guard entry in the definitions glossary names `ask_on_change` and its default, `docs/config-reference.yaml` records the key under `usage.burn_guard` alongside the other burn guard keys, and the OpenAPI spec gains a `BurnGuardConfig` schema with `ask_on_change` as a boolean, wired into `GET`/`PUT /api/usage/burn-guard/config`.
+
+## v9.65.0 — Peer machine names out of tracked files
+
+### Added
+
+- **Peer machine names are kept out of tracked files, and the check now learns them from the daemon.** `make leak-patterns-init` (`scripts/seed-leak-patterns.sh`) fills your gitignored `.leak-patterns.local` with the names of the federation peers, compute nodes and node pools the local daemon knows, reading them at run time, so the whole-tree leak check catches them as `local` findings without printing the match. Names shorter than five characters and the words in `scripts/leak-patterns.skip` (product vocabulary such as backend names) are skipped and counted, and LLM pool names are never seeded. `scripts/scrub-peer-names.sh` replaces the names in tracked files with neutral role names (dry run by default, `--apply` to write) and refuses a pattern that matches more than 500 lines in the code. The tree was scrubbed with it: the code, tests, how-to pages, plans and the historical plans no longer name any peer machine. The supervisor watch script now reads the pool names it skips from `SUPERVISOR_WATCH_SKIP_NODES` or a gitignored `.supervisor-watch-skip` file instead of carrying them in its source.
+
+## v9.64.3 — The coordinator Stop waits for its idle loop
+
+### Fixed
+
+- **Coordinator Stop now finishes before the idle check loop can run again.** A stop previously returned while the loop was still running, so an idle check could run after shutdown or write into a directory while it was being cleaned up. It now returns only after the loop has exited, so nothing races the cleanup.
+
+## v9.64.2 — Two libexpat findings accepted for 30 days
+
+### Security
+
+- **Two new libexpat findings (CVE-2026-117610 and CVE-2026-118370, both high, no Debian fix yet) are accepted for 30 days.** The Release scan of the agent-base image listed them, which blocked its container job. A trace of a built image shows that only `git` depends on libexpat and only the WebDAV push helper `git-http-push` links it, which datawatch never runs (it clones and pushes over ssh and smart HTTPS), so no remote XML reaches the parser. Both entries expire on 2026-12-02; Debian is re-checked each release and the entries are removed when a fix ships. The generated ignore file and the security review page are regenerated.
+
+## v9.64.1 — Backfill marks merged work that was cancelled
+
+### Fixed
+
+- **The shipped-state backfill now marks cancelled PRDs whose work actually landed.** The pass previously skipped a PRD whose stored status is cancelled even when a main-branch merge commit names its id, so a merged-then-cancelled Automaton (and the Automations containing it) never read as shipped. The backfill now records shipped state on every PRD whose id is named by a main-branch merge commit — even when its stored status is cancelled. The status never changes: a cancelled PRD with a merge is cancelled *and* shipped, while a cancelled PRD with no merge stays plain cancelled. The dry run now counts `prds_marked` and reports a new `prds_would_mark_cancelled` count that matches the real run, so a preview shows exactly what the backfill will change. The release version is the next patch above main, assigned by the merge helper (`scripts/merge-branches-bump-version.sh`); this entry deliberately carries no version number.
+
+## v9.64.0 — Operator console dashboard
+
+### Added
+
+- **The dashboard opens on an operator console: one number, one line and one link per card for what needs your attention.** Cards show open operator questions, held and blocked Automata, the lanes, the usage position and CI and release state, each with a link that takes you to the place to act, and a card whose source is unavailable shows the reason instead of an empty box. It is read from the web app, `datawatch dashboard console`, the MCP tool `dashboard_console_get`, `GET /api/dashboard/console` and the chat verb `dashboard console`. Seven switches under `dashboard.console` (`enabled` and one per section) choose what it shows, with your answers as the defaults; they are reachable from every surface and the web settings, and the how-to is the operator console guide.
+- **Dashboard cards are audited and cleaned up.** Every card's data source and the reason it can be empty are recorded in a plan page; the duplicate Automata card in the stored layout is removed; a card whose feature is switched off is hidden; and an empty card says why in one line and links to the setting that fills it. Observer cards are reused on the console where they fit.
+
+## v9.63.2 — Python XML finding accepted for 30 days
+
+### Security
+
+- **The accepted-risk entry for the critical Python 3.11 XML finding (CVE-2026-7210) is renewed for 30 days, by your decision.** Debian bookworm still lists the package as open with no fixed version, and the finding is reachable only in the aider agent image (the gemini image never calls the parser). The entry now expires on 2026-12-02 and records that the operator accepted it; Debian is re-checked each week and the entry is removed when a fix ships. The generated ignore file and the security review page are regenerated.
+
+## v9.63.1 — The About card comes first
+
+### Fixed
+
+- **In the web app, the About card is now the first thing on Settings → About.** It holds the logo, language, theme, version, update check and daemon controls, and used to sit below the API and Config Viewer sections. A test checks that it stays first.
+
+## v9.63.0 — Shipped state for Automata and Automations
+
+### Added
+
+- **Shipped state for Automata (PRDs) and Automations — "shipped" as a status-like bucket, orthogonal to the stored status.** A PRD or Automation can now carry *shipped state*: the release version the work landed in, when it merged, and the main-branch merge commit that proved it (recorded by the merge step or by a backfill pass). Recording shipped state never changes the stored status — a cancelled PRD whose work landed stays cancelled *and* carries shipped state, and an unmerged cancel is still just cancelled. While the shipped surface is enabled (`autonomous.shipped.enabled`, on by default) a record with shipped state displays as **shipped** in views that report an effective status, and — while `autonomous.shipped.count_separately` (on by default) holds — counts in its own **shipped** bucket instead of its stored status, so shipped and cancelled are separated everywhere counts or status buckets are shown; `autonomous.shipped.show_chip` (on by default), `autonomous.shipped.filter_default` (`all`, the list view's shipped selection) and `autonomous.shipped.backfill_on_start` (a one-time backfill at daemon start, off by default) complete the block. All five keys are settable from every standard path: `PUT /api/config`, `datawatch config set`, the MCP `config_set` tool, the comm channel `configure` and the PWA settings.
+- **Shipped-state backfill, live in the verification script.** One pass over the base repository's main branch lists every merge commit whose subject names an `automaton/<8-hex PRD id>` branch, finds the first release at or after each merge (by the next version-bump commit, else the CHANGELOG heading) and records the four fields on the matching PRDs — and on an Automation whose non-skipped members have all shipped, using the latest member merge. Idempotent: the recorded merge commit is the key, so re-running fills only what is missing and rewrites nothing that is present. `POST /api/autonomous/shipped/backfill` (with `?dry_run=true` for the report without writing), the `autonomous_shipped_backfill` MCP tool, `datawatch autonomous shipped backfill`, and the comm `shipped-backfill` verb all drive the same pass; the release verification script runs a live backfill smoke against the base repository, so a daemon that ships a release but fails to record the shipped state of that work is caught.
+- **New shipped-state surfaces.** REST: `POST /api/autonomous/prds/{id}/shipped` (body: `merged_in_release`, `merged_at`, `merge_commit`, `source`) and the Automation equivalent `POST /api/automations/{id}/shipped`; `GET /api/autonomous/shipped/counts` answers with the per-status count pair under the in-force settings. Filter: `GET /api/autonomous/prds` and `GET /api/automations` accept `shipped=true|false` to keep only records with (or without) shipped state; with neither set the server's `filter_default` view applies. MCP: `autonomous_shipped_record`, `autonomous_shipped_counts`, plus a `shipped` filter on `autonomous_prd_list` and `automation_list`. CLI: `datawatch autonomous shipped record|backfill|counts` and `--shipped true|false` on the list commands. Comm: `shipped <id> --commit <sha>` (aliases `shipped-record`, `shipped_record`, `record-shipped`, `record_shipped`), `shipped-backfill` and `shipped-counts`. Dashboard: a **Shipped** card reports the per-status counts and the shipped-vs-cancelled separation. Web UI: shipped filters appear in the PRD and Automation status menus while `show_chip` is on. The OpenAPI spec, the config reference and `docs/api/autonomous.md` are updated. Native clients (datawatch-app, PWA parity) are covered by the parity item: see `docs/parity-status.md` and the issue draft in `docs/plans/2026-11-01-shipped-status-parity-issue.md`.
+- **Operator guide and definitions.** New howto `docs/howto/automata-shipped-status.md` (shipped vs cancelled, recording, backfill dry-run, filter and settings), the "Shipped state" and "shipped vs cancelled" entries in `docs/datawatch-definitions.md`, and the `Autonomous PRD` / `Automation` records sections documenting the four shipped-state fields in the same file.
+
+**Monitoring (B7):** shipped state is not a new subsystem to gauge — no `SystemStats` field, no dedicated stats endpoint, no Monitor card, no comm stats command. The per-status count pair (which is the point of the feature) is already served by `GET /api/autonomous/shipped/counts` and rendered by the Shipped dashboard card; the audit log carries every record (`record_shipped`, `shipped_backfill`) with the actor, and failed backfill passes log the base-repository error rather than a metric.
+
+**Reuse audit (new primitives):** the recorded fields are new (release, merged-at, merge-commit, source) but the mechanics reuse existing primitives — config keys ride the standard `PUT /api/config` apply path, the counts reuse the existing per-status count helpers, the backfill reuses the git helpers and the release-detection of the merged-member check, the REST/MCP/CLI/comm handlers follow the existing automation-record handler shape, the audit entries use the audit actions already defined for record-shaped writes, and the dashboard card reuses the existing card framework. Only the shipped-state struct fields, the four endpoints/verbs/tools named above, the two backfill helpers (release lookup + idempotent apply) and the howto/definitions/plan text are new.
+
+## v9.62.2 — Repository tidy and a plain-English README
+
+### Changed
+
+- **The project README is rewritten in plain English and is a quarter of its former length.** The introduction, the summary and each feature area are short bullets, the release history moved to `docs/release-highlights.md`, and the Android and community sections moved below the product content.
+- **Stray files are gone from the repository root.** A leftover verifier verdict, an empty copy of the leak check script and a gate report were removed or moved, the test evidence folder moved under `docs/testing/runs/`, and a CI test now fails when an unknown file or folder is tracked at the top level.
+
+## v9.62.1 — Container images build again
+
+### Fixed
+
+- **The agent container images build again.** The identifier scrub in the previous release rewrote the container user's name in seven Dockerfiles as a build argument declared before the first `FROM`, which is empty inside a build stage, so the agent-base image failed at `groupadd: '' is not a valid group name` and the image refresh and any release that builds images stopped. Each Dockerfile now declares the argument again after its final `FROM`, and a CI test fails any Dockerfile that uses it without doing so.
+
+## v9.62.0 — Whole-tree leak check and scrub
+
+### Added
+
+- **Operator-machine identifiers were scrubbed from tracked files, and the leak check is now automated.** A whole-tree scan (`scripts/check-no-local-leaks.sh`, run as `make check-leaks`) fails on four classes of identifier: private and tailnet addresses, absolute home paths for any user, email addresses not on the allowed list, and every fixed string the operator lists in the gitignored `.leak-patterns.local` file (created from the checked-in template with `make leak-patterns-init`; its absence only skips that class). The generic class patterns and the allowed address list ship under `scripts/` as configuration (`scripts/leak-check.patterns`, `scripts/leak-check.allowed-emails`). Findings are reported as `path:line: class` and the matched value is never printed, so the output is safe in CI logs. The check runs inside `make lint` and in the release smoke script; a separate last-commit diff grep remains as the complementary check. All tracked files now use the prescribed placeholders — the IANA reserved documentation ranges for addresses, `example.com` names for hosts, neutral role names such as *local node* and *remote node* for machines and hardware models, and `/home/<user>` for home paths. The AGENT.md rule "No local-environment leaks in git" and its audit row (A8) describe the new check and the placeholders, and the PRD authoring checklist in `docs/plans/README.md` now requires that PRD specs, test fixtures and docs carry no operator-machine identifiers and that `make check-leaks` passes before a task is done.
+
+## v9.61.6 — Federation peers honour their certificate settings
+
+### Fixed
+
+- **A federation peer's certificate setting is now honoured everywhere the daemon reads that peer.** The federation sessions view used the default HTTP client and ignored the peer's `tls_skip_verify` and pinned fingerprint, so a peer set to skip certificate checks was still reported with a certificate error, and that error reached the lane fill evidence and the sessions list. One shared peer client now carries the peer's settings (skip verify or a pinned fingerprint; a peer without the opt-in keeps normal verification) and is used by the sessions fetch and the other peer call sites the audit found (the proxy, fingerprint sync and peer usage calls). Separately, a session-list fault on a peer that hosts none of a lane's compute nodes no longer makes that lane unreadable in the lane fill evidence.
+
+## v9.61.5 — Saved script removal refuses unsafe ids
+
+### Security
+
+- **Deleting an Automaton can no longer remove a folder outside the saved verification scripts.** The removal checks that the cleaned path stays strictly inside the saved-scripts folder and refuses an id that would leave it (an empty id, `..` or a path that climbs out). This closes the path-injection alert on the code that shipped in the previous release. A test covers the refused ids and shows another Automaton's saved folder untouched.
+
+## v9.61.4 — Supervisor watch counts pi transcripts
+
+### Fixed
+
+- **The supervisor watch no longer calls a working pi worker silent.** A pi worker writes its output file only when it finishes, so the watch read minutes to hours of silence for workers that were reading files or compacting their context. The activity measure now also counts the newest pi transcript of the Automaton and of each of its task worktrees (the folder comes from `PI_CODING_AGENT_DIR` when set, otherwise the default; a missing folder is skipped), and the SILENT line names which measure was newest. The 60 minute threshold is unchanged.
+
+## v9.61.3 — git-lfs suppression removed, Debian ships the fix
+
+### Security
+
+- **The accepted-risk entry for the git-lfs finding is removed.** Debian bookworm now ships the fixed git-lfs (3.3.0-1+deb12u2), so a fresh image build has it and the suppression is no longer needed. The generated ignore file and the security review page are regenerated. Python 3.11's XML finding stays on the registry because Debian has no fix for it yet.
+
+## v9.61.2 — Verification scripts survive cancel and recreate
+
+### Fixed
+
+- **Cancelling an Automaton now keeps its verification scripts.** The scripts are saved in a folder outside the worktree before the worktree is removed, and they are copied back when the Automaton or a task worktree is created or recreated. A stray folder that is not a worktree at the worktree path is moved aside instead of blocking setup. A verification script that is missing everywhere still produces the existing setup fault.
+
+## v9.61.1 — Task commit handles staged deletions
+
+A finished task that removed a file is committed instead of held for review.
+
+### Fixed
+
+- **A task that finishes with a file removed no longer fails its automatic commit and is no longer held for review.** When a task deletes a file (with `git rm`, or by deleting it in the worktree), the deletion is now committed along with the rest of the task's work. A listed path that no longer exists anywhere is skipped instead of failing the commit; any other `git add` error still fails the commit. When a path was skipped because it no longer exists, the hold question now says so. This fix ships in the next patch above main.
+
+## v9.61.0 — Claude burn guard
+
+Claude burn guard: keeps the weekly burn under the pace line without ending a running session.
+
+### Added
+
+- **A burn guard now keeps the weekly Claude burn from running past the pace line, and never ends a running session.** Every `usage.burn_guard.interval_minutes` (default 60) the daemon reads the Claude session transcripts, prices the tokens in points of the weekly allowance, projects them to the reset and compares the result with the pace line of your newest usage reading. When the projection is more than `margin_points` (default 2) over, it applies the next rung of a ladder that changes admission only: `lower_inflight`, `route_pi_prompt`, `hold_claude` (order settable). When the burn is back under the line by the margin and `step_back` is on, it releases one rung per interval. Each step raises one warning alert and one queue question with the numbers and what was done. A new reading refits the two cache prices (`refit_on_reading`). The same block adds an **effort ceiling** per task kind (default `docs`, `parity`, `live_check` and `final_gate` capped at `low`; `low`, `medium`, `high` or `cheaper_backend`, set per Automaton or per task) that only ever lowers effort or moves the task to the cheaper backend, and a **Claude retry limit** (`retry_limit_claude`, default 2, 0 to 20): a task that uses its retries is held for review with a question offering *Retry the task now* or *Cancel the task*. Reach it from the Burn guard card on the usage calculator view (with **Run now** and help links), `datawatch usage burn-guard status|run|config`, `datawatch automation set-effort-ceiling`, `GET /api/usage/burn-guard`, `POST /api/usage/burn-guard/run`, `GET`/`PUT /api/usage/burn-guard/config`, the MCP `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get` and `burn_guard_config_set` tools, the chat verb `usage burn-guard` and `configure usage.burn_guard.<key>=<value>`. Mobile parity: the PWA shows the status, settings and alerts, so a datawatch-app parity issue is required; its text is in `docs/plans/parity-issues/burn-guard.md` and it is filed as dmz006/datawatch-app#332. See [docs/howto/burn-guard.md](docs/howto/burn-guard.md).
+
+**Reuse audit (new primitives):** reuse-audit: usagecalc, capacity ledger, attempt_limit. The pace line, ceiling and week position come from the existing usagecalc advice; the inflight cap, routing and hold go through the existing capacity ledger's admission; the Claude retry limit reuses the existing task attempt_limit path; alerts and questions use the existing alert and question stores; settings ride the existing config `PUT` apply path.
+
+**Monitoring and docs:** observability: added (guard status with state, rung, projection, last decision, fit error and counters on `GET /api/usage/burn-guard`, the MCP status tool, the CLI, the comm verb and the PWA card). access-docs: added (howto with `exec_steps`, definitions entry, parity status, README, setup and usage calculator links). config-parity: verified (every `usage.burn_guard` key is settable from YAML, `PUT /api/config`, `datawatch config set`, MCP `config_set`, the chat `configure` verb and the PWA card; the effort ceiling has its own Automaton and task tools: `automation_set_effort_ceiling`, `datawatch automation set-effort-ceiling`, `POST /api/automations/{id}/set_effort_ceiling` and the chat verb). `GET /api/config` returns the block under `usage.burn_guard`, and Settings has a Usage burn guard section. The Monitor panel has a Burn guard stat card, `openapi.yaml` documents the routes, and `release-smoke.sh` and browser story TS-843 cover them.
+
+## v9.60.0 — Parallel tasks in one Automaton
+
+### Added
+
+- **The tasks of one Automaton can run at the same time, safely.** A task flagged read only skips the tree lock and runs beside other tasks. Every other task that runs alongside others gets its own worktree and branch off the Automaton branch, and when it is verified its work is merged back into the Automaton branch in dependency order. A branch that does not merge cleanly follows a conflict policy: `additive_then_model` (keep both sides when the changes only add lines, and ask the merge conflict model for anything else), `block` (hold the task and leave the conflict for you) or `triage` (raise the conflict as a question). Four settings under `autonomous.parallel` control it, with the operator's answers as defaults: `read_only_tasks` (`true`), `worktree_per_task` (`true`), `merge_conflict_policy` (`additive_then_model`) and `merge_conflict_model` (empty, which uses the strongest configured planning model). An explicit `false` is kept; only an absent key reads the default. They are reachable from the PWA Settings Automata section, YAML, `PUT /api/config`, `datawatch config set`, the chat `configure` verb and the MCP `autonomous_config_set` tool. A task is flagged read only with the `read_only` field on `autonomous_prd_add_task` and `autonomous_prd_edit_task`, the REST task routes, the CLI and the task edit in the web app. Each task shows its merge state, and a completed Automaton records its parallel execution numbers (speedup against running the tasks one after another) on the Automaton card, in `datawatch autonomous get`, in chat and over MCP. A "?" entry for each new card and setting is in the definitions page, and the how-to is Running the tasks of one Automaton in parallel.
+
+## v9.59.0 — Maintainer upstream monitoring
+
+Maintainer-only upstream monitoring (not part of the product).
+
+- A Dependabot configuration covers Go modules, Docker tags and workflow actions: security updates arrive one pull request each, routine updates arrive daily as one grouped pull request, and nothing merges by itself.
+- A scheduled `upstream-watch` job covers what Dependabot cannot see: tool versions pinned through `ARG` lines in the Dockerfiles, the scanner pin, and the scanner installer fetched from a moving branch. It opens or updates one issue when something is stale and never edits files or opens a pull request.
+- The version-bump check now passes a range authored entirely by `dependabot[bot]` without a bump, as the versioning rule already allowed.
+- A maintainer guide is added under the plans folder.
+
+### Fixed
+
+- **A compute node is no longer given more sessions than its limit, and a restart no longer gives a resumed worker's slot to new work.** Three faults in the capacity ledger are fixed. First, a verifier or judge whose model runs on two or more nodes carried no node choice, so it was admitted whatever its nodes were holding and could land on a full node; it is now placed on the least loaded node that has room, or it waits. A session adopted onto a node already at its limit (a worker resumed after a restart) is still counted as one of that node's occupants, so new work sees the node as full, yet the node's pool never reads over its limit (`GET /api/capacity` shows such sessions as the node's `overflow`). Second, a model's pool counted every session once, so sessions piled on one busy node used up slots a free node could have taken; the pool now counts the sessions on each node only up to that node's own limit. Third, after a restart new requests could be placed before the surviving work was adopted, and on a node the daemon had not yet read; the daemon now holds new requests until the resumed workers are adopted and treats no node as healthy until the first read of the compute node list. The three behaviours are separate settings under `autonomous`, all on by default, each applied to the next admission with no restart: `capacity_strict_node_limit`, `capacity_count_pool_by_node` and `capacity_adopt_before_admit` (set one to `false` to restore the earlier behaviour), plus `capacity_adoption_wait_seconds` (whole seconds, default 30, `0` reads as 30) for the longest the restart hold lasts. They are reachable from the PWA Settings capacity section, YAML, `PUT /api/config`, `datawatch config set`, the MCP `config_set` and `autonomous_config_set` tools and the chat `configure` verb. Mobile parity: the PWA shows these settings, so a datawatch-app parity issue is required and is filed at the merge. See the operations guide section "Node placement and restart ordering".
+- **The answer dialog for a question no longer cuts off the top of its first line on a phone.** The question id line under the title was the first child of the dialog's scrolling body and carried a negative top margin, which pushed the first line of text above the scroll point where it could not be reached. The body now has a small top padding and starts scrolled to the top when the dialog opens; the text scrolls and the buttons stay in view as before. This covers every dialog opened through the shared modal, not just the question dialog. Mobile parity: the Android client's question dialog needs the same top-of-text fix, and the datawatch-app parity issue is filed at the merge.
+- **Your saved identity can no longer be lost silently.** The daemon now keeps a timestamped backup of the identity before every write, and keeps the newest few: `identity.backups_to_keep` sets how many (a whole number, default 10, minimum 1; change it with `PUT /api/config`, `datawatch config set` or the PWA identity section).
+- **A write that would replace saved fields with an empty identity is refused, and the caller is told.** `PUT`, `PATCH` and `POST /api/identity`, the MCP `set_identity` and `update_identity` tools and `datawatch identity set` now answer HTTP 409 (`code: identity_wipe_refused`, with the names of the fields kept) and write nothing, unless the write is an explicit reset. Each refusal is recorded in the audit log as `identity_set_refused`.
+- **Clearing the identity is now a deliberate act.** The PWA **Reset** button (it asks first and says a backup is kept), `datawatch identity reset`, the MCP `reset_identity` tool and `POST /api/identity/reset` are the explicit reset. The old PWA button that only reloaded the form from the daemon is now called **Revert**. There is no reset from the chat channel, by design.
+- **Bring a lost identity back from a backup.** Use the PWA **Restore** choice (it lists the backups with time, role and number of filled fields), `datawatch identity restore [--backup <name>]`, the MCP `restore_identity` tool (and `identity_backups` to list them), `POST /api/identity/restore`, or the chat verbs `identity backups` and `identity restore <name|latest>`. The current identity is backed up first, so a restore can itself be undone.
+- **The cause, as far as the evidence goes, is likely a release smoke run pointed at the live daemon.** The identity was emptied on 2026-10-24 by an identity write pair (`identity_update` then `identity_set` with an empty body) that matches section 13 of the release smoke script when it runs against an external daemon. The cause is recorded as likely, not confirmed, because the audit log does not record the request body or the client; the full evidence is in `docs/plans/identity-loss-root-cause.md`. The release smoke no longer writes an empty identity, and a new lint check forbids it.
+- **The PWA test scripts no longer turn certificate checking off.** The three PWA story scripts TS-833, TS-834 and TS-835 now trust the test daemon's own certificate (its path is set in `TEST_TLS_CA` by the e2e runners) instead of disabling certificate checking. Two string patterns in PWA unit tests were also rewritten with a correct escaping method. This is a test-only change: nothing in the shipped product changes.
+
+**Monitoring (B7):** n/a per item, with reasons — this fix adds no subsystem with a state of its own to gauge. There is no new channel `SystemStats` field, no `GET /api/<subsystem>/stats` endpoint, no stats MCP tool, no Monitor card and no comm stats command. Every change is in the audit log: a refused empty write as `identity_set_refused`, an explicit clear as `identity_reset` and a restore as `identity_restore`, each with the actor.
+
+**Reuse audit (new primitives):** nothing new was built where a primitive existed. The backups, the refusal, the reset and the restore are methods on the existing identity manager and are stored beside the existing identity file; `identity.backups_to_keep` is applied through the existing config `PUT` apply path (validate first, apply at once, no restart); the three audit actions use the existing audit log; the PWA Reset and Restore confirmations use the existing PWA confirmation helper.
+
+### Added
+
+- **Each project can now define its own merge pipeline, and say how a merge conflict is handled.** The pipeline comes from a file in the project's repository, else a record the daemon keeps, else the built-in pipeline; `autonomous.merge_pipeline.source_order` sets the order and `fallback_on_bad_file` says what happens when the file is unusable. A conflict follows `conflict_policy` (stop and ask, resolve additive hunks mechanically, or mechanical then a model) and a model's proposal is kept only if the pipeline's test step passes on it in a scratch tree. Read it, check a pipeline and keep a record from the PWA card, `datawatch autonomous merge-pipeline`, the `autonomous_merge_pipeline_*` MCP tools and the chat verb. See `docs/howto/merge-pipeline.md`.
+- **A new onboarding report says what is configured, what is missing and what to try next.** Six checks (backends, models, projects, comm channels, memory, merge pipeline), each failure with its reason and an ordered next step with a how-to link, the command, the MCP tool and the PWA place. Read it from the Onboarding report card, `datawatch automation onboarding-report`, the `onboarding_report` MCP tool, the chat verb or `GET /api/automation/onboarding-report`; `onboarding_report.enabled`, `disabled_checks` and `include_next_steps` switch it and its checks off. See `docs/howto/onboarding-report.md`.
+- **You can now tell a hung model request from a slow one.** When a worker or a verifier of an Automaton is waiting on a model that runs on one of your compute nodes, the daemon now looks at the node and shows whether the request is *generating* or has made no progress, and for how long: "waiting on a model request: generating", "waiting on a model request: no progress for 12 minutes", or, when the node cannot be reached, "waiting on a model request: node unreachable, no progress for 12 minutes". Before the first reading the state is *unknown*. It is shown on every surface: the **Automata model request progress** card on the Automation Overview, a chip on session rows, the session header and task rows, `GET /api/autonomous/request-watch` (optional `session` and `automaton` filters), the MCP tool `autonomous_request_watch`, `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` and the chat verb `autonomous request-watch`. Today only Ollama nodes can be read; a session on any other kind of node simply shows nothing.
+- **After 30 minutes with no progress you get one alert and one question, and nothing is fixed for you.** When a request passes the no-progress limit (30 minutes by default), the daemon raises one warning alert and, with the operator question channel on, one question that offers *keep waiting* (always offered and always the default), *end the worker*, *retry on another backend* and *unload and reload the model*. The question does not block anything and does not park the task, because parking a running worker would itself end the worker: answering it only records your choice in the Automaton's decision log. The watch makes no model call and never ends a worker, retries on another backend or unloads a model by itself; if you pick one of those, you do it. A request that shows progress again and then stalls again raises a new alert and question; a question still open when the request recovers or the session ends is withdrawn.
+- **Eleven settings under `autonomous.request_watch`, all with defaults and reachable from every surface** (PWA Settings, YAML, `PUT /api/config`, `datawatch config set`, MCP `config_set`, and the chat `configure` verb): `enabled` (true), `poll_seconds` (30, whole number, minimum 1), `no_progress_minutes` (30, whole number, minimum 1), `observe_workers` (true), `observe_verifiers` (true), `use_gpu_signal` (true, reads the GPU of a node that has an attached observer), `gpu_busy_percent` (10, 1 to 100), `unreachable_counts` (true, an unreachable node counts toward the no-progress time), `raise_alert` (true), `raise_question` (true) and `remediation_options` (unset, which offers all four choices; an explicit empty list leaves only *keep waiting*, so the alert is raised but no question).
+- **Transient infrastructure failures now retry on their own instead of needing a hand reset.** When the machinery around a task fails — the worker could not be started, a write failed because the disk is full or read-only, the session was killed before the task reached it, or the daemon restarted under it — the Automaton no longer counts that against the task. It waits and tries again: by default 3 tries with delays of 1, 5 and 9 minutes, 15 minutes in all, and a task that is waiting shows *infrastructure retry n of max* with the time of the next try. Every retry is written to the task with its class, reason and time, and logged as a decision on the Automaton. Tasks that failed behind the one that was retried recover with it: once the task is no longer failed, cancelled or held, its dependents return to pending on their own. A task whose tries run out is held for your review rather than failed, and, with the operator question channel on, the Automaton asks a question that names the task and the cause and offers *Retry the task now* or *Cancel the task*; answering it does what resolving the review would. Throttles and usage limits from a model provider, and a task's own failures, are never retried this way. Every choice is a setting under `autonomous.infra_retry`: `enabled`, `max_tries`, `backoff_seconds`, `categories`, `exhausted_action` (`hold` or `count`), `retry_dependents` and `raise_question`. The state is shown by `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries`, the comm channel verb `autonomous infra-retries`, and the web app, which has an Infrastructure retries card in the Automation view, a *Retry n of max* badge on each task and the seven settings with their help. See [howto/infrastructure-retry.md](docs/howto/infrastructure-retry.md).
+- **An Automation no longer stays blocked on work that has already shipped.** When a member Automaton of an Automation ends cancelled and its branch is already merged into the project's own default branch, the Automation used to block and wait for you even though the work was done. The daemon now checks with read-only git, using the project's default branch rather than assuming `main`, and the new setting `autonomous.automation.merged_member_policy` decides what happens. `completed` (the default) treats the member as completed so the Automation moves on, and raises one info alert; `manual` keeps the Automation blocked but adds the proof to the reason so you can resume it or skip the member; `block` keeps the old behaviour and runs no git at all. A branch that is not merged, has no commits ahead, or whose state cannot be read always keeps the blocked outcome. The setting is changeable from the web UI, `PUT /api/config`, `datawatch config set`, chat `configure` and the MCP `autonomous_config_set` tool, and applies to the next member that ends with no restart.
+- **Every merged-member decision is recorded and readable from every surface.** Each decision names the member, its branch, the default branch it was proved merged into, the proving commit, the policy in force and the outcome (advanced or blocked). Read them with `GET /api/automations/merged-members` (or `/api/automations/{id}/merged-members` for one), the MCP tool `automation_merged_members`, `datawatch autonomous merged-members`, the chat verb `autonomous merged-members`, or the new **Automaton merged-member decisions** block on the Automation detail view in the web UI. Running a cancelled member again while its Automation is blocked on it resumes the Automation by itself. Operator guide: `docs/howto/automation-merged-member.md`.
+- **Operators are now told when an Automaton needs a decision, and the asker hears the answer back.** With the operator-question channel (still behind its off-by-default switch), every question an Automaton raises is announced three ways at once: a live `question_raised` message to any open PWA, one line in every active messaging group (who asked, the question, the numbered options, and where to answer), and — for a high-priority question raised with `priority: "high"` — a warning alert carrying the question id, its label, the question text and the options that sits in the alert list until you deal with it. Answering or withdrawing an open question fires a `question.answered` / `question.withdrawn` event that you can subscribe to like any other Automaton lifecycle event (comm, topic, alert, webhook, MCP queue or peer), delivered exactly once even if the daemon restarts between the record and the send.
+- **The asker has one read to poll for the answer.** `GET /api/questions/{id}` now also carries `answer_count`, `current_answer_id` and the standing answer's summary (the verbatim quote, who answered and where). This is the default return path: an automated session that asks can subscribe to the answer event and poll this read, and it works with no extra settings. A session gone is gone — an asking session that no longer exists costs nothing; the answer is stored and readable any time.
+- **Opt-in: the answer lands as one line in the session that asked.** A question raised with `return_path: true` (which names the asking session) gets, on the first answer, exactly one `DATAWATCH_ANSWER: {…}` line written into that session — a marker a line-based reader can grep, then a one-line JSON with the question id, answer id, chosen option, the verbatim quote, the actor and the surface. It never crosses a new line, even if the quote does; a later (superseding) answer sends a fresh line. Best-effort: a lost line is one daemon warning, never a retry — the answer is always in the store and the event, whatever happened to the line.
+- **Three new config keys, all on by default, all switchable from every surface:** `autonomous.questions.notify_messaging`, `autonomous.questions.notify_alert` and `autonomous.questions.return_path` turn each announce route off by itself. All four (the channel switch plus the three) are reachable the same way the rest of the config is — PWA Settings (the "Autonomous Automata planning" section), REST config, MCP `config_set`, `datawatch config set`, and the comm channel. While the channel switch is off, none of this fires at all; flip it on and it is live on the next question, no restart — the answered and withdrawn events included, because the config write attaches the event sink at that moment instead of only at daemon start.
+
+### Changed
+
+- **Usage calculator readings take their lane count from the daemon.** The lanes input on a reading is removed: the daemon stamps each reading with the Claude lanes it sees running, and a lanes value sent by an older script is ignored. The advice now shows the lanes running now and the what-if lanes apart, and the what-if is never saved.
+- **High-priority questions now raise an alert; normal ones do not.** Raising with `priority: "high"` adds a warning alert to the alert history carrying the question id, label, text and options. `priority` is only how urgent the operator should be — it does not change how risky a wrong answer is (that stays in `risk`) and does not gate answering, withdrawing or polling.
+
+**Monitoring (B7):** n/a per item, with reasons — this step adds events and notifications, not a new subsystem with a state of its own to gauge. There is no new channel `SystemStats` field, no `GET /api/<subsystem>/stats` endpoint, no stats MCP tool, no Monitor card and no comm stats command. The raised, answered and withdrawn moments are already visible where the operator looks: the `question_raised` WebSocket message, the messaging line, the alert in the alert list, the two lifecycle events (counted by the existing subscription delivery records and audit trail), and every mutation in the audit log under its question action. Queue and state counts stay queryable through `GET /api/questions` with its filters. A failed announcement or session line is a daemon warning log line, not a metric.
+
+**Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
+
+## v9.58.2 — Pipeline file opened through a root handle
+
+### Security
+
+- **The merge pipeline file is opened through a root handle on the project directory.** A pipeline file name that is a symlink, an absolute path or a `..` path leaving the project is now refused by the operating system and not only by the name check, which closes a code scanning path injection finding in the file loader.
+
+### Fixed
+
+- **Two string cleaning patterns in a PWA test stub are gone.** The result panel test used a regular expression sanitizer stub that code scanning flagged; it now removes fixed strings.
+
+## v9.58.1 — Accepted risk for a new SQLite finding
+
+### Security
+
+- **A new HIGH finding on the SQLite library in the agent images is accepted for 30 days.** The container scan of the 9.58.0 release listed CVE-2026-119373 (a denial of service in `libsqlite3-0`, no fixed Debian bookworm version) and blocked the image build. The library's reachability was already traced for the earlier SQLite finding: only gpg links it, nothing runs gpg at runtime, and datawatch uses a pure Go SQLite driver. The entry is in `security/accepted-risks.yml` as reasoning from that trace (not a new trace), so it expires on 2026-12-01.
+
+## v9.58.0 — Merge pipeline as configuration
+
+- **Each project can now define its own merge pipeline, and say how a merge conflict is handled.** The pipeline comes from a file in the project's repository, else a record the daemon keeps, else the built-in pipeline; `autonomous.merge_pipeline.source_order` sets the order and `fallback_on_bad_file` says what happens when the file is unusable. A conflict follows `conflict_policy` (stop and ask, resolve additive hunks mechanically, or mechanical then a model) and a model's proposal is kept only if the pipeline's test step passes on it in a scratch tree. Read it, check a pipeline and keep a record from the PWA card, `datawatch autonomous merge-pipeline`, the `autonomous_merge_pipeline_*` MCP tools and the chat verb. See `docs/howto/merge-pipeline.md`.
+- **A new onboarding report says what is configured, what is missing and what to try next.** Six checks (backends, models, projects, comm channels, memory, merge pipeline), each failure with its reason and an ordered next step with a how-to link, the command, the MCP tool and the PWA place. Read it from the Onboarding report card, `datawatch automation onboarding-report`, the `onboarding_report` MCP tool, the chat verb or `GET /api/automation/onboarding-report`; `onboarding_report.enabled`, `disabled_checks` and `include_next_steps` switch it and its checks off. See `docs/howto/onboarding-report.md`.
+
+## v9.57.0 — Claude Code prompts are dismissed safely
+
+- **Claude Code interstitial prompts are recognised and dismissed safely.** A worker that pauses on a Claude Code interstitial prompt — for example the autocompact question ("Want to autocompact at 400k tokens instead?", where **Enter** would confirm the highlighted option: *Autocompact at 400k* (change the setting) or *Keep auto (1m tokens)*) — used to hold its lane until someone noticed it was silent. Only prompt shapes in the built-in per-kind table are recognised (today: the autocompact-threshold question); idle prompts, quoted prompt wording and startup/decision dialogs deliberately classify as none. The daemon recognises the table's prompt kinds on the session's terminal (a built-in per-kind table, not a free-text pattern list) and dismisses each with the one safe key for that kind — **Esc**, never Enter on a choice that changes a setting. The dismissal is bounded and switchable per session config: `session.dismiss_ui_prompts` (default **on**) turns it on or off, `session.ui_prompt_dismiss_delay_seconds` (default 5) is the settle wait before the first key, `session.ui_prompt_clear_bound_seconds` (default 30) is how long the key must hold before the prompt counts as cleared, and `session.ui_prompt_max_attempts` (default 2) is the retry budget before the session is flagged for the operator to answer by hand. Every dismissal is audited (`ui_prompt_dismissed`, with the prompt kind), an exhausted prompt flags the session as blocked (needs input), and a per-kind counter feeds `GET /api/stats` (the `ui_prompts` object; also the `get_stats` MCP tool) and the Prometheus `datawatch_ui_prompt_dismissals_total` metric. All four settings are changeable from every surface: PWA Settings → Sessions, `PUT /api/config`, the MCP `config_set` tool, `datawatch config set`, and the comm `configure session.dismiss_ui_prompts=...` verb.
+**Monitoring (B7):** n/a per item, with reasons — the interstitial-prompt item's gauges are the `datawatch_ui_prompt_dismissals_total` Prometheus counter (per prompt kind) and the `ui_prompts` counters in `GET /api/stats` / the `get_stats` MCP tool, both counting dismissals vs. blocks per kind; everything else lands where the operator looks: the `ui_prompt_dismissed` audit entries (prompt kind, session, key), the blocked/needs-input flag on the session once the retry budget is spent, and the four `session.ui_prompt*` settings on every config surface. The other Added items in this release add events and notifications, not a new subsystem with a state of its own to gauge.
+
+**Reuse audit (new primitives, interstitial-prompt item):** nothing new was built where a primitive existed. Detection reads the existing session terminal capture (no new pane access); the dismissal key travels the existing per-session key-send path; the blocked flag reuses the existing session needs-input state; the counters reuse the existing stats collector and Prometheus registry; the audit entries reuse the existing audit log; and the four settings ride the existing config `PUT` apply path (validate first, apply at once, no restart) across the four established config surfaces. Only the per-kind interstitial table, its safe-key map and its fixtures are new.
+
+## v9.56.4 — Two more flaky tests made deterministic
+
+### Fixed
+
+- **Two tests that failed now and then under load no longer depend on timing.** The live-flip fan-out test now waits for the router send count to reach its expected value instead of reading it right after the second raise (the send is asynchronous), and the resume monitors needs-input test no longer relies on a fixed delay. Both report what they saw when they fail. No product behaviour changed.
+
+## v9.56.3 — Test code alerts closed
+
+- **The PWA test scripts no longer turn certificate checking off.** The three PWA story scripts TS-833, TS-834 and TS-835 now trust the test daemon's own certificate (its path is set in `TEST_TLS_CA` by the e2e runners) instead of disabling certificate checking. Two string patterns in PWA unit tests were also rewritten with a correct escaping method. This is a test-only change: nothing in the shipped product changes.
+
+## v9.56.2 — Nodes are never over-admitted
+
+- **A compute node is no longer given more sessions than its limit, and a restart no longer gives a resumed worker's slot to new work.** Three faults in the capacity ledger are fixed. First, a verifier or judge whose model runs on two or more nodes carried no node choice, so it was admitted whatever its nodes were holding and could land on a full node; it is now placed on the least loaded node that has room, or it waits. A session adopted onto a node already at its limit (a worker resumed after a restart) is still counted as one of that node's occupants, so new work sees the node as full, yet the node's pool never reads over its limit (`GET /api/capacity` shows such sessions as the node's `overflow`). Second, a model's pool counted every session once, so sessions piled on one busy node used up slots a free node could have taken; the pool now counts the sessions on each node only up to that node's own limit. Third, after a restart new requests could be placed before the surviving work was adopted, and on a node the daemon had not yet read; the daemon now holds new requests until the resumed workers are adopted and treats no node as healthy until the first read of the compute node list. The three behaviours are separate settings under `autonomous`, all on by default, each applied to the next admission with no restart: `capacity_strict_node_limit`, `capacity_count_pool_by_node` and `capacity_adopt_before_admit` (set one to `false` to restore the earlier behaviour), plus `capacity_adoption_wait_seconds` (whole seconds, default 30, `0` reads as 30) for the longest the restart hold lasts. They are reachable from the PWA Settings capacity section, YAML, `PUT /api/config`, `datawatch config set`, the MCP `config_set` and `autonomous_config_set` tools and the chat `configure` verb. Mobile parity: the PWA shows these settings, so a datawatch-app parity issue is required and is filed at the merge. See the operations guide section "Node placement and restart ordering".
+
+## v9.56.1 — Lane fill wording, audit and coverage
+
+### Fixed
+
+- **Lane fill refusals now use the Automaton wording, and lane fill mode changes are audited.** The refusal text of lane fill said "PRD" in operator-facing copy; it now says Automaton. Changing the lane fill mode for a lane kind writes an audit entry (JSON lines and CEF), and the release smoke and a browser story cover the lane fill card. Generated live-check reports no longer carry the host name.
+
+## v9.56.0 — Lane fill follows the concurrency caps
+
+- **Lane fill is now careful about which Automaton it picks, and it can be switched on one kind of lane at a time.** Lane fill skips an Automaton that has sat untouched for more than 72 hours (`autonomous.lane_fill.stale_after_hours`, `0` turns this off), never starts a spec marked HOLD or "do not run", and never starts one that is sequenced after work that is not finished. It starts an implementation Automaton only when its proposal carries a `Confirmed: yes` line, skips work the default branch already has, and takes an Automaton only when its recorded worktree is real. Every skipped Automaton now shows why, in plain words, as a short reason code on the REST, MCP, CLI and chat status and as a chip on the Lane fill card, and a skipped Automaton no longer counts as eligible work in the supervisor watch. The number of lanes now follows the LLM concurrency caps, so a Claude backend capped at one session gets one Claude lane, and the status shows the configured count, the count in use and where it came from. The GPU pool check now reads a compute node that uses a private or self-signed certificate with that node's own certificate settings, and when the certificate is still not trusted it names the node and the setting that fixes it. Lane fill can be switched on for GPU lanes first and for Claude lanes later with `autonomous.lane_fill.gpu_mode` and `autonomous.lane_fill.claude_mode`, and each switch is recorded in the audit log. Lane fill still ships in shadow mode for both kinds of lane, so nothing starts on its own and nothing changes until you turn a mode on. The seven new settings (`stale_after_hours`, `require_confirmed_proposal`, `check_main_carries`, `require_worktree`, `lane_counts_from_caps`, `gpu_mode`, `claude_mode`) can be set from the config file, the CLI, chat, REST, MCP and the Settings page, and the how-to `automation-lane-fill` has the step-by-step way to move from shadow to on.
+
+## v9.55.0 — Request progress watch
+
+- **You can now tell a hung model request from a slow one.** When a worker or a verifier of an Automaton is waiting on a model that runs on one of your compute nodes, the daemon now looks at the node and shows whether the request is *generating* or has made no progress, and for how long: "waiting on a model request: generating", "waiting on a model request: no progress for 12 minutes", or, when the node cannot be reached, "waiting on a model request: node unreachable, no progress for 12 minutes". Before the first reading the state is *unknown*. It is shown on every surface: the **Automata model request progress** card on the Automation Overview, a chip on session rows, the session header and task rows, `GET /api/autonomous/request-watch` (optional `session` and `automaton` filters), the MCP tool `autonomous_request_watch`, `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` and the chat verb `autonomous request-watch`. Today only Ollama nodes can be read; a session on any other kind of node simply shows nothing.
+- **After 30 minutes with no progress you get one alert and one question, and nothing is fixed for you.** When a request passes the no-progress limit (30 minutes by default), the daemon raises one warning alert and, with the operator question channel on, one question that offers *keep waiting* (always offered and always the default), *end the worker*, *retry on another backend* and *unload and reload the model*. The question does not block anything and does not park the task, because parking a running worker would itself end the worker: answering it only records your choice in the Automaton's decision log. The watch makes no model call and never ends a worker, retries on another backend or unloads a model by itself; if you pick one of those, you do it. A request that shows progress again and then stalls again raises a new alert and question; a question still open when the request recovers or the session ends is withdrawn.
+- **Eleven settings under `autonomous.request_watch`, all with defaults and reachable from every surface** (PWA Settings, YAML, `PUT /api/config`, `datawatch config set`, MCP `config_set`, and the chat `configure` verb): `enabled` (true), `poll_seconds` (30, whole number, minimum 1), `no_progress_minutes` (30, whole number, minimum 1), `observe_workers` (true), `observe_verifiers` (true), `use_gpu_signal` (true, reads the GPU of a node that has an attached observer), `gpu_busy_percent` (10, 1 to 100), `unreachable_counts` (true, an unreachable node counts toward the no-progress time), `raise_alert` (true), `raise_question` (true) and `remediation_options` (unset, which offers all four choices; an explicit empty list leaves only *keep waiting*, so the alert is raised but no question).
+
+## v9.54.0 — Finished work reaches the remote before a session ends
+
+### Added
+- **When work finishes, datawatch now pushes it to the remote according to a new setting.** `git.push_on_complete` selects the policy — `never` (no push, with a visible "not pushed" warning), `branch` (the default: push the finished work branch), or `default_branch` (push onto the remote's default branch, only after the final gates have passed at completion) — and `git.push_remote` picks the remote name (default `origin`). The value is read live on every push, so changing it applies to the next push without a restart.
+- **Pushes never force.** Every push datawatch performs is a plain fast-forward-only push, so finished work can never rewrite or destroy history on the remote. If the local work has diverged, that push simply fails and is treated like any failed push.
+- **A failed push keeps the work instead of losing it.** The commit stays in the local checkout, a visible "not pushed" warning is shown with the reason, and an alert is raised so it is not silently dropped.
+- **Each automaton can override the daemon default for itself.** A per-PRD push policy set in the web UI, REST API, MCP or CLI always wins over the daemon's `git.push_on_complete`; the remote name always comes from `git.push_remote`.
+- **Work is no longer lost in teardowns.** One-shot sessions push their validated commits before ending, and when a session or worker container is about to be torn down with committed-but-unpushed work, that work branch is pushed first. Under the `default_branch` policy a teardown that sits on the default branch deliberately does not push — that push waits for the final gates anyway.
+- **Pushed / not-pushed is now visible everywhere.** The per-PRD state shows in the web UI, in `prd-get`, in the REST API, and in the settings screens; a failed push also leaves its warning and reason there.
+- **The new settings and labels are available in all five web UI languages** (English, German, Spanish, French, Japanese).
+
+## v9.53.1 — Question dialog shows its first line
+
+- **The answer dialog for a question no longer cuts off the top of its first line on a phone.** The question id line under the title was the first child of the dialog's scrolling body and carried a negative top margin, which pushed the first line of text above the scroll point where it could not be reached. The body now has a small top padding and starts scrolled to the top when the dialog opens; the text scrolls and the buttons stay in view as before. This covers every dialog opened through the shared modal, not just the question dialog. Mobile parity: the Android client's question dialog needs the same top-of-text fix, and the datawatch-app parity issue is filed at the merge.
+
+## v9.53.0 — Held Automata states raise operator questions
+
+- **The daemon now asks you when an Automaton is held waiting on a decision.** A held-state question is the daemon's own question on an Automaton sitting in one of five held states: blocked (parked waiting on a decision or stuck after a failure), held on review after a repeated failure, revision requested, parked on an unanswered decision, or waiting for an insert you have to approve. In `on` mode each held (Automaton, state) pair becomes exactly one blocking question that carries that state's real actions as options — resume, retry, retry on a stronger backend, change the spec, cancel, approve-insert, reject-insert — plus the `hold` option, which is always the default so nothing is decided silently; the recommended option and its one-sentence rationale come from a fixed table keyed on the state and the failure category (infrastructure/content/scope/policy), never a model. The mode is `autonomous.questions.held_mode`: `off` (nothing runs), `shadow` (the default — the pass computes every held Automaton and records one note per (item, state) you can read back through the same surfaces, and raises nothing) or `on`; `autonomous.questions.held_states` narrows which of the five states are covered (absent = all, explicit empty = none; an unknown state id is refused, not ignored). It lives under the operator-question switch (`autonomous.questions.enabled` — while that is off the report endpoint says so in its 503), and neither key raises on its own without it. An open question is withdrawn by the daemon when the held state clears (the reason names the cleared state); an answer that names a state the Automaton already left is never run — it is refused, recorded once with the full answer as a `stale` entry, and closes the question. The same (Automaton, state) never gets a second question while one is open, across restarts. Every answer lands exactly once as a decision entry — who, which surface, which option, your words, and the result (`applied`, `recorded`, `refused` or `stale`). It is on `GET /api/autonomous/held-questions` (with `prd_id` and `state` filters; read-only), the `autonomous_held_questions` MCP tool, `datawatch question held`, the chat `question held`, and the Held-question card on the Automation view; an answer goes in on any of the standard answer surfaces — PWA, REST `POST /api/questions/{id}/answer`, the `question_answer` MCP tool, `datawatch question answer` or the chat `question answer`. Both keys are in PWA Settings under "Autonomous Automata planning", in REST config, MCP, `datawatch config set` and the chat channels like the rest of the Automata config. See `docs/howto/automaton-held-state-questions.md`.
+
+## v9.52.0 — Plan coverage gate ignores files tasks create
+
+- **An Automaton's plan no longer needs a manual acknowledgement just for its own work.** Every plan used to report 20 to 50 findings, most of them files the plan itself creates (new source files, tests, docs) plus stray words from the spec counted as missing requirements. The plan coverage check now drops both: a finding for a file the plan lists as one it will change is not reported, and requirements are extracted only from the spec's own requirement-bearing sections, with a minimum length below which a line is not treated as a requirement. Genuine findings still need your acknowledgement, exactly as before. The stored coverage record now also counts how many findings each filter suppressed, so you can always see what the check left out. Read the record with `GET /api/autonomous/prds/{id}/plan_coverage`, the MCP tool `autonomous_prd_plan_coverage_get`, or the chat verb `autonomous plan-coverage <id>`. The four settings, changeable from every config surface like the rest of the plan coverage settings: `autonomous.plan_coverage_suppress_created_files` (on by default), `autonomous.plan_coverage_scoped_requirements` (on by default), `autonomous.plan_coverage_requirement_sections` (the sections a requirement can come from, a comma list, default `scope,constraints`) and `autonomous.plan_coverage_min_requirement_chars` (a whole number, `0` means the built-in default of 30). Each filter switches off by itself, and with both off the check reports what it reported before. Operator guide: `docs/howto/plan-coverage-filters.md`.
+
+## v9.51.1 — Flaky tests made deterministic
+
+### Fixed
+
+- **A shutdown report no longer names an unrelated process as the sender.** The daemon's PID used to be matched as a plain substring of a candidate process's command line, so any process whose arguments or paths merely contained the same digits (for example a value that has the daemon's digits inside a larger number) could be reported as the stop sender, with the smallest unrelated PID winning. The PID is now matched as a whole token — an argument equal to the PID, or a `--pid=123` style form — so a process is only named as the sender when its command line genuinely names the daemon's PID.
+
+## v9.51.0 — A task whose work was not committed is held
+
+- **A task whose work was not committed is now held, with the files listed, instead of being marked complete.** An Automaton that commits its own work could finish a task while the task's files sat uncommitted in the worktree, so a merge of the branch shipped without them and nothing said so. When a task finishes, the daemon now commits the files the task declared, and if the commit fails or files are still uncommitted it holds the task: it is parked as blocked with the reason and the list of files, and one question asks whether to **commit** them, **discard** them or **retry**. Nothing changes until you answer, a file outside the task's declared files is listed but never committed on its own, and the held task uses up none of its automatic retries. Before an Automaton is reported finished, the whole worktree is checked once more: a dirty worktree blocks the finished state and lists the files, so the Automaton is never shown as merge ready with work that would not ship. Two settings control it: `autonomous.automation.uncommitted_work_policy` is `hold` (the default), `warn` (record it and carry on) or `off`, and `autonomous.automation.uncommitted_work_scope` is `task_files` (the default, only the files the task changed) or `worktree` (every uncommitted file); both take effect on the next task with no restart. See what is held with `GET /api/autonomous/uncommitted-work`, the MCP tool `autonomous_uncommitted_work`, `datawatch autonomous uncommitted-work`, the chat verb `autonomous uncommitted-work`, or the **Automata uncommitted work** card on the Automation Overview sub-tab, and set the two values in Settings → General → Automata settings → **Uncommitted-work check**. The files the daemon itself puts in a worktree for a session (its MCP discovery file, the skills it injects and the lines it adds to the ignore file) are never counted as uncommitted work. `scripts/uncommitted-work-live-check.sh` runs the whole check against a sandbox daemon and rewrites its report in `docs/plans/`.
+
+## v9.50.0 — Infrastructure failures retry automatically
+
+- **Transient infrastructure failures now retry on their own instead of needing a hand reset.** When the machinery around a task fails — the worker could not be started, a write failed because the disk is full or read-only, the session was killed before the task reached it, or the daemon restarted under it — the Automaton no longer counts that against the task. It waits and tries again: by default 3 tries with delays of 1, 5 and 9 minutes, 15 minutes in all, and a task that is waiting shows *infrastructure retry n of max* with the time of the next try. Every retry is written to the task with its class, reason and time, and logged as a decision on the Automaton. Tasks that failed behind the one that was retried recover with it: once the task is no longer failed, cancelled or held, its dependents return to pending on their own. A task whose tries run out is held for your review rather than failed, and, with the operator question channel on, the Automaton asks a question that names the task and the cause and offers *Retry the task now* or *Cancel the task*; answering it does what resolving the review would. Throttles and usage limits from a model provider, and a task's own failures, are never retried this way. Every choice is a setting under `autonomous.infra_retry`: `enabled`, `max_tries`, `backoff_seconds`, `categories`, `exhausted_action` (`hold` or `count`), `retry_dependents` and `raise_question`. The state is shown by `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries`, the comm channel verb `autonomous infra-retries`, and the web app, which has an Infrastructure retries card in the Automation view, a *Retry n of max* badge on each task and the seven settings with their help. See [howto/infrastructure-retry.md](docs/howto/infrastructure-retry.md).
+
+## v9.49.1 — Compute node certificates are verified
+
+### Fixed
+
+- **The supervisor watch now checks node certificates.** The watch's host probe, which reads the models a compute node has resident, used to accept any certificate when the node's address was `https://`, so anyone on the network path could have answered in the node's place and the watch would have believed it. It now verifies the certificate by default, against the system roots (which honour `SSL_CERT_FILE` and `SSL_CERT_DIR`; there is no daemon-wide CA setting). A node whose certificate the system roots do not cover takes one of three new settings, on the REST node record, the YAML `compute_nodes` entry, the MCP node tools, the CLI, the chat command and the PWA node form: `tls_ca_file` trusts a private CA bundle in addition to the roots, `tls_cert_fingerprint` pins the node's SHA-256 certificate fingerprint (64 hex digits, colons allowed), and `tls_insecure_skip_verify` keeps the old behaviour for that node. The skip setting is off by default and cannot be combined with the other two. A self-signed node with none of the three now fails the probe: the watch reports nothing about it (unknown, no finding) and the error names the fix. A node with verification turned off shows a red **TLS verification OFF** badge in the PWA node row, is written to the audit log as `compute_node_tls_verification_off` when it is saved and the first time the watch probes it, and a watch finding raised for it says that certificate verification is turned off. Only the supervisor watch probe changed; the connectivity probe made when a node is added or updated and the node monitoring and models handlers still do not check certificates. Mobile parity: the three node fields, the badge and the help links are in the PWA and the datawatch-app issue is filed by the supervisor at merge. Walkthrough: [Certificates for self-signed and private-CA nodes](docs/howto/compute-nodes.md#certificates-for-self-signed-and-private-ca-nodes).
+
+**Reuse audit (node certificates):** nothing new was built where a primitive existed. One shared builder (`NodeTLSConfig`) turns a node's three settings into the client TLS config and is the only place that sets skip-verify for a node probe; the watch probe, the existing node usage probes' opt-out, the audit log and the PWA badge all read the same three fields. The watch probe reads each node's record live, so an edit takes effect without a restart.
+
+**Surfaces:** REST (`tls_ca_file`, `tls_cert_fingerprint`, `tls_insecure_skip_verify` on `GET`, `POST` and `PUT /api/compute/nodes`), YAML config, MCP (`compute_node_add`, `compute_node_update`), CLI (`--tls-ca-file`, `--tls-cert-fingerprint`, `--tls-insecure-skip-verify`), comm channel (`k=v` pairs) and PWA (fields, badge, help links, five locales) carry the same three settings.
+
+## v9.49.0 — Identity backups and restore
+
+### Fixed
+
+- **Your saved identity can no longer be lost silently.** The daemon now keeps a timestamped backup of the identity before every write, and keeps the newest few: `identity.backups_to_keep` sets how many (a whole number, default 10, minimum 1; change it with `PUT /api/config`, `datawatch config set` or the PWA identity section).
+- **A write that would replace saved fields with an empty identity is refused, and the caller is told.** `PUT`, `PATCH` and `POST /api/identity`, the MCP `set_identity` and `update_identity` tools and `datawatch identity set` now answer HTTP 409 (`code: identity_wipe_refused`, with the names of the fields kept) and write nothing, unless the write is an explicit reset. Each refusal is recorded in the audit log as `identity_set_refused`.
+- **Clearing the identity is now a deliberate act.** The PWA **Reset** button (it asks first and says a backup is kept), `datawatch identity reset`, the MCP `reset_identity` tool and `POST /api/identity/reset` are the explicit reset. The old PWA button that only reloaded the form from the daemon is now called **Revert**. There is no reset from the chat channel, by design.
+- **Bring a lost identity back from a backup.** Use the PWA **Restore** choice (it lists the backups with time, role and number of filled fields), `datawatch identity restore [--backup <name>]`, the MCP `restore_identity` tool (and `identity_backups` to list them), `POST /api/identity/restore`, or the chat verbs `identity backups` and `identity restore <name|latest>`. The current identity is backed up first, so a restore can itself be undone.
+- **The cause, as far as the evidence goes, is likely a release smoke run pointed at the live daemon.** The identity was emptied on 2026-10-24 by an identity write pair (`identity_update` then `identity_set` with an empty body) that matches section 13 of the release smoke script when it runs against an external daemon. The cause is recorded as likely, not confirmed, because the audit log does not record the request body or the client; the full evidence is in `docs/plans/identity-loss-root-cause.md`. The release smoke no longer writes an empty identity, and a new lint check forbids it.
+
+**Monitoring (B7):** n/a per item, with reasons — this fix adds no subsystem with a state of its own to gauge. There is no new channel `SystemStats` field, no `GET /api/<subsystem>/stats` endpoint, no stats MCP tool, no Monitor card and no comm stats command. Every change is in the audit log: a refused empty write as `identity_set_refused`, an explicit clear as `identity_reset` and a restore as `identity_restore`, each with the actor.
+
+**Reuse audit (new primitives):** nothing new was built where a primitive existed. The backups, the refusal, the reset and the restore are methods on the existing identity manager and are stored beside the existing identity file; `identity.backups_to_keep` is applied through the existing config `PUT` apply path (validate first, apply at once, no restart); the three audit actions use the existing audit log; the PWA Reset and Restore confirmations use the existing PWA confirmation helper.
+
+## v9.48.0 — Usage calculator knows the lanes
+
+- **Usage calculator readings take their lane count from the daemon.** The lanes input on a reading is removed: the daemon stamps each reading with the Claude lanes it sees running, and a lanes value sent by an older script is ignored. The advice now shows the lanes running now and the what-if lanes apart, and the what-if is never saved.
+
+## v9.47.1 — CodeQL default setup kept, alert gate only, local scan
+
+### Fixed
+
+- **The CodeQL workflow no longer fails on every push.** It used to run its own analysis and try to upload a second one, but GitHub's default setup is switched on for the repository and the two cannot both upload, so the upload was rejected every time. GitHub default setup stays the one analysis. The workflow now holds only the alert gate: it waits for default setup's analysis of the commit, then fails if any high or critical alert is open, with dismissed alerts left out. A local, non-uploading CodeQL run shows the same findings before CI does: the same four languages, the same default query suite and the same rule, file and line for every open alert, with nothing sent to GitHub. It comes as a script, a `make` target, a how-to and an optional pre-push hook. The security review document no longer says default setup must be disabled.
+
+**Reuse audit (CodeQL fix):** nothing new was built for the gate. The existing alert gate in the CodeQL workflow is kept and only the duplicate analysis and upload were removed, and the local run reuses the earlier local CodeQL reproduction (same bundle version, packs and suites) as a script instead of re-deriving it.
+
+**Surfaces:** no REST, MCP, CLI, comm channel, config or PWA surface changed.
+
+## v9.47.0 — Quality gate scope
+
+- **The quality gate can now run only the tests a task can break.** Each Automaton, or every Automaton through `autonomous.default_quality_gates.scope`, can set the gate scope (`full`, the default and the old behaviour, or a scoped value) and a list of smoke packages (`smoke_packages`). A scoped gate runs the packages touched by the task plus the smoke set, also runs `go vet` on them and folds new vet failures in as regressions, and falls back to the full run with the reason kept when it cannot work out the scope. The final gate task always runs the full suite. The plan used for each gate is stored on the gate result (`scope_plan`). The setting is on the YAML config, REST, MCP, CLI, chat commands and the web UI; how-to `quality-gate-scope`.
+
+## v9.46.1 — PWA dialogs fit the screen
+
+### Fixed
+
+- **Dialogs in the PWA now fit the screen, so a long one can always be answered or cancelled.** A long dialog, including the question answer dialog, used to grow taller than a phone screen with no way to scroll, which pushed Cancel and the submit button out of reach. The dialog is now capped to the visible height: its title and its Cancel and submit buttons stay in view while the middle scrolls. It follows the visible area, so the buttons also stay reachable with the phone keyboard open. Short dialogs look and behave as before.
+
+## v9.46.0 — Clearer operator questions
+
+- **An Automaton question now says what each choice costs, and the answer dialog says what it is about.** Every option can carry a plain trade-off line (what you gain and what you give up), sent as a `tradeoffs` object on the raise, as `--tradeoff <option>=<text>` on `datawatch question raise`, or in the MCP `question_raise` tool; `question show` prints them and the PWA answer dialog shows each one under its option, with the recommendation and what happens if nobody answers stated in plain words. The dialog also links to what the question is about: a proposal opens in the document viewer in a new tab, an Automaton gets an **Open** button, and a task or registry row shows its title and kind. The link is worked out when the question is read (`context_ref` on `GET /api/questions/{id}` and the list rows) and is never written into the stored question.
+- **Questions are checked for being readable when they are raised, in three modes.** `autonomous.questions.quality_mode` is `warn` by default: a question that is too short (`quality_min_text_chars`, 60 by default, 0 turns the length check off), names an internal tracker identifier (`quality_tracker_id_pattern`, with a default that matches a few capital letters followed by digits) or has an option with no trade-off line is still stored, and the problems are listed back to the asker so it can fix them next time. `refuse` runs the same check and refuses the raise with the problems listed (HTTP 422), so nothing is stored until it is fixed; `off` runs no check. Read the policy with `GET /api/questions/quality`, the MCP `question_quality` tool, `datawatch question quality` or the chat verb `question quality`. All four settings, including `queue_preview_lines`, are changeable from PWA Settings, REST config, MCP `config_set`, `datawatch config set` and the comm channel, take effect at once, and a bad value is refused with nothing changed.
+- **Queue rows show a short preview with an expand control.** Each open question in the PWA queue leads with its label (the id is the small secondary line), shows only the first few lines of its text (`autonomous.questions.queue_preview_lines`, 3 by default) and offers **Show more** / **Show less**, remembered per question across refreshes.
+
+## v9.45.0 — Merged members complete and chains advance
+
+- **An Automation no longer stays blocked on work that has already shipped.** When a member Automaton of an Automation ends cancelled and its branch is already merged into the project's own default branch, the Automation used to block and wait for you even though the work was done. The daemon now checks with read-only git, using the project's default branch rather than assuming `main`, and the new setting `autonomous.automation.merged_member_policy` decides what happens. `completed` (the default) treats the member as completed so the Automation moves on, and raises one info alert; `manual` keeps the Automation blocked but adds the proof to the reason so you can resume it or skip the member; `block` keeps the old behaviour and runs no git at all. A branch that is not merged, has no commits ahead, or whose state cannot be read always keeps the blocked outcome. The setting is changeable from the web UI, `PUT /api/config`, `datawatch config set`, chat `configure` and the MCP `autonomous_config_set` tool, and applies to the next member that ends with no restart.
+- **Every merged-member decision is recorded and readable from every surface.** Each decision names the member, its branch, the default branch it was proved merged into, the proving commit, the policy in force and the outcome (advanced or blocked). Read them with `GET /api/automations/merged-members` (or `/api/automations/{id}/merged-members` for one), the MCP tool `automation_merged_members`, `datawatch autonomous merged-members`, the chat verb `autonomous merged-members`, or the new **Automaton merged-member decisions** block on the Automation detail view in the web UI. Running a cancelled member again while its Automation is blocked on it resumes the Automation by itself. Operator guide: `docs/howto/automation-merged-member.md`.
+
+## v9.44.3 — Stop committing a built binary and a stale search index
+
+### Fixed
+
+- **A built helper binary and an old generated search index are no longer committed.** Both had been committed by mistake (one by a task, one as a stale copy of a file that `make docs-index` generates), and both embedded the maintainer machine's names and paths. They are removed from the repository and ignored; the real index is still generated by `make docs-index`.
+
+## v9.44.2 — Remove operator-machine identifiers from the repository
+
+### Fixed
+
+- **The repository no longer names the maintainer's own machine.** Documents, test fixtures, the changelog and a settings placeholder in the web UI named a private hostname, a GPU model, a tailnet address and home directory paths. They now use neutral names (a local node, a 32 GB GPU, a home placeholder). The supervisor watch script reads the model hosts from the daemon's own node registry instead of a hard-coded address.
+
+## v9.44.1 — Stop committing test run folders
+
+### Fixed
+
+- **Test run folders are no longer committed.** Three folders that live checks and the restart test harness create (a sandbox daemon's data directory, and two sets of harness records) had been committed by mistake; they held a sandbox node registry and machine paths. They are removed from the repository and listed in `.gitignore`, so a task can no longer add them.
+
+## v9.44.0 — The daemon watches what the supervisor watches
+
+### Added
+
+- **The daemon now runs its own supervisor watch, in shadow mode first.** On every coordinator poll, with no model call, it runs fourteen checks, twelve of which the supervisor script also runs by hand (the other two, a worktree that is not registered and a verify script that is not executable, are new in the watch, and the script has checks of its own the watch does not cover yet: an unreachable model host, node balancing, capacity lease holds, placement and commits ahead of origin): the terminal-session service restarted, the Automaton daemon not active on a node, the working model not loaded on a node, a failed task, a task waiting for review, an Automaton that finished but is not merged, an idle lane while eligible work waits, a worktree with no `go.mod`, a worktree that is not registered, a worktree gone silent, a verify script that is not executable, a dirty main checkout, a red CI run and a stuck CI run. Each one is kept as a finding with a stable kind and subject, shown newest-first with open findings on top. A finding about one Automaton is also noted on that Automaton's triage record the first time it is seen. A check that cannot tell, because a probe failed or a node could not be reached, reports nothing, and a finding closes by itself when its check stops reporting it.
+- **Shadow reports and never acts; `on` raises one alert per episode.** The new block `autonomous.automation.supervisor_watch` has a `mode` of `off`, `shadow` or `on`, and an unset mode reads `shadow`. In shadow the findings and the comparison are recorded and a finding open for the alert time is marked *would alert*, but no alert is raised. In `on`, one warning alert is raised through the existing alert and chat channels when a finding has been open for `alert_minutes` (default 30, `0` turns it off). The watch is report-only in every mode: it never merges, starts, holds, cancels or retries an Automaton and never restarts a service. The other keys are `silent_minutes` (default 60), `poll_seconds` (default 60, minimum 60), `script_output_path`, `tmux_restart_baseline`, `main_checkout` and `working_model` (the model every compute node should keep loaded; empty turns the working-model check off); a bad value is refused on every write path and nothing is written.
+- **The watch compares itself with the script, so the script can be retired.** Run `scripts/supervisor-watch.py` with the new `--record <path>` option and set that path as `script_output_path`: every pass compares the two sets of findings and keeps what only the watch raised, what only the script raised, and the days of full agreement. A missing, unreadable or stale script record is never counted as a disagreement. One full day of agreement is the bar for retiring the script. The how-to is `docs/howto/automation-supervisor-watch.md`.
+- **The watch can be read on every surface.** REST `GET /api/autonomous/supervisor-watch`, the MCP tool `supervisor_watch_list`, `datawatch autonomous supervisor-watch`, the chat verb `autonomous supervisor-watch`, and a Supervisor watch card on the Automation view's Chains sub-tab (refreshed every 30 seconds, hidden when the endpoint is unavailable, labels in all five languages). All of them are reads: none raises an alert or changes the mode.
+- **A sandbox live check for the watch.** `scripts/supervisor-watch-sandbox-check.sh` builds the tree, starts a throwaway daemon under the shared daemon-library traps with the production proxy port disabled, and shows the watch raise `main_checkout_dirty` in shadow without alerting. It replaces the hand-started daemon the first live check used, which had no traps and tried to bind the production proxy port.
+- **The supervisor watch now sees a task held for review on the normal path.** `task_review_needed` used to read the triage record, which never names a task that was held for review, so it could not fire when an Automaton used up its attempts and went blocked. It now reads the tasks of every running or blocked Automaton and raises one finding per Automaton with a task in the review state.
+- **The supervisor script no longer records an unreachable model host as a missing working model.** `MODEL host ... unreachable` has no finding kind in the daemon watch (an unreachable node reads as unknown), so it is left out of the `--record` file instead of being keyed as `model_not_resident` with no node.
+- **A snapshot test no longer mistakes another process's snapshot for a leak.** `TestAttemptSnapshotCleansUpTempDir` scanned the shared system temp directory for `attempt-snapshot-*` directories, and `go test ./...` runs several package binaries at once (the daemon's attempt-preserve path takes snapshots too), so it could count a directory another process had just made. The test now points `TMPDIR` at its own directory first, so only its own snapshot can be seen; no wait is needed.
+- **The supervisor watch can be monitored.** `GET /api/autonomous/supervisor-watch/stats` and the MCP tool `supervisor_watch_stats` return the watch as numbers (mode, seconds since the last poll, open, would-alert, alerted and resolved findings, days of full agreement). The same numbers ride on the stats broadcast, show on a new Supervisor watch card on the Monitor tab (labels in all five languages) and are exported as the Prometheus gauges `datawatch_supervisor_watch_findings{state}`, `datawatch_supervisor_watch_agreed_days` and `datawatch_supervisor_watch_last_poll_age_seconds`.
+
+## v9.43.0 — Automaton worktrees, branches and daemon temp files clean up after themselves
+
+### Added
+
+- **Finished Automaton work is now cleaned up, and you can see what it would remove before it removes anything.** An Automaton running in worktree mode leaves a work branch (`automaton/<id>`), a worktree and temporary scratch files behind, and a busy daemon slowly fills its disk. Two cleanup passes now handle this. The **worktrees** pass removes a completed or cancelled Automaton's work branch and worktree when it ends, and again on a periodic sweep for anything held back. The **temp files** pass removes the scratch files the daemon's own worker sessions created, when the session ends, and again on a periodic sweep. It removes a worktree only when nothing is lost: the Automaton is finished, no live session or lease uses the worktree, the worktree has no uncommitted changes, every commit is already on the project's default branch and the work is older than the retention window. The default branch is the Automaton's own base branch or the one the repository's remote records as default, never an assumed name, so a project whose default branch is `master` or `trunk` is judged against that branch. Removal never uses `--force` or `-D`: if git refuses, the entry stays and the reason is recorded. Only branches under `automaton/` and the daemon's own `datawatch-` scratch files are ever considered, and a symbolic link is never followed. See `docs/howto/automaton-worktree-cleanup.md`.
+- **It starts in `report` mode, so nothing is removed until you say so.** `autonomous.automation.cleanup_mode` is `off`, `report` (the default) or `on`. In `report` every check runs and each pass counts what it would remove; in `on` it removes, at most `autonomous.automation.cleanup_max_removals_per_pass` entries per pass (default 10); `off` does nothing at all. `autonomous.automation.cleanup_retention_hours` (default 24) is how long finished work must have sat before it can be removed. A value that is not allowed is refused with an error and nothing is saved. All of them are changed the same way as the rest of the Automata config and take effect on the next poll with no restart.
+- **A disk alert warns you before the disk is full.** The daemon reads how full the disk holding the worktree base repository and the disk holding its temporary directory are, in every mode, and raises one warning alert when either reaches `autonomous.automation.disk_alert_percent` (default 85). It is raised at most once an hour while the disk stays full, and the time it last fired survives a restart. The alert only tells you to free space; it never removes anything.
+- **The cleanup status is readable everywhere.** For each pass it shows the mode, when it last ran, what it removed, what it would have removed, what it skipped, what failed, the bytes freed and the last error, plus a running split between what the Automaton or session released itself (owner) and what the periodic sweep had to catch (net) — the aim is for the net to find nothing. It also shows the two disk readings and the alert. Read it with `GET /api/autonomous/cleanup`, the `autonomous_cleanup_status` MCP tool, `datawatch autonomous cleanup`, the chat command `autonomous cleanup`, or the new Cleanup card on the Automation Overview sub-tab. The four settings are in PWA Settings, REST config, MCP `config_set`, `datawatch config set` and the chat channels. The English text is used in the other four languages until translations arrive.
+- **Moving from report to on.** Leave the mode on `report` until a few finished Automata have gone through, read the would-remove counts and the safe-to-delete report to confirm it would remove only what you are happy to lose, then set the mode to `on`. Nothing removed comes back, so the checks come first.
+
+## v9.42.3 — Go tests no longer leave scratch files in the temp directory
+
+### Fixed
+- **The Go test suites no longer leave scratch files in the temp directory.** Tests now get their throwaway directories from the test framework, or register a cleanup right after creating one, and the temp-directory leak guard fails the run — naming the surviving entry and the package that left it — when any scratch directory is left behind. `make test-tmp-guard` runs the guard in full mode over every package in the repository, while a normal `go test ./...` keeps the same check on a small default package list. Leftovers of a killed run can be cleared with `make clean-test-tmp`, which removes only stale throwaway test scratch directories older than one hour — it never follows symlinks and never touches anything else in the temp directory.
+
+## v9.42.2 — Daily image refresh no longer fails on the reviewer request
+
+### Fixed
+
+- **The daily image refresh no longer turns red when it opens the stale-suppression pull request.** The workflow asked for the repository owner as a reviewer on a pull request the owner's own token had just opened, which GitHub refuses; the pull request was created each time but the run failed after it (every day since 2026-10-27). The reviewer request is now best effort and its refusal is logged.
+
+## v9.42.1 — MCP session tests no longer race their temp dir cleanup
+
+### Fixed
+
+- **The release build no longer fails on a cleanup race in the MCP session tests.** A test helper started sessions whose background writers could still be writing when the test's temporary directory was removed, which failed the v9.42.0 release run once ("directory not empty"). The helper now stops the writers first. No product behaviour changed.
+
+## v9.42.0 — Security failures stop the Automaton line and are reported
+
+### Added
+
+- **A failed security check now stops the Automaton line and tells you why.** When a security workflow fails because of a dependency, the daemon reads the failed log, looks the advisory up, checks the accepted-risks registry, and stores a security failure report: the dependency, the advisory identifier, when it was published (or `unknown`), the registry entry with its dates, a fixed version when one is known, and a recommendation — `upgrade`, `keep`, `keep_no_entry` (no fix and no registry entry yet, so the operator must add one) or `unknown` (the lookup or the registry could not be read). In `on` mode the Automaton line that carries the failing commit is moved to blocked and one alert is raised at once; it is never resumed for you. There is no waiting clock: a fresh advisory is treated the same as an old one. The new setting `autonomous.automation.security_failure.mode` is `off`, `shadow` or `on` and defaults to `shadow`: shadow stores the same report and records the stop it would have made, but stops nothing and raises no alert, so you can compare it with what you would have done before switching to `on`. It needs the repo CI watch running over the repository. The report is read-only on every surface: `GET /api/autonomous/security-failures` (with `repo` and `status` filters), the `security_failure_list` MCP tool, `datawatch autonomous security-failure`, the chat command `autonomous security-failure [run-id]`, and a Security failure card in the Automation view. The daemon never writes a suppression and never reruns a security run: to accept a risk you add the entry to `security/accepted-risks.yml` and run `make security-registry-gen`. A new check in `make lint` fails if the generated ignore file or the generated table in the security review was edited by hand instead of through the registry. See `docs/howto/automation-security-failure.md`.
+
+## v9.41.0 — Search before create warns about overlapping work
+
+### Added
+
+- **Creating an Automaton now checks for overlap and can warn you.** When you create an Automaton, the daemon compares its title and spec with the Automata already there, the plans registry and the unmerged Automaton branches, and returns an overlap warning for each one that looks like the same work. A warning never blocks the create and changes nothing. The default mode, `shadow`, records what the warnings would have been in the audit log (`automaton_create_search`) and shows nothing, so you can compare them with what you actually did; set `autonomous.automation.create_search_mode` to `on` to see the warnings in the create reply, or `off` to skip the check. `autonomous.automation.create_search_threshold` (default 0.5) sets how close a match must be. You can also run the same search by hand with `GET /api/autonomous/overlap`, `datawatch autonomous overlap`, the `autonomous overlap` chat command, or the `autonomous_overlap_search` MCP tool. See `docs/howto/automaton-search-before-create.md`.
+
+## v9.40.0 — Merge pending by commit content and a safe-to-delete report
+
+### Added
+
+- **You can now see which finished Automata have work that never reached `main`.** A new check looks at the work branch of every completed Automaton and sorts it into one of five states: merged, merge pending, needs a look, empty, or unknown. A branch whose commits are all on `main` is merged; one with no commits ahead of `main` is empty; one the daemon could not compare (no worktree base repository, or a git error) is unknown and left alone. The check is **off by default** and only reads: it never merges, deletes or pushes anything.
+- **A caveat worth knowing: a commit whose patch changed shows as "needs a look", not "merge pending".** The check decides a commit is on `main` by matching both its patch and its subject line. A commit whose subject line is on `main` but whose patch is not (it was merged, then changed on the way, for example by a conflict fix) is a mismatch the check cannot settle, so it is shown as needs a look instead of being called merge pending. The same goes for a patch that is on `main` under a reworded subject. Needs a look raises no alert and writes no merge-pending record; it is a prompt to compare the branch by hand.
+- **Merge pending raises one alert per episode.** In `on` mode a finished Automaton whose branch still has commits not on `main` gets a merge-pending record, and once it has sat for `autonomous.automation.merge_pending_alert_minutes` (default 30; `0` turns the alert off) one warning alert names the Automaton, its branch, how many commits are missing from `main`, how long it has waited, and the Automation it belongs to. Merging the branch clears the record, and a later episode alerts again.
+- **Shadow mode lets you try the check without any alerts.** `autonomous.automation.merge_pending_mode` takes `off` (the default), `shadow` or `on`. In `shadow` the check runs and records what it would have done (state, commits ahead, and whether it would have alerted) in a bounded history you read back newest first, but it raises no alert and writes no merge-pending record. Use it to see how the check judges your own branches before switching on.
+- **A read-only safe-to-delete report for Automata work branches.** It lists which `automaton/*` branches and worktrees can be cleaned up (everything on `main`, or nothing ahead of it) and which must stay (merge pending, needs a look, not comparable, or a worktree with uncommitted changes). It never deletes anything; cleaning up is a separate step the operator approves.
+- **Everywhere you already look.** The merge state and the safe-to-delete report are on `GET /api/autonomous/merge` and `GET /api/autonomous/safe-to-delete`, the MCP tools `autonomous_merge` and `autonomous_safe_to_delete`, the commands `datawatch autonomous merge` and `datawatch autonomous safe-to-delete`, the chat verbs `autonomous merge` and `autonomous safe-to-delete`, and the PWA Automation view (a merge badge on finished Automata and a safe-to-delete card on the Overview sub-tab). Both settings are reachable from PWA Settings, REST config, MCP, `datawatch config set` and the chat channels like the rest of the Automata config.
+
+## v9.39.1 — Accept the new Java advisory with no Debian fix (30 days)
+
+### Security
+
+- **The container build is unblocked for a new Java advisory with no Debian fix yet.** The Java runtime in the `parent-full` image (used only by the Signal messaging bridge) was flagged by an Oracle Java SE advisory published 2026-10-24 (a TLS-library issue), for which Debian bookworm has no fixed package; the fix exists only in Debian's unstable branch. The finding is recorded in the accepted-risks registry with a 30-day expiry and its reachability marked unknown, not no, because the bridge does make TLS connections as a client. The fix is to be consumed as soon as Debian ships it.
+
+## v9.39.0 — Workers can ask design questions through the question channel
+
+### Added
+
+- **A worker can now ask you a design question from inside its session, and its task waits for your answer.** Turn on `autonomous.questions.worker_marker` (off by default, and it does nothing unless the operator question channel is on too) and a worker session of an Automaton can print one `DATAWATCH_QUESTION:` line followed by a line of JSON: the question, two to twenty options, an optional recommendation and default, and whether it is blocked. The daemon stores it as an ordinary question asked by `worker-<session>` and linked to its task, announces it the same way as any other question, and ignores a repeat of the same line while the question is open. A line that fails its checks is never stored; it is recorded in the audit log as `question_marker_refused` with the session, the reason and a hash of the line, never the text.
+- **A blocked task gives back its slot while it waits, and resumes on its own.** A question marked `blocked` parks its task with the wait reason `await_decision: <question id>`: the capacity slot is returned, the project-tree lock is released unless there is unpushed work, and no retry or failure is counted. The coordinator tick reads the answered and withdrawn questions, re-admits the task and sends the worker one line carrying your decision (or saying the question was withdrawn). Questions that are not blocking leave the task running. One-shot print-mode backends are not asked on their behalf yet.
+- **Questions carry three new fields and the web UI links answers.** The question record gains `blocking`, `source` (`marker` or `rest`) and `source_line_sha256`, all left out when empty. In the web UI, Settings has a toggle for the worker marker, and an answer entry in an Automaton's decision log shows the answer id as a link that opens your quote, the chosen option, who answered and when. The new how-to is `docs/howto/operator-questions-workers.md`.
+- **You can see how the worker marker is doing.** The marker keeps five counters since the daemon started: lines raised as questions, repeats of a question still open, lines refused, tasks parked on a blocking question and tasks resumed. They are on `GET /api/questions/stats` (answers even while the question channel is off, and names both switches), in the MCP tool `question_stats`, on a *Worker Questions* card on the Monitor tab that shows once any counter is above zero, in the stats snapshot as `worker_questions_*`, and as the Prometheus metric `datawatch_worker_questions_total{outcome=…}`. The card labels are in all five languages. The release smoke gains a section for the marker switch, the stats read and the answer log the decision link opens, and the decision link has its own end-to-end story.
+
+## v9.38.1 — Decision gate test no longer races its alert
+
+### Fixed
+
+- **The release build no longer fails on a timing-sensitive test of the decision gate.** The test checked the single "task waiting for a decision" alert the moment the task was parked, but the alert is sent a moment later; on a slow machine the test read zero alerts and stopped the release pipeline (this happened to the 9.35.0 and 9.38.0 releases). The test now waits for the alert. No behaviour of the gate changed.
+
+## v9.38.0 — Repo CI watch for the head of main and release tags
+
+### Added
+
+- **The daemon can now watch the CI of external repositories.** A new config block, `autonomous.automation.repo_ci_watch`, turns the automation coordinator into a CI watcher: name repositories (a list of absolute paths) and on every poll it lists the workflows on the head of `main` and on the newest release tags, records each run, classifies failures and stuck runs, and raises one alert per unresolved run once it has been that way for the alert window (default 30 minutes, off with `alert_minutes: 0`). Started up in `on` mode it also acts: it cancels a stuck run once per run id, reruns an infrastructure failure once per run id (only where the repository has an infrastructure retry budget — without one nothing is rerun automatically), and deletes a failed run that a later green run of the same workflow has superseded when you have set `delete_superseded: delete`. It is **off by default** — with no repositories and `mode: off` nothing is watched, recorded or alerted. **Shadow mode is the way to run it first**: it records every run and logs every action it would take without doing any of them and without raising the alert, so you can compare what it would have done against what actually happened before you let it act.
+
+## v9.37.0 — Operator question answering on every surface
+
+### Added
+
+- **A browser story covers the operator-question channel end to end** (run from the PWA story suite with headless Chromium): it runs against the isolated sandbox daemon — with the switch off the Automation view shows the disabled text, nothing is listed and `POST`/`GET /api/questions` answer 503; with it on a raised question (two options, a recommendation, a default) appears in the queue card and opens with all three visible; withdrawing it removes it from the open queue and the history shows it withdrawn. The story restores the switch afterwards. Verified live 2026-10-29: exit 0, 1 of 1 story passed — switch-off, switch-on and raise, queue card and dialog, withdraw and history all passed; recorded in `docs/testing-tracker.md` and `docs/testing.md`.
+- **The whole answering surface for operator questions is now in place: a queue, an answer form, a history, and a route from every place you work.** With the operator-question channel switched on, the Automation view carries a card that lists an Automaton's open questions in the order the daemon keeps them — the text, who asked, how long it has been waiting, and a marker on the high-priority ones — with the disabled state (nothing listed, the daemon's 503 shown as translated text) while the switch is off. Opening a question shows its options, the recommendation with its reasoning, the default, and a free-text box; an answer is an option, the operator's own words, or both, and the words arrive exactly as typed. A changed mind does not edit the standing answer: it is answered again, the new answer names the one it replaces, and both stay in place — answers are never edited, only superseded. The history view lists what is decided with its full answer log, a read-only record from which nothing re-enters the queue. A question raised while the view is open refreshes it once, with a notice. From the CLI: `datawatch question list`, `question show`, `question answer` (option number or id, plus your own words verbatim), `question withdraw` and `question raise`. Over MCP: `question_list`, `question_get`, `question_answer`, `question_withdraw`, `question_raise`. In any chat channel: `question list`, `question show <id>`, and `question answer <id> <number-or-option> [your own words…]` — and when exactly one question is open, a plain reply whose first word is one of its option numbers answers it. A raised question still lands one line in every active messaging group, with the question, the numbered options, and where to answer. Every surface speaks the same routes — `POST /api/questions`, `GET /api/questions`, `GET /api/questions/{id}`, `POST /api/questions/{id}/answer`, `POST /api/questions/{id}/withdraw` — with `surface` recorded with each answer, so an answer looks the same no matter where it came from.
+- **Reuse audit — what existing primitive does this extend:** the autonomous question store (append-only by design, since the channel's first step) and the standing `GET`/`POST /api/questions` route family are extended, not replaced — every surface is one more client of those routes, the PWA card and dialog reuse the same loader, i18n and 5-second poll machinery as the other Automation cards, and the live-refresh hook reuses the `question_raised` WebSocket message. No second store, no second REST shape, and no edit path was added — supersession is the store's own contract.
+
+## v9.36.0 — Lanes waiting only on a verifier count as available
+
+### Added
+
+- **A Claude lane whose Automaton is only waiting on a verifier now counts as available.** When the work on a Claude lane is done for now and the lane is just waiting for verifier results, the automatic lane fill planner treats that lane as available when it works out the next start (within the usual lane count and Claude usage limits), so queued work no longer sits behind a lane that is idle in practice. Every lane view — the REST lane fill status, the MCP tool, the CLI, the comm channel, and the PWA lane fill card — shows such a lane as waiting on a verifier and whether the planner counts it as available. The idle-lane alert for a lane like that fires once per episode, not once per poll. A lane whose waiting work still has other work running counts as busy, as before. The new setting `autonomous.lane_fill.count_verifier_wait` (on by default) switches this counting back off whenever you want the old behaviour. Automatic lane fill itself is still in shadow mode by default: the planner records what it would start and starts nothing until you switch the mode on.
+
+## v9.35.0 — Operator decisions and the design-point gate
+
+### Added
+
+- **Operators can make an Automaton task wait for their answer.** A decision now has an id and, once answered, your words quoted exactly as you wrote them. A task whose spec names an open decision is kept from starting, says why in one sentence, and starts by itself the moment the decision is answered. The gate begins in shadow mode: it only records what it would have held, so you can watch it before you switch it on. You can read the decisions, their answers and the tasks waiting on them over REST, MCP, the CLI, chat and the web UI.
+
+## v9.34.3 — Open-model matrix on pi workers only
+
+### Changed
+
+- **The open-model eval matrix now runs on pi workers only.** Every cell in the open-model grid — the `qwen3.8:27b` baseline plus the other execution-role candidates — now goes through the pi backend instead of the old second backend; the grid definition, driver and fixtures are re-pointed and the retired backend names are gone from them. Each role carries its own pi thinking level (the executor roles pin `minimal`), the level is applied per task and recorded on every cell result row, and a pi-path preflight now runs one real pi worker per role before anything else and refuses to start the run unless the model each session reports matches the role's expected model exactly. The first valid report of a pi run is in `docs/testing/runs/2026-10-29-open-model-matrix/`: preflight passed for all four roles present on the local node set (all cells ran at thinking `minimal`); the report's per-cell notes are the record — the twelve candidate-model cells were invalid on infrastructure (workers were placed on a node that does not host their model and died at start, held for review — not model results), and the four baseline cells ran to completion but are shown untrusted rather than scored because their session records were gone at collect time, so no cell has a trustworthy pass/fail yet.
+
+## v9.34.2 — Automation CLI reads the current version and shows pending inserts
+
+### Fixed
+
+- **Leaving `--expected-version` off an Automation control command no longer fails with a version mismatch.** The control commands (`datawatch automation` insert, pause, resume, skip, remove, edges, approve, cancel and the settings commands) now read the Automation's current version first and send that, so an omitted version works against a live Automation; if the Automation's version moved between the read and the write, the command reads it again and retries once instead of failing. A version you type yourself is still checked, and a stale one is still refused with the daemon's message.
+- **`datawatch automation get` and `datawatch automation status` now list pending inserts.** Each pending insert is shown with its member id, the Automaton, the reason it is held and the exact approve command to run (rows without pending inserts print none). The PENDING count in `automation status` now includes the held inserts, and the PWA's Automation status line shows the same count, with a pending insert row per insert that carries the member id, the Automaton, the reason and an Approve control.
+
+## v9.34.1 — Header Tags icon redraw
+
+### Changed
+
+- **The header Tags button now shows a filled, colored tag with a lighter hole instead of a thin outline.** It reads clearly next to the alerts bell in both the dark and the light theme. The button looks brighter while the Tags dropdown is open or a tag filter is on, shows a visible focus ring, and the count badge stays readable on top of it. The button's name, tooltip, keyboard use and dropdown are unchanged.
+
+## v9.34.0 — Automation view sub-tabs: Overview and Chains
+
+### Changed
+
+- **The Automation view is organised behind sub-tabs.** The Automation sub-tab now carries a second row of sub-tabs: **Overview**, with the Progress card, the Capacity and queue card and the summary cards that sit with them, and **Chains**, with the status badges, the search and filter bar, your Automations, and the open Automation with its pipeline strip and controls. Chains is the one open by default, and it is where your saved Automation links and the back control from a member's page land.
+- **The New Automation button is no longer in the view header.** Creating an Automation is unchanged: the round button at the bottom right and the **＋ Create Automation** button on the empty state both still open the same form.
+- **The two rows of sub-tabs fit on a phone.** At 360 px both rows fit without scrolling or clipping, and every sub-tab is at least 40 px tall.
+
+## v9.33.0 — Operator questions: notifications, events and the return path
+
+### Added
+
+- **Operators are now told when an Automaton needs a decision, and the asker hears the answer back.** With the operator-question channel (still behind its off-by-default switch), every question an Automaton raises is announced three ways at once: a live `question_raised` message to any open PWA, one line in every active messaging group (who asked, the question, the numbered options, and where to answer), and — for a high-priority question raised with `priority: "high"` — a warning alert carrying the question id, its label, the question text and the options that sits in the alert list until you deal with it. Answering or withdrawing an open question fires a `question.answered` / `question.withdrawn` event that you can subscribe to like any other Automaton lifecycle event (comm, topic, alert, webhook, MCP queue or peer), delivered exactly once even if the daemon restarts between the record and the send.
+- **The asker has one read to poll for the answer.** `GET /api/questions/{id}` now also carries `answer_count`, `current_answer_id` and the standing answer's summary (the verbatim quote, who answered and where). This is the default return path: an automated session that asks can subscribe to the answer event and poll this read, and it works with no extra settings. A session gone is gone — an asking session that no longer exists costs nothing; the answer is stored and readable any time.
+- **Opt-in: the answer lands as one line in the session that asked.** A question raised with `return_path: true` (which names the asking session) gets, on the first answer, exactly one `DATAWATCH_ANSWER: {…}` line written into that session — a marker a line-based reader can grep, then a one-line JSON with the question id, answer id, chosen option, the verbatim quote, the actor and the surface. It never crosses a new line, even if the quote does; a later (superseding) answer sends a fresh line. Best-effort: a lost line is one daemon warning, never a retry — the answer is always in the store and the event, whatever happened to the line.
+- **Three new config keys, all on by default, all switchable from every surface:** `autonomous.questions.notify_messaging`, `autonomous.questions.notify_alert` and `autonomous.questions.return_path` turn each announce route off by itself. All four (the channel switch plus the three) are reachable the same way the rest of the config is — PWA Settings (the "Autonomous Automata planning" section), REST config, MCP `config_set`, `datawatch config set`, and the comm channel. While the channel switch is off, none of this fires at all; flip it on and it is live on the next question, no restart — the answered and withdrawn events included, because the config write attaches the event sink at that moment instead of only at daemon start.
+
+### Changed
+
+- **High-priority questions now raise an alert; normal ones do not.** Raising with `priority: "high"` adds a warning alert to the alert history carrying the question id, label, text and options. `priority` is only how urgent the operator should be — it does not change how risky a wrong answer is (that stays in `risk`) and does not gate answering, withdrawing or polling.
+
+**Monitoring (B7):** n/a per item, with reasons — this step adds events and notifications, not a new subsystem with a state of its own to gauge. There is no new channel `SystemStats` field, no `GET /api/<subsystem>/stats` endpoint, no stats MCP tool, no Monitor card and no comm stats command. The raised, answered and withdrawn moments are already visible where the operator looks: the `question_raised` WebSocket message, the messaging line, the alert in the alert list, the two lifecycle events (counted by the existing subscription delivery records and audit trail), and every mutation in the audit log under its question action. Queue and state counts stay queryable through `GET /api/questions` with its filters. A failed announcement or session line is a daemon warning log line, not a metric.
+
+**Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
+
+## v9.32.0 — The calculator reset zone follows the server by default
+
+### Changed
+
+- **The usage calculator's reset now follows your server's time zone by default.** Leaving the reset time zone empty (the new default) means the reset runs at its time in the zone the daemon runs in — it was pinned to Sunday 08:00 UTC. The daemon picks up the zone from the `TZ` environment variable, falling back to the zone named in the system local-time symlink, then the runtime's local zone. If none can be found, the reset falls back to UTC and the advice now says so and points at the key to set. Any zone you set explicitly (a plain `UTC` included) always wins over the server's zone and is never rewritten. The effective zone is shown as the server's zone in the PWA settings card (empty field with the zone as placeholder and a note), in `GET /api/config` (`reset_zone_source` `server`, `reset_zone_fell_back` on the UTC fallback), in `datawatch config get` (the zone printed as `<zone> (server zone)`), and in the calculator advice's text (the reset line carries `(server zone)`) and JSON (`zone` plus `server_zone: true`).
+
+## v9.31.6 — Throttle detection matches each backend own error line
+
+### Changed
+
+- **Throttle detection now looks for each backend's own error line at the start of the line.** Instead of searching anywhere in a backend's output for a throttle phrase, detection now matches the backend's own error message and only when the phrase begins that line, so the decision is based on what the backend is actually reporting rather than on anything printed around it.
+- **Ordinary output that quotes a throttle phrase no longer pauses a backend.** A log line, echo, or result that merely mentions a throttle phrase in the middle of a sentence is treated as data now, so a backend is no longer throttled by its own text quoting a phrase.
+- **The explicit protocol marker is also matched only at the start of a line.** The dedicated marker a backend can emit to declare a throttle is now recognized only when it opens the line, the same way the built-in error matches behave.
+- **An operator's `rate_limit_patterns` override is applied as before and replaces the built-in matches.** When an operator sets their own patterns, they fully take the place of the built-in list — and, like everything else now, each operator pattern is matched at the start of a line as well.
+- **After upgrading, the usage back-off status shows the patterns as stale until an operator rechecks them.** Because a stored pattern that was not checked against the new start-of-the-line rule may no longer mean what it did before, the status flags the patterns as stale and asks an operator to reconfirm them rather than silently trusting old values.
+- **Back-off durations are unchanged.** The lengths of time a backend backs off are the same as before; only what triggers the detection changed.
+- **The built-in throttle list is now a per-backend table, and the shipped `rate_limit_patterns` default is empty.** The generic default list is gone; the Settings Detection Filters card shows that the built-in table applies instead of listing old phrases, and saving the card does not bring the generic list back. The claude-code usage-dialog lines (the approaching-limit warning, the reset-time announcement and the stop-and-wait menu option) stay detected, anchored to that backend's own dialog lines. A short section in `docs/operations.md` records the decision.
+
+## v9.31.5 — The Windows build works again, and a test now guards it
+
+- **The release build for Windows was failing, so most recent releases had no downloadable files.** The descendant-stall change in 9.30.1 signalled a recorded child process with a call that exists only on Linux and macOS, so the Windows build stopped compiling. Linux tests never saw it. The call now goes through the portable process API, which behaves the same on Linux and macOS and returns an error on Windows instead of failing the build. A new test cross-compiles the daemon for Windows and macOS on every test run, so a platform-specific call can no longer slip through.
+
+## v9.31.4 — The usage calculator prints the per-task cost as typed
+
+- **A cost of 0.05 points no longer prints 0.1.** The per-task cost in the remaining-work estimate line used to be rounded to one decimal everywhere; it now prints as typed — up to three decimals with trailing zeros dropped, so 0.05 stays 0.05 and 0.025 shows as 0.025. This holds in the text form, the comm-channel form, and the PWA card (including the burn-ledger queue line), and the PWA card and the text/CLI forms now agree on the exact number. All the other figures in the calculator keep their one-decimal styling.
+
+## v9.31.3 — Session progress strip removed; progress route fixed for non-pi sessions
+
+### Changed
+- The live pi progress strip is no longer shown on the session detail page. It had been added in v9.30.0 without discussion, takes a lot of
+  room, and on a claude-code session it was showing stale data from an
+  unrelated old pi log. The progress snapshot stays as task data on the
+  Automaton: the task card in the Status tab (automata.task_progress) keeps
+  showing it, and the REST, MCP and CLI surfaces are unchanged.
+- `GET /api/sessions/{id}/progress` now answers 404 (plain text `no session
+  log available`) for a session that is not a pi session or whose pi log
+  cannot be located, instead of `200` with a snapshot parsed from an
+  unrelated old log.
+  Log locating prefers an exact match on the session id in the log file name
+  before falling back to newest-modified, so a stale leftover log from an
+  unrelated pi session can no longer be read for another session.
+
+## v9.31.2 — Terminal search and copy buttons removed
+
+- **The terminal search and copy buttons are gone from the PWA session toolbar.** They were never requested and had no server API behind them — they only ever worked inside the browser, so nothing on the server side changes. The font menu, the scroll-mode toggle, and the fit-to-width buttons are unchanged.
+
+## v9.31.1 — Observer graphs and every later style rule work again
+
+- **The Observer system statistics graphs came back, along with other styling.** Since the 9.14.2 release, one closing brace was missing in the stylesheet, so every style rule after the loading-skeleton rules applied only when the browser asked for reduced motion. The Observer per-system bars showed as plain text lines, and any other screen styled by later rules lost its styling the same way. The brace is back. A new test fails if the stylesheet ever ends with an unclosed block or a media block opened inside another block.
+
+## v9.31.0 — Opt-in attempt time and no-progress limits for autonomous workers
+
+- **Two new settings, both off by default:** `autonomous.task_max_attempt_seconds` caps how long a single attempt may run at all (recommended 5400), and `autonomous.task_no_progress_seconds` caps how long an attempt may go without progress (recommended 1800).
+- **Progress means the worker is visibly doing work:** new terminal output, a changed file in the work directory, a new commit, or a busy child process. None of these for the configured window counts as no progress.
+- **Uncommitted work is saved before the worker is stopped:** it is saved to a named ref, then the attempt is stopped and the task is retried, so no work is thrown away.
+- **After the retry budget is exhausted, the task is held for your review** with the reason in its failure detail ('no progress for N seconds: no output, no file changes, no commits').
+
+## v9.30.2 — ZAP report attach tolerates API throttling
+
+- **The security scan no longer goes red when GitHub throttles the report upload.** The owasp-zap workflow's last step attaches the scan reports to a release. It now runs only for a real release tag (never for a main branch run), retries with a growing wait when GitHub throttles the token, and, if the throttling persists, logs a warning and leaves the run green because the scan result is what counts; the reports stay available from the run's `owasp-zap-reports` artifact. A scan finding above the accepted thresholds, or any other upload error such as a permissions failure, still fails the run. A new section in `docs/operations.md` explains how to re-attach the reports by hand.
+
+## v9.30.1 — Descendant-only stall bound for pi-prompt workers
+
+### A pi-prompt worker parked behind a living child process is detected and reaped
+
+- **A new stall detector covers a hole only pi-prompt has.** A one-shot `pi --print` worker writes nothing to its log until it finishes, so the log-mtime stall check is disabled for it — and a run whose runner has exited but whose working child (a build, a test) is still alive with no other sign of life was previously invisible. A new tracker (`DescendantStallTracker`) now measures silence per `poll_interval`, resets on any log write, any workdir file change, or any sign of life, and fires when a live working descendant is the only life sign. On trip the attempt ends as an infrastructure failure, its recorded descendants are cleaned up, it alerts, and the normal stall retry path picks up the task.
+- **New setting `autonomous.descendant_stall_seconds` (default 2700).** Zero or negative values read as the default on every surface, so the detector can never be silently turned off. The key is carried by YAML, REST `GET`/`PUT` config, MCP `autonomous_config_set`, CLI `datawatch config set`, comm channel `configure`, and the PWA settings card (five locales). See [implementation](docs/implementation.md) and [operations](docs/operations.md).
+
+## v9.30.0 — Pi worker observability: progress, stale heartbeat, loop detector and thinking level
+
+- **You can now see what a running pi worker is actually doing, without opening its pane.** While a pi task is running, the task card in the PWA and the task objects in the CLI, REST, and MCP views show a live progress snapshot (what it did last, which tools it has called and how often, its last summary, and token counts), refreshed from the worker's own session log about every 30 seconds. The same log's newest-event time also shows up in the session view and the tail, so a stuck worker is distinguishable from a working one.
+- **A stopped-but-quiet pi worker is now detected and retried on its own.** Stalls are judged from real signs of life — the worker's log still being written, a live child process, a busy backend, or recent file changes in the task's directory — instead of only from pane output. When none of those is present for `autonomous.stale_task_seconds`, the worker is stopped as an infrastructure failure and retried through its normal retry budget, even if the pane still looks like it is working.
+- **A worker that keeps repeating itself is broken out of the loop automatically.** If the worker's recent turns show it announcing a next step without ever acting, or repeating the identical tool call with identical arguments, the task is flagged as `looping` (visible as a warning on the task) and a `task.looping` event is emitted. An interactive pi worker gets one corrective message telling it to act now and keep running; a one-shot `pi --print` worker is stopped and retried with the loop hint appended to the task. The same loop fires the rescue only once per session, so you are not spammed.
+- **Two new settings.** `pi.thinking_level` sets pi's own `--thinking` level for every pi worker launch (`off`, `minimal`, `low`, `medium`, `high`; empty = pi's model default) and can be overridden per task, story, or PRD. `autonomous.loop_detect_turns` sets how many recent turns the loop detector examines (default 3; `0` turns loop detection off while the streak warning and stall heartbeat keep working). Both are editable in the web settings, `config.yaml`, the REST/MCP/CLI write edges, and the comm channel; the operator guide describes all of it under the new "Pi worker observability" section.
+
+## v9.29.2 — Stuck-running Automaton watchdog
+
+
+### An Automaton can no longer sit silently in running
+
+- **A stuck Automaton is re-checked, then blocked.** An Automaton could stay in `running` with every task finished and no active session, with nothing left to move it on. A watchdog now looks for that state. When an Automaton has stayed in it for `autonomous.stuck_running_seconds` (default 900, 15 minutes), the daemon re-runs its completion rollup once. If it is still stuck after a second full bound, the daemon moves it to `blocked`. A session that is still working, or a task that is not finished, resets the timer, and a change made by someone else at the same moment wins over the watchdog.
+- **What you see.** The Automaton's decision history gets a `stuck_running_refire` entry at the re-check and a `stuck_running_blocked` entry when it is blocked; the audit log gets `autonomous_stuck_running_blocked` (with the time stuck and the bound); and the usual status event fires, so the Automaton shows as blocked in the PWA, in notifications and in `GET /api/autonomous/prds`. Look at why the rollup did not finish it, then use `rejudge` when every task completed or `reset_task` for one that did not, as described in the recovery how-to.
+- **Changing the bound.** The setting is read on every pass, so a change applies without a restart. It is on every surface: YAML (`autonomous.stuck_running_seconds`), the CLI (`datawatch config set`), REST (`PUT /api/config`), MCP (`config_set`, `autonomous_config_set`), the comm channel (`configure autonomous.stuck_running_seconds=<n>`) and the PWA Settings Automata card in five locales. `0` or a negative value uses the default.
+- Docs: [`howto/autonomous-recovery.md`](docs/howto/autonomous-recovery.md#stuck-running-watchdog) and [`operations.md`](docs/operations.md). Parity: datawatch-app issue #290.
+
+### The last three open code-scanning alerts are addressed
+
+- **Subprocess sessions run one program, with no shell. This changes what a `--shell` / `subprocess: true` task may contain.** A `schedule spawn --shell` / `"subprocess": true` task used to be handed to `bash -c`. The daemon now re-runs its own binary as a helper with a validated argument list (rc-file path, `--`, task), and the helper splits the task with shell-style quoting only (`'…'`, `"…"`, `\`, a leading `~/`) and runs the program directly. No shell is started by the daemon or the helper, so a request can no longer make the daemon interpret `|`, `&`, `;`, `<`, `>`, `( )`, `$`, backticks or a newline. A task that contains one of those outside quotes is refused: the session fails at once with `subprocess task uses shell syntax …` in its log and nothing runs. Missing programs now end with exit 127 and non-executable files with 126, as before. **Migration:** a task that needs a pipe, `&&` or a variable names the program that provides it, for example `--shell "bash -c 'make test && make lint'"`, or runs a script file; `docs/howto/result-panel.md` shows both. Existing scheduled jobs that use shell syntax need that edit; the scripts in `scripts/` that start subprocess sessions were updated. CodeQL `go/command-injection` (#661) is cleared because the path from a request to a shell is gone, not because the scanner stops following the value.
+- **The MCP debug transport escapes what it echoes.** Every response carries `X-Content-Type-Options: nosniff`. A payload with no type or an HTML type is sent as plain text and HTML-escaped. A declared `text/event-stream` is no longer passed through byte for byte: `<` and `>` are written as the JSON escapes `\u003c` and `\u003e`, which decode to the same string, and every other byte is unchanged (CodeQL `go/reflected-xss`). A client that parses the JSON sees no difference; a client that matched the raw bytes of a `<` or `>` in an event would.
+- **Dictation fields get plain counter ids.** The microphone button added to a textarea without an id no longer builds that id from `Math.random()`; it is only a page element id, so a counter is enough (CodeQL `js/insecure-randomness`).
+- **An unused locale string is removed.** `session_last_activity_title` was no longer read by the page and is dropped from the five locale files, which turns the existing "removed title key is absent" test green.
+- **Checked with a fresh local scan.** Rebuilding both CodeQL databases and re-running the default code-scanning suites no longer reports these three results, and nothing appears that the earlier scan did not already have. One unrelated existing `js/xss-through-dom` result only moved from line 10882 to 10893 of `app.js` because of the added lines; its source-line fingerprint is identical. See [the local reproduction plan](docs/plans/2026-10-27-codeql-local-reproduction.md#round-3-alerts-661-714-715).
+
+### Plan check flags write tasks that declare no files
+
+- **A write task with no files is now a finding.** The plan coverage check raises `write_task_without_files` for a task whose title starts with a write verb and whose `files` list is empty, unless the first line of its spec starts with `READ-ONLY:` or it is a gate, smoke or similar task. In `block` mode the finding stops approval until the plan is fixed or the finding is acknowledged with a note; see [autonomous planning](docs/howto/autonomous-planning.md#declaring-files-for-write-tasks).
+
+### Voice transcription: real error causes, long-recording chunking and kept recordings
+
+- **Failed and slow requests are logged.** A failed `POST /api/voice/transcribe`, and any request slower than 30 s, writes one `[voice] transcribe failed:` or `[voice] transcribe slow:` line with the backend, upload size, audio length, elapsed time, cause and exit status. The transcript text is never logged.
+- **Errors name the real cause.** A failure is HTTP 502 with a JSON body `{error, cause, hint, detail, latency_ms}`. `cause` is `timeout`, `killed`, `out_of_memory`, `ffmpeg_missing`, `backend_error` or `unknown`, and `hint` is one sentence on the fix. `POST /api/voice/test` carries `cause` and `hint` too. Both OpenAPI files describe the body.
+- **Long recordings are chunked.** New setting `whisper.chunk_seconds` (default 120, `0` turns it off, otherwise 30 or more, so 1 to 29 are ignored through the API). The local whisper backend splits longer audio and transcribes it slice by slice, joining the texts, so memory stays flat. PCM WAV is split in pure Go; other formats need `ffmpeg` and are sent whole when it is missing. The setting is on every surface: YAML, CLI (`config set`), REST, MCP (`config_set`), the comm channel (`configure`) and the PWA Settings Voice Input card.
+- **The deadline scales with the audio.** A transcription gets 5 minutes, or twice the audio length when that is longer, capped at 30 minutes. A clip whose length cannot be read gets 5 minutes. The ffmpeg transcode keeps its own 5-minute budget.
+- **The PWA keeps a failed recording.** When a transcription fails, the recording stays in the page with a message for the cause in five locales, a Retry button and a Discard button, in the session input bar, in other microphone-enabled fields and on the Settings test button. Retry resends the same audio; nothing is lost until you press Discard.
+- Docs: [`howto/voice-input.md`](docs/howto/voice-input.md#long-recordings-and-memory-local-whisper) covers the memory envelope (whisper `medium` needs about 1.5 GiB for weights plus several GiB at peak, so hosts with 8 GiB or less should use `small` or `base`), the cause table and the log fields. The flow is in [`flow/voice-transcribe-flow.md`](docs/flow/voice-transcribe-flow.md).
+
+### Large changes go to claude-code first when a judge runs
+
+- **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `claude-code` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
+- **How lines are counted.** Added plus deleted lines on the Automaton branch against its merge base, with lock files left out. `0` turns the rule off.
+- **Nothing else changes.** In `balance` mode the load still decides and the order only breaks ties. A judge that times out on every backend still holds the Automaton with the hold reason `judge_timeout_hold`, after the `judge_timeout_seconds` limit is spent on each backend. The Automaton decision log names the rule that routed the judge and the line count.
+- **Settings on every surface.** YAML (`autonomous.judge_size_threshold_lines`), REST (`PUT /api/config` and `PUT /api/autonomous/config`), MCP (`autonomous_config_set`), the CLI (`autonomous config-set --judge-size-threshold-lines`), the comm channel (`autonomous judge-policy-set judge_size_threshold_lines=400`) and the PWA Settings autonomous card in five locales. See [howto/judge-policy.md](docs/howto/judge-policy.md#size-aware-routing).
+
+### The channel bridge verifies the daemon's TLS certificate
+
+- `datawatch-channel` no longer sets `InsecureSkipVerify` on its health probe and parent posts (CodeQL `go/disabled-certificate-check`, alert 643). It trusts the daemon's own certificate as a root, read from `DATAWATCH_CA_CERT`, and the daemon sets that variable to the certificate it serves.
+- `DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY` is an explicit operator opt-in (default off) that restores the old skip and logs a warning when on. Both variables are listed in `docs/implementation.md`.
+
+### A pi backend's node list is read from its own LLM entry
+
+- Next patch above main: a `pi` or `pi-prompt` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.
+- `scripts/check-waiter-nodes.sh` reports the node each waiting request is bound to and exits 2 when every waiter of a multi-node backend sits on one node while another candidate is free.
+- Docs: [`automata-capacity.md`](docs/howto/automata-capacity.md) and [`compute-nodes.md`](docs/howto/compute-nodes.md) describe the node choice and how to read the script's output.
+
+### The LLM entry's compute node list decides where local-model work runs
+
+- The `compute_nodes` list on an LLM entry now decides which nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate.
+- The request goes to the least loaded candidate. `scheduling_priority` only breaks a tie between equally loaded candidates, then list order.
+- The limit of one engine per node still applies. A node that does not serve the model is skipped. A one-entry list behaves as before.
+
+### Restart keeps each worker on the node it runs on
+
+- After a daemon restart, a worker session that survived is adopted onto the compute node it runs on, taken from its recorded node. The node then shows its engines in use, and a new request is placed on a node with a free engine instead of piling onto the busy one.
+- A node recorded on waiting work is a hint only. If that node is no longer in the LLM entry's `compute_nodes` list, the request drops it and is placed on a listed node once an engine frees. Nothing is rejected.
+- Removing a node from the list reaches waiting work at once, without a daemon restart.
+
+### Queued requests move to a node that frees an engine
+
+- A queued request now picks its compute node again on each admission pass and whenever any node frees an engine. A request that was waiting on a busy node moves to a node with a free engine, least loaded first and then by node priority. This applies to workers and to the judge. Before, a request kept waiting on the node it first tried while other nodes sat idle.
+- A change to an LLM entry's `compute_nodes` list reaches waiting work without a daemon restart. The limit of one engine per node still applies.
+- Docs: [`llm-backends.md`](docs/llm-backends.md) describes how a waiting request moves between nodes.
+
+### Pi workers are placed on the least-loaded healthy node and launched on the node they leased
+
+- A `pi` or `pi-prompt` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
+- A node that is not in the compute registry, or is inside a maintenance window, is skipped. The waiting reason names it, for example `waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: unhealthy; gpu-box-2: 2/2 engines in use, held by ...`.
+- A worker whose model has no provider (for example `qwen3.8:27b`) takes the provider of the backend's configured model, so it is admitted on the node it will actually run on.
+- A worker is launched against the node its lease names, including when the LLM entry lists only one node. If a worker holds capacity but no node was leased while its entry lists nodes, it is no longer launched on pi's default endpoint; the task fails with an error saying no compute node was leased.
+- Sessions adopted after a daemon restart are counted once against pool limits, including those whose lease had already been handed to the verifier, so a pool no longer reads above its real use.
+- A leased node is asked to load the model by its own name (`qwen3.8:27b`), not the provider-qualified name the lease carries (`ollama/qwen3.8:27b`). A real Ollama node answers 404 to the qualified name, which used to drop that node on every attempt and leave a two-node entry running on one node.
+- Sessions that start at the same moment no longer share a node address. The pi backend is one object for every session and its node address was set just before each launch, so a worker could be started against another worker's node; starting and restarting a session now hold a lock from the first per-session setting until the launch has read them.
+- Docs: [`compute-nodes.md`](docs/howto/compute-nodes.md) has a new section on how a pi-family worker picks its node, and [`compute-routing.md`](docs/howto/compute-routing.md) no longer says list order decides.
+
+### Node-hosted pi runners are seen as alive
+
+- The liveness probes now recognise a pi runner that node hosts. The kernel names such a process `MainThread`, so the probes missed it; they now also read the script node runs and treat a script named after a runner as that runner.
+- The pi-prompt idle check counts a live runner as work. A one-shot pi print run generates with no child process, so a runner that was alive and generating no longer reads as idle and is no longer ended by the session idle detector. Other backends still count only work children.
+- Held-task reviews and the attempt record carry the pi exit status, the last pane output and the process list when a pi-prompt task stalls. The new attempt fields are `runner_exit_status`, `runner_last_output` and `runner_processes`; they are optional and appear only when evidence was captured. The review report and the next attempt's prompt print them, and the stall error names the exit status when pi returned one.
+
+### Shared navigation fits phone widths
+
+The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
+
+**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+
+## v9.29.1 — Header Tags icon and a chips-only session tag row
+
+The session header's Tags dropdown button is now a tag icon instead of the word "Tags": the active-filter count badge, the keyboard operation and the focus ring are unchanged, and the accessible name and tooltip stay the translated label. The row above the terminal on a session detail no longer shows the "Tags" label, the "No tags" placeholder or the "edit tags" button (the dropdown already offers "Edit tags of this session"): it shows only the tag chips, own and inherited, and is not rendered at all when the session has none. The two locale keys nothing uses any more were removed from all five bundles. Tests, the Tags how-tos and the parity record were updated, and the Tags dropdown story is recorded against a sandbox daemon. `scripts/e2e-pwa.sh` now starts its sandbox daemon in the current shell so the daemon PID it later stops is the real one. Parity: datawatch-app issue #289.
+
+## v9.29.0 — Usage and cost calculator
+
+**Usage and cost calculator** — the account's weekly usage allowance is now a first-class feature with one shared model and all five access methods. One daemon-computed advice shows the latest reading, the effective ceiling (100 plus any bought extra credit), the one burn figure (the recent burn, falling back to the week average with an on-screen note when no reading exists in the last 2 hours), the verdict against the chosen usage policy, the safe lane count after an adjustable safety margin (5 points by default, a setting), the projected cycle end, run-out warnings, and the finish-early estimate (computed from the remaining queue, overridable by a typed figure). Variant and policy stay independent: the variant — pace gauge, lane planner, or burn ledger, all shown together with the `all` layout — picks only the answer shape, while the policy (use until spent, pace to the week, finish early) picks the spend target, and every layout shows the same numbers. The readings series belongs to the account, not the daemon: one keeper daemon holds the series and extra credit, peer daemons read it through the usage read federation capability (falling back to their last copy, marked as such), and writes go to the keeper under the usage write capability. Every surface shows the same data — YAML/config (`usage.calculator.*` on every config surface: the ten keys incl. variant, policy, safety points, cost per task, baseline, max lanes, reset moment, keeper), CLI (`usage advice` with per-call `--variant`/`--policy`/`--lanes`, `usage reading add/list/delete`, `usage extra-credit`, `usage remaining-work`), the PWA card on the Automation sub-tab with the three-variant switcher and the calculator's settings card in the settings page, REST under `/api/usage` (advice, readings, reading delete, extra credit, remaining work), the comm channel `usage` command (advice, reading, extra, work), and six MCP tools (`usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set`) that proxy the daemon's REST surface with the read/write capabilities on the matching tools. The calculator keeps its advice-only bar: it advises, it never stops or slows a lane.
+
+**Reuse audit** — what existing primitive does this extend? The calculator reuses existing primitives rather than adding new ones: the budget/cost surface's REST/MCP/CLI/comm handler shape and loopback proxy (the `usage.calculator` config keys reuse the budget block's whole-patch-on-invalid PUT validation and apply-then-confirm pattern), the capacity card's PWA polling/stale/error frame and its daemon-local settings persistence (the PWA card persists only the `variant` key), the peer-budget fetch with last-copy fallback (the readings series' keeper/peer model with the usage read/write federation capabilities), the usage back-off config-namespace discipline (a single `usage.*` key namespace per feature, invalid key rejected before partial apply), and the release-smoke section-82 discipline for a new surface (smoke-cleanup extended so the run restores exactly the reading, extra credit, policy/variant overrides and back-off state it set).
+
+*Audit tokens: `observability: N/A` (the calculator advises only; its mutations are the daemon's standard audit events — `audit-tests: added`, `TestUsageCalcAuditRecordMutations`) · `skills-hook: N/A` · `fed-parity: verified` (the usage read/write capabilities gate the federation path, `TestUsageSeriesCapabilityGates`) · `config-parity: verified` (all ten keys on YAML, REST, MCP, CLI, comm, PWA — `TestUsageCalcConfigPutEveryKey`, `TestUsageCalcConfigCommConfigure`, `TestUsageCalcConfigToolPath`) · `access-docs: added` (`docs/howto/usage-calculator.md`, all five access-method rows) · `smoke-extended: usage calculator section` (release-smoke §85) · `smoke-cleanup: extended for usage` (`usage`, `usage-credit`, `usage-variant` kinds).*
+
+## v9.28.7 — CI test timeout raised to 12 minutes
+
+- The `go test ./...` step of the CI and Release workflows had a 5 minute limit. The session package alone now takes about 4.5 to 5 minutes on a loaded runner (its temp-leak guard runs a nested test of the whole module for over two minutes), so the v9.28.6 release run hit "panic: test timed out after 5m0s" and nothing was published. The limit is 12 minutes, inside the job's 20 minute bound. No product behaviour changes; v9.28.6 and v9.28.7 contain the same code.
+
+## v9.28.6 — A store open no longer deletes a live writer's temporary file
+
+### A background save lost by a concurrent store open is fixed
+
+- **Root cause of the flaky `TestCIWatch_TimeoutPending`.** Opening a store (`NewStore`) deleted every `.tmp-*` file in the records directory, including the temporary file of a save in progress from another goroutine. That save then failed on its rename and, for the CI watch follow-up, was only logged, so the recorded pass was lost for good. Opening a store now removes only temporary files that are old enough to be stale, so a live writer is never disturbed.
+- Regression tests open a store beside a live writer and prove the save lands; the CI watch test reads back with clearer diagnostics. No behaviour changes for operators other than the fix.
+
+## v9.28.5 — Two more CodeQL alerts are fixed and the subprocess shell stays by decision
+
+### Two more CodeQL alerts fixed in code
+
+- **MCP debug transport.** A declared event stream sent by the MCP debug transport is written as JSON-escaped bytes and the response carries `X-Content-Type-Options: nosniff`, so echoed input can no longer be read as markup (`go/reflected-xss`, alert 715). The old byte-for-byte pass-through of a declared `text/event-stream` body is gone; the testing tracker records the new wire contract.
+- **PWA dictation ids.** A textarea without an id now gets `_autoMicTa_<n>` from a page-level counter instead of a `Math.random()` suffix (`js/insecure-randomness`, alert 714); the id only has to be unique on the page, so a counter is the right tool.
+- **Subprocess sessions are unchanged.** Alert 661 (`go/command-injection` in the subprocess launch) is dismissed as won't fix by decision: a subprocess session runs the caller's command line through `bash -c`, which is the documented feature. The reasoning and the risk acceptance are in `docs/plans/2026-10-28-codeql-alert-661-decision.md`.
+- The unused locale key `session_last_activity_title` (left over from the removed session time counter) is removed from all five bundles.
+
+## v9.28.4 — go-jose is updated to 4.1.6 (HIGH denial of service when parsing JWKs with RSA keys)
+
+- The indirect dependency `github.com/go-jose/go-jose/v4` is updated from 4.1.4 to 4.1.6, which fixes CVE-2026-116587 (HIGH): a denial of service when parsing JSON web keys that contain RSA keys. The Trivy scan of the agent-base image found it in the `datawatch` binary and, being blocking at HIGH, failed the v9.28.3 release run before any asset was published. No code change; v9.28.3 and v9.28.4 are otherwise identical.
+
+## v9.28.3 — The daemon cleanup audit test no longer times out on a slow CI runner
+
+- The test that runs the daemon cleanup audit over the whole repository (`TestRepoDaemonScriptsPassAudit`) had a 60 second limit; the audit takes about half a minute on a developer machine and more than a minute on a loaded CI runner, so the v9.28.1 and v9.28.2 release runs failed on it. The shared command bound in `tests/ci` is now 4 minutes, which still stops a hung command. No product behaviour changes; v9.28.1 and v9.28.2 contain the same code.
+
+## v9.28.2 — Node placement is tested against the production configuration
+
+### Node placement is tested against the production configuration
+
+- **Production-shaped unit fixtures.** The placement and adoption tests now run against the shape of the live configuration (three single-node ollama entries plus the pi-prompt entry that lists both nodes), which is the shape the earlier tests did not cover and the reason a placement defect passed its tests.
+- **A live placement story (`TS-828`).** Two pi workers must hold different nodes and a third must wait; the story runs against a sandbox daemon with two stand-in model hosts and ends everything it starts.
+- **Release smoke section 84.** The capacity ledger section of the release smoke checks the node pools and the one-engine-per-node limit on a sandbox daemon.
+- **A post-deploy invariant check.** `scripts/check-waiter-nodes.sh` is wired into the post-deploy step and reports a node over its limit with its lease holders.
+- Docs: the testing tracker has a section for the new tests and the live check.
+
+## v9.28.1 — Test and sandbox daemons end with their jobs on every exit path
+
+### The daemon-cleanup marker is scoped, and a dead-at-start daemon no longer reads as started
+
+The `# daemon-cleanup-ok` marker is no longer a blanket exemption for its line: it exempts only a banned-pattern definition line, a daemon start whose ending is owned elsewhere, and the recorded start or end lines it names. Everywhere else it never authorizes an end by name: a `pgrep`-found kill, a name-searched tmux session, or a `ps`-and-`grep` pipeline feeding a kill is still a violation, and a marker on a line that needs no exemption is itself a violation, in shell and Go alike. The shared helper also detects a daemon that dies at startup: the start call returns the daemon's exit code instead of success, and re-records a daemon when only a forking wrapper lost, so its cleanup ends exactly that daemon.
+
+### Test daemons end with the job that starts them, and a leftover daemon fails the run
+
+A test daemon — a datawatch daemon started by a job from a throwaway config under a temp path, such as a sandbox daemon under the temp directory or an end-to-end test daemon from a `datawatch-<hex>` run folder — is now required to end, together with every session it started, on every exit path: normal exit, failure and interrupt. It may only be ended by the PID recorded when the job started it, after that daemon's live command line has been re-read and still carries the config recorded with it; ending processes by name pattern is banned in test and tooling scripts, and the multiplexer server is never touched by these checks. The test runner snapshots the daemons alive at the start of a run and runs the leftover-daemon guard at the end — after every daemon the run started has been stopped and before the run folder is removed — so a test daemon that is still alive makes the run fail and shows the guard's report (PID, age, config path, listening TCP ports), even if every story passed. Three new pieces back this rule: `scripts/test-daemon-lib.sh`, a shared start/record/stop and trap helper for shell jobs that start daemons; `make check-test-daemons`, a static audit that no script or test starts a daemon it does not own on every exit path (now part of `make lint`); and `make check-leftover-daemons`, which lists the live test daemons against a snapshot baseline (empty by default, so it lists them all). A sandbox daemon also ends on its own at a maximum lifetime (four hours by default) even if no trap ever runs, and regression tests in `go test ./tests/ci/` drive the guard and the audit against a fake daemon so the checks themselves stay honest.
+
+## v9.28.0 — The session header is cleaner and a Tags dropdown holds watching and tag filters
+
+### Session header: Tags dropdown replaces the watch eye and time counter
+
+- **Watching moved.** The session header no longer shows a time counter or a watch eye. Open the header **Tags** dropdown and use **Watch this session** (or **Stop watching this session**) under **This session**.
+- **Filters in one place.** The session list's **Watched only** toggle and tag filter are in the same dropdown, with tag checkboxes, a **match ANY** / **match ALL** switch and **Clear**. A count on the **Tags** button shows how many filters are on.
+- **Edit tags from the header.** **Edit tags of this session** in the dropdown opens the session tag editor.
+- Docs: [`howto/sessions-deep-dive.md`](docs/howto/sessions-deep-dive.md) (PWA happy path) and [`howto/automata-tags.md`](docs/howto/automata-tags.md#the-header-tags-dropdown) describe the dropdown.
+
+## v9.27.0 — Failed and blocked Automata get a triage record, a poll-time pass and an alert
+
+### Autonomous triage: failed and blocked Automata are recorded, alertable and readable on every surface
+
+The autonomous engine now keeps a triage record for every Automaton that ends **failed** or **blocked**. On each coordinator tick a triage pass reads the live Automaton list and fills in, refreshes or clears one record per Automaton: which Automation and member it is, when it was first seen in that state, the failed task (name and error, truncated to 2000 chars) with the session end reason and start/retry counts, and the four retry-budget categories (infra, content, scope, policy) with their limit, used and left values. A record is kept while the Automaton stays failed or blocked, refreshed with any new information, and cleared once it leaves that state.
+
+Once a record has been sitting failed or blocked for `autonomous.automation.triage_alert_minutes` (default 30; `0` turns the alert off; the key is the single piece of triage configuration, set with `datawatch config set autonomous.automation.triage_alert_minutes <n>` or `PUT /api/config`), the engine raises one triage alert per episode through the existing lifecycle alert sink. The alert is audited and stamped on the record (`alerted_at`).
+
+The records are readable on the same channel-parity surfaces as the rest of autonomous:
+
+| Surface | Entry point |
+|---|---|
+| REST | `GET /api/autonomous/triage` — `automation_id`, `prd_id` or `status` (`failed`\|`blocked`, anything else refused); the body lists the records newest first and the alert threshold currently in force (`alert_minutes`) |
+| MCP | `autonomous_triage` — same filters, proxies the read route, needs the autonomous read capability from a federated peer |
+| CLI | `datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed\|blocked] [--json]` — a bad status is refused before anything is sent; `--json` prints the REST body untouched |
+| Comm | `autonomous triage [automation-id]` on every messaging channel (one optional positional argument, the automation id; no `prd` or `status` filter) |
+| PWA | a triage card in the Automaton detail view: status, failed task, first-seen and alert times, the four retry budgets and the notes, with wording in all five locale bundles |
+| Mobile/wear | the same `GET /api/autonomous/triage` contract, documented for Android/Wear/Auto in `docs/api/mobile-surface.md` |
+
+The triage record is a read: the pass starts, retries or edits nothing, and the retry budgets it shows are the engine's existing budgets, reused as-is.
+
+The comm-channel alert delivery changed with this: the alert body is no longer truncated at 200 characters, so every comm-channel alert (lifecycle, Automation blocked, triage, ...) now carries its full text, not just a prefix (`internal/router/router.go`, `SendAlert`). This is a behavior change for all comm alerts, not only triage. No record on a live daemon is live-verified yet, and nobody has looked at the card in a running PWA — the testing tracker marks every row `Validated: No` with the pending live checks. The operator reference for the record, the pass, the alert key and the surfaces is in `docs/operations.md`; the API contract is in `docs/api/autonomous.md`; the how-to pointer is in `docs/howto/automation-tab.md`.
+
+## v9.26.0 — Operators can answer questions raised by Automata through a question channel
+
+### Operator questions for the Automaton, over REST
+
+**New: an Automaton can now ask you a question, and you can answer it over REST.** The operator question channel is up: an Automaton raises a question, and an operator authorized for it reads it, answers it, changes their mind about the answer, or withdraws the question. The surface is REST for now:
+
+- `POST /api/questions` raises one (`label`, `risk`, `context`, `text`, a set of `options`, optional `recommendation`, and a required `default`), returning the stored record with its generated id.
+- `GET /api/questions` lists them, filterable by `state`, `context`, `asker`, `text` and `limit`.
+- `GET /api/questions/{id}` reads one question along with its answer count and the id of the currently effective answer.
+- Under each question id: `POST /answer` records an answer, `POST /withdraw` withdraws an open question, and `GET /answers` reads the oldest-first answer log showing which answers stand and which were superseded.
+
+Answers are **immutable**: picking an option, writing your own wording in a quote, or both leaves a stored record with a hash over the quote's exact bytes, and a changed mind is a *new* answer that names the one it supersedes, never an edit of the old one. Questions **never expire by a clock**: they stay in the file until answered or withdrawn (the `expired` state exists only as an explicit terminal move). An answer whose text looks like a secret is **refused with a 422 that names the two safe routes** — the datawatch secrets store referenced as `${secret:name}`, or a session-facing file — and is never stored, with none of the submitted text echoed to the caller. Every state change writes one question audit line into the existing single audit log under its own CEF name (`QuestionRaised`, `QuestionAnswered`, `AnswerSuperseded`, `QuestionWithdrawn`, `QuestionExpired`, `QuestionAnswerRefused`), with the pipes, `=`, backslashes and newlines the lines carry escaped, and the refused line records the refusal without any of the answer's text. The channel is **off by default** behind the new `autonomous.questions.enabled` switch — the PWA Settings toggle (labeled in five locales), `configure` from chat, `PUT /api/config`, the MCP `config_set` tool, or `datawatch config set` — flipping it on takes effect on the next request without a restart, and while it is off every endpoint refuses with a 503 that names the switch. The MCP and CLI round trips are pinned by tests (`internal/mcp/questions_config_surface_test.go`, `cmd/datawatch/questions_config_surface_test.go`), and the PWA toggle round-trip is covered by the questions settings locale tests. The reads sit behind `autonomous:read`, the writes (raise, answer, withdraw) behind `autonomous:write`, the same gates every other autonomous surface uses, and local operators always pass. A curl walkthrough is in `docs/howto/automation-tab.md`.
+
+**Next:** the MCP tools, the CLI subcommands, the in-PWA question queue, and answering from a comm channel build directly on this REST surface and its record, state and audit shapes.
+
+**Reuse audit (new primitives):** an append-only JSON-Lines question store (the session-record pattern), quote integrity (a SHA-256 over the quote's exact bytes), an immutable answer log in which a changed mind supersedes rather than edits, secret-pattern refusal on answers by the existing secret scanner, and the six question audit actions with their CEF ids in the existing audit package. Reused rather than rebuilt: the config pipeline for `autonomous.questions.enabled` (no new config surface), the `autonomous:read`/`autonomous:write` fedCap gates used by every other autonomous surface, and the PWA Settings config-card framework for the toggle.
+
+**Skills hook:** n/a — the step adds no new session, Automaton, agent, comm-channel or plugin path; the channel is a data record and a config switch on existing surfaces, and every mutation goes through the existing audit package.
+
+**Monitoring (B7):** n/a per item, with reasons — this step's parity line (plan step 1) is config + REST only, so there is no channel `SystemStats` field, no `GET /api/<subsystem>/stats` endpoint, no stats MCP tool, no Monitor card and no comm stats command yet, and no Prometheus counter beyond the existing audit sink. In the meantime, every mutation lands in the audit log under its question CEF action (raised, answered, superseded, withdrawn, refused), and queue counts and state counts are queryable through `GET /api/questions` with its `state`, `context`, `asker` and `limit` filters. The queue view, the surface verbs and the stats wiring follow in plan steps 2-3, and the reasons are recorded in `docs/api-mcp-mapping.md` -> Operator questions and `docs/operations.md` -> "Operator questions".
+
+**Guardrail tokens** (carried in the message of the final commit of this branch; the earlier task commits are automatic and are not rewritten; mirrored here): `rules: Configuration-Accessibility (B6), Monitoring-And-Observability (B7), Reuse-And-Expand-Audit (B9), Skills-Hook-Audit (B10), Mobile-Parity (B4), Locale-Guard (B3), Terminology, General-Doc-Checklist item 4 (README)` · `changelog: added` · `readme: updated (Current release incoming line)` · `tracker: "Operator questions" (docs/testing-tracker.md)` · `b6: config round-trip, CLI config-set and MCP config-set tests for the new switch, PWA toggle in five locales, configure in the comm key set` · `b3: locale-guard: added settings_automata_questions_enabled (mustHave in the locale test, non-empty, no PRD-word or Automation-word in the label, round-trip, app.js presence)` · `b4: datawatch-app#283 filed and verified open (title: "feat(questions): operator question channel — queue view, answer sheet + settings toggle")` · `b7: monitoring N/A per item (config + REST parity line; audit covers decision traceability)` · `b9: reuse-audit above (session-record store, SHA-256 quote integrity, immutable answer log, existing secret scanner, existing audit package, existing config pipeline, existing Settings card)` · `b10: skills-hook: N/A (no session/Automaton/agent/comm-channel/plugin path added)` · `id-check: clean` · `leak-check: clean (question, task and Automaton ids in API examples are sample fixtures, not internal tracker ids)` · `make-build: ok` · `tests: ok` · `version: 9.17.1 (both files)`.
+
+## v9.25.3 — Verifier and judge waiters move to a backend that frees up
+
+### A waiting verifier or judge moves to a backend that frees up
+
+- **What was wrong.** A verifier or judge request that started waiting on one backend stayed on it, even when another listed backend sat idle.
+- **The fix.** The waiting request re-evaluates the routing policy when a slot is released or a pool limit changes, and about every 5 s. When the policy now picks a backend with a free slot, the request moves there. The move is written to the Automaton decision log as a `verifier_policy` or `judge_policy` decision whose reason starts `moved from <backend>:`. A request never moves back to a backend it left.
+- **What does not change.** A request with an explicit verification LLM, a pinned guardrail backend or a stronger-verifier pick stays put. The mode rules (`fixed`, `gpu-only` and `claude-only` never move), the caps, the Claude session cap, the usage back-off and the one-engine-per-node limit decide what has a free slot. No setting is changed.
+- Docs: [howto/judge-policy.md](docs/howto/judge-policy.md#a-waiting-request-moves-when-another-backend-frees-up).
+
+## v9.25.2 — CodeQL findings fixed in code: escaped output, nosniff, path containment and argument vectors
+
+### Code-scanning alerts fixed in code: responses that echo input, project paths and PWA text
+
+- **Untyped markup bodies are HTML-escaped.** A REST response with no `Content-Type` whose first bytes read as HTML, XML or SVG is now sent as `text/plain; charset=utf-8` and its body is HTML-escaped (`<` `>` `&` `"` `'`), so text that echoes request input (an error line, for example) cannot be read as a document. The `Content-Length` the handler declared is dropped for such a body, because the escaped body is longer. JSON and every response that already carries a `Content-Type` or `Content-Encoding` are not changed. This is the only change to a response body in this round, and it applies to the gzip middleware in front of every `/api` route. See [testing tracker: untyped markup bodies and nosniff](docs/testing-tracker.md#untyped-markup-bodies-and-nosniff-on-api-responses--unreleased).
+- **`X-Content-Type-Options: nosniff` on API responses.** The gzip middleware adds the header unless the handler set it, before the status line is written (net/http copies the headers there, so a later set would not reach the client). The MCP debug transport pins the same header, and when the stream's type is not `text/event-stream` or another non-HTML type it also escapes the payload. A stream that is already `text/event-stream` passes through byte for byte.
+- **Project directories are checked against the allowed roots on the value that is used.** The session manager, the git helpers (`internal/session/git.go`), the gitguard containment helpers, the claude-code backend (`CLAUDE.md` lookup) and the pipeline quality checks now hand the filesystem and `git` calls the path that passed the roots check, not the one that was requested. A relative path is refused, a sibling directory that only shares a root's name as a prefix is refused, and a path that is not under any allowed root returns no path. The allowed roots themselves (worktree base, workspace root, `server.allowed_project_roots`) are unchanged.
+- **Commit-message write path.** The message of a session snapshot, task commit or annotated tag is written to git's standard input (`git commit -F -`, `git tag -a -F -`) instead of `-m <text>` or a temporary file in the OS temp directory, so text that derives from a task title or summary never enters git's argument list. The temporary commit-message file is gone.
+- **PWA text is escaped where it is drawn.** The waiting-task line and its cause chip, the Automata progress bar and held badge, the chat bubble header, the Stats card numbers and session rows now pass every dynamic value through `escHtml`. A wait cause is looked up with a `switch`, so names such as `__proto__` and `constructor` render no chip instead of reaching the object prototype. Normal values look the same as before. Browser story `TS-826` in `docs/testing.md` covers it.
+- **Docs.** [`docs/plans/2026-10-27-codeql-local-reproduction.md`](docs/plans/2026-10-27-codeql-local-reproduction.md) records how the alerts were reproduced locally and what each fix does.
+
+## v9.25.1 — A relaunched task is placed through the capacity ledger, not on its old node
+
+### A relaunched task is placed like a new request
+
+- A relaunch (a task whose earlier session is replaced, including one that was verifying) gives up the lease of the previous attempt and is admitted through the same placement as a new request. Before, the relaunch could keep the node of the attempt it replaced without placement choosing again.
+- Placement picks the least loaded of the backend's own compute nodes, one engine per node. The node of the previous attempt is only a tie breaker: it wins when it is free and equally loaded, and never outranks a less loaded node.
+- If no node is free, the relaunch waits like any other request.
+- A worker that survives a daemon restart keeps its recorded node.
+- The verifier and the await-external re-admission follow the same rule. A respawned verifier or judge that still holds a lease from an earlier run frees it and is placed again, and a task returning from an external wait is re-admitted through placement with the node it released as the tie breaker.
+- `scripts/check-waiter-nodes.sh` prints an `OVERLIMIT` line, with the lease holders, for any node that holds more engines than its limit, and exits 2 for it even when nothing is waiting.
+- Nothing about caps or settings changed: no limit was raised and no setting or default was added or changed.
+
+## v9.25.0 — Plan coverage flags write tasks that declare no files
+
+### Plan check flags write tasks that declare no files
+
+- **A write task with no files is now a finding.** The plan coverage check raises `write_task_without_files` for a task whose title starts with a write verb and whose `files` list is empty, unless the first line of its spec starts with `READ-ONLY:` or it is a gate, smoke or similar task. In `block` mode the finding stops approval until the plan is fixed or the finding is acknowledged with a note; see [autonomous planning](docs/howto/autonomous-planning.md#declaring-files-for-write-tasks).
+
+## v9.24.0 — Scope lint ignores literal pattern text and is a setting
+
+### Added
+- **`autonomous.scope_lint` setting (`off` / `warn` / `enforce`, default `enforce`).** Sets what the pre-spawn scope lint does with a task whose spec or planned files fall outside the Automaton's read and write directories. Available in the config file, the PWA (Settings → Automate → Task scope lint), REST, MCP, the comm channel and the CLI. Placeholder and quoted pattern text is never flagged.
+- **A failed Automaton accepts a spec edit for a task whose only failure is a scope lint rejection.** Other failed tasks and completed tasks stay locked.
+
+## v9.23.2 — Judges use their routing and size rule unless a task or Automaton pins a backend
+
+### Fixed
+
+- The judge routing treated any resolved guardrail backend as an operator pin, so the size rule and the fallback never ran for the judges. A pin is now only an explicit task or PRD override; a global verification backend is only a default. See [howto/judge-policy.md](docs/howto/judge-policy.md).
+
+## v9.23.1 — Voice transcription shows real error causes, chunks long recordings and keeps failed ones
+
+### Voice transcription: real error causes, long-recording chunking and kept recordings
+
+- **Failed and slow requests are logged.** A failed `POST /api/voice/transcribe`, and any request slower than 30 s, writes one `[voice] transcribe failed:` or `[voice] transcribe slow:` line with the backend, upload size, audio length, elapsed time, cause and exit status. The transcript text is never logged.
+- **Errors name the real cause.** A failure is HTTP 502 with a JSON body `{error, cause, hint, detail, latency_ms}`. `cause` is `timeout`, `killed`, `out_of_memory`, `ffmpeg_missing`, `backend_error` or `unknown`, and `hint` is one sentence on the fix. `POST /api/voice/test` carries `cause` and `hint` too. Both OpenAPI files describe the body.
+- **Long recordings are chunked.** New setting `whisper.chunk_seconds` (default 120, `0` turns it off, otherwise 30 or more, so 1 to 29 are ignored through the API). The local whisper backend splits longer audio and transcribes it slice by slice, joining the texts, so memory stays flat. PCM WAV is split in pure Go; other formats need `ffmpeg` and are sent whole when it is missing. The setting is on every surface: YAML, CLI (`config set`), REST, MCP (`config_set`), the comm channel (`configure`) and the PWA Settings Voice Input card.
+- **The deadline scales with the audio.** A transcription gets 5 minutes, or twice the audio length when that is longer, capped at 30 minutes. A clip whose length cannot be read gets 5 minutes. The ffmpeg transcode keeps its own 5-minute budget.
+- **The PWA keeps a failed recording.** When a transcription fails, the recording stays in the page with a message for the cause in five locales, a Retry button and a Discard button, in the session input bar, in other microphone-enabled fields and on the Settings test button. Retry resends the same audio; nothing is lost until you press Discard.
+- Docs: [`howto/voice-input.md`](docs/howto/voice-input.md#long-recordings-and-memory-local-whisper) covers the memory envelope (whisper `medium` needs about 1.5 GiB for weights plus several GiB at peak, so hosts with 8 GiB or less should use `small` or `base`), the cause table and the log fields. The flow is in [`flow/voice-transcribe-flow.md`](docs/flow/voice-transcribe-flow.md).
+
+## v9.23.0 — Scope and guardrail warnings are opt-in lifecycle event kinds
+
+**Two opt-in warning notify event kinds (`scope_warning`, `guardrail_warn`)** — an Automaton's scope-drift warning (a task touched files outside its declared scope; the event lists the files) and a guardrail `warn` verdict (the event names the guardrail, carries the verdict summary and issues, and links to the matching PWA alert) are now deliverable lifecycle event kinds, not just PWA signals. Both are opt-in and off by default: a subscription for either kind fires only when the kind is in the Automaton's resolved notify set (per-Automaton list, guardrail profile list, or `autonomous.notify.default_events`), and every configuration surface — YAML, CLI, PWA, REST, MCP, comm channel — accepts, reports and validates the two kinds with a near-miss hint on a typo. Neither kind blocks or changes any task, story or Automaton; the PWA keeps showing both warnings (alert and inline marker) regardless of the notify set. Covered by emission tests (`lifecycle_emit_warning_test.go`), opt-in/default-set tests (`notify_warning_kinds_test.go`), surface-acceptance tests across REST/MCP/comm/CLI/config and the PWA presentation and five-locale parity tests; a live end-to-end pass is pending (no live daemon in this environment). Tracked in [testing-tracker.md](docs/testing-tracker.md).
+
+**Warning notify events are presented as opt-in in the PWA** — the two opt-in event kinds (`scope_warning`, `guardrail_warn`) are no longer buried unmarked in generic lists: the Automaton settings modal shows an `(opt-in)` marker on the four opt-in kinds (the two warning kinds plus the two session kinds) and groups the bare warning kinds under a localized Warnings header, and the lifecycle-subscription editor offers a dedicated "Warnings (opt-in)" kind group with an explainer of when an opt-in kind fires. Five new locale keys land in all five bundles (de/es/fr/ja translated, Automaton rendered per locale), with parity tests on both sides (Go cross-checks the app.js opt-in set against the backend and the locale guard; JS checks the markers, groups and hints).
+
+## v9.22.0 — Large diffs go to Claude first for the final judge
+
+### Large changes go to claude-code first when a judge runs
+
+- **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `claude-code` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
+- **How lines are counted.** Added plus deleted lines on the Automaton branch against its merge base, with lock files left out. `0` turns the rule off.
+- **Nothing else changes.** In `balance` mode the load still decides and the order only breaks ties. A judge that times out on every backend still holds the Automaton with the hold reason `judge_timeout_hold`, after the `judge_timeout_seconds` limit is spent on each backend. The Automaton decision log names the rule that routed the judge and the line count.
+- **Settings on every surface.** YAML (`autonomous.judge_size_threshold_lines`), REST (`PUT /api/config` and `PUT /api/autonomous/config`), MCP (`autonomous_config_set`), the CLI (`autonomous config-set --judge-size-threshold-lines`), the comm channel (`autonomous judge-policy-set judge_size_threshold_lines=400`) and the PWA Settings autonomous card in five locales. See [howto/judge-policy.md](docs/howto/judge-policy.md#size-aware-routing).
+
+## v9.21.3 — The workspace root is an allowed project directory by default
+
+### Fixed
+
+- The default allowed project roots now include the workspace root, the folder `~/workspace` when `session.workspace_root` is unset, so interactive sessions, explicit `project_dir` Automata and test runs under that folder are no longer refused. No configuration change is needed. More roots come only through `server.allowed_project_roots`; setting `session.workspace_root` replaces the default workspace root.
+
+## v9.21.2 — A restart keeps each pi worker on the node it was placed on
+
+- After a daemon restart, a surviving pi-prompt worker is re-adopted on the compute node it was placed on, read from the node recorded at placement, never guessed from names or DNS. Before this, both survivors could land on one node (`node:datawatch` 2 of 1) while the other GPU sat idle and requests waited.
+- If a surviving worker's node cannot be determined, its lease is held on no node and flagged in `/api/capacity`, instead of defaulting to one node.
+- A restart smoke step checks that the node pools are unchanged across a daemon restart, and the operations guide describes where a re-adopted worker's node comes from.
+
+
+## v9.21.1 — Open CodeQL alerts are fixed in code: command injection, path containment, reflected output and more
+
+CodeQL findings on main are fixed in code, with no scanner setting changed:
+
+- Git helpers build their commands from fixed argument vectors, and subprocess-resume tasks no longer go through a shell wrapper (the two critical `go/command-injection` alerts).
+- One checked path-containment helper now guards the git guard, session, autonomous, pipeline and claude-code path sinks (the `go/path-injection` alerts), with unit tests for symlink, dot-dot, dangling-link and outside-root cases.
+- The MCP debug transport and the gzip middleware write echoed values safely (`go/reflected-xss`), the federation hop chain bounds its allocation size, and three product-code web UI findings are fixed.
+- Test-only web alerts are dismissed in GitHub with reason "used in tests".
+
+### The channel bridge verifies the daemon's TLS certificate
+
+- `datawatch-channel` no longer sets `InsecureSkipVerify` on its health probe and parent posts (CodeQL `go/disabled-certificate-check`, alert 643). It trusts the daemon's own certificate as a root, read from `DATAWATCH_CA_CERT`, and the daemon sets that variable to the certificate it serves.
+- `DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY` is an explicit operator opt-in (default off) that restores the old skip and logs a warning when on. Both variables are listed in `docs/implementation.md`.
+
+## v9.21.0 — The daemon warns at startup about exposed, unauthenticated listeners
+
+### Daemon warns at startup about exposed, unauthenticated listeners (BL062); operator can acknowledge
+
+- At every start, the daemon logs one warning line per listener that is enabled, not token-protected, and bound to a non-loopback address. Covered: `rest` (server.token), `rest_tls` (server.ttls), `mcp_sse` (mcp.token, or server.token when mcp.token is empty), `proxy_sandbox` (always token-protected, never warned), `webhook` (webhook.token), `github_webhook` (github_webhook.secret); `twilio_webhook` has no built-in auth and is never warned. Each line names the listener and its configured bind address so the operator sees which listener; it never names a token or secret value.
+- New config setting `server.acknowledge_unauthenticated` (bool). Set it after deliberately reviewing those listeners: it silences the warning and sets the `acknowledged` flag on the matching entries of the `/api/health` `listeners` array and the `listener_*` diagnose checks. It does not change the bind address, the token, or the warning condition itself.
+- `GET /api/health` (no auth) now returns a `listeners` array — one entry per listener with `name`, `enabled`, `auth_required`, `loopback`, `acknowledged`; posture only, never bind addresses or token/secret values.
+- `GET /api/diagnose` now carries one informational `listener_<name>` check per listener, always `ok` (posture reporting, not a failure), with detail `address=… enabled=… auth_required=… loopback=… acknowledged=… exposed=…`; the overall diagnose `ok` flag is unchanged by listener auth posture.
+- No default changed: `server.acknowledge_unauthenticated` defaults to `false`, so every daemon start warns for exposed, unauthenticated, unacknowledged listeners.
+- Docs: config-reference (setting + covered-listener comment), operations (startup warning, fixes, acknowledge, five-row access table), openapi (both files: health `listeners`, diagnose `listener_*` checks, config key), mobile-surface (health `listeners` array + config key for Android/iPhone clients).
+
+
+- Docs: the two `v9.0.0` CHANGELOG sections are merged into one (the major release notes now sit under the single heading).
+
+## v9.20.0 — Project directories must lie under an allowed root
+
+### Project directories must lie under an allowed root
+
+- A project directory that comes from a request or a stored record is now refused unless it lies under an allowed root. This applies to a session start (REST, MCP, chat, CLI and PRD tasks), an Automaton created with an explicit `project_dir` or a per-task `project_dir`, and the working directory of the pipeline and quality-gate test runner. The rule is always on, whether or not an API token is set.
+- The allowed roots are the PRD worktree base (`autonomous.worktree_dir`, default `~/.datawatch/prd-worktrees`) and the workspace root (`session.workspace_root`), plus any folders listed in the new setting `server.allowed_project_roots`. Nothing else widens the set.
+- `..` segments and symlinks, including dangling links, are resolved before the check. A refused directory returns an error that names the allowed roots (REST answers 400).
+- `server.allowed_project_roots` is available in `config.yaml`, `PUT /api/config`, MCP `config_set`, `datawatch config set`, chat `configure` and the Settings card (with strings in all five locale bundles). It takes absolute paths only and applies without a restart.
+- Upgrade note: a session or Automaton whose project directory is outside these roots (for example a checkout under `~/workspace`) is refused until its folder is added to `server.allowed_project_roots` or set as `session.workspace_root`. `session.default_project_dir` is daemon configuration and is still used as is.
+- Docs: [`operations.md`](docs/operations.md) "Allowed project roots".
+
+## v9.19.6 — Pi work is placed on the backend own compute nodes
+
+### A pi backend's node list is read from its own LLM entry
+
+- a `pi` or `pi-prompt` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.
+- `scripts/check-waiter-nodes.sh` reports the node each waiting request is bound to and exits 2 when every waiter of a multi-node backend sits on one node while another candidate is free.
+- Docs: [`automata-capacity.md`](docs/howto/automata-capacity.md) and [`compute-nodes.md`](docs/howto/compute-nodes.md) describe the node choice and how to read the script's output.
+
+## v9.19.5 — The compute node list decides where local-model work runs
+
+### The LLM entry's compute node list decides where local-model work runs
+
+- The `compute_nodes` list on an LLM entry now decides which nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate.
+- The request goes to the least loaded candidate. `scheduling_priority` only breaks a tie between equally loaded candidates, then list order.
+- The limit of one engine per node still applies. A node that does not serve the model is skipped. A one-entry list behaves as before.
+
+## v9.19.4 — Adopted sessions hold a node lease and waiting work is re-placed
+
+### Restart keeps each worker on the node it runs on
+
+- After a daemon restart, a worker session that survived is adopted onto the compute node it runs on, taken from its recorded node. The node then shows its engines in use, and a new request is placed on a node with a free engine instead of piling onto the busy one.
+- A node recorded on waiting work is a hint only. If that node is no longer in the LLM entry's `compute_nodes` list, the request drops it and is placed on a listed node once an engine frees. Nothing is rejected.
+- Removing a node from the list reaches waiting work at once, without a daemon restart.
+
+## v9.19.3 — Supervisor watch script no longer needs a release
+
+### Supervisor watch script is exempt from the version bump check
+
+- `scripts/supervisor-watch.py` is operations tooling with no effect on the product, so `scripts/check-version-bump.sh` now treats it like the other zero-behaviour paths. Editing it no longer fails CI for lack of a version bump.
+
+## v9.19.2 — Supervisor watch script
+
+### Cheap supervisor watch script
+
+- `scripts/supervisor-watch.py` is a one-command health check for the people or sessions supervising a datawatch build: it prints `OK` with a lane summary, or `ATTENTION` with one line per finding (tmux restarts, a down daemon, a missing model, newly failed or review-needed tasks, finished PRDs not yet merged, idle lanes, a broken or silent PRD worktree, a dirty main checkout, red or stuck CI). It makes no changes.
+
+## v9.19.1 — Waiting work moves to a free compute node
+
+### Queued requests move to a node that frees an engine
+
+- A queued request now picks its compute node again on each admission pass and whenever any node frees an engine. A request that was waiting on a busy node moves to a node with a free engine, least loaded first and then by node priority. This applies to workers and to the judge. Before, a request kept waiting on the node it first tried while other nodes sat idle.
+- A change to an LLM entry's `compute_nodes` list reaches waiting work without a daemon restart. The limit of one engine per node still applies.
+- Docs: [`llm-backends.md`](docs/llm-backends.md) describes how a waiting request moves between nodes.
+
+## v9.19.0 — Tag browsing and the shared tile for Automata
+
+**Fixed: untagged Automata carry `tags` and `primary_tag_id` in list responses** — every Automaton list item now has a `tags` array (empty when untagged) and a `primary_tag_id` string (empty when none), so a tag browser reads one shape for tagged and untagged items. Comm verbs that proxy REST (the `autonomous tags`, `attention` and registry verbs) now also work on the test message route, which had no loopback port.
+
+**Added: Automata tag browsing with the shared tile**. The Automata and Automation tabs draw every Automaton as one shared tile and offer a tag browser: a tag tree with live subtree counts, an Untagged section, and ANY or ALL matching when several tags are selected. An attention group and a running strip sit above the browser, and the view it opens on follows the new landing rule. Session tags are new: a session carries its own tags and shows the tags it inherits from its Automaton as read-only. The federated tag registry keeps one shared tag list across daemons, with a stale marker, merge notes and a status line. Six new settings under `autonomous.tags` control the default view, the attention statuses, the default match mode, the direct-count tooltip, the registry keeper and the registry sync interval. They apply without a restart.
+
+**Added: shared tag registry for Automata tags** — several daemons can share one tag registry. One daemon keeps it (`autonomous.tags.registry_keeper`); the others keep a cached copy and send their tag edits to it. The cache is synced every `autonomous.tags.registry_sync_seconds` (a whole number, minimum 5, default 30), and both settings take effect at runtime without a restart. When a peer and the keeper both change the same field, the keeper keeps its own value and the reply says which field conflicted. While a peer cannot reach its keeper, renames, moves, recolors, description changes and deletes are refused with 503 (the message says the last copy is shown), while new tags are still created and marked pending sync until the keeper has them. Merge notes and removed-on-keeper notes are listed until they are dismissed on that daemon. The operator surfaces are the new REST dismiss route (`POST /api/autonomous/tags/registry/notes/{id}/dismiss`), the MCP tools `autonomous_tag_registry_status` and `autonomous_tag_registry_dismiss_note`, the CLI commands `datawatch autonomous tag-registry` and `tag-registry-dismiss <note-id>`, and the comm verbs `autonomous tag-registry` and `tag-registry-dismiss <note-id>`. Two keeper-to-peer routes (`GET /api/autonomous/tags/registry` and `POST /api/autonomous/tags/registry/write`) carry the sync and are not operator actions. The two settings are available from the YAML config, the config API, the comm `configure` verb, MCP `config_set`, the CLI `config set` and the web Settings card. The PWA, Android and iPhone apps have no registry banner or dismiss control in this release; the tag browser shows the tags as before.
+
+**Changed: tag writes go through the registry** — on a peer, creating, renaming, moving, recoloring, describing and deleting a tag are forwarded to the keeper, and the reply shows the keeper's value. `GET /api/autonomous/tags` now carries a `registry` object with the daemon's role, its keeper, whether that keeper is stale, the last sync time, the revision, the number of tags pending sync, the notes and the last sync error. A standalone daemon and the keeper behave as before for the tag routes, apart from the new `registry` field.
+
+**Session tags in the PWA** — session cards and tree nodes show a session's own tags as normal chips and the tags it inherits from its Automaton as dashed chips marked *inherited* (read-only on the session). The session detail has a Tags row with an **Edit tags** button that saves through `POST /api/sessions/tags` and shows the server's refusal text, the New Session form has a tag picker that sends `tags` with the start request, and the sessions select bar has a batch **Tag** action that adds tags to the selected sessions. Chips follow tag changes from the live tag event. The change is in the PWA only; no API, config or CLI surface changed.
+
+**Tag browser on the Automata and Automation lists** — each list has a `[List] [Tags]` switch. The Tags view shows the managed tag tree with a subtree count per tag, so a parent counts every Automaton under it once, and an `Untagged` section last. On web and tablet (720px and up) the tags are collapsible sections with their sub-sections nested inside; a tag section is collapsed by default when the registry holds more than eight top-level tags, and the expansion state is remembered per browser. Below 720px the view drills down one tag at a time with a breadcrumb (`Tags > Work > Mobile App`, with the middle crumbs collapsed beyond three levels) and a back row; the drill-down path is kept in the URL hash (`#automata/tags/<path>`). An Automaton with several tags appears under each of them, with an `also in:` line that opens the other tag on tap. The optional primary tag only sorts an Automaton within a tag; it never hides one, and it is set from the tags dialog. The filter bar takes several tags with ANY or ALL (the starting mode comes from `autonomous.tags.default_match_mode`), and status and backend facets with live counts; a filtered result is a flat grid, and an empty result says `No matches` with the number of filters to clear. Under 720px the filters open from one `Filters (N)` button in a bottom sheet. The single-tag dropdown is replaced; the one tag it held carries over as the new selection. Strings are localised in all five bundles, with English placeholders in de, es, fr and ja.
+
+**Needs attention, Running and live counts above the tag browser** — both lists show two pinned groups above the tag browser. `Needs attention` is open and holds the Automata whose status is in `autonomous.tags.attention_statuses` (blocked, needs_review and paused by default) plus every Automaton with a task held for operator review, each with its blocked reason where one exists. `Running` is one line per Automaton, at most five and then `+N more`, and starts closed on a phone. A pinned Automaton still appears under its tags, an empty group takes no height, and with both empty the area is hidden. The view switch gains an `Attention (N)` button that is shown at every count, zero included, and opens a view with only the pinned groups. `autonomous.tags.default_view` decides the view a page opens on: `auto` opens Attention when N is 1 or more and the tag browser otherwise, `attention` and `tags` force one, and a view the viewer picked is remembered in the browser and wins. The choice is made once when the page loads and never switches while it is open. Tag counts, the pinned groups and the list refresh from the `tag_update` and `prd_update` frames (rename, re-parent, delete, assignment and status changes); a burst of frames waits 250 ms and refetches once, so every shown count and chip follows a rename or re-parent. With the stream down, the lists' own 30-second poll catches up. Strings are localised in all five bundles, with English placeholders in de, es, fr and ja.
+
+**Automata and Automation lists draw one shared tile** — both lists show each item as the same tile: a title of at most two lines, a status chip, the short ID, the backend and model, a progress bar with `done / total` taken from the list payload (no request per tile), up to three tag chips with a `+N` control that opens the full list, and the last activity as a relative time. Open is always shown and the status actions stay on the tile; pin and watch move into a `⋯` menu. Below 720px the grid becomes one column of two-line rows; below 420px each item is one line with its title, status dot and count, and its actions move into the menu. Select mode, pin, watch, the expandable stories and tasks, the batch bar and the history toggle keep their behaviour. The change is in the PWA only; no API, config or CLI surface changed.
+
+**Tag browser settings (`autonomous.tags`)** (BL461) — six config keys under `autonomous.tags` control the Automata list. `default_view` picks the view it opens on (`auto`, `attention` or `tags`; default `auto`, which opens the attention view when an Automaton needs attention and the tag browser otherwise). `attention_statuses` lists the Automaton statuses that place an Automaton in the attention group (default `blocked`, `needs_review`, `paused`; any other status is refused; an empty list takes the defaults). `default_match_mode` sets how several selected tags combine (`any` widens the list, `all` narrows it; default `any`). `direct_counts_visible` (default `false`) shows each tag's direct count as a tooltip beside its subtree count. `registry_keeper` names the federation peer that keeps the shared tag registry (empty means this daemon keeps it and nothing syncs), and `registry_sync_seconds` sets the sync interval in whole seconds (minimum 5; default 30). Each key is settable from YAML, the CLI, the web Settings card (Automata, Tag browser group), REST `PUT /api/config`, MCP `config_set` and the comm channel, and an invalid value is refused on every surface with the same message. Documented in the config reference, the implementation reference and the operations guide.
+
+**Tag changes reach open clients over WebSocket** — every tag registry change (create, rename, reparent, recolor, delete) and every tag assignment (an Automaton's tag list or primary tag, a session's own tags) now sends one `tag_update` frame to every connected client. The data carries IDs only (`kind`, plus `tag_id`, `prd_id` or `session_id`), so a client refetches `GET /api/autonomous/tags?counts=true` for the new counts. A refused change (a cycle, a tag still in use, a tag with children, an unknown tag) sends nothing. A tag description change sends nothing, since it never changes a count. The PWA tag filter and tag registry refresh from the frame. Every Automaton status change now also sends the existing `prd_update` frame, including `blocked`, `needs_review` and `paused`; before, only some status paths did. The frame is additive; no existing field or route changed.
+
+**Sessions carry tags** — a session can carry its own managed tags, set when it is started (`tags` on the start request) or afterwards with the new `POST /api/sessions/tags` route (`{id, tag_ids}`, short or full session ID). The tags are stored with the session and survive a daemon restart; a duplicate tag is dropped and an unknown tag is refused with 404 before anything is written. A session spawned by an Automaton also shows the Automaton's tags as read-only `inherited_tags`, computed on each read and never stored, so changing the Automaton's tags changes what its sessions show. Session list and detail responses gain `tags` and `inherited_tags` (additive; no existing field changed). Deleting a tag is refused with 409 while an Automaton or a session still carries it, and the count covers both. The route needs the federation sessions-write capability.
+
+**Tag browsing reaches MCP, the CLI and the comm channel** — the MCP tag list takes a `counts` flag, `autonomous_prd_set_tags` takes an optional `primary_tag_id` (sent alone, it changes only the primary and keeps the tags), and two tools are new: `session_set_tags` (a session's own tags; write capability) and `autonomous_attention_list` (read capability). The CLI gains `autonomous tag-list --counts` (also `autonomous tags`), `prd-set-tags --primary <tag id>`, `autonomous attention`, and `datawatch session tags <id> --tags <list>`. The comm channel gains `autonomous tags [counts]`, `attention`, `session-tags <session id> <tag ids>` and `set-primary <prd id> <tag id|none>`. Each surface sends the same REST request as the others. `POST /api/autonomous/prds/{id}/set_tags` now accepts a body with `primary_tag_id` and no `tag_ids`, which keeps the current tag set; a body without `tag_ids` that sends no `primary_tag_id` still clears the tags, as before.
+
+**Tag counts, primary tag, attention list and Automation tags** — `GET /api/autonomous/tags?counts=true` adds `subtree_count` and `direct_count` for Automata and `session_subtree_count` and `session_direct_count` for sessions (a session counts through its own tags and the tags it inherits), and the reply carries an `untagged` object. Each Automata list item carries its tags (`tags` in the summary view, `tag_ids` in the full record) with its task and story counts unchanged. An Automaton has an optional `primary_tag_id`, set through `set_tags` and refused with 400 unless it is one of the Automaton's tags; it is used only for sorting. The new `GET /api/autonomous/attention` returns the Automata in the attention statuses (blocked, needs_review and paused by default) and every Automaton with a task held for review. An Automation list item carries a computed `tags` array, the union of its member Automata's tags; nothing is stored on the Automation. All additive; no existing field or query parameter changed.
+
+## v9.18.0 — Judge routing policy and time limit
+
+The judges (the Automaton guardrail, plan review and other autonomous judges) now have their own role in the verifier routing policy, a time limit, one attempt per backend and a visible hold when they cannot finish.
+
+- **The judge role defaults to the verifier policy.** `autonomous.judge_policy` is an ordered list of backends for the judges. Empty, the judges follow the verifier routing policy, so a later change to the verifier policy reaches them too. A unit that pins its own guardrail backend keeps that backend as its only choice.
+- **Three modes for judges.** `fixed`, `prefer-free` and `balance` apply to judges as they do to verifiers. Under `prefer-free`, a judge whose local slots are full runs on a Claude backend in the list when that backend has a free slot and the Claude session cap allows it.
+- **A time limit for each judge run.** `autonomous.judge_timeout_seconds` defaults to 30 minutes. It counts the judge run only, not the wait for a capacity slot. The judge uses the same capacity leases as verifier sessions.
+- **One attempt per backend.** A judge that times out on a backend moves to the next one. Timed-out attempts are kept across a daemon restart, so a backend is not tried twice.
+- **Alerts.** Each timeout raises a warning that names the Automaton, the backend, the time spent and the next backend. When every backend has timed out, the Automaton is held in `needs_review` with a judge-timeout verdict, and an error alert lists every attempt. Nothing is approved, passed or blocked silently.
+- **Settings on every surface.** YAML, REST, MCP, the CLI (`autonomous config-set --judge-policy --judge-timeout-seconds`), the comm channel (`autonomous judge-policy` and `judge-policy-set`) and the PWA Settings autonomous card.
+- **Docs.** A new how-to, [howto/judge-policy.md](docs/howto/judge-policy.md), covers the role, the modes, the time limit, the alerts and how to resolve a hold. The API reference and the testing tracker are updated to match.
+
+## v9.17.6 — Pi-prompt workers lease the compute node they run on
+
+### Pi workers are placed on the least-loaded healthy node and launched on the node they leased
+
+- A `pi` or `pi-prompt` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
+- A node that is not in the compute registry, or is inside a maintenance window, is skipped. The waiting reason names it, for example `waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: unhealthy; gpu-box-2: 2/2 engines in use, held by ...`.
+- A worker whose model has no provider (for example `qwen3.8:27b`) takes the provider of the backend's configured model, so it is admitted on the node it will actually run on.
+- A worker is launched against the node its lease names, including when the LLM entry lists only one node. If a worker holds capacity but no node was leased while its entry lists nodes, it is no longer launched on pi's default endpoint; the task fails with an error saying no compute node was leased.
+- Sessions adopted after a daemon restart are counted once against pool limits, including those whose lease had already been handed to the verifier, so a pool no longer reads above its real use.
+- A leased node is asked to load the model by its own name (`qwen3.8:27b`), not the provider-qualified name the lease carries (`ollama/qwen3.8:27b`). A real Ollama node answers 404 to the qualified name, which used to drop that node on every attempt and leave a two-node entry running on one node.
+- Sessions that start at the same moment no longer share a node address. The pi backend is one object for every session and its node address was set just before each launch, so a worker could be started against another worker's node; starting and restarting a session now hold a lock from the first per-session setting until the launch has read them.
+- Docs: [`compute-nodes.md`](docs/howto/compute-nodes.md) has a new section on how a pi-family worker picks its node, and [`compute-routing.md`](docs/howto/compute-routing.md) no longer says list order decides.
+
+## v9.17.5 — One start tracker for launched and adopted workers
+
+### One start tracker for launched and adopted workers
+
+A worker the daemon launches and a worker adopted after a daemon restart now share one start tracker and one limit, so the two paths cannot drift apart. The setting `autonomous.session_start_confirm_seconds` and its 120 second default are unchanged, and start failures are booked the same way on both paths. Behaviour is unchanged on both paths. A launched worker's start-confirm clock still starts at the first check that finds it silent, and an adopted worker is still measured from the last evidence of life it left before the restart.
+
+## v9.17.4 — A held task can be resolved while its Automaton keeps running
+
+### Fixed
+
+- A task held for review can now be retried or cancelled while its Automaton is still running other tasks. The decision no longer needs the Automaton to be idle, and no second executor is started: the running executor is woken, re-reads the Automaton and launches the retried task, or fails the dependents of a cancelled one. This holds for both the one-task-at-a-time executor and the concurrent one.
+- The five second wait, and the "executor still finishing" error it ended in, are gone from the held-task decision. The REST, MCP and CLI `resolve_task_review` calls no longer answer 400 for this reason while the Automaton runs.
+
+## v9.17.3 — Workers are not launched in an unregistered worktree
+
+### Automaton workers no longer launch in an unregistered worktree
+
+An Automaton worker is no longer launched in a project directory that is not a registered worktree of the repository holding the repository root marker files. When the directory is not registered, the launch is refused and an alert naming the Automaton is raised instead of the worker starting. A worktree directory that has gone missing is also no longer recreated as an empty repository when a session starts, so a worker can no longer run against a blank repository that has none of the project's history. To recover after the alert, repair the directory, for example by re-adding it with `git worktree add`, and run the Automaton again.
+
+### Shared navigation fits phone widths
+
+The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
+
+**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+
+## v9.17.2 — Pi-prompt workers are no longer closed while still running
+
+### Node-hosted pi runners are seen as alive
+
+- The liveness probes now recognise a pi runner that node hosts. The kernel names such a process `MainThread`, so the probes missed it; they now also read the script node runs and treat a script named after a runner as that runner.
+- The pi-prompt idle check counts a live runner as work. A one-shot pi print run generates with no child process, so a runner that was alive and generating no longer reads as idle and is no longer ended by the session idle detector. Other backends still count only work children.
+- Held-task reviews and the attempt record carry the pi exit status, the last pane output and the process list when a pi-prompt task stalls. The new attempt fields are `runner_exit_status`, `runner_last_output` and `runner_processes`; they are optional and appear only when evidence was captured. The review report and the next attempt's prompt print them, and the stall error names the exit status when pi returned one.
+
+### Shared navigation fits phone widths
+
+The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
+
+**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+
+### One start tracker for launched and adopted workers
+
+A worker the daemon launches and a worker adopted after a daemon restart now share one start tracker and one limit, so the two paths cannot drift apart. The setting `autonomous.session_start_confirm_seconds` and its 120 second default are unchanged, and start failures are booked the same way on both paths. Behaviour is unchanged on both paths. A launched worker's start-confirm clock still starts at the first check that finds it silent, and an adopted worker is still measured from the last evidence of life it left before the restart.
+
+## v9.17.1 — Idle worker nudge fires after the turn
+
+**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+
+**Idle claude-code workers at the empty prompt are nudged after their turn** — a claude-code worker that finished its turn and sat idle at the empty prompt was never nudged, so only the session idle detector ended it, after the full idle limit. The confirmed cause was in the post-turn wait: it read the backend family once, when the wait started, so a session that was not yet visible then never got a nudge tracker. The wait also measured idleness from the log file's age, so pane redraws held the idle clock below the window, and a template line `DATAWATCH_COMPLETE: <summary of this task>` counted as a completion and ended nudge tracking. The fix reads the family on every tick until the session is visible, starts the idle clock at the start of the idle run, and no longer treats template placeholders as completions. The nudge now applies to every claude-code worker in the post-turn wait whatever the task status shows, and the fresh and adopted waits share one nudge decision. Logging: the wait start logs the backend family, whether the nudge applies, the windows, the session idle limit and whether a nudge is persisted, and warns once per wait when the nudge window is not shorter than the idle limit; each nudge, answer and stall is logged with its session and task. The idle detector's end reason now ends with the session's nudge history (`no nudge sent`, or `nudge N sent at <time>, outcome <sent|answered|stalled>`). `GET /api/config` returns the effective nudge and stall windows as read-only keys (`worker_idle_nudge_effective_seconds` and `worker_idle_nudge_stall_effective_seconds`); no setting or surface changes. Tests cover the empty-prompt reproduction and its variants (late-visible session, pane redraws, template echo, verifying status), late and replaced sessions, the log and end-reason wording, the effective-value read, and three executor-level scenarios (a verifying worker holding only its worker lease, an adopted session after a restart, nudge then stall then retry).
+
+## v9.17.0 — Lifecycle events to a webhook or a federation peer
+
+- A new `webhook` subscription sink POSTs each matching Automaton lifecycle event over HTTPS to a receiver the operator runs. Each request is signed with HMAC-SHA256 and carries a delivery id and an event kind header.
+- Webhooks are only sent to hosts on an operator-set allow-list. The signing secret is held in the secrets vault and referenced as `${secret:name}`; a literal value is refused, and the resolved value is never stored, logged or audited.
+- A failed delivery is retried with backoff. A delivery that is still failing after the last attempt raises one alert and writes an audit record. Redirects are not followed, and a private or loopback address is refused unless its host is on the allow-list.
+- A new `peer` subscription sink forwards each matching event to a registered federation peer. A forwarded event is never forwarded on again, and a loop is refused by origin host, visited list and hop cap.
+- Both sinks are disabled by default. Until the operator turns on `autonomous.notify.webhook.enabled` or `autonomous.notify.forwarding.enabled`, a subscription with that sink is refused at creation, and a stored one delivers nothing. The settings are available in YAML, the CLI, the Settings card, REST and the comm channel.
+- The subscription surfaces (REST, MCP, CLI, comm channel and the PWA Subscriptions tab) accept the new sink types. The retry counts, signature format and payload shape are the proposed defaults, pending the operator's confirmation.
+
+## v9.16.2 — Shared navigation mobile fit
+
+The shared navigation bar and the other cross-tab elements now fit narrow phone screens. The reusable mobile-fit checker found overflow and clipped controls in the elements every tab shares, and the markup and stylesheet are corrected so the bar and shared controls stay inside the viewport at 320 pixel width and are unchanged on desktop. A browser story and a probe run the checker against every tab at phone and desktop widths, the release smoke gained a shared-navigation section, and a how-to documents the fit rules. Test evidence from the live sandbox run is stored under the testing runs folder.
+
+## v9.16.1 — Restart during session launch never adopts a dead worker
+
+A daemon restart during a session launch no longer leaves a dead-on-arrival worker adopted as alive. Boot adoption now checks that the session is a really started agent (an agent-started predicate on the session manager) before adopting it, the start-confirm bound applies to adopted sessions and is measured from the session's last evidence of life, launches in flight are tracked and drained on shutdown, and start failures are booked the same way on the adopted and the worker path (including the failure escalation attempt record). The restart matrix has a restart-during-launch state, with fake-backed tests for the four cases and a live sandbox run documented in the operations guide.
+
+## v9.16.0 — Per-Automaton notify events
+
+Each Automaton can set which lifecycle events notify, with the precedence the operator decided: a per-Automaton notify_events list overrides the profile and the profile overrides the global default. The default set is needs_review, blocked, failed, completed and cancelled, and any other kind (including the new task.review_needed) can be added. The effective list is shown in the Automaton detail view, the guardrail profile panel and on every configuration surface (config file, REST, MCP, CLI, comm channel, PWA) with the five locale bundles, with tests for the precedence and the defaults, a how-to and tracker rows.
+
+## v9.15.0 — Pi workers and judges balanced across the GPU nodes
+
+Pi workers and judges now run on the compute node whose slot they hold. An LLM entry's `compute_nodes` list is a pool: admission picks the highest-priority node with a free slot (one engine per GPU), loads the model on it and waits, fails over to the next node with an error alert if the load fails, and a one-node entry behaves exactly as before. The chosen node drives where the worker really runs: the pi launch gets that node's provider through a per-session configuration directory. Verifier and guardrail judge sessions take node leases like workers, with the verify lease handed off on the same node. The slot count per node is derived from observer data (free GPU memory, or free system memory for a CPU-only node, against the served model size, floor 1), with a new per-node `session_slots` override on every surface that wins over the derived figure, and `max_concurrent_sessions` still caps the result; nodes that host no local engine keep `max_concurrent_sessions`. The capacity card and view show the node each worker holds and a pool summary line with the free slots across the pool. Two workers are tested to hold different nodes.
+
+## v9.14.3 — Verifier watchdog spares slow healthy verifiers
+
+The verifier no-progress watchdog no longer ends a slow but healthy verifier. A verifier counts as making progress while its runner process is alive or it holds a capacity slot, the single setting autonomous.verifier_no_progress_timeout_seconds now defaults to 900 seconds, time spent waiting for a capacity slot does not count against the limit, and a verifier judged hung is handed to the fallback verifier backend at once under the existing infra escalation threshold. Documented in the operator docs, with a live smoke for a slow healthy verifier.
+
+## v9.14.2 — Observer tab fits phone, tablet and desktop
+
+The Observer tab now fits phone, tablet and desktop widths. A reusable mobile-fit checker drives the Observer view through a matrix of viewports, themes and zoom levels and reports clipped text, overlap, edge crossing and small tap targets; the Observer and system statistics layouts are fixed against its findings (per-system cards collapse to one column on narrow screens, text wraps or truncates with a tooltip, section scrolling and compact units fixed), and the stats requests that the sub-loaders fired separately now share one in-flight request. Two guard stories keep it fixed (an Observer regression guard and a desktop and tablet baseline guard), there is a mobile-fit step in the release smoke and a `make test-e2e-mobile-fit` target, and the design is documented in the Observer mobile-fit plan. The very large generated evidence reports from the investigation are not included; the small post-fix and other-tabs reports and the repro summary are.
+
+## v9.14.1 — Idle workers are nudged and retried
+
+Idle claude-code workers at an empty prompt are now nudged and retried. The idle nudge counted every child process of the session as work, including the session's own channel and MCP server children, so a worker sitting at an empty prompt was never nudged; only children that are real work now count. Nudge events are scoped to their session and the tracker is seeded after a daemon restart that adopts the session, the nudge-aware wait runs for adopted sessions, and every nudge, stall and retry is logged with the session and task ids and recorded on the task. Tests cover an idle session with an MCP child, a real work child, an adopted restart, and nudge then stall then retry.
+
+## v9.14.0 — imap_mcp channel config parity
+
+The imap_mcp messaging channel can now be configured everywhere the other messaging channels can: GET /api/config returns an imap_mcp block with the token masked, applyConfigPatch accepts imap_mcp.enabled, url, account, subject_prefix, to and token (an empty value or the masked placeholder never overwrites the stored token, and an explicit empty value clears a field), and the PWA settings page lists imap_mcp with url, account, to, subject prefix and a password-type token field. The messaging backends documentation is updated and tests cover the patch, the masking and the settings page. This finished work from the original imap_mcp parity PRD never reached main and was found by the content-based branch audit.
+
+## v9.13.0 — Compute node usage on the capacity card
+
+The capacity card on the Automation sub-tab shows live usage for each compute node next to its slot pool: the loaded model with its memory and expiry, slots held of the limit, and GPU utilization and GPU memory from the observer. The figures are cached with short timeouts so a slow node never blanks the card, and a node with no observer shows only the slot figures. The same usage is available over REST, MCP, the CLI and the comm channel, with the five locale bundles.
+
+## v9.12.0 — Failure escalation policy for repeated task failures
+
+Repeated task failure escalation is configurable. A policy lists the worker backends and models to try in order, and after a configurable failure count (default 3) a task stops retrying and goes to operator review with a summary of every attempt (backend and model, time spent, what changed, the verifier report). Each retry prompt carries what earlier attempts failed on, so a stronger worker gets full context. The operator can retry, change the spec, change the worker, narrow the scope or cancel from the Automaton view, the CLI, REST, MCP and the comm channel. The policy is a global default with per-Automaton and per-task overrides and appears on every configuration surface, with the five locale bundles.
+
+## v9.11.1 — Start detector survives long silent first actions
+
+The session start detector no longer ends a worker whose first action is a long silent tool call. Start is measured from the last evidence of life (pane change, process activity, output file) instead of from adoption after a restart, so a restart no longer ends adopted workers after the grace period. The busy worker state after task delivery is fixed and its cause documented, the restart matrix covers these states, and four scenario tests with fakes lock the behaviour.
+
+## v9.11.0 — Automatic lane fill in shadow mode
+
+Automatic lane fill in the Automation coordinator, in shadow mode first. Each poll the coordinator computes, for every idle lane (two local GPU channels as one pool and a configurable number of Claude channels), which eligible PRD it would start and why, and what blocks each idle lane. In shadow mode it records every decision as an audit entry and starts nothing; the operator compares that log with what was actually done before switching it on. Eligibility respects holds, sequencing and the operator's lane count and usage policy; an idle lane with eligible work raises an alert after a configurable time. Configuration is on every surface (config file, REST, MCP, CLI, comm channel, web settings with the five locales), with a lane fill card on the Automation sub-tab and a how-to.
+
+## v9.10.4 — Judges obey the capacity limits
+
+Guardrail and plan-review judge sessions now take capacity leases like verifiers and workers. A judge waits when its pool is full, releases its lease when it ends or fails, and a restart mid-judge neither leaks the lease nor starts a second judge. The lease reaper treats a judge lease by the same rule as a verifier lease, and the capacity view lists queued and running judges by a readable name. Judge routing through the verifier policy and the time limit with retry are follow-up work.
+
+## v9.10.3 — Status cards only on the Automation sub-tab
+
+The Progress card and the capacity card now appear only on the Automation sub-tab. They are removed from the Automata and Templates sub-tabs, load only when the Automation sub-tab is selected, and stop their polling when the operator leaves it. The Automation sub-tab shows its capacity card exactly once, and the PRD detail view has no progress card. Node tests and browser stories updated for the new placement.
+
+## v9.10.2 — Stall detector limited to opencode sessions
+
+The stall detector, written for opencode losing its Ollama connection, now applies only to the opencode family, decided from the session's backend and not from its output. For those backends it matches the provider error line as the tool prints it, not a bare phrase anywhere in the last 300 lines, and text already present at the previous scan does not match again. Claude and pi sessions are never ended by it, so a task that writes or tests network code (connection refused, deadline exceeded) is no longer ended mid-run. Each end records the matched line, the backend and the scan source in the end reason.
+
+## v9.10.1 — Restart matrix for in-flight work
+
+The restart matrix runs the daemon restart scenarios from the BL590 plan (adoption of live sessions, launch windows, in-flight tasks, verifier sessions) in a sandbox and records each result; the matrix is wired into the release smoke, with strict mode for the final gate. Restart behaviour fixes found by the matrix are included. Documented in the operator docs and the testing tracker.
+
+## v9.10.0 — Plugin widget data gated on plugin:read and plugin:write
+
+Plugin widget data endpoints now gate on the new `plugin:read` and `plugin:write` federation capabilities instead of `config:read` and `config:write`. Federation peers must be granted them explicitly; full-control, the operator token (PWA, mobile, CLI) and session-scoped credentials are unaffected. Tests cover the capability checks for every widget route. This finished work from the plugin widgets series sat unmerged on its branch and was found by the content-based branch audit.
+
+## v9.9.1 — Orphan sweep no longer ends live workers
+
+Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.
+
+- The sweep compared the full session id from the session lister (`host-8b57`) with the short id tasks store (`8b57`), so no live worker ever counted as bound to its task, and each was ended once the five-minute grace passed. A single id helper now returns one normalised form, used by the sweep, the boot adoption path and the reset path.
+- Regression tests use production-shaped ids (full on one side, short on the other): a live worker is never ended, a true orphan still is, and a table test covers short, full, empty and mixed-host ids.
+- The sweep logs once when it sees a live worker whose id form matches no task id form, so a future mismatch is visible.
+
+## v9.9.0 — Bounded websocket session list with per-session updates
+
+Stops the daemon from pushing the whole session list to every client over the websocket, which made the PWA slow, laggy and unstable and could stall a session view on a phone link.
+
+- On connect the websocket sends only what the default session list shows: active sessions and finished sessions inside the recent window (the same recent-minutes setting the PWA already uses, default 5 minutes), as small summary rows. A state change sends only the one changed session. Finished sessions older than the window are never sent over the websocket; Show history fetches them over the paged REST list.
+- Clients announce the new form in their hello (`session_list: window`). Older clients that do not announce it still get the `sessions` frame, now bounded to the same default-view rows with a flag saying more exist, so the Android and iOS apps keep working until they adopt the new form.
+- A byte-budget test on the hub with a 4,000-session fixture and a browser story that measures websocket bytes for a cold connect, a reconnect, an idle session and Show history.
+- Documentation for the new message shape and a note for the datawatch-app clients.
+
+## v9.8.2 — Internal-ID check in the development lint
+
+Adds the internal-tracker-ID check to the datawatch development lint, so a change that puts a tracker id in user-facing text fails before it ships. This is development tooling for the datawatch repository only; it does not change how any user project is linted or gated.
+
+- New `make check-internal-refs` target, run by `make lint` and by the release workflow.
+- The branch merge helper runs the check on the main tree before merging, when the repository defines the target.
+- A regression test proves the check fails when a tracker id appears in user-facing text and passes when it does not.
+- Development documentation updated.
+
+## v9.8.1 — Every session end records who ended it and why
+
+Every session end now records who ended it and why, so a worker that is ended early can be traced instead of vanishing without a reason.
+
+- A reason-bearing end API in the session manager. Every path that ends a session goes through it and writes a `killed` timeline line with `by=` and a reason, and a journal line.
+- Every caller is attributed: the daemon shutdown and cleanup paths, the executor, the orphan sweep, the lease reaper, and the REST, MCP and comm-channel kill commands. A hook event such as Stop or SubagentStop is recorded as not ending a session.
+- A guard test fails if any code ends a session without going through the reason-bearing helper.
+- This is the first part of the investigation into Claude workers being ended about five minutes after their task is delivered; the reproduction and fix follow once real runs show the recorded reason.
+
+## v9.8.0 — Progress dashboard for the Automata
+
+The Automata tab now shows how far the work has got and roughly when the rest will be done, and the same numbers are available everywhere.
+
+- A metrics engine computes counts by kind (feature or bug) and state, elapsed and active time with inactive windows excluded, throughput per day, lane utilization, known versus estimated remaining work and a completion range.
+- A PRD kind field (feature or bug, defaulting from its registry row) and a machine-readable backlog read from the roadmap rows.
+- The same metrics object on REST, MCP, CLI and the comm channel, with daily snapshots and a trend view.
+- A Progress card on the Automata tab, with loading, stale and failed states and a Retry button.
+- Settings `autonomous.progress.lanes`, `inactive_gap_hours`, `snapshot_retention_days`, `backlog_path` and `since`.
+- A golden test compares the engine's numbers with the supervisor status script on a fixed fixture.
+
+## v9.7.0 — Automation is the first sub-tab of the Automata tab
+
+The Automation view is now the first sub-tab of the Automata tab, to the left of Automata and Templates, instead of a second main navigation page, so everything about running work is in one place.
+
+- Opening the Automata tab lands on the Automation sub-tab, since Automation is the high-level view and you dig deeper from there. The last sub-tab you chose is not remembered.
+- The separate Automation navigation button and page are gone. The enable gate is unchanged: the sub-tab shows only when the autonomous subsystem is enabled.
+- Every old link, route and alert link that pointed at Automation lands on the Automata tab with the Automation sub-tab selected and the item opened.
+- The sub-tab bar fits at 320 px wide with 40 px tap targets and adds no horizontal scroll. The Automation data loads only when its sub-tab is selected, with no full-list request.
+- Locale strings in all five locales, updated tests and browser stories, how-to and testing tracker rows.
+
+## v9.6.1 — Paged Automata list and small reconnect refresh
+
+Stops the web UI from downloading full lists on load, reconnect and refresh.
+
+- The Automata tab now loads the paged summary list (50 rows per page with a Load more control, as on the sessions tab) instead of the full list of about 360 MB. Opening a row fetches that one PRD in full, children load on expand, and the loading, cached, stale and failed states with Retry apply.
+- The reconnect refresh in the non-local session mode is one small summary request instead of the full session list of about 35 MB.
+- Every other list call in the web files was audited. Those that run on a tab open, a reconnect or a timer now use the summary form, and the ones left alone are listed with the reason in the audit test.
+- A byte-budget ratchet test fails when a list endpoint is requested in the full form from a load, reconnect or timer path, and a browser story checks the bytes and the number of requests for a dropped and restored connection.
+
+## v9.6.0 — mcp.public_url for the MCP SSE endpoint behind a reverse proxy
+
+Adds `mcp.public_url` so the MCP SSE endpoint works behind a reverse proxy. Contributed by Cairn Viktor (external pull request 208, fixing issue 207).
+
+- The SSE `endpoint` event used to advertise the first `mcp.sse_host` bind address, so behind `tailscale serve`, Caddy or nginx remote clients were told to POST to `http://127.0.0.1:8081/message` and every tool call failed.
+- With `mcp.public_url` set (whitespace and trailing slashes trimmed) it is used as the advertised base URL. With it empty the advertised URL is exactly what it was before.
+- Review additions on top of the contribution: the value must be empty or an absolute http or https URL, the setting appears on every config surface (REST, MCP, CLI, comm channel, PWA settings and the config reference) with parity tests, and the keep-alive option of the SSE server is kept.
+
+## v9.5.126 — PRD commits stay inside the declared scope
+
+Checks the three PRD commit-scope rules and closes the one gap found.
+
+- A PRD commit stages only the files under the task's declared write directories, and a worktree-mode PRD scopes to its own worktree. Both were already enforced, and the verification report names the code path and test for each.
+- A direct-mode PRD with no declared write directories no longer commits automatically. That was the gap: it is now covered by a code change and tests.
+- New tests check that the write directories and the worktree path reach the session start request, and that the direct-mode case does not commit.
+- The verification report is in `docs/plans/2026-10-23-prd-commit-scope-verification.md` and the testing tracker is updated.
+
+## v9.5.125 — Restart keeps a finished worker and re-verifies only
+
+A daemon restart no longer redoes a worker that had already finished.
+
+- A task that was verifying when the daemon stopped, whose worker had finished and left a completion marker or a recorded result but no verdict, now keeps the worker's work. Only the verification is run again. The worker session is not ended and no retry is counted.
+- A verifying task whose worker did not finish is still reset to pending, as before.
+- The decision is a small pure function with a table test, plus a restart-adoption test with fakes for the finished-worker case.
+- The restart-adoption notes and the testing tracker are updated.
+
+## v9.5.124 — Flexible verifier routing
+
+Verifier backend selection is now a policy instead of a fixed global setting, so verification can use whichever backend has a free slot, all local, all Claude, or a mix.
+
+- New `autonomous.verifier_policy` with an ordered list of eligible backends and a mode: `fixed` (default, the previous behaviour), `prefer-free`, `balance`, `gpu-only` or `claude-only`. It can be overridden per PRD and per task.
+- The backend is picked at verifier launch through the capacity ledger, so a verifier does not wait on a busy backend when another eligible one is free. The chosen backend and the reason are written to the task record and the audit log.
+- A retry after a local verifier failure, or a final gate, can force a stronger verifier (default Claude Sonnet).
+- A per-window cap on Claude verifier sessions limits usage, and an active usage hold removes Claude backends from the list.
+- The policy is available over YAML, REST, MCP, the CLI, the comm channel and the PWA settings, with parity tests, plus an operator how-to and testing tracker rows.
+
+## v9.5.123 — Hermetic session-starting server tests
+
+Makes the session-starting server tests hermetic so they no longer fail when the host terminal multiplexer is busy.
+
+- The server tests that start sessions through the handler now use the package's fake multiplexer instead of a real one, so a loaded host can no longer make `TestHandleDeleteSession_MemoryStrategyPurge` fail with "create tmux session: exit status 1".
+- The server test binary can no longer reach the operator's multiplexer: `TMUX` is cleared and `TMUX_TMPDIR` points at a fresh temporary directory for the whole run, checked by `TestTmuxEnvIsolated`.
+- One explicitly named live test, `TestLiveTmuxSessionStartDelete`, starts and deletes a real session. It is behind the `livetmux` build tag and `DATAWATCH_LIVE_TMUX=1`, and refuses to run unless the multiplexer is isolated.
+
+## v9.5.122 — Harness-only commits and non-project refusal
+
+Only the harness commits, and only after validation passes. A worker can no longer bypass the validation gate by running git commit itself.
+
+- Sessions started by the harness for an automation task or a validated one-shot get a per-session git hook set, installed through a harness-owned hooks directory outside the worktree. A commit without the harness token for that session is rejected with a message saying the harness commits after validation.
+- The hook set is removed when the session ends and when the daemon adopts or reaps the session, so a restart leaves no hooks path behind in a worktree.
+- Automatic commits are refused in a directory that is not a project: the home directory, a filesystem root, or a directory with no repository and no project marker. One audit line is logged and nothing retries.
+- Tests cover a rejected worker commit, a harness commit after validation, a failed validation leaving no commit, cleanup on session end and on restart adoption, and the home directory refusal. A live check runs in a throwaway repository.
+
+## v9.5.121 — Per-record session and PRD stores
+
+Stops the daemon from rewriting its whole session and PRD files on every change, which kept a CPU core busy and made API calls take seconds.
+
+- Each session is stored in its own record file and each PRD in its own record, with large text moved to side files. An old `sessions.json` or `prds.jsonl` is migrated once and the original is kept as a backup.
+- A background writer coalesces bursts of updates into one write and flushes on close.
+- Old finished sessions can move to an archive file, and oversized stored fields are cut with a marker.
+- New settings: `session.store_flush_interval`, `session.store_archive_after_days`, `session.store_field_cap_kb` and `session.store_side_file_cap_kb`, on every config surface.
+- A benchmark and a write-budget test guard against the problem returning.
+
+## v9.5.120 — Web UI load checks and list-endpoint guide
+
+Adds the load-performance checks and documentation for the web UI list endpoints.
+
+- The PWA runner and the release smoke now include web UI load scenarios.
+- List endpoints and tabs are measured against a live-style data set of thousands of sessions and hundreds of Automata, with the results recorded in the plan note.
+- New how-to `list-endpoints-and-paging` explains summary views, paging, ETag and 304, gzip, and the loading, cached, stale and failed states.
+- Testing tracker rows added for the new scenarios.
+
+## v9.5.119 — Daemon stop-cause recording
+
+Records why the daemon stops, so a stop with no known sender can be traced.
+
+- A new `shutdowncause` package captures the signal, its sender where the platform reports it, and the parent process, then writes `last-shutdown.json` as the daemon shuts down.
+- The next start prints a startup line that names the previous stop cause, then marks the record consumed.
+- A regression test sends a signal from a child process and checks the recorded sender.
+- New `make lint` check `check-service-scope` fails any test or script that stops or restarts the production service.
+- Test and live-smoke scripts now run against their own isolated daemon instead of the production one.
+- The investigation of the 2026-10-23 05:33 stop is written up with cited evidence in `docs/plans/2026-10-23-daemon-stop-cause.md`. The actual sender is still unexplained.
+
+## v9.5.118 — Restart-safe task sessions and orphan sweep
+
+Fixes a restart-time duplicate-worker defect where a daemon restart could leave a second worker session running for the same task in the same worktree.
+
+- The task-to-session link is now saved at launch, before the first prompt is sent.
+- Boot reconcile adopts a matching live session instead of starting another one.
+- Resetting or relaunching a task ends every live session that belongs to the task and its worktree first.
+- A periodic sweep ends orphaned automation sessions. It leaves verifier, decompose and judge sessions alone.
+- New setting `autonomous.orphan_grace_seconds` controls how long a session may be unclaimed before the sweep ends it.
+
+## v9.5.117 — Verifier watchdog, fallback verifier and a lease reaper that spares live verifiers
+
+### Fixed
+
+- **Verification no longer stalls the whole system when one verifier hangs.** A verifier session that produces no output file and no pane activity for a configurable time (`autonomous.verifier_no_progress_timeout_seconds`, default 10 minutes) is ended and recorded as an infra failure that names the watchdog, instead of waiting out the 30-minute limit. After a configurable number of consecutive infra failures on one task (`autonomous.verifier_infra_escalation_threshold`, default 2), the next verification for that task runs on `autonomous.fallback_verification_backend`, and the switch is recorded in the task and the audit log. The capacity lease reaper no longer frees the lease of a verifier that is still running, and after a daemon restart duplicate verifier sessions for one task are reconciled instead of left behind. Verifier queue wait, run time and failure counts are reported in the capacity API and the status text.
+
+## v9.5.116 — Capacity ledger callbacks no longer wait on the network or the session store
+
+### Added
+
+- **A stuck capacity ledger now reports itself.** If `/api/capacity` or the comm `capacity` reply waits more than 5 seconds for the ledger lock, the daemon logs `capacity ledger lock held for N seconds` once, with the stacks of the goroutines inside the capacity package, so the holder is visible without a debugger. No new config key.
+
+### Changed
+
+- **The shared-node check now reads cached peer usage.** Federated peers' capacity counts are kept in memory and refreshed at the end of each fingerprint sync pass (and once at daemon start), so the admission path never makes a network call. Peers that have not opted in are never contacted. No new config key.
+
+## v9.5.115 — The session list legacy-shape test no longer flakes under load
+
+### Fixed
+
+- **The session list legacy-shape test no longer fails sometimes under load.** `TestSessionListPageLegacyUnchanged` compared a response built from wall-clock timestamps with one rebuilt a moment later, and it depended on state shared with earlier tests. The test now uses fixed timestamps and builds the expected body from the same snapshot, and the sibling tests got the same treatment. This was the last known cause of release test-step failures.
+
+## v9.5.114 — Capacity rate ceilings and a non-blocking admission query
+
+### Added
+
+- **Capacity pools can carry requests-per-window and tokens-per-window ceilings.** A pool may now limit the number of requests and the number of tokens over a rolling window in addition to its concurrency limit, reusing the window mechanism of the dollar budget. Admission checks every dimension that is set; a pool with no ceiling behaves exactly as before. The keys are on every config surface, and a wait caused by a rate ceiling shows in the capacity API, the wait-reason text and the audit events with the reset time when known.
+- **Admission can be asked without waiting.** A new `Decision` result (admit, queued, or alternate available) reports a waiting request's queue position and idle capacity found elsewhere, and a non-blocking `Status` query returns it without taking a lease or changing state. It is available on REST and MCP read endpoints and in the CLI and chat capacity text; the blocking `Acquire` that existing callers use is unchanged.
+
+## v9.5.113 — Release scan unblocked for one Brotli finding in the agent image
+
+### Fixed
+
+- **Release scan no longer blocked by one Brotli finding in the agent image.** CVE-2026-111497 in `libbrotli1` has no fix in Debian bookworm. A scan of the built image found that only curl, libcurl and git's HTTP helpers link the decoder, and it can only be reached through a hostile git remote that the operator configured, so it is traced and suppressed in `.trivyignore`. This publishes the releases whose scan it blocked.
+
+## v9.5.112 — Optional local-model decision assistant for Automations
+
+### Added
+
+- **An optional local-model decision assistant for Automations.** An Automation, or one of its members, can name a backend and model from the LLM registry and enable any of four hook points: resolving an empty blocked or failed edge, pre-screening a skip, triaging a mid-flight insert, and choosing between pausing and blocking at a budget breach. At each enabled hook the coordinator gives the assistant a bounded evidence packet and gets back a chosen option, a confidence and a one-sentence reason. A confidence below the per-hook-point threshold, an unparseable answer, a timeout or an unreachable model always escalates to the operator exactly as before, and a hard guard stops the assistant from ever cancelling in-flight work, removing a started member, raising a budget ceiling or overriding a human sign-off. Every decision is recorded with the actor `assistant:<model>`, and a shadow mode records what it would have decided without acting. It is off by default, settable on REST, MCP, the CLI and chat, and shown in the web Automation detail view.
+
+## v9.5.111 — The session input audit test no longer fails on temp-directory cleanup
+
+### Fixed
+
+- **The session input audit test no longer fails on temp-directory cleanup.** `TestGH201Phase4_SessionInput_Audited_NeverLogsTheText` still failed now and then because a goroutine kept writing into the test's temporary directory while the cleanup removed it. Every late writer the test fixture starts is now stopped or waited for in a cleanup that runs before the directory removal, the same fix is applied to the other tests that use the fixture, and a gate shows 100 of 100 pinned, loaded runs passing.
+
+## v9.5.110 — Capacity admission no longer deadlocks on the shared-node check
+
+### Fixed
+
+- **Capacity admission no longer deadlocks when a federated shared-node check runs.** The shared-node fingerprint check asked the capacity ledger for its pool usage while the ledger was already holding its own lock to decide whether a waiting task could start, so the first task that had to wait on a node pool froze the ledger: `/api/capacity` and `/api/autonomous/status` hung, no waiting task was ever admitted, and the daemon sat near 100 percent CPU. The ledger now hands the check the held count and limit, and a regression test fails if a ledger callback can read the ledger back.
+
+## v9.5.109 — Fast web UI loading with summary lists and loading states
+
+### Changed
+
+- **The web UI loads fast and says what it is doing.** The Automata and Sessions lists no longer return every PRD's full stories and every session's full task text: the list endpoints return summaries with paging, filters and an ETag, so an unchanged list costs a few bytes, and full objects load on demand when a row is opened (the old full form stays behind an explicit query flag for the CLI and MCP). On the live system the PRD list was 339 MB and the session list 32 MB; the data that made one PRD 13 MB is moved off the list path. A performance budget test with a seeded large data set fails the build if a list response grows past its limit.
+- **Every list shows a loading state, a failed state with Retry, and a real stale warning.** The Sessions, Automata, Automation, Observer and Alerts tabs show a skeleton and a "last updated" line, render the last good response instantly from cache while the fresh one loads, ignore superseded responses, and fetch their endpoints in parallel. The live-update connection and its reconnect are reviewed and fixed.
+- **The Automation tab has an empty state and the capacity card.** With no Automations it shows a clear "No Automations yet" message with a Create button, and it now shows the same capacity and queue card as the Automata tab.
+- The slow-network end-to-end scenarios for these tabs are written; wiring them into the release smoke is a follow-up.
+
+## v9.5.108 — The capacity view names what is running and waiting
+
+### Changed
+
+- **The capacity view now names what is running and what is waiting, instead of showing raw ids.** Pool holders, waiting tasks and PRDs in the capacity API, the wait-reason text, the capacity text on the CLI, chat and MCP, the audit details for admission waits, and the Automata and Automation capacity cards show the PRD title and task title first, with the short id as a secondary reference. For example "Observer mobile fit / Record the desktop and tablet layout baseline (dbd50015)", "Verifying: <task title>" and "Planning: <PRD title>". The existing id fields stay in the API for scripts. Long titles are shortened with the full text in a tooltip, a deleted PRD shows as untitled, and one cached title lookup keeps the polled capacity call fast.
+
+## v9.5.107 — Role tags on LLM entries and session priority in admission
+
+### Added
+
+- **LLM registry entries can carry role tags.** An entry has an open list of roles (for example planning, verification, council), set with a `roles` parameter on `llm_add` and `llm_update` over MCP, REST, the CLI and chat, and edited in the web LLM editor. A call site with an explicit backend or model always wins; the role is looked up only when there is none, and an ambiguous role resolves deterministically with a warning. A contention check reports when two roles have silently converged on one entry, both on a periodic scan and when configuration is written. A Workload Roles card under Settings, Automate lists each role, its entry and any warning.
+- **Sessions carry a priority.** A session has an integer priority, set on REST, MCP, the CLI and chat and shown on the session card, and it is now passed to all four capacity admission requests that used to omit it, so independent sessions take part in the fairness ordering. The default stays 0.
+
+## v9.5.106 — Automation close-out: import-graph, parity audit and deprecation of the old graph tools
+
+### Added
+
+- **`import-graph` turns an old orchestrator graph into a draft Automation.** Available as `POST /api/automations/import-graph/{graph_id}`, the `automation_import_graph` MCP tool, `datawatch automation import-graph <graph-id> [--dry-run]` and the comm `automation import-graph <graph-id> [dry-run]`. A dry run previews the Automation and any warnings and stores nothing; a graph that cannot be expressed as an Automation is refused with the reason. A real import writes one audit entry.
+
+### Changed
+
+- **The orchestrator graph create, plan and run operations now say they are deprecated.** `orchestrator_graph_create`, `orchestrator_graph_plan` and `orchestrator_graph_run`, and their REST, CLI and comm forms, keep working but carry a notice that names `import-graph`; REST responses add a `Deprecation: true` header and `deprecation` field, and the daemon logs the warning once per operation.
+- **Every Automation operation and config key now exists on every surface.** The verb, web control, audit event and config key gaps found by the new parity audit are closed, and a parity test keeps them closed.
+
+## v9.5.105 — Automata tags: a nested tag tree to organise Automata
+
+### Added
+
+- **Automata tags: organise Automata in a nested tag tree.** Tags are managed objects (`id`, `name`, `parent_id`, `color`, `description`) saved to `tags.jsonl`, so they survive a restart; an Automaton carries several (`tag_ids`). Browse by tag in the web UI with an **include sub-tags** switch (on by default), assign from the Automaton detail view or the create dialog, and bulk tag from the action bar. A project-alias suggestion pre-ticks an existing tag but never creates one. Deleting a tag with child tags is refused; deleting a tag still assigned to Automata is refused with the count of Automata using it; moving a tag under itself or its own sub-tags is refused. Parity: REST (`/api/autonomous/tags`, `set_tags`, `GET /api/autonomous/prds?tag=`), MCP (`autonomous_tag_*`, `autonomous_prd_set_tags`), CLI (`datawatch autonomous tag-*`, `prd-set-tags`), comm channel (`tags`, `tag-*`, `set-tags`) and the web UI are covered; YAML config does not apply (tags are operator data). Android and iPhone (datawatch-app) need an issue filed at merge — spec in `docs/plans/2026-10-23-datawatch-app-tags-note.md`. How-to: `docs/howto/automata-tags.md`.
+
+## v9.5.104 — The launch-failure retry test no longer flakes
+
+### Fixed
+
+- **The launch-failure retry test no longer depends on real timers, and a data race behind it is fixed.** `TestLaunchFailureRetry_BoundedAndFailsInfra` waited a fixed five seconds on real retry timers and failed about half the time on a loaded runner, which stopped four releases from publishing. The task-exhausted failure reason in the executor was also written without the store lock; it is now set under the lock. The test and the sibling tests that waited on real backoff timers now run deterministically, and a repeat-run gate under the race detector and CPU contention guards them.
+
+## v9.5.103 — Federated daemons detect a shared compute node or billing account by hashed fingerprint
+
+### Added
+
+- **Federated daemons can now find out whether they share a compute node or a billing account, without revealing either.** Each side asks its compute nodes for their own stable identity (a GPU UUID where available, otherwise a locally stored node id) and hashes it with a key shared only by that pair of peers; an LLM entry can also carry a `billing_group` label that is hashed the same way. Only the hashes cross the wire, on a slow periodic sync, and only for peers you have switched on for fingerprint exchange (off by default).
+- **A match is never trusted automatically.** It becomes a pending match that you confirm or reject on REST, MCP, the CLI, chat or the web federation view; a confirmed shared compute node is then counted toward local admission capacity. If a peer is unreachable at admission time, admission fails open and carries on locally. Confirm and reject are audited (signature numbers 42 and 43).
+
+## v9.5.102 — The session input audit test no longer flakes
+
+### Fixed
+
+
+- **The session input audit test no longer flakes on temp-dir cleanup or under the race detector.** The background push of the session list that follows start, kill, delete and reconcile actions is now tracked so tests can wait for it, the test session helper stops the session monitor and waits for its files to settle before the temp directory is removed, and `SendInput`, `Kill`, the channel-event marker and the start response now write and read the shared session under the session store's lock instead of racing with the monitor goroutine's saves. Shipped in the next patch above main.
+
+## v9.5.101 — Task delivery waits for slow-starting Claude sessions
+
+### Fixed
+
+
+- **Task delivery to a slow-starting Claude session now waits instead of failing early.** A one-shot task's text used to be delivered as soon as the session first looked ready, but a Claude session can still be starting its channel and tool servers — and only then show its main prompt — so the delivery could race the startup and the task failed before the prompt ever appeared. Delivery of a one-shot task now waits at least 180 seconds by default for the main prompt before giving up: `session.task_delivery_window_seconds` (default `60`) bounds each attempt's wait and `session.task_delivery_attempts` (default `3`) bounds the number of attempts, with 5s and 10s backoff pauses between them (total budget = attempts × window + backoff, about 195 seconds with the defaults). The decompose session follows the same budget. A session whose process has already exited still fails at once, without waiting out the budget. Parity: REST config, MCP `config_set`, CLI `datawatch config set`, the comm channel `configure`, YAML config and the PWA settings are covered; Android and iPhone (datawatch-app) need a datawatch-app issue filed by the operator at merge.
+
+## v9.5.94 — Automation BudgetPolicy: spending limits for Automations and members
+
+## v9.5.100 — Test homes no longer leak a Go module cache into the temp directory
+
+### Fixed
+
+- **The Go test packages no longer leave a 500 MB throwaway home behind each run.** The test home that `internal/session`, `internal/server` and `internal/mcp` create gets a read-only Go module cache whenever a test runs the go tool, and the old cleanup silently failed on it, so a PRD's repeated test runs filled the temporary directory with dozens of `dw-test-home-*` directories (28 GB in one afternoon). The three packages now share one helper that makes the tree writable before removing it, and a regression test and a leak gate fail the build if any such directory is left behind.
+
+## v9.5.99 — The quality gate runs through a shell and compares by test name
+
+### Fixed
+
+- **The quality-gate test command now runs through a shell, in the project directory.** `test_command` is one string run with `sh -c`, so compound commands such as `go test ./... && node --test internal/server/web/*.test.js` work instead of breaking the gate.
+- **A gate baseline that cannot produce usable results is marked invalid, never trusted, and never blocks.** A command that could not start or timed out, a non-zero exit that names no failing test (a build or setup problem) and a run that found no tests are recorded on the Automaton as `quality_gate_status: "invalid"` with a plain `quality_gate_invalid_reason` and a `quality_gate_invalid` decision. The baseline is checked when the gate is set and when the Automaton starts, and from then on the gate only warns. An unusable run is reported as an invalid gate, never as a regression.
+- **Regressions are compared by failing test name, not by count, and confirmed by one re-run.** A new failing test name is a regression even when the failure count is unchanged, and tests that now pass are reported as an improvement. A regression is confirmed by one re-run, and only the tests that fail again are reported; a failure that does not reproduce is treated as stable.
+
+### Added
+
+- **`autonomous.gate_disagreement` (`warn` by default, or `block`) on every surface.** It decides what happens when a task's own verification passed but the gate confirmed a regression from a valid baseline: `warn` records the disagreement and the task completes, `block` fails the task with a `gate_disagreement: …` error. An invalid gate never blocks. Set it with `PUT /api/config` (`autonomous.gate_disagreement`, any other value is a 400), MCP `autonomous_config_set` (`gate_disagreement`), `datawatch autonomous config-set '{"gate_disagreement":"block"}'`, `configure autonomous.gate_disagreement=block`, or the Settings selector in the web UI.
+- **The web UI shows an invalid gate.** An amber "Quality gate invalid" badge with the reason appears on the Automaton card and list row, and the Monitor's quality-gate card gets an invalid line. The new strings are in all five locale bundles.
+- Operator guide: `docs/operations.md` → "Quality gate (test baseline + regression check)".
+
+## v9.5.98 — Capacity waits say why; admission and budget events audited
+
+### Added
+
+- **Capacity, back-off and budget waits now say why, and every admission and budget event is audited.** A queued task, session status, the capacity API and the CLI and chat text show the wait cause (pool full, node busy, back-off, budget window), the reset time when known, who holds the pool, and what is running. New audit events record a task starting to wait, being admitted, and an LLM budget window rolling over; a single audit query with a subject filter and an action-prefix match works on REST, MCP, the CLI and chat.
+- **A web capacity and budget card, an operator guide and a release smoke section** cover the new visibility, with the audit events carrying their own signature numbers (39 to 41) that do not collide with the Automation budget events.
+
+## v9.5.97 — Automation tab in the web UI
+
+### Added
+
+- **An Automation tab in the web UI.** It sits to the left of the Automata tab and lists each Automation as a card. A detail view draws the pipeline as a strip with fork lanes, joins and nested levels, and offers pause, resume, a cancel dialog that asks whether in-flight work stops, and skip, insert, remove and reorder for members. A create and edit form covers linear, fork, join and nested members, plus default model and budget policy fields. The labels exist in all five languages.
+- **The words Automation and Automaton are now defined side by side** in the operator guide, and the "Launch Automation" button is relabelled "Launch Automaton".
+
+## v9.5.96 — Claude start-up confirmation dialogs answered or failed fast
+
+### Fixed
+
+- **A Claude session left at a start-up confirmation dialog is now answered or failed fast.** Start-up screens (trust folder, MCP trust, development channels, unsafe-continue, update prompt and others) are classified and routed through the existing handlers, and an unknown confirmation is reported instead of left waiting for the 30-minute limit.
+- **A pasted task prompt is confirmed as submitted** before the session counts as started, so a prompt pasted into a dialog is no longer lost silently.
+- **A session that never starts working now fails after a bounded wait and is retried on its own budget of two.** The bound is `autonomous.session_start_confirm_seconds` (default 120), shown on the web settings card in five languages and settable through the REST, MCP and chat config surfaces.
+
+## v9.5.95 — Release scan unblocked for two OpenJDK findings
+
+### Fixed
+
+- **Release scan no longer blocked by two OpenJDK findings in parent-full.** CVE-2026-91403 and CVE-2026-91415 in `openjdk-17-jre-headless` have no fix in Debian bookworm and are unreachable from datawatch (the JRE only runs signal-cli); both are traced and suppressed in `.trivyignore`. This also re-runs the release whose go test step failed on a temp-directory cleanup race.
+
+## v9.5.94 — Automation BudgetPolicy: spending limits for Automations and members
+
+### Added
+
+- **A spending limit (BudgetPolicy) for Automations and their members.** An Automation, or one of its members, can carry a budget policy: a ceiling (a dollar amount, or an optional estimated share of the plan allocation) over a window (the whole run, a day, a week or a month), a pacing mode and an on-breach rule. An Automation's spend is the sum of its member Automata's cost records, built on the existing per-LLM spend ledger (no second ledger). The coordinator checks the policy at the advance, the entry and fork gates and the admission hook, and refuses to start a member whose declared estimated cost would cross the ceiling. On a breach the Automation pauses and resumes by itself at the window rollover only when the reset time is known (a window the daemon defines itself, anchored at a reset time, weekday and zone, or a reset time parsed from a rate-limit message); when the reset time is unknown it goes to blocked and waits for the operator, and an alert is raised either way. The `allocation_pct` estimate is opt-in, always labelled estimated, and never pauses or blocks anything. Another daemon's usage counts toward the ceiling only for peers explicitly named in `peer_window`, off by default; there is no automatic confirmation that a peer shares the account yet. New `set_budget` operation on REST (`POST /api/automations/{id}/set_budget`), MCP (`automation_set_budget`), the CLI (`automation set-budget`) and the chat commands, with a `budget` view in the Automation records and in `autonomous_status`.
+
+## v9.5.93 — Hand-started prompt-style sessions are recorded as one-shot
+
+### Fixed
+
+- **Hand-started prompt-style sessions are now one-shot.** A session started by hand with a `-prompt` backend (for example `datawatch session new --backend pi-prompt`) was recorded as interactive, so the completion validation gate, the finished-session reaper and retention did not cover it and it sat in `waiting_input` after the worker exited. Every backend whose name ends in `-prompt` now gets `one_shot` set when a session is created; explicitly interactive backends stay interactive and existing session records are not changed. The scratch-removal test now uses the system temp directory instead of a hard-coded path. Deterministic tests cover the creation-time decision, the reaper ending a finished prompt-style session, and unchanged existing records.
+
+## v9.5.92 — Automation model-tier defaults for execution, verification and planning
+
+### Added
+
+- **An Automation can carry default model settings for its member Automata.** The Automation tier now sits in the resolution order between the Automaton level and the global default, for the execution backend, model and effort and for the verification LLM: task, story, Automaton, Automation, global. A new verifier source value `automation` shows when the Automation supplied the verification choice, and each task run record gains `executor_source` (`task`, `story`, `prd`, `automation` or `global`) beside `verifier_source`, shown wherever the verifier source is shown. Planning has its own optional pair on the Automation (`planning_backend`, `planning_model`; unset means the global planning backend); it is used only when a member is decomposed and never changes the run or verify default. New operations `automation_set_llm` and `automation_set_verification_llm` on REST (`POST /api/automations/{id}/set_llm` and `/set_verification_llm`), MCP, the CLI and the chat commands, allowed while the Automation is draft, active, paused or blocked. An opt-in live smoke test covers the defaults against a running daemon.
+
+## v9.5.91 — go.mod lists pflag as a direct dependency so the release build passes its tidiness check
+
+### Fixed
+
+- **The release build failed its go.mod tidiness check.** The dollar-budget work imports `github.com/spf13/pflag` directly, but `go.mod` still listed it as an indirect dependency, so the release pipeline's "go.mod is tidy" step refused to build the 9.5.90 release. `go.mod` now lists it as a direct dependency. No code changes.
+
+## v9.5.90 — Per-LLM dollar budget with a windowed ledger
+
+### Added
+
+- **Per-LLM dollar budget over a rolling or weekly window.** An LLM entry can carry a `budget`: a dollar ceiling and a window, either rolling hours or a weekly anchor (weekday, clock time and time zone). Spend is recorded from the existing per-call cost records at the configured rates and kept in a persisted windowed ledger. Capacity admission waits with the reason `budget window full` when a call would cross the ceiling, and resumes when the window rolls over. The status shows spend, ceiling, window end and the rollover time. An estimated share-of-allocation figure (`allocation_pct`) is available per LLM, opt-in, always labelled estimated, computed from token usage priced at API rates against an allocation you declare per plan tier, and it never blocks anything. Another daemon's usage counts toward a ceiling only for peers explicitly opted in (off by default for every peer). The budget configuration and ledger state are on REST (`/api/budget`), MCP, the CLI, the chat commands and the PWA, and appear in `autonomous_status` and the capacity API. The older cost-guardrail item is narrowed to reporting only; this ledger owns ceilings and hard stops.
+
+## v9.5.89 — The pattern staleness flag follows the claude CLI version
+
+### Fixed
+
+- **The rate-limit pattern staleness flag now follows the Claude CLI version.** The flag (`patterns_stale`) fingerprinted only datawatch's own rate-limit pattern list, so an upgrade of the `claude` tool, the real cause of drifting screen text, never raised it. The fingerprint now includes the `claude` version text, read once at daemon start and refreshed on a status request when the cached value is more than 10 minutes old (an absent tool or a failing command records `unknown` and does not raise the flag by itself). The new `claude_cli_version` field appears beside `patterns_version` and `patterns_stale` on REST, MCP, the CLI, the chat commands, `autonomous_status` and the capacity status, and the recheck operation stores both. The command runner is injectable, so the tests use a fake.
+
+## v9.5.88 — Reactive usage back-off for rate-limited backends
+
+### Added
+
+- **Reactive usage back-off.** When a session of a backend reaches the rate-limited state (detected from the screen-matched rate-limit messages), datawatch now sets a back-off flag for that backend. Capacity admission waits on the flag for autonomous dispatch of that backend and reports the wait reason, and a global cooldown is treated as a wait and not as a failure. The flag clears at the reset time parsed from the rate-limit message when there is one; otherwise it stays set until an operator clears it or the configurable maximum back-off passes (`autonomous.backoff_max_wait_minutes`, default 60). Interactive session starts are never blocked. `autonomous.usage_backoff` (`pause_backend` or `off`) turns the behaviour on or off. The back-off state (backend, since, reset time or unknown, source) appears in `autonomous_status` and the capacity API, with set and clear operations on REST, MCP, the CLI and the chat commands. A pattern-drift staleness flag (`patterns_version`, `patterns_stale`) is raised when the rate-limit pattern list changes since the last operator recheck, with a recheck operation on the same surfaces.
+
+## v9.5.87 — Automation control operations: pause, resume, cancel, skip, insert, remove, reorder
+
+### Added
+
+- **Automation control operations and mid-flight editing.** A running Automation can now be paused, resumed, cancelled, have a member skipped, inserted, removed or reordered, on REST, MCP, the CLI and the chat commands with the same names and arguments. Cancel has no default: `cancel_in_flight` is a required argument on every surface, and a call that omits it is rejected with a message naming the two choices. Each Automation carries an `agent_insert_policy` (`allow` or `require_operator`; the global default is `allow`, set by a config key): an insert by an agent or session under `require_operator` is held pending until the operator approves it, and under `allow` the inserted Automaton still passes its own approval gate and the insert is audited. Every operation that acts on a position names the branch it acts on, and is rejected with a clear message when the Automation has several active branches and none is named. Operations are serialised by a per-Automation lock, edits carry the Automation Version and a stale version answers HTTP 409, and each operation records a decision and an audit entry. An insert marked urgent goes to a dedicated urgent Automation lane when one is available, otherwise it may be placed ahead of the current position when it blocks the running Automation, and only one urgent member can be active at a time. Documented in the API reference, the MCP tool list, the config reference and the testing tracker; an opt-in live smoke test drives the operations against a running daemon.
+
+## v9.5.86 — A failed pi run no longer looks complete
+
+### Fixed
+
+- **A failed pi run no longer looks complete.** The interactive pi launch command printed the completion line unconditionally after pi returned, so a pi run that exited with an error could be taken for a finished task. The command now captures pi's exit status: it prints the completion line only on a zero exit, prints a distinct `DATAWATCH_PI_FAILED` line carrying the exit status on a non-zero exit, and exits with pi's own status. The session record stores a failure marker so a failed run is shown as failed with its exit code, and the one-shot cleanup path ignores the failure line. Deterministic tests run a stub pi under a real shell for the success and failure branches.
+
+## v9.5.85 — Automations: fork, join and nested Automations
+
+### Added
+
+- **An Automation can now fork into parallel branches, join them, and contain other Automations.** An Automation's member list was a single chain with one current position; it now keeps a set of active positions. A fork member starts several member Automata at the same time; a join member waits for its branches and carries an `on_branch_failure` rule: `all_must_succeed` (the default: wait for the other branches, then block the Automation and name the failed branch), `any_one_is_enough`, or `continue_anyway`. A new nested member kind lets an Automation include another Automation, with cycle detection across levels and clear ownership. Old single-position Automations load unchanged. The coordinator advances every active branch, reconciles a fork that was running when the daemon restarted, rejects a stale edit with HTTP 409, and the status response (`autonomous_status`) and audit entries show the active positions. The fork, join and nested shapes are accepted in `members_json` on REST, MCP and the CLI and chat verbs, and are documented in the API reference, the MCP tool list, the testing tracker and the orchestration design notes. Unit tests cover every join rule, a nested cycle, a restart in the middle of a fork and a stale version; an opt-in live smoke test drives fork, join and nesting against a running daemon.
+
+## v9.5.84 — The MCP SSE listener retries a failed bind at boot
+
+### Fixed
+
+- **The MCP SSE listener now retries a failed bind at boot instead of giving up.** If the listen address could not be bound when the daemon started (for example the previous instance was still releasing its port after a restart, or the network was not up yet), the MCP endpoint stayed absent until the next restart. A failed bind is now logged once, retried with exponential backoff (1 s doubling to a 15 s cap) while the rest of the daemon keeps starting, and the final outcome is logged. The total retry time is `mcp.sse_bind_timeout` (default 120 s; zero or negative uses the default). The listener state (listening, retrying or failed) is reported in the health output. Deterministic tests use an injectable listen function and clock.
+
+## v9.5.83 — Automatic commits stage only changed files and refuse whole-home adds
+
+### Fixed
+
+- **Automatic commits and attempt snapshots can no longer stage a whole home directory.** Session snapshots and per-attempt snapshots used to run `git add` over a whole directory tree; in a project directory that was the user's home this staged hundreds of gigabytes and, when interrupted, left temporary pack files behind (one repository reached 843 GB). Staging now goes through a shared guard: it stages only the files the session changed or the declared write scope, skips any file over 50 MB and any cache, model or build-output directory, refuses an over-limit tree with a clear message instead of adding it, bounds the time a staging step may take, and removes its own temporary pack files if it is interrupted. Tests cover a home-like tree with a large file and a cache directory for both the session commit paths and the attempt snapshots; the guard is documented in the implementation and operations notes.
+
+## v9.5.82 — Pinned models on GPU nodes are protected from silent eviction
+
+### Added
+
+- **Warning when two large models share one compute node.** When two different models are configured to run on the same node, datawatch warns at startup and shows the warning in the config response and the capacity status. The node may not hold both models at once, so a call to one can evict the other.
+- **Per-node pinned model.** A compute node can be pinned to one model. A request that does not name a model runs the pinned one. A request for a different model is refused with a clear message unless that node's allow-model-swap setting is enabled, so a pinned model is not swapped out by accident.
+- **Pin keeper.** A background check re-pins a pinned model that Ollama has evicted, every `pin_check_seconds` seconds (0 turns the check off), and raises an alert each time it had to.
+
+## v9.5.81 — The quality gate confirms a regression by re-running before it reports
+
+### Fixed
+
+- **The per-task quality gate no longer reports a regression from a one-off failure.** A reported regression is now re-run once and is reported only if the failing tests fail again, and the report names the failing tests. Earlier the gate compared failure counts only, so a single intermittent failure under load (counts such as "76 to 77") failed unrelated tasks that could not reproduce it. The DNS messaging backend tests are also hardened: the test server now binds an operating-system chosen port and reports it instead of a closed-then-rebound port helper, and the fixed startup sleeps are replaced by waiting for the listener to be ready. The scan that led here (eight full-suite runs and a DNS stress run, no intermittent failure found) is recorded in a plan note.
+
+## v9.5.80 — Workers that never got their task are retried and re-sent the task
+
+### Fixed
+
+- **A claude-code Automaton worker whose task was never typed in is now noticed and recovered.** If the wait for the worker's main prompt timed out (for example behind a startup banner or update notice), the task was never delivered, yet the worker sat idle for the whole task and the idle nudge only asked it for a completion line. Delivery now retries with bounded attempts and backoff, the main-prompt detection tolerates banner and notice lines on the pane, a delivery that still fails ends the session as a delivery failure so the executor retries the task with a fresh session (the reason is recorded on the task), and the idle nudge re-sends the task to a worker whose task was never delivered. Deterministic tests with a fake terminal multiplexer cover a late prompt, a prompt behind a banner, no prompt, and the nudge on an undelivered task.
+
+## v9.5.79 — Tests and the pi backend no longer leak temp files into /tmp
+
+### Fixed
+
+- **Tests and the pi backend no longer leak temporary files into `/tmp`.** The home-isolation test setups, the plugin supervisor test and the schedule tests now use per-test temporary directories that are removed on exit, and the end-of-session cleanup of the pi backend now removes the task, output and status scratch files it creates (the older cleanup only removed the task file and used a hard-coded path). A new regression test fails if a run of the session package leaves new entries with the known prefixes behind. `/tmp` is memory-backed, so these leaks (about 9000 entries) had filled it during full test runs.
+
+## v9.5.78 — The WebSocket output-scope unsubscribe test is deterministic
+
+### Fixed
+- **`TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture` (BL550) no longer flakes (test-only, no production behavior change).** Symptom: subtest `same_id` failed once in the Release `go test + lint` job (test finished in 0.01 s) and passed locally. Cause found: the test harness raced the hub's scheduling — the hub applies client registration in its own Run goroutine (unbuffered handoff, then map write), but `findHubClient` snapshotted the hub registry immediately, so the registry write could lag behind the frames the test had already observed; `wsSubscribe` also substring-scanned the whole frame payload, which another session's pane text could satisfy. Fix, entirely in `internal/server/ws_output_scope_test.go`: `findHubClient` and the capture-cancel wait now poll on their real conditions under a deadline bounded by the shared frame timeout, with all original assertions preserved and asserted at the deadline; `wsSubscribe` matches the initial `pane_capture` on the exact `session_id` (short/full forms treated as equal) instead of the payload substring; a `t.Cleanup` cancels any still-live capture and waits (bounded poll) until `Hub.ClientCount()` is back to zero, so neither the capture goroutine nor the hub client leaks into the next subtest. The other WS tests sharing the changed helpers were audited — `TestWSOutputScope_SubscribedModeFiltersTerminalFrames`, `TestWSOutputScope_ShortAndFullIDsMatch`, `TestWSOutputScope_ConfigDefaultSubscribedForNoHelloClient`, `TestClientUnsubscribe_Direct` and `TestSessionIDsMatch` — and needed no change; all pass at `-count=50`. There is no production behavior change: the `MsgUnsubscribe` path and the output-scope delivery code are untouched and no non-test file was modified.
+
+## v9.5.77 — Boot-resume age gate counts live workers on verifying tasks
+
+### Fixed
+
+- **A daemon restart no longer parks an Automaton whose worker is still running on a task labelled verifying.** The boot-resume age gate counted a live worker session only on `in_progress` tasks, but a task labelled `verifying` while its worker still runs is the same situation. The live-session check, the last-output activity check and the never-park rule now treat `verifying` tasks with a live session exactly like `in_progress` ones; dead sessions and old activity are still parked. New tests cover a verifying task with a live and with a dead worker.
+
+## v9.5.76 — BL398 phase 2 first tranche: reachability traces for 12 container CVE suppressions
+
+### Security
+BL398 Phase 2 first tranche: reachability traces for 12 accepted-risks entries (libsqlite3-0 x3, zlib1g, curl, libldap, ncurses, perl, util-linux, libcups2, git-lfs, python3.11) are recorded in `security/accepted-risks.yml`, with removal recommendations in `docs/plans/2026-10-21-bl398-phase2-tranche1-recommendations.md`. 62 container entries remain untraced. No suppression was removed; the operator decides. Parity: this work touches no REST, MCP, CLI, comm channel or PWA interface.
+
+## v9.5.75 — Result panel for scheduled jobs: MCP, CLI and comm-channel parity
+
+### Added
+- **Scheduled jobs can post structured results into a per-schedule history.** A new file-backed store (`internal/session/schedule_result_store.go`) keyed by schedule name keeps each schedule's most recent `results.schedule_history_limit` posted results, evicting the oldest entries first when the limit is lowered or exceeded. Result payloads carry a required title, an ok/warn/error status, an optional summary, a free-form metrics map, up to 20 tables of at most 100 rows, and an optional markdown report; strings over 2000 characters (summary, markdown, table titles, headers, cells) are truncated with a `…(truncated)` marker instead of being dropped, and payloads that still serialize to more than 64 KB after truncation are rejected. Payloads that fail validation are rejected with typed errors (missing title, unrecognized status, table/row/size limits), and the store is concurrent-safe and persists atomically under the data dir, so history survives daemon restarts independent of the posting session.
+- **New `results.schedule_history_limit` config.** Default 20; the effective value is clamped so it is never below 1. Editable through every existing config surface: `datawatch configure results.schedule_history_limit=…`, MCP `config_set key=results.schedule_history_limit value=…`, `PUT /api/config {"results.schedule_history_limit": …}`, the Web UI Settings card (new “Scheduled Job Results” section), and direct YAML editing. See `docs/config-reference.yaml` (results section).
+- Tests: `internal/session/schedule_result_store_test.go` (eviction, limit raise/lower, persist/reopen, truncation, typed rejections, concurrent adds under `-race`) and `internal/config/results_config_test.go` + `internal/server/results_config_patch_test.go` (defaults, min-1 clamping, YAML round-trip, REST patch path).
+- **REST surface for the result panel.** `POST /api/sessions/{session_id}/result` lets a session post its result: it is gated on the `sessions:result_write` capability, a session-scoped credential may only post to the session it belongs to (any other session gets 403), the valid payload is always reflected in that session's status board result slot, and it lands in the per-schedule history only when the session belongs to a named schedule. `GET /api/schedule-results` returns one group per schedule name, sorted by name, with the latest posted result, the retained count, and the recent-status sequence for a sparkline; `GET /api/schedule-results/{schedule_name}` returns the full retained history, oldest first. All three routes are behind the federation capability gate (a bare peer gets 403), write audit-log entries, and are counted by two new Prometheus counters. OpenAPI entries for all three routes are in `internal/server/web/openapi.yaml`; tests in `internal/server/session_result_endpoint_test.go`.
+- **MCP parity for the result panel (GH#204).** Two new MCP tools reuse the exact REST surface: `post_result` — session_id, required `title`, `ok`/`warn`/`error` `status`, optional `summary`, `metrics`, `tables`, `markdown`; the same payload contract and `session.ValidateResultPayload` validation as `POST /api/sessions/{id}/result`, the same per-schedule `ScheduleResultStore` write when the session belongs to a named schedule, and the same status-board result-slot update always — and `schedule_results_list` — per-schedule latest result, retained count, and recent status sequence (same as `GET /api/schedule-results`), or the full retained history for one `schedule_name` (same as `GET /api/schedule-results/{schedule_name}`). Capabilities: `post_result` → `sessions:result_write`, `schedule_results_list` → `autonomous:read`, matching the REST gates. All failure modes return proper `isError` tool results carrying the upstream error. Tests: `internal/mcp/schedule_results_test.go`. Docs: `docs/mcp.md`, `docs/cursor-mcp.md`, `docs/datawatch-definitions.md`.
+- **CLI: `datawatch schedule-results` (list, history, post).** `datawatch schedule-results list` fetches the per-schedule latest results and prints a table (schedule, status, title, summary, posted time, retained count, recent status sequence); `datawatch schedule-results history <schedule_name>` prints the full retained history for one schedule, oldest first; `datawatch schedule-results post --title … --status ok [--summary …] [--metrics JSON] [--table JSON …] [--markdown …] [--file payload.json]` posts a structured result. Inside a spawned scheduled-job session the post needs no `--session` (it defaults to `DATAWATCH_SESSION_ID`) and authenticates with the spawn-scoped credential (`DATAWATCH_RESULT_TOKEN`); outside a spawned session `--session` must be explicit and the usual daemon token applies. `--file` seeds the payload from a JSON file and individual flags override its fields; `--table` accepts a full table object so shell jobs can post tables, not just scalars. Payloads are client-side validated before any request (missing title, bad status, non-object metrics or table), and the read commands can print the raw JSON with `--json`. Implementation: `cmd/datawatch/schedule_results_cli.go`; tests: `cmd/datawatch/schedule_results_cli_test.go` (payload building, file seeding and flag override, env defaults, credential preference, formatted list/history output, 403/404 surfacing) against a `httptest` daemon.
+- **Comm-channel read surface for the result panel.** `schedule-results` — one line per schedule (last status icon ✓/⚠/✗, summary/title, age); `schedule-results list` — same; `schedule-results <name>` — that schedule's retained history, newest first (capped at 10 lines; the full history stays on the CLI/PWA); `schedule-results history <name>` — alias mirroring the CLI. Read-only: posting stays on the CLI/MCP/API paths. Data comes from the existing `GET /api/schedule-results` and `GET /api/schedule-results/{name}` endpoints over the router's in-process loopback — no new backend surface. Implementation: `internal/router/schedule_results.go` + `CmdScheduleResults` in `internal/router/commands.go`; tests: `internal/router/schedule_results_test.go` (parse, list/history formatting, empty-state and unknown-schedule replies, loopback-unconfigured safety); docs: `docs/commands.md`.
+- **PWA: new opt-in dashboard card “Integration status.”** One row per schedule name from `GET /api/schedule-results`: status badge, title + summary, relative posted time, retained count, and an inline SVG sparkline of `recent_statuses` (oldest → newest, capped at 60 bars) coloured per status; clicking a row opens the session that posted the result. It is opt-in — listed first in the Add-Card picker but deliberately absent from the default layout — and refreshes with the existing dashboard RAF cycle under a 30 s minimum refetch interval and an in-flight guard (no extra timers). When no schedules have posted yet, the empty state explains how a job posts a result and links `/api/openapi.yaml` (result endpoints); fetch failures render a localized error state instead of an empty card. All new strings use `t('dash_integ_*')` keys added to all five locale bundles (en/de/es/fr/ja), with the card label itself resolved through `t('dash_integ_status')` so the picker follows the operator's locale. Tests: `internal/server/web/app-integration-status-card.test.js` (opt-in picker placement, locale-aware label, row rendering incl. sparkline cap and mixed colours, hostile name/summary/session-id escaping in HTML and the inline `onclick`, empty/error states with no raw locale keys); docs: `docs/howto/dashboard.md`.
+- **Result panel documentation.** New `docs/howto/result-panel.md` — architecture diagram, payload shape and limits, the spawn → post → read flow for shell jobs (worked `schedule spawn --shell` + `schedule-results post` example, raw REST `curl` example), CLI, MCP, and comm-channel read surfaces, dashboard-card and Status-tab instructions, retention config, verification, and troubleshooting — registered in the howto index. Cross-reference notes in `docs/howto/alerts-and-notifications.md` and `docs/howto/alert-rules.md` make the division of labor explicit: a result is what a run produced, an alert is what the operator should be paged about. A `scripts/release-smoke.sh` live section and a dedicated test story (TS-801) cover the spawned-subprocess → post → read path end-to-end, including the 403 cross-session rejection (unit-covered; the live rows are marked unvalidated until the next sandbox run).
+
+## v9.5.74 — Needs-input detector ignores echoed task text on adopted sessions
+
+### Fixed
+
+- **A live adopted session is no longer flipped to waiting-for-input by the echoed task text after a restart.** The needs-input detector could read the instruction line inside the typed task ("print DATAWATCH_NEEDS_INPUT: <your question>") as a real request once the post-restart grace window ended, which failed the session tests intermittently under load and in the Release workflow. A needs-input marker counts only as a standalone line the worker printed after the task text; an instruction that is part of the echoed task never moves a running session. The grace and echo windows and the scan clock are now injectable, so the tests no longer depend on wall time or machine load.
+
+## v9.5.73 — The PWA terminal no longer throws when xterm is used after dispose
+
+### Fixed
+
+- **The PWA terminal no longer throws "Cannot read properties of undefined (reading 'dimensions')" from xterm.** A session switch or reconnect could dispose the terminal while a scheduled fit/resize/scroll job was still pending, and the stale job crashed once xterm's render service was gone. Every fit, resize and scroll call is now guarded by a check that the terminal exists, is open and not disposed and that its container is visible and non-zero-sized, and pending resize/scroll timers are cancelled when the terminal is disposed. Tests: fake-xterm node tests (`internal/server/web/app-xterm-guard.test.js`) and a Playwright rapid-switch story (`scripts/test-stories/pwa/TS-800.mjs`).
+- **The service-worker-disabled console line on a self-signed certificate is now one quiet info line pointing at `docs/operations.md`.** Registration rejection due to an untrusted certificate is expected, not an operator-facing failure; the PWA now prints exactly one `console.info` (at most once per page load, no warn/error) and everything else keeps working normally. Enabling the service worker with a trusted certificate is documented in `docs/operations.md`.
+
+## v9.5.72 — A daemon restart no longer ends live claude-code workers
+
+### Fixed
+
+- **A daemon restart no longer ends live claude-code Automaton workers.** After a restart the one-shot reaper and the pane scanners read the wrapped tail of the typed launch command (`... echo 'DATAWATCH_COMPLETE: claude done'`, whose last fragment starts with the marker and ends with the closing quote) as the worker's own completion line, and ended the session a few seconds after startup. A completion line now has to be a real summary line: the wrapped tail of a quoted shell argument is ignored, and the one-shot reaper applies the same real-completion rules as the pane scanners. New deterministic mid-task restart tests use a fake terminal multiplexer with realistic claude-code pane content.
+
+## v9.5.71 — Lifecycle subscriptions: update, test-fire, pending-events queue and PWA tab
+
+### Added
+
+- **Automata lifecycle event subscriptions — Phase 4 of the [lifecycle-events design](docs/plans/2026-10-13-prd-lifecycle-events.md): a pending-events queue for generic MCP clients, update and test-fire for subscriptions, and a PWA Subscriptions tab.**
+  - **Pending-events queue + `mcp_queue` sink** — a subscription whose sink type is `mcp_queue` (target = a queue name of letters, digits and `. _ : -`, max 64 characters) appends each matching event to a bounded in-memory queue instead of pushing it. Clients that cannot receive pushes poll it with a cursor: `autonomous_events_pending` (MCP), `GET /api/autonomous/events?queue=<name>&since=<cursor>&limit=<n>` (REST; limit default 50, capped at 200; returns `{events, next_cursor, dropped}`), `datawatch autonomous events --queue <name> [--since <cursor>] [--limit n] [--json]` (CLI) and `autonomous events [queue=<name>] [since=<cursor>]` (comm channel, owner-scoped). `dropped` is true when events the client had not yet read were evicted from a full queue. The `webhook` sink type is still rejected.
+  - **Subscription update + test-fire on every surface** — `PUT /api/autonomous/subscriptions/{id}` replaces a subscription's mutable fields (id and creation time are kept) and `POST /api/autonomous/subscriptions/{id}/test` delivers one labelled test event to just that subscription's sink; MCP `autonomous_subscription_update` / `autonomous_subscription_test`; CLI `datawatch autonomous subscription-update <id>` / `subscription-test <id>`; comm `autonomous subscription-update <id> key=value...` / `autonomous subscription-test <id>` (owner-scoped). A test never types the action text and never consumes a one-shot.
+  - **PWA Subscriptions tab** — a Subscriptions tab on the Automaton detail view lists the subscriptions that apply to the Automaton (scoped to it, or unscoped) with add, edit, delete and test. The add/edit form offers the closed event-kind set, level, scope, all five sink types, send-input text, one-shot, coalesce and an expiry in hours. Strings ship in all five locales (en, de, es, fr, ja).
+  - **Config** — `autonomous.notify.pending_events_max` (default 500, values below 1 fall back to 500) bounds each pending-events queue; applied at daemon start.
+  - **Not in this change** — WebSocket payload enrichment and live toasts, the outbound webhook sink and federation forwarding. App-side (Android/iOS) subscription UI is tracked in [docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md).
+
+## v9.5.70 — Idle claude-code workers are nudged to finish before they are treated as stalled
+
+### Added
+
+- **Idle nudge for claude-code workers** — a PRD-owned claude-code worker that sits idle with no output and no completion marker for `autonomous.worker_idle_nudge_seconds` (default 180) gets one nudge to print `DATAWATCH_COMPLETE`; if it is still silent `autonomous.worker_idle_nudge_stall_seconds` (default 600) after the nudge, it is killed and retried as a stall. Nudges are recorded on the task (`nudge_count`, `nudge_events`).
+- **Idle-nudge settings on every surface, and nudge counts in status** — `autonomous.worker_idle_nudge_seconds` and `autonomous.worker_idle_nudge_stall_seconds` are now set through the web settings card (all 5 locales), `PUT /api/config`, the MCP `autonomous_config_set` tool, the `configure` chat command and `docs/config-reference.yaml`, and take effect on the next worker without a restart. `GET /api/autonomous/status` and `autonomous_status` now report `nudges_total`, `nudge_tasks` (per-task counts) and `nudges_by_backend`.
+- **Idle-nudge docs** — new recovery howto section *Worker finished a turn without the completion marker*, an operations subsection beside the session idle timeout, and testing-tracker rows (unit rows validated, live sandbox rows pending).
+
+## v9.5.69 — Internal-ref leak audit passes: tracker tags removed from OpenAPI summaries
+
+### Fixed
+
+- **Operator-facing OpenAPI summaries no longer contain internal tracker tags or sprint labels.** The 19 `summary:` lines in `internal/server/web/openapi.yaml` that carried `BL###`/`F##` tags (for example `BL42`, `F10 sprint 3+`) now read as plain descriptions, and the internal-ref leak audit (`scripts/check-no-internal-refs.sh`) passes again. Wording is otherwise unchanged; no API contract, config key or locale string changed.
+
+## v9.5.68 — Inference-cap gap closure: plan-tier caps, verifier lease hand-off, decompose admission
+
+### Added
+
+- **Plan-tier-aware LLM capacity caps.** The LLM registry entry gains a `plan_tier` field (unset | `pro` | `max_5x` | `max_20x` | `api`; unknown values are rejected by `inference.LLM.Validate`), and `inference.EffectiveMaxInflight(llm, table)` derives the capacity-ledger per-LLM inflight cap: an explicit `max_inflight` > 0 always wins, else the tier table (new config key `autonomous.plan_tier_max_inflight`, map tier→int, default `pro: 1, max_5x: 2, max_20x: 4, api: 0` — operator policy, overridable; `api: 0` = unlimited until the dollar-budget phase lands), else a conservative kind default: 1 for subscription kinds (claude-code and the other non-local, non-API kinds), 0/unlimited for local Ollama/OpenWebUI kinds (still governed by the node: pools and the two-engines-per-GPU limit) and for dollar-metered API kinds. `cmd/datawatch` `syncPools` now sets each `llm:<name>` pool limit from `EffectiveMaxInflight`, re-synced by the existing 10s loop on registry change.
+- **Config validation for `autonomous.plan_tier_max_inflight`:** every key must be a known tier and every cap ≥ 0, else the daemon refuses to start with the key named.
+- **Tests:** table lookup / explicit-override / unset conservative defaults / kind classification / tier validation / `plan_tier` YAML+JSON round-trip (`internal/inference`), default + YAML round-trip + rejection of negative caps and unknown tiers (`internal/config`), and `TestSyncLLMLimits_PlanTierDrivesLedgerLimit` + `TestSyncLLMLimits_TableOverrideFollows` pinning the ledger limit to the derived value (`cmd/datawatch`).
+
+- **Decompose is now capacity-gated.** Every decompose entry point — MCP `run`, `resume`, `retry-decompose`, REST, CLI, and session-based decompose — acquires an LLM pool lease (planner role, host engine excluded) through the shared pool before the one-shot decompose runs, and the lease is released on success, failure, timeout, and cancel. When the pool is saturated the PRD stays in `planning` with a visible wait reason (`capacity: planner waiting (n planner / m worker active …)`) instead of failing immediately, or spinning the planner in a run/wait/failed loop against a saturated pool. The reason is surfaced on the PRD status, the planning session's `wait_reason` (the session-status automaton block falls back to the PRD-level reason for planning sessions), MCP output, and the CLI; when it clears, the decompose proceeds without re-submitting.
+- **Decompose capacity wait timeout.** A decompose queued on a saturated pool gives up when the shared `autonomous.capacity_wait_timeout_seconds` bound (default 14400s, 4h — the same bound the executor's capacity wait already used) elapses, failing with a clear "decompose timed out waiting for capacity" reason instead of queueing forever.
+- **Decompose cancel is a cancel, not a failure.** Cancelling (or rejecting) the PRD while its planner is still queued on capacity drops the waiter immediately, is reported as "decompose cancelled" on the PRD, and does not consume the decompose retry budget or roll the PRD back to draft.
+- **Tests:** `TestDecompose_WaitsForLLMPoolAndProceeds`, `TestDecompose_ReleasesLeaseOnAttemptError`, `TestDecompose_TimeoutClearsWaitReason`, `TestDecompose_CancelWhileWaitingDropsPlanner`, `TestDecompose_NodeLimitRespected`, `TestDecompose_PlannerLeaseExcludesHost` and `TestDecompose_CapacityDisabledUnchanged` (`internal/autonomous`).
+
+- **Verify holds the worker's lease instead of stacking a second one.** When a task moves from worker to verification, the task's worker lease is re-keyed (holder `verify:<task>`) so the task occupies exactly one capacity slot from spawn through verification — no release-and-re-wait window in which a sibling can take the slot, and no double-count while the verifier runs. The hand-off is refused, and the verifier is admitted separately with its own lease, when its backend/model resolves to a different pool set than the worker's — a second slot is never stacked on top of the first. Tests: `TestManager_HandoffVerifyLease_RekeysWorkerLease`, `TestManager_HandoffVerifyLease_DifferentPoolsRefused`, `TestManager_HandoffVerifyLease_NoWorkerLeaseRefused`, `TestExecutor_TaskInVerifyHoldsExactlyOneLease`, `TestExecutor_RetryReleasesAndReAdmitsAfterVerifyFailure` and `TestExecutor_DifferentPoolFallbackNoStacking` (`internal/autonomous`).
+
+- **Tasks waiting on an external condition release their slot instead of pinning it.** A worker blocked on something outside the daemon (a long CI run, a deploy finishing, an upstream review) emits a `DATAWATCH_AWAIT_EXTERNAL: <condition>` marker line and stops; the executor then parks the task in a visible wait state — `await_external` with the condition as its sub-reason, carried in the task's `wait_reason` on every status surface — releases the task's capacity lease, and releases the project-tree write lock *unless the tree has uncommitted changes or commits not reachable from a remote-tracking ref* (unpushed work keeps the lock). The task is then re-admitted through the normal bounded capacity wait (`autonomous.capacity_wait_timeout_seconds`): on success the parked session resumes with its project tree — no fresh spawn, and no retry or failure is counted; on timeout or cancel the task is left lease-free in its wait state and the normal retry machinery takes over. A parked pane is excluded from the stall/idle/exit-silence detectors while parked, boot-resume re-adopts a parked task whose session survived a daemon restart (or re-queues it if the session is dead), and each cycle emits an `autonomous_idle_wait_release` audit event naming the pools and tree lock it released. Tests: `TestAwaitExternal_MarkerParsing`, `TestAwaitExternal_WaitReasonFormat`, `TestAwaitExternal_LiveLeaseReleasedOnCycle`, `TestAwaitExternal_ReAdmitWaitsOnSaturatedPool`, `TestAwaitExternal_TreeLockKeptWhileUnpushed`, `TestAwaitExternal_TreeLockReleasedWhenPushedAndClean` and the two boot-resume tests in `internal/autonomous/await_external_test.go`.
+
+### Fixed
+
+- **Three `internal/autonomous` executor tests no longer flake under full-suite load.** `TestExecutor_WorkerStallExhaustsRetriesLikeNormalFailure`, `TestExitSilenceRetry_ExhaustsRetriesAndFailsInfra` and `TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning` now create their PRD against a real `t.TempDir()` project directory. With the fake `/w/proj` path, a concurrent boot-resume scan could see the PRD in `failed` (after the executor's terminal write) and park it as "project directory no longer exists", clobbering the `PRDFailed` state the test asserts (B165).
+
+## v9.5.67 — Boot-resume counts live workers; parked Automata can be resumed
+
+### Fixed
+
+- **Boot-resume no longer parks an Automaton whose worker session is still alive.** The age gate now counts a live worker session on an `in_progress` task (and that session's recent output) as activity, so an Automaton that is genuinely still working is never judged stale. Only an Automaton with no live worker and old activity is parked.
+
+### Added
+
+- **A parked Automaton can be resumed with an explicit resume action on every surface.** `POST /api/autonomous/prds/{id}/resume`, the `autonomous_prd_resume` MCP tool, the CLI `prd-resume <id> [--note ...]`, the chat command `autonomous resume <id> [note]` and a Resume button in the PWA (labelled in all five languages) put a PRD that the boot-resume gate parked back to running. Only a PRD parked by the gate can be resumed this way (any other state is rejected naming the allowed state), the resume is audit-logged, and a live worker session is re-adopted rather than respawned.
+- **Park reasons and the park alert now name the resume action.** They previously told the operator to approve the PRD, which does not apply to a parked one.
+- **The boot-resume report records a parked PRD that still has a live worker.** A parked entry in `Status().BootResume` carries `live_sessions`, and resuming adds a `resumed_by_operator` entry, so the operator can see that a resume will re-adopt the worker.
+
+## v9.5.66 — A daemon restart no longer kills running claude-code workers
+
+### Fixed
+
+- **A daemon restart no longer ends in-flight claude-code Automaton workers.** Task-echo suppression now uses the persisted `TaskDeliveredAt` and the task text, so the task the daemon typed into the worker (and its placeholder) is not mistaken for a completion after a restart. A completion marker counts only after the echoed task text and only as a real summary line. Live delivered-task sessions are adopted on resume, and boot-resume adopts a claude-code worker the same way it already adopted other backends. New opt-in live test `TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive` (`DW_LIVE_RESTART_TEST=1`, sandbox daemon only); walkthrough in `docs/howto/autonomous-recovery.md`. No config keys, REST/MCP/PWA contracts or locale strings changed, so `docs/config-reference.yaml`, `docs/operations.md`, Mobile-Parity and Localization are N/A.
+
+## v9.5.65 — Automation coordinator: the queue advances itself
+
+### Added
+
+- **An active Automation now advances itself.** When the Automaton under an Automation's cursor completes, is blocked or fails, the next Automaton starts with no LLM, chat session or operator call in between. The coordinator listens to the existing lifecycle events, takes the `on_complete` / `on_blocked` / `on_failed` edge from the member's real status, and moves the cursor with a version compare-and-set so a duplicate or racing event starts the next member once. A next member that is not approved blocks the Automation with a reason and an alert; a paused one is resumed; a member that fails to start blocks it; an empty edge blocks it; reaching the end completes it and clears member ownership. Each advance and block is written to the audit log. After a daemon restart, reconcile runs once boot-resume has finished: a member that finished while the daemon was down advances, a still-running member is left alone, and a pending start is retried without double-starting. Design: `docs/plans/2026-10-14-automation-orchestration-design.md` (Phase 2); walkthrough: `docs/howto/automation-queue-advance.md`.
+- **An Automation can now be activated from every interface.** `POST /api/automations/{id}/activate` (body `{actor?, reason?}`, actor defaults to `operator`), the `automation_activate` MCP tool, `datawatch automation activate <id>` and the chat verb `automation activate <id>` all start a draft Automation: it is validated, marked active and its entry member starts through the normal approval gate (or the Automation becomes blocked with a reason). Only a draft can be activated (409 otherwise), an unknown ID is a 404, and each activation is written to the audit log.
+- **`GET /api/autonomous/status` and the `autonomous_status` MCP tool now return an `automations` array**: one row per draft, active, paused or blocked Automation with its current member and Automaton, pending member count, idle time and blocked reason. The PWA has no Automation view yet, so this array is surfaced through the API and MCP only.
+- **New setting `autonomous.automation.idle_alert_minutes`** (whole minutes, default `0` = off): raises one alert when an active Automation has sat idle that long. Settable through `PUT /api/config`, `PUT /api/autonomous/config`, the `automation_idle_alert_minutes` argument of `autonomous_config_set`, `datawatch config set`, chat `configure`, and the PWA Settings → General → Automate card (labelled in all five languages). A negative or non-integer value is rejected with 400.
+
+## v9.5.64 — Persisted lifecycle subscriptions with CRUD on every surface
+
+### Added
+
+- **Automata lifecycle event subscriptions — Phase 3 of the [lifecycle-events design](docs/plans/2026-10-13-prd-lifecycle-events.md).** Register a persisted rule — *when this Automaton event fires, deliver it there* — instead of polling session lists to notice a new worker session and then injecting text into it:
+  - **Subscription model** — filter (event kinds / level / Automaton / task) → one sink (`comm`, `session`, `topic`, `alert`) → optional `send_input` action (types text into the session sink's target on fire). `one_shot` deletes the record after first *successful* delivery; `expires_at` sets a TTL; `coalesce` batches human-facing sinks in quiet windows. Event kinds are a closed set (all PRD/task status kinds + `task.session_started` / `task.session_cleared` / `prd.updated`); unknown kinds are rejected at creation.
+  - **Session delivery** — bridge preferred: the daemon POSTs the message to the session's channel bridge on `http://127.0.0.1:<port>/send` (5 s timeout); falls back to typing the text into the session's input via `SendInput` (source tag `lifecycle-sub`) when the bridge is absent, off-localhost, or errors. One-shot failure: one retry, then log + drop.
+  - **REST** — `GET/POST /api/autonomous/subscriptions` (list with optional `?owner=`, create → 201), `DELETE /api/autonomous/subscriptions/{id}` (auth `autonomous:read`/`autonomous:write`; `503` when the lifecycle engine is not wired).
+  - **MCP** — `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions` (proxy the daemon's REST on loopback; the daemon store is the source of truth).
+  - **CLI** — `datawatch autonomous subscribe` (including the watch-and-inject shorthand `--task <id> --on session_started --send "<text>" --sink session --target <session> --one-shot`; `--task` implies one-shot; shorthands `session_started` / `session_cleared` map to task kinds, full kinds pass through), `datawatch autonomous unsubscribe <id>`, `datawatch autonomous subscriptions [--owner <owner>]`.
+  - **Comm channel** — `autonomous subscribe <kinds…> [prd=<id>] [task=<id>]`, `autonomous subscriptions`, `autonomous unsubscribe <id>`; owner-scoped (the calling channel is both owner and sink target — a channel can never list or remove another channel's records).
+  - **Storage & lifecycle** — persisted at `<data_dir>/lifecycle_subscriptions.json` (secfile-encrypted at rest); the engine re-attaches immediately on add/remove — no daemon restart; create/delete are audit-logged. `webhook` and `mcp_queue` sink types are rejected with a clear phase error (later releases).
+  - **Docs** — [howto](docs/howto/automaton-lifecycle-subscriptions.md), [flow diagram](docs/flow/lifecycle-subscription-flow.md), operations section in `docs/operations.md`, "lifecycle event subscription" glossary entry + core-feature matrix row in `docs/datawatch-definitions.md`, `README.md` feature line, testing-tracker rows (unit surfaces; live rows pending a sandbox sweep). No new config keys in this phase — subscriptions are data, so `docs/config-reference.yaml` is N/A. App side (Android/iOS UI): tracked in [docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md).
+
+### Fixed
+
+## v9.5.63 — Automaton workers no longer read other sessions CLAUDE.md files
+
+### Fixed
+### Fixed
+- **Automaton workers no longer read ancestor-directory `CLAUDE.md` files.** A worker launched in a PRD worktree or the main checkout also loaded parent-directory `CLAUDE.md` files, such as another session's `Session:`/`Task:` guardrails, and stalled asking which task to do. The claude-code backend now passes `--settings '{"claudeMdExcludes":[...]}'` listing every `CLAUDE.md` in a strict ancestor of the project directory (absolute paths, computed per launch). The project's own `CLAUDE.md` and `~/.claude/CLAUDE.md` still load. It applies to Automaton-owned launches and resumes only; interactive sessions are unchanged. Verified on Claude Code 2.1.306. Tests in `internal/llm/claudecode/ancestors_test.go`, `internal/llm/claudecode/ancestors_launch_test.go` and `internal/session/exclude_ancestor_claudemd_test.go`; see `docs/operations.md` and `docs/plans/ancestor-claude-md-findings.md`.
+
+## v9.5.62 — PWA stays connected on cellular: stable reconnect, safe reload, incremental resync
+
+### Fixed
+- **PWA connection no longer flaps or hammers the daemon on cellular / Tailscale links.** WebSocket reconnect now uses jittered exponential backoff (1 s base, 30 s cap) with a 15 s stability window, retries immediately on the browser `online` event and when the tab becomes visible, and sets no timers while hidden. A 15 s heartbeat with a 35 s stale threshold detects carrier NAT idle drops. After reconnect the PWA makes one `GET /api/sessions` and one subscribe for the open session instead of a full reload.
+- **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
+
+### Changed
+
+- **PWA shows connection state and a tap-to-reload update banner.** The status dot now reads connected, reconnecting (with attempt count) or offline. A new daemon version shows a single update banner; the page never auto-reloads while the user is typing, focused in the terminal or has a draft.
+
+### Changed
+- **A daemon-version change no longer shows the datawatch-eye splash before reloading.** The new reload guard replaces three of the sites that used the splash (the WS-open version probe, the sessions-broadcast version change and the service-worker controller change): the page now shows an "update available, tap to reload" banner, or reloads at once only when you are fully idle. The splash still covers the other full-page refreshes. The three splash tests for the removed mechanisms were dropped; the new reload-guard tests cover the replacement.
+
+## v9.5.61 — Automatic task commits use the task title as their subject
+
+### Fixed
+Automatic commits made after an automated task now use the task's title as their subject, and the commit body lists the files changed and the verification result. Snapshot commits made before a task starts now name the PRD and the purpose of the snapshot instead of repeating the worker prompt.
+
+## v9.5.60 — Task delivery is protected from the completion detector
+
+### Fixed
+- **claude-code worker sessions no longer end before their task is delivered.** A one-shot worker that showed a startup dialog and then finished or exited was recorded as complete even though the task text was never sent. Claiming a session for task delivery now arms the task-echo suppression straight away, so the typed task is not mistaken for a completion marker, and a shared, stricter guard rejects placeholder `DATAWATCH_COMPLETE` text. If a session still reaches a terminal state with no delivery recorded, the executor now treats it as a launch failure (wrapping `ErrWorkerStalled`) and retries it through the normal `auto_fix_retries` budget as an infrastructure failure instead of sending the empty session to verification. Covered by new `TestOneShotTaskDelivery*` and `TestLaunchFailure*` tests.
+- **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
+
+## v9.5.59 — PWA shows the datawatch eye during full-page refreshes
+
+### Fixed
+- **The PWA no longer cuts to a white screen during its full-page refresh transitions** — when the app reloads itself (switching locale, the reconnect-path daemon-version catch-up, a broadcast that detects a new daemon build, a service-worker asset update, a manual cache-bust, or the stale-version self-heal stamp), the animated datawatch eye now fills the screen for a short minimum window before the refreshed page takes over, so the transition reads as "the app is alive and swapping" instead of a dead page. The WS-reconnect daemon-version catch-up is the one case that also shows the pulsing bolt, matching the in-flight session-connect treatment; every other refresh shows the plain eye.
+- **The boot splash and the inline panel spinners are unchanged** — the initial launch Earthrise scene and the in-panel loading glyphs behave exactly as before; only the full-screen refresh transitions gain the new treatment.
+- **Reduced-motion users get a single static eye frame** instead of the animation during these transitions; the eye stays visible for the same window without motion.
+- Reuse audit: this extends the existing `DWSplashArt.startEyeOnly` / `DWSplashArt.startSessionLoading` primitives in `internal/server/web/splash-art.js` — no new animation code was added; the new behavior is a shared overlay + min-dwell dismissal in `app.js` around those exact primitives, per reuse-and-expand.
+
+## v9.5.58 — PRD worktrees are buildable out of the box
+
+### Fixed
+- **PRD worktrees are buildable out of the box now.** When a PRD's git worktree is created or reused, `EnsureWorktree` (`internal/autonomous/worktree.go`) prepares the tree via `prepareWorktree` (`internal/autonomous/worktree_prepare.go`): in repos that contain `internal/docsindex` it ensures `internal/docsindex/assets/docs-bm25-index.json` exists, writing the same `{}` placeholder `make docs-index` writes only when the file is missing (an existing index is left byte-for-byte untouched), keeps the file git-ignored (falling back to the worktree's own `info/exclude` if the ignore rule is absent) and never stages or commits it. Before this, building the packages that import `internal/docsindex` (`internal/server`, `cmd/datawatch`) inside a fresh worktree failed with `pattern assets/docs-bm25-index.json: no matching files found`, and the task was reported failed with "no new changes to verify" even though the worker's work was fine — new and reused worktrees now self-heal, and a worktree created by an older daemon is fixed manually with `make docs-index` (or by creating the file containing `{}`). Unit coverage in `internal/autonomous/worktree_prepare_test.go` (including a fresh-worktree compile regression); docs updated in `docs/operations.md` and `docs/howto/autonomous-recovery.md`.
+
+## v9.5.57 — PWA terminal no longer stalls while a session is live
+
+### Fixed
+- **PWA terminal no longer stalls while a session is live.** The session terminal could stop updating even though the daemon kept sending screen frames: the 33 ms render throttle dropped any frame that arrived inside the window (and the daemon only resends a pane when it changes), and frames were silently discarded while the terminal was scrolled up. The throttle now keeps the newest frame and draws it from a 40 ms trailing timer, so the last change is never lost. While scrolled up the newest frame is held and a **Jump to live** button appears; it is also triggered by typing, sending input, or scrolling back to the bottom, and draws the held frame. If an open session view receives no screen frame for 30 s, the 20 s WebSocket watchdog tick re-sends `subscribe` to re-sync. Covered by `internal/server/web/app-pane-capture.test.js` and the new `TS-798` PWA story (`feature:terminal-live-update`), which types commands into a live shell session and asserts the output appears within 3 s before and after a forced WebSocket reconnect. See `docs/operations.md` (Terminal Performance) and `docs/plans/2026-10-20-pwa-terminal-live-update-findings.md`.
+
+## v9.5.56 — A daemon restart keeps a task whose worker is still running
+
+### Changed
+- **Restart-safety live tests now sanitize the restart subprocess environment.** The daemon restart step in `TestBL462_DaemonRestartSurvivesLive` and `TestDaemonRestartAdoptsLiveWorkerLive` runs via `bl462RestartEnv`: `TMUX` and `TMUX_TMPDIR` are stripped on the `DW_LIVE_RESTART_CMD` and `systemctl --user` paths. The one documented exception is the `datawatch restart` CLI fallback, which re-execs the daemon in the ambient environment and must keep `TMUX_TMPDIR` (without it the restarted daemon loses its tmux socket — the failure these tests catch); `TMUX` is still stripped there.
+
+### Added
+- **Tests and docs for the boot-resume live-session adoption behavior.** When the daemon restarts mid-run, an `in_progress` task whose worker session survived is now adopted (kept in `in_progress` on the same session id, its capacity lease re-adopted, no duplicate spawn — the resumed run waits for the worker to finish and then verifies it); a task whose session died but whose output already carries the completion marker goes straight to verification; only fully dead tasks reset to pending. The Automaton stays `running` throughout because boot-resume recreates its executor under the same lock a manual run uses. Covered deterministically by `TestAdoptLive_AliveAdopted`, `TestAdoptLive_DeadReset`, `TestAdoptLive_FinishedWhileDown` and `TestAdoptLive_NoDuplicateSpawn` (`internal/autonomous`, all session backends, passing `-race -count=3`) and, for the live path, by the opt-in `TestDaemonRestartAdoptsLiveWorkerLive` (`internal/session`, gated on `DW_LIVE_RESTART_TEST=1` + `DW_BASE`, restarts the daemon through the operator path or `DW_LIVE_RESTART_CMD`). `docs/howto/autonomous-recovery.md` gains a section on what a daemon restart does to an in-progress task.
+
+## v9.5.55 — A restart no longer revives old failed PRDs
+
+### Fixed
+- **A daemon restart no longer revives old failed PRDs.** The boot-resume age and project-directory gate (`autonomous.resume_max_age_seconds`) now also applies to the recovery of a PRD left in `failed` with daemon-killed tasks: a stale one is parked (blocked, plain-English reason, alert, boot-resume report entry) instead of being re-launched, and a cancelled PRD is never recovered. Before this, old smoke PRDs came back to life at every restart. Tests in `internal/autonomous/boot_resume_gate_test.go`; recovery guide updated.
+
+## v9.5.54 — Undeclared-file warning on completed tasks
+
+### Added
+
+- **Automata now warn when a task changes files it never declared.** After each direct-mode task, files the task's own worker committed that are in neither the task's planned files nor its generated files are flagged. The finding shows on the task (an Undeclared edits badge and `undeclared_edits` with lines changed), as an `undeclared_edit_detected` decision on the Automaton, in the audit log and as a warn-level alert. Files that were already uncommitted before the task started stay under `drift_mode`, and a file is never reported by both.
+- **New setting `autonomous.undeclared_edit_mode`** (`off` | `warn` | `block`, default `warn`). `warn` records and alerts while the task continues; `block` holds the task as Blocked; `off` disables the check. Available over REST, MCP, CLI, comm `configure`, the PWA Settings (a select) and YAML. See `docs/howto/file-drift-guardrail.md`.
+
+## v9.5.53 — Deterministic boot-resume and API-executor tests
+
+### Fixed
+- **`TestBootResumeGateReport`, `TestRunDedupe_BootResumeVsRun` and the other `internal/autonomous` tests that start API executors no longer flake with "TempDir RemoveAll cleanup: directory not empty".** A new `drainOnCleanup` test helper (`WaitIdle` plus `Manager.Stop`, registered after the temp dir so it runs first) is wired into the gate fixture and every API-executor test, and state-wait sleeps in those tests are replaced with bounded polls. The package passes three `-count=20` runs, a `GOMAXPROCS=2 -cpu 1,2` run and `-race -count=2`. Test-only change.
+
+## v9.5.52 — Sonnet plan review before approval
+
+### Added
+
+- **Plan review before approval — a reviewer LLM judges each Automaton's plan against its original spec before you approve it (off by default).** Set `autonomous.plan_review_backend` (any configured LLM) and optionally `autonomous.plan_review_model`; the reviewer checks requirement coverage, task sizes, dependencies, non-trivial verification scripts and scope outside the write dirs, and its verdict is stored on the Automaton and in the decision log.
+- **New `autonomous.plan_review_mode` setting: `off` (default), `warn` (verdict recorded, never blocks) or `block` (a failing verdict refuses approve until the review is re-run to a pass or the plan is re-decomposed).** An unknown value is a config error. A reviewer outage or unreadable verdict is recorded as a reviewer failure and never blocks approval in any mode.
+- **Re-run endpoint: `POST /api/autonomous/prds/{id}/plan-review`**, with the same action on every surface: the PWA re-run button, MCP `autonomous_prd_plan_review`, comm `autonomous plan-review <id>`, and `datawatch autonomous prd-plan-review <id>`. In block mode the PWA shows a dedicated explanation toast when approve is refused.
+- **Reviewer cost and tokens appear on the verdict** when the backend reports them.
+- **Separate verifier for the plan's smoke and final-gate tasks** via `autonomous.smoke_verification_backend` / `autonomous.smoke_verification_model`; an explicit per-task verifier always wins. Empty by default (no behavior change).
+- **PWA settings** for all five new keys, localized in English, German, Spanish, French and Japanese. Android/iOS parity is tracked in `docs/parity-status.md`.
+
+## v9.5.51 — Plan-coverage gate stops flagging valid plans
+
+- **plan-coverage gate no longer reports false unresolved_file findings** — plan prose that is not a file is no longer flagged: bare file names are resolved by searching the project tree, tokens without a known file extension, dotted code identifiers (`json.Unmarshal`) and slash-separated prose lists (`absent/null/empty`) are not treated as files, and untracked runtime files (`output.log`) are not reported. A file declared in the generated-files list of the same task or an earlier story/task counts as existing, while a path under an existing directory that does not exist and is never generated is still reported, so genuine gaps keep failing the gate.
+
+## v9.5.50 — Container scans: certifi pinned in agent-aider, libcups2 accepted in parent-full
+
+### Security
+- **The `agent-aider` image now installs certifi 2026.10.19 or newer**, which clears the CRITICAL advisory GHSA-6q48-6c7w-9gw2 (compromised emSign root CAs). `scripts/check-dockerfile-certifi.sh` fails the build if the pin is missing or below that floor; it runs in the `ci` workflow and has a `--self-test` mode.
+- **libcups2 CVE-2026-55453 in the `parent-full` image is now an accepted risk.** Debian bookworm has no fixed `libcups2` yet (the fix is only in sid), the flaw needs a hostile IPP printer, and the image does not print. The entry in `security/accepted-risks.yml` expires on 2026-11-20 and `.trivyignore` was regenerated from it. Evidence is in `docs/plans/2026-10-21-trivy-aider-parent-full.md`.
+
+## v9.5.49 — MCP held to REST's reliability bar
+
+### Fixed
+
+- **MCP sessions dropping mid-conversation (BL463)** — mcp-go v0.46.0 discards
+  write/flush errors on the SSE stream outright, and a client disconnect only
+  surfaces at the next write, so a stalled client or proxy could kill the
+  connection while datawatch neither noticed, surfaced it, nor logged it. The
+  SSE serve path now registers error recovery, pings the stream with a 10 s
+  keepalive, and observes every stream (open/close, bytes, write/flush errors,
+  close reason). The stdio listen loop logs start/stop and client disconnects.
+  Root-cause analysis: `docs/plans/2026-10-20-bl463-mcp-drop-findings.md`.
+- **A recovery log line could corrupt the JSON-RPC stream in `datawatch mcp`
+  (stdio) mode** — session-store recovery messages (corruption warning,
+  subdirectory merge, flock timeout) were written to stdout, which in stdio
+  mode is the MCP protocol channel. They now go to stderr and stdout stays
+  strict JSON-RPC. Caught live by the release-smoke §7r probe.
+
+### Added
+
+- **`get_my_scope` — the session asks who it is and where it stands** —
+  returns `session_id` / `full_id` / `mcp_server_name` / `shared_entry_name`
+  / `mode` / `channel_ready` / `channel_port` / `bridge_alive` / `peers`,
+  with `resolved_via` (`hint` | `in-band` | `channel-ready-fallback`).
+  `datawatch mcp` now injects the in-band scope credential from the datawatch
+  session (BL463), and falls back to the current channel-ready active session.
+- **REST mirror: `GET /api/sessions/self/scope?hint=<id>`** — both surfaces
+  call the same `channel.BuildSelfScope` (`internal/channel/session_scope.go`),
+  so the MCP tool and the REST route can only differ by transport.
+- **Release smoke (§7r, stdio MCP) now asserts the BL463 contract** — a live
+  session calls `get_my_scope` and gets back its scope (the probe starts its
+  own fixture session when it owns the daemon); failing calls — both
+  in-process (`get_my_scope` with an unresolvable hint) and loopback-proxy
+  (`template_delete` of a missing template) — must come back as
+  `isError:true` results named after the tool and carrying the upstream
+  status + body (e.g. `template_delete: HTTP 404: template not found`); and
+  the server's stdout must stay strict JSON-RPC (a log leak fails the smoke).
+
+### Changed
+
+- MCP tool failure responses are now real error results: every MCP tool failure
+  (`isError:true`) is named after the tool call and, for tools that mirror a REST
+  route, carries the upstream HTTP status and the daemon's error body (truncated
+  where long). Previously many tools failed as indistinguishable success results
+  with an "Error: ..." text payload, and the `POST /api/mcp/call` bridge reported
+  HTTP 200 / `isError:false` for them while the direct REST route returned a 4xx
+  with a JSON body. Affected tools span session management
+  (`get_my_session_id`, `get_my_scope`, `start_session`, `send_input`,
+  `rename_session`, `kill_session`, `session_output`, `session_timeline`,
+  `session_children`, `send_saved_command`, `schedule_add`, `session_reconcile`,
+  …), the REST-loopback proxy tools (templates, projects, cooldown, audit, cost,
+  rollback, diagnose, …), and the memory tools. Successful responses and result
+  payloads are unchanged.
+
+**The point of v9.5.29: MCP is now held to REST's reliability bar — same
+reliability, same scope knowledge, same failure information.**
+
+## v9.5.48 — File drift guardrail blocks pre-existing drift and only warns on the worker's own edits
+
+- **File drift guardrail: pre-existing drift blocks by default, the worker's own edits only ever warn.** The guardrail now distinguishes two kinds of finding. A swept-in edit that *already existed* before the task started (uncommitted work that a `git add -A` picked up) is **blocked by default** under the new `autonomous.drift_mode: block` value: the task is set to `blocked` with error `foreign_file_drift: <files>` and the automaton stops walking, so the swept-in change is visible and you decide what to do. Edits made *by the task's own worker* (committed files that were clean before the task started, planned or not) are always recorded, warned and audited — but **never blocked**, in either mode. `drift_mode: warn` restores the previous flag-and-continue behaviour daemon-wide. Only `block` and `warn` are accepted (anything else is rejected, and an unset value behaves as `block`); the per-automaton / per-profile `block_on_file_drift: false` is the opt-out for automata you trust in a shared tree, and an unset daemon-wide flag no longer means "warn for everyone".
+- **Approving a file-drift-blocked task now works on a blocked PRD.** Per-task approval (`autonomous_prd_approve_task`, REST `POST /api/autonomous/prds/{id}/approve_task`) accepts PRDs in the **blocked** status — including ones halted by the file drift check — and an approved blocked task is released back to its pending queue with the stale error cleared, ready for an existing run path. Draft and cancelled PRDs still refuse approval.
+
+## v9.5.47 — Daemon restart no longer revives stale running Automata
+
+### Added
+- **New setting `autonomous.resume_max_age_seconds` (default 3600)** — how old a left-running Automaton's newest activity may be at daemon restart and still be eligible to resume. `0` = never auto-resume after a restart, `-1` = no age limit. Both values can be set from the config file, the REST API (`autonomous.resume_max_age_seconds`, or the autonomous config endpoint), the MCP autonomous-config tools, the `datawatch autonomous config-set` CLI, the comm-channel `configure` command, and the Settings card in the web UI (label and hint provided in all five language bundles).
+
+### Fixed
+- **A daemon restart no longer unconditionally revives every running Automaton.** At startup, each Automaton that was left running before the restart is checked against the resume-age limit and its project directory is verified to still exist. A fresh Automaton resumes as before; a stale one — or one whose project directory is gone (for example a reclaimed temp directory) — is parked as `blocked` with a plain-English reason and an operator alert is raised, instead of silently re-running from a dead context. A parked Automaton can be approved manually if it should still run.
+- **Every boot decision is now auditable.** The startup log, the Automaton's decision log, and the `boot_resume` list on the autonomous status all record each Automaton that was resumed or parked, with its age in seconds at decision time and the reason — so the operator can see exactly why a stale or missing-directory Automaton was parked.
+
+## v9.5.46 — A silently exited one-shot pi task is caught and retried
+
+- **A one-shot pi task where the pi process quits without ever writing a completion or a verdict no longer stalls the PRD** — the daemon now notices the silence after the idle limit (autonomous.session_idle_timeout_seconds, default 15 minutes), stops the session, and retries the task.
+- **The silence is measured from the moment pi stopped, not from when the pane happens to read as waiting for input** — a pane whose state flickers after pi exits can no longer hide the dead run.
+- **The task records why it was retried** — the reason "pi print run exited without a completion or verdict" is attached to the task.
+
+## v9.5.45 — A decompose whose save fails is retryable instead of stuck
+
+### Fixed
+- **When saving a finished decompose fails, the PRD now rolls back to draft with a recorded, retryable `decompose-persist` failure** (category `infra`, operator-retryable) instead of returning a bare error and leaving the PRD in `needs_review` with no stories stored. The give-up path also logs a failed rollback save rather than ignoring it, and a failed planning-mark save is logged.
+
+### Tests
+- `decompose_persist_failure_test.go` and `decompose_streaming_coverage_test.go` (with the test-only `Store.SavePRDFailHook`, nil in production).
+
+## v9.5.44 — Autonomous config changes take effect without a daemon restart
+
+### Fixed
+- **Autonomous settings changed at runtime now apply to live Automata right away.** Previously, changes made with `datawatch config set autonomous.…`, the REST `PUT /api/config`, or the WebUI settings panel (for example `verification_backend`, `verification_model`, the `verification_backends` pool, `stale_task_seconds`, `planning_backend`, `planning_model`, `verifier_diff_max_bytes`) were stored and read back correctly, but the verifier, the guardrail, the planner, the stall detection and the diff truncation kept using the values from daemon start-up until the daemon was restarted. Every one of those paths now re-reads the current setting on each run, so a setting changed at runtime is used on the very next task with no restart.
+- This also closes the 2026-10-18 finding that `stale_task_seconds` was stored but ignored until a restart.
+
+### Tests
+- `cmd/datawatch/live_autonomous_config_test.go` and `internal/server/autonomous_config_live_read_test.go`. These exercise the extracted live-config wiring; the live-daemon proof is a tracker row (Validated=No) until it has been run against a sandbox daemon.
+
+## v9.5.43 — Deterministic autonomous tests and executor data races fixed
+
+### Fixed
+- **The autonomous executor no longer has data races under `go test -race`.** PRD, story and task fields that executor goroutines write are now written and persisted under the store lock (`Store.WithLock`), and the lifecycle event builders read them under it. `Store.SnapshotPRD` returns a deep copy for read-only callers that may overlap a running executor.
+- **One PRD can no longer be started twice at the same moment.** The boot-time resume scan and an explicit run for the same PRD are now deduplicated.
+- **Stale tree-lock removal can no longer delete a fresh lock.** Removing a stale same-tree lock is serialized and re-checked, so two waiters can no longer both end up holding it.
+- **`TestSameTreeConcurrentReleaseBumpsDoNotCollide` and `TestExecutor_CancelledDependencyFailsDependent`, which flaked in about half of the full `-count=20` runs, are now deterministic.** The package passes `-race` and three `-count=20` runs in a row.
+
+### Tests
+- New: `persist_race_test.go`, `run_dedupe_test.go`, `store_snapshot_test.go`, and extended `tree_lock_test.go`.
+
+## v9.5.42 — Deterministic internal/session screen-capture tests
+
+### Fixed
+- **`TestSelfUpdateDialog_ScreenCaptureSendsNoKeyAndDoesNotFlipToWaiting` and the other `internal/session` tests that used fixed sleeps to wait for the screen-capture goroutine now poll for the real condition with a deadline** (`pollUntil`, `waitCaptureLoopsExit` and `mutatePane` in `internal/session/test_sync_helpers_test.go`), and wait for the capture loop to exit before asserting. This stops them failing under CI load (the v9.5.37 Release `go test + lint` job failed on the first one). Test-only change; no production behavior changed. Covers `self_update_dialog_test.go`, `startup_dialog_dismiss_test.go`, `alertgate_test.go` and `tmux_env_scrub_test.go`.
+
+## v9.5.41 — Pin the gh builder Go toolchain above the CVE fix, with a pin check
+
+### Security
+- **The `agent-base` image no longer ships a `gh` binary built with a Go standard library that is flagged by CVE-2026-111943 (`crypto/x509`).** The `gh` build stage in `Dockerfile.agent-base` now uses Go 1.27.3 (the fixed release), and the other Dockerfiles pin Go 1.26.10 instead of a floating `1.26`.
+- **CI now builds and scans with the Go version in `go.mod`** (`go-version-file`) instead of a floating `stable`, which could resolve below the CVE floor.
+
+### Added
+- **`scripts/check-go-toolchain-pins.sh`** fails when any Dockerfile or workflow pins a Go version below 1.26.10. It runs in `make lint`, in the `ci` and `release` workflows, and has a `--self-test` mode.
+
+## v9.5.40 — Git is now opt-in for sessions
+
+### Changed
+- **A session now touches git only when you ask it to.** Before this release a one-shot session that finished inside a git repository was committed automatically; now it is committed only when git was requested for that session. **This reverses the old default.** Start requests have a new `git` field (REST `/api/sessions/start`, the CLI `--git` flag, the MCP `start_session` tool, `git=` in the `new:` chat command, schedules, and a "git" checkbox in the PWA new-session form in all five locales). An explicit `git` value always wins; when it is omitted, the new config key `session.git_default` decides, and it defaults to `false`. PRD task sessions are git-enabled when their PRD has git settings (a PRD git block or a project profile). A git-enabled session gets the pre-session snapshot commit, the `datawatch-pre-` and `datawatch-post-` checkpoint tags, and one validation-gated completion commit; planning and judgment sessions (`skip_snapshot`) still never commit.
+
+### Documentation
+- **Operator guide** `docs/operations.md`, `docs/api/openapi.yaml`, `docs/api-mcp-mapping.md` and `docs/config-reference.yaml` describe the opt-in and the new key.
+
+### Tests
+- Per-surface tests for the `git` field and the default: `internal/server/session_start_git_test.go`, `internal/mcp/start_session_git_test.go`, `internal/router/git_token_test.go`, `internal/session/schedule_git_test.go`, `cmd/datawatch/session_new_git_test.go`, `internal/config/git_default_test.go`, `internal/autonomous/executor_git_test.go`, `internal/server/web/app-new-session-git.test.js`, and the gitless one-shot flow in `internal/session/oneshot_gitless_test.go`.
+
+## v9.5.39 — Accept util-linux CVE-2026-53615 in agent-base (no Debian fix)
+
+### Security
+- **The util-linux finding CVE-2026-53615 in the `agent-base` image is now an accepted risk, so the container scan no longer fails the release.** Debian bookworm has no fixed `util-linux` yet (the fix is only in trixie), the eight affected packages come from one source package, and the agent containers do not probe untrusted block devices. The entry in `security/accepted-risks.yml` expires on 2026-11-20 and `.trivyignore` was regenerated from it. Evidence and the review date are in `docs/plans/2026-10-21-cve-2026-53615-agent-base.md`.
+
+## v9.5.38 — Guardrail judges always run on the model you pinned
+
+### Fixed
+- **Guardrail judge model resolution — explicit, validated, and loud when unresolvable.** Every guardrail judge (rules-review, ci-watch, per-task / per-story guardrails, rejudge) now resolves its model through a single pure resolver (`internal/autonomous/guardrail_model.go`, `ResolveGuardrailModel`) with a 5-tier precedence chain: tier 1 PRD `guardrail_model`, tier 2 task `guardrail_model`, tier 3 the new `autonomous.guardrail_model` config field, tier 4 `autonomous.verification_model`, tier 5 `autonomous.planning_model` (tiers 3–5 apply once the resolved judge backend is pi-family). Each tier is validated against the resolved backend via the v8.37.2 pairing rule before it may win — an unpairable tier is skipped with a recorded reason. When every tier fails (nothing configured, or every tier unpairable), the guardrail record gets a loud, non-retried infra-category block (sentinel `ErrNoGuardrailModel`, verdict `noGuardrailModelVerdict`) naming all five config keys — a pi-family judge NEVER silently runs on the backend's built-in/registry default model, and the model handed to pi is never empty. `set_prd_guardrail_llm` / `set_task_guardrail_llm` validate the pair (and full unit resolution when a model is pinned) before mutating. New config field documented in `docs/config-reference.yaml` and `docs/implementation.md`; table-driven tests in `internal/autonomous/guardrail_model_test.go`.
+
+## v9.5.37 — Guardrail judge and decompose sessions always run on a configured model
+
+### Fixed
+- **A guardrail judge or decompose session can no longer launch on the backend's built-in default model.** Every Automaton judge (`rules-review`, `ci-watch`, the per-task and per-story guardrail verdicts, and the rejudge action) now resolves its model from the levels you configured — the PRD's `guardrail_model` pin, the task's `guardrail_model` override, then `autonomous.guardrail_model`, `autonomous.verification_model` and `autonomous.planning_model` in order — and `pi`'s built-in default is never used. A tier the judge's backend cannot serve is skipped with a recorded reason, never launched. When no level resolves to a model the backend can serve, the judge is **not** launched: the guardrail record gets a loud, non-retried infrastructure-category block and the message names exactly which keys to set. The decompose session follows the same no-built-in-default rule (its model resolves from the PRD's `decomposition_model`, `autonomous.planning_model`, the PRD's model, `autonomous.verification_model`), and when no level resolves on a pi-family backend the decompose attempt fails immediately with the same key list instead of consuming retry budget. The guardrail model setters (`set_prd_guardrail_llm` / `set_task_guardrail_llm`) validate the model/backend pair — and the full resolution — before accepting a pin, so a pin that would leave the unit with no resolvable model is refused at set time. See `docs/llm-backends.md` ("Judge and planning model resolution (Automata)") for the resolution order and the key list.
+
+## v9.5.37 — Every task that changes files must have a verification script
+
+### Fixed
+- **It is now checked that every task that changes files has a verification script, and the tasks that are missing one are named** — a plan with an unverified file-changing task no longer slips through unchecked.
+- **A plan that fails this check is now sent back to the planner with the names of the offending tasks for another try, instead of being passed on to review or failed without a retry.**
+
+## v9.5.36 — One-shot startup dialog auto-dismiss
+
+### Fixed
+- **A one-shot Claude Code session no longer stalls on its start-up dialog.** The session manager now recognizes the trust-folder and similar start-up dialogs in the pane, dismisses them with the right keys, and then delivers the task, so a one-shot or PRD worker session no longer sits waiting on a prompt nobody answers. Covered by `internal/session/startup_dialog_dismiss_test.go` with a recorded dialog fixture; design note in `docs/plans/2026-10-20-oneshot-startup-dialog-dismiss.md`.
+
+- **model/backend pairing** — a model that cannot run on its backend is now refused when it is set, and again before a PRD runs. A bare Claude alias (such as `claude-haiku-5-5`) is refused on `pi` and `pi-prompt`, and a provider-tagged model (such as `ollama/qwen3.8:27b`) is refused on `claude-code`. The check covers the PRD, story, task and verification/guardrail model setters on REST, MCP and the comm channel. REST returns `400` with the mismatch text, and MCP returns a tool error. The PRD Run preflight refuses a PRD whose unfinished tasks contain a mismatched pair, so earlier records are refused too. On `pi-prompt`, a non-zero exit or an empty run now prints `DATAWATCH_PI_FAILED` instead of `DATAWATCH_COMPLETE`. See `docs/llm-backends.md`.
+
+## v9.5.35 — Go 1.26.10 pin, deterministic autonomous tests, tolerant judge verdicts
+
+### Security
+- **The Go toolchain pin is raised to 1.26.10, the fixed patch release for GO-2026-6809 (crypto/x509 distrust of compromised intermediate certificates).** `govulncheck` reached this finding through `mcp.ServeSSE` → `http.Server.Serve`, which calls `x509.Certificate.Verify`. With the pinned toolchain, `govulncheck ./...` reports no standard-library vulnerabilities. The finding was not suppressed in `.trivyignore`.
+- **Pins touched:** `go.mod` (`go 1.26.10`), the `GO_VERSION` build args in `docker/dockerfiles/Dockerfile.agent-base` and `docker/dockerfiles/Dockerfile.lang-go`, and the OSS scanner image in `.oss-scanner/Dockerfile` (`golang:1.26.10-bookworm`).
+
+## Also in 9.5.35: tolerant issues decoding for guardrail verdicts and per-task verification
+
+### Fixed
+- **A guardrail judge or per-task verifier that returns `issues` as objects (or a single string/object instead of a string array) no longer blocks the PRD.** Judges and verifiers emit `issues` in more than one shape; the previous strict decode failed on the first object-shaped element (`json: cannot unmarshal object into GuardrailVerdict.issues.0 of type string`), dropped the whole verdict, and left the Automaton `blocked` even though every task had completed. `GuardrailVerdict` and `VerificationResult` now decode `issues` tolerantly: each element may be a string or an object, string/object arrays may be mixed, and a bare string, object, or number is accepted; issue objects are rendered into one readable line (e.g. `[high] pkg/file.go:42: description / message`), with everything else decoded strictly exactly as before.
+- **The raw judge text is now kept on the verdict in `raw_judge` (truncated to 16 KiB)** for both guardrail verdicts and verification results, so the exact text a judge produced can be inspected for auditing and debugging instead of being lost with a failed decode.
+- **Judge and verifier prompts now state that `issues` must be an array of plain strings, one sentence each, never objects** — defense in depth on top of the tolerant decoder.
+- **A PRD blocked earlier by `json: cannot unmarshal object into GuardrailVerdict.issues.0 of type string` now passes when rejudged** with the rejudge action (see `docs/howto/autonomous-recovery.md`) — the re-judge decodes the object-shaped issues and records the real judgment.
+- **Covered by regression tests** in `internal/autonomous/tolerant_issues_test.go`: `TestTolerantIssuesShapes` (string/object/mixed/bare/null shapes, including the incident's object-issue verdict), `TestTolerantIssuesStrictOtherFields` (strictness kept on every other field), `TestIssuesRoundTrip`, and `TestIncidentFixtureSizes`.
+
+### Tests
+- **Deterministic autonomous tests.** Executor goroutines are drained (`API.WaitIdle`) before test cleanup, and tests poll for the expected status instead of sleeping, so `TestBlockedTaskEdit_EditPersistsAndLeavesCompletedSiblingAlone` and `TestCapacity_WaitingTaskShowsStatusAndNeverFails` no longer flake under CI load.
+
+## v9.5.34 — PRD workers can no longer reach the production tmux server
+
+### Fixed
+- **PRD worker, verifier and guardrail sessions can no longer reach the production tmux server.** They now start with `TMUX` and `TMUX_TMPDIR` unset in the pane shell, so a worker cannot take down the tmux server and every session with it. Operator-started sessions are unchanged.
+- **New check `scripts/check-no-unscoped-tmux.sh`** fails on tmux server-shutdown or session-kill-all calls in scripts, tests and plan verification scripts unless the call uses an explicit throwaway socket; decompose validation rejects such plans.
+
+### Documentation
+- **Documented the tmux safety rules** in `AGENT.md` (Session Safety), `docs/testing.md` and `docs/operations.md`: PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed; scripts and tests never run tmux server-shutdown or session-kill-all except against an explicit `-S` throwaway socket or under `env -u TMUX`; every verification script runs with `env -u TMUX -u TMUX_TMPDIR`; `scripts/check-no-unscoped-tmux.sh` enforces it in `make lint`, CI and decompose validation.
+- **Why:** on 2026-10-18 20:18 and again on 2026-10-20 18:46:35 a worker's script ran a tmux server-shutdown command (`TMUX_TMPDIR=<dir>` prefixed) that took down the production tmux server with every session on it. Root cause: tmux prefers `TMUX` over `TMUX_TMPDIR`, and every worker runs inside a production pane, so the "private" directory was ignored.
+
+## v9.5.33 — Retried tasks keep their first-attempt pre-task SHA
+
+
+### Fixed
+- **A retried task no longer records a pre-task SHA from its own retry, so correctly committed work is no longer reported as a false no-output failure.** When the first attempt captured no HEAD (no commits yet), the task's base SHA stayed empty, and the retry adopted its own pre-task HEAD — which already included the first attempt's commit. The verifier then diffed from the wrong base and saw nothing. The base SHA is now set only on the first attempt (attempt 0); retries never overwrite it. Covered by tests that reproduce the no-HEAD first attempt and the retry path.
+- **The PWA no longer issues one `/api/schedules` fetch per session update when a session-detail view recovers after a WebSocket reconnect** — schedule reloads for the same session are now coalesced (in-flight dedup + 1 s minimum interval) and only the currently-open session triggers a reload, so a reconnect burst is bounded regardless of how many sessions the daemon has.
+
+- **Voice recordings longer than 30 seconds now transcribe successfully instead of failing.** Whisper-based backends that enforce a 30-second window now get the full recording as a first upload; when the backend refuses it, the daemon splits the recording locally into 30-second-or-shorter chunks at silence-aware cut points, transcribes each chunk in order, and joins the parts without duplicating or dropping audio. Deterministic: the same input always produces the same cut points.
+- **Covered by regression tests** at the transcriber layer (`internal/transcribe/long_audio_test.go`) and the upload handler layer (`internal/server/long_audio_test.go`), including 5- and 10-minute recordings, 413 enforcement on oversized uploads, and slow-upload completion.
+
+### Investigation
+- **CONFIRMED: the `/api/schedules` reconnect flood is the dominant contributor to the drop-like symptoms reported on cellular.** Measured with the `TS-797` schedule-flood story (20 seeded sessions; WS disconnect → recovery; the daemon serves HTTP/1.1 only, so the browser's 6-concurrent-per-origin connection cap applies exactly as on the phone) on two locally built daemon binaries with only the embedded `app.js` differing — **before-fix** (`app.js` from `31d96b1e`, no `_loadSessionSchedules` coalescer) vs **after-fix** (HEAD, `8412e745` coalescer in place):
+
+  | metric (untrusted-TLS origin) | before-fix | after-fix |
+  |---|---|---|
+  | total `/api/schedules` requests | **42** (1 on page load, **41 during the reconnect window**) | **1** (0 during the reconnect window) |
+  | peak in-flight, all traffic (reconnect window) | 8 | 0 |
+  | peak in-flight `/api/schedules` (reconnect window) | 4 | 0 |
+  | story verdict | FAIL (`42 > limit 5`) | PASS |
+
+  41 un-coalesced concurrent requests necessarily overflow a 6-connection HTTP/1.1 per-origin pool, queuing and starving the other traffic on that origin — `/api/sessions`, `/api/stats`, and even the WebSocket upgrade handshake — so an operator on cellular sees requests fail and the app appear to “lose the connection” (on constrained devices: `net::ERR_INSUFFICIENT_RESOURCES`). The flood itself does not sever the WebSocket transport; it exhausts the shared HTTP pool while the device is most fragile (just reconnected on a flaky link).
+- **Other drop-related code paths observed and recorded (not fixed in this pass):** the client WS stale watchdog (50 s stale threshold, 20 s ping tick → 50–70 s detection latency before it forces a reconnect), the reconnect backoff schedule, and the server-side WS protocol ping in the write pump (30 s ticker, `internal/server/ws.go`) — each is a legitimate independent disconnect/reconnect mechanism on a flaky cellular link and is documented here for the record.
+- **Evidence and how to reproduce:** `docs/testing-tracker.md` (“PWA schedules-flood” → “Baseline measurement” table), `.scratch/evidence/README.md` (full run transcripts), `.scratch/evidence-before/run-1/` (before-run screenshots + daemon log), before/after binaries in `.scratch/bin/`. Reproduce: build the two binaries as described, then `TEST_BINARY=<binary> bash scripts/e2e-pwa.sh schedule-flood` — the before binary FAILS at `/api/schedules=42`, the after binary PASSES at `/api/schedules=1`.
+
+## v9.5.32 — autonomous: a deterministic, no-LLM plan requirement coverage gate at decompose time, with an operator acknowledgement override
+
+- **New gate: `autonomous.plan_coverage_check` (`off|warn|block`, default `block`) + `autonomous.plan_coverage_min_ratio` (in the range (0,1], default 1.0)** — at decompose time datawatch runs a pure string-level check measuring how much of the PRD's spec the decomposed plan actually addresses, plus a set of structural findings (a dangling `DependsOn`, a dependency cycle, a plan entry with no file provenance, a step with no verification reason, a bad tracker-ID name). The result is stored on the PRD as the `plan_coverage` record (the mode + min_ratio it was pinned to, the covered/missing/weakened requirement counts, each unmatched requirement with its verdict, any findings, and the operator ack when one exists). The check is deterministic: the same spec + plan always gives the same report — no model call, no clock in the verdict.
+- **Approval behavior by mode** — `block` (default) stops Approve until the operator acknowledges that exact failing surface; `warn` stores and shows the failing report on the PRD but approval proceeds; `off` records the report with no gating. A report fails when the covered ratio is below the min ratio, or on any structural finding (findings fail regardless of ratio).
+- **Operator acknowledgement override** — unblock a failing `block`-mode report with an actor + a non-empty note, bound to the stored report's fingerprint so it cannot cover a different failure surface (changing the plan after an ack re-locks Approve). Reachable via REST `POST /api/autonomous/prds/{id}/plan_coverage/acknowledge`, MCP `autonomous_prd_plan_coverage_acknowledge`, CLI `autonomous prd-ack-coverage`, and the PWA.
+- **Read the stored report on a `needs_review` PRD** — `datawatch autonomous prd-coverage <id>`, REST `GET /api/autonomous/prds/{id}?detail=full` (`plan_coverage` field), MCP `autonomous_prd_get(level=full)`, or the PWA coverage panel.
+- **Both settings reachable on every parity surface** — YAML `config.yaml`, REST config (`PUT /api/config` and `GET/PUT /api/autonomous/config`), MCP `autonomous_config_set`, CLI `datawatch config set`, comm channel `configure`, and the PWA Settings fields. A PRD is pinned at decompose time: a later mode/ratio change does not re-evaluate an already-recorded report and does not undo an ack.
+- **Docs + parity test** — `docs/plans/2026-10-20-plan-coverage-gate.md` (Phases 1–4, Done), `docs/config-reference.yaml` (both keys), `docs/operations.md` (operator workflow), `docs/testing-tracker.md`, and a surface-parity test pinning the shared literals across REST, MCP, CLI and comm.
+
+## v9.5.31 — Format the session package and reject whole-package checks in plans
+
+
+### Fixed
+- **The twenty session files that were not formatted are now formatted** — formatting only, with no change in behaviour.
+- **Verification scripts are now told to check only the files a task changes** — a package's old formatting problems no longer fail unrelated tasks.
+- **A plan whose verification script checks a whole package is now rejected early with a clear reason** — covered by tests using a fake plan and fake files.
+## v9.5.30 — Re-judge blocked PRDs whose verdict was lost
+
+
+### Added
+- **An Automaton stuck `blocked` because its guardrail verdict was lost or in doubt can now be re-judged with the new rejudge action.** It re-runs the completion guardrail without resetting, reopening, or otherwise touching any completed task — only a truly blocked Automaton whose every task is already completed qualifies, and it is refused (naming the first task that isn't completed) if any task still is. The new verdict is written to the Automaton's decision log before its status changes; a pass clears the blocked reason and completes the Automaton, a block keeps it blocked with the new reason.
+- **Covered by tests using a fake judge.**
+## v9.5.29
+
+
+### Fixed
+- The project's lint check (errcheck and staticcheck) now passes again on main: unchecked error returns are handled or deliberately ignored, and a few style findings were corrected, with no change in behaviour.
+
+## v9.5.28
+
+### Fixed
+- **The planner is now instructed to never pin a fixed version number in release tasks** — the version is chosen at merge time, so plans no longer hard-code it.
+- **A plan whose release task names a fixed version is rejected early with a clear reason before it reaches review** — it can be revised and resubmitted without suffering a failed validation.
+- **Covered by tests using a fake planner.**
+
+## v9.5.27
+
+### Fixed
+- **Every guardrail judgment is now written to the Automaton's decision log before the Automaton's status changes.** Each entry records the verdict, the reason, and the judge session that made it, so a guardrail decision can always be traced afterward.
+- **An Automaton blocked by a guardrail now shows the guardrail and the judge session as its blocked reason.** That reason clears when the Automaton leaves the blocked state.
+- **A guardrail judge's output file is kept until its decision has been saved, and only then removed.** If saving fails, the output is still available for inspection.
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
 - **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
@@ -641,12 +4138,12 @@ unchanged.
 ## v9.1.6 — fix(compute): ComputeNodes representing this machine need ObserverPeer set
 
 **Operator-reported live, 2026-10-15**: the PWA session "Status" tab showed
-"no monitored compute node" for a session on `johnnyjohnny-cpu` (a CPU-only
+"no monitored compute node" for a session on `local-node-cpu` (a CPU-only
 logical ComputeNode for the same physical host as the daemon), and the PRD
 page's usage panel was silently missing the same data for the same reason.
 `handleComputeNodeDetail`'s self-peer fallback serves live local stats when
 a ComputeNode's `ObserverPeer` (or, if unset, its own name) equals the
-daemon's hostname — `johnnyjohnny-cpu`'s `ObserverPeer` was simply never
+daemon's hostname — `local-node-cpu`'s `ObserverPeer` was simply never
 set, so it fell through to its own node name, which doesn't match.
 **First attempt at this fix tried inferring locality from the node's
 Address (loopback/hostname/IP resolution) — operator explicitly rejected
@@ -3924,7 +7421,7 @@ with zero verification scripts despite BL416's own design intent).
 ## v9.0.6 — fix: datawatch-channel sibling binary silently never updated
 
 ### Fixed
-- Found while updating `ralfthewise` after v9.0.5: its `~/.local/bin/
+- Found while updating `peer-d` after v9.0.5: its `~/.local/bin/
   datawatch-channel` binary was stale since 2026-05-12 even though the
   main `datawatch` binary had been updating normally every release.
   Root cause: `datawatch-channel` moved to its own dedicated goreleaser
@@ -3971,7 +7468,7 @@ with zero verification scripts despite BL416's own design intent).
   Root cause: `loadAboutOrphanedTmux()` used a bare `fetch('/api/stats')`
   instead of the federation-aware `apiFetch()` helper, so it always
   hit the local daemon regardless of which server was selected —
-  confirmed `ralfthewise` actually has 0 orphans of its own, the card
+  confirmed `peer-d` actually has 0 orphans of its own, the card
   was just silently showing the local host's list. Also cleaned up a
   dead/unused array in `killOrphanedTmux()` built from the same
   non-federated pattern (never actually invoked).
@@ -4069,6 +7566,81 @@ allowlist (HLLM-006), plugin/skill-install diff-confirm gating
 token/cost accounting reports zero on every backend; root-caused
 (`Manager.AddUsage` is never called from real session lifecycle, only
 from the manual `POST /api/cost/usage` endpoint), not yet fixed.
+
+### Major release notes
+
+Operator-authorized full-pipeline major release: run the complete E2E
+suite, fix everything found, cut 9.0.0. See
+`docs/plans/2026-10-07-v9.0.0-major-release.md` for the full writeup.
+
+### Why major, not minor
+
+This milestone has been tracked in the backlog since 2026-09-15, gated on
+the three-part memory-lifecycle trilogy (subprocess scope isolation,
+lifecycle management, PRD memory integration) — all three shipped
+incrementally back in September (v8.29.0–v8.33.0), but the milestone itself
+was never formally cut; its backlog status text went stale and was never
+corrected. v9.0.0 is that formal cut, bundled with every v8.x release since
+(the GH#192 Android/iOS parity batch, the federation live-store staleness
+fix, and this release's own full E2E pass + housekeeping) — no new feature
+beyond what's already in 8.73.1.
+
+### Fixed
+
+- **Android beta instructions** (relayed from the datawatch-app session): the "Join Beta" badge linked straight to the Play opt-in page, which only works after joining the Google Group first. Badge now points at the tester-group link; step 1 notes to use the same Google account the phone uses for Play; added a line noting Wear OS is in the same closed test (install via Play Store search on the watch itself, or play.google.com in a browser — "Install on more devices" often doesn't surface the watch as an option).
+- **Full E2E suite**: 672 passed, 1 failed, 15 skipped (47 min, isolated
+  sandbox daemon, never production). The 1 failure was a release gate
+  (`release-smoke.sh` → `tidy-plans.sh --dry-run`) finding 9 plan docs past
+  the 7-day archive cutoff still sitting in `docs/plans/` — fixed by
+  running `tidy-plans.sh` for real; re-verified with a standalone
+  `release-smoke.sh` run afterward (185 passed, 0 failed, 33 skipped). The
+  15 skips are all pre-existing infrastructure-floor gaps in the sandbox
+  (1Password/Signal/Tailscale not configured, an Ollama vision model that
+  crashed mid-run, and a parallel-LLM Automata test hitting its own
+  documented 30-minute soft-skip branch) — none a code regression.
+- **Claude model aliases** (major-release refresh rule): `handleClaudeModels`'s
+  hardcoded `full_names` were missing the `-5-5` minor-version suffix —
+  `claude-opus-5`/`claude-sonnet-5` corrected to `claude-opus-5-5`/
+  `claude-sonnet-5-5`. `claude-haiku-4-5-20251001` and `claude-fable-5-1`
+  were already current.
+- **Release-gate lint**: the first `v9.0.0` tag's CI run failed on
+  `golangci-lint` errcheck — a `//nolint:errcheck` sat on the wrong line
+  (`exec.Command(...)` instead of the wrapped `.Run()` continuation two
+  lines down, which golangci-lint doesn't honor) in
+  `internal/llm/backends/gemini/backend.go`, plus two unguarded
+  `fmt.Fprint` in `internal/llm/backends/openwebui/usage_test.go`. Both
+  pre-existing, neither introduced by this release. Fixed; full E2E then
+  re-run completely from scratch (not just the narrower `release-smoke.sh`
+  recheck) to rule out side effects from the TS-557 plan-doc move:
+  **674 passed, 0 failed, 14 skipped, 48 min.**
+- **Agent-spawn integration smokes**: `tests/integration/spawn_docker.sh`
+  and `spawn_k8s.sh` are required by the major-release checklist but wired
+  into neither CI nor `scripts/run-tests.sh` — `git log -S` shows they'd
+  likely never actually passed. Both called the singular
+  `/api/profiles/project(cluster)` against routes that have always been
+  plural (404 on every call); `spawn_docker.sh` separately hardcoded an
+  `image_pair.agent` that the docker driver resolves to a non-existent
+  registry tag, leaving its own `$IMAGE` override as dead code. Fixed
+  both; they now pass end-to-end (real Pod and container lifecycle).
+
+### Changed
+
+- **Container/Helm maintenance audit**: confirmed every worker/parent
+  container image bakes in a fresh-from-source build of the `datawatch`
+  binary itself (`agent-base`'s builder stage), and that
+  `.github/workflows/release.yaml` already rebuilds every one of them on
+  every release tag push, unconditionally — no manual rebuild needed for
+  this release. `charts/datawatch/Chart.yaml`'s `appVersion` (stale at
+  `5.26.22`, ~80 releases behind) refreshed to `9.0.0`; chart `version`
+  left unchanged (no template/values changes this release).
+- **README restructure**: added the `## Current release` marquee section
+  the release checklist requires (previously just a drifted "Recent
+  highlights" paragraph with no dedicated heading); folded older entries
+  into `### vX.Y highlights` bullet groups.
+- **Backlog correction**: `docs/plans/README.md`'s v9.0.0/BL386/BL387
+  entries had sat at stale "in-progress"/"planned" status text since
+  2026-09-16, long after all three actually shipped — corrected to reflect
+  the real, already-tracked-elsewhere closure state.
 
 ## v8.80.0 — chore: v9.0.0 pre-tag re-verification pass
 
@@ -4702,7 +8274,7 @@ from the manual `POST /api/cost/usage` endpoint), not yet fixed.
 ## v8.73.32 — feat(federation): per-peer TLS cert-verification bypass for self-signed servers
 
 ### Added
-- Operator reported federation to `ralfthewise` failing while its web UI loaded fine. Root cause: `ralfthewise`'s datawatch serves a self-signed certificate (`CN=server`, issuer==subject — its own auto-generated fallback cert), and every federation outbound call (`Store.Test()`, `/api/proxy/{name}/...`, `/api/proxy/{name}/ws`, `/remote/{name}/...`, aggregated-sessions fan-out) does strict TLS verification with no way to trust a specific peer's cert — `tls: failed to verify certificate: x509: certificate signed by unknown authority`.
+- Operator reported federation to `peer-d` failing while its web UI loaded fine. Root cause: `peer-d`'s datawatch serves a self-signed certificate (`CN=server`, issuer==subject — its own auto-generated fallback cert), and every federation outbound call (`Store.Test()`, `/api/proxy/{name}/...`, `/api/proxy/{name}/ws`, `/remote/{name}/...`, aggregated-sessions fan-out) does strict TLS verification with no way to trust a specific peer's cert — `tls: failed to verify certificate: x509: certificate signed by unknown authority`.
 - New per-entry `tls_skip_verify` field (`multiserver.Entry`, `config.RemoteServerConfig`) disables cert verification for **that one peer only** — every other peer/server keeps full verification. Shared `multiserver.HTTPClient(skipVerify, timeout)` helper used by all 5 outbound call sites instead of 5 independently-drifting `http.Client` constructions.
 - Full-surface parity: REST (`fedPeerAdd`/`fedPeerUpdate`/plain server add/update — auto-pass-through, no DTU needed), MCP (`federation_peer_add/update`, `server_add/update` — new `tls_skip_verify` param), CLI (`federation peer add/update --tls-skip-verify`, `server add/update --tls-skip-verify`, and an interactive prompt in `datawatch setup server`), YAML (`servers[].tls_skip_verify`), PWA (checkbox on both the "Remote Servers" and "Federation Peers" forms, 2 new locale keys × 5 bundles). No comm-channel surface exists for server management, so none was added.
 - `TestStore_Test_TLSSkipVerify` — a real `httptest.NewTLSServer` (genuinely self-signed, not mocked): confirms `TLSSkipVerify=false` fails with a certificate error against it and `TLSSkipVerify=true` succeeds against the *same* server.
@@ -5009,81 +8581,6 @@ from the manual `POST /api/cost/usage` endpoint), not yet fixed.
 ### Added
 - `server_picker_loading`, `fed_conn_connecting`, `fed_conn_loading_sessions`, `fed_conn_error_title`, `fed_conn_error_body`, `fed_conn_back_to_local` — new locale keys, all 5 bundles.
 - `internal/server/web/app-fed-conn-status.test.js` — 10 new tests pinning the state-default regression, retry-not-poison behavior, and the real event-driven status transitions.
-
-## v9.0.0 — Memory Lifecycle Complete (major release)
-
-Operator-authorized full-pipeline major release: run the complete E2E
-suite, fix everything found, cut 9.0.0. See
-`docs/plans/2026-10-07-v9.0.0-major-release.md` for the full writeup.
-
-### Why major, not minor
-
-This milestone has been tracked in the backlog since 2026-09-15, gated on
-the three-part memory-lifecycle trilogy (subprocess scope isolation,
-lifecycle management, PRD memory integration) — all three shipped
-incrementally back in September (v8.29.0–v8.33.0), but the milestone itself
-was never formally cut; its backlog status text went stale and was never
-corrected. v9.0.0 is that formal cut, bundled with every v8.x release since
-(the GH#192 Android/iOS parity batch, the federation live-store staleness
-fix, and this release's own full E2E pass + housekeeping) — no new feature
-beyond what's already in 8.73.1.
-
-### Fixed
-
-- **Android beta instructions** (relayed from the datawatch-app session): the "Join Beta" badge linked straight to the Play opt-in page, which only works after joining the Google Group first. Badge now points at the tester-group link; step 1 notes to use the same Google account the phone uses for Play; added a line noting Wear OS is in the same closed test (install via Play Store search on the watch itself, or play.google.com in a browser — "Install on more devices" often doesn't surface the watch as an option).
-- **Full E2E suite**: 672 passed, 1 failed, 15 skipped (47 min, isolated
-  sandbox daemon, never production). The 1 failure was a release gate
-  (`release-smoke.sh` → `tidy-plans.sh --dry-run`) finding 9 plan docs past
-  the 7-day archive cutoff still sitting in `docs/plans/` — fixed by
-  running `tidy-plans.sh` for real; re-verified with a standalone
-  `release-smoke.sh` run afterward (185 passed, 0 failed, 33 skipped). The
-  15 skips are all pre-existing infrastructure-floor gaps in the sandbox
-  (1Password/Signal/Tailscale not configured, an Ollama vision model that
-  crashed mid-run, and a parallel-LLM Automata test hitting its own
-  documented 30-minute soft-skip branch) — none a code regression.
-- **Claude model aliases** (major-release refresh rule): `handleClaudeModels`'s
-  hardcoded `full_names` were missing the `-5-5` minor-version suffix —
-  `claude-opus-5`/`claude-sonnet-5` corrected to `claude-opus-5-5`/
-  `claude-sonnet-5-5`. `claude-haiku-4-5-20251001` and `claude-fable-5-1`
-  were already current.
-- **Release-gate lint**: the first `v9.0.0` tag's CI run failed on
-  `golangci-lint` errcheck — a `//nolint:errcheck` sat on the wrong line
-  (`exec.Command(...)` instead of the wrapped `.Run()` continuation two
-  lines down, which golangci-lint doesn't honor) in
-  `internal/llm/backends/gemini/backend.go`, plus two unguarded
-  `fmt.Fprint` in `internal/llm/backends/openwebui/usage_test.go`. Both
-  pre-existing, neither introduced by this release. Fixed; full E2E then
-  re-run completely from scratch (not just the narrower `release-smoke.sh`
-  recheck) to rule out side effects from the TS-557 plan-doc move:
-  **674 passed, 0 failed, 14 skipped, 48 min.**
-- **Agent-spawn integration smokes**: `tests/integration/spawn_docker.sh`
-  and `spawn_k8s.sh` are required by the major-release checklist but wired
-  into neither CI nor `scripts/run-tests.sh` — `git log -S` shows they'd
-  likely never actually passed. Both called the singular
-  `/api/profiles/project(cluster)` against routes that have always been
-  plural (404 on every call); `spawn_docker.sh` separately hardcoded an
-  `image_pair.agent` that the docker driver resolves to a non-existent
-  registry tag, leaving its own `$IMAGE` override as dead code. Fixed
-  both; they now pass end-to-end (real Pod and container lifecycle).
-
-### Changed
-
-- **Container/Helm maintenance audit**: confirmed every worker/parent
-  container image bakes in a fresh-from-source build of the `datawatch`
-  binary itself (`agent-base`'s builder stage), and that
-  `.github/workflows/release.yaml` already rebuilds every one of them on
-  every release tag push, unconditionally — no manual rebuild needed for
-  this release. `charts/datawatch/Chart.yaml`'s `appVersion` (stale at
-  `5.26.22`, ~80 releases behind) refreshed to `9.0.0`; chart `version`
-  left unchanged (no template/values changes this release).
-- **README restructure**: added the `## Current release` marquee section
-  the release checklist requires (previously just a drifted "Recent
-  highlights" paragraph with no dedicated heading); folded older entries
-  into `### vX.Y highlights` bullet groups.
-- **Backlog correction**: `docs/plans/README.md`'s v9.0.0/BL386/BL387
-  entries had sat at stale "in-progress"/"planned" status text since
-  2026-09-16, long after all three actually shipped — corrected to reflect
-  the real, already-tracked-elsewhere closure state.
 
 ## v8.73.1 — docs: Android beta step 3 — install link now live
 
@@ -5969,7 +9466,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ## v8.36.9 — feat(autonomous): verifier capacity load-balances across multiple configured ollama nodes; fixes capacity-card PRD attribution and a config-merge bug
 
 ### Added
-- **`autonomous.verification_backends`** — an ordered list of LLM registry names (e.g. `["ollama-datawatch", "ollama-johnnyjohnny"]`) the verifier tries in order, using whichever currently has free node capacity. Found live: a claude-code PRD's verifier always fell back to one hardcoded default backend, which needed the *same exclusive `node:` capacity slot* a real local worker session on that node needed — so a 100%-cloud PRD's progress could be blocked indefinitely by unrelated local GPU contention it had nothing to do with. Each candidate uses its own registry-default model (forcing one model across heterogeneous nodes isn't safe). Empty (default) = exact single-backend behavior as before. Exposed through every surface: REST/YAML config, MCP (`autonomous_config_set`'s new `verification_backends` array param), and comm channel (new `autonomous config-get` / `autonomous config-set` verbs — this whole config surface previously had no comm-channel parity at all).
+- **`autonomous.verification_backends`** — an ordered list of LLM registry names (e.g. `["ollama-datawatch", "ollama-local-node"]`) the verifier tries in order, using whichever currently has free node capacity. Found live: a claude-code PRD's verifier always fell back to one hardcoded default backend, which needed the *same exclusive `node:` capacity slot* a real local worker session on that node needed — so a 100%-cloud PRD's progress could be blocked indefinitely by unrelated local GPU contention it had nothing to do with. Each candidate uses its own registry-default model (forcing one model across heterogeneous nodes isn't safe). Empty (default) = exact single-backend behavior as before. Exposed through every surface: REST/YAML config, MCP (`autonomous_config_set`'s new `verification_backends` array param), and comm channel (new `autonomous config-get` / `autonomous config-set` verbs — this whole config surface previously had no comm-channel parity at all).
 
 ### Fixed
 - **The verifier's capacity requests never set `PRDID`** — so `/api/capacity?prd_id=<id>` and the capacity card could never show that a PRD was genuinely blocked waiting on the verifier; it just looked idle. Also: `?prd_id=` only ever filtered the `pools` list, never `leases`/`waiting`, so a PRD's scoped view could show unrelated PRDs' entries. Both fixed.
@@ -5983,7 +9480,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ## v8.36.7 — fix(autonomous): a worker's `git add -A` could reach the operator's home directory when its project dir had no git repo of its own
 
 ### Fixed
-- **A one-shot task's `git add -A` could silently stage the operator's entire home directory** — found live while retrying PRD `a2833a5e`'s story-2 tasks: `/home/dmz/workspace/llm-research` (the PRD's `project_dir`) had never been `git init`'d on its own, so every git command run from inside it (including the daemon's own pre-task `git -C projectDir rev-parse HEAD` capture, which doesn't error on this — it silently returns the discovered ancestor repo's SHA instead) walked upward and landed on a stray `.git` at the operator's home directory. A worker's checkpoint-protocol `git add -A` — which stages relative to the *discovered repo's root*, not the task's project dir — began staging `.gnupg`, `.kube`, `.docker`, `.claude.json`, `.bash_history`, and the rest of the home directory before being caught and killed. Verified nothing sensitive was ever actually committed (checked the home-dir repo's full history: only `workspace/llm-research/*` paths across its entire log, no remote configured). `autonomousSpawn` now calls `ensureProjectDirOwnGitRepo` before every task: if a project dir's discovered git toplevel resolves to exactly the operator's home directory (the specific dangerous case — a project dir intentionally nested inside some *other* real repo is left untouched), it gets its own dedicated repo first.
+- **A one-shot task's `git add -A` could silently stage the operator's entire home directory** — found live while retrying PRD `a2833a5e`'s story-2 tasks: `/home/<user>/workspace/llm-research` (the PRD's `project_dir`) had never been `git init`'d on its own, so every git command run from inside it (including the daemon's own pre-task `git -C projectDir rev-parse HEAD` capture, which doesn't error on this — it silently returns the discovered ancestor repo's SHA instead) walked upward and landed on a stray `.git` at the operator's home directory. A worker's checkpoint-protocol `git add -A` — which stages relative to the *discovered repo's root*, not the task's project dir — began staging `.gnupg`, `.kube`, `.docker`, `.claude.json`, `.bash_history`, and the rest of the home directory before being caught and killed. Verified nothing sensitive was ever actually committed (checked the home-dir repo's full history: only `workspace/llm-research/*` paths across its entire log, no remote configured). `autonomousSpawn` now calls `ensureProjectDirOwnGitRepo` before every task: if a project dir's discovered git toplevel resolves to exactly the operator's home directory (the specific dangerous case — a project dir intentionally nested inside some *other* real repo is left untouched), it gets its own dedicated repo first.
 - Migrated the 6 other project directories found in the same exposed state (`Android`, `datawatch-intelligence`, `email`, `openrig-datawatch`, plus two ephemeral e2e/sandbox dirs) to their own repos as a one-time operational cleanup; not part of the code fix itself.
 - **CI: `attach stats-cluster tarball` release-asset upload retry window widened 3×90s → 8×60s** — observed on the v8.36.6 release: `gh release view`/`gh release upload` returned "release not found" for 3 full minutes of retries starting 6 minutes after goreleaser's own log confirmed the release was published (same tag, same repo, same token) — a read-path propagation lag, not a permissions or job-ordering bug. A manual retry ~15 minutes post-publish succeeded immediately; widened the in-job budget to comfortably cover it.
 
@@ -6374,7 +9871,7 @@ This completes BL381's PWA surface. REST + MCP + CLI + comm channel + fedCap shi
 
 ### Fixed
 - **Automata watchdog blind to `verifying`/`running_tests` tasks** — the built-in watchdog goroutine only scanned tasks in `in_progress` state for SSE stall patterns. Tasks stuck in `verifying` or `running_tests` (where the opencode session has an active SSE stream but the LLM backend timed out) were never detected and never killed, leaving them stuck until manual operator intervention. The watchdog now covers all three active task states.
-- **Insecure spawned `automata-watchdog` schedule removed** — a cron schedule was spawning opencode sessions with a task prompt that (1) issued `curl` to the local daemon API, (2) ran `tmux capture-pane` to read other sessions' terminal content (a cross-session secret read boundary violation), and (3) wrote reports to `/home/dmz/.datawatch/` outside the workspace. The schedule has been deleted and the spawned session killed. The built-in Go watchdog goroutine already covers SSE stall detection without any of these security issues.
+- **Insecure spawned `automata-watchdog` schedule removed** — a cron schedule was spawning opencode sessions with a task prompt that (1) issued `curl` to the local daemon API, (2) ran `tmux capture-pane` to read other sessions' terminal content (a cross-session secret read boundary violation), and (3) wrote reports to `/home/<user>/.datawatch/` outside the workspace. The schedule has been deleted and the spawned session killed. The built-in Go watchdog goroutine already covers SSE stall detection without any of these security issues.
 
 ## v8.27.0 — feat(autonomous): cancel story/task, requeue task, active session resource bars
 
@@ -6485,7 +9982,7 @@ These fixes complete the enforcement hardening started in v8.25.10, which fixed 
 - **`cmd/datawatch-stats/main.go`** — tegrastats probe started first (Jetson/Tegra priority), falls back to nvidia-smi on discrete-GPU hosts; logged at startup.
 
 ### Notes
-- On NVIDIA Thor (GB10) unified-memory SoCs, `tegrastats` reports system RAM as the GPU memory pool (no discrete VRAM), GPU temperature from `gpu@T.TC`, power from `VDD_GPU XmW`, and GPU util% = 0 (GR3D_FREQ absent in Thor format).
+- On NVIDIA Thor (GB10) unified-memory SoCs, `tegrastats` reports system RAM as the GPU memory pool (no discrete VRAM), GPU temperature from `gpu temp field (T dot TC, tegrastats)`, power from `VDD_GPU XmW`, and GPU util% = 0 (GR3D_FREQ absent in Thor format).
 - CAP_BPF must be re-granted on any manually deployed binary (`sudo setcap cap_bpf+eip ~/.local/bin/datawatch-stats`); CI goreleaser builds are unaffected.
 
 ## v8.25.2 — fix(ci): add datawatch-stats to goreleaser for linux/darwin arm64+amd64
@@ -6885,7 +10382,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 ### Added
 
-- **`docker/dockerfiles/Dockerfile.agent-goose`** — pre-creates `/home/datawatch/.config/goose/` so the sessions directory exists before the first `goose session` call (avoids a race on container cold-start); adds `ENV GOOSE_CLI_THEME=plain` to prevent escape-sequence bleed in tmux pipe-pane captures (was previously required only at launch-command level; now also a container default).
+- **`docker/dockerfiles/Dockerfile.agent-goose`** — pre-creates `/home/<user>/.config/goose/` so the sessions directory exists before the first `goose session` call (avoids a race on container cold-start); adds `ENV GOOSE_CLI_THEME=plain` to prevent escape-sequence bleed in tmux pipe-pane captures (was previously required only at launch-command level; now also a container default).
 
 ### Notes
 
@@ -7272,7 +10769,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
   # Exact syntax from GH#128:
   datawatch schedule spawn \
     --cron "0 * * * *" \
-    --path /home/dmz/workspace/imap-mcp \
+    --path /home/<user>/workspace/imap-mcp \
     --schedule-name imap-hourly-rules \
     --shell "imap-mcp run-rules --config ~/workspace/dmz-imap.yaml"
   ```
@@ -7296,7 +10793,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
   session:
     extra_mcp_servers:
       - name: imap-mcp
-        command: /home/dmz/workspace/imap-mcp/imap-mcp
+        command: /home/<user>/workspace/imap-mcp/imap-mcp
         env:
           GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD}"
   ```
@@ -7379,7 +10876,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 - **Task-echo false positive eliminated** — The `\r`-split fix introduced in v8.12.4 inadvertently caused a false positive: if the task text itself contains the completion pattern (e.g. `"output a line starting with:\nDATAWATCH_COMPLETE: done"`), Claude Code's TUI re-renders the user input and a CR-segment starting with `  DATAWATCH_COMPLETE:` appears in the pipe-pane log within ~1 s of task delivery. `matchesCompletionPattern` fired on it, setting `StateComplete` before the LLM had run the Bash tool. Fix: `Manager` now records a `taskDeliveredAt` timestamp when `send_input` fires (`MarkTaskDelivered`); `processOutputLine` suppresses completion detection for 5 s after task delivery. Task echo appears at T+1 s; LLM API response arrives at T+10 s minimum, so 5 s safely covers the echo window without affecting real completions.
 
-  Verified end-to-end with a tool-using spawn (v8125-toolcall-reap-test2, ac1c): task `ls -la /home/dmz | wc -l` → Bash tool called → LLM emitted `⎿ DATAWATCH_COMPLETE: 54` → detected at ~55 s, tmux killed. 369-line log confirms full execution path (vs. 96 lines for the false-positive premature kill). Exactly one session spawned per tick.
+  Verified end-to-end with a tool-using spawn (v8125-toolcall-reap-test2, ac1c): task `ls -la /home/<user> | wc -l` → Bash tool called → LLM emitted `⎿ DATAWATCH_COMPLETE: 54` → detected at ~55 s, tmux killed. 369-line log confirms full execution path (vs. 96 lines for the false-positive premature kill). Exactly one session spawned per tick.
 
 ---
 
@@ -8354,7 +11851,7 @@ Downstream-Review Rule.
 ### Fixed
 
 - **SRI version-pin timebomb.** `index.html` / `diagrams.html` / `api-docs.html` were loading CDN scripts with semver-range tags (`mermaid@10`, `marked@12`, `swagger-ui-dist@5`) alongside fixed sha384 integrity hashes. The CDN resolves the range to whatever is "latest in major"; the next CDN rotation would silently 404 the script with an SRI mismatch and the Diagrams + API Docs pages would render blank. Pinned to the currently-resolved exact versions (`mermaid@10.9.6`, `marked@12.0.2`, `swagger-ui-dist@5.32.6`); hashes match unchanged. `qrcodejs/1.0.0` was already exact.
-- **RFC 5737 private-IP sweep — finished what v8.8.4 started.** `docs/howto/federation-cbac.md` retained `10.0.0.2` in three places (curl example, comm-channel example, YAML config sample) after v8.8.4 replaced the same address in `app.js`. Since the docs are served by the embedded docs viewer, ZAP would re-flag the same alert 2 on the docs path. Replaced with `198.51.100.2` (RFC 5737 documentation range); `make sync-docs` mirrors to the embedded copy.
+- **RFC 5737 private-IP sweep — finished what v8.8.4 started.** `docs/howto/federation-cbac.md` retained `192.0.2.2` in three places (curl example, comm-channel example, YAML config sample) after v8.8.4 replaced the same address in `app.js`. Since the docs are served by the embedded docs viewer, ZAP would re-flag the same alert 2 on the docs path. Replaced with `198.51.100.2` (RFC 5737 documentation range); `make sync-docs` mirrors to the embedded copy.
 
 ---
 
@@ -8446,7 +11943,7 @@ Downstream-Review Rule.
 - **Cross-Origin-Embedder-Policy added** — `COEP: unsafe-none` on all responses. Resolves ZAP alert 90004 (COEP Missing).
 - **Cross-Origin-Resource-Policy added** — `CORP: same-origin` on all responses. Resolves ZAP alert 90004 (CORP Missing).
 - **Permissions-Policy added** — Restricts camera, microphone (self-only for Whisper voice), geolocation, payment, USB, motion sensors. Resolves ZAP alert 10063.
-- **Private IP Disclosure fixed** — Federation peer URL example changed from `10.0.0.2` (RFC 1918) to `198.51.100.2` (RFC 5737 documentation range). Resolves ZAP alert 2.
+- **Private IP Disclosure fixed** — Federation peer URL example changed from `192.0.2.2` (RFC 5737 documentation range, retained as a placeholder despite the ZAP false positive) to `198.51.100.2` (RFC 5737 TEST-NET-2). Resolves ZAP alert 2.
 - **Suspicious comments removed** — `// bug from v6.11.13` → `// workaround from v6.11.13`; `// Debug panel` → `// Diagnostic panel` in `app.js`. Resolves ZAP alert 10027.
 
 ---
@@ -9433,7 +12930,7 @@ follow-ups to alpha.34 that complete the hook-integration arc.
   PWA is in a side panel / split window.
 - **Strict shell + monitor cleanup rule codified** — operator-flagged
   accumulating `until grep -qE` watcher shells; new rule
-  `feedback_shell_cleanup_strict.md` mandates pkill after every ship.
+  `feedback_shell_cleanup_strict.md` mandates a straying-process cleanup kill after every ship.
 
 ## [7.0.0-alpha.34] - 2026-05-10
 
@@ -10106,7 +13603,7 @@ Plan-drift acknowledged: alpha.14–19 shipped operator-pulled-in UX work instea
 
 ### Memory
 
-- Added: `feedback_no_empty_exec_target.md` — never call `exec.Command("tmux", "kill-session", "-t", "")` (the empty target = match-all and killed operator's live attached session).
+- Added: `feedback_no_empty_exec_target.md` — never call the tmux session-kill with an empty `-t` target (an empty target is match-all and took down the operator's live attached session).
 - Added: `feedback_smoke_cleanup_only_tracked.md` — smoke cleanup sweeps ONLY `add_cleanup`-tracked + the prefixes `autonomous:` / `smoke-`. No mass-sweep by name pattern.
 
 ## [7.0.0-alpha.19] - 2026-05-09
@@ -10171,7 +13668,7 @@ Operator-spec'd 2026-05-09: "in llm selecting compute shouldn't be a comma list 
 
 ### Summary — CRITICAL: empty tmux target killed operator's live session (#249)
 
-Operator 2026-05-09: "i stopped session 4169ux and it killed all sessions… No it killed this session too, not cascaded, there were only 2 seasons, one left from smoke test, when i killed it it killed our claude session". Operator stopped a council-virtual leftover session via the PWA; daemon called `tmux kill-session -t ""` (because virtual sessions have empty TmuxSession) and tmux killed the operator's live attached claude session (the one running our entire dev conversation).
+Operator 2026-05-09: "i stopped session 4169ux and it killed all sessions… No it killed this session too, not cascaded, there were only 2 seasons, one left from smoke test, when i killed it it killed our claude session". Operator stopped a council-virtual leftover session via the PWA; the daemon called the tmux session-kill with an empty target (empty target matches all sessions) and it took down the operator's live attached claude session (the one running our entire dev conversation).
 
 ### Fixed
 
@@ -10384,7 +13881,7 @@ Three operator-pulled-in pre-v7.0 deliverables in one cut, executed after operat
 
 - `go build ./...` — clean
 - `node --check internal/server/web/app.js` — OK (after Compute tab edits)
-- Live council quick-run against daemon — verified 2 council-virtual sessions (`ralfthewise-council-4169-ux-advocate`, `ralfthewise-council-4169-ops-realist`) appear in `/api/sessions` with `state=running`, `backend=council-virtual`
+- Live council quick-run against daemon — verified 2 council-virtual sessions (`peer-d-council-4169-ux-advocate`, `peer-d-council-4169-ops-realist`) appear in `/api/sessions` with `state=running`, `backend=council-virtual`
 - Chrome MCP visual: tab list = `[General, Plugins, Comms, Compute, Automata, About]` (no LLM, no Agents); Compute tab shows 11 cards; Automata tab includes `gc_projectprofiles`
 - Smoke 98/0/13 from alpha.9 baseline; re-run pending after this cut
 
@@ -10640,18 +14137,18 @@ Per `docs/plans/2026-05-08-v7.0.0-plan.md` § 5 S5.
 
 ```bash
 # CLI
-datawatch memory scope recall --persona alice --project /home/me/web --session sess1
-datawatch memory scope borrow --scope project-shared --project /home/me/web --top-k 5
-datawatch memory scope seed --from-scope project-shared --from-project /home/me/web \
-  --to-scope session-local --to-project /home/me/marketing --to-session marketing-sess \
+datawatch memory scope recall --persona alice --project /home/<user>/web --session sess1
+datawatch memory scope borrow --scope project-shared --project /home/<user>/web --top-k 5
+datawatch memory scope seed --from-scope project-shared --from-project /home/<user>/web \
+  --to-scope session-local --to-project /home/<user>/marketing --to-session marketing-sess \
   --content-substring "branding"
 datawatch memory scope promote --memory-id 42 \
-  --from-scope session-local --from-project /home/me/web --from-session sess1 \
-  --to-scope project-shared --to-project /home/me/web \
+  --from-scope session-local --from-project /home/<user>/web --from-session sess1 \
+  --to-scope project-shared --to-project /home/<user>/web \
   --persona alice --run run-99
 
 # REST
-curl -sk 'https://localhost:8443/api/memory/scopes/recall?persona=alice&project=/home/me/web'
+curl -sk 'https://localhost:8443/api/memory/scopes/recall?persona=alice&project=/home/<user>/web'
 curl -sk -X POST 'https://localhost:8443/api/memory/scopes/promote' \
   -H 'Content-Type: application/json' \
   -d '{"memory_id":42,"from":{"scope":"session-local",...},"to":{"scope":"project-shared",...}}'
@@ -11605,7 +15102,7 @@ Functional ✓ 1834 tests · Smoke ✓ exit 0 · Rule audit ✓ 31 rules walked 
 
 ### Summary — sessions.json corruption auto-recovery + atomic writes
 
-Operator post-mortem 2026-05-07: daemon crashed at startup with `Error: create session manager: open session store: parse store /home/dmz/.datawatch/sessions.json: unexpected end of JSON input`. Root cause: the previous version's `secfile.WriteFile` used non-atomic `os.WriteFile` — a daemon kill mid-flush left the file truncated at a 128 KB page boundary mid-string. Two fixes:
+Operator post-mortem 2026-05-07: daemon crashed at startup with `Error: create session manager: open session store: parse store /home/<user>/.datawatch/sessions.json: unexpected end of JSON input`. Root cause: the previous version's `secfile.WriteFile` used non-atomic `os.WriteFile` — a daemon kill mid-flush left the file truncated at a 128 KB page boundary mid-string. Two fixes:
 
 ### Fixed (BL286)
 
@@ -15437,7 +18934,7 @@ Patch — loopback URL respects bind config + startup health probe.
 - **127.0.0.1 hardcoded everywhere**, breaking when the daemon binds
   to a specific non-loopback interface (operator-reported: "Loopback
   may not exist if someone changes the default interfaces, validate"
-  — when `cfg.Server.Host = 192.168.1.5`, the daemon listens at
+  — when `cfg.Server.Host = 192.0.2.35`, the daemon listens at
   192.x and DOESN'T accept on 127.0.0.1, so all 14 internal loopback
   HTTP calls — autonomous decompose, voice transcribe, channel
   bridge, orchestrator guardrails, etc. — silently fail).
@@ -20334,7 +23831,7 @@ and conversation mining. **All memory backlog items (BL43-BL67) are now implemen
 - **Multi-profile fallback chains**: named profiles with different accounts/API keys per backend. `session.fallback_chain` config auto-switches to the next profile on rate limit. Profile env vars applied to tmux session on launch. Configurable via YAML, web UI (Settings → Profiles & Fallback), and REST API.
 - **`channel_ready` + `channel_port` session fields**: set automatically when the per-session MCP channel calls `/api/channel/ready`; exposed in REST API `/api/sessions`. Used for debounced state detection and per-session channel routing
 - **Prompt context capture**: prompt alerts now include up to 10 surrounding screen lines (`prompt_context` field on Session) giving meaningful context about what is being asked, instead of a single matched line or noisy fallback
-- **Alert title format**: all alert titles now use `hostname: name [id]: event` (e.g. `ralfthewise: myproject [a1b2]: running → waiting_input`) for consistent identification across local and remote channels
+- **Alert title format**: all alert titles now use `hostname: name [id]: event` (e.g. `peer-d: myproject [a1b2]: running → waiting_input`) for consistent identification across local and remote channels
 - **Rate-limit auto-continue**: when a rate limit is detected with a reset time, datawatch creates a persisted scheduled command to auto-resume the session after the limit resets — survives daemon restarts (replaces previous in-memory timer that was lost on reboot)
 - **`ScheduleStore.CancelBySession`**: new method to cancel all pending scheduled commands for a session; called automatically on session kill and delete to prevent orphan entries
 - **Channel tab bidirectional**: channel tab now shows outgoing sends (blue `→`), incoming replies (amber `←`), and notifications (purple `⚡`) — previously only showed Claude's rare `reply` tool calls

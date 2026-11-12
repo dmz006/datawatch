@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // installFakeTmux puts a PATH-resolvable fake `tmux` in dir that records
@@ -55,6 +56,7 @@ func TestLaunch_LongTaskGoesThroughScratchFile(t *testing.T) {
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	installFakeTmux(t, dir, argvFile)
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 
 	task := "SPEC\n" + strings.Repeat("x", 40*1024)
 	b := New("aider")
@@ -96,7 +98,7 @@ func TestLaunch_LongTaskGoesThroughScratchFile(t *testing.T) {
 	}
 	rmIdx := strings.Index(cmd, "rm -f '"+path+"'")
 	echoIdx := strings.Index(cmd, "DATAWATCH_COMPLETE")
-	if !(rmIdx < echoIdx) {
+	if rmIdx >= echoIdx {
 		t.Errorf("rm -f cleanup must come before the DATAWATCH_COMPLETE echo, got: %.400s", cmd)
 	}
 	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: aider done'") {
@@ -108,6 +110,7 @@ func TestLaunch_TaskWithSingleQuotesStillDeliveredIntact(t *testing.T) {
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	installFakeTmux(t, dir, argvFile)
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 
 	task := "don't break it's a test\nwith a newline"
 	b := New("aider")
@@ -130,6 +133,7 @@ func TestLaunch_FallsBackToInlineWhenScratchFileFails(t *testing.T) {
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	installFakeTmux(t, dir, argvFile)
+	testhome.PrivateTmp(t) // any scratch file lands in the test's temp dir
 	// Point TMPDIR at a path that doesn't exist so os.CreateTemp fails.
 	t.Setenv("TMPDIR", filepath.Join(dir, "definitely-missing"))
 
@@ -154,6 +158,7 @@ func TestLaunch_ProjectDirQuoting(t *testing.T) {
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	installFakeTmux(t, dir, argvFile)
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 
 	b := New("aider")
 	if err := b.Launch(context.Background(), "task", "cs-test", "/proj's/dir", ""); err != nil {

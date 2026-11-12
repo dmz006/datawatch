@@ -205,7 +205,7 @@ memory archive-import project=<dir> source_prd_id=<old_id> target_prd_id=<new_id
 ```
 POST /api/memory/scopes/archive-import
 {
-  "project_dir": "/home/user/datawatch",
+  "project_dir": "/home/<user>/datawatch",
   "source_prd_id": "<old_prd_id>",
   "target_prd_id": "<new_prd_id>",
   "role_filter": ["learning", "decision"],

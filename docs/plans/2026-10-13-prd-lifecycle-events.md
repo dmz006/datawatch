@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-13 (investigation and writing finished 2026-10-14)
 **Version:** v9.0.75 (`var Version` in `cmd/datawatch/main.go` at time of writing)
-**Status:** Phase 1 Done (v9.0.85, 2026-10-14). Phases 2–5 Planned.
+**Status:** Phase 1 Done (v9.0.85, 2026-10-14), Phase 2 Done (v9.3.0), Phase 3 Done (Unreleased, this build), Phase 4 Done (Unreleased, this build — WS payload enrichment and live toasts carved out as follow-up). Phase 5 Done (Unreleased, this build — the outbound webhook sink and peer forwarding ship disabled until the operator confirms the proposal).
 
 Terminology: this doc says **Automaton / Automata** in prose, per AGENT.md's
 terminology rule. The internal Go type is `PRD` (and identifiers such as
@@ -544,7 +544,7 @@ milliseconds. No polling, no scratchpad script, no 25 s race window.
 
 ## Phases
 
-Phase 1 is **Done** (v9.0.85); Phases 2–5 are **Planned**. Each phase's own checklist must include
+Phase 1 is **Done** (v9.0.85); Phase 2 is **Done** (v9.3.0); Phase 3 is **Done** (Unreleased, this build); Phase 4 is **Done** (Unreleased, this build, with WS payload enrichment and live toasts carved out as follow-up); Phase 5 is **Done** (Unreleased, this build, shipped disabled until the operator confirms the proposal). Each phase's own checklist must include
 AGENT.md's **Phase Completion Checklist** (functionality, unit tests, live
 smoke against a real daemon, full `go test ./...` + `node --test`, the
 8-item documentation checklist, conditional docs).
@@ -564,18 +564,151 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
    operator-visible concept or workflow yet — the frame and the PWA are
    unchanged); Mobile-Parity N/A (WS `prd_update` contract unchanged);
    Localization N/A (no `app.js` change); version bumped to v9.0.85.
-2. **Phase 2 — Planned.** Built-in sinks: alert store, `PublishToTopic`,
+2. **Phase 2 — Done (v9.3.0).** Built-in sinks: alert store, `PublishToTopic`,
    comm fan-out with per-Automaton coalescing; global default event-set
-   config. *(Phase Completion Checklist applies.)*
-3. **Phase 3 — Planned.** Persisted subscriptions + REST/MCP/CLI/comm CRUD;
-   session-push adapter (bridge `/send` preferred, `SendInput` fallback)
-   including the `send_input` action subscription. *(Phase Completion
-   Checklist applies.)*
-4. **Phase 4 — Planned.** Pending-events MCP tool for generic MCP clients;
-   PWA subscription UI. *(Phase Completion Checklist applies.)*
-5. **Phase 5 — Planned.** Outbound webhook URL sink (HMAC, SSRF guard,
-   retry/backoff), federation forwarding. *(Phase Completion Checklist
-   applies.)*
+   config (`autonomous.notify.default_events`). *(Phase Completion
+   Checklist applies — recorded in the v9.3.0 CHANGELOG entry.)*
+3. **Phase 3 — Done (Unreleased, this build).** Persisted subscriptions +
+   REST/MCP/CLI/comm CRUD; session-push adapter (bridge `/send` preferred,
+   `SendInput` fallback) including the `send_input` action subscription.
+   *(Phase Completion Checklist applies.)* Shipped as
+   `internal/autonomous/lifecycle_subscription.go`,
+   `lifecycle_subscription_store.go`, `lifecycle_session_push.go` (engine
+   wired in `cmd/datawatch/main.go`) + the four surfaces:
+   `internal/server/autonomous_subscriptions.go` (REST),
+   `internal/mcp/autonomous_subscription_tools.go` (MCP),
+   `cmd/datawatch/cli_autonomous_subscriptions.go` (CLI),
+   `internal/router/autonomous_subscriptions.go` (owner-scoped comm verbs).
+   Checklist: unit tests green — `go test ./cmd/datawatch
+   ./internal/autonomous ./internal/mcp ./internal/router
+   ./internal/server` = 5 packages, EXIT 0 (2026-10-21);
+   **End-to-end gate (verification pass, 2026-10-21, `env -u TMUX`):** all six
+   code-level criteria verified by reading code — (1) `task.session_started` +
+   `send_input` action + one-shot dispatched via the injected sender: covered by
+   `TestSessionPushSendInputTargetsNewWorker` + `TestSessionPushOneShot
+   DeletedOnlyAfterSuccess`, plus this pass's **additive**
+   `TestSessionPushOneShotSendInputTargetsWorker` (the combined watch-and-inject
+   case; test-only, no feature change — PASS); (2) all four surfaces proxy the
+   single `NewSubscriptionStore` wired in `cmd/datawatch/main.go`; (3) REST
+   guarded by `fedCap(CapAutonomousRead/Write)`, comm verbs owner-scoped, no
+   cross-store writes outside the daemon; (4) `docs/testing-tracker.md` live rows
+   all **Validated=No** (sandbox sweep pending); (5) new howto/flow/operations
+   docs carry no tracker IDs or unreleased version numbers; (6) `webhook`/`mcp_queue`
+   sinks rejected at validation, no SSRF/federation-forwarding code (Phase 4–5
+   absent). Gate commands: `go build ./...` **PASS**; `go vet ./...` **PASS**
+   (exit 0); `go test ./...` **PASS** (exit 0); `node --test
+   internal/server/web/*.test.js` **PASS** (304/304); `make sync-docs`
+   re-embedded the PWA plan-doc copy (files byte-identical; re-run after this
+   paragraph was appended); `check-docs-sync.sh` **PASS** (re-run after
+   `make sync-docs`); `check-howto-coverage.sh` **PASS**. One check red and **not caused
+   by this phase**: `check-no-internal-refs.sh` reports 19 pre-existing
+   `internal/server/web/openapi.yaml` `summary:` leaks (old IDs BL5/BL9/BL12/
+   BL17/BL24/BL27/BL30/BL31/BL34/BL35/BL37/BL40/BL42/BL93/BL94/BL107/BL362, F10,
+   F17). Confirmed unrelated to BL427 — Phase 3 adds no openapi internal-ID lines
+   and `BL427` appears nowhere in `openapi.yaml`; those belong to other features
+   and should be cleaned on their own ticket. **Net: Phase 3 gate green; the
+   single red is a pre-existing, operator-facing leak tracked separately.**
+   `docs/config-reference.yaml` **N/A** (no new config keys in this phase —
+   subscriptions are data, not config); `docs/operations.md` section added
+   ("Managing Automata lifecycle event subscriptions");
+   `docs/testing-tracker.md` rows added (unit surfaces **Validated=Yes**;
+   live rows **Validated=No**, pending a sandbox sweep); howto
+   (`docs/howto/automaton-lifecycle-subscriptions.md`) + flow diagram
+   (`docs/flow/lifecycle-subscription-flow.md`) + glossary entry +
+   core-feature matrix row in `docs/datawatch-definitions.md` added;
+   `README.md` feature line + `docs/README.md` index entries +
+   `docs/howto/README.md` entry added; Mobile-Parity: event *delivery*
+   flows via the v9.3.0 `PublishToTopic` → UnifiedPush/APNs path, the
+   app-side *management* UI is tracked in
+   [2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md)
+   (referenced from `docs/parity-status.md`; file a `dmz006/datawatch-app`
+   issue on merge); Localization **N/A** (no `app.js` string changes in
+   this phase); version — Unreleased (final number set at merge).
+   **Known gap for follow-up (code, not docs):** the CLI/comm shorthand
+   `prd_updated` resolves to `task.prd_updated`, which is *not* in the
+   closed `KnownEventKinds` set (the emitted kind is `prd.updated`) — a
+   subscription created with that shorthand is rejected at validation; use
+   the full `prd.updated` until the shorthand mapping is fixed.
+4. **Phase 4 — Done (Unreleased, this build).** Pending-events queue and
+   `mcp_queue` sink for generic MCP clients; subscription update and
+   test-fire on every surface; PWA Subscriptions tab. *(Phase Completion
+   Checklist applies.)* Shipped as
+   `internal/autonomous/lifecycle_pending_queue.go` (bounded in-memory
+   queue, monotonic cursors, `dropped` on eviction, released when the last
+   subscription for a queue is deleted),
+   `internal/autonomous/lifecycle_subscription_test_fire.go` (engine
+   `FireTest`) and the store `Update`
+   (`internal/autonomous/lifecycle_subscription_store.go`), plus the surfaces:
+   `internal/server/autonomous_events.go` (REST `GET
+   /api/autonomous/events`) and `internal/server/autonomous_subscriptions.go`
+   (`PUT` and `POST …/{id}/test`),
+   `internal/mcp/autonomous_events_tools.go` (`autonomous_events_pending`) and
+   `internal/mcp/autonomous_subscription_update_tools.go`
+   (`autonomous_subscription_update`, `autonomous_subscription_test`),
+   `cmd/datawatch/cli_autonomous_events.go` (`events`) and
+   `cmd/datawatch/cli_autonomous_subscription_update.go`
+   (`subscription-update`, `subscription-test`),
+   `internal/router/autonomous_events.go` and
+   `internal/router/autonomous_subscription_update.go` (owner-scoped comm
+   verbs), and the PWA Subscriptions tab with its add/edit form in
+   `internal/server/web/app.js` (strings in all five locale bundles).
+   Config: `autonomous.notify.pending_events_max` (default 500, applied at
+   daemon start). Checklist: unit tests added for every surface (Go tests in
+   the five packages above and `internal/server/web/app-lifecycle-subscriptions.test.js`);
+   **live tests Validated=No** — REST events/update/test against a running
+   daemon, an MCP `autonomous_events_pending` poll round trip with a real
+   event, and the PWA tab create/edit/delete/test in a browser are recorded
+   in `docs/testing-tracker.md` as LIVE pending; `CHANGELOG.md`
+   `[Unreleased]` entry, `docs/config-reference.yaml`, `docs/operations.md`
+   (events/update/test, polling procedure, queue size key), the howto
+   (PWA walkthrough, polling workflow, test-fire), the flow diagram
+   (pending-queue path), the glossary entry, `docs/mcp.md`,
+   `docs/api-mcp-mapping.md`, `docs/parity-status.md`, `README.md` feature
+   line and the doc indexes updated; Mobile-Parity: the app-side note
+   ([2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md))
+   now lists the update, test and events endpoints so the
+   `dmz006/datawatch-app` issue filed on merge is complete; Localization:
+   done (five bundles); version — Unreleased (final number set at merge).
+   **Carved out as follow-up (explicitly out of scope for this phase, not
+   done):** WS `MsgPRDUpdate` payload enrichment and PWA live toasts off an
+   enriched frame. **Known gap still present:** the CLI/comm shorthand
+   `prd_updated` still resolves to `task.prd_updated`, which is not in the
+   closed `KnownEventKinds` set — use the full `prd.updated`.
+   **Verification gate (2026-10-21, run with `env -u TMUX -u TMUX_TMPDIR`):**
+   `go build -o datawatch ./cmd/datawatch/`, `go vet ./...` and `go test ./...`
+   all pass (no failing package); `node --test internal/server/web/*.test.js`
+   = 374 pass, 0 fail; `scripts/check-docs-sync.sh` and
+   `scripts/check-howto-coverage.sh` pass. `scripts/check-no-internal-refs.sh`
+   still reports exactly the 19 pre-existing `openapi.yaml` summary leaks and
+   none from this phase's diff (the two `(BL427)` mentions on the CLI help
+   line and the `docs/mcp.md` table row were already there and only had the
+   new tool names or `mcp_queue` added; cleaning them is follow-up). Checked
+   against the phase text: the queue → REST → MCP cursor flow is covered by
+   unit tests (`TestMCPQueueSinkAppendsMatchingOnly`,
+   `TestPendingQueueLimitAndSinceExclusive` for the caught-up empty page,
+   `TestPendingQueueEvictionAndDropped`, `TestPendingEventsRESTDroppedFlagRoundTrip`
+   and the MCP proxy tests) but there is no single test chaining a real
+   subscription through the engine into a REST/MCP poll — that round trip is
+   one of the LIVE-pending tracker rows; all 59 `lifecycle_sub_` keys used by
+   `app.js` exist in en, de, es, fr and ja; REST, MCP, CLI, comm and PWA each
+   cover events-pending (PWA has no events view — it creates `mcp_queue`
+   subscriptions but does not poll them, an intentional gap) and update/test;
+   every live row in `docs/testing-tracker.md` is Validated=No; `CHANGELOG.md`
+   carries no version number; the `webhook` sink is still rejected
+   (`TestMCPQueueSinkWebhookStillRejected`) and no webhook or federation
+   forwarding code exists; `docs/config-reference.yaml` documents
+   `autonomous.notify.pending_events_max`.
+5. **Phase 5 — Done (Unreleased), shipped disabled pending operator confirmation
+   of the proposal.** Outbound webhook URL sink (HMAC, SSRF guard,
+   retry/backoff), federation forwarding. The open values (retry curve,
+   signature format, payload shape, peer addressing, offline-peer behaviour)
+   are proposed in
+   [2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md);
+   the sink and the forwarding stay disabled until the operator confirms it.
+   Each open value is one named constant or config default marked "pending
+   operator confirmation". The operator's how-to is
+   [howto/automaton-lifecycle-webhooks.md](../howto/automaton-lifecycle-webhooks.md).
+   *(Phase Completion Checklist applies.)*
 
 ---
 
@@ -648,60 +781,181 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
 
 Phase 1 (v9.0.85) adds **no** external surface: the dispatcher is
 in-process only, and the WS `MsgPRDUpdate` frame keeps its existing
-`{prd_id, status}` / `{prd_id, deleted:true}` shape (it is not yet enriched).
-**None** of the following is implemented yet. Intent for Phases 2–5:
+`{prd_id, status}` / `{prd_id, deleted:true}` shape (it is not yet
+enriched). **Phases 3 and 4 — implemented in this build** (Phase 2's sinks
+shipped in v9.3.0). Current status of each intended surface:
 
-- **REST:** `GET/POST/DELETE /api/autonomous/subscriptions`;
-  `GET /api/autonomous/events?since=<cursor>` (pending-events feed); WS
-  `MsgPRDUpdate` payload enriched with event kind + task fields.
-- **MCP:** `autonomous_subscribe`, `autonomous_unsubscribe`,
-  `autonomous_subscriptions`, `autonomous_events_pending`.
-- **CLI:** `datawatch autonomous subscribe|unsubscribe|subscriptions|events`
-  (including `--task <id> --on session_started --send "<text>"` for
-  example 1).
-- **Comm channel:** verbs for subscribe/unsubscribe/list, scoped to the
-  calling channel as the sink. Delivery uses the existing comm router
-  fan-out.
-- **YAML/config:** `autonomous.notify.*` keys (above) in
-  `docs/config-reference.yaml`; per-Automaton `notify_events` only if
-  approved.
-- **PWA:** subscription list/editor on the Automaton detail view; live
-  toasts driven by the enriched WS frame.
-- **Android:** receives events via the existing `PublishToTopic` →
-  UnifiedPush path (no new daemon surface). Subscription management is a
-  `datawatch-app` issue to file when Phase 3 ships.
-- **iPhone/iOS:** same as Android, via the existing APNs-backed push
-  registration. The app-side UI is likewise tracked as a `datawatch-app`
-  issue, not built in this repo.
+- **REST:** ✅ `GET/POST /api/autonomous/subscriptions` (list with
+  optional `?owner=` filter; create → 201),
+  `PUT /api/autonomous/subscriptions/{id}` (Phase 4),
+  `POST /api/autonomous/subscriptions/{id}/test` (Phase 4) and
+  `DELETE /api/autonomous/subscriptions/{id}` (`autonomous:read` /
+  `autonomous:write`; `503` when the engine is not wired). ✅
+  `GET /api/autonomous/events?queue=&since=<cursor>&limit=` (Phase 4). ❌ WS
+  `MsgPRDUpdate` payload enrichment (follow-up, explicitly out of scope for
+  Phase 4).
+- **MCP:** ✅ `autonomous_subscribe`, `autonomous_unsubscribe`,
+  `autonomous_subscriptions`, `autonomous_subscription_update`,
+  `autonomous_subscription_test` (proxy the daemon REST on loopback; the
+  daemon store is the source of truth). ✅ `autonomous_events_pending`
+  (Phase 4).
+- **CLI:** ✅ `datawatch autonomous
+  subscribe|unsubscribe|subscriptions|subscription-update|subscription-test`
+  (including `--task <id> --on session_started --send "<text>"` for example
+  1). ✅ `datawatch autonomous events` (Phase 4).
+- **Comm channel:** ✅ verbs for subscribe/subscriptions/unsubscribe plus
+  subscription-update, subscription-test and events, owner-scoped — the
+  calling channel is the owner *and* the sink target, and may read only the
+  queues its own subscriptions feed. Delivery fan-out uses the existing comm
+  router.
+- **Session delivery:** ✅ session-push adapter — bridge
+  `POST 127.0.0.1:<port>/send` (5 s timeout) preferred, `SendInput`
+  fallback (source tag `lifecycle-sub`); one-shot removed only on success,
+  one retry then log+drop on failure.
+- **YAML/config:** ✅ Phase 2's `autonomous.notify.default_events`
+  (v9.3.0). **No new keys in Phase 3** — subscriptions are data. ✅ Phase 4
+  adds `autonomous.notify.pending_events_max` (per-queue retention, default
+  500). ✅ Per-Automaton and per-profile `notify_events` — open question 2 is
+  **resolved in this build** (see the two items above): the two data fields
+  plus the global tier are live on CLI, comm, MCP, REST and PWA, and the
+  five-kind default is the baseline (opt-out: `default_events: []`).
+- **PWA:** ✅ subscription list/editor on the Automaton detail view
+  (Subscriptions tab: list, add, edit, delete, test; Phase 4). ❌ live
+  toasts off an enriched WS frame (follow-up, explicitly out of scope for
+  Phase 4). Event *delivery* works today via the v9.3.0 topic-push path.
+- **Android:** ✅ receives events via the existing `PublishToTopic` →
+  UnifiedPush path (no new daemon surface since v9.3.0). ⏳ Subscription
+  *management* UI: [2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md)
+  — file a `dmz006/datawatch-app` issue on merge.
+- **iPhone/iOS:** ⏳ same as Android, via the existing APNs-backed push
+  registration; the app-side UI is likewise tracked in that note, not built
+  in this repo.
+
+**Phase 5 (Done, Unreleased — shipped disabled pending operator confirmation of
+the proposal):** outbound webhook URL sink (HMAC / SSRF guard /
+retry-backoff) and federation forwarding of the event stream. Proposal:
+[2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md).
+Both switches (`autonomous.notify.webhook.enabled`,
+`autonomous.notify.forwarding.enabled`) default to off; while off, a `webhook`
+or `peer` subscription is refused at creation and a stored one delivers nothing.
+`mcp_queue` is accepted from Phase 4. Surfaces, now done:
+
+- **REST:** ✅ `sink.type` `webhook` (with `sink.secret_ref`) and `peer` on
+  `POST` and `PUT /api/autonomous/subscriptions`; the `POST /api/autonomous/events/forward`
+  receiving endpoint (`202` accepted, `400`, `401`, `403`, `409` loop refusal,
+  `503` when forwarding is off or the receiver is not wired).
+- **MCP:** ✅ `autonomous_subscribe` and `autonomous_subscription_update` accept
+  `sink_type` `webhook` / `peer` and the `secret_ref` argument.
+- **CLI:** ✅ `datawatch autonomous subscribe|subscription-update` with
+  `--sink webhook|peer` and `--secret-ref`.
+- **Comm channel:** ✅ `autonomous subscribe|subscription-update` with
+  `sink=webhook|peer`, `target=` and `secret_ref=`, owner-scoped as before.
+- **YAML/config:** ✅ `autonomous.notify.webhook.*` and
+  `autonomous.notify.forwarding.*` (documented in `docs/config-reference.yaml`).
+- **Settings card:** ✅ Settings → Comms → Notifications: the webhook and
+  forwarding switches, the allow-list and the retry and limit fields.
+- **PWA:** ✅ Automaton → Subscriptions tab: the webhook and federation-peer sink
+  types, with the secret reference field and the disabled and empty-allow-list
+  hints.
+- **Session delivery:** N/A — the webhook and peer sinks do not type into a session.
+- **Android / iPhone:** ⏳ the apps receive events through the existing push path
+  and the subscription management UI is tracked in
+  [2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md)
+  (which now covers the two new sink types and `secret_ref`). The sink reaches
+  mobile clients through the same REST contract.
 
 ---
 
 ## Open questions for the operator
 
-1. **Default event set:** is `needs_review / blocked / failed / completed /
+1. ~~**Default event set:** is `needs_review / blocked / failed / completed /
    cancelled` the right Automaton-level default? Should
    `task.session_started` / `task.session_ended` be on by default or only
-   opt-in?
-2. **Configurability shape:** global default + per-subscription filters only
+   opt-in?~~ **Resolved (shipped in this build):** the five kinds
+   `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`,
+   `prd.cancelled` are the global default (`autonomous.notify.default_events`
+   unset); the two session kinds are opt-in, and the opt-in check was
+   enforced at the dispatcher gate — a subscription for an opt-in kind
+   fires only when the Automaton's resolved set includes that kind.
+   `prd.updated` is never a valid kind.
+2. ~~**Configurability shape:** global default + per-subscription filters only
    (recommended), or also a per-Automaton `notify_events` with
-   per-Automaton > profile > global precedence mirroring `resolveGuardrails`?
+   per-Automaton > profile > global precedence mirroring `resolveGuardrails`?~~
+   **Resolved (shipped in this build):** three tiers — the Automaton's own
+   `notify_events` list, its guardrail profile's `notify_events` list, then the
+   global `autonomous.notify.default_events`; the first non-empty tier wins
+   (`ResolveNotifyEvents` in `internal/autonomous/notify_events_resolve.go`),
+   mirroring `resolveGuardrails`. On every surface — REST
+   `POST …/set_notify_events`, profile create/update, MCP
+   `autonomous_prd_set_notify_events`, CLI `autonomous prd-set-notify-events` /
+   `guardrail profile create|update --notify-events`, comm
+   `set-notify-events` / `guardrail profile notify-events`, and the PWA
+   "Notification events" panel. Changes are audit-logged as
+   `autonomous_notify_events_changed`.
 3. **Action subscriptions:** may a subscription carry an action
    (`send_input` text into the newly started session, as in example 1), or
    should subscriptions only notify, with the subscriber acting itself?
-4. **Scope warnings and guardrail `warn` verdicts:** should these
+4. ~~**Scope warnings and guardrail `warn` verdicts:** should these
    currently silent advisories become notifiable event kinds (opt-in), or
-   stay PWA-only?
+   stay PWA-only?~~ **Resolved (shipped in this build):** yes — the two
+   kinds are `scope_warning` (a task touched files outside its declared
+   scope; the event carries `files` and, when the finding raised an
+   alert, the PWA `?alert=<id>` link) and `guardrail_warn` (a guardrail
+   returned a `warn` outcome; the event carries the guardrail name, the
+   verdict summary/issues and the recorded decision). Both are opt-in and
+   off by default — not in the five-kind `DefaultNotifyEvents` baseline —
+   and fire only when the kind is in the Automaton's resolved set
+   (per-Automaton list > profile list > `autonomous.notify.default_events`),
+   enforced by the same dispatcher gate as the other opt-in kinds
+   (`notify_warning_kinds_test.go`, emission in
+   `lifecycle_emit_warning.go`, `lifecycle_emit_warning_test.go`). Every
+   configuration surface — YAML, CLI, PWA, REST, MCP, comm channel —
+   accepts and reports both kinds.
 5. **Outbound webhook sink:** wanted at all (Phase 5), and if so, with what
    host allow-list and secret handling?
+   - **Answered by the operator, 2026-10-23:** yes. Outbound webhook sink with an
+     operator-configured host allow-list (only listed hosts can receive events),
+     the signing secret held in the secrets vault and referenced as
+     `${secret:name}`, each POST signed with HMAC, failures retried with backoff
+     and then an alert, and an SSRF guard that refuses private, loopback and
+     link-local targets unless the host is explicitly allow-listed. The details
+     that the operator did not answer (retry count and curve, signature header
+     format, payload shape, the cloud-metadata narrowing of the SSRF rule) are
+     still pending in
+     [the proposal](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md),
+     section 2 and section 3. The sink ships disabled until they are confirmed.
 6. **Generic MCP clients:** is the pending-events polling tool enough, or
    should datawatch also implement MCP `resources/subscribe` /
    `notifications/resources/updated` (requires handling the method itself,
    or an mcp-go upgrade)?
 7. **Federation:** should Automaton events from one host be deliverable to
    subscribers on another, and through which existing federation path?
+   - **Answered by the operator, 2026-10-23:** yes. Federation forwarding goes
+     through the existing federation path: the peer registry, the peer's bearer
+     token and the hop-chain header. A peer subscription names a registered peer
+     and never carries a credential. Loop prevention uses the origin host, a
+     visited list and a hop cap. The details that are still pending in
+     [the proposal](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md)
+     are the peer addressing, the offline-peer behaviour (bounded retry, then a
+     dropped event with an alert; no durable outbox), and the hop cap value. The
+     forwarding ships disabled until they are confirmed.
 8. **Sequencing with BL431:** should this PRD's dispatcher implementation
    ship **before**, **with**, or **after** BL431's Automation-coordinator
    implementation, given that BL431 designed the coordinator as an
    in-process subscriber of this dispatcher?
 9. **BL422 follow-up:** confirm that tier-mismatch events are a separate
    follow-up filed only after BL422's results land.
+
+## Operator decisions, 2026-10-23
+
+Recorded from the operator review of the open questions above.
+
+- **Q1, default event set:** `needs_review`, `blocked`, `failed`, `completed` and `cancelled`. Task session start and end events are opt-in only.
+- **Q2, configurability shape:** a global default, per-subscription filters, and also a per-Automaton `notify_events` setting. Precedence is per-Automaton over profile over global, and a subscription filter narrows the resolved set. Implemented by the per-Automaton `notify_events` PRD.
+- **Q3, action subscriptions:** the design is notify only. The existing `send_input` action stays as it is (session sink only, 4,096 character cap) and a future design can grow from it, for example other action types. No change now.
+- **Q5, outbound webhook sink:** yes, with a configured host allow-list, a vault-backed secret, HMAC signing, retry then alert, and an SSRF guard. The existing Generic Webhook backend is inbound only and stays as it is.
+- **Q7, federation:** yes, Automaton events are deliverable to subscribers on federated peers through the existing federation path.
+- **Q8, sequencing with BL431:** moot, the Automation coordinator and the dispatcher have both shipped.
+- **Q4, scope warnings and guardrail warn verdicts:** yes, as opt-in event kinds (`scope_warning` and `guardrail_warn`), off by default — **shipped in this build** (see open question 4): delivered like every other notify event, with the PWA still showing both warnings and neither kind ever blocking or altering any work.
+- **Q6, generic MCP clients:** the polling tool stays, and MCP resource subscriptions (`resources/subscribe`, `notifications/resources/updated`) will be implemented later with extensive regression testing. Held until the operator says so.
+- **Q9, BL422 follow-up:** a tier-mismatch event will probably be added as another opt-in event kind, but only after BL422's results land. At that point the design is validated against the results and added only if the results agree. Nothing is filed as a PRD until then.

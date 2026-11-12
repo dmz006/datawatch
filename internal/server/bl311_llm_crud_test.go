@@ -24,6 +24,11 @@ func newLLMServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(sm)
+	trackSessionManager(t, sm)
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
+	t.Cleanup(sm.WaitBackground)
 	hub := NewHub()
 	srv := NewServer(hub, sm, "h", "", nil, nil, "")
 	srv.inferenceReg = inference.NewRegistry()
@@ -185,7 +190,15 @@ func TestLLMEnabled_KnownAdapters(t *testing.T) {
 // TestHandleLLMs_DisabledRegistryReturns503 verifies the guard clause.
 func TestHandleLLMs_DisabledRegistryReturns503(t *testing.T) {
 	dir := t.TempDir()
-	sm, _ := session.NewManager("h", dir, "echo", 30*time.Second)
+	sm, err := session.NewManager("h", dir, "echo", 30*time.Second)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	allowTestTemp(sm)
+	trackSessionManager(t, sm)
+	// In-memory tmux fake: this test never needs a live multiplexer.
+	sm.WithFakeTmux()
+	t.Cleanup(sm.WaitBackground)
 	srv := NewServer(NewHub(), sm, "h", "", nil, nil, "")
 	// No inferenceReg — simulates a pre-migration or degraded install.
 

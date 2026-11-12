@@ -100,7 +100,7 @@ func TestLifecycleEmitPRD_Transitions(t *testing.T) {
 			setup: func(t *testing.T) (*Manager, string, func() error) {
 				m := newEmitManager(t, DefaultConfig(), nil)
 				p := newEmitPRD(t, m, PRDCompleted)
-				return m, p.ID, func() error { _, err := m.Archive(p.ID); return err }
+				return m, p.ID, func() error { _, err := m.Archive(p.ID, "operator"); return err }
 			},
 		},
 		{
@@ -117,6 +117,7 @@ func TestLifecycleEmitPRD_Transitions(t *testing.T) {
 				m := newEmitManager(t, DefaultConfig(), nil)
 				p := newEmitPRD(t, m, PRDRunning)
 				api := NewAPI(m)
+				drainOnCleanup(t, m, api)
 				return m, p.ID, func() error { return api.Cancel(p.ID) }
 			},
 		},
@@ -127,6 +128,7 @@ func TestLifecycleEmitPRD_Transitions(t *testing.T) {
 				m := newEmitManager(t, DefaultConfig(), nil)
 				p := newEmitPRD(t, m, PRDApproved)
 				api := NewAPI(m)
+				drainOnCleanup(t, m, api)
 				return m, p.ID, func() error { return api.Run(p.ID) }
 			},
 		},
@@ -178,7 +180,7 @@ func TestLifecycleEmitPRD_Transitions(t *testing.T) {
 		{
 			name: "Manager.Run roll-up failed", want: PRDFailed, old: PRDRunning,
 			setup: func(t *testing.T) (*Manager, string, func() error) {
-				m := newEmitManager(t, DefaultConfig(), fakeDecompose)
+				m := newEmitManager(t, legacyFailureConfig(), fakeDecompose)
 				p := newEmitPRD(t, m, PRDApproved)
 				return m, p.ID, func() error { return m.Run(context.Background(), p.ID, fakeSpawn, failingVerify) }
 			},

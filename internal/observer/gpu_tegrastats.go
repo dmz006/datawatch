@@ -3,8 +3,8 @@
 // Reads one output line from `tegrastats --interval 500` (killed by
 // context timeout after first line). Handles two output formats:
 //
-//   Classic Jetson (Orin/Nano/TX2): GR3D_FREQ X%@Y GPU@T.TC RAM X/YMB
-//   Tegra Thor (GB10/GH200):        gpu@T.TC RAM X/YMB VDD_GPU XmW/YmW
+//   Classic Jetson (Orin/Nano/TX2): GR3D_FREQ X%@Y GPUnC temp field (T dot TC, tegrastats) RAM X/YMB
+//   Tegra Thor (GB10/GH200):        gpu temp field (T dot TC, tegrastats) RAM X/YMB VDD_GPU XmW/YmW
 //                                   (no explicit GPU util%)
 //
 // Degrades cleanly when tegrastats is not in PATH (NewTegraStatsProbe

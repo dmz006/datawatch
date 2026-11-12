@@ -39,6 +39,9 @@ func verifTask(prd *PRD, id string) *Task {
 
 func assertVerifLLM(t *testing.T, got, want VerificationLLM) {
 	t.Helper()
+	if want.Mode == "" {
+		want.Mode = "generate" // an absent verification_mode resolves to generate
+	}
 	if got != want {
 		t.Fatalf("resolved = %+v; want %+v", got, want)
 	}
@@ -48,17 +51,17 @@ func TestResolveVerificationLLM_TaskOverride(t *testing.T) {
 	prd := verifPRD()
 	task := verifTask(prd, "t1")
 	task.VerificationBackend, task.VerificationModel, task.VerificationEffort = "claude-code", "opus", EffortHigh
-	assertVerifLLM(t, ResolveVerificationLLM(prd, task, verifGlobalCfg()),
+	assertVerifLLM(t, ResolveVerificationLLM(prd, task, nil, verifGlobalCfg()),
 		VerificationLLM{Backend: "claude-code", Model: "opus", Effort: "high", Source: VerifierSourceTask})
 }
 
 func TestResolveVerificationLLM_StoryOverride(t *testing.T) {
 	prd := verifPRD()
 	prd.Story[0].VerificationBackend, prd.Story[0].VerificationModel, prd.Story[0].VerificationEffort = "claude-code", "sonnet", EffortMedium
-	assertVerifLLM(t, ResolveVerificationLLM(prd, verifTask(prd, "t1"), verifGlobalCfg()),
+	assertVerifLLM(t, ResolveVerificationLLM(prd, verifTask(prd, "t1"), nil, verifGlobalCfg()),
 		VerificationLLM{Backend: "claude-code", Model: "sonnet", Effort: "medium", Source: VerifierSourceStory})
 	// A task in a different story does not inherit s1's override.
-	assertVerifLLM(t, ResolveVerificationLLM(prd, verifTask(prd, "t2"), verifGlobalCfg()),
+	assertVerifLLM(t, ResolveVerificationLLM(prd, verifTask(prd, "t2"), nil, verifGlobalCfg()),
 		VerificationLLM{Backend: "ollama", Model: "qwen-global", Effort: "low", Source: VerifierSourceGlobal})
 }
 
@@ -66,17 +69,17 @@ func TestResolveVerificationLLM_PRDOverride(t *testing.T) {
 	prd := verifPRD()
 	prd.VerificationBackend, prd.VerificationModel, prd.VerificationEffort = "opencode", "glm", EffortMax
 	for _, id := range []string{"t1", "t2"} {
-		assertVerifLLM(t, ResolveVerificationLLM(prd, verifTask(prd, id), verifGlobalCfg()),
+		assertVerifLLM(t, ResolveVerificationLLM(prd, verifTask(prd, id), nil, verifGlobalCfg()),
 			VerificationLLM{Backend: "opencode", Model: "glm", Effort: "max", Source: VerifierSourcePRD})
 	}
 }
 
 func TestResolveVerificationLLM_GlobalFallback(t *testing.T) {
 	prd := verifPRD()
-	assertVerifLLM(t, ResolveVerificationLLM(prd, verifTask(prd, "t1"), verifGlobalCfg()),
+	assertVerifLLM(t, ResolveVerificationLLM(prd, verifTask(prd, "t1"), nil, verifGlobalCfg()),
 		VerificationLLM{Backend: "ollama", Model: "qwen-global", Effort: "low", Source: VerifierSourceGlobal})
 	// Nil task and empty global config still resolve, with Source global.
-	assertVerifLLM(t, ResolveVerificationLLM(prd, nil, Config{}),
+	assertVerifLLM(t, ResolveVerificationLLM(prd, nil, nil, Config{}),
 		VerificationLLM{Source: VerifierSourceGlobal})
 }
 
@@ -86,9 +89,9 @@ func TestResolveVerificationLLM_TaskBeatsStoryBeatsPRD(t *testing.T) {
 		task, story, prdLv bool
 		want               VerificationLLM
 	}{
-		{"all set", true, true, true, VerificationLLM{"tb", "tm", "high", VerifierSourceTask}},
-		{"story+prd", false, true, true, VerificationLLM{"sb", "sm", "medium", VerifierSourceStory}},
-		{"prd only", false, false, true, VerificationLLM{"pb", "pm", "max", VerifierSourcePRD}},
+		{"all set", true, true, true, VerificationLLM{Backend: "tb", Model: "tm", Effort: "high", Source: VerifierSourceTask, Mode: "generate"}},
+		{"story+prd", false, true, true, VerificationLLM{Backend: "sb", Model: "sm", Effort: "medium", Source: VerifierSourceStory, Mode: "generate"}},
+		{"prd only", false, false, true, VerificationLLM{Backend: "pb", Model: "pm", Effort: "max", Source: VerifierSourcePRD, Mode: "generate"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -103,7 +106,7 @@ func TestResolveVerificationLLM_TaskBeatsStoryBeatsPRD(t *testing.T) {
 			if tc.prdLv {
 				prd.VerificationBackend, prd.VerificationModel, prd.VerificationEffort = "pb", "pm", EffortMax
 			}
-			assertVerifLLM(t, ResolveVerificationLLM(prd, task, verifGlobalCfg()), tc.want)
+			assertVerifLLM(t, ResolveVerificationLLM(prd, task, nil, verifGlobalCfg()), tc.want)
 		})
 	}
 }
@@ -157,7 +160,7 @@ func TestResolveVerificationLLM_ModelNeverPairedAcrossLevels(t *testing.T) {
 			prd := verifPRD()
 			task := verifTask(prd, "t1")
 			tc.setup(prd, task)
-			assertVerifLLM(t, ResolveVerificationLLM(prd, task, verifGlobalCfg()), tc.want)
+			assertVerifLLM(t, ResolveVerificationLLM(prd, task, nil, verifGlobalCfg()), tc.want)
 		})
 	}
 }
@@ -167,7 +170,7 @@ func TestResolveVerificationLLM_EffortIndependent(t *testing.T) {
 	task := verifTask(prd, "t1")
 	task.VerificationBackend = "claude-code"
 	prd.Story[0].VerificationEffort = EffortThorough
-	got := ResolveVerificationLLM(prd, task, verifGlobalCfg())
+	got := ResolveVerificationLLM(prd, task, nil, verifGlobalCfg())
 	if got.Source != VerifierSourceTask || got.Effort != "thorough" {
 		t.Fatalf("got %+v; want task backend with story effort", got)
 	}
@@ -176,7 +179,7 @@ func TestResolveVerificationLLM_EffortIndependent(t *testing.T) {
 	task2 := verifTask(prd2, "t1")
 	task2.VerificationEffort = EffortQuick
 	prd2.VerificationBackend = "opencode"
-	got = ResolveVerificationLLM(prd2, task2, verifGlobalCfg())
+	got = ResolveVerificationLLM(prd2, task2, nil, verifGlobalCfg())
 	if got.Source != VerifierSourcePRD || got.Effort != "quick" {
 		t.Fatalf("got %+v; want prd backend with task effort", got)
 	}
@@ -184,7 +187,7 @@ func TestResolveVerificationLLM_EffortIndependent(t *testing.T) {
 
 func TestResolveVerificationLLM_LowercaseAlias(t *testing.T) {
 	prd := verifPRD()
-	if resolveVerificationLLM(prd, verifTask(prd, "t1"), verifGlobalCfg()) != ResolveVerificationLLM(prd, verifTask(prd, "t1"), verifGlobalCfg()) {
+	if resolveVerificationLLM(prd, verifTask(prd, "t1"), nil, verifGlobalCfg()) != ResolveVerificationLLM(prd, verifTask(prd, "t1"), nil, verifGlobalCfg()) {
 		t.Fatal("resolveVerificationLLM and ResolveVerificationLLM disagree")
 	}
 }
@@ -265,7 +268,7 @@ func TestSetTaskVerificationLLM_ClearFallsBackToStory(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored, _ := m.Store().GetPRD(prd.ID)
-	if got := ResolveVerificationLLM(stored, &stored.Story[0].Tasks[0], verifGlobalCfg()); got.Source != VerifierSourceTask || got.Backend != "opencode" {
+	if got := ResolveVerificationLLM(stored, &stored.Story[0].Tasks[0], nil, verifGlobalCfg()); got.Source != VerifierSourceTask || got.Backend != "opencode" {
 		t.Fatalf("after nil update got %+v; want task override intact", got)
 	}
 	// Pointer to "" clears and falls back to the story.
@@ -273,7 +276,7 @@ func TestSetTaskVerificationLLM_ClearFallsBackToStory(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored, _ = m.Store().GetPRD(prd.ID)
-	assertVerifLLM(t, ResolveVerificationLLM(stored, &stored.Story[0].Tasks[0], verifGlobalCfg()),
+	assertVerifLLM(t, ResolveVerificationLLM(stored, &stored.Story[0].Tasks[0], nil, verifGlobalCfg()),
 		VerificationLLM{Backend: "claude-code", Model: "sonnet", Effort: "medium", Source: VerifierSourceStory})
 }
 

@@ -108,12 +108,17 @@ type DeferredSession struct {
 	Backend    string `json:"backend"`
 	Name       string `json:"name"`
 	// v8.11.0 — extended spawn fields (GH#128)
-	LLMRef    string `json:"llm_ref,omitempty"`  // unified LLM registry ref
-	Model     string `json:"model,omitempty"`     // model name override
-	Effort    string `json:"effort,omitempty"`    // quick/normal/thorough
+	LLMRef     string `json:"llm_ref,omitempty"`    // unified LLM registry ref
+	Model      string `json:"model,omitempty"`      // model name override
+	Effort     string `json:"effort,omitempty"`     // quick/normal/thorough
 	OneShot    bool   `json:"one_shot,omitempty"`   // terminate on DATAWATCH_COMPLETE:
 	Ephemeral  bool   `json:"ephemeral,omitempty"`  // reap workspace directory on delete
 	Subprocess bool   `json:"subprocess,omitempty"` // run via bash -c, not TUI (exit code = completion)
+	Git        bool   `json:"git,omitempty"`        // opt in to git init/snapshot/commit (default false)
+	// GH#204 Phase 1 — name of the schedule entry that owns this spawn,
+	// carried server-side into the spawned session's Session.ScheduleName
+	// so results/sessions can be grouped per schedule_name.
+	ScheduleName string `json:"schedule_name,omitempty"` // originating schedule entry name
 }
 
 // ScheduleStore persists scheduled commands to a JSON file.
@@ -295,6 +300,7 @@ type AddSpawnOptions struct {
 	OneShot      bool      // auto-terminate session on DATAWATCH_COMPLETE: (default true for spawn)
 	Ephemeral    bool      // reap workspace directory when session is deleted (default true)
 	Subprocess   bool      // run task as subprocess (exit code = completion, no TUI scraping)
+	Git          bool      // opt in to git init/snapshot/commit (default false)
 }
 
 // AddSpawn schedules an ephemeral one-shot session to start at a future time or
@@ -326,16 +332,18 @@ func (s *ScheduleStore) AddSpawn(opts AddSpawnOptions) (*ScheduledCommand, error
 		State:        SchedPending,
 		CreatedAt:    time.Now(),
 		DeferredSession: &DeferredSession{
-			Task:       opts.Task,
-			ProjectDir: opts.ProjectDir,
-			Backend:    opts.Backend,
-			Name:       opts.SessionName,
-			LLMRef:     opts.LLMRef,
-			Model:      opts.Model,
-			Effort:     opts.Effort,
-			OneShot:    opts.OneShot,
-			Ephemeral:  opts.Ephemeral,
-			Subprocess: opts.Subprocess,
+			Task:         opts.Task,
+			ProjectDir:   opts.ProjectDir,
+			Backend:      opts.Backend,
+			Name:         opts.SessionName,
+			LLMRef:       opts.LLMRef,
+			Model:        opts.Model,
+			Effort:       opts.Effort,
+			OneShot:      opts.OneShot,
+			Ephemeral:    opts.Ephemeral,
+			Subprocess:   opts.Subprocess,
+			Git:          opts.Git,
+			ScheduleName: opts.ScheduleName,
 		},
 	}
 	s.entries = append(s.entries, sc)

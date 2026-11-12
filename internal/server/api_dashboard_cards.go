@@ -17,8 +17,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
 )
+
+// dashShippedCardID is the dashboard card that shows the shipped-state read
+// surfaces (shipped.go): per-status counts with shipped separated from
+// cancelled while the autonomous.shipped surface is enabled +
+// count_separately holds.
+const dashShippedCardID = "shipped"
 
 // dashCard is a single card in the layout.
 type dashCard struct {
@@ -26,6 +33,12 @@ type dashCard struct {
 	CS     int    `json:"cs"`
 	RS     int    `json:"rs,omitempty"`
 	System bool   `json:"system,omitempty"`
+	// Data is the card's live payload, filled at read time for cards that
+	// need one (currently the shipped card): the per-status PRD/Automation
+	// counts computed under the in-force autonomous.shipped settings, plus
+	// those settings so the client never guesses. The layout file stores
+	// cards without Data; it only rides the list/get responses.
+	Data any `json:"data,omitempty"`
 }
 
 // dashLayout is the full layout file.
@@ -49,13 +62,37 @@ func defaultDashCards() []dashCard {
 		{ID: "smoke", CS: 6, RS: 2, System: true},
 		// BL387 Phase 3 — memory scope stats tile.
 		{ID: "memory-scope", CS: 3, RS: 1, System: true},
+		// shipped-state counts tile (shipped.go read surfaces).
+		{ID: dashShippedCardID, CS: 12, RS: 1, System: true},
 	}
+}
+
+// dedupeDashCards drops later duplicates by id, keeping the first
+// occurrence and its cs/rs values. This is the id-uniqueness invariant
+// for the stored layout: the merge normaliser alone only *adds* missing
+// cards, so without this a second `tree` admitted through an unguarded
+// append (or a client-side duplicate) would survive every read and PUT.
+func dedupeDashCards(cards []dashCard) []dashCard {
+	seen := make(map[string]bool, len(cards))
+	deduped := cards[:0]
+	for _, c := range cards {
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		deduped = append(deduped, c)
+	}
+	return deduped
 }
 
 // mergeSystemCards ensures all default system cards are present, re-adding
 // any that were removed (inserted at the front in their original order).
 // Also stamps System=true on any existing card whose ID is a system card ID.
+// Runs dedupeDashCards first, so system cards (tree, orbital, events,
+// sparklines, gantt, heatmap, guardrails, ekg, smoke, memory-scope) are
+// always present exactly once and non-system ids never duplicate.
 func mergeSystemCards(cards []dashCard) []dashCard {
+	cards = dedupeDashCards(cards)
 	defaults := defaultDashCards()
 	systemIDs := make(map[string]bool, len(defaults))
 	for _, d := range defaults {
@@ -93,10 +130,13 @@ func (s *Server) readDashLayout() (dashLayout, error) {
 	}
 	_ = json.Unmarshal(data, &layout)
 	// Re-merge system cards so they survive a PUT wipe or manual edit.
+	// mergeSystemCards also drops duplicate ids (first occurrence wins);
+	// when the merged list differs from the file's we persist the healed
+	// layout so the duplicate does not come back on the next read.
 	merged := mergeSystemCards(layout.Cards)
 	if len(merged) != len(layout.Cards) {
 		layout.Cards = merged
-		_ = s.writeDashLayout(layout) // persist restored cards
+		_ = s.writeDashLayout(layout) // persist restored/deduped cards
 	} else {
 		layout.Cards = merged
 	}
@@ -104,6 +144,9 @@ func (s *Server) readDashLayout() (dashLayout, error) {
 }
 
 func (s *Server) writeDashLayout(layout dashLayout) error {
+	// The stored layout holds each card id exactly once, whatever the
+	// caller's card list looks like (first occurrence wins).
+	layout.Cards = dedupeDashCards(layout.Cards)
 	path := s.dashLayoutPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -158,6 +201,11 @@ func (s *Server) dashCardsListHandler(w http.ResponseWriter, r *http.Request) {
 	if cards == nil {
 		cards = []dashCard{}
 	}
+	for i := range cards {
+		if cards[i].ID == dashShippedCardID {
+			cards[i].Data = s.shippedCardData()
+		}
+	}
 	writeJSONOK(w, cards)
 }
 
@@ -201,11 +249,53 @@ func (s *Server) dashCardGetHandler(w http.ResponseWriter, r *http.Request, id s
 	}
 	for _, c := range layout.Cards {
 		if c.ID == id {
+			if c.ID == dashShippedCardID {
+				c.Data = s.shippedCardData()
+			}
 			writeJSONOK(w, c)
 			return
 		}
 	}
 	http.Error(w, "card not found", http.StatusNotFound)
+}
+
+// shippedCardData is the live shipped card payload (shipped.go): the
+// per-status PRD and Automation counts under the in-force
+// autonomous.shipped settings — shipped separated from cancelled while
+// enabled + count_separately hold; with count_separately off a
+// shipped-yet-cancelled record folds back into "cancelled" — plus those
+// settings. A server without the autonomous manager gets a nil payload
+// (the card then renders with no data). The buckets are computed on every
+// read and never persisted; the layout file keeps cards data-less.
+func (s *Server) shippedCardData() any {
+	if s.autonomousMgr == nil {
+		return nil
+	}
+	ship := s.shippedSettings()
+	sep := ship.EffectiveEnabled() && ship.EffectiveCountSeparately()
+	prds := map[string]int{}
+	for _, raw := range s.autonomousMgr.ListPRDs() {
+		p, err := toPRD(raw)
+		if err != nil || p == nil {
+			continue
+		}
+		prds[autonomous.PRDEffectiveDisplayStatus(p, sep)]++
+	}
+	autos := map[string]int{}
+	for _, raw := range s.autonomousMgr.ListAutomations() {
+		a := rawAutomationOf(raw)
+		autos[autonomous.AutomationEffectiveDisplayStatus(a, sep)]++
+	}
+	return map[string]any{
+		"prds":        prds,
+		"automations": autos,
+		"settings": map[string]any{
+			"enabled":          ship.EffectiveEnabled(),
+			"show_chip":        ship.EffectiveShowChip(),
+			"filter_default":   string(ship.EffectiveFilterDefault()),
+			"count_separately": ship.EffectiveCountSeparately(),
+		},
+	}
 }
 
 func (s *Server) dashCardUpdateHandler(w http.ResponseWriter, r *http.Request, id string) {

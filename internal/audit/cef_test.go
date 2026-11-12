@@ -73,6 +73,9 @@ func TestCEF_SignatureSeverityTriples(t *testing.T) {
 		{"automation_create", 28, "AutomationCreated", 3},
 		{"automation_update", 29, "AutomationUpdated", 3},
 		{"automation_delete", 30, "AutomationDeleted", 5},
+		{"autonomous_usage_backoff_set", 31, "AutonomousUsageBackoffSet", 4},
+		{"autonomous_usage_backoff_cleared", 32, "AutonomousUsageBackoffCleared", 3},
+		{"autonomous_usage_backoff_auto_cleared", 33, "AutonomousUsageBackoffAutoCleared", 2},
 		{"some_unmapped_future_action", 0, "AuditEvent", 3},
 	}
 	for _, c := range cases {
@@ -266,6 +269,112 @@ func TestAutomationCreate_CEFSingleLineEscaping(t *testing.T) {
 	}
 	if !strings.Contains(line, "deviceCustomString1=automation_create") {
 		t.Errorf("action extension missing: %q", line)
+	}
+}
+
+// session_end_reap — emitted by cmd/datawatch when a session ends and the
+// reaper ends processes proven to belong to it (Actor "autonomous",
+// Subject "N ended, M survived", Details: ended, survivors, commands).
+func TestSessionEndReap_JSONLinesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	l, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := Entry{
+		Timestamp: time.Now().UTC().Truncate(time.Millisecond),
+		Actor:     "autonomous",
+		Action:    "session_end_reap",
+		SessionID: "tmux:sess-001:full-id",
+		Subject:   "2 ended, 1 survived",
+		Details:   map[string]any{"ended": 2, "survivors": 1, "commands": "git push; tmux new"},
+	}
+	if err := l.Write(in); err != nil {
+		t.Fatal(err)
+	}
+	_ = l.Close()
+
+	f, err := os.Open(filepath.Join(dir, "audit.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	var lines []string
+	for sc.Scan() {
+		lines = append(lines, sc.Text())
+	}
+	if len(lines) != 1 {
+		t.Fatalf("want 1 JSON line, got %d: %q", len(lines), lines)
+	}
+	var out Entry
+	if err := json.Unmarshal([]byte(lines[0]), &out); err != nil {
+		t.Fatalf("line is not valid JSON: %v (%q)", err, lines[0])
+	}
+	if out.Action != in.Action || out.Actor != "autonomous" || !out.Timestamp.Equal(in.Timestamp) {
+		t.Fatalf("round-trip mismatch: %+v", out)
+	}
+	if out.SessionID != in.SessionID || out.Subject != in.Subject {
+		t.Fatalf("session/subject lost: %+v", out)
+	}
+	if got := out.Details["ended"]; got != float64(2) {
+		t.Errorf("Details[ended] = %v, want 2", got)
+	}
+	if got := out.Details["survivors"]; got != float64(1) {
+		t.Errorf("Details[survivors] = %v, want 1", got)
+	}
+	if got := out.Details["commands"]; got != "git push; tmux new" {
+		t.Errorf("Details[commands] = %v", got)
+	}
+}
+
+func TestSessionEndReap_CEF(t *testing.T) {
+	SetCEFVersionFn(func() string { return `9|0\1` })
+	defer SetCEFVersionFn(func() string { return "v?" })
+	line := FormatCEFLine(Entry{
+		Timestamp: time.Now(),
+		Actor:     "autonomous",
+		Action:    "session_end_reap",
+		SessionID: "tmux:sess-001:full-id",
+		Subject:   "2 ended, 1 survived",
+		Details:   map[string]any{"ended": 2, "survivors": 1, "commands": "git push; tmux new"},
+	})
+	wantPrefix := `CEF:0|datawatch|datawatch|9\|0\\1|69|SessionEndReap|4|`
+	if !strings.HasPrefix(line, wantPrefix) {
+		t.Fatalf("line = %q, want prefix %q", line, wantPrefix)
+	}
+	if strings.ContainsAny(line, "\n\r") {
+		t.Fatalf("raw newline survived into CEF line: %q", line)
+	}
+	if !strings.Contains(line, "deviceCustomString1=session_end_reap") {
+		t.Errorf("action extension missing: %q", line)
+	}
+	if !strings.Contains(line, "deviceCustomString2=tmux:sess-001:full-id") {
+		t.Errorf("session slot missing: %q", line)
+	}
+	if !strings.Contains(line, `deviceCustomString3Label=commands deviceCustomString3=git push; tmux new`) {
+		t.Errorf("commands extension missing: %q", line)
+	}
+	if !strings.Contains(line, "deviceCustomString4=2") || !strings.Contains(line, "deviceCustomString5=1") {
+		t.Errorf("ended/survivors missing: %q", line)
+	}
+	if !strings.Contains(line, `deviceCustomString6Label=subject deviceCustomString6=2 ended, 1 survived`) {
+		t.Errorf("subject slot missing: %q", line)
+	}
+}
+
+func TestSessionEndReap_CEFCommandEscape(t *testing.T) {
+	e := Entry{
+		Timestamp: time.Now(),
+		Actor:     "autonomous",
+		Action:    "session_end_reap",
+		Details:   map[string]any{"commands": `back\slash =eq line1
+line2`},
+	}
+	line := FormatCEFLine(e)
+	// backslash -> double backslash, '=' -> backslash '=', newline -> '\n'.
+	if !strings.Contains(line, `back\\slash \=eq line1\nline2`) {
+		t.Fatalf("escape broke the commands value:\n%s", line)
 	}
 }
 

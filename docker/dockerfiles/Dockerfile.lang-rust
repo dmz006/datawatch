@@ -5,10 +5,14 @@
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
+# Inherited non-root user name (see agent-base); home under /home/${DW_USER}.
+ARG DW_USER=datawatch
 ARG RUST_VERSION=1.85.0
 ARG CARGO_AUDIT_VERSION=0.21.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG RUST_VERSION
 ARG CARGO_AUDIT_VERSION
 
@@ -16,19 +20,19 @@ USER root
 RUN install_packages build-essential pkg-config libssl-dev
 
 USER datawatch
-ENV RUSTUP_HOME=/home/datawatch/.rustup \
-    CARGO_HOME=/home/datawatch/.cargo \
-    PATH=/home/datawatch/.cargo/bin:${PATH}
+ENV RUSTUP_HOME=/home/${DW_USER}/.rustup \
+    CARGO_HOME=/home/${DW_USER}/.cargo \
+    PATH=/home/${DW_USER}/.cargo/bin:${PATH}
 
 RUN curl -fsSL https://sh.rustup.rs \
         | sh -s -- --default-toolchain ${RUST_VERSION} --profile minimal -y && \
     rustup component add clippy rustfmt rust-analyzer rust-src && \
     cargo install cargo-audit --version ${CARGO_AUDIT_VERSION} --locked && \
     # Strip ~120MB of toolchain docs / share data we'll never read
-    rm -rf /home/datawatch/.rustup/toolchains/*/share/doc \
-           /home/datawatch/.rustup/toolchains/*/share/man \
-           /home/datawatch/.rustup/downloads \
-           /home/datawatch/.cargo/registry
+    rm -rf /home/${DW_USER}/.rustup/toolchains/*/share/doc \
+           /home/${DW_USER}/.rustup/toolchains/*/share/man \
+           /home/${DW_USER}/.rustup/downloads \
+           /home/${DW_USER}/.cargo/registry
 
 LABEL datawatch.variant="lang-rust" \
       datawatch.lang.rust=$RUST_VERSION \

@@ -9,10 +9,11 @@ Design doc: [`../plans/2026-04-22-bl171-datawatch-observer.md`](../plans/2026-04
 - **REST** (v2): `GET /api/stats?v=2` or `GET /api/observer/stats`.
 - **REST** (v1 compat): `GET /api/stats` keeps the old flat shape for v1 clients; all flat scalars are also present as top-level aliases inside the v2 response.
 - **REST** (BL180 cross-host, v5.12.0): `GET /api/observer/envelopes/all-peers` — federation-aware view; collects local + every peer's last-pushed envelopes and runs `CorrelateAcrossPeers` so cross-peer caller attributions surface as `<peer>:<envelope-id>` rows on each matched server envelope. Response shape: `{by_peer: {peer-name: [Envelope, ...], ...}}`.
+- **REST** (pull mode): `GET /api/observer/pull` — live per-peer observer pull states (see *Observer pull mode* below); capability `observers:read`.
 - **Live** (WS): `MsgStats` broadcast on the existing `/ws` channel — payload upgraded to StatsResponse v2 at 1 s cadence.
-- **MCP tools**: `observer_stats`, `observer_envelopes`, `observer_envelope`, `observer_envelopes_all_peers` (v5.12.0), `observer_config_get`, `observer_config_set`, `observer_peers_list`, `observer_peer_get/register/delete`, `observer_peer_stats`, `observer_agent_list/stats`, `ollama_stats`.
-- **CLI**: `datawatch observer stats|envelopes|envelopes-all-peers|envelope <id>|config-get|config-set <json>|peer list|peer register|peer delete|peer stats <name>`.
-- **Comm**: via the existing `rest` passthrough (`rest GET /api/observer/envelopes`).
+- **MCP tools**: `observer_stats`, `observer_envelopes`, `observer_envelope`, `observer_envelopes_all_peers` (v5.12.0), `observer_config_get`, `observer_config_set`, `observer_peers_list`, `observer_peer_get/register/delete`, `observer_peer_stats`, `observer_pull_status` (pull mode; read-only, capability `observers:read`), `observer_agent_list/stats`, `ollama_stats`.
+- **CLI**: `datawatch observer stats|envelopes|envelopes-all-peers|envelope <id>|config-get|config-set <json>|peer list|peer register|peer delete|peer stats <name>|pull status [--json]`.
+- **Comm**: via the existing `rest` passthrough (`rest GET /api/observer/envelopes`), plus the dedicated `observer pull status` verb for the pull protocol. See [howto/federated-observer](../howto/federated-observer.md) — *Pull mode*.
 
 ## Envelopes — the headline feature
 
@@ -102,6 +103,76 @@ See the design doc for the full JSON contract. Highlights:
 - `processes.tree`: top-N by CPU with ancestors preserved so the tree is always connected.
 - `peers[]`: populated only on the aggregator (main datawatch) — lists Shape B / C peers + last-push freshness.
 - Every v1 flat field (`cpu_pct`, `mem_pct`, `uptime_seconds`, `sessions_total`, `sessions_running`, `disk_pct`, `gpu_pct`) is preserved at the root so v1 clients keep working.
+
+## Observer pull mode
+
+Pull mode inverts the peer push protocol: the local daemon pulls a peer's
+v2 stats on a schedule instead of the peer pushing them. It is **off by
+default** — globally gated by `observer.pull.enabled` (default `false`)
+and per-peer by the federation peer entry's `observer_pull` flag (default
+`false`). See [howto/federated-observer](../howto/federated-observer.md)
+— *Pull mode* for the operator view and the push/pull comparison.
+
+### `GET /api/observer/pull`
+
+Capability: `observers:read` (other methods → `405`). Lists every peer in
+the pull target set — enabled, federated entries with `observer_pull`
+true and a URL — with its live pull state:
+
+```json
+{
+  "peers": [
+    {
+      "name": "lab-west",
+      "source": "pull",
+      "shadow": false,
+      "stale": false,
+      "stale_reason": "none",
+      "last_success_at": "2026-11-01T12:00:00Z",
+      "interval_s": 30,
+      "timeout_s": 5
+    }
+  ]
+}
+```
+
+- `shadow` is `true` when the same peer name is also push-registered.
+- `stale_reason` is one of `none` | `timeout` | `error` | `forbidden` (the peer answered 401/403) | `not_permitted` (the entry lacks the `observers:read` capability — no request is issued) | `bad_payload` (the v2 stats body did not decode) | `unknown`.
+- `interval_s` / `timeout_s` are the effective per-peer values (the entry's, or the global `observer.pull.default_*` when the entry leaves them at 0).
+- Bearer tokens are never returned.
+- The list is an empty array (not null) when no peer is opted in.
+
+### Merged peer list contract (`GET /api/observer/peers`)
+
+Every row now carries three pull-mode fields in addition to the push
+data:
+
+- `source` — `"push"` or `"pull"`.
+- `shadow` — `true` for a row that is visibility only: a federation peer
+  with pull off that has never pushed. Shadow rows contribute no data and
+  are excluded from the envelope aggregate and the meta-peer buckets.
+- `pull` — object: `{enabled, stale, stale_reason, last_success_at, last_attempt_at, interval_s}`. A pull-only peer's `last_push_at` is its last successful pull.
+
+A peer that is both push-registered and pull-target appears exactly once.
+A pulled peer is bindable to a Compute Node through the usual attach
+endpoint (`PUT /api/compute/nodes/<name>/observer-peer`); attaching a
+shadow peer is refused with `409`.
+
+### Pull configuration surface
+
+| Key | Default | Set via |
+|---|---|---|
+| `observer.pull.enabled` | `false` | YAML, `datawatch config set observer.pull.enabled`, `PUT /api/config`, MCP `config_set`, PWA settings |
+| `observer.pull.default_interval_s` | `30` (minimum `5`) | same five methods |
+| `observer.pull.default_timeout_s` | `5` (≥ `0`) | same five methods |
+| `observer_pull` (peer entry) | `false` | `federation peer add/update --observer-pull`, `POST`/`PUT /api/federation/peers[/name]`, PWA federation peer form |
+| `observer_pull_interval_s` (peer entry) | `0` = global default | same per-peer methods |
+| `observer_pull_timeout_s` (peer entry) | `0` = global default | same per-peer methods |
+
+A pull fetch is `GET {peer-url}/api/observer/stats?v=2` with the entry's
+bearer token; it honors the entry's TLS-skip-verify and pinned-fingerprint
+settings, and each target runs in its own goroutine with its own timeout
+so one slow peer never delays another.
 
 ## Sub-process monitoring examples
 

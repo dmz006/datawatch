@@ -1,0 +1,30 @@
+# scripts/leak-patterns.local.template — template for .leak-patterns.local
+#
+# .leak-patterns.local lives at the REPOSITORY ROOT and is never committed
+# (it is in .gitignore). It is the operator's own list of machine-specific
+# tokens — a personal hostname, an internal registry host, a kubectl
+# context name, a private Wi-Fi SSID, etc. — that are too private to put
+# in the checked-in scripts/leak-check.patterns.
+#
+# Format:
+#   - one fixed-string pattern per line
+#   - matching is case-insensitive substring matching, against every
+#     scanned file, and the matched text is never printed — only
+#     "path:line: local"
+#   - blank lines and lines starting with '#' are ignored
+#
+# If the file is absent or holds only comments and blank lines, the check
+# prints "local patterns: skipped" and carries on — that is never an
+# error. The 'local' class is the only one fed by this file.
+#
+# `make leak-patterns-init` (scripts/seed-leak-patterns.sh) creates the real
+# file from this template when it is absent and automatically appends the
+# names the local datawatch daemon knows — federation peers, compute nodes,
+# observer peers and pool hosts — one per line beneath a dedicated comment
+# marker, deduplicated against existing lines case-insensitively (remember
+# that matching itself is case-insensitive substring matching). An existing
+# file is never overwritten. Only a count is printed; names are not.
+#
+# To create the real file by hand:
+#   copy this file to ".leak-patterns.local" at the repository root and
+#   add your patterns there. Do not commit the result.

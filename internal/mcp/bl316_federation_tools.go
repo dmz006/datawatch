@@ -67,6 +67,7 @@ func (s *Server) toolFederationPeerAdd() mcpsdk.Tool {
 		mcpsdk.WithString("token", mcpsdk.Description("bearer token for the peer (optional)")),
 		mcpsdk.WithString("capabilities", mcpsdk.Description("comma-separated capability strings (optional; defaults to federation-peer)")),
 		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this peer only (self-signed/local-dev peer on a trusted network; default false)")),
+		mcpsdk.WithBoolean("fingerprint_sync", mcpsdk.Description("opt this peer into the resource-fingerprint exchange (opt-in per peer; default false)")),
 	)
 }
 
@@ -85,6 +86,7 @@ func (s *Server) toolFederationPeerUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("token", mcpsdk.Description("new bearer token")),
 		mcpsdk.WithString("capabilities", mcpsdk.Description("comma-separated capability strings")),
 		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this peer only (default false)")),
+		mcpsdk.WithBoolean("fingerprint_sync", mcpsdk.Description("opt this peer into the resource-fingerprint exchange (default false)")),
 	)
 }
 
@@ -177,6 +179,9 @@ func (s *Server) handleFederationPeerAddMCP(ctx context.Context, req mcpsdk.Call
 	if req.GetBool("tls_skip_verify", false) {
 		body["tls_skip_verify"] = true
 	}
+	if req.GetBool("fingerprint_sync", false) {
+		body["fingerprint_sync"] = true
+	}
 	out, err := s.proxyJSON("POST", "/api/federation/peers", body)
 	if err != nil {
 		return nil, err
@@ -210,12 +215,15 @@ func (s *Server) handleFederationPeerUpdateMCP(ctx context.Context, req mcpsdk.C
 	if caps := mustString(req, "capabilities"); caps != "" {
 		body["capabilities"] = strings.Split(caps, ",")
 	}
-	// Only include tls_skip_verify if the caller explicitly passed it —
-	// otherwise an update that doesn't mention it would silently reset an
-	// existing true value back to false.
+	// Only include tls_skip_verify / fingerprint_sync if the caller explicitly
+	// passed them — otherwise an update that doesn't mention them would
+	// silently reset an existing value.
 	if argsMap, ok := req.Params.Arguments.(map[string]any); ok {
 		if _, has := argsMap["tls_skip_verify"]; has {
 			body["tls_skip_verify"] = req.GetBool("tls_skip_verify", false)
+		}
+		if _, has := argsMap["fingerprint_sync"]; has {
+			body["fingerprint_sync"] = req.GetBool("fingerprint_sync", false)
 		}
 	}
 	out, err := s.proxyJSON("PUT", "/api/federation/peers/"+name, body)

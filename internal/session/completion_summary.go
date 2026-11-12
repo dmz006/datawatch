@@ -7,11 +7,6 @@ import (
 
 const completionSummaryMarker = "DATAWATCH_COMPLETE:"
 
-// completionSummaryPlaceholder is the instruction-template text that task
-// prompts echo into the pane (see StartScreenCapture, which already skips it
-// during live detection). Lines carrying it are not real summaries.
-const completionSummaryPlaceholder = `<one-sentence summary`
-
 // completionSummaryMaxLen caps the length of an extracted summary.
 const completionSummaryMaxLen = 200
 
@@ -23,10 +18,10 @@ const completionBoxPrefixes = "┃│⎿●>-* \t"
 // in raw session output text. It strips ANSI escapes (treating bare \r as a
 // line boundary), scans lines from the end toward the start, and trims
 // whitespace and leading box/bullet runes from each candidate before
-// matching. Candidates that are empty or are the
-// instruction placeholder are skipped; the first accepted one is collapsed to
-// a single line and truncated to completionSummaryMaxLen characters.
-// Returns "" if no valid summary is found.
+// matching. Candidates that are empty or are template placeholders (the
+// instruction's "<...>" summary, see isCompletionPlaceholder) are skipped; the
+// first accepted one is collapsed to a single line and truncated to
+// completionSummaryMaxLen characters. Returns "" if no valid summary is found.
 func ExtractCompletionSummary(text string) string {
 	clean := StripANSI(text)
 	// Bare carriage returns (e.g. from in-line overdraw) also act as
@@ -47,7 +42,7 @@ func ExtractCompletionSummary(text string) string {
 		if summary == "" {
 			continue
 		}
-		if strings.Contains(summary, completionSummaryPlaceholder) {
+		if isCompletionPlaceholder(line) {
 			continue
 		}
 		summary = strings.Join(strings.Fields(summary), " ")

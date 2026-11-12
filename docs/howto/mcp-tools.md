@@ -117,6 +117,34 @@ catalogue:
    against the daemon and shows the response inline. Audit-logged
    like any other call.
 
+## Lifecycle event subscriptions (BL427)
+
+`autonomous_subscribe`, `autonomous_unsubscribe` and
+`autonomous_subscriptions` manage persisted Automaton (PRD/task)
+lifecycle-event subscriptions: when an event fires, the daemon delivers it to
+the subscription's sink.
+
+| Tool | Proxies | Purpose |
+|---|---|---|
+| `autonomous_subscribe` | `POST /api/autonomous/subscriptions` | Register a subscription: `kinds` (e.g. `task.session_started,prd.blocked`) and/or `level` (`prd`|`task`), optional `prd_id`/`task_id` scope, `sink_type` + `sink_target` (`comm`, `session`, `topic`, `alert`), optional `action_text` (send_input into a session sink), `one_shot`, `coalesce`, `expires_in_seconds` |
+| `autonomous_unsubscribe` | `DELETE /api/autonomous/subscriptions/{id}` | Remove one subscription by id (404 for unknown ids) |
+| `autonomous_subscriptions` | `GET /api/autonomous/subscriptions` | List subscriptions, optional `owner` filter |
+
+The same surface over CLI (handy for one-off setups from a shell):
+
+```
+datawatch autonomous subscribe --task <id> --on session_started \
+  --send "Task started, build is running." --sink session --target <session-id> --one-shot
+datawatch autonomous subscribe --on prd.blocked --sink comm --target my-router
+datawatch autonomous subscriptions [--owner operator]
+datawatch autonomous unsubscribe <id>
+```
+
+The CLI's `--on` shorthand words map to task kinds (`session_started` →
+`task.session_started`); full kinds pass through. `--send` is the
+send_input action (session sinks only) and is one-shot by default when `--task`
+is given.
+
 ## Other channels
 
 ### 5a. Mobile (Compose Multiplatform)

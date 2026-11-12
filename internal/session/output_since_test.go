@@ -27,6 +27,8 @@ func newManagerWithSession(t *testing.T, logPath string) (*Manager, *Session) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	allowTestTemp(mgr)
 	sess := &Session{
 		ID:      "ab01",
 		FullID:  "testhost-ab01",
@@ -73,7 +75,7 @@ func TestOutputSince_Delta(t *testing.T) {
 	// Append new content.
 	f, _ := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
 	f.WriteString("new line alpha\nnew line beta\n") //nolint:errcheck
-	f.Close()                                         //nolint:errcheck
+	f.Close()                                        //nolint:errcheck
 
 	// Second read: delta only.
 	text, secondOffset, err := mgr.OutputSince(sess.FullID, firstOffset)

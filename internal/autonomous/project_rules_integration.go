@@ -93,9 +93,11 @@ func (m *Manager) runPRDCompletionProjectRulesCheck(prd *PRD) (bool, error) {
 		return false, fmt.Errorf("prd-completion project-rules check: %s", result.Error)
 	}
 	if !result.Pass {
-		prd.Decisions = append(prd.Decisions, Decision{
-			At: time.Now(), Kind: "project_rules_block", Actor: "autonomous",
-			Note: fmt.Sprintf("%d finding(s) at or above fail_on_severity blocked PRD completion", len(result.Findings)),
+		m.store.WithLock(func() {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At: time.Now(), Kind: "project_rules_block", Actor: "autonomous",
+				Note: fmt.Sprintf("%d finding(s) at or above fail_on_severity blocked PRD completion", len(result.Findings)),
+			})
 		})
 		// BL410 Phase 3 — a deterministic scan hit is always a real
 		// finding (content), never an infra failure: scan.Run's own

@@ -83,6 +83,46 @@ list
 
 ---
 
+### `sessions groups [axis] [tag-prefix]`
+
+Per-group count summary of the host's sessions over the same grouped read
+the PWA Group-by picker, the MCP `list_sessions` params and the CLI
+`--group-by` flag all share.
+
+| Argument | Meaning |
+|---|---|
+| `axis` | Optional; defaults to `tag`. One of `tag`, `state`, `node`, `project`, `automaton`. Unknown axes are refused with `unknown axis "…" (supported: tag, state, node, project, automaton)`; more than two arguments is refused too. |
+| `tag-prefix` | Optional, second argument. With the tag axis only: only tags with this prefix (e.g. `automation:`) form groups; the rest collect in the ungrouped group. Ignored on every other axis. |
+
+**Examples and reply** (a `by <axis> — N session(s)` line, one line per
+group, then a `totals:` line — under a `Sessions by <axis>` reply header):
+```
+sessions groups tag automation:
+datawatch (Sessions by tag):
+by tag, tag prefix "automation:" — 6 session(s)
+  automation:lane-gpu  2 (complete×1, running×1)
+  automation:lane-cpu  1 (complete×1)
+  ungrouped  3 (failed×1, killed×1, running×1)
+  totals: complete×2, failed×1, killed×1, running×1
+```
+
+On the `automaton` axis each Automaton line also carries its block
+progress:
+
+```
+sessions groups automaton
+datawatch (Sessions by automaton):
+by automaton — 6 session(s)
+  a12f0001  4 (complete×3, running×1)  [done 3/4]
+  ungrouped  2 (failed×1, killed×1)  [done 2/2]
+  totals: complete×3, failed×1, killed×1, running×1
+```
+
+See [`docs/howto/sessions-tiles-and-grouping.md`](howto/sessions-tiles-and-grouping.md)
+for the full feature walk-through on every channel.
+
+---
+
 ### `status <id>`
 
 Show recent output from a session (last 20 lines by default).
@@ -471,6 +511,61 @@ alerts 10
 
 ---
 
+### `schedule-results`
+
+Read the **scheduled-job result panel** — the same data the PWA panel and the `datawatch schedule-results` CLI show (this channel command is read-only; posting is done by the job itself with `datawatch schedule-results post`).
+
+| Syntax | Description |
+|---|---|
+| `schedule-results` | One line per schedule: last status icon (✓ ok / ⚠ warn / ✗ error), one-line summary, elapsed time |
+| `schedule-results list` | Same as above |
+| `schedule-results <schedule_name>` | Recent history for that schedule, most recent first (up to 10 lines; the complete history is on the CLI/PWA) |
+| `schedule-results history <schedule_name>` | Alias for the previous one |
+
+Examples:
+- `schedule-results` → all schedules and their most recent result
+- `schedule-results imap-hourly-rules` → recent results for that one schedule
+
+### Interstitial prompt settings via `configure`
+
+Claude Code interstitial prompts (the *“Want to autocompact at 400k tokens instead?”* question, for instance) are recognised per-kind and dismissed with **Esc** by default (never Enter, which would confirm the highlighted option and can change a setting). They are bounded and audited, and all settings take effect immediately:
+
+```
+configure session.dismiss_ui_prompts=false       — never dismiss; flag the operator instead
+configure session.ui_prompt_dismiss_delay_seconds=10   — wait 10 s before the first key
+configure session.ui_prompt_clear_bound_seconds=60     — 60 s between keys per prompt
+configure session.ui_prompt_max_attempts=3             — up to 3 keys per prompt
+configure session.dismiss_ui_prompts     — show current value
+```
+
+Defaults when unset: `dismiss_ui_prompts=true`, delay 5 s, clear bound 30 s, 2 attempts. When the budget is spent (or dismissal is off), the session is flagged waiting-for-input and an operator question is raised with the captured screen tail. Counters show in the stats API under `ui_prompts`. See `docs/howto/sessions-deep-dive.md` and `docs/operations.md` for the full rules.
+
+### Splash dwell settings via `configure`
+
+Two settings control how long the PWA splash screen (logo screen) stays on screen, in whole seconds from 0 to 60; `0` keeps the legacy timing. They apply from the next splash show — no restart.
+
+```
+configure ui.splash_min_seconds=8                    # dwell for an ordinary show (first visit or > 24 h); default 6
+configure ui.splash_min_seconds_new_version=15       # dwell when shown for a new version; default 9
+```
+
+Read the current value with `datawatch config get ui.splash_min_seconds` or `GET /api/config` (both keys under `ui`). Out-of-range or non-whole-number values are refused with the key named, and nothing changes. Once the window is connected, a tap, click, or keypress dismisses the splash early with the fade.
+
+The same keys work through every other surface:
+
+```
+datawatch config set ui.splash_min_seconds 8
+datawatch config set ui.splash_min_seconds_new_version 15
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
+     -d '{"ui.splash_min_seconds": 8}' \\
+     http://datawatch.local/api/config
+# YAML:  ui:
+#           splash_min_seconds: 8
+#           splash_min_seconds_new_version: 15
+```
+
+MCP: `config_set` with key `ui.splash_min_seconds`. See operations.md → “Splash dwell settings” and implementation.md → “Splash dwell settings” for the full write-up.
+
 ### `setup <service>`
 
 Start an interactive setup wizard for a backend or subsystem. Can be sent from any connected messaging channel.
@@ -503,6 +598,296 @@ Step 1/3: Enter bot token:
 **Notes:**
 - Signal setup cannot be performed over a messaging channel (QR code required). You will receive instructions to run `datawatch setup signal` on the host machine.
 - Type `cancel` or `abort` at any prompt to exit the wizard.
+
+### `autonomous subscribe <kinds|short-names> [prd=<id>] [task=<id>]`
+
+Subscribe this comm channel to Automaton (PRD/task) lifecycle events
+(BL427 phase 3). When a matching event fires, the daemon delivers it back
+over this channel's comm sink, batched per Automaton during the quiet
+window (coalesced by default).
+
+**Syntax:** `autonomous subscribe <kinds> [prd=<id>] [task=<id>]`
+
+- `<kinds>` — one or more event kinds, comma-separated. Shorthand words
+  map to task kinds (`session_started` = `task.session_started`);
+  full kinds pass through (`prd.blocked`, `task.completed`), and any
+  other bare word is treated as a task status kind (`waiting_capacity`
+  → `task.waiting_capacity`).
+- `prd=<id>` / `task=<id>` — scope the subscription to one Automaton or
+  one task.
+
+**Example:**
+```
+autonomous subscribe session_started,prd.blocked prd=prd_a3f9
+```
+→ `subscribed sub_a3f2  kinds=task.session_started,prd.blocked  prd=prd_a3f9  sink=comm -> telegram:-1001234  coalesce=yes  (owner telegram:-1001234)`
+
+Each channel's identity (`<backend>:<group-id>`) becomes both the sink
+**target** and the **owner** — a channel receives the events it
+subscribed to and manages only its own subscriptions.
+
+### `autonomous subscriptions`
+
+List this channel's lifecycle-event subscriptions (owner-scoped — you
+never see other channels' subscriptions). One record per line:
+```
+sub_a3f2  kinds=task.session_started,prd.blocked  prd=prd_a3f9  sink=comm -> telegram:-1001234  coalesce=yes
+```
+
+### `autonomous unsubscribe <id>`
+
+Delete one of **this channel's** subscriptions. The id is verified
+against this channel's owner-scoped list before the delete reaches the
+deemon — a channel that created a subscription (or the daemon itself)
+removes it:
+```
+autonomous unsubscribe sub_a3f2
+```
+→ `deleted sub_a3f2`
+
+> The other `autonomous` verbs (status, list, plan-review, …) work from
+> a comm channel the same way; this section documents the lifecycle
+> subscription verbs. The CLI equivalents are
+> `datawatch autonomous subscribe/unsubscribe/subscriptions` (richer
+> flags, including session/topic/alert sinks).
+
+### `automation set-budget <id> key=value...`
+
+Set, replace or clear the spending limit of an Automation (a chain of
+Automata), or of one of its members. It does not start, pause or resume
+anything by itself. The arguments are `key=value` pairs; the policy keys
+replace the whole limit.
+
+**Syntax:**
+```
+automation set-budget <id> ceiling_type=dollar|allocation_pct ceiling_value=<n> window=automation|day|week|month
+    [pacing=none|even] [on_breach=pause|block] [backend=<llm>] [allocation_estimate=true]
+    [peer_window=<a,b>] [reset_time=HH:MM] [reset_weekday=<day>] [reset_day=1..28] [reset_zone=<zone>]
+    [member=<id>] [estimated_cost_usd=<n>] [expected_version=<n>]
+automation set-budget <id> clear=true [member=<id>] [expected_version=<n>]
+```
+
+- `ceiling_type`, `ceiling_value` and `window` are required together.
+  Only a `dollar` ceiling can stop work; `allocation_pct` shows an estimate
+  and never pauses or blocks.
+- `on_breach` defaults to `pause`: the Automation pauses and resumes by
+  itself at the window reset when the reset time is known, and is blocked
+  until you resume it when the reset time is unknown. `block` always blocks.
+  An alert is raised either way.
+- `peer_window` names, comma separated, the other daemons whose usage counts
+  toward the ceiling (off by default; no automatic confirmation that a peer
+  shares the account).
+- `member=<id>` targets that member's own limit; `estimated_cost_usd=<n>`
+  with `member` declares its expected cost (0 removes it).
+- `clear=true` removes the limit and cannot be combined with policy keys.
+- `expected_version=<n>` must match the Automation's current version or the
+  daemon refuses with a 409.
+
+**Example:**
+```
+automation set-budget ab12cd34 ceiling_type=dollar ceiling_value=40 window=week on_breach=pause
+```
+→ `automation ab12cd34 (nightly build): status active, version 8, 3 members`
+followed by the budget block: scope, `spent: $0.00 of $40.00 ceiling (week window)`, the
+window, the reset time, `on breach: pauses and resumes by itself at the reset`, and one
+line per counted peer.
+
+`automation status <id>` prints the same budget block. A mistake in the
+arguments is answered with the usage line and nothing is sent to the daemon.
+
+---
+
+### `progress [automation=<id>] [tag=<id> ...] [tag_match=<any|all>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]` / `progress trend [days] [tag=<id> ...] [tag_match=<any|all>]`
+
+Show how far the Automata have got and when the rest should be done. Both
+verbs are read-only and print the same text as `datawatch autonomous progress`
+and `datawatch autonomous progress-trend`, built from the same object as
+`GET /api/autonomous/progress`, `GET /api/autonomous/progress/trend` and the
+`autonomous_progress` and `autonomous_progress_trend` MCP tools.
+
+**Syntax:**
+```
+progress
+progress tag=1a2b3c4d since=2026-10-01
+progress automation=<id>
+progress tag=4f5e6d7c tag=1a2b3c4d tag_match=all
+progress trend 14
+progress trend 14 tag=1a2b3c4d
+```
+
+(`1a2b3c4d` and `4f5e6d7c` stand for tag **ids** — the ids the tag named `stage:build` and the tag named `automation:release` carry in `autonomous_tag_list`; the filter compares ids, not names.)
+
+- `automation=<id>` counts only the Automata of one Automation; `tag=<id>`
+  counts only the Automata carrying the tag — repeat it to select several, and
+  `tag_match=all` (the default is `any`) switches from “carries at least one”
+  to “carries every one”. `since` is the first day counted and `until` the last
+  (inclusive); both are `YYYY-MM-DD`. A mistake in the arguments is answered
+  with the usage line and nothing is sent to the daemon.
+- `progress trend [days]` reads the saved daily snapshots for the last `days`
+  days (1 to 365, default 30) and says whether the completion range is
+  converging, widening, flat or unknown; `tag=<id>` (repeatable) plus
+  `tag_match=<any|all>` name the tag scope the reply reports.
+
+**What the reply shows:**
+- a header with the calendar days, the active days after the inactive windows
+  are left out, and the number of lanes;
+- one row each for feature, bug (and other, when it has any) and the total:
+  Automata, done, running, waiting, blocked, tasks, done and left, work time,
+  the median wall time of a finished Automaton and the mean time of a task;
+- `LEFT`: the known work (Automata that exist) and the estimated work (rows
+  not filed yet, Automata with no tasks yet) on separate lines, then the
+  combined figure, labelled as an estimate;
+- `ETA`: the completion range in active days with the method behind each
+  figure and what drives the spread;
+- `LEAD`, `WAITS` (every inactive window, never hidden) and the first 14
+  backlog rows not filed yet, as plain item text.
+
+Anything that has not been measured reads `not measured`, never zero.
+
+---
+
+### `compute node models [name] [model=<m>] [backend=<b>] [refresh]`
+
+Show which models each compute node serves. Read-only; prints the same data as `GET /api/compute/served-models`, `datawatch compute node served-models` and the `compute_served_models` MCP tool.
+
+**Syntax:**
+```
+compute node models
+compute node models gpu-1
+compute node models model=ollama/qwen3:27b
+compute node models gpu-1 model=ollama/qwen3:27b backend=ollama refresh
+```
+
+- `name` limits the answer to one node; an unknown node is answered with an error.
+- `model=<m>` adds the model check: whether a pin of that model would be accepted or refused, which nodes serve it, and the refusal message.
+- `backend=<b>` narrows that check to one backend.
+- `refresh` reads the nodes now instead of using the kept copy (kept for `autonomous.model_routing.served_models_cache_seconds`).
+- The words may come in any order; a mistake is answered with the usage line and nothing is sent to the daemon.
+
+**What the reply shows:** one block per node with its kind, then how many models it serves, whether the list is fresh or a kept copy and how old, and the models. A node whose models could not be read says so with the cause; a disabled node says it is disabled and is not read.
+
+---
+
+### `autonomous set-task-node <automaton-id> <task-id> <node|clear>` / `autonomous set-story-node <automaton-id> <story-id> <node|clear>`
+
+Pin one task, or every task of a story that has no pin of its own, to a compute node, so its worker runs there. The word `clear` removes the pin. The pin is checked against the node's served models for the model the task resolves to: a node that does not serve it is refused with a message that names the model and the node (or applied with a warning when `autonomous.model_routing.refusal_mode` is `warn`), and a node that is not registered is refused in both modes. Same behaviour as `datawatch autonomous prd-set-task-node` and `prd-set-story-node`, `POST /api/autonomous/prds/{id}/set_task_node` and `set_story_node`, and the `autonomous_prd_set_task_node` and `autonomous_prd_set_story_node` MCP tools.
+
+**Syntax:**
+```
+autonomous set-task-node <automaton-id> <task-id> gpu-1
+autonomous set-story-node <automaton-id> <story-id> clear
+```
+
+Exactly four words are expected after `autonomous`; anything else is answered with the usage line.
+
+The model routing settings are configuration keys, not commands: `configure autonomous.model_routing.refusal_mode=warn`, and the other `autonomous.model_routing.*` keys. See [howto/model-routing.md](howto/model-routing.md).
+
+---
+
+### `federation fingerprint list [state]` / `federation fingerprint confirm <id>` / `federation fingerprint reject <id>`
+
+List the **pending matches** this daemon found while reconciling resource fingerprints with its federation peers, and **decide** them yourself. A match means the two daemons appear to be holding the *same underlying resource* — a compute node (e.g. the same GPU), or an LLM entry billed to a shared account. **Confirm** makes those two resources one shared pool (for a compute node, the peer's admitted work now also counts against our admission capacity; rejecting again stops that). **Reject** keeps them as separate things (and undoes a prior confirmation). Nothing is confirmed automatically: a match stays pending until we decide.
+
+```
+federation fingerprint list [pending|confirmed|rejected]      # default: all states
+federation fingerprint confirm <id>                            # shared pool from now on
+federation fingerprint reject <id>                             # keep separate
+```
+
+→ `mm2f8c01  pending  node  local=node-a  peer=beta  peer_name=node-b`
+followed by one line noting what confirm/reject do. A bad state word, or an unknown id, is replied with a usage line and nothing is sent to the daemon.
+
+### `federation peer fingerprint <name> on|off`
+
+Opt a peer **in or out** of the fingerprint exchange. The flag is `fingerprint_sync` on the peer record: per-peer, off by default, and it needs to be on **both sides** — we must also be opted in on that peer's own copy of us. (The LLM-entry side of the exchange is a label, not a toggle: set `billing_group=<label>` in `llm add|update`.)
+
+```
+federation peer fingerprint beta on
+```
+→ the peer's record in JSON, now with `fingerprint_sync: true`.
+
+> The exchange never sends raw values — only per-peer-pair **hashes** of the node's own identity (or an LLM entry's billing-group label), keyed on the peer pair — so neither peer can learn our value from the other's hash, and a peer token without federation control capabilities cannot even read the exchange endpoint at all. See `docs/howto/federation-fingerprint.md`.
+
+---
+
+### `usage` / `usage advice` / `usage reading` / `usage extra` / `usage work` / `usage burn-guard`
+
+The account **usage calculator** — the account's usage verdict, lane count, pace, policy and typed figures — the same data the REST, MCP and PWA surfaces show (design: `docs/plans/2026-10-23-usage-calculator-design.md`). Every reply stays within 50 columns and closes with the forms the operator can send back.
+
+| Form | Meaning |
+|---|---|
+| `usage` | The advice for the configured variant, policy and lane count. Same as `usage advice`. |
+| `usage advice [variant=V] [policy=P] [lanes=N]` | Advice for this one call. Overrides apply to this call only and are not saved. |
+| `usage reading <percent> [lanes=N] [session=N]` | Store a typed weekly percent (optionally a lane count and a second session's percent), then show the refreshed advice. |
+| `usage extra <points>` | Set the bought extra-credit points, then show the refreshed advice. |
+| `usage work <points\|clear>` | Set (or clear) the typed remaining-work figure, then show the refreshed advice. When cleared, the per-task estimate stands in. |
+| `usage burn-guard` | The burn guard's status, read-only: state, rung in force, projected percent against the pace line and margin, burn per hour, over or under target, and the last decision. Same data as `GET /api/usage/burn-guard`; run it or change its settings from the CLI, REST or MCP (`datawatch usage burn-guard run`, `config`). |
+
+**Burn guard projection gap.** The comm channel sets the gap between the guard's projection and the usage advice with `configure usage.burn_guard.max_projection_gap_points=<n>`: a number from 0 to 100 (default 25; 0 never compares the two projections). The value is checked by the same rule as the REST config path and the CLI (`datawatch usage burn-guard config max_projection_gap_points=<n>`), and an invalid value is refused with `Refused:` and nothing is stored. The `usage burn-guard config` output shows the current value as `max_projection_gap_points`.
+
+The `variant` / `policy` / `lanes` / `session` keys are case-insensitive; values pass through verbatim and the daemon validates them.
+
+**Example:**
+```
+usage advice variant=lane-planner lanes=3
+[myserver] usage advice
+  … 50-column advice text …
+  reply with one of:
+    usage advice [variant=V] [policy=P] [lanes=N]
+    usage reading <pct> [lanes=N] [session=N]
+    usage extra <pts>
+    usage work <pts|clear>
+    usage burn-guard
+
+usage reading 72.5 lanes=3 session=41
+[myserver] usage reading
+  reading stored: 72.5%
+  … refreshed advice …
+```
+
+**Notes:**
+- `usage` / `usage advice` are read-only and reflect the stored `usage.calculator.*` settings; set them with `configure usage.calculator.variant=…` or `configure usage.calculator.policy=…`. A per-call `variant=` / `policy=` saves nothing.
+- `reading`, `extra` and `work` write first; the reply acknowledges the write, then shows the refreshed advice.
+- A bare or unrecognized form answers with the grammar lines and touches nothing on the daemon.
+- This is the comm-channel view of the calculator; it is separate from `usage_backoff` (the per-backend rate-limit hold).
+
+### `identity` / `identity backups` / `identity restore <name|latest>`
+
+Read and change the **operator identity** (role, north-star goals, current
+projects, values, current focus, context notes) and bring an earlier one back.
+Every write keeps a timestamped backup of the identity it replaces; the daemon
+keeps the newest `identity.backups_to_keep` of them (default 10). See
+[howto/identity-and-telos](howto/identity-and-telos.md#backups-restore-and-the-empty-write-guard).
+
+| Form | Meaning |
+|---|---|
+| `identity` / `identity show` | The full identity as JSON. |
+| `identity get [field]` | The whole identity, or one field (`role`, `north_star_goals`, `current_projects`, `values`, `current_focus`, `context_notes`); `not set` when empty. |
+| `identity set <field> <value>` | Merge one field (comma-separated for the list fields). Other fields are kept. |
+| `identity backups` | The saved backups, newest first: file name, local time, role and how many fields have content. `no backups yet` when there are none. |
+| `identity restore <name>` | Bring the named backup back and show the restored identity. |
+| `identity restore latest` | Bring back the newest backup that has content. |
+| `identity configure` | Points at the PWA wizard and `datawatch identity configure`; chat is line-oriented, so no interview runs here. |
+
+There is **no chat verb that clears the identity**. `identity reset` answers
+with a pointer to `datawatch identity reset`, the PWA Reset button and the MCP
+`reset_identity` tool, so one mistyped line cannot empty it. A restore first
+backs up the identity it replaces, so `identity restore latest` also undoes a
+reset or restore made elsewhere. `identity restore` with no name prints the
+usage lines and changes nothing; an unknown name is reported with the daemon's
+own error text.
+
+**Example:**
+```
+identity backups
+[myserver] identity backups
+identity-20261029T101500.000Z.yaml  2026-10-29 06:15:00  platform engineer  5 fields
+identity-20261028T080000.000Z.yaml  2026-10-28 04:00:00  platform engineer  3 fields
+
+identity restore identity-20261028T080000.000Z.yaml
+[myserver] identity restore identity-20261028T080000.000Z.yaml
+{ "role": "platform engineer", … }
+```
 
 ---
 
@@ -571,10 +956,19 @@ Stop the running daemon and start a fresh one. Active AI sessions in their tmux 
 
 Equivalent to `datawatch stop && datawatch start` but in a single command. The new daemon re-reads the config file.
 
+While running Automata work would be interrupted (a planning Automaton, a verifying task, a running judge, a running task or a live session), the restart is refused. The command prints the interruption report and exits non-zero. Pass `--force` to restart anyway:
+
+```bash
+datawatch restart            # refused with the report while work runs
+datawatch restart --force    # restart anyway
+```
+
 The `restart` command is also available via:
-- **All messaging backends**: send `restart` to your Signal/Telegram/Discord/Slack/Matrix group
+- **All messaging backends**: send `restart` to your Signal/Telegram/Discord/Slack/Matrix group; send `restart force` to restart past a refusal
 - **Web UI**: Settings → About → Restart button (calls `POST /api/restart`)
-- **MCP**: `restart` tool
+- **MCP**: `restart_daemon` tool, with `force=true` to restart past a refusal
+
+See [howto/restart-with-work-running.md](howto/restart-with-work-running.md#forcing-a-restart-past-running-work).
 
 ### `datawatch setup <service>`
 
@@ -601,7 +995,12 @@ Interactive wizard to configure a backend or subsystem. Available services:
 
 | Service | Description |
 |---|---|
-| `llm claude-code` | Configure claude CLI binary and permission settings |
+| `llm classifier status` | Verification mode of every LLM, capability probe status, calibration status and the publisher allowlist. Same data as `GET /api/llm/classifier`. |
+| `llm classifier publishers` | List the publisher allowlist for classify-mode judge models. |
+| `llm classifier add-publisher <name> confirm=true` | Add a publisher to the allowlist. Refused without `confirm=true`; every addition is audited. |
+| `llm classifier verdicts <automaton> [task=<id>] [low]` | An Automaton's verdict records: mode, score vector, route and outcome. `low` keeps only low-confidence blocks. |
+| `llm classifier review <automaton> <task> retry\|cancel [note=<text>]` | Decide a low-confidence block. It first checks that the task has one, then sends the decision the way `autonomous review-task` does. |
+| `llm claude-code` || `llm claude-code` | Configure claude CLI binary and permission settings |
 | `llm aider` | Configure aider (binary path, enable/disable) |
 | `llm goose` | Configure goose (binary path, enable/disable) |
 | `llm gemini` | Configure Gemini CLI (binary path, enable/disable) |
@@ -645,6 +1044,44 @@ datawatch test --pr
 - Requires `gh` CLI for `--pr` (GitHub CLI)
 - Phone numbers are partially masked (last 4 digits only)
 - Tokens and secrets are never included in output or PRs
+
+### `datawatch session list [flags]`
+
+List all sessions, or the same list grouped. Without grouping flags this is
+the flat list (see the `list` comm command above for the ungrouped view);
+with `--group-by` the read goes through the daemon's grouped REST endpoint
+and the CLI renders the full grouped view: group headers with count and
+state mix, the group's sessions indented underneath, story blocks and
+done/total progress on the automaton axis, and per-state totals at the end.
+
+| Flag | Description |
+|---|---|
+| `--group-by` | Group the list by `tag`, `state`, `node`, `project` or `automaton`. Activates the grouped read. |
+| `--tag-prefix` | With `--group-by tag`: only tags with this prefix (e.g. `automation:`) form groups; the rest collect in the ungrouped group. Ignored on every other axis. |
+| `--all-servers` | Include sessions from all federation peers (`/api/sessions/aggregated`). |
+| `--orphaned` | List only sessions whose parent id no longer exists. |
+| `--name` | Filter by name glob (e.g. `worker-*, agent-?`). |
+| `--state` | Filter by state: `running`, `waiting_input`, `rate_limited`, `complete`, `failed`, `killed`. |
+| `--backend` | Filter by backend family (e.g. `opencode`, `claudecode`). |
+| `--alive` | Filter by `claude_alive`: `true` or `false`. |
+| `--json` | Output structured JSON. |
+| `--summary` | Compact JSON list: long text fields truncated, only the newest finished sessions kept. |
+| `--states` | Comma list of states to include (e.g. `running,waiting_input`); `active` = every non-finished state. |
+| `--since` | Only sessions updated after this time (RFC3339 or unix seconds). |
+
+**Examples:**
+```bash
+# All sessions, grouped by Automaton: block, story, done/total per block
+datawatch session list --group-by automaton
+
+# The tag axis narrowed to the automation: prefix
+datawatch session list --group-by tag --tag-prefix automation:
+
+# Per-node cut of the fleet
+datawatch session list --group-by node
+```
+
+The grouped read is one REST endpoint (`GET /api/sessions?group_by=...&tag_prefix=...`) shared by the PWA Group-by picker, the MCP `list_sessions` params and the comm verb `sessions groups` — same groups, counts and state mixes everywhere.
 
 ### `datawatch session new [flags] <task>`
 
@@ -761,14 +1198,14 @@ A one-time spawn that fails to start is marked `failed`.
 # Pure shell job — run imap-mcp rule engine hourly (no LLM needed)
 datawatch schedule spawn \
   --cron "0 * * * *" \
-  --path /home/user/workspace/imap-mcp \
+  --path /home/<user>/workspace/imap-mcp \
   --schedule-name imap-hourly-rules \
   --shell "imap-mcp run-rules --config ~/workspace/dmz-imap.yaml"
 
 # AI task — nightly report with Claude Code
 datawatch schedule spawn \
   --cron "0 2 * * *" \
-  --path /home/user/workspace/project \
+  --path /home/<user>/workspace/project \
   --backend claude-code \
   --schedule-name nightly-report \
   --task "Generate a summary of today's commits and open issues"
@@ -778,6 +1215,53 @@ datawatch schedule spawn --at 23:00 --shell "rsync -avz /data /backup"
 ```
 
 `schedule list` shows run history: FIRES / LAST-FIRE / LAST-RESULT columns (values: `spawned`, `skipped`, `failed`).
+
+### `datawatch schedule-results [list | history | post]`
+
+Read and post the structured result panel for scheduled jobs — the same data the PWA result panel and the MCP `post_result` / `schedule_results_list` tools operate on.
+
+| Subcommand | What it does |
+|---|---|
+| `datawatch schedule-results list` | Latest result per schedule: status, title, summary, posted time, retained count, recent-status sequence. `--json` prints the raw API response. |
+| `datawatch schedule-results history \<schedule_name\>` | Full retained history for one schedule, oldest first (e.g. `datawatch schedule-results history "imap-mcp run-rules"`). |
+| `datawatch schedule-results post …` | Post a structured result for a session (`POST /api/sessions/{id}/result`) |
+
+`post` flags:
+
+| Flag | Required | Description |
+|---|---|---|
+| `--title` | yes | Human-readable result title |
+| `--status` | no (default `ok`) | `ok`, `warn`, or `error` |
+| `--summary` | no | One-line summary |
+| `--metrics` | no | JSON object of scalar metrics, e.g. `{"active_rules": 40}` |
+| `--table` | no (repeatable) | JSON table: `{"title": "…", "columns": […], "rows": [[…]]}` |
+| `--markdown` | no | Longer markdown report / findings section |
+| `--file` | no | Seed the payload from a JSON file; individual flags override its fields |
+| `--session` | outside a spawned session | Session to post for; defaults to `DATAWATCH_SESSION_ID` inside a spawned scheduled-job session |
+
+```bash
+# From inside a spawned scheduled-job session (no --session needed;
+# the daemon injects DATAWATCH_SESSION_ID + DATAWATCH_RESULT_TOKEN):
+datawatch schedule-results post \
+  --title "40 active rules" \
+  --status ok \
+  --summary "2 messages actioned" \
+  --metrics '{"active_rules": 40, "actioned": 2}' \
+  --table '{"title":"Actions","columns":["action","count"],"rows":[["reply",1],["flag",1]]}'
+
+# From outside, on behalf of a session (needs an operator token):
+datawatch schedule-results post \
+  --session host-a1b2 \
+  --title "40 active rules" \
+  --status ok \
+  --file result.json
+
+# Inspect what the panel is showing:
+datawatch schedule-results list
+datawatch schedule-results history nightly-report
+```
+
+Payload rules (enforced client-side before any request and re-checked by the daemon): `title` required; `status` one of `ok`/`warn`/`error`; `metrics` a flat object of scalars; at most 20 tables of 100 rows each; long strings are truncated with a `…(truncated)` marker; the whole payload must serialize to ≤ 64 KB. A session that belongs to a named schedule keeps its last N results (default 20, `results.schedule_history_limit`); every post also updates the session's status-board result slot.
 
 ### `datawatch session schedule list`
 
@@ -858,20 +1342,175 @@ Like `ask` but routes through the rules engine first — applies
 routing-rules, RTK token-savings logging, and project-context
 auto-attach if a project profile maps the cwd.
 
+### `datawatch identity <subcommand>`
+
+Manage the operator identity through the running daemon (`/api/identity`). Every
+write keeps a timestamped backup of the identity it replaces in the
+`identity-backups` folder next to `identity.yaml`; `identity.backups_to_keep`
+(default 10, minimum 1) sets how many are kept. A write that would replace a
+saved identity with an empty one is refused by the daemon (HTTP 409,
+`identity_wipe_refused`), and the CLI prints that sentence, says nothing was
+written and points at `identity reset`.
+
+| Subcommand | Description |
+|---|---|
+| `get [--field <name>]` | Print the identity, or one field. |
+| `show` | Alias for `get`. |
+| `set --field <name> --value <value>` | Merge one field (comma-separated for list fields); other fields are kept. |
+| `edit` | Open `identity.yaml` in `$EDITOR`. |
+| `configure` | Interactive six-step setup wizard. |
+| `backups [--json]` | List the saved backups, newest first: name, local time, role, number of fields with content. `no backups yet` when there are none. `--json` prints the daemon's reply unchanged. |
+| `restore [--backup <name>]` | Bring a backup back and print the restored identity. Without `--backup` (or with `--backup latest`) the newest backup with content is used. The identity being replaced is backed up first, so a restore can be undone. |
+| `reset [--yes]` | Clear the identity on purpose; a backup is kept and `restore` undoes it. Without `--yes` you are asked to type `RESET`; anything else cancels and sends nothing. With no terminal on stdin `--yes` is required. |
+
+```bash
+datawatch identity backups
+datawatch identity restore --backup identity-20261028T080000.000Z.yaml
+datawatch identity reset --yes
+```
+
+Chat has the same list and restore (`identity backups`, `identity restore
+<name|latest>`) but no reset; see [`identity`](#identity--identity-backups--identity-restore-namelatest).
+
 ### `datawatch autonomous <subcommand>`
 
 PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 
 | Subcommand | Description |
 |---|---|
-| `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts) |
+| `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts). An Automaton whose completion review blocked it carries `rules_review_outcome`; `get <id>` (CLI `prd-get`) prints the same action line and finding bullets, and a parked Automaton accepts add-task and a re-run |
 | `config get/set` | Get / set autonomous engine config (max_recursion_depth, auto_approve_children, per_task_guardrails, per_story_guardrails) |
 | `learnings` | List engine learnings (BL202) |
+| `unlanded-work [--json]`, `unlanded-work keep <branch> [--note <text>]`, `unlanded-work archive-branch <branch>`, `unlanded-work delete-worktree <branch> --confirm` | List the archived Automaton branches whose commits are not on the default branch, each with a recommendation (landed, superseded or needs a decision), and act on one: keep it, move it under the archive refs, or write a bundle backup and then delete its worktree and branch. Same as `GET /api/autonomous/unlanded-work` and the three `POST` actions; the list is also the `autonomous_unlanded_work` MCP tool (read-only) and the chat verb `autonomous unlanded-work [keep\|archive-branch\|delete-worktree <branch> [confirm]]`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) |
+| `standard-tasks [--project <dir-or-alias>] [--json]` | List the standard tasks the decomposer adds to each story — the built-in pack (changelog entry, parity-issue draft, docs set, bounded load-step rule, final gate, version note) with any operator overrides resolved for the `--project`: a table of `ID TITLE KIND ENABLED MODE RUNNER` (`mode` is `llm`, `daemon` or `off`; `runner` is `session`, `script gate`, `daemon` or `none`); `--json` prints the `GET /api/autonomous/standard-tasks[?project=…]` body `{enabled, tasks[]}` untouched. A read: nothing is written. Chat word: `standard tasks` (or `autonomous standard-tasks`) |
+| `progress [--json] [--automation <id>] [--tag <id>]... [--tag-match any\|all] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--tag` is repeatable and `--tag-match all` counts only Automata carrying every selected tag (any one by default). `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id> ...] [tag_match=<any\|all>] [since=<date>] [until=<date>]` |
+| `progress-trend [--days <n>] [--tag <id>]... [--tag-match any\|all] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `--tag` is repeatable and scopes the tags the reply reports. `GET /api/autonomous/progress/trend`; chat: `progress trend [days] [tag=<id> ...] [tag_match=<any\|all>]` |
+| `lane-fill [--limit <n>] [--json]` | Lane fill: each GPU and Claude lane with what it is running or why it is idle, a `Lane counts:` line (effective, configured and source for each lane kind, for example `gpu 2 of 2 (config), claude 1 of 3 (LLM caps)`), a `Mode per lane kind:` line when a kind's mode differs from the base mode, the queued eligible counts and the newest decisions; a decision that refused an Automaton shows its reason code in brackets in front of the reason text, for example `[stale] Automaton last updated 101 hours ago, older than the 72 hour stale limit` (`--limit` 1 to 1000, default 50). `--json` prints the `GET /api/autonomous/lane-fill` body untouched; a bad `--limit` is refused before anything is sent |
+| `merge-shadow status` / `merge-shadow compare <automaton-id>` | Merge shadow (Phase 4, shadow mode): `status` prints the matched / different comparison counts per release size (`patch`, `minor`, `major`, `none`) summed over all projects, or the one line `no merge shadow comparison exists yet`; `compare <automaton-id>` prints that Automaton's comparison — release size, matched / different / not-compared counts, and each difference as `<field> [<severity>]: planned “\<planned\>”, landed “\<landed\>”` — or `no merge shadow comparison exists for Automaton <id>`. Read-only: `GET /api/autonomous/merge/shadow`; chat: `autonomous merge-shadow` (one summary line, or `No merge comparisons yet`). Walkthrough: [howto/merge-shadow.md](howto/merge-shadow.md) |
+| `triage [--automation <id>] [--prd <id>] [--status failed\|blocked] [--json]` | Triage records: one row per failed or blocked Automaton — identity, the failed task, first-seen and alarm times, the retry budgets shown as given, the notes, and the alarm threshold in `alert_minutes`. `--status` is `failed` or `blocked` (case-sensitive, refused locally for anything else); an empty list prints its own line. `--json` prints the `GET /api/autonomous/triage` body untouched; chat: `autonomous triage [automation-id]` (one optional positional argument, the automation id) |
+| `decisions [automaton-id] [--prd <id>] [--state open\|answered\|withdrawn\|expired] [--limit <n>] [--json]` | Operator decisions, newest first: one line each with the id, the state, the question (cut to 120 characters) and, for an answered decision, the answer id, the actor and the quote verbatim; a task held on a decision is named on its line with its wait reason. The Automaton id is the argument or `--prd` (give it once). `--limit` is a positive number, default 100, a larger value is capped at 1000. `--json` prints the `GET /api/autonomous/decisions` body untouched; chat: `autonomous decisions [automaton-id]`. A read: nothing is written |
+| chat: `decision-records [automaton-id]` / `decision-record <id>` / `decision-record create <json>` / `decision-record withdraw <id> [reason]` | Decision records over the chat channel (no CLI subcommand): the list holds at most the ten newest, one per line — the id, the question state, the title cut to 80 characters and, for an answered record, who answered and the quote cut to 120 characters; the single record shows it whole (title, situation, options with their trade-offs, the recommendation, the state, the answer, the document change report and the follow-up); `create` sends one JSON body (the same content fields as the REST create) and replies with the record id, the question id and any clarity warnings — a refusal replies with the findings; `withdraw` sends the optional reason and confirms. `GET/POST /api/autonomous/decision-records`, `GET /api/autonomous/decision-records/{id}`, `POST /api/autonomous/decision-records/{id}/withdraw` |
+| `subscribe --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink comm\|session\|topic\|alert --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <secs>]` | Subscribe to Automaton lifecycle events and route them to a sink (BL427 phase 3); `--on` is repeatable; shorthand words map to task kinds, full kinds pass through |
+| `unsubscribe <id>` | Delete a lifecycle-event subscription by id (BL427 phase 3) |
+| `subscriptions [--owner <owner>]` | List lifecycle-event subscriptions, optionally scoped to one owner (BL427 phase 3) |
 | `prd list/get/create/decompose/edit/edit-task/delete/instantiate/run/cancel` | PRD CRUD (cancel + edit + delete added in v5.19.0) |
 | `prd approve/reject/request-revision` | BL191 Q1 review/approve gate (v5.2.0) |
+| `prd-resume <id> [--note ...]` (alias `resume`) | Resume a paused PRD or one the boot-resume gate parked; chat: `autonomous resume <id> [note]`; REST `POST /api/autonomous/prds/{id}/resume` |
 | `prd children` | List child PRDs spawned via SpawnPRD (v5.9.0, BL191 Q4) |
 | `prd set-llm/set-task-llm` | Pin LLM backend/effort/model at PRD or task scope (v5.4.0, BL203) |
+| `prd failure-escalation show\|set\|clear <id> [--task <task>]` | Show, set or clear the failure escalation override on an Automaton or one task. Chat: `autonomous set-failure-escalation <id> [task] clear \| enabled=true\|false max_failures=N steps=backend:model[@attempts],...`. REST `POST /api/autonomous/prds/{id}/set_failure_escalation` |
+| `prd resolve-review <id> --task <task> --action retry\|cancel` | Retry (optionally with a new spec, worker, file scope, read-only mark, report path or note) or cancel a task held for operator review. Works while the Automaton is running other tasks; there is no wait and no second executor. Chat: `autonomous review-task <id> <task> retry\|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [read_only=true\|false] [report_path=<path>] [spec=...] [note=...]`. REST `POST /api/autonomous/prds/{id}/resolve_task_review` |
+| `datawatch config set autonomous.failure_escalation.max_failures 4` | Daemon-wide failure escalation default (also `.enabled` and `.steps`). Chat: `configure autonomous.failure_escalation.max_failures=4` |
 | `prd-set-task-verification-llm <id> --task <task>` / `prd-set-story-verification-llm <id> --story <story>` / `prd-set-verification-llm <id>` | Pick the LLM that verifies one task / every task in a story / the whole Automaton. Flags `--backend` / `--model` / `--effort`; omitted flags are unchanged, `--backend ""` clears. Precedence task > story > Automaton > global `autonomous.verification_*` (v9.0.70) |
+| `prd-set-notify-events <prd-id> <kind,kind,...|inherit>` | Replace the Automaton's notify set — the list of lifecycle event kinds that produce notifications for it (Unreleased). Kinds are comma-separated; `inherit` (or an omitted/empty list) clears it back to the guardrail-profile tier, then the global `autonomous.notify.default_events`. Validates against the known kinds (`prd.updated` is not a valid kind). `POST /api/autonomous/prds/{id}/set_notify_events`; audit action `autonomous_notify_events_changed` |
+| `tag-list [--include-sub] [--counts]` (alias `tags`) | List Automata tags as a tree (`parent_id`) with the number of Automata carrying each; `--counts` adds subtree and direct counts for Automata and sessions plus the untagged totals (the subtree count is the figure a tag browser shows); `GET /api/autonomous/tags[?counts=true]` |
+| `tags sweep [--dry-run] [--json]` (also under `tag-list sweep`) | Tag sweep: apply the in-force `tags.placement` settings to what already exists — re-derives the system tags of every Automata-owned session and object (automata, tasks, automations, templates, decision records, held questions) and writes only the ones that differ (a second run changes nothing). The operator's own tags are a separate field the sweep never reads or writes. `--dry-run` runs the full re-derivation and reports the would-be counts without writing anything; the reply is a per-kind tally of examined / changed / unchanged / failed, printed as one row per kind, and `--json` prints the `POST /api/autonomous/tags/sweep` body untouched; chat: `autonomous tags sweep [dry-run]` |
+| `tag-create <name> [--parent <id>] [--color <hex>] [--description <text>]` | Create a tag, optionally nested under a parent; `POST /api/autonomous/tags` |
+| `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused; a *system* tag (one the daemon keeps, such as an auto tag) cannot be renamed or moved — only recolored |
+| `tag-delete <id>` | Delete a tag; refused while it has child tags, refused while a system tag, and refused with a count while Automata still carry it |
+| `tag-registry` | Show this daemon's shared tag registry status: role (standalone, keeper or peer), keeper, stale, last sync, revision, pending sync count, notes and last sync error; the `registry` field of `GET /api/autonomous/tags` |
+| `tag-registry-dismiss <note-id>` | Dismiss one merge or removed-on-keeper note on this daemon; `POST /api/autonomous/tags/registry/notes/{id}/dismiss`. An unknown note is refused with 404 |
+| `prd-set-tags <prd-id> [--tags <id1,id2,...>] [--primary <tag-id>]` | Replace the tags on an Automaton (an empty `--tags` value clears them) and/or set its primary tag, used for sorting (an empty `--primary` clears it). Give `--primary` alone to keep the tags; `POST /api/autonomous/prds/{id}/set_tags` |
+| `session tags <session-id> --tags <id1,id2,...>` | Replace the tags a session carries itself (an empty `--tags` value clears them). Inherited tags come from the Automaton and are not set here; `POST /api/sessions/tags` |
+| `attention` | List the Automata that need attention: the attention statuses (`blocked`, `needs_review`, `paused` by default) plus any with a task held for review; `GET /api/autonomous/attention`. When the completion review blocked an Automaton, its item carries `rules_review_outcome`: the CLI and chat print an action line (`fix task created`, `fix task failed`, `retries spent` or `auto-fix off`) with the retries spent of the budget, then each finding (the problem the completion review found) as a bullet; chat shows up to five findings and `+N more`. `--json` prints only the raw body. A parked Automaton accepts add-task and a re-run |
+| `prd-set-kind <id> <feature\|bug\|other>` | Set the Automaton kind the progress figures count it under; an unknown kind is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_kind` (body `{"kind": ...}`, an empty kind derives it again) |
+| `prd-create <spec> --kind <feature\|bug\|other>` | Give the kind at creation; omit it to derive the kind from the title and spec |
+| `prd-set-lane-preference <id> <gpu\|claude\|any>` | Set which lane an Automaton may take; an unknown value is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_lane_preference` (body `{"lane_preference": ...}`) |
+| `prd-create <spec> --lane-preference <gpu\|claude\|any>` | Give the lane preference at creation; omit it to take any lane |
+| `config-set '{"priority_by_kind":{"bug":90,"feature":10}}'` / `config-get` | The capacity-queue kind → priority table (`autonomous.priority_by_kind`): the shipped rows are bug=80, maintenance=70, feature=20, other=0; a kind you name is set exactly as given (a zero holds it at the back), a kind you leave out keeps its shipped value. Integer values ≥ 0 only — a non-number, a fraction or a boolean is refused. `{}` or the empty string clears the table back to the shipped defaults. The same key works via `datawatch config set autonomous.priority_by_kind '{"bug":90}'` and comm `configure autonomous.priority_by_kind=bug=90,maintenance=50`. `config-get` prints the effective table. [How-to](howto/autonomous-priority-by-kind.md) |
+| `config-set '{"defect_intake_automation":"MyAutomation"}'` | Name the Automation that new kind:bug defect filings are offered to (`autonomous.defect_intake_automation`); empty by default (a filing then records `not_configured` and nothing is offered — never guessed). The outcome lands on the Automaton (`defect_intake.outcome`: `offered` \| `not_configured` \| `skipped` \| `error`). [How-to](howto/autonomous-priority-by-kind.md) |
+| per-Automaton priority pin | No CLI subcommand: pin with MCP `autonomous_prd_set_priority id=<id> priority=<n>` or REST `POST /api/autonomous/prds/{id}/set_priority {"priority":<n>}` (or the Automaton's settings in the web app). The pin is recorded with `priority_source: explicit` and always wins for that Automaton, including an explicit 0; `autonomous_prd_get` reads back `priority` + `priority_source` (`explicit` \| `kind` \| `default`). The related `datawatch session priority <id> <n>` sets a *session's* queue priority, not an Automaton's. [How-to](howto/autonomous-priority-by-kind.md) |
+| `prd-set-task-node <automaton-id> --task <task-id> --node <node>` | Pin one task to a compute node; an empty `--node` clears the pin. A node that does not serve the task's model is refused with a message naming the model and the node (or applied with a warning when `autonomous.model_routing.refusal_mode` is `warn`); `POST /api/autonomous/prds/{id}/set_task_node`; chat: `autonomous set-task-node <automaton> <task> <node\|clear>` |
+| `prd-set-story-node <automaton-id> --story <story-id> --node <node>` | Pin every task of a story to a compute node (a task's own pin wins); an empty `--node` clears the pin; same checks; `POST /api/autonomous/prds/{id}/set_story_node`; chat: `autonomous set-story-node <automaton> <story> <node\|clear>` |
+| `overlap [spec] [--title <t>] [--spec <s>] [--json]` | Search before create: the Automata, registry rows and unmerged branches that already cover a plan's title and spec, best match first. Give the spec as the argument or with `--spec`, and the title with `--title`; either one alone is enough. A read: nothing is written, and it runs in every create-search mode. `--json` prints the `GET /api/autonomous/overlap` body untouched; chat: `autonomous overlap <text>` (the text is the spec) |
+
+Comm channels: `autonomous tags [counts]`, `tags sweep [dry-run]`, `attention`, `session-tags <session-id> <tag-id1,tag-id2,...>` (omit the list to clear), `set-primary <prd-id> <tag-id|none>`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
+`tag-rename <id> <new-name>`, `tag-move <id> <parent-id|root>`, `tag-color <id> <color>`,
+`tag-delete <id>`, and `set-tags <prd-id> <tag-id1,tag-id2,...>` (omit the list to clear).
+`tag-registry` shows the shared tag registry status and `tag-registry-dismiss <note-id>` dismisses one of its notes on this daemon.
+The registry itself, and the feature-access table for its endpoints, are in [api/autonomous.md](api/autonomous.md#shared-tag-registry).
+`set-notify-events <prd-id> [kind,kind,...|]` likewise sets the Automaton's notify set (omit the list to clear back to inherit); `status` includes the global notify tier and every Automaton's override.
+
+The guardrail-profile notify tier is the same story one level up: `datawatch guardrail profile create --name <name> [--guardrails <list>] --notify-events kind,kind,...` / `datawatch guardrail profile update <id> --notify-events kind,kind,...` (`inherit` or an omitted value clears the tier back to the global default; on `update`, omitting leaves it unchanged), and comm `guardrail profile notify-events <id> <kind,kind,...|inherit>` (or an omitted list). See the how-to [howto/guardrail-library.md](howto/guardrail-library.md), section *Notify events on a profile*.
+
+Comm channels for the progress figures: `progress [automation=<id>] [tag=<id> ...] [tag_match=<any|all>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]`
+and `progress trend [days] [tag=<id> ...] [tag_match=<any|all>]` (see their
+own section above), and
+`autonomous set-kind <prd-id> <feature|bug|other>` to set an Automaton kind.
+
+Comm channels for lane fill: `autonomous lane-fill [limit]` replies with the same lines as the CLI: one line per lane,
+the lane counts line, the per-kind modes line when a kind's mode differs from the base mode, the queued
+eligible counts, then the newest five decisions (`limit` is how many decisions are read). A decision that
+refused an Automaton shows its reason code in brackets in front of the reason text, for example
+`[held] ...`; the codes are `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`,
+`proposal_missing`, `main_carries_work` and `worktree_invalid`. And
+`autonomous set-lane-preference <prd-id> <gpu|claude|any>` sets the lane an Automaton may take.
+
+Comm channel for triage records: `autonomous triage [automation-id]` (one optional positional argument, the automation id) replies with one line per record (newest first) and the alert threshold; extra arguments are refused, the daemon's refusal (no manager) is passed through. The records are read: the daemon neither starts nor retries from one of them.
+
+Comm channel for operator decisions: `autonomous decisions [automaton-id]` (one optional positional argument, the Automaton id) replies with the newest ten decisions, one line each, in the same text as the CLI; extra arguments get a usage reply. The decisions are read: nothing is answered or changed from this verb.
+
+Comm channel for the overlap read: `autonomous overlap <text>` takes the spec of the plan you are about to create (everything after the verb) and replies with one line per warning, best match first, or `No overlaps found.`. It is a read and writes nothing; a bare `autonomous overlap` is refused with the usage line. The create-search mode and threshold are configuration keys, not commands: `datawatch config set autonomous.automation.create_search_mode=on` (or `shadow`, or `off`), and `autonomous.automation.create_search_threshold` (above 0, at most 1). In chat, `configure autonomous.automation.create_search_mode=on`.
+
+Branch refresh: `datawatch autonomous branch-refresh <id> enabled|disabled|inherit` sets the per-Automaton override. `enabled` refreshes that Automaton's branch from main between tasks even when the daemon setting is off, `disabled` never refreshes it, `inherit` clears the override so the daemon setting applies; setting it also resets a refresh a merge conflict stopped. Chat: `autonomous branch-refresh <id> enabled|disabled|inherit`. The numbers across Automata: `datawatch autonomous branch-refresh-stats` (chat: `autonomous branch-refresh-stats`). The daemon settings are configuration keys, not commands: `datawatch config set autonomous.branch_refresh_enabled true` and `autonomous.branch_refresh_behind_limit 5`. In chat, `configure autonomous.branch_refresh_enabled=true`. See `docs/howto/automaton-branch-refresh.md`.
+
+Lane fill settings are configuration keys, not commands: `datawatch config set autonomous.lane_fill.mode shadow` (or `on`, or `off`), and the other `autonomous.lane_fill.*` keys. In chat, `configure autonomous.lane_fill.mode=on`. The keys and the surfaces are listed in the Lane fill section of `docs/operations.md`.
+
+### `datawatch compute node served-models [name] [--model M] [--backend B] [--refresh] [--json]`
+
+Show which models each compute node serves. One line per node: name, kind, number of models, `fresh` or `cached, <n>s old`, then the models. A node whose models could not be read says why; a disabled node is listed and not read. Reads `GET /api/compute/served-models`; chat: `compute node models`; MCP: `compute_served_models`.
+
+| Flag | Description |
+|---|---|
+| `name` (argument) | Limit the answer to one node; an unknown node is an error |
+| `--model M` | Also check whether the model would be accepted, and print the result (`allowed`, `refused` or `does not apply`), the message, and the nodes that serve it |
+| `--backend B` | Narrow that check to one backend (default: every enabled node) |
+| `--refresh` | Read the nodes now instead of using the kept copy |
+| `--json` | Print the daemon's answer untouched |
+
+```sh
+datawatch compute node served-models
+datawatch compute node served-models gpu-1 --model ollama/qwen3:27b --refresh
+```
+
+The cache age and the refusal behaviour are set with `datawatch config set autonomous.model_routing.<key> <value>`; see [howto/model-routing.md](howto/model-routing.md).
+
+### `datawatch automation <subcommand>`
+
+Automations: chains of Automata run one after another or in branches. Every
+control takes `--actor`, `--reason` and `--expected-version`; a stale expected
+version is refused with HTTP 409.
+
+| Subcommand | Description |
+|---|---|
+| `import-graph <graph-id>` | Turn an orchestrator graph into a draft Automation (`--dry-run` previews it, nothing stored). The comm verb is `automation import-graph <graph-id> [dry-run]` |
+| `list`, `get <id>` | List Automations; show one (members, edges, active cursors, budget) |
+| `create`, `activate <id>` | Create a draft from JSON; start a draft |
+| `update <id>` | Update an Automation (name, description, entry member, members, and the auto-tags override — `--auto-tags on\|off` plus `--auto-tags-automation-template` / `--auto-tags-stage-template` / `--auto-tags-kind-template`) |
+| `pause`, `resume`, `cancel <id>` | Operator control (`cancel` requires `--cancel-in-flight true\|false`) |
+| `skip`, `insert`, `remove`, `edges`, `approve` | Edit a running chain |
+| `rename-stage <id> <from-stage> <to-stage>` | Rename every member occupying `from-stage` to `to-stage` in place (draft, active, paused or blocked). When auto tagging is on, the stage's auto-tag record follows the rename and operator tags are never touched; a missing or empty stage name is refused before any request. Comm: `automation rename-stage <id> <from-stage> <to-stage>`; REST `POST /api/automations/{id}/stages/rename` |
+| `set-budget <id>` | Set, replace or clear the spending limit of the Automation, or of one member with `--member` |
+
+`set-budget` flags: `--ceiling-type dollar|allocation_pct`, `--ceiling-value <n>`
+and `--window automation|day|week|month` (required together); optional
+`--pacing none|even`, `--on-breach pause|block`, `--backend <llm>`,
+`--allocation-estimate`, `--peer-window a,b`, `--reset-time HH:MM`,
+`--reset-weekday <day>`, `--reset-day 1..28`, `--reset-zone <zone>`;
+`--member <id>` with `--estimated-cost-usd <n>` declares a member's expected
+cost (0 removes it); `--clear` removes the limit and cannot be combined with
+the policy flags. The flags are checked against each other before any request
+is sent. On a breach the Automation pauses and resumes by itself at the window
+reset when the reset time is known, and is blocked until you resume it when it
+is unknown; an alert is raised either way. `--allocation-estimate` adds an
+estimated figure that never pauses or blocks, and `--peer-window` counts only
+the peers you name, with no automatic confirmation that they share the account.
+
+```bash
+datawatch automation set-budget ab12cd34 --ceiling-type dollar --ceiling-value 40 \
+  --window week --pacing even --reset-weekday monday --reset-time 09:00
+datawatch automation set-budget ab12cd34 --clear
+```
 
 ### `datawatch observer <subcommand>`
 
@@ -896,6 +1535,8 @@ PRD-DAG orchestrator (BL117).
 | `graph create/get/list/run/cancel/plan` | DAG CRUD + execution |
 | `verdicts <graph-id>` | Aggregate guardrail verdicts |
 | `config get/set` | Orchestrator config |
+
+**Deprecated:** `orchestrator create`, `orchestrator plan` and `orchestrator run` (CLI and comm channel) still work but print a deprecation notice; use `datawatch automation import-graph <graph-id>` instead.
 
 ### `datawatch agent <subcommand>`
 
@@ -922,8 +1563,18 @@ Project + cluster profile CRUD (F10 sprint 2).
 
 | Subcommand | Description |
 |---|---|
-| `summary <dir>` | Project-summary one-shot (git status, recent sessions, stats, BL35) |
-| `upsert` | Add/update a project record from operator input (BL27) |
+| `list` | List the registered project aliases |
+| `get <name>` | Show one alias and its record |
+| `upsert <name> --dir <abs> [--backend …] [--description …]` | Register or update an alias. Sends no policy, so it clears the stored policy tier; see [howto/projects-tab](howto/projects-tab.md) |
+| `delete <name>` | Remove an alias; the directory is not touched |
+| `policy show\|set\|unset` | The per-project policy tier; `policy show <name> --effective [--automaton <id>]` resolves each setting with its tier. See [howto/project-automation-policy](howto/project-automation-policy.md) |
+| `show <name> [--window N]` | The record plus the roll-up: arcs, Automata, tasks, points and throughput |
+| `set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags given; the other fields keep their stored value |
+| `arcs <name> [--set id:priority:state,…]` | Print the arcs in order, or replace them (`--set ""` clears) |
+| `history <name> [--limit N] [--cursor …]` | One page of finished Automata, daily progress and Gantt rows |
+
+The target's definition of done and the lane defaults are set through REST or MCP
+(`project_upsert`), not by a flag.
 
 ### `datawatch cooldown <subcommand>`
 
@@ -984,6 +1635,15 @@ Per-session token accounting (BL6).
 
 Query the operator audit log (BL9, append-only JSONL or CEF).
 
+### `datawatch audit self-config [--limit N]`
+
+Query the self-config audit trail — one record per attempt to change the
+daemon's own non-secret settings through an agent surface (config-write
+MCP tools, session/peer REST config PUTs, comm `configure`), allowed and
+(by default) denied, newest-first. Read-only; `--limit` caps entries
+(default 100, max 1000). Same source as the PWA Settings → Self-config
+card and `GET /api/audit/self-config`.
+
 ### `datawatch diagnose`
 
 Run the daemon diagnostic battery (BL37): tmux availability, config
@@ -994,6 +1654,27 @@ LLM-backend health, observer kprobe load.
 
 List the last `n` alerts (default 20). Same source as the PWA Alerts
 tab.
+
+### `datawatch question <subcommand>`
+
+The operator-question channel from the CLI (v9.33+): read and answer a
+question an Automaton has raised. All of these speak the daemon's
+`/api/questions` routes, so an answer here is the same record as one
+over MCP, comm, or the PWA; while the `autonomous.questions.enabled`
+switch is off the daemon 503s and names the switch.
+
+| Subcommand | Description |
+|---|---|
+| `list [--state <state>] [--context <ctx>] [--asker <who>] [--text <search>] [--limit n] [--json]` | List the questions in a state (default `open`); print the answer log with `show` |
+| `show <id>` | One question, its current answer (option id, verbatim quote, actor, surface) and the full answer log |
+| `answer <id> (--option <option id> and/or --text <verbatim words>) [--supersedes <answer id>]` | Record an answer (option id and/or the operator's own words, verbatim, never trimmed); `--supersedes` names the standing answer a changed mind replaces |
+| `withdraw <id> --reason <text>` | Withdraw an open question; the reason is recorded verbatim |
+| `raise --text <text> --option id=label [..] [--default <option id or hold>]` | Raise a question to the Automaton's operator: name what it is about with the context flags (`--prd-id`, `--task-id`, `--proposal-path`, `--registry-row-key`), add a recommendation with `--recommend`/`--rationale`, and opt this question into the session line with `--return-path --session <id>` |
+
+See [howto/operator-questions-answering.md](howto/operator-questions-answering.md)
+for the full walkthrough and
+[howto/operator-questions-notifications.md](howto/operator-questions-notifications.md)
+for the notify/alert/return-path switches.
 
 ### `datawatch health [--url=<url>] [--endpoint=<path>] [--timeout=<sec>]`
 
@@ -1079,7 +1760,7 @@ The MCP server exposes the full feature set as tools for AI clients (Cursor, Cla
 
 | Tool | Description |
 |---|---|
-| `list_sessions` | List all sessions on this host |
+| `list_sessions` | List all sessions on this host; optional `group_by` (`tag`/`state`/`node`/`project`/`automaton`) + `tag_prefix` return the grouped response (groups with count, state mix, members; automaton blocks with stories and done/total progress) |
 | `start_session` | Start a new AI session (`task`, optional `project_dir`) |
 | `session_output` | Last N lines of output (`session_id`, optional `lines`) |
 | `session_timeline` | Structured event timeline (`session_id`) |

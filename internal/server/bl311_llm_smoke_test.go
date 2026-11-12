@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -221,7 +222,30 @@ func TestNamedLLMInBackendsWhenRegistryWired(t *testing.T) {
 // resolves it (GET from registry) and proceeds without returning 400.
 // When the name is absent from the registry, a 400 is returned immediately.
 func TestSessionStart_WithNamedLLM(t *testing.T) {
+	// The named claude-code LLM resolves to the real registered backend
+	// (this package imports it), whose launch writes a task scratch file
+	// under os.TempDir() before the tmux send-keys step fails, and the
+	// production cleanup for that file (an `rm -f` typed into the tmux
+	// pane) can never run here. Redirect TMPDIR to this test's own
+	// throwaway dir so the scratch file is removed with the test instead
+	// of accumulating in the shared test temp dir (watched by the
+	// datawatch-claudecode-task-* guard in internal/session). The
+	// redirect target must come from os.MkdirTemp, not t.TempDir: the
+	// testing framework caches the per-test temp base on the first
+	// t.TempDir call, and Setenv must land before that first call or the
+	// allowed-project-roots guard (which allows os.TempDir()) rejects the
+	// test's later temp dirs as siblings of the redirect target.
+	tmp, err := os.MkdirTemp("", "bl311-named-llm")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
+	t.Setenv("TMPDIR", tmp)
+
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer session, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 
 	// Register a named session-backend LLM (claude-code kind is a session backend).
 	_ = srv.inferenceReg.Add(&inference.LLM{Name: "named-test", Kind: inference.KindClaudeCode})
@@ -252,6 +276,9 @@ func TestSessionStart_WithNamedLLM(t *testing.T) {
 // that doesn't exist in the registry is rejected with 400 immediately.
 func TestSessionStart_UnknownNamedLLM(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 	// Registry is empty — "does-not-exist" is unknown.
 
 	body, _ := json.Marshal(map[string]any{
@@ -280,6 +307,9 @@ func TestSessionStart_UnknownNamedLLM(t *testing.T) {
 // the backend path must NOT 400 on registry grounds (it may 500 from exec).
 func TestSessionStart_NamedVsAdapterType(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 
 	// --- Request A: legacy backend field (adapter-type path) ---
 	bodyA, _ := json.Marshal(map[string]any{

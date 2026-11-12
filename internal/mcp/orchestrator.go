@@ -5,8 +5,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 
+	"github.com/dmz006/datawatch/internal/orchestrator"
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -53,6 +55,13 @@ func (s *Server) handleOrchestratorConfigSet(_ context.Context, req mcpsdk.CallT
 	return textOK(string(out)), nil
 }
 
+// deprecatedText logs the once-per-process warning for a deprecated graph tool
+// and appends the notice to its result text.
+func deprecatedText(tool string, out []byte) *mcpsdk.CallToolResult {
+	orchestrator.WarnDeprecatedOnce(tool, log.Printf)
+	return textOK(string(out) + "\n\n" + orchestrator.DeprecationNotice(tool))
+}
+
 func (s *Server) toolOrchestratorGraphList() mcpsdk.Tool {
 	return mcpsdk.NewTool("orchestrator_graph_list",
 		mcpsdk.WithDescription("BL117 — list all PRD-DAG graphs newest-first."),
@@ -68,7 +77,7 @@ func (s *Server) handleOrchestratorGraphList(_ context.Context, _ mcpsdk.CallToo
 
 func (s *Server) toolOrchestratorGraphCreate() mcpsdk.Tool {
 	return mcpsdk.NewTool("orchestrator_graph_create",
-		mcpsdk.WithDescription("BL117 — create a PRD-DAG graph from a set of BL24 PRD IDs with optional dependencies."),
+		mcpsdk.WithDescription("DEPRECATED: use automation import-graph and the Automation tab. create a PRD-DAG graph from a set of Automaton IDs with optional dependencies."),
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Graph title")),
 		mcpsdk.WithString("project_dir", mcpsdk.Description("Project directory")),
 		mcpsdk.WithString("prd_ids", mcpsdk.Required(), mcpsdk.Description(`JSON array of PRD IDs, e.g. ["abc","def"]`)),
@@ -98,7 +107,7 @@ func (s *Server) handleOrchestratorGraphCreate(_ context.Context, req mcpsdk.Cal
 	if err != nil {
 		return nil, err
 	}
-	return textOK(string(out)), nil
+	return deprecatedText("orchestrator_graph_create", out), nil
 }
 
 func (s *Server) toolOrchestratorGraphGet() mcpsdk.Tool {
@@ -117,7 +126,7 @@ func (s *Server) handleOrchestratorGraphGet(_ context.Context, req mcpsdk.CallTo
 
 func (s *Server) toolOrchestratorGraphPlan() mcpsdk.Tool {
 	return mcpsdk.NewTool("orchestrator_graph_plan",
-		mcpsdk.WithDescription("BL117 — (re)build the node tree for a graph. Creates PRD + guardrail nodes with configured dependencies."),
+		mcpsdk.WithDescription("DEPRECATED: use automation import-graph and the Automation tab. (re)build the node tree for a graph. Creates PRD + guardrail nodes with configured dependencies."),
 		mcpsdk.WithString("id", mcpsdk.Required()),
 		mcpsdk.WithString("deps", mcpsdk.Description("Optional JSON deps map")),
 	)
@@ -136,12 +145,12 @@ func (s *Server) handleOrchestratorGraphPlan(_ context.Context, req mcpsdk.CallT
 	if err != nil {
 		return nil, err
 	}
-	return textOK(string(out)), nil
+	return deprecatedText("orchestrator_graph_plan", out), nil
 }
 
 func (s *Server) toolOrchestratorGraphRun() mcpsdk.Tool {
 	return mcpsdk.NewTool("orchestrator_graph_run",
-		mcpsdk.WithDescription("BL117 — kick the runner for a graph (fire-and-forget; poll graph_get for progress)."),
+		mcpsdk.WithDescription("DEPRECATED: use automation import-graph and the Automation tab. kick the runner for a graph (fire-and-forget; poll graph_get for progress)."),
 		mcpsdk.WithString("id", mcpsdk.Required()),
 	)
 }
@@ -151,7 +160,7 @@ func (s *Server) handleOrchestratorGraphRun(_ context.Context, req mcpsdk.CallTo
 	if err != nil {
 		return nil, err
 	}
-	return textOK(string(out)), nil
+	return deprecatedText("orchestrator_graph_run", out), nil
 }
 
 func (s *Server) toolOrchestratorGraphCancel() mcpsdk.Tool {

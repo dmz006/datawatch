@@ -5,12 +5,19 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm/scratch"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 func init() {
@@ -41,6 +48,15 @@ type Backend struct {
 	// chrome (v8.8.3) — when non-nil, passes --chrome (true) or
 	// --no-chrome (false) to claude at launch. Nil = omit flag.
 	chrome *bool
+	// excludeAncestorClaudeMd — when true, Launch/LaunchResume pass
+	// `--settings {"claudeMdExcludes":[...]}` listing every CLAUDE.md in an
+	// ancestor of the project directory, so autonomous workers don't read
+	// other sessions' Session:/Task: guardrail lines. Off by default.
+	excludeAncestorClaudeMd bool
+	// workerProfile — when Profile.Name is non-empty, Launch/LaunchResume
+	// materialize this resolved worker session profile into the command
+	// (see profileFlags). Zero value = non-profile command line.
+	workerProfile WorkerProfileLaunch
 }
 
 // New creates a claude-code backend. binaryPath defaults to "claude".
@@ -71,11 +87,197 @@ func (b *Backend) SetModel(model string) { b.model = model }
 // SetEffort (v5.27.5) — effort level forwarded to `--effort`.
 func (b *Backend) SetEffort(effort string) { b.effort = effort }
 
+// SetExcludeAncestorClaudeMd — opt-in: hide ancestor-directory CLAUDE.md files
+// (never the project's own or ~/.claude/CLAUDE.md) from the launched claude.
+// Set explicitly on every launch: the backend is a shared singleton.
+func (b *Backend) SetExcludeAncestorClaudeMd(on bool) { b.excludeAncestorClaudeMd = on }
+
+// WorkerStartingContextFileName is the file name — in the session working
+// directory — of the worker starting context the launcher writes and hands
+// to Claude Code with --append-system-prompt.
+const WorkerStartingContextFileName = "worker-starting-context.md"
+
+// WorkerProfileLaunch carries a resolved worker session profile
+// (internal/workerprofile) plus the inputs the launcher needs to
+// materialize it. The caller resolves and validates the profile; this
+// struct is launch-time data only.
+type WorkerProfileLaunch struct {
+	// Profile is the resolved profile. An empty Profile.Name means "no
+	// profile applied" and the launch command is byte-identical to the
+	// non-profile launch.
+	Profile workerprofile.WorkerProfile
+	// MCPServers is the set of MCP server specs available to the
+	// session; only the ones Profile.MCP selects end up in the
+	// per-session MCP config the worker is pinned to.
+	MCPServers map[string]channel.MCPServerSpec
+	// Starting supplies the pieces of the starting context block (role,
+	// task spec, constraints, rules) — see
+	// autonomous.BuildWorkerStartingContext. Starting.Profile is filled
+	// from Profile itself at build time.
+	Starting autonomous.StartingContextInput
+}
+
+// SetWorkerProfile applies the resolved worker profile to the next
+// Launch / LaunchResume: the session is pinned to the per-session MCP
+// config with the strict flag, the tools allow-list maps to
+// --allowedTools, skills-off maps to "skills": false in the --settings
+// JSON, and the starting context is written to the working directory
+// and appended to the system prompt. Pass a zero WorkerProfileLaunch
+// (or call ClearWorkerProfile) for the non-profile command line.
+func (b *Backend) SetWorkerProfile(w WorkerProfileLaunch) { b.workerProfile = w }
+
+// ClearWorkerProfile drops any worker profile previously set on this
+// backend and restores the non-profile launch command.
+func (b *Backend) ClearWorkerProfile() { b.workerProfile = WorkerProfileLaunch{} }
+
+// WorkerProfileName returns the name of the worker profile applied to
+// this backend's launches, or "" when no profile is applied.
+func (b *Backend) WorkerProfileName() string { return b.workerProfile.Profile.Name }
+
+// ancestorClaudeMds returns the absolute path of every existing CLAUDE.md in
+// a strict ancestor of projectDir, nearest parent first. projectDir's own
+// CLAUDE.md and anything beneath it are never included.
+func ancestorClaudeMds(projectDir string) []string {
+	dir := filepath.Clean(projectDir)
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	var out []string
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+		p, ok := claudeMdIn(dir)
+		if !ok {
+			continue
+		}
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// claudeMdIn returns the path of the CLAUDE.md entry directly inside dir, and
+// false when that entry is not contained in dir. gitguard.ContainedEntry does
+// the symlink-aware check; the prefix test on the value that is returned is
+// repeated here, behind an early return, so the one path handed to os.Stat is
+// the one that was checked. A symlinked CLAUDE.md is accepted as the link
+// itself, wherever it points.
+func claudeMdIn(dir string) (string, bool) {
+	entry, err := gitguard.ContainedEntry(dir, filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		return "", false
+	}
+	sep := string(filepath.Separator)
+	dirPrefix := strings.TrimSuffix(filepath.Clean(dir), sep) + sep
+	if !strings.HasPrefix(entry, dirPrefix) {
+		return "", false
+	}
+	return filepath.Clean(entry), true
+}
+
+// settingsFlag returns the ` --settings '<json>'` flag for projectDir:
+// the claudeMdExcludes list (ancestor-exclusion launch) and, when a
+// worker profile is applied with skills turned off, "skills": false.
+// Returns "" when nothing applies.
+func (b *Backend) settingsFlag(projectDir string, w WorkerProfileLaunch) string {
+	var vals map[string]any
+	if b.excludeAncestorClaudeMd {
+		paths := ancestorClaudeMds(projectDir)
+		if len(paths) > 0 {
+			vals = map[string]any{"claudeMdExcludes": paths}
+		}
+	}
+	// skills=false is a per-launch worker-profile toggle
+	// (WorkerProfile.Skills); it rides the same --settings JSON as
+	// claudeMdExcludes and is emitted only when a profile is applied
+	// with skills turned off.
+	if w.Profile.Name != "" && !w.Profile.Skills {
+		if vals == nil {
+			vals = map[string]any{}
+		}
+		vals["skills"] = false
+	}
+	if vals == nil {
+		return ""
+	}
+	js, err := json.Marshal(vals)
+	if err != nil {
+		return ""
+	}
+	return " --settings " + shellQuote(string(js))
+}
+
+// profileFlags materializes the applied worker profile (if any) for the
+// session working directory and returns the Claude Code flags it maps to.
+// It writes two files into projectDir:
+//
+//   - worker-mcp.json (channel.WorkerMCPConfigFileName): the per-session
+//     MCP config (0600, atomic) naming exactly the servers the profile's
+//     MCP selection allows. The launch carries --strict-mcp-config, so no
+//     other MCP configuration applies to the session;
+//   - worker-starting-context.md (WorkerStartingContextFileName):
+//     the deterministic starting context block
+//     (autonomous.BuildWorkerStartingContext), passed to Claude Code via
+//     --append-system-prompt. The file is read by the shell at launch
+//     time ($(cat …)) so the typed line stays short no matter how large
+//     the context is.
+//
+// With no profile applied (zero WorkerProfileLaunch) it returns "" and
+// writes nothing, so the launch command is byte-identical to the
+// non-profile launch.
+//
+// The mapping is one-way: the profile's tools allow-list becomes
+// --allowedTools. Profiles carry no deny-list, and the launcher never
+// emits a flag that disallows tools for a worker profile.
+func (b *Backend) profileFlags(projectDir string, w WorkerProfileLaunch) (string, error) {
+	p := w.Profile
+	if p.Name == "" {
+		return "", nil
+	}
+	if projectDir == "" {
+		return "", newProfileApplyError(p.Name, fmt.Errorf("projectDir is required"))
+	}
+	if err := workerprofile.Validate(p); err != nil {
+		return "", newProfileApplyError(p.Name, err)
+	}
+
+	// MCP selection: pin the session to exactly the allowed servers.
+	mcpPath, err := channel.WriteWorkerMCPConfig(projectDir, p.MCP, w.MCPServers)
+	if err != nil {
+		return "", newProfileApplyError(p.Name, err)
+	}
+	flags := " --strict-mcp-config --mcp-config " + shellQuote(mcpPath)
+
+	// Tools: the allow-list maps to --allowedTools. Entries are
+	// comma-joined because an entry may itself contain spaces
+	// (e.g. "Bash(git add:*)").
+	if p.Tools.Mode == workerprofile.ToolsAllow {
+		flags += " --allowedTools " + shellQuote(strings.Join(p.Tools.Allow, ","))
+	}
+
+	// Starting context: build it deterministically from the profile plus
+	// the caller's starting pieces, write it to the session working
+	// directory, and pass its full text to Claude Code.
+	ctxInput := w.Starting
+	ctxInput.Profile = p
+	ctxPath := filepath.Join(projectDir, WorkerStartingContextFileName)
+	if ctxErr := os.WriteFile(ctxPath, []byte(autonomous.BuildWorkerStartingContext(ctxInput)), 0o600); ctxErr != nil {
+		return "", newProfileApplyError(p.Name, fmt.Errorf("write starting context: %w", ctxErr))
+	}
+	flags += " --append-system-prompt \"$(cat " + shellQuote(ctxPath) + ")\""
+
+	return flags, nil
+}
+
 // SetChrome (v8.8.3) — passes --chrome or --no-chrome to claude at launch.
 // Nil means neither flag is passed (let claude use its default).
 func (b *Backend) SetChrome(enabled bool) { b.chrome = &enabled }
 
-func (b *Backend) Name() string                  { return "claude-code" }
+func (b *Backend) Name() string                   { return "claude-code" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
 func (b *Backend) HasToolAccess() bool            { return true }
 
@@ -175,9 +377,30 @@ func sessionChannelName(tmuxSession string) string {
 }
 
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+	return b.LaunchWithProfile(ctx, b.workerProfile, task, tmuxSession, projectDir, logFile)
+}
+
+// LaunchWithProfile is Launch with the worker profile passed for this one
+// launch only. The backend is a shared instance, so nothing is stored on it:
+// concurrent launches each carry their own profile. A zero WorkerProfileLaunch
+// builds exactly the command line Launch builds without a profile.
+func (b *Backend) LaunchWithProfile(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile string) error {
+	_, err := b.LaunchWithProfileFallback(ctx, w, task, tmuxSession, projectDir, logFile)
+	return err
+}
+
+// LaunchWithProfileFallback is LaunchWithProfile, except that a profile which
+// cannot be applied does not fail the launch: the session starts with no
+// profile and the apply error text is returned as fallbackReason (empty when
+// the profile applied, or when there was no profile). See launchFlags.
+func (b *Backend) LaunchWithProfileFallback(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile string) (fallbackReason string, err error) {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
-	post := b.postFlagsStr()
+	profileFlags, fallbackReason, err := b.launchFlags(projectDir, w)
+	if err != nil {
+		return "", err
+	}
+	post := b.postFlagsStr() + profileFlags
 
 	// Derive a deterministic session ID from the tmux session name so that
 	// LaunchResume can later --resume the same conversation by deriving the
@@ -202,9 +425,9 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	}
 
 	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
-		return fmt.Errorf("launch claude-code in %s: %w", tmuxSession, err)
+		return fallbackReason, fmt.Errorf("launch claude-code in %s: %w", tmuxSession, err)
 	}
-	return nil
+	return fallbackReason, nil
 }
 
 // ResumeKeepsTask implements llm.ResumeKeepsTask: a resumed claude-code
@@ -218,9 +441,26 @@ func (b *Backend) ResumeKeepsTask() bool { return true }
 // If --resume fails (e.g. conversation not found for pre-fix sessions), falls back
 // to a fresh launch with --session-id so future restarts will work.
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
+	return b.LaunchResumeWithProfile(ctx, b.workerProfile, task, tmuxSession, projectDir, logFile, resumeID)
+}
+
+// LaunchResumeWithProfile is LaunchResume with the worker profile passed for
+// this one launch only (see LaunchWithProfile).
+func (b *Backend) LaunchResumeWithProfile(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile, resumeID string) error {
+	_, err := b.LaunchResumeWithProfileFallback(ctx, w, task, tmuxSession, projectDir, logFile, resumeID)
+	return err
+}
+
+// LaunchResumeWithProfileFallback is LaunchResumeWithProfile with the profile
+// fallback of LaunchWithProfileFallback.
+func (b *Backend) LaunchResumeWithProfileFallback(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile, resumeID string) (fallbackReason string, err error) {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
-	post := b.postFlagsStr()
+	profileFlags, fallbackReason, err := b.launchFlags(projectDir, w)
+	if err != nil {
+		return "", err
+	}
+	post := b.postFlagsStr() + profileFlags
 
 	// If resumeID is not a UUID, derive the deterministic UUID from the name
 	actualResumeID := resumeID
@@ -248,9 +488,9 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 
 	cmd := fmt.Sprintf("%s || %s; %secho 'DATAWATCH_COMPLETE: claude done'", resumeCmd, fallbackCmd, cleanup)
 	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
-		return fmt.Errorf("resume claude-code in %s: %w", tmuxSession, err)
+		return fallbackReason, fmt.Errorf("resume claude-code in %s: %w", tmuxSession, err)
 	}
-	return nil
+	return fallbackReason, nil
 }
 
 // writeTaskFile writes task text to a scratch file instead of embedding it
@@ -275,6 +515,10 @@ func writeTaskFile(tmuxSession, task string) (string, error) {
 		os.Remove(f.Name()) //nolint:errcheck
 		return "", err
 	}
+	// Session-end ownership: record the task-capture file under the session's
+	// tmux name so its end path releases any that the run left behind (the
+	// launch command's own rm -f already handles the normal case).
+	scratch.RecordPath(tmuxSession, f.Name())
 	return f.Name(), nil
 }
 

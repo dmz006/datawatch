@@ -95,7 +95,12 @@ func (w *WhisperTranscriber) Transcribe(ctx context.Context, audioPath string) (
 		audioPath, w.Model, w.Language, tmpFile.Name())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("transcribe: whisper failed: %w\noutput: %s", err, string(output))
+		// exec reports a process killed for a context deadline as a plain
+		// "signal: killed" exit error; keep the context error visible too.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = fmt.Errorf("%w: %w", ctxErr, err)
+		}
+		return "", fmt.Errorf("transcribe: whisper failed: %w\noutput: %s", err, tailOutput(string(output), maxChildOutput))
 	}
 
 	data, err := os.ReadFile(tmpFile.Name())

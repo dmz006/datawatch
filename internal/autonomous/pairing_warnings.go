@@ -32,7 +32,7 @@ func PairingWarnings(cfg Config, decomposeRefs map[string][]string) []string {
 		}
 		sort.Strings(backends)
 		for _, b := range backends {
-			if resolvePlannedModel(b, "", "", "", cfg.PlanningBackend, cfg.PlanningModel) != "" {
+			if resolvePlannedModel(b, "", "", "", cfg.PlanningBackend, cfg.PlanningModel, cfg.VerificationModel) != "" {
 				continue
 			}
 			out = append(out, planningPairingWarning(cfg, b, decomposeRefs[b]))

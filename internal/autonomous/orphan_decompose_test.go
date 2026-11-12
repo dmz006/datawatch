@@ -8,15 +8,19 @@ func TestBootResume_PlanningPRDKillsItsOrphanDecomposeSession(t *testing.T) {
 	m, api, _, _ := apiFixture(t)
 	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
 	other, _ := m.CreatePRD("s2", "/w/proj", "opencode", "", EffortNormal)
+	// No planner record is set, so without the restart flag boot-resume would
+	// restart planning once. The flag is set here so the case under test is
+	// the orphan kill followed by the reset to draft.
 	for _, id := range []string{prd.ID, other.ID} {
 		p, _ := m.Store().GetPRD(id)
 		p.Status = PRDPlanning
+		p.PlanningRestartedOnce = true
 		_ = m.Store().SavePRD(p)
 	}
 	live := map[string][]string{prd.ID: {"dec-1"}, other.ID: {"dec-2", "dec-3"}}
 	var killed []string
 	m.SetDecomposeSessionsFn(func(id string) []string { return live[id] })
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	api.resumeRunningPRDs()
 
@@ -62,7 +66,7 @@ func TestBootResume_CancelledPRDKillsLiveDecomposeSessionWithoutRedecompose(t *t
 	live := map[string][]string{prd.ID: {"dec-cancelled-1"}}
 	var killed []string
 	m.SetDecomposeSessionsFn(func(id string) []string { return live[id] })
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	api.resumeRunningPRDs()
 
@@ -87,7 +91,7 @@ func TestBootResume_CancelledPRDWithNoSessionsIsNoOp(t *testing.T) {
 
 	var killed []string
 	m.SetDecomposeSessionsFn(func(string) []string { return nil })
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	api.resumeRunningPRDs()
 	api.resumeRunningPRDs()
@@ -106,6 +110,7 @@ func TestBootResume_PlanningPRDContrastStillResetsToDraft(t *testing.T) {
 	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDPlanning
+	p.PlanningRestartedOnce = true // restart already used: reset to draft, no new planner
 	_ = m.Store().SavePRD(p)
 
 	decomposeCalls := 0
@@ -116,7 +121,7 @@ func TestBootResume_PlanningPRDContrastStillResetsToDraft(t *testing.T) {
 	live := map[string][]string{prd.ID: {"dec-planning-1"}}
 	var killed []string
 	m.SetDecomposeSessionsFn(func(id string) []string { return live[id] })
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	api.resumeRunningPRDs()
 

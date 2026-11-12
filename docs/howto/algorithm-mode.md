@@ -146,27 +146,27 @@ TOKEN=$(cat ~/.datawatch/token); BASE=https://localhost:8443
 
 # Start
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/start
+  -d '{"session_id":"peer-d-abcd"}' $BASE/api/algorithm/start
 
 # Advance (current phase → next)
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/advance
+  -d '{"session_id":"peer-d-abcd"}' $BASE/api/algorithm/advance
 
 # Status
 curl -sk -H "Authorization: Bearer $TOKEN" \
-  $BASE/api/algorithm/status/ralfthewise-abcd
+  $BASE/api/algorithm/status/peer-d-abcd
 #  → {"session_id":"...","phase":"orient","captured":["observe.md"]}
 
 # Measure with eval
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd","evals":"cronjob-correctness"}' \
+  -d '{"session_id":"peer-d-abcd","evals":"cronjob-correctness"}' \
   $BASE/api/algorithm/measure
 
 # Reset / Abort
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/reset
+  -d '{"session_id":"peer-d-abcd"}' $BASE/api/algorithm/reset
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/abort
+  -d '{"session_id":"peer-d-abcd"}' $BASE/api/algorithm/abort
 ```
 
 ### 5c. MCP

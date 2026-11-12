@@ -62,6 +62,8 @@ The daemon monitors for this pattern and will:
 
 You can also use normal interactive prompts — the daemon detects idle prompt states.
 
+- Design choice for the operator: when the task and the code cannot settle a design choice that only the operator can make, you may print the marker `DATAWATCH_QUESTION:` followed by one line of JSON with the keys question, options, recommendation, default and blocked. Set blocked to true only when the task cannot go on without the answer; otherwise keep working on the rest of the task. The daemon acts on that line only when the operator has turned the worker marker on, so keep using the needs-input line for anything that is not a design choice.
+
 ## Completion Protocol
 
 When your task is fully complete, output:
@@ -121,6 +123,10 @@ from past sessions that you don't have in your training data.
   DATAWATCH_BLOCKED: <description of blocker>
   ```
   so the user can intervene.
+
+## Bounded Load-Step Rule
+
+- Any CPU-load or stress step a task asks for — a busy loop, a stress test, a load or soak test, or any other command that pins the CPU — must be bounded before it runs: run it niced (nice -n 19) so it yields to the system's other work; use at most a quarter of the cores (cap the worker count at nproc/4, minimum one); give it its own hard timeout (a bounded `timeout <duration> ...` wrapper) so it always dies on its own; clean up its children with a trap on EXIT INT TERM so no orphaned load survives; and it must never outlive its owning task — when the task ends, the load ends with it. Automaton plans tasks to leave the host as it found it, so an unbounded load step is a defect in the plan.
 
 ## Live Project Cookbook Rule (operator-required)
 

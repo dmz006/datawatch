@@ -6,12 +6,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 func newAutonomousCmd() *cobra.Command {
@@ -23,21 +28,133 @@ each Task spawned as a worker session with independent verification.
 
 Subcommands:
   status                          Loop status (running, active PRDs, queued/running tasks)
+  progress [--json] [--automation ID] [--tag ID] [--since DATE] [--until DATE]
+                                  Progress counts, rates, work left and the completion range
+  progress-trend [--days N] [--json]  How the completion range moved over the saved daily snapshots
+  lane-fill [--limit N] [--json]  Lane fill: each lane, queued eligible counts and the newest decisions
+  infra-retries [automaton-id] [--limit N] [--json]
+                                  Infrastructure retries: the retry policy in effect and the tasks retried
+                                  or held because the machinery around them failed, newest first
+  prd-set-task-node <automaton-id> --task <task-id> --node <node>
+                                  Pin one task to a compute node; an empty --node clears the pin
+  prd-set-story-node <automaton-id> --story <story-id> --node <node>
+                                  Pin every task of one story to a compute node; an empty --node clears it
+  triage [--automation ID] [--prd ID] [--status failed|blocked] [--json]
+                                  Triage read: the failed and blocked Automata waiting for operator triage,
+                                  newest first, beside the alert threshold — the same text the comm verb
+                                  (autonomous triage) and the triage alert show
+  decisions [automaton-id] [--state open|answered|withdrawn|expired] [--limit N] [--json]
+                                  Decision line: the operator decisions, newest first, one line each with
+                                  the question, the answer and any task held on it — the same text the
+                                  comm verb (autonomous decisions) shows
+  decision-records list [--state open|answered|withdrawn] [--automaton <id>] [--limit N] [--json]
+                         List the decision records (the structured operator decisions), newest first,
+                         with the folder watch status
+  decision-records show <id> [--json]   One record: content, answer, document report, follow-up
+  decision-records create [--title ... --situation ... --deciding ... --option id=label ... --default <id|hold> ...] | [--file <path|->]
+                         Raise a decision: the trade-offs stored for an operator's answer
+  decision-records update <id> [same inputs]
+                         Change the content of an open record
+  decision-records withdraw <id> [--reason <text>]
+                         Withdraw a record and its queue question
+  repo-ci-watch [--repo P] [--status S] [--json]
+                                  Repo CI watch read: the mode, the alert threshold in whole minutes,
+                                  the watched repositories, the last poll, and the stored records
+                                  (repository, ref, workflow, status, classification, first seen,
+                                  alerted), newest first
+  supervisor-watch [--json]       Supervisor watch read: the mode, the last poll, one line per finding
+                                  (kind, state, last seen, the operator line) and the comparison
+                                  against the supervisor script's output
+  merge [--json]                  Merge state: the mode, the alert threshold and the finished Automata whose
+                                  work branch is not on main yet (read only)
+  merged-members [automation-id] [--json]
+                                  Merged-member decisions: the members whose branch was already merged on
+                                  the default branch, the outcome, the proving commit and the policy
+                                  (read only; without an id every Automaton's, newest first)
+  safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
+                                  (report only, nothing is deleted)
+  cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
+                                   the removed/would-remove/skipped/failed counts, the owner-vs-net split,
+                                   the two disk readings and the disk alert (read only, nothing is removed)
+  lint config [--json]             Decompose lint config: the mode, the enforce retry budget, the active
+                                   rule pack and the disabled rule ids (read only)
+  lint config-set key=value ...    Set decompose-lint mode / max_retries / disabled_rules, preserving the
+                                   active rule pack (mode is off|shadow|enforce; disabled_rules is a
+                                   comma list of rule ids; the reply is the new config)
+  lint dry-run <id> [--json]       Lint one Automaton's stored plan read-only: which rules fire and on
+                                   which tasks (nothing is retried, verified or stored)
+  lint findings <id> [--json]      The decompose-lint record the executor stored for one Automaton: the
+                                   mode, the attempts and the final findings one line each
+  uncommitted-work [--automaton ID] [--json]
+  planning-routing get|set|test|scorecard
+                                  Planning routing config, no-LLM routing test and counts-only scorecard
+                                   Uncommitted-work status: the policy and scope in effect and the tasks and
+                                   Automata held because work was left uncommitted (read only, nothing is
+                                   committed or discarded)
+  unlanded-work [--json]           Archived Automaton branches with work not on the default branch and the
+                                   recommendation for each (read only)
+  unlanded-work keep <branch> [--note TEXT]
+  unlanded-work archive-branch <branch>
+  unlanded-work delete-worktree <branch> --confirm
+                                   Act on one listed branch: leave it, move it under the archive refs, or
+                                   back it up as a bundle and delete its worktree and branch
+  request-watch [--session ID] [--automaton ID] [--json]
+                                   The in-flight model request of each worker or verifier session whose model
+                                   runs on a compute node: generating, idle or unreachable, and for how long
+                                   (read only, nothing is ended, retried or unloaded)
+  protected-paths [--automaton ID] [--json]
+                                   Protected-paths status: the action and rules source in effect, the
+                                   effective protected list, the tasks held because their commit changed
+                                   protected paths (with the question to answer) and the paths each
+                                   Automaton authorises in advance (read only, nothing is approved or
+                                   rejected)
+  authorize-paths <automaton-id> [--path P ...] [--clear]
+                                   Replace the protected paths an Automaton may change without an operator
+                                   decision (--clear empties the list; give --path or --clear)
+  overlap [--title T] [--spec S | <spec>] [--json]
+                                  Search before you create: the Automata, registry rows and branches
+                                  that already cover a plan's title and spec, best match first
+  security-failure [--repo P] [--status S] [--json]
+                                  Security failure read: the open reports of failed security runs
+                                  (repository, ref, workflow, run, status, dependency, advisory,
+                                  recommendation, action), newest first
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
                                   config-set '{"max_engines_per_node":2}'
+                                  config-set '{"gate_disagreement":"block"}'
+                                  config-set '{"default_quality_gates":{"scope":"touched-plus-smoke","smoke_packages":["internal/pipeline"]}}' (default gate scope: full|touched-plus-smoke|touched)
+                                  config-set --capacity-rate-requests 60 --capacity-rate-tokens 2000000 --capacity-rate-window-seconds 3600
+                                  config-set --verifier-policy-mode prefer-free --verifier-policy-backends qwen,claude-code
+                                  config-set --judge-policy qwen,claude-code --judge-timeout-seconds 1800
+                                  config-set '{"resume_max_age_seconds":1800}'
+                                  config-set '{"plan_tier_max_inflight":{"pro":1,"max_5x":2,"max_20x":4,"api":0}}' (tier inflight caps; 0 = unlimited; unknown tiers rejected)
+                                  config-set '{"priority_by_kind":{"bug":90,"maintenance":50}}' (kind→queue-priority table; 0 = back of the queue; {} clears the table; defaults bug=80 maintenance=70 feature=20 other=0)
+                                  config-set '{"defect_intake_automation":"MyAutomation"}' (Automation for new kind:bug filings; "" clears it)
+  verifier-policy                 Show the global verifier routing policy
+  verifier-policy-set             Set it by flag (--verifier-policy-mode, --verifier-policy-backends, ...)
+  prd-set-verifier-policy <id>    Override verifier routing for one Automaton (--mode, --backends)
+  prd-set-task-verifier-policy <id> --task <task-id>  Override verifier routing for one task
   prd-list                        List all PRDs
-  prd-create <spec>               Create a draft PRD (--type, --guided-mode, --skills)
+  prd-create <spec>               Create a draft PRD (--type, --kind, --guided-mode, --skills)
   prd-get <id>                    Fetch one PRD with story+task tree
   prd-plan <id>                   Run the LLM planning phase for a PRD (alias: prd-decompose)
   prd-decompose <id>              Run the LLM planning phase for a PRD (alias: prd-plan)
   prd-run <id>                    Kick the executor for a PRD
   prd-cancel <id>                 Cancel + archive a PRD
+  failure-escalation show|set|clear|global  Show, set or clear the failure escalation policy (per Automaton, per task, or the daemon default)
+  resolve-review <id> --task T --action retry|cancel  Retry or cancel a task held for operator review (status lists held tasks under review_needed)
   prd-delete <id>                 Hard-delete a PRD + descendants
   prd-edit <id>                   Edit PRD title + spec
   prd-approve <id>                Approve planned PRD
+  prd-plan-review <id>            Re-run the plan reviewer for a PRD (alias: plan-review)
+  prd-resume <id> [--note ...]    Resume a paused or boot-parked PRD (alias: resume)
   prd-reject <id>                 Reject a PRD plan
+  prd-coverage <id> [--json]      Show the Automaton's stored plan-coverage report, its ack, findings and the suppressed counts
+  prd-ack-coverage <id>           Acknowledge a failing coverage report (--actor, --note) so approve in block mode is allowed
+  generated-artefacts [get|set <key> <on|off>]   Show or change the switches for the artefacts an Automaton generates
+  change-record <prd-id>          Show the change record of an Automaton
+  generated <prd-id> <kind> [--regenerate]   Preview a generated artefact, or write it again
   prd-request-revision <id>       Request fresh planning run
   prd-edit-task <id>              Rewrite a task spec before approving
   prd-edit-story <id>             Rewrite a story's title/description before approving
@@ -46,7 +163,21 @@ Subcommands:
   prd-add-task <id>               Add a new task to an existing story without re-running decompose
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
+  prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug, other or maintenance
+  shipped record <id> --release R --commit C  Record the shipped state (--at, --source, --automation optional)
+  prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
+  tag-list [--counts]             List the tag tree (--counts adds the Automata and session totals per tag)
+  tag-create <name>               Create a tag (--parent, --color, --description)
+  tag-rename <id> <new-name>      Rename a tag
+  tag-move <id> --parent <id|root>  Move a tag under another parent
+  tag-color <id> <color>          Set a tag's color
+  tag-delete <id>                 Delete a tag
+  tag-registry                    Show the tag registry status (role, keeper, staleness, revision, notes, last error)
+  tag-registry-dismiss <note-id>  Dismiss one tag registry note
+  prd-set-tags <id> [--tags a,b] [--primary <tag-id>]  Set an Automaton's tags and its primary tag
+  attention                       List the Automata that need attention (blocked, needs review, paused)
+  prd-set-notify-events <id> [kinds]  Set the event kinds that produce notifications for an Automaton (inherit or omit to clear)
   prd-set-git <id> on|off         Set AutoPR (+--base-branch override) for a PRD (BL407 Phase 5)
   prd-set-skills <id> <csv>       Assign skills to PRD (BL221 Phase 4)
   prd-scan <id>                   Trigger security scan (BL221 Phase 3)
@@ -57,18 +188,36 @@ Subcommands:
   scan-config-set <k=v,...>       Update scan config fields (BL221 Phase 3)
   types-list                      List automaton type registry (BL221 Phase 4)
   type-register                   Register or update an automaton type (BL221 Phase 4)
-  template-list                   List template store (BL221 Phase 2)
-  template-create                 Create a template (BL221 Phase 2)
-  template-get <id>               Fetch one template (BL221 Phase 2)
-  template-update <id>            Update a template (BL221 Phase 2)
-  template-delete <id>            Delete a template (BL221 Phase 2)
-  template-instantiate <id>       Create PRD from template (BL221 Phase 2)
-  template-clone <prd-id>         Clone PRD to template (BL221 Phase 2)
+  template-list                   List Automaton templates
+  standard-tasks                  List the standard tasks the decomposer adds to each story
+  template-create                 Create a template
+  template-get <id>               Fetch one template
+  template-update <id>            Update a template
+  template-delete <id>            Delete a template
+  template-instantiate <id>       Create PRD from template
+  template-clone <prd-id>         Clone PRD to template
   prd-instantiate <tmpl-id>       Instantiate legacy YAML template (BL191)
-  learnings                       List extracted post-task learnings`,
+  learnings                       List extracted post-task learnings
+  subscriptions [--owner X]       List persisted lifecycle event subscriptions (BL427)
+  subscribe --on <kind> ...       Subscribe to lifecycle events → sink: comm|session|topic|alert|mcp_queue (BL427)
+                                  shorthand: --task <id> --on session_started --send "<text>"
+  unsubscribe <id>                Delete a lifecycle event subscription by id (BL427)
+  events --queue <name>           Read pending events from an mcp_queue queue [--since <cursor>] [--limit n] [--json]
+  merge-pipeline show|set-record|clear-record|validate   The merge pipeline of a project, its record, and a check of a pipeline
+  merge-shadow status|compare <automaton>   Merge shadow matched/different counts per release size, and one Automaton's differences
+`,
 	}
 	cmd.AddCommand(
+		newAutonomousProgressCmd(),
+		newAutonomousProgressTrendCmd(),
+		newAutonomousLaneFillCmd(),
+		newAutonomousInfraRetriesCmd(),
+		newAutonomousMergePipelineCmd(),
+		newAutonomousMergeShadowCmd(),
 		newAutonomousStatusCmd(),
+		newAutonomousGeneratedArtefactsCmd(),
+		newAutonomousChangeRecordCmd(),
+		newAutonomousGeneratedCmd(),
 		newAutonomousConfigGetCmd(),
 		newAutonomousConfigSetCmd(),
 		newAutonomousPRDListCmd(),
@@ -79,6 +228,10 @@ Subcommands:
 		newAutonomousPRDCancelCmd(),
 		newAutonomousPRDApproveCmd(),
 		newAutonomousPRDRejectCmd(),
+		newAutonomousPRDCoverageCmd(),
+		newAutonomousPRDAckCoverageCmd(),
+		newAutonomousPRDPlanReviewCmd(),
+		newAutonomousPRDResumeCmd(),
 		newAutonomousPRDRequestRevisionCmd(),
 		newAutonomousPRDEditTaskCmd(),
 		newAutonomousPRDEditStoryCmd(),
@@ -90,10 +243,21 @@ Subcommands:
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetStoryLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
+		newAutonomousPRDSetTaskNodeCmd(),
+		newAutonomousPRDSetStoryNodeCmd(),
+		newAutonomousFailureEscalationCmd(),
+		newAutonomousResolveReviewCmd(),
+		newAutonomousPRDSetThinkingLevelCmd(),
+		newAutonomousPRDSetStoryThinkingLevelCmd(),
+		newAutonomousPRDSetTaskThinkingLevelCmd(),
 		newAutonomousPRDSetTaskProjectDirCmd(),
 		newAutonomousPRDSetTaskVerificationLLMCmd(),
 		newAutonomousPRDSetStoryVerificationLLMCmd(),
 		newAutonomousPRDSetVerificationLLMCmd(),
+		newAutonomousVerifierPolicyCmd(),
+		newAutonomousVerifierPolicySetCmd(),
+		newAutonomousPRDSetVerifierPolicyCmd(),
+		newAutonomousPRDSetTaskVerifierPolicyCmd(),
 		newAutonomousLearningsCmd(),
 		newAutonomousPRDChildrenCmd(),
 		newAutonomousPRDDeleteCmd(),
@@ -107,19 +271,76 @@ Subcommands:
 		newAutonomousScanConfigSetCmd(),
 		// BL221 Phase 4 — type registry, Guided Mode, skills.
 		newAutonomousPRDSetTypeCmd(),
+		newAutonomousPRDSetKindCmd(),
+		newAutonomousPRDSetReleaseSizeCmd(),
+		newAutonomousPRDSetBreakingChangeCmd(),
+		newAutonomousPRDSetLanePreferenceCmd(),
+		newAutonomousShippedCmd(),
+		newAutonomousDefectCmd(),
+		newAutonomousTagListCmd(),
+		newAutonomousTagCreateCmd(),
+		newAutonomousTagRenameCmd(),
+		newAutonomousTagMoveCmd(),
+		newAutonomousTagColorCmd(),
+		newAutonomousTagDeleteCmd(),
+		newAutonomousTagRegistryCmd(),
+		newAutonomousTagRegistryDismissCmd(),
+		newAutonomousTagSweepCmd(),
+		newAutonomousAttentionCmd(),
+		newAutonomousPRDSetTagsCmd(),
 		newAutonomousPRDSetGuidedModeCmd(),
+		newAutonomousPRDSetNotifyEventsCmd(),
 		newAutonomousPRDSetGitCmd(),
+		newAutonomousBranchRefreshCmd(),
+		newAutonomousBranchRefreshStatsCmd(),
 		newAutonomousPRDSetSkillsCmd(),
 		newAutonomousTypesListCmd(),
 		newAutonomousTypeRegisterCmd(),
 		// BL221 Phase 2 — template store.
 		newAutonomousTemplateListCmd(),
+		newAutonomousStandardTasksCmd(),
 		newAutonomousTemplateCreateCmd(),
 		newAutonomousTemplateGetCmd(),
 		newAutonomousTemplateUpdateCmd(),
 		newAutonomousTemplateDeleteCmd(),
 		newAutonomousTemplateInstantiateCmd(),
 		newAutonomousTemplateCloneCmd(),
+		// BL427 lifecycle-event subscriptions.
+		newAutonomousSubscriptionsCmd(),
+		newAutonomousSubscribeCmd(),
+		newAutonomousUnsubscribeCmd(),
+		newAutonomousSubscriptionUpdateCmd(),
+		newAutonomousSubscriptionTestCmd(),
+		newAutonomousEventsCmd(),
+		newAutonomousEventLogCmd(),
+		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
+		newAutonomousTriageCmd(),
+		// Checks and ship status reads.
+		newAutonomousChecksCmd(),
+		newAutonomousShipCmd(),
+		newAutonomousRestartInterruptionsCmd(),
+		newAutonomousRulesContextCmd(),
+		// Repo CI watch read.
+		newAutonomousRepoCIWatchCmd(),
+		newAutonomousSecurityFailureCmd(),
+		newAutonomousSupervisorWatchCmd(),
+		newAutonomousDecisionsCmd(),
+		// Decision records: the structured operator decisions on the Automaton.
+		newDecisionRecordsCmd(),
+		newAutonomousMergeCmd(),
+		newAutonomousSafeToDeleteCmd(),
+		newAutonomousCleanupCmd(),
+		// Decompose lint surface (config, dry-run, stored findings).
+		newAutonomousLintCmd(),
+		newAutonomousUncommittedWorkCmd(),
+		newAutonomousUnlandedWorkCmd(),
+		newAutonomousPlanningRoutingCmd(),
+		newAutonomousRequestWatchCmd(),
+		newAutonomousProtectedPathsCmd(),
+		newAutonomousAuthorizePathsCmd(),
+		newAutonomousMergedMembersCmd(),
+		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
+		newAutonomousOverlapCmd(),
 	)
 	return cmd
 }
@@ -128,7 +349,13 @@ func newAutonomousStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Loop status snapshot",
-		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/status") },
+		Long: `Loop status snapshot as JSON.
+
+The review_needed array lists every task held for operator review across all
+Automata, oldest hold first: automaton_id, automaton_title, task_id, task_title,
+failure_count, last_backend, last_model and held_at. It is omitted when no task
+is held. Decide a held task with: datawatch autonomous resolve-review <id> --task <task-id> --action retry|cancel`,
+		RunE: func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/status") },
 	}
 }
 
@@ -140,14 +367,299 @@ func newAutonomousConfigGetCmd() *cobra.Command {
 
 The concurrency keys are max_concurrent_tasks (tasks of one Automaton that
 run at once; 1 = sequential) and max_engines_per_node (engine sessions one
-compute node runs at once; 1 = one engine per node, the default).`,
+compute node runs at once; 1 = one engine per node, the default).
+
+resume_max_age_seconds is the boot-resume age limit in seconds (default
+3600): a completed task older than that is no longer eligible for resume.
+0 = never resume, -1 = no age limit.
+
+gate_disagreement (default "warn") applies when the verifier passed a task
+but the quality gate found a regression: "warn" records task.gate_disagreement
+and a PRD decision-log entry and the task still completes; "block" fails the
+task with a "gate_disagreement: …" error. An invalid gate never blocks.
+
+default_quality_gates is the default gate config for new Automata:
+enabled, test_command, timeout, block_on_regression, scope (full |
+touched-plus-smoke | touched — how much of the test suite a gate task runs;
+empty = full) and smoke_packages (package patterns for the touched-plus-smoke
+scope; empty = the built-in set).`,
 		RunE: func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/config") },
 	}
 }
 
-func newAutonomousConfigSetCmd() *cobra.Command {
+// autonomousRateFlags maps each rate-ceiling flag of config-set to the config
+// key it writes. The flags are sent only when set, so an omitted flag leaves
+// the key unchanged and an explicit 0 clears that ceiling.
+var autonomousRateFlags = map[string]string{
+	"capacity-rate-requests":       "capacity_rate_requests",
+	"capacity-rate-tokens":         "capacity_rate_tokens",
+	"capacity-rate-window-seconds": "capacity_rate_window_seconds",
+}
+
+// applyAutonomousRateFlags copies the rate-ceiling flags that were set onto
+// body, rejecting negative values before anything is sent.
+func applyAutonomousRateFlags(cmd *cobra.Command, body map[string]any) error {
+	for flag, key := range autonomousRateFlags {
+		if !cmd.Flags().Changed(flag) {
+			continue
+		}
+		n, _ := cmd.Flags().GetInt(flag)
+		if n < 0 {
+			return fmt.Errorf("--%s must be >= 0", flag)
+		}
+		body[key] = n
+	}
+	return nil
+}
+
+// applyAutonomousJudgeFlags copies the judge flags that were set onto body:
+// --judge-policy (an ordered comma list; an explicit empty value clears it so
+// the judges follow the verifier routing policy) and --judge-timeout-seconds (the
+// time limit; a negative value is rejected before anything is sent) and
+// --judge-size-threshold-lines (the changed-line count above which the judges
+// route by change size; 0 turns the rule off, and a negative value is rejected),
+// --judge-strong-backend (the strong backend a large diff routes to first; an
+// explicit empty value resolves to the last judge-policy entry) and
+// --judge-verdict-cache (the per-commit verdict cache; explicit false turns it
+// off). A flag that was not given adds no key to body.
+func applyAutonomousJudgeFlags(cmd *cobra.Command, body map[string]any) error {
+	if cmd.Flags().Changed("judge-policy") {
+		s, _ := cmd.Flags().GetString("judge-policy")
+		body["judge_policy"] = splitVerifierBackends(s)
+	}
+	if cmd.Flags().Changed("judge-timeout-seconds") {
+		n, _ := cmd.Flags().GetInt("judge-timeout-seconds")
+		if n < 0 {
+			return fmt.Errorf("--judge-timeout-seconds must be >= 0")
+		}
+		body["judge_timeout_seconds"] = n
+	}
+	if cmd.Flags().Changed("judge-size-threshold-lines") {
+		n, _ := cmd.Flags().GetInt("judge-size-threshold-lines")
+		if n < 0 {
+			return fmt.Errorf("--judge-size-threshold-lines must be >= 0")
+		}
+		body["judge_size_threshold_lines"] = n
+	}
+	if cmd.Flags().Changed("judge-prompt-file-threshold-lines") {
+		n, _ := cmd.Flags().GetInt("judge-prompt-file-threshold-lines")
+		if n < 0 || n > 100000 {
+			return fmt.Errorf("--judge-prompt-file-threshold-lines must be a whole number from 0 to 100000")
+		}
+		body["judge_prompt_file_threshold_lines"] = n
+	}
+	if cmd.Flags().Changed("judge-delivery-wait-per-thousand-lines-seconds") {
+		n, _ := cmd.Flags().GetInt("judge-delivery-wait-per-thousand-lines-seconds")
+		if n < 0 || n > 3600 {
+			return fmt.Errorf("--judge-delivery-wait-per-thousand-lines-seconds must be a whole number from 0 to 3600")
+		}
+		body["judge_delivery_wait_per_thousand_lines_seconds"] = n
+	}
+	if cmd.Flags().Changed("judge-strong-backend") {
+		s, _ := cmd.Flags().GetString("judge-strong-backend")
+		body["judge_strong_backend"] = s
+	}
+	if cmd.Flags().Changed("judge-verdict-cache") {
+		b, _ := cmd.Flags().GetBool("judge-verdict-cache")
+		body["judge_verdict_cache_enabled"] = b
+	}
+	return nil
+}
+
+// verifierPolicyFlagDefs describes the verifier routing flags: the flag name,
+// the autonomous.verifier_policy field it writes and its kind. They are shared
+// by config-set and verifier-policy-set.
+var verifierPolicyFlagDefs = []struct{ flag, field, kind string }{
+	{"verifier-policy-mode", "mode", "string"},
+	{"verifier-policy-backends", "backends", "list"},
+	{"verifier-policy-claude-session-cap", "claude_session_cap", "int"},
+	{"verifier-policy-claude-cap-window-minutes", "claude_cap_window_minutes", "int"},
+	{"verifier-policy-force-stronger-on-retry", "force_stronger_on_retry", "bool"},
+	{"verifier-policy-final-gate-stronger", "final_gate_stronger", "bool"},
+	{"verifier-policy-stronger-backend", "stronger_backend", "string"},
+	{"verifier-policy-stronger-model", "stronger_model", "string"},
+}
+
+// addVerifierPolicyFlags registers the verifier routing flags on cmd.
+func addVerifierPolicyFlags(cmd *cobra.Command) {
+	cmd.Flags().String("verifier-policy-mode", "", "Verifier routing mode: fixed, prefer-free, balance, gpu-only or claude-only (empty = fixed)")
+	cmd.Flags().String("verifier-policy-backends", "", "Ordered comma list of eligible verifier backends (empty = use verification_backends)")
+	cmd.Flags().Int("verifier-policy-claude-session-cap", 0, "Most Claude verifier sessions started per window (0 = unlimited)")
+	cmd.Flags().Int("verifier-policy-claude-cap-window-minutes", 0, "Window length in minutes for the Claude session cap (0 = default 60)")
+	cmd.Flags().Bool("verifier-policy-force-stronger-on-retry", false, "Send a retried verification to the stronger verifier")
+	cmd.Flags().Bool("verifier-policy-final-gate-stronger", false, "Send the final verification gate to the stronger verifier")
+	cmd.Flags().String("verifier-policy-stronger-backend", "", "Stronger verifier backend (empty = claude-code)")
+	cmd.Flags().String("verifier-policy-stronger-model", "", "Stronger verifier model (empty = the default Sonnet model)")
+}
+
+// applyVerifierPolicyFlags collects the verifier routing flags that were set
+// into a verifier_policy object on body. An omitted flag leaves its field
+// unchanged and an explicit empty value, 0 or false clears it. A negative
+// number is rejected before anything is sent. Fields already in a JSON
+// verifier_policy object on body are kept.
+func applyVerifierPolicyFlags(cmd *cobra.Command, body map[string]any) error {
+	vp := map[string]any{}
+	if cur, ok := body["verifier_policy"].(map[string]any); ok {
+		vp = cur // flags win over the same field given in the JSON body
+	}
+	for _, d := range verifierPolicyFlagDefs {
+		if !cmd.Flags().Changed(d.flag) {
+			continue
+		}
+		switch d.kind {
+		case "int":
+			n, _ := cmd.Flags().GetInt(d.flag)
+			if n < 0 {
+				return fmt.Errorf("--%s must be >= 0", d.flag)
+			}
+			vp[d.field] = n
+		case "bool":
+			b, _ := cmd.Flags().GetBool(d.flag)
+			vp[d.field] = b
+		case "list":
+			s, _ := cmd.Flags().GetString(d.flag)
+			vp[d.field] = splitVerifierBackends(s)
+		default:
+			s, _ := cmd.Flags().GetString(d.flag)
+			vp[d.field] = s
+		}
+	}
+	if len(vp) > 0 {
+		body["verifier_policy"] = vp
+	}
+	return nil
+}
+
+// splitVerifierBackends splits a comma list of backend names. An empty string
+// is an empty list (clear); empty entries are kept so the daemon rejects them
+// rather than a stray comma quietly shrinking the list.
+func splitVerifierBackends(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return []string{}
+	}
+	parts := strings.Split(s, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}
+
+func newAutonomousVerifierPolicyCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "config-set <json-or-@file>",
+		Use:   "verifier-policy",
+		Short: "Show the global verifier routing policy (autonomous.verifier_policy)",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			raw, err := daemonJSONBody(http.MethodGet, "/api/autonomous/config", nil)
+			if err != nil {
+				return err
+			}
+			var cfg map[string]json.RawMessage
+			if json.Unmarshal(raw, &cfg) != nil {
+				prettyPrint(raw)
+				return nil
+			}
+			if vp, ok := cfg["verifier_policy"]; ok {
+				prettyPrint(vp)
+				return nil
+			}
+			fmt.Println("{}")
+			return nil
+		},
+	}
+}
+
+func newAutonomousVerifierPolicySetCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "verifier-policy-set",
+		Short: "Set the global verifier routing policy; only the flags you give change",
+		Long: `Set fields of autonomous.verifier_policy, which chooses the backend that
+runs each verification. Fields you do not give are left unchanged; an explicit
+empty value, 0 or false clears that field. The change takes effect on the next
+verification, with no restart.
+
+  datawatch autonomous verifier-policy-set --verifier-policy-mode prefer-free --verifier-policy-backends qwen,claude-code
+  datawatch autonomous verifier-policy-set --verifier-policy-claude-session-cap 6 --verifier-policy-claude-cap-window-minutes 60
+  datawatch autonomous verifier-policy-set --verifier-policy-final-gate-stronger --verifier-policy-stronger-backend claude-code
+
+Modes: fixed (first eligible backend only, the default), prefer-free (first
+backend with a free slot), balance (lowest relative load), gpu-only (local
+backends only), claude-only (Claude backends only).`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			body := map[string]any{}
+			if err := applyVerifierPolicyFlags(cmd, body); err != nil {
+				return err
+			}
+			if len(body) == 0 {
+				return fmt.Errorf("give at least one --verifier-policy-* flag")
+			}
+			return daemonJSON(http.MethodPut, "/api/autonomous/config", body)
+		},
+	}
+	addVerifierPolicyFlags(cmd)
+	return cmd
+}
+
+// verifierPolicyOverrideCLIBody builds a set_verifier_policy /
+// set_task_verifier_policy body. mode and backends are sent only when their
+// flag was set, so an omitted flag leaves the field unchanged and an explicit
+// empty value clears it.
+func verifierPolicyOverrideCLIBody(cmd *cobra.Command, base map[string]any) map[string]any {
+	body := map[string]any{}
+	for k, v := range base {
+		body[k] = v
+	}
+	if cmd.Flags().Changed("mode") {
+		v, _ := cmd.Flags().GetString("mode")
+		body["mode"] = v
+	}
+	if cmd.Flags().Changed("backends") {
+		v, _ := cmd.Flags().GetString("backends")
+		body["backends"] = splitVerifierBackends(v)
+	}
+	return body
+}
+
+func addVerifierPolicyOverrideFlags(cmd *cobra.Command, scope string) {
+	cmd.Flags().String("mode", "", "verifier routing mode for "+scope+" (fixed, prefer-free, balance, gpu-only, claude-only); empty = clear, omit = unchanged")
+	cmd.Flags().String("backends", "", "ordered comma list of verifier backends for "+scope+"; empty = clear, omit = unchanged")
+}
+
+func newAutonomousPRDSetVerifierPolicyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "prd-set-verifier-policy <prd-id> [--mode M --backends a,b]",
+		Short: "Override the verifier routing of an Automaton. Precedence: task > Automaton > global verifier_policy. Omitted flags are unchanged; an empty value clears.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := verifierPolicyOverrideCLIBody(cmd, map[string]any{"actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_verifier_policy", body)
+		},
+	}
+	addVerifierPolicyOverrideFlags(cmd, "this Automaton")
+	return cmd
+}
+
+func newAutonomousPRDSetTaskVerifierPolicyCmd() *cobra.Command {
+	var taskID string
+	cmd := &cobra.Command{
+		Use:   "prd-set-task-verifier-policy <prd-id> --task <task-id> [--mode M --backends a,b]",
+		Short: "Override the verifier routing of one task. Precedence: task > Automaton > global verifier_policy. Omitted flags are unchanged; an empty value clears.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := verifierPolicyOverrideCLIBody(cmd, map[string]any{"task_id": taskID, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_verifier_policy", body)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")
+	addVerifierPolicyOverrideFlags(cmd, "this task")
+	_ = cmd.MarkFlagRequired("task")
+	return cmd
+}
+
+func newAutonomousConfigSetCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config-set [json-or-@file]",
 		Short: "Merge fields into autonomous config",
 		Long: `Merge the given JSON fields onto the current autonomous config; fields
 not given are left unchanged.
@@ -162,20 +674,181 @@ Example — let each compute node run up to 2 engine sessions at once
 
   datawatch autonomous config-set '{"max_engines_per_node":2}'
 
+Example — make completed tasks older than 30 minutes no longer eligible
+for resume (default 3600; 0 = never resume, -1 = no age limit):
+
+  datawatch autonomous config-set '{"resume_max_age_seconds":1800}'
+
+Example — verifier passed a task but the quality gate found a regression:
+fail the task instead of completing it with a recorded gate_disagreement.
+Only "warn" (the default; record and complete) or "block" is accepted:
+
+  datawatch autonomous config-set '{"gate_disagreement":"block"}'
+
+Default quality-gate config for new Automata (autonomous.default_quality_gates):
+scope is full (default) | touched-plus-smoke (touched packages plus the smoke
+set) | touched (touched packages only); smoke_packages lists the package
+patterns the touched-plus-smoke scope runs (empty = the built-in set):
+
+  datawatch autonomous config-set '{"default_quality_gates":{"scope":"touched-plus-smoke","smoke_packages":["internal/pipeline","internal/autonomous"]}}'
+
+tier inflight-cap table (see "datawatch llm add|update --help" for --plan-tier/--max-inflight):
+  datawatch autonomous config-set '{"plan_tier_max_inflight":{"max_5x":2,"api":0}}'
+      Ties each subscription plan tier (pro | max_5x | max_20x | api) to an
+      inflight cap (0 = unlimited). An explicit per-LLM max_inflight > 0 wins
+      over the tier cap; clear the table with {}.
+
+kind → capacity-queue priority table (autonomous.priority_by_kind): where an
+Automaton lines up while waiting for capacity depends on its PRD's kind — the
+higher the number, the closer to the front. Shipped rows: bug=80 (fast lane
+for fixes), maintenance=70, feature=20, other=0 (the fallback row for a kind
+with no row of its own; an installation may name its own kinds).
+  datawatch autonomous config-set '{"priority_by_kind":{"bug":90,"maintenance":50}}'
+      Integer priorities (0 or greater) only — a non-number, a fraction or a
+      boolean is refused with a clear message. A priority pinned directly on a
+      PRD (autonomous_prd_set_priority / prd-set-priority) always wins for that
+      PRD. Clear the table back to the daemon defaults with {}.
+
+defect intake Automation (autonomous.defect_intake_automation): the Automation
+that new kind:bug defect filings are recorded under (empty by default — each
+installation chooses its own; a filing without one is recorded, not filed
+anywhere):
+  datawatch autonomous config-set '{"defect_intake_automation":"MyAutomation"}'
+      Pass "" to clear it back to the unset state.
+
+Judge routing, which chooses the backends the judges (Automaton guardrail,
+plan review and other autonomous judges) try. --judge-policy is an ordered comma
+list, one attempt per backend; an empty value clears it, and the judges then
+follow the verifier routing policy. --judge-timeout-seconds is the time limit
+for one judge run (default 1800 = 30 minutes; 0 = default; the wait for a
+capacity slot does not count). --judge-strong-backend names the strong backend
+a large diff routes to first when the size rule fires (empty = the last entry
+of the judge policy), and --judge-verdict-cache turns the per-commit verdict
+cache off (on by default: pass/block verdicts replay on judged commits, and a
+verified commit is held on a judge timeout instead of re-run):
+
+  datawatch autonomous config-set --judge-policy qwen,claude-code --judge-timeout-seconds 1800
+
+  judge_policy                    ordered judge backends (empty = follow the verifier routing policy)
+  judge_timeout_seconds           time limit for one judge run (default 1800)
+  judge_size_threshold_lines      changed-line count above which the judges route by change size (default 400; 0 = off)
+  judge_prompt_file_threshold_lines  prompt line count above which the judge prompt is sent as a file (default 300; 0 = always full prompt; 0-100000)
+  judge_delivery_wait_per_thousand_lines_seconds  extra delivery wait per thousand prompt lines (0-3600)
+  judge_strong_backend            strong backend large diffs route to first (empty = the last entry of the judge policy)
+  judge_verdict_cache_enabled     per-commit verdict cache (default true; false re-judges every verified commit fresh)
+
+Rate ceiling on each LLM's pool, by flag or by JSON key (0 = no ceiling,
+the default; negative values are rejected):
+
+  datawatch autonomous config-set --capacity-rate-requests 60 --capacity-rate-tokens 2000000 --capacity-rate-window-seconds 3600
+
+  capacity_rate_requests          most task/verifier starts per LLM per window
+  capacity_rate_tokens            most tokens per LLM per window
+  capacity_rate_window_seconds    rolling window length (default 3600)
+
+Node over-admission rules, by JSON key (all on by default; false restores the
+earlier behaviour):
+
+  capacity_strict_node_limit      verifier and resumed workers never over-admit a node
+  capacity_count_pool_by_node     an LLM pool counts the sessions on each node up to that node's limit
+  capacity_fallthrough            admit a task on another idle allowed pool when its own is full (default false)
+  capacity_adopt_before_admit     after a restart, resumed workers are admitted before new work
+  capacity_adoption_wait_seconds  longest wait for that adoption (default 30; negative values are rejected)
+
+Verifier routing, which chooses the backend that runs each verification, by
+flag or by the verifier_policy JSON object. Fields you do not give are left
+unchanged; the change takes effect on the next verification:
+
+  datawatch autonomous config-set --verifier-policy-mode prefer-free --verifier-policy-backends qwen,claude-code
+  datawatch autonomous config-set '{"verifier_policy":{"claude_session_cap":6}}'
+
+  verifier_policy.mode                       fixed (default), prefer-free, balance, gpu-only, claude-only
+  verifier_policy.backends                   ordered list of eligible verifier backends
+  verifier_policy.claude_session_cap         most Claude verifier sessions per window (0 = unlimited)
+  verifier_policy.claude_cap_window_minutes  window length for that cap (0 = default 60)
+  verifier_policy.force_stronger_on_retry    send a retried verification to the stronger verifier
+  verifier_policy.final_gate_stronger        send the final verification gate to the stronger verifier
+  verifier_policy.stronger_backend           stronger verifier backend (empty = claude-code)
+  verifier_policy.stronger_model             stronger verifier model (empty = the default Sonnet model)
+
+Host load check (autonomous.host_load_alert): when the load average stays above
+a multiple of the core count for some minutes, one alert names the busiest
+process groups. By flag or by the host_load_alert JSON object; fields you do not
+give are left unchanged:
+
+  datawatch autonomous config-set --host-load-alert-mode reap --host-load-alert-multiple 2 --host-load-alert-minutes 15
+  datawatch autonomous config-set '{"host_load_alert":{"mode":"off"}}'
+
+  host_load_alert.mode      off, alert (default) or reap (also ends proven-orphan processes of ended sessions)
+  host_load_alert.multiple  load-to-cores multiple that counts as a breach (default 1.5)
+  host_load_alert.minutes   minutes a breach must last before it alerts (default 10)
+
+Example — set the pre-spawn scope lint to warn (spawn the task and record a
+scope_lint_warn decision) instead of blocking it:
+
+  datawatch autonomous config-set '{"scope_lint":"warn"}'
+
+scope_lint takes one of three values: off (skip the lint), warn (spawn the
+task and record a scope_lint_warn decision) or enforce (block the task before
+its session starts; the default). Any other value is rejected.
+
+planning_restart_policy (autonomous.planning_restart_policy) says what a daemon
+restart does to an Automaton that is still in planning (its decompose running):
+reattach (the default) keeps planning running and re-attaches it to the restarted
+daemon; restart restarts planning once after the restart and records a decision
+saying so; draft resets the Automaton to draft, as before this setting existed.
+Any other value is refused before anything is sent. The value is written to the
+daemon config, so the CLI sends it on its own request. See
+docs/howto/restart-with-work-running.md for when to pick each one.
+  datawatch autonomous config-set '{"planning_restart_policy":"restart"}'
+
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			raw := args[0]
-			if len(raw) > 1 && raw[0] == '@' {
-				b, err := os.ReadFile(raw[1:])
-				if err != nil {
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]any{}
+			if len(args) == 1 {
+				raw := args[0]
+				if len(raw) > 1 && raw[0] == '@' {
+					b, err := os.ReadFile(raw[1:])
+					if err != nil {
+						return err
+					}
+					raw = string(b)
+				}
+				if err := json.Unmarshal([]byte(raw), &body); err != nil {
+					return fmt.Errorf("parse JSON: %w", err)
+				}
+			}
+			if err := applyAutonomousRateFlags(cmd, body); err != nil {
+				return err
+			}
+			if err := applyAutonomousJudgeFlags(cmd, body); err != nil {
+				return err
+			}
+			if err := applyVerifierPolicyFlags(cmd, body); err != nil {
+				return err
+			}
+			if err := applyHostLoadAlertFlags(cmd, body); err != nil {
+				return err
+			}
+			// planning_restart_policy is a daemon-config key (PUT /api/config),
+			// not part of the autonomous config body. It is refused here when
+			// invalid, before anything is sent, then written on its own.
+			planningPatch, err := takePlanningRestartPolicy(body)
+			if err != nil {
+				return err
+			}
+			if len(body) == 0 && planningPatch == nil {
+				return fmt.Errorf("give a JSON body or at least one flag")
+			}
+			if planningPatch != nil {
+				if _, err := daemonJSONBody(http.MethodPut, "/api/config", planningPatch); err != nil {
 					return err
 				}
-				raw = string(b)
-			}
-			var body any
-			if err := json.Unmarshal([]byte(raw), &body); err != nil {
-				return fmt.Errorf("parse JSON: %w", err)
+				fmt.Printf("autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
+				if len(body) == 0 {
+					return nil
+				}
 			}
 			resp, err := daemonJSONBody(http.MethodPut, "/api/autonomous/config", body)
 			if err != nil {
@@ -186,6 +859,19 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 			return nil
 		},
 	}
+	cmd.Flags().Int("capacity-rate-requests", 0, "Most task/verifier starts per LLM pool per rolling window (0 = no requests ceiling)")
+	cmd.Flags().Int("capacity-rate-tokens", 0, "Most tokens per LLM pool per rolling window (0 = no tokens ceiling)")
+	cmd.Flags().Int("capacity-rate-window-seconds", 0, "Rolling window length in seconds for the rate ceilings (0 = default 3600)")
+	cmd.Flags().String("judge-policy", "", "Ordered comma list of judge backends, one attempt each (empty = follow the verifier routing policy)")
+	cmd.Flags().Int("judge-timeout-seconds", 0, "Time limit in seconds for one judge run (0 = default 1800 = 30m)")
+	cmd.Flags().Int("judge-size-threshold-lines", 400, "Changed-line count above which the judges route by change size (whole number; 0 = rule off)")
+	cmd.Flags().Int("judge-prompt-file-threshold-lines", 300, "Judge prompt length in lines above which the prompt is sent as a file (whole number 0-100000; 0 = always send the full prompt)")
+	cmd.Flags().Int("judge-delivery-wait-per-thousand-lines-seconds", 0, "Extra seconds of judge delivery wait per thousand prompt lines (whole number 0-3600)")
+	cmd.Flags().String("judge-strong-backend", "", "Strong judge backend a large diff routes to first when the size rule fires (empty = the last entry of the judge policy)")
+	cmd.Flags().Bool("judge-verdict-cache", true, "Per-commit judge verdict cache, on by default (false re-judges every verified commit fresh)")
+	addVerifierPolicyFlags(cmd)
+	addHostLoadAlertFlags(cmd)
+	return cmd
 }
 
 // printDeprecatedFields writes any deprecated_fields note from a config
@@ -203,15 +889,71 @@ func printDeprecatedFields(resp []byte) {
 }
 
 func newAutonomousPRDListCmd() *cobra.Command {
-	return &cobra.Command{
+	var status, shipped string
+	cmd := &cobra.Command{
 		Use:   "prd-list",
-		Short: "List all PRDs (newest first)",
-		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/prds") },
+		Short: "List all PRDs (newest first); --status (may include shipped) or --shipped true|false narrows",
+		Long: `List all PRDs (newest first).
+
+By default this prints the full list. With --status or --shipped it
+switches to the summary list and narrows: --status takes comma-separated
+statuses and may include "shipped" (the shipped-state bucket, selected by
+the record's merge commit — not the stored status); --shipped true keeps
+only PRDs that carry shipped state, --shipped false only ones that do
+not; with neither set the server's autonomous.shipped.filter_default
+view applies (all / shipped / unshipped).`,
+		RunE: func(*cobra.Command, []string) error {
+			q, err := prdListQuery(status, shipped)
+			if err != nil {
+				return err
+			}
+			if len(q) == 0 {
+				return daemonGet("/api/autonomous/prds")
+			}
+			return daemonGet("/api/autonomous/prds?" + q.Encode())
+		},
 	}
+	cmd.Flags().StringVarP(&status, "status", "s", "", "Comma-separated statuses to keep (may include shipped)")
+	cmd.Flags().StringVar(&shipped, "shipped", "", "true|false: keep only shipped / only unshipped PRDs (default: the server's autonomous.shipped.filter_default view)")
+	return cmd
+}
+
+// prdListQuery builds the PRD list query from the --status / --shipped
+// flags. Neither set = the full list (no query, the original full=1 call
+// shape). One or the other = the server-side filtered summary list: status
+// takes comma-separated statuses and may include shipped (the shipped-state
+// bucket, selected by the record's merge commit — not the stored status);
+// shipped true keeps only PRDs that carry shipped state, false only ones
+// that do not. Status and shipped are ANDed; shipped=true remains gated by
+// autonomous.shipped enabled on the daemon.
+func prdListQuery(status, shipped string) (url.Values, error) {
+	status = strings.Trim(strings.TrimSpace(status), ",")
+	switch v := strings.ToLower(strings.TrimSpace(shipped)); v {
+	case "", "all":
+		// empty: no shipped narrowing; all: the daemon default view.
+	case "true", "false":
+		// carried below
+	default:
+		return nil, fmt.Errorf("shipped: must be true or false (got %q); shipped means the PRD's work has landed (its merge commit is recorded), and it is independent of status", shipped)
+	}
+	q := url.Values{}
+	if status == "" && strings.ToLower(strings.TrimSpace(shipped)) == "" {
+		q.Set("full", "1")
+		return q, nil
+	}
+	if status != "" {
+		q.Set("status", status)
+	}
+	switch strings.ToLower(strings.TrimSpace(shipped)) {
+	case "", "all":
+	default:
+		q.Set("shipped", strings.ToLower(strings.TrimSpace(shipped)))
+	}
+	return q, nil
 }
 
 func newAutonomousPRDCreateCmd() *cobra.Command {
-	var projectDir, backend, effort, typ, skillsCSV string
+	var projectDir, backend, effort, typ, skillsCSV, kind, lanePref string
 	var guidedMode bool
 	cmd := &cobra.Command{
 		Use:   "prd-create <spec>",
@@ -227,6 +969,20 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 			}
 			if typ != "" {
 				body["type"] = typ
+			}
+			if kind != "" {
+				k, err := parseKindArg(kind)
+				if err != nil {
+					return err
+				}
+				body["kind"] = k
+			}
+			if lanePref != "" {
+				p, err := parseLanePreferenceArg(lanePref)
+				if err != nil {
+					return err
+				}
+				body["lane_preference"] = p
 			}
 			if guidedMode {
 				body["guided_mode"] = true
@@ -247,6 +1003,8 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend override")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort hint (low/medium/high/max)")
 	cmd.Flags().StringVar(&typ, "type", "", "Automaton type (software|research|operational|personal or custom)")
+	cmd.Flags().StringVar(&kind, "kind", "", "Automaton kind (feature|bug|other); omit to derive it from the title and spec")
+	cmd.Flags().StringVar(&lanePref, "lane-preference", "", "Lane the Automaton may take (gpu|claude|any); omit for any")
 	cmd.Flags().BoolVar(&guidedMode, "guided-mode", false, "Enable Guided Mode (step-by-step operator checkpoints)")
 	cmd.Flags().StringVar(&skillsCSV, "skills", "", "Comma-separated skill IDs (e.g. git,docker,pytest)")
 	return cmd
@@ -258,16 +1016,87 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 		Use:   "prd-get <id>",
 		Short: "Fetch one PRD with its story+task tree",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(c *cobra.Command, args []string) error {
 			path := "/api/autonomous/prds/" + args[0]
 			if detail != "" {
 				path += "?" + url.Values{"detail": {detail}}.Encode()
 			}
-			return daemonGet(path)
+			body, err := daemonJSONBody(http.MethodGet, path, nil)
+			if err != nil {
+				return err
+			}
+			out := c.OutOrStdout()
+			if len(body) > 0 {
+				prettyPrint(body)
+			}
+			for _, block := range rulesReviewOutcomeBlocks(body) {
+				fmt.Print(block)
+			}
+			if line := prdPushLine(body); line != "" {
+				_, _ = fmt.Fprintln(out, line)
+			}
+			if line := prdReviewLine(body); line != "" {
+				fmt.Println(line)
+			}
+			if line := prdParallelLine(body); line != "" {
+				_, _ = fmt.Fprintln(out, line)
+			}
+			for _, line := range automatonCostLines(body) {
+				_, _ = fmt.Fprintln(out, line)
+			}
+			for _, line := range prdTaskMergeLines(body) {
+				_, _ = fmt.Fprintln(out, line)
+			}
+			// Counts-first line per task with a non-empty
+			// skipped_snapshot_paths ("left unstaged: <task> N (reason=count, ...)");
+			// the detailed path list stays in the raw JSON above.
+			for _, line := range autonomous.RenderSkippedSnapshotLines(body) {
+				_, _ = fmt.Fprintln(out, line)
+			}
+			return nil
 		},
 	}
-	cmd.Flags().StringVar(&detail, "detail", "", "Detail level: summary, tasks or full (default: the daemon's full view)")
+	cmd.Flags().StringVar(&detail, "detail", "", "Detail level: summary (no spec text), tasks (task statuses) or full (default: the daemon's full view). full returns the PRD spec, every story description and every task spec whole and uncut — read full before editing a spec; edits carrying a capped view's truncation marker are refused here and by the daemon")
 	return cmd
+}
+
+// prdPushLine renders the one-line git push status for prd-get from the
+// daemon's reply JSON: "push: pushed <ref>@<sha>" after a successful push,
+// "push: NOT PUSHED — <reason>" after a refused one, and "" when no push
+// outcome was recorded (nothing to report). It reads the push state from
+// the PRD's git object (full detail) or from the top-level push_state /
+// push_warning of the trimmed summary view.
+func prdPushLine(prdJSON []byte) string {
+	var v struct {
+		PushState   string `json:"push_state"`
+		PushedRef   string `json:"pushed_ref"`
+		PushedSHA   string `json:"pushed_sha"`
+		PushWarning string `json:"push_warning"`
+		Git         struct {
+			PushState   string `json:"push_state"`
+			PushedRef   string `json:"pushed_ref"`
+			PushedSHA   string `json:"pushed_sha"`
+			PushWarning string `json:"push_warning"`
+		} `json:"git"`
+	}
+	if err := json.Unmarshal(prdJSON, &v); err != nil {
+		return ""
+	}
+	state, ref, sha, warning := v.Git.PushState, v.Git.PushedRef, v.Git.PushedSHA, v.Git.PushWarning
+	if state == "" {
+		state, ref, sha, warning = v.PushState, v.PushedRef, v.PushedSHA, v.PushWarning
+	}
+	switch state {
+	case "pushed":
+		if len(sha) > 7 {
+			sha = sha[:7]
+		}
+		return fmt.Sprintf("push: pushed %s@%s", ref, sha)
+	case "not_pushed":
+		return "push: NOT PUSHED — " + warning
+	default:
+		return ""
+	}
 }
 
 func newAutonomousPRDPlanCmd() *cobra.Command {
@@ -277,7 +1106,7 @@ func newAutonomousPRDPlanCmd() *cobra.Command {
 		Aliases: []string{"prd-decompose"},
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/decompose", nil)
+			return daemonJSONWithOutcome(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/decompose", nil)
 		},
 	}
 }
@@ -331,6 +1160,15 @@ func newAutonomousPRDEditCmd() *cobra.Command {
 		Short: "Edit PRD title + spec (non-running PRDs only)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			if spec != "" {
+				// Text copied out of a capped view carries the truncation
+				// marker and is not the full spec: refuse it with the daemon's
+				// own wording before anything reaches the wire (the 400 says
+				// the same).
+				if msg, refuse := autonomous.TruncationRefusal("spec", spec); refuse {
+					return fmt.Errorf("%s", msg)
+				}
+			}
 			body := map[string]any{"actor": "operator"}
 			if title != "" {
 				body["title"] = title
@@ -342,7 +1180,7 @@ func newAutonomousPRDEditCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "New PRD title")
-	cmd.Flags().StringVar(&spec, "spec", "", "New PRD spec (full replacement)")
+	cmd.Flags().StringVar(&spec, "spec", "", "New PRD spec (full replacement) — the full spec text: to edit the existing spec, read it first (prd-get's default full view returns the whole spec, uncut); a spec carrying a capped view's truncation marker is refused here and by the daemon")
 	return cmd
 }
 
@@ -392,6 +1230,121 @@ func newAutonomousPRDRejectCmd() *cobra.Command {
 	return cmd
 }
 
+// newAutonomousPRDCoverageCmd — show the Automaton's stored plan-coverage
+// record (the plan-coverage gate record: the mode/min_ratio it was pinned
+// to when the report was computed, the coverage report, any structural
+// findings and the operator acknowledgement of a failing surface, if
+// present) plus the counts of the findings the plan-coverage filters
+// suppressed and the filters in effect now.
+func newAutonomousPRDCoverageCmd() *cobra.Command {
+	var rawJSON bool
+	cmd := &cobra.Command{
+		Use:   "prd-coverage <id>",
+		Short: "Show the Automaton's stored plan-coverage report (gate, ratio, report, ack, findings, suppressed counts)",
+		Long: "Read the Automaton's stored plan-coverage record: the gate mode/ratio it was pinned to at compute time, " +
+			"the coverage report, any structural findings and the operator acknowledgement, if present. " +
+			"Shows how many findings the plan-coverage filters suppressed (the created-file findings and the stray-requirement " +
+			"findings) and the filters in effect (suppress_created_files, scoped_requirements, requirement_sections, " +
+			"min_requirement_chars). The same record is also part of the Automaton's detail=full read (its plan_coverage field), " +
+			"so the MCP/REST/comm surfaces that announce plan_coverage on the detail=full path agree with this command. " +
+			"Use --json to print the raw daemon response body instead of the summary.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := daemonJSONBody(http.MethodGet, "/api/autonomous/prds/"+args[0]+"/plan_coverage", nil)
+			if err != nil {
+				return err
+			}
+			if rawJSON {
+				_, _ = cmd.OutOrStdout().Write(append(body, '\n'))
+				return nil
+			}
+			var resp struct {
+				ID           string          `json:"id"`
+				Status       string          `json:"status"`
+				PlanCoverage json.RawMessage `json:"plan_coverage"`
+				Suppressed   struct {
+					CreatedFiles int `json:"created_files"`
+					Requirements int `json:"requirements"`
+				} `json:"suppressed"`
+				Filters json.RawMessage `json:"filters"`
+			}
+			if err := json.Unmarshal(body, &resp); err != nil {
+				return fmt.Errorf("decode plan-coverage read: %w", err)
+			}
+			id := resp.ID
+			if id == "" {
+				id = args[0]
+			}
+			if len(resp.PlanCoverage) == 0 || string(resp.PlanCoverage) == "null" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No plan-coverage report stored for %s (run the planning phase first; the deterministic coverage check is computed at decompose time).\n", id)
+				return nil
+			}
+			var record any
+			if err := json.Unmarshal(resp.PlanCoverage, &record); err != nil {
+				return fmt.Errorf("decode plan_coverage: %w", err)
+			}
+			pretty, err := json.MarshalIndent(record, "", "  ")
+			if err != nil {
+				return fmt.Errorf("re-marshal plan_coverage: %w", err)
+			}
+			out := cmd.OutOrStdout()
+			_, _ = fmt.Fprintf(out, "Plan coverage for %s (%s)\n", id, resp.Status)
+			_, _ = fmt.Fprintf(out, "Suppressed by the plan coverage filters: %d created-file finding(s), %d requirement finding(s)\n", resp.Suppressed.CreatedFiles, resp.Suppressed.Requirements)
+			var flt struct {
+				SuppressCreatedFiles bool     `json:"suppress_created_files"`
+				ScopedRequirements   bool     `json:"scoped_requirements"`
+				RequirementSections  []string `json:"requirement_sections"`
+				MinRequirementChars  int      `json:"min_requirement_chars"`
+			}
+			if json.Unmarshal(resp.Filters, &flt) == nil && (flt.SuppressCreatedFiles || flt.ScopedRequirements || len(flt.RequirementSections) > 0 || flt.MinRequirementChars > 0) {
+				_, _ = fmt.Fprintf(out, "Filters in effect: suppress_created_files=%t scoped_requirements=%t requirement_sections=%s min_requirement_chars=%d\n",
+					flt.SuppressCreatedFiles, flt.ScopedRequirements, strings.Join(flt.RequirementSections, ","), flt.MinRequirementChars)
+			} else {
+				filters := strings.TrimSpace(string(resp.Filters))
+				if filters == "" || filters == "null" {
+					filters = "none"
+				}
+				_, _ = fmt.Fprintf(out, "Filters in effect: %s\n", filters)
+			}
+			_, _ = fmt.Fprintln(out, string(pretty))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&rawJSON, "json", false, "print the raw daemon response body instead of the summary")
+	return cmd
+}
+
+// newAutonomousPRDAckCoverageCmd — operator-acknowledge the PRD's
+// failing plan-coverage report (the block-mode gate). The manager pins
+// the ack to the exact failing surface (fingerprint); a non-empty note
+// is required. See the REST endpoint
+// POST /api/autonomous/prds/{id}/plan_coverage/acknowledge.
+func newAutonomousPRDAckCoverageCmd() *cobra.Command {
+	var actor, note string
+	cmd := &cobra.Command{
+		Use:   "prd-ack-coverage <id>",
+		Short: "Acknowledge a failing plan-coverage report so approve is allowed (block mode)",
+		Long: "Operator-acknowledge the PRD's stored failing plan-requirement coverage report. " +
+			"The ack is pinned to the exact failing surface at the time it is recorded (unmatched requirements + structural findings), " +
+			"so approving after the plan changed needs a fresh ack. " +
+			"Use prd-coverage <id> to read the report first.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if strings.TrimSpace(note) == "" {
+				return fmt.Errorf("a non-empty --note is required to acknowledge a failing plan-coverage report")
+			}
+			if actor == "" {
+				actor = "operator"
+			}
+			body, _ := json.Marshal(map[string]string{"actor": actor, "note": note})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/plan_coverage/acknowledge", body)
+		},
+	}
+	cmd.Flags().StringVar(&actor, "actor", "operator", "operator identity recorded on the ack")
+	cmd.Flags().StringVar(&note, "note", "", "non-empty justification for accepting the failing coverage surface")
+	return cmd
+}
+
 func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 	var note string
 	cmd := &cobra.Command{
@@ -408,21 +1361,57 @@ func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 }
 
 func newAutonomousPRDEditTaskCmd() *cobra.Command {
-	var taskID, newSpec string
+	var taskID, newSpec, reportPath string
+	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "prd-edit-task <prd-id> --task <task-id> --spec <new-spec>",
-		Short: "Rewrite a task's spec before approving",
+		Use:   "prd-edit-task <prd-id> --task <task-id> [--spec <new-spec>] [--read-only[=false]] [--report-path <path>]",
+		Short: "Rewrite a task's spec, read-only mark or report path before approving",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body, _ := json.Marshal(map[string]string{"task_id": taskID, "new_spec": newSpec, "actor": "operator"})
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := prdEditTaskCLIBody(cmd, taskID, newSpec, readOnly, reportPath)
+			if err != nil {
+				return err
+			}
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/edit_task", body)
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "task ID to rewrite (required)")
-	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (required)")
+	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (omit to keep the spec) — the full spec text: to edit the existing spec, read it first (prd-get's default full view returns the whole spec, uncut); a spec carrying a capped view's truncation marker is refused here and by the daemon")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only (changes no files; may skip the tree lock); --read-only=false clears it; omit to leave unchanged")
+	cmd.Flags().StringVar(&reportPath, "report-path", "", "the one repo-relative report path a read-only task may write (under .datawatch/reports/); requires the task to be read-only")
 	_ = cmd.MarkFlagRequired("task")
-	_ = cmd.MarkFlagRequired("spec")
 	return cmd
+}
+
+// prdEditTaskCLIBody builds the edit_task request body. The read_only key is
+// sent only when the --read-only flag was given, so an unset flag leaves the
+// task's mark unchanged; the report_path key is sent only when --report-path
+// was given non-empty (an empty path is the same as none).
+func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly bool, reportPath string) ([]byte, error) {
+	roSet := cmd.Flags().Changed("read-only")
+	if newSpec == "" && !roSet && reportPath == "" {
+		return nil, fmt.Errorf("nothing to edit: pass --spec, --read-only and/or --report-path")
+	}
+	if newSpec != "" {
+		// Text copied out of a capped view carries the truncation
+		// marker and is not the full spec: refuse it with the daemon's
+		// own wording before anything reaches the wire (the 400 says the
+		// same).
+		if msg, refuse := autonomous.TruncationRefusal("new_spec", newSpec); refuse {
+			return nil, fmt.Errorf("%s", msg)
+		}
+	}
+	body := map[string]any{"task_id": taskID, "actor": "operator"}
+	if newSpec != "" {
+		body["new_spec"] = newSpec
+	}
+	if roSet {
+		body["read_only"] = readOnly
+	}
+	if reportPath != "" {
+		body["report_path"] = reportPath
+	}
+	return json.Marshal(body)
 }
 
 func newAutonomousPRDEditStoryCmd() *cobra.Command {
@@ -432,13 +1421,22 @@ func newAutonomousPRDEditStoryCmd() *cobra.Command {
 		Short: "Rewrite a story's title/description before approving",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			if newDescription != "" {
+				// Text copied out of a capped view carries the truncation
+				// marker and is not the full description: refuse it with the
+				// daemon's own wording before anything reaches the wire
+				// (the 400 says the same).
+				if msg, refuse := autonomous.TruncationRefusal("new_description", newDescription); refuse {
+					return fmt.Errorf("%s", msg)
+				}
+			}
 			body, _ := json.Marshal(map[string]string{"story_id": storyID, "new_title": newTitle, "new_description": newDescription, "actor": "operator"})
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/edit_story", body)
 		},
 	}
 	cmd.Flags().StringVar(&storyID, "story", "", "story ID to rewrite (required)")
 	cmd.Flags().StringVar(&newTitle, "title", "", "new title (empty = keep unchanged)")
-	cmd.Flags().StringVar(&newDescription, "description", "", "new description (empty = keep unchanged)")
+	cmd.Flags().StringVar(&newDescription, "description", "", "new description (empty = keep unchanged) — the full description text: to edit the existing description, read it first (prd-get's default full view returns the whole description, uncut); a description carrying a capped view's truncation marker is refused here and by the daemon")
 	_ = cmd.MarkFlagRequired("story")
 	return cmd
 }
@@ -480,17 +1478,17 @@ func newAutonomousPRDRemoveStoryCmd() *cobra.Command {
 }
 
 func newAutonomousPRDAddTaskCmd() *cobra.Command {
-	var storyID, title, spec, dependsOnCSV string
+	var storyID, title, spec, dependsOnCSV, reportPath string
+	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>] [--depends-on <task-id,...>]",
+		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>] [--depends-on <task-id,...>] [--read-only] [--report-path <path>]",
 		Short: "Add a new task to an existing story without re-running decompose",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body := map[string]any{"story_id": storyID, "title": title, "spec": spec, "actor": "operator"}
-			if dependsOnCSV != "" {
-				body["depends_on"] = splitCSV(dependsOnCSV)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bodyJSON, err := prdAddTaskCLIBody(cmd, storyID, title, spec, dependsOnCSV, readOnly, reportPath)
+			if err != nil {
+				return err
 			}
-			bodyJSON, _ := json.Marshal(body)
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/add_task", bodyJSON)
 		},
 	}
@@ -498,9 +1496,31 @@ func newAutonomousPRDAddTaskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "task title (required)")
 	cmd.Flags().StringVar(&spec, "spec", "", "task spec — concrete instructions for the worker session")
 	cmd.Flags().StringVar(&dependsOnCSV, "depends-on", "", "comma-separated task IDs (within the same PRD) that must complete before this one becomes eligible")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only: it changes no files, so it may skip the tree lock")
+	cmd.Flags().StringVar(&reportPath, "report-path", "", "the one repo-relative report path this read-only task may write (under .datawatch/reports/); requires --read-only")
 	_ = cmd.MarkFlagRequired("story")
 	_ = cmd.MarkFlagRequired("title")
 	return cmd
+}
+
+// prdAddTaskCLIBody builds the add_task request body. read_only is sent only
+// when --read-only was given and report_path only when --report-path was given
+// non-empty, so an add without the flags asks for nothing extra.
+func prdAddTaskCLIBody(cmd *cobra.Command, storyID, title, spec, dependsOnCSV string, readOnly bool, reportPath string) ([]byte, error) {
+	body := map[string]any{"story_id": storyID, "title": title, "actor": "operator"}
+	if spec != "" {
+		body["spec"] = spec
+	}
+	if dependsOnCSV != "" {
+		body["depends_on"] = splitCSV(dependsOnCSV)
+	}
+	if readOnly {
+		body["read_only"] = true
+	}
+	if reportPath != "" {
+		body["report_path"] = reportPath
+	}
+	return json.Marshal(body)
 }
 
 func newAutonomousPRDRemoveTaskCmd() *cobra.Command {
@@ -529,7 +1549,7 @@ func newAutonomousPRDSetLLMCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, _ := json.Marshal(prdSetLLMCLIBody(cmd))
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
+			return daemonJSONWithOutcome(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
 		},
 	}
 	cmd.Flags().StringVar(&backend, "backend", "", "Worker LLM name (empty value clears to fallback; omit the flag to leave unchanged)")
@@ -548,7 +1568,7 @@ func newAutonomousPRDSetStoryLLMCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"story_id": storyID, "backend": backend, "effort": effort, "model": model, "actor": "operator"})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_llm", body)
+			return daemonJSONWithOutcome(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_llm", body)
 		},
 	}
 	cmd.Flags().StringVar(&storyID, "story", "", "story ID to override (required)")
@@ -568,7 +1588,7 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			legacy := map[string]string{"backend": backend, "effort": effort, "model": model}
 			body, _ := json.Marshal(setLLMCLIBody(cmd, legacy, map[string]string{"task_id": taskID, "actor": "operator"}, guardrailBackend, guardrailModel, "backend", "effort", "model"))
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_llm", body)
+			return daemonJSONWithOutcome(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_llm", body)
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")
@@ -577,6 +1597,61 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 	cmd.Flags().StringVar(&model, "model", "", "specific model name for this task; empty = backend default")
 	addGuardrailLLMFlags(cmd, &guardrailBackend, &guardrailModel)
 	_ = cmd.MarkFlagRequired("task")
+	return cmd
+}
+
+// newAutonomousPRDSetThinkingLevelCmd — set the PRD-level pi --thinking
+// level override (off|minimal|low|medium|high; empty clears back to the
+// global pi.thinking_level config). Tasks inherit unless overridden.
+func newAutonomousPRDSetThinkingLevelCmd() *cobra.Command {
+	var level string
+	cmd := &cobra.Command{
+		Use:   "prd-set-thinking-level <id> --level <off|minimal|low|medium|high|>",
+		Short: "Set the PRD-level pi --thinking level override. Tasks inherit unless overridden.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"thinking_level": level, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_thinking_level", body)
+		},
+	}
+	cmd.Flags().StringVar(&level, "level", "", "thinking level: off|minimal|low|medium|high (empty clears to the global pi.thinking_level config)")
+	_ = cmd.MarkFlagRequired("level")
+	return cmd
+}
+
+func newAutonomousPRDSetStoryThinkingLevelCmd() *cobra.Command {
+	var storyID, level string
+	cmd := &cobra.Command{
+		Use:   "prd-set-story-thinking-level <prd-id> --story <story-id> --level L",
+		Short: "Override the pi --thinking level for one story. Empty level clears (falls back to PRD then global).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"story_id": storyID, "thinking_level": level, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_thinking_level", body)
+		},
+	}
+	cmd.Flags().StringVar(&storyID, "story", "", "story ID to override (required)")
+	cmd.Flags().StringVar(&level, "level", "", "thinking level; empty = inherit PRD then global")
+	_ = cmd.MarkFlagRequired("story")
+	_ = cmd.MarkFlagRequired("level")
+	return cmd
+}
+
+func newAutonomousPRDSetTaskThinkingLevelCmd() *cobra.Command {
+	var taskID, level string
+	cmd := &cobra.Command{
+		Use:   "prd-set-task-thinking-level <prd-id> --task <task-id> --level L",
+		Short: "Override the pi --thinking level for one task. Empty level clears (falls back to story, PRD, then global).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"task_id": taskID, "thinking_level": level, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_thinking_level", body)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")
+	cmd.Flags().StringVar(&level, "level", "", "thinking level; empty = inherit story, PRD then global")
+	_ = cmd.MarkFlagRequired("task")
+	_ = cmd.MarkFlagRequired("level")
 	return cmd
 }
 
@@ -847,6 +1922,67 @@ func newAutonomousPRDSetTypeCmd() *cobra.Command {
 	}
 }
 
+// parseKindArg checks an Automaton kind typed on the command line.
+func parseKindArg(arg string) (string, error) {
+	k, ok := autonomous.NormalizePRDKind(arg)
+	if !ok || k == "" {
+		return "", fmt.Errorf("unknown Automaton kind %q: use feature, bug, other or maintenance", strings.TrimSpace(arg))
+	}
+	return k, nil
+}
+
+func newAutonomousPRDSetReleaseSizeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-release-size <id> <patch|minor|major|none|clear>",
+		Short: "Set the release size of an Automaton (clear resolves it again)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			size := ""
+			if !strings.EqualFold(strings.TrimSpace(args[1]), "clear") {
+				v, ok := autonomous.NormalizeReleaseSize(args[1])
+				if !ok {
+					return fmt.Errorf("unknown release size %q: use patch, minor, major, none or clear", strings.TrimSpace(args[1]))
+				}
+				size = v
+			}
+			body, _ := json.Marshal(map[string]string{"release_size": size})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_release_size", body)
+		},
+	}
+}
+
+func newAutonomousPRDSetBreakingChangeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-breaking-change <id> <true|false>",
+		Short: "Set or clear the breaking-change flag of an Automaton",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			breaking, err := strconv.ParseBool(args[1])
+			if err != nil {
+				return fmt.Errorf("breaking change must be true or false, got %q", args[1])
+			}
+			body, _ := json.Marshal(map[string]bool{"breaking_change": breaking})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_breaking_change", body)
+		},
+	}
+}
+
+func newAutonomousPRDSetKindCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-kind <id> <feature|bug|other>",
+		Short: "Set the Automaton kind (feature, bug, other or maintenance)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			kind, err := parseKindArg(args[1])
+			if err != nil {
+				return err
+			}
+			body, _ := json.Marshal(map[string]string{"kind": kind})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_kind", body)
+		},
+	}
+}
+
 func newAutonomousPRDSetGuidedModeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prd-set-guided-mode <id> <on|off>",
@@ -860,20 +1996,118 @@ func newAutonomousPRDSetGuidedModeCmd() *cobra.Command {
 	}
 }
 
+// Per-Automaton notify event kinds: which lifecycle events produce
+// notifications for one Automaton. An empty list (inherit) falls back
+// to the guardrail profile, then the global default set.
+func newAutonomousPRDSetNotifyEventsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-notify-events <id> [kinds]",
+		Short: "Set the lifecycle event kinds that produce notifications for an Automaton",
+		Long: `Set the notify event kinds for one Automaton.
+
+kinds is a comma-separated list of lifecycle event kinds, e.g.:
+  prd-set-notify-events a1 prd.blocked,task.session_started
+
+Use inherit (or omit the kinds argument) to clear the Automaton's list
+and inherit from its guardrail profile or the global default set.
+
+Valid kinds:
+  prd.active prd.approved prd.archived prd.blocked prd.cancelled prd.completed
+  prd.draft prd.failed prd.needs_review prd.paused prd.planning prd.rejected
+  prd.revisions_asked prd.running
+  task.awaiting_approval task.blocked task.cancelled task.completed task.failed
+  task.in_progress task.pending task.queued task.review_needed task.running_tests
+  task.session_cleared task.session_started task.verifying task.waiting_capacity
+  scope_warning guardrail_warn
+  question.answered question.withdrawn
+
+Opt-in kinds (off by default, list them to turn them on):
+  task.session_started task.session_cleared scope_warning guardrail_warn
+
+Default set (used when the Automaton and its guardrail profile both inherit):
+  prd.needs_review prd.blocked prd.failed prd.completed prd.cancelled
+`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			events := []string{}
+			if len(args) == 2 && !strings.EqualFold(args[1], "inherit") {
+				for _, k := range strings.Split(args[1], ",") {
+					if t := strings.TrimSpace(k); t != "" {
+						events = append(events, t)
+					}
+				}
+			}
+			body, _ := json.Marshal(map[string]any{"notify_events": events})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_notify_events", body)
+		},
+	}
+}
+
 func newAutonomousPRDSetGitCmd() *cobra.Command {
-	var baseBranch string
+	var baseBranch, pushOnComplete string
 	cmd := &cobra.Command{
 		Use:   "prd-set-git <id> <on|off>",
-		Short: "Set AutoPR (push+open a PR on completion) and base-branch override for a PRD (BL407)",
+		Short: "Set AutoPR (push+open a PR on completion), base-branch and push-on-complete policy for a PRD",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(c *cobra.Command, args []string) error {
 			autoPR := args[1] == "on" || args[1] == "true" || args[1] == "1"
-			body, _ := json.Marshal(map[string]any{"auto_pr": autoPR, "base_branch": baseBranch})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_git", body)
+			body := map[string]any{"auto_pr": autoPR, "base_branch": baseBranch}
+			if c.Flags().Changed("push-on-complete") {
+				p := pushOnComplete
+				if p == "inherit" {
+					p = "" // clear the per-PRD override; inherit the daemon setting
+				}
+				body["push_on_complete"] = p
+			}
+			b, _ := json.Marshal(body)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_git", b)
 		},
 	}
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "PR base branch override (empty = repo's own default branch)")
+	cmd.Flags().StringVar(&pushOnComplete, "push-on-complete", "", "per-PRD push-on-complete override: never | branch | default_branch | inherit (inherit = clear the override, use the daemon's git.push_on_complete); omit to leave unchanged")
 	return cmd
+}
+
+func newAutonomousBranchRefreshCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "branch-refresh <id> <enabled|disabled|inherit>",
+		Short: "Set the per-Automaton branch refresh override (enabled, disabled, or inherit the daemon setting)",
+		Long: "Set the branch refresh override of one Automaton. enabled refreshes it even when the daemon\n" +
+			"setting is off, disabled never refreshes it, inherit clears the override so\n" +
+			"autonomous.branch_refresh_enabled applies. The daemon settings are set with\n" +
+			"datawatch config set autonomous.branch_refresh_enabled / autonomous.branch_refresh_behind_limit.\n" +
+			"Setting the override also resets a refresh that a merge conflict stopped, so the next gap tries\n" +
+			"the merge again.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			var v string
+			switch strings.ToLower(args[1]) {
+			case "enabled", "enable", "on", "true":
+				v = "true"
+			case "disabled", "disable", "off", "false":
+				v = "false"
+			case "inherit", "clear", "default":
+				v = "null"
+			default:
+				return fmt.Errorf("mode must be enabled, disabled or inherit, got %q", args[1])
+			}
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/branch-refresh", []byte(`{"enabled":`+v+`}`))
+		},
+	}
+}
+
+func newAutonomousBranchRefreshStatsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "branch-refresh-stats",
+		Short: "Show the branch refresh numbers (setting, Automata by result, stopped count)",
+		Long: "Show the daemon's branch refresh setting and limit, how many Automata have a recorded refresh\n" +
+			"by result (clean, conflict, skipped, error), how many have refreshing stopped by a conflict and how\n" +
+			"many carry a per-Automaton override. Reads GET /api/autonomous/branch-refresh/stats.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return daemonGet("/api/autonomous/branch-refresh/stats")
+		},
+	}
 }
 
 func newAutonomousPRDSetSkillsCmd() *cobra.Command {
@@ -933,6 +2167,71 @@ func newAutonomousTemplateListCmd() *cobra.Command {
 		Short: "List all templates in the automaton template store",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/templates") },
 	}
+}
+
+// standardTaskRow is the subset of a standard-task row the table shows.
+type standardTaskRow struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Kind    string `json:"kind"`
+	Enabled bool   `json:"enabled"`
+	Mode    string `json:"mode"`
+	Runner  string `json:"runner"`
+}
+
+// renderStandardTasksTable writes the id/title/kind/enabled/mode/runner table
+// for a GET /api/autonomous/standard-tasks response body. The mode column
+// shows the row's effective mode (llm, daemon or off) and the runner column
+// shows who carries the task out (script gate, session, daemon or none), both
+// as resolved by the daemon.
+func renderStandardTasksTable(w io.Writer, body []byte) error {
+	var resp struct {
+		Tasks []standardTaskRow `json:"tasks"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("decode standard tasks: %w", err)
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tTITLE\tKIND\tENABLED\tMODE\tRUNNER")
+	for _, t := range resp.Tasks {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\n", t.ID, t.Title, t.Kind, t.Enabled, t.Mode, t.Runner)
+	}
+	return tw.Flush()
+}
+
+func newAutonomousStandardTasksCmd() *cobra.Command {
+	var asJSON bool
+	var project string
+	cmd := &cobra.Command{
+		Use:   "standard-tasks",
+		Short: "List the standard tasks the decomposer adds to each story",
+		Long: `List the standard tasks the decomposer adds to each story.
+
+Each row shows the task id, its title, its kind, whether it is enabled, its
+mode (llm, daemon or off) and its runner (script gate, session, daemon or
+none). Use --project to see the list as one project resolves it, including
+that project's own overrides. Use --json for the raw response.`,
+
+		Args: cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			path := "/api/autonomous/standard-tasks"
+			if project != "" {
+				path += "?project=" + url.QueryEscape(project)
+			}
+			body, err := daemonJSONBody(http.MethodGet, path, nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				fmt.Println(string(body))
+				return nil
+			}
+			return renderStandardTasksTable(os.Stdout, body)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the raw JSON response")
+	cmd.Flags().StringVar(&project, "project", "", "Project directory or alias to resolve the list for")
+	return cmd
 }
 
 func newAutonomousTemplateCreateCmd() *cobra.Command {

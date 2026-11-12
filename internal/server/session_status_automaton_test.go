@@ -59,6 +59,10 @@ func automatonStatusPRD(spec string) *autonomous.PRD {
 				FilesPlanned:     []string{"a.go"},
 				FilesTouched:     []string{"a.go", "b.go"},
 				ForeignFileDrift: []string{"x.go"},
+				SkippedSnapshotPaths: []autonomous.SnapshotSkippedPath{
+					{Path: "secrets/.env", Reason: "never-stage"},
+					{Path: "build/out.bin", Reason: "size"},
+				},
 			}, {
 				ID: "t2", StoryID: "s1", Title: "Task two", Status: autonomous.TaskStatus("pending"),
 			}},
@@ -72,6 +76,11 @@ func automatonStatusServer(t *testing.T, api AutonomousAPI, sess *session.Sessio
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(sm)
+	trackSessionManager(t, sm)
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
+	t.Cleanup(sm.WaitBackground)
 	if sess != nil {
 		if err := sm.SaveSession(sess); err != nil {
 			t.Fatalf("SaveSession: %v", err)
@@ -131,6 +140,18 @@ func TestSessionStatusAutomaton_PopulatedFromTask(t *testing.T) {
 	if g["pre_task_sha"] != "abc123" || len(g["files_planned"].([]any)) != 1 ||
 		len(g["files_touched"].([]any)) != 2 || len(g["foreign_file_drift"].([]any)) != 1 {
 		t.Errorf("git=%v", g)
+	}
+	skip := g["skipped_snapshot_paths"].([]any)
+	if len(skip) != 2 {
+		t.Fatalf("git.skipped_snapshot_paths=%v want 2 entries", skip)
+	}
+	se := skip[0].(map[string]any)
+	if se["path"] != "secrets/.env" || se["reason"] != "never-stage" {
+		t.Errorf("skipped[0]=%v", se)
+	}
+	se2 := skip[1].(map[string]any)
+	if se2["path"] != "build/out.bin" || se2["reason"] != "size" {
+		t.Errorf("skipped[1]=%v", se2)
 	}
 	decs := a["decisions"].([]any)
 	if len(decs) != 10 {
@@ -196,6 +217,70 @@ func TestSessionStatusAutomaton_OmittedCases(t *testing.T) {
 				t.Errorf("sprint key present: %v", body["sprint"])
 			}
 		})
+	}
+}
+
+// automatonReadableAPI is an AutonomousAPI fake that also serves task
+// wait-visibility, and resolves wait reasons to readable sentences.
+type automatonReadableAPI struct {
+	fakeOrchAutonomous
+	prd      any
+	waiting  []autonomous.TaskWaitView
+	readable string
+}
+
+func (a *automatonReadableAPI) GetPRD(id string) (any, bool) {
+	if a.prd == nil {
+		return nil, false
+	}
+	return a.prd, true
+}
+
+func (a *automatonReadableAPI) TaskVisibility() ([]autonomous.TaskWaitView, []autonomous.TaskHoldView) {
+	return a.waiting, nil
+}
+
+func (a *automatonReadableAPI) ReadableWaitSentence(reason string) string { return a.readable }
+
+// The raw wait_reason stays untouched; wait_reason_readable sits beside it,
+// resolved through the manager when the manager can resolve holder names.
+func TestSessionStatusAutomaton_WaitReasonReadableBesideRaw(t *testing.T) {
+	raw := autonomous.NodeBusyWaitText("n1", 1, 1, []string{"t3"})
+	want := "waiting for node n1: 1/1 engines in use, held by Fix crash / T3 (c3e70011)"
+	api := &automatonReadableAPI{
+		prd:      automatonStatusPRD("do the thing"),
+		waiting:  []autonomous.TaskWaitView{{TaskID: "t2", PRDID: "prd1", Reason: raw, Cause: autonomous.WaitCauseNodeBusy}},
+		readable: want,
+	}
+	s := automatonStatusServer(t, api, &session.Session{ID: "dd", FullID: "h-dd", PRDID: "prd1", TaskID: "t2"})
+	a := getSessionStatus(t, s, "h-dd")["automaton"].(map[string]any)
+	if a["wait_reason"] != raw {
+		t.Errorf("wait_reason=%v, want %q", a["wait_reason"], raw)
+	}
+	if a["wait_reason_readable"] != want {
+		t.Errorf("wait_reason_readable=%v, want %q", a["wait_reason_readable"], want)
+	}
+	if a["wait_cause"] != "node_busy" {
+		t.Errorf("wait_cause=%v, want node_busy", a["wait_cause"])
+	}
+}
+
+// A manager without the ReadableWaitSentence capability still gets a
+// readable field — raw holder ids in place of names (the fallback path).
+func TestReadableWaitSentence_FallbackWithoutResolver(t *testing.T) {
+	reason := "pool llm:pi-prompt full (2/2, held by task-a,task-b)"
+	manager := &automatonStatusAPI{}
+	if got, want := readableWaitSentence(manager, reason),
+		"pool llm:pi-prompt full (2/2), held by task-a and task-b"; got != want {
+		t.Errorf("readable = %q, want %q", got, want)
+	}
+	if got := readableWaitSentence(manager, ""); got != "" {
+		t.Errorf("empty reason readable=%q, want \"\"", got)
+	}
+	// With a resolver wired, its sentence wins.
+	api := &automatonReadableAPI{readable: "pool llm:pi-prompt full (2/2), held by A and B"}
+	if got := readableWaitSentence(api, reason); got != api.readable {
+		t.Errorf("readable=%q, want the resolved sentence", got)
 	}
 }
 

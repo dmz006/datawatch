@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/trace"
+	"github.com/dmz006/datawatch/internal/trace/observe"
 	"io"
 	"log"
 	"net/http"
@@ -25,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -54,6 +57,7 @@ import (
 	"github.com/dmz006/datawatch/internal/evals"
 	"github.com/dmz006/datawatch/internal/federation"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/hookinstaller"
 	"github.com/dmz006/datawatch/internal/identity"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -68,6 +72,7 @@ import (
 	pibackend "github.com/dmz006/datawatch/internal/llm/backends/pi"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
+	scratch "github.com/dmz006/datawatch/internal/llm/scratch"
 	"github.com/dmz006/datawatch/internal/mcp"
 	mcpsearchpkg "github.com/dmz006/datawatch/internal/mcp/search"
 	memoryPkg "github.com/dmz006/datawatch/internal/memory"
@@ -87,10 +92,12 @@ import (
 	observerpkg "github.com/dmz006/datawatch/internal/observer"
 	observerpeerpkg "github.com/dmz006/datawatch/internal/observerpeer"
 	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
+	"github.com/dmz006/datawatch/internal/pilog"
 	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
+	"github.com/dmz006/datawatch/internal/requestwatch"
 	"github.com/dmz006/datawatch/internal/router"
 	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/secfile"
@@ -98,8 +105,10 @@ import (
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
+	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/dmz006/datawatch/internal/skills"
+	"github.com/dmz006/datawatch/internal/spendledger"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
 	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
 	tailscalepkg "github.com/dmz006/datawatch/internal/tailscale"
@@ -114,7 +123,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.5.26"
+var Version = "9.147.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -182,56 +191,97 @@ func autoLinkLegacyComputeNode(creg *compute.Registry, lreg *inference.Registry,
 	fmt.Printf("[inference] auto-linked llm/%s → compute/%s (%s)\n", llmName, nodeName, address)
 }
 
-// claudeDisclaimerResponse (v5.27.2) returns the input string the
-// daemon should send to auto-accept claude-code's startup
-// disclaimer / trust prompts when session.claude_auto_accept_disclaimer
-// is on. Returns "" when the line isn't a recognised disclaimer
-// (caller treats "" as no-op, never sends).
+// claudeDisclaimerResponse (v5.27.2) reports whether a line is a recognised
+// claude-code startup dialog and returns a tag naming how to answer it.
+// It delegates the recognition to the shared startup-dialog classifier
+// (session.ClassifyStartupDialog) instead of ad-hoc substring matching.
+// Returns "" when the classifier does not recognise the line (caller treats
+// "" as no-op, never sends).
 //
-// Patterns mirror the seed-filter list at the bottom of this file:
+// Tags returned:
 //
-//   - "trust this folder" / "Quick safety check" / "Yes, I trust"
-//     → "1\n"  (the numbered "Yes, I trust this folder" menu)
-//   - "Enter to confirm" / "Esc to cancel" → "\n" (option 1 pre-selected)
-//   - "I am using this for local development" /
-//     "Loading development channels"
-//     → "\n"   (Enter-to-confirm continuation)
+//   - "trust-dialog" → trust-folder arrow-key TUI (caller must use the
+//     SendTrustPromptAccept path, not SendInput text)
+//   - "esc"          → unsafe dialog (confirm-unsafe / update-prompt):
+//     decline with a single Esc, no retry here
+//   - "confirm"      → confirm footer with unrecognised wording: the
+//     classifier chose to send nothing (pane-level decision may still act
+//     if the live pane gives more context)
+//   - "2\n", "1\n", "\n" → Enter-type keys rendered as SendInput text
 //
-// Pure function — extracted from the DetectPrompt callback so unit
-// tests can exercise every disclaimer variant without spinning up a
-// session manager.
+// Pure function — extracted from the DetectPrompt callback so unit tests
+// can exercise every disclaimer variant without spinning up a session
+// manager.
 func claudeDisclaimerResponse(line string) string {
-	lower := strings.ToLower(line)
-	switch {
-	case strings.Contains(lower, "trust this folder"),
-		strings.Contains(lower, "quick safety check"),
-		strings.Contains(lower, "yes, i trust"):
-		// Trust dialog uses an arrow-key TUI ("❯ No, exit" pre-selected).
-		// Sending text input here would confirm "No, exit". The caller must
-		// use SendTrustDialogAccept (Down+Enter) instead. Return non-empty
-		// so the caller knows a trust-dialog goroutine is needed, but callers
-		// must check isTrustDialogLine before using this value as text input.
-		return "trust-dialog"
-	case strings.Contains(lower, "yes, i accept"):
-		// bypass-permissions disclaimer: "2. Yes, I accept" is option 2.
-		// Sending "2\n" selects it. Unique to the bypassPermissions flow.
-		return "2\n"
-	case strings.Contains(lower, "enter to confirm"),
-		strings.Contains(lower, "esc to cancel"),
-		strings.Contains(lower, "i am using this for local development"),
-		strings.Contains(lower, "loading development channels"):
-		return "\n"
+	a := session.ClassifyStartupDialog(line)
+	if a.Kind == session.StartupDialogNone {
+		return ""
 	}
-	return ""
+	switch a.Kind {
+	case session.StartupDialogTrustFolder:
+		return "trust-dialog"
+	case session.StartupDialogConfirmUnsafe, session.StartupDialogUpdatePrompt:
+		return "esc"
+	case session.StartupDialogUnknownConfirm:
+		return "confirm"
+	}
+	return session.StartupDialogSendText(a)
 }
 
-// isTrustDialogLine reports whether line came from Claude Code's workspace-trust
-// TUI dialog. These lines need Down+Enter (arrow-key navigation), not text input.
-func isTrustDialogLine(line string) bool {
-	lower := strings.ToLower(line)
-	return strings.Contains(lower, "trust this folder") ||
-		strings.Contains(lower, "quick safety check") ||
-		strings.Contains(lower, "yes, i trust")
+// respondStartupDialog is the handler decision function shared by the
+// DetectPrompt path, the state-change path and the start-up poller. It
+// captures the live pane once, classifies it, and answers the dialog the
+// classifier identified — exactly once, with the classifier's exact keys.
+//
+//   - trust-folder    → SendTrustPromptAccept (Down+Enter arrow-key path)
+//   - Enter-type keys → the rendered text via SendInput with source
+//     "auto-accept-disclaimer"
+//   - Retry dialogs   → a single Esc via the tmux layer (DeclineStartupDialog),
+//     logged with the dialog kind. No retry logic here: the session stays
+//     in waiting_input, the silent-start detector fails it and the
+//     start-failure budget owns the re-try.
+//   - none / unknown  → sends nothing (session stays in waiting_input)
+//
+// It reports whether a keystroke was answered. A "no keystroke" outcome
+// returns false so caller loops may re-capture later within their window.
+func respondStartupDialog(m *session.Manager, sessID string) bool {
+	a := m.ActiveStartupDialog(sessID)
+	switch a.Kind {
+	case session.StartupDialogNone:
+		return false
+	case session.StartupDialogTrustFolder:
+		// Arrow-key TUI ("❯ No, exit" pre-selected): Down moves the selector
+		// onto the accept option, Enter confirms.
+		if err := m.SendTrustDialogAccept(sessID); err != nil {
+			fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
+			return false
+		}
+		return true
+	case session.StartupDialogUnknownConfirm:
+		// The classifier declined to guess: send nothing and let the
+		// silent-start detector flag the session as a start failure.
+		fmt.Printf("[claude] unrecognised startup dialog on %s — sending nothing\n", sessID)
+		return false
+	}
+	if a.Retry {
+		// Unsafe dialog (confirm-unsafe / update-prompt): decline with
+		// exactly one Esc; the start-failure budget owns any re-try.
+		if err := m.DeclineStartupDialog(sessID); err != nil {
+			fmt.Printf("[claude] decline %q dialog send failed %s: %v\n", a.Kind, sessID, err)
+			return false
+		}
+		fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
+		return true
+	}
+	text := session.StartupDialogSendText(a)
+	if text == "" {
+		return false
+	}
+	if err := m.SendInput(sessID, text, "auto-accept-disclaimer"); err != nil {
+		fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
+		return false
+	}
+	return true
 }
 
 // claudeStartupAccepted tracks sessions whose startup auto-accept goroutine
@@ -247,6 +297,15 @@ var claudeStartupAccepted sync.Map // key: sessID (string) → struct{}{}
 // task via send_input exactly once per session. Excluded: claude-code (channel
 // bridge), opencode-acp (ACP structured API), subprocess (shell task wrapping).
 var tuiTaskDelivered sync.Map // key: sessID (string) → struct{}{}
+
+// scratchOwnerReleaseHook counts a worker session's own temporary scratch
+// release into the autonomous cleanup status (the owner bucket in
+// cleanup_status.go), so it stays separate from the safety-net sweep's count.
+// Once the autonomous manager starts up, it gets set to the manager's
+// RecordOwnerTempRelease; nil is a no-op (hand-launched test, autonomous
+// disabled), and it is read at session termination — at that point the
+// manager may have already started.
+var scratchOwnerReleaseHook func(count int)
 
 var (
 	cfgPath    string
@@ -318,8 +377,10 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newProjectsCmd(),       // BL27
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30
+		newUsageBackoffCmd(),   // BL428 Phase 4
 		newStaleCmd(),          // BL40
 		newCostCmd(),           // BL6
+		newTraceCmd(),          // agent trace views
 		newAuditCmd(),          // BL9
 		// Sprint S4 (v3.8.0).
 		newAssistCmd(),      // BL42
@@ -330,6 +391,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newChannelRoutingCmd(), // BL331 parity
 		// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 		newAutonomousCmd(),
+		newSupervisorLoopCmd(),
+		newQuestionCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.
 		newPluginsCmd(),
 		// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.
@@ -341,38 +404,42 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		// BL220 — G13/G14 CLI surface parity.
 		newAnalyticsCmd(),
 		newProxyCmd(),
-		newToolingCmd(),       // BL219
-		newSecretsCmd(),       // BL242
-		newTailscaleCmd(),     // BL243
-		newSkillsCmd(),        // BL255
-		newIdentityCmd(),      // BL257 P1 v6.8.0
-		newAlgorithmCmd(),     // BL258 v6.9.0
-		newEvalsCmd(),         // BL259 P1 v6.10.0
-		newCouncilCmd(),       // BL260 v6.11.0
-		newDocsCmd(),          // BL274 v6.16.0
-		newComputeCmd(),       // v7.0.0 S1 — ComputeNode registry
-		newLLMCmd(),           // v7.0.0 S2 — LLM registry
-		newWebSearchCmd(),     // BL391 — multi-provider web search registry
-		newServerCmd(),        // BL312 S1 — multi-server registry
-		newFederationCmd(),    // BL316 S2 — federation peer and group registry
-		newCapacityCmd(),      // capacity admission ledger status
-		newAlertRulesCmd(),    // S14b — per-pod alert rules + observer-driven autoscaling
-		newMemoryCmd(),        // v7.0.0 S5 — scope-hierarchy memory
-		newMarketplaceCmd(),   // alpha.33 #244 — Ollama marketplace
-		newGuardrailCmd(),     // BL303 S2 — guardrail library + profiles
-		newRetryCmd(),         // BL410 Phase 1 — retry profiles + per-Automaton policy
-		newDashboardCmd(),     // #57/#58 — dashboard card layout CRUD
-		newSmokeCmd(),         // #54 — smoke-run cross-instance forwarding
-		newFilterCmd(),        // top-level filter command
-		newScheduleTopCmd(),   // top-level schedule command (mirrors session schedule)
-		newPushCmd(),          // BL330 — UnifiedPush registration management
-		newFilesCmd(),         // BL333 — federated file service
-		newSecurityCmd(),      // BL334 — operational data encryption status + secure wipe
-		newMatrixCmd(),        // BL241 — Matrix backend status + test
-		newExitHookCmd(),      // BL356 — session crash/exit hooks
-		newQueueCmd(),         // BL357 — durable role-based work queue
-		newDiscussionSubCmd(), // BL358 — discussion push/subscribe
-		newResultCmd(),        // BL360 — structured agent result store
+		newToolingCmd(),         // BL219
+		newSecretsCmd(),         // BL242
+		newTailscaleCmd(),       // BL243
+		newSkillsCmd(),          // BL255
+		newIdentityCmd(),        // BL257 P1 v6.8.0
+		newAlgorithmCmd(),       // BL258 v6.9.0
+		newEvalsCmd(),           // BL259 P1 v6.10.0
+		newCouncilCmd(),         // BL260 v6.11.0
+		newDocsCmd(),            // BL274 v6.16.0
+		newComputeCmd(),         // v7.0.0 S1 — ComputeNode registry
+		newLLMCmd(),             // v7.0.0 S2 — LLM registry
+		newWebSearchCmd(),       // BL391 — multi-provider web search registry
+		newServerCmd(),          // BL312 S1 — multi-server registry
+		newFederationCmd(),      // BL316 S2 — federation peer and group registry
+		newCapacityCmd(),        // capacity admission ledger status
+		newBudgetCmd(),          // per-LLM dollar budget status
+		newUsageCmd(),           // weekly usage allowance: advice, readings, extra credit, remaining work
+		newAlertRulesCmd(),      // S14b — per-pod alert rules + observer-driven autoscaling
+		newMemoryCmd(),          // v7.0.0 S5 — scope-hierarchy memory
+		newMarketplaceCmd(),     // alpha.33 #244 — Ollama marketplace
+		newGuardrailCmd(),       // BL303 S2 — guardrail library + profiles
+		newRetryCmd(),           // BL410 Phase 1 — retry profiles + per-Automaton policy
+		newAutomationCmd(),      // Automation lifecycle (activate)
+		newDashboardCmd(),       // #57/#58 — dashboard card layout CRUD
+		newSmokeCmd(),           // #54 — smoke-run cross-instance forwarding
+		newFilterCmd(),          // top-level filter command
+		newScheduleTopCmd(),     // top-level schedule command (mirrors session schedule)
+		newPushCmd(),            // BL330 — UnifiedPush registration management
+		newFilesCmd(),           // BL333 — federated file service
+		newSecurityCmd(),        // BL334 — operational data encryption status + secure wipe
+		newMatrixCmd(),          // BL241 — Matrix backend status + test
+		newExitHookCmd(),        // BL356 — session crash/exit hooks
+		newQueueCmd(),           // BL357 — durable role-based work queue
+		newDiscussionSubCmd(),   // BL358 — discussion push/subscribe
+		newResultCmd(),          // BL360 — structured agent result store
+		newScheduleResultsCmd(), // GH#204 — scheduled-job result panel CLI
 	)
 
 	if err := root.Execute(); err != nil {
@@ -641,6 +708,7 @@ func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, bo
 		Effort:         boot.Effort,
 		Model:          boot.Model,
 		PermissionMode: boot.PermissionMode,
+		ThinkingLevel:  boot.ThinkingLevel,
 		OneShot:        true,
 	}
 	// Note: git commits for this worker task are automatic (the
@@ -694,6 +762,10 @@ func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, bo
 }
 
 func runStart(cmd *cobra.Command, _ []string) error {
+	// fedPeerRegistry and fedPeerGroups back the lifecycle peer forwarder's
+	// lookup (lifecycleLookupPeer). Each stays nil when its store fails to open.
+	var fedPeerRegistry *multiserver.Store
+	var fedPeerGroups *federation.GroupStore
 	fg, _ := cmd.Flags().GetBool("foreground")
 	if !fg {
 		if secureMode {
@@ -709,18 +781,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// B23: capture full stack traces and concurrent-map crashes to a file
 	// so silent daemon deaths leave a forensic trail.
 	installCrashLog()
-
-	// v9.0.7: a daemon started without inheriting datawatch.env's
-	// TMUX_TMPDIR (e.g. the old daemonize() path from `datawatch restart`,
-	// before this release's systemd delegation) would have every tmux
-	// call in internal/session/tmux.go — all bare exec.Command("tmux",
-	// ...), relying entirely on inherited env — silently hit tmux's
-	// default (no-server) socket instead of the one every live session's
-	// pane actually lives on. Found live on this host: ResumeMonitors
-	// then marked 3 genuinely-alive sessions StateFailed.
-	if d := ensureTmuxTmpdirEnv(); d != "" {
-		fmt.Printf("[tmux] TMUX_TMPDIR was unset — using dedicated socket %s\n", d)
-	}
 
 	// F10 S3.4 — worker self-registration. When the spawn driver
 	// injected DATAWATCH_BOOTSTRAP_{URL,TOKEN} + DATAWATCH_AGENT_ID
@@ -845,6 +905,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("load config: %w", err)
 		}
 	}
+	// v9.0.7: a daemon started without inheriting datawatch.env's
+	// TMUX_TMPDIR (e.g. the old daemonize() path from `datawatch restart`,
+	// before this release's systemd delegation) would have every tmux
+	// call in internal/session/tmux.go — all bare exec.Command("tmux",
+	// ...), relying entirely on inherited env — silently hit tmux's
+	// default (no-server) socket instead of the one every live session's
+	// pane actually lives on. Found live on this host: ResumeMonitors
+	// then marked 3 genuinely-alive sessions StateFailed. Runs after the
+	// config load so the fallback checks the configured data directory
+	// (not just the home default), and before any tmux call in this process.
+	if d := ensureTmuxTmpdirEnv(expandHome(cfg.DataDir)); d != "" {
+		fmt.Printf("[tmux] TMUX_TMPDIR was unset — using dedicated socket %s\n", d)
+	}
 	// Zero encKey on exit (best-effort; GC will eventually collect it anyway).
 	defer zeroBytes(encKey)
 
@@ -870,7 +943,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// BL334 T43d — migrate operational data files (discussion WAL,
 		// participants.json, channel_routing.json) to encrypted format.
 		home, _ := os.UserHomeDir()
-		discussionsDir := filepath.Join(home, ".datawatch", "discussions")
+		dataDir := expandHome(cfg.DataDir)
+		discussionsDir := startupDiscussionsDir(cfg.DataDir)
 		if _, err := secfile.MigrateDiscussionWALs(discussionsDir, encKey); err != nil {
 			fmt.Printf("[warn] discussion migration: %v\n", err)
 		}
@@ -879,7 +953,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[warn] channel_routing migration: %v\n", err)
 		}
 		// BL334 T43g — migrate JSON stores added in v8.5.x.
-		dataDir := expandHome(cfg.DataDir)
 		for _, store := range []struct{ path, label string }{
 			{filepath.Join(dataDir, "servers.json"), "servers.json"},
 			{filepath.Join(dataDir, "skills.json"), "skills.json"},
@@ -906,6 +979,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Report the cause of the previous run (if any) now that the data dir
+	// is known and the logger is ready, then consume the record so a crash
+	// after a later clean start cannot be misreported as that previous stop.
+	fmt.Println(shutdowncause.PreviousShutdownLine(expandHome(cfg.DataDir)))
+
 	// Apply flag overrides
 	if v, _ := cmd.Flags().GetString("llm-backend"); v != "" {
 		cfg.Session.LLMBackend = v
@@ -922,6 +1000,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if v, _ := cmd.Flags().GetBool("no-mcp"); v {
 		cfg.MCP.Enabled = false
 	}
+
+	// Startup warning: name every listener that is enabled, bound
+	// non-loopback, and enforcing no credential, unless the operator has
+	// acknowledged that posture. Runs once per daemon start (after flag
+	// overrides, before any listener starts) and never again on config
+	// reloads.
+	config.LogUnauthenticatedListeners(os.Stdout, config.ListenerAuthStates(cfg))
 
 	debugf("hostname=%s", cfg.Hostname)
 
@@ -1014,6 +1099,79 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
+	// Session store writes are coalesced by a background writer; flush and
+	// stop it on every exit path.
+	defer func() { _ = mgr.Close() }()
+	// Remove shell task files left behind by an earlier daemon in the project
+	// directories of the sessions known at startup. The session store is
+	// loaded by NewManager, so the list is complete here and before any shell
+	// task can launch. A sweep error is logged and never stops startup.
+	{
+		var sweepDirs []string
+		for _, s := range mgr.ListSessions() {
+			if s != nil {
+				sweepDirs = append(sweepDirs, s.ProjectDir)
+			}
+		}
+		removed, sweepErr := shell.SweepStaleTaskFiles(sweepDirs)
+		if sweepErr != nil {
+			fmt.Printf("[warn] shell task file sweep: %v\n", sweepErr)
+		}
+		if removed > 0 {
+			fmt.Printf("[shell] removed %d stale task file(s)\n", removed)
+		}
+	}
+	// Spend ledger: sessions write to it; GET /api/cost/report reads it.
+	spendLedger, ledgerErr := spendledger.Open(expandHome(cfg.DataDir), nil)
+	if ledgerErr != nil {
+		fmt.Fprintf(os.Stderr, "[warn] spend ledger unavailable: %v\n", ledgerErr)
+	} else {
+		mgr.SetSpendLedger(spendLedger)
+	}
+	// Daemon-observed trace events for the ollama, openwebui and shell
+	// backends: register the recorder hooks against the trace store.
+	var traceObserver *observe.Observer
+	var traceIngestor *session.TraceIngestor
+	var traceStore *trace.Store
+	if cfg.Tracing.WithDefaults().Mode != trace.ModeOff {
+		if ts, terr := trace.NewStore(expandHome(cfg.DataDir), cfg.Tracing.WithDefaults(), nil); terr != nil {
+			debugf("trace store unavailable, daemon-observed tracing off: %v", terr)
+		} else {
+			traceStore = ts
+			traceObserver = observe.Install(ts, cfg.Tracing, func(tmux string) string {
+				for _, s := range mgr.ListSessions() {
+					if s.TmuxSession == tmux {
+						return s.FullID
+					}
+				}
+				return ""
+			}, nil)
+			defer traceObserver.Close()
+			// Transcript ingest (incremental + at session end) and the
+			// capability/permission/call events of sessions, all on one
+			// background goroutine; each event is also appended to the
+			// session timeline.
+			traceIngestor = session.NewTraceIngestor(session.TraceIngestConfig{
+				Sink: ts, Settings: cfg.Tracing,
+				Locate:   session.DefaultTranscriptLocator(""),
+				Timeline: func(id, line string) { _ = mgr.AppendTimeline(id, line) },
+			})
+			mgr.SetTraceIngestor(traceIngestor)
+			traceCtx, traceCancel := context.WithCancel(context.Background())
+			go traceIngestor.Run(traceCtx)
+			defer func() { traceCancel(); traceIngestor.Close() }()
+		}
+	}
+	// Old terminal sessions move to the archive file (age and field cap are
+	// the store defaults until the config wiring sets them).
+	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
+	mgr.SetArchiveAfter(time.Duration(cfg.Session.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
+	mgr.SetFieldCap(cfg.Session.EffectiveStoreFieldCapKB() << 10)
+	mgr.StartArchiver(session.DefaultArchiveInterval)
+	// Inherited-tags cache lifetime (0 = default, negative = off) applies
+	// at startup, the same way the other session-manager settings do.
+	mgr.SetInheritedTagsCacheTTL(time.Duration(cfg.Autonomous.InheritedTagsCacheSeconds) * time.Second)
+	mgr.SetJudgeDeliveryWaitPerThousandLines(cfg.Autonomous.JudgeDeliveryWaitPerThousandLinesSeconds)
 	if cfg.Session.MaxSessions > 0 {
 		mgr.SetMaxSessions(cfg.Session.MaxSessions)
 	}
@@ -1245,6 +1403,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if identityErr != nil {
 		fmt.Printf("[warn] identity manager init: %v\n", identityErr)
 	}
+	// identity.backups_to_keep is read on every identity write. cfg is the
+	// same pointer the HTTP server's config PUT mutates (server.New below
+	// receives it), so a change applies on the next write with no restart.
+	if identityMgr != nil {
+		identityMgr.SetBackupsToKeep(func() int { return cfg.Identity.EffectiveBackupsToKeep() })
+	}
 
 	// BL258 v6.9.0 — Algorithm Mode 7-phase tracker. In-memory; one
 	// state machine per session ID. State is operator-driven (manual
@@ -1285,6 +1449,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetAutoGitInit(cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
 	mgr.SetWorkspaceRoot(cfg.Session.WorkspaceRoot)
+	// The automatic-commit guard enforces the same project roots as session
+	// start. session.default_project_dir is daemon configuration, so a session
+	// that runs there (no project_dir in its request) may commit.
+	gitguard.SetProjectRoots(func() []string {
+		roots := cfg.AllowedProjectRoots()
+		if d := strings.TrimSpace(cfg.Session.DefaultProjectDir); d != "" {
+			roots = append(roots, expandHome(d))
+		}
+		return roots
+	})
 	mgr.BackfillOutputMode()
 
 	// BL93 — startup session reconciler.
@@ -1346,6 +1520,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// GH#204 Phase 1 — subprocess sessions get their session identity,
+	// base URL, and a scoped result-posting credential (ONLY
+	// sessions:result_write, for exactly that session) in their child
+	// environment. nil-safe: no store here means no token variable.
+	mgr.SetSessionTokenMinter(sessionTokenStore)
+	mgr.SetSubprocessBaseURL(loopbackBaseURL(cfg))
+
 	// Per-session MCP channel registration for claude-code multi-session support.
 	if claudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
@@ -1354,6 +1535,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		if cfg.Server.Token != "" {
 			channelEnv["DATAWATCH_TOKEN"] = cfg.Server.Token
+		}
+		// Let the bridge verify the daemon's TLS cert instead of skipping
+		// verification: hand it the path of the cert the daemon serves.
+		if cfg.Server.TLSEnabled {
+			channelEnv["DATAWATCH_CA_CERT"] = daemonCertPath(cfg)
 		}
 
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
@@ -1367,10 +1553,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			sessionChannelEnv := map[string]string{
 				"DATAWATCH_API_URL": channelEnv["DATAWATCH_API_URL"],
 			}
+			if v, ok := channelEnv["DATAWATCH_CA_CERT"]; ok {
+				sessionChannelEnv["DATAWATCH_CA_CERT"] = v
+			}
 			if sessionTokenStore != nil {
+				// BL412 option C followup — the session-default grant for
+				// the spawned session's scoped credential carries the
+				// builtin "self-config" capability group when the
+				// allow_self_config alias is enabled (the default); an
+				// explicit operator grant (session.capabilities) is always
+				// used as-written, which is how the group is removed or
+				// narrowed on purpose.
 				grantCaps := cfg.Session.Capabilities
 				if len(grantCaps) == 0 {
-					grantCaps = []string{"session-default"}
+					grantCaps = federation.SessionDefaultGrantCaps(cfg.MCP.SelfConfigEnabled())
 				}
 				resolved := federation.Resolve(grantCaps, nil)
 				if tok, err := sessionTokenStore.Mint(sess.FullID, resolved); err != nil {
@@ -1569,7 +1765,58 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 		})
+		// Session-end scratch release (design: session-end cleanup + safety-net
+		// sweep) — when this worker session reaches its terminal state, drop
+		// the temp files the daemon itself created for it (task capture files
+		// for the pi / claude-code / opencode / aider / goose backends, and the
+		// pi per-session worker config directories) from the created-path
+		// record. Removal is best effort: whatever it could not delete stays
+		// put, stays recorded, and the autonomous temp sweep may still collect
+		// it later. It never touches a live session's record.
+		mgr.SetScratchReleaser(func(sess *session.Session) {
+			if sess == nil {
+				return
+			}
+			keys := map[string]bool{}
+			if sess.TmuxSession != "" {
+				keys[sess.TmuxSession] = true
+			}
+			keys[sess.ID] = true // defensive: a launch path keyed under the bare id
+			releasedTotal := 0
+			for k := range keys {
+				released, errs := scratch.ReleaseSession(k)
+				releasedTotal += released
+				if released > 0 {
+					debugf("scratch release for %s: removed %d leftover temp entr(ies) from session end", sess.FullID, released)
+				}
+				for _, e := range errs {
+					debugf("scratch release for %s: %v", sess.FullID, e)
+				}
+			}
+			if releasedTotal > 0 {
+				// cleanup status (cleanup_status.go): count the owner's own
+				// session-end release under the owner bucket, so the
+				// safety-net sweep's count stays separate and the operator
+				// can see when the net had to do the owner's work.
+				if scratchOwnerReleaseHook != nil {
+					scratchOwnerReleaseHook(releasedTotal)
+				}
+			}
+		})
+		wireSessionEndReap(mgr)
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			// Shell sessions: report the command's exit code from the
+			// daemon's own session record to the trace recorder.
+			if traceObserver != nil && sess.BackendFamily == "shell" && sess.TmuxSession != "" {
+				code := 0
+				if sess.State != session.StateComplete {
+					code = sess.FailureExitCode
+					if code == 0 {
+						code = 1
+					}
+				}
+				traceObserver.SessionEnded(sess.TmuxSession, code)
+			}
 			// Design A3 — revoke this session's scoped credential
 			// immediately; its bridge process can no longer authenticate
 			// to the daemon at all once this returns.
@@ -1606,6 +1853,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Kill tmux session on completion/failure only when kill_sessions_on_exit is enabled.
 			// When disabled the tmux window stays alive so the operator can inspect output.
 			if cfg.Session.KillSessionsOnExit {
+				exitState := sess.State
 				go func() {
 					defer func() {
 						if p := recover(); p != nil {
@@ -1613,7 +1861,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}()
 					time.Sleep(2 * time.Second) // brief delay to let final output flush
-					mgr.KillTmuxSession(sess.FullID)
+					_ = mgr.EndSession(sess.FullID, session.EndReason{Caller: endCallerKillOnExit, Reason: killOnExitEndReason(exitState)})
 				}()
 			}
 			if sess.BackendFamily == "claude-code" {
@@ -1719,6 +1967,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// automatic commit stays staged to the same directories
 				// (auto-commit leak fix) instead of widening to `git add -A`.
 				WriteScope: sess.WriteScope,
+				// Retry/resume start keeps the original session's owner.
+				PRDID:       sess.PRDID,
+				TaskID:      sess.TaskID,
+				StoryID:     sess.StoryID,
+				AutomatonID: sess.AutomatonID,
+				SpendRole:   sess.SpendRole,
 			}
 			newSess, err := mgr.Start(context.Background(), sess.Task, "", sess.ProjectDir, opts)
 			if err != nil {
@@ -1736,21 +1990,79 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// shutdownAudit holds the operator audit log once it is wired up below
+	// (auditpkg.New, the same log the REST/MCP handlers write to). The signal
+	// handler and the restart closures reference it so the shutdown entry is
+	// written before teardown (KillSessionsOnExit / cancel) or before the
+	// process execs/exits.
+	var shutdownAudit *auditpkg.Log
+
+	// recordShutdownCause captures what caused this daemon to go away
+	// (os/signal on the SIGINT/SIGTERM path, or the via string declared by
+	// shutdowncause.MarkAPIInitiated for API/MCP/update-initiated restarts),
+	// prints a 'shutdown cause: ...' line, writes the audit entry (Actor
+	// "daemon", Action "shutdown", full Cause fields in Details), and persists
+	// the cause as <data_dir>/last-shutdown.json. All writes are synchronous
+	// so they are on disk before any subsequent teardown.
+	recordShutdownCause := func(sig os.Signal) {
+		c := shutdowncause.Capture(sig)
+		fmt.Println("shutdown cause: " + c.String())
+		subject := c.Signal
+		if subject == "" {
+			subject = c.Via
+		}
+		if shutdownAudit != nil {
+			_ = shutdownAudit.Write(auditpkg.Entry{
+				Timestamp: time.Now(),
+				Actor:     "daemon",
+				Action:    "shutdown",
+				Subject:   subject,
+				Details: map[string]any{
+					"signal":           c.Signal,
+					"sender_pid":       c.SenderPID,
+					"sender_uid":       c.SenderUID,
+					"sender_user":      c.SenderUser,
+					"cmdline":          c.Cmdline,
+					"parent_chain":     c.ParentChain,
+					"source":           c.Source,
+					"service_stop_job": c.ServiceStopJob,
+					"time":             c.Time.Format(time.RFC3339),
+					"via":              c.Via,
+				},
+			})
+		}
+		if werr := shutdowncause.Write(expandHome(cfg.DataDir), c); werr != nil {
+			fmt.Printf("[warn] persist shutdown cause: %v\n", werr)
+		}
+	}
+
+	// BL428 Phase 4 — per-backend usage back-off: rate-limit detection sets
+	// flags on the shared registry, a lightweight sweeper clears them.
+	wireUsageBackoff(ctx, cfg, mgr, autonomousBackoff)
+
 	// Clean up PID file on exit
 	pidFilePath := filepath.Join(expandHome(cfg.DataDir), "daemon.pid")
 	defer func() { _ = os.Remove(pidFilePath) }()
+
+	// httpStopped is closed when the PWA server's Start returns, which is after
+	// it has shut its listeners down. It stays nil when no server is started.
+	var httpStopped chan struct{}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-sigCh
 		fmt.Printf("\nShutting down... (signal=%v)\n", sig)
+		recordShutdownCause(sig)
 		if cfg.Session.KillSessionsOnExit {
 			fmt.Println("Killing active sessions...")
-			if err := mgr.KillAll(); err != nil {
+			if err := mgr.EndAllSessions(session.EndReason{Caller: endCallerShutdown, Reason: shutdownEndReason(sig)}); err != nil {
 				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
 			}
 		}
+		// The store is not closed here: the serve path drains in-flight
+		// launches first, and that drain must still be able to save the
+		// sessions it rolls back. The deferred mgr.Close flushes the store.
 		cancel()
 	}()
 
@@ -1869,6 +2181,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open result store: %w", err)
 	}
 
+	// Structured result panel — per-schedule result history.
+	scheduleResultStore, err := session.NewScheduleResultStore(scheduleResultStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open schedule result store: %w", err)
+	}
+
 	// Create command library
 	cmdLib, err := newCmdLibrary(filepath.Join(expandHome(cfg.DataDir), "commands.json"))
 	if err != nil {
@@ -1882,6 +2200,43 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	// BL226 — register global so any package can call alerts.EmitSystem
 	alertspkg.SetGlobal(alertStore)
+
+	// One-shot push-on-complete (session manager): ad-hoc one-shots (no
+	// PRD owner) push their finished work after their own validation is
+	// the completion commit. The settings closure is stored, not its
+	// result — read on every push attempt, so a runtime configure change
+	// applies without a restart (same live-config pattern as the
+	// autonomous manager's wiring).
+	mgr.SetGitPushSettings(func() (policy, remote string) {
+		return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
+	})
+	// Pre-push secret scan (git.secret_scan): the live policy is read on
+	// every push attempt by both one-shot paths (push-on-complete and
+	// push-before-teardown). The daemon default is shadow (see
+	// effectiveSecretScanMode), so a fresh install scans + alerts without
+	// ever refusing a push; enforce refuses (Kind=secret_found) with the
+	// remote untouched.
+	mgr.SetSecretScanSettings(func() gitpkg.SecretScanPolicy {
+		al := cfg.Git.EffectiveSecretScanAllowList()
+		return gitpkg.SecretScanPolicy{
+			Mode:         cfg.Git.EffectiveSecretScanMode(),
+			Detectors:    cfg.Git.EffectiveSecretScanDetectors(),
+			PathPatterns: al.Paths,
+			Fingerprints: al.Fingerprints,
+		}
+	})
+	// Operator alert sink for one-shot push failures → the same alert
+	// store every other system alert goes to.
+	mgr.SetPushAlertFn(func(level, title, body string) {
+		lv := alertspkg.LevelInfo
+		switch level {
+		case "warn":
+			lv = alertspkg.LevelWarn
+		case "error":
+			lv = alertspkg.LevelError
+		}
+		alertStore.AddSystem(lv, title, body)
+	})
 
 	// Create filter store
 	filterStore, err := newFilterStore(filepath.Join(expandHome(cfg.DataDir), "filters.json"))
@@ -1939,7 +2294,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Defaults: file provider rooted at <data_dir>/secrets.
 	secretsBaseDir := cfg.Agents.SecretsBaseDir
 	if secretsBaseDir == "" {
-		secretsBaseDir = filepath.Join(expandHome(cfg.DataDir), "secrets")
+		secretsBaseDir = secretspkg.DefaultFileProviderDir(cfg.DataDir)
 	}
 	agentMgr.SecretsProvider = secretspkg.Resolve(cfg.Agents.SecretsProvider, secretsBaseDir)
 
@@ -2094,6 +2449,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	k8sDriver.ParentCertFingerprint = parentFingerprint
 	agentMgr.RegisterDriver(k8sDriver)
 
+	// Teardown push (push-first on Terminate): honour the operator's
+	// git.push_on_complete policy ("never" skips the step entirely)
+	// and surface a push that did not land as a warn-level system
+	// alert. The hook runs inline inside Terminate and must be fast;
+	// alertStore.AddSystem is a local mutex-guarded append, which it
+	// is.
+	agentMgr.PushPolicy = func() string { return cfg.Git.EffectivePushOnComplete() }
+	agentMgr.OnTeardownPushFailure = func(a *agentspkg.Agent, rep agentspkg.TeardownPushReport) {
+		reason := rep.Reason
+		if reason == "" {
+			reason = "unknown reason"
+		}
+		body := fmt.Sprintf(
+			"agent %s (project %s): teardown push did not land (attempted=%t, branch=%q, unpushed=%d) — %s",
+			a.ID, a.ProjectProfile, rep.Attempted, rep.Branch, rep.Count, reason)
+		alertStore.AddSystem(alertspkg.LevelWarn, "Agent teardown push failed", body)
+		fmt.Fprintf(os.Stderr, "[agents] teardown push for agent %s: %v\n", a.ID, rep)
+	}
+
 	// v7.0.0 S5 — outer-scope handle so the daemon can wire the
 	// memory backend into httpServer for the /api/memory/scopes/*
 	// endpoints later (the existing memStore variable is scoped to
@@ -2211,31 +2585,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// reading the live pane at t+750 ms is sufficient to accept
 			// whichever prompt is actually on screen. Subsequent filter
 			// callbacks are skipped via this LoadOrStore guard.
-			triggerLine := line
 			if _, loaded := claudeStartupAccepted.LoadOrStore(sessID, struct{}{}); loaded {
 				return
 			}
 			go func() {
 				defer claudeStartupAccepted.Delete(sessID)
 				time.Sleep(750 * time.Millisecond)
-				// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
-				// Text input ("1\n") would confirm the wrong option. Send
-				// Down+Enter to navigate to "Yes, I trust this folder" instead.
-				if isTrustDialogLine(triggerLine) {
-					if err := mgr.SendTrustDialogAccept(sessID); err != nil {
-						fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-					}
-					return
-				}
-				// Handle other startup prompts (bypass-permissions, channel MCP):
-				// check the live pane and send the appropriate text response.
+				// Classifier-driven: answers whichever startup dialog is
+				// actually on the live pane (trust arrow keys, Enter-type
+				// accepts, or a single Esc for unsafe dialogs). At most one
+				// answer per appearance; a few re-captures in case the TUI is
+				// still rendering.
 				for i := 0; i < 5; i++ {
-					liveResp := mgr.GetActiveStartupPromptInput(sessID)
-					if liveResp != "" {
-						if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
-							fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-							break
-						}
+					if respondStartupDialog(mgr, sessID) {
+						break
 					}
 					time.Sleep(500 * time.Millisecond)
 				}
@@ -2269,22 +2632,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 		}
-		// Startup trust-dialog poller — fires for every new claude-code session.
-		// Startup trust-dialog poller — backup for the DetectPrompt path.
-		// The DetectPrompt path fires from the log file and is the primary
-		// handler; this poller covers the window before the log pipe is
-		// established and sessions where Claude starts faster than the
-		// filter engine can process. Polls the tmux pane every 500ms for
-		// up to 45s (Claude can take 20-30s to start in loaded environments).
+		// Startup dialog poller — fires for every new claude-code session;
+		// backup for the DetectPrompt path. The DetectPrompt path fires from
+		// the log file and is the primary handler; this poller covers the
+		// window before the log pipe is established and sessions where
+		// Claude starts faster than the filter engine can process. Polls
+		// the tmux pane every 500ms for up to 45s (Claude can take 20-30s
+		// to start in loaded environments). Answers any dialog the
+		// classifier recognises — not only the trust dialog:
+		// trust arrow keys, Enter-type accepts, or a single Esc for unsafe
+		// dialogs.
 		if claudeAutoAccept && sess.BackendFamily == "claude-code" {
 			go func(sessID string) {
 				deadline := time.Now().Add(45 * time.Second)
 				for time.Now().Before(deadline) {
 					time.Sleep(500 * time.Millisecond)
-					if mgr.IsTrustDialogShowing(sessID) {
-						if err := mgr.SendTrustDialogAccept(sessID); err != nil {
-							fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-						}
+					if respondStartupDialog(mgr, sessID) {
 						return
 					}
 				}
@@ -2344,6 +2707,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// can resolve named LLMs to their adapter kind at call time.
 		autonomousInferenceReg *inference.Registry
 	)
+	// Read at restart time, because the autonomous manager and the live config
+	// are filled in after the restart functions are wired.
+	liveRestartManager := func() restartPolicyManager {
+		if autonomousMgrRef == nil {
+			return nil // a true nil interface, not a typed nil
+		}
+		return autonomousMgrRef
+	}
+	liveRestartSettings := func() restartPolicySettings { return restartSettingsFrom(cfg.Autonomous) }
+
+	// Placement tags on every started session (scheduled and comm-channel
+	// starts included): the session manager is the tag sink, the live
+	// tags.placement block is the config source, and the Automation axis
+	// reads the autonomous manager, attached later in startup, at call time.
+	mgr.SetPlacementStartHook(placementStartFunc(mgr,
+		func() config.PlacementConfig { return cfg.Autonomous.Tags.Placement },
+		placementAutomationOf(func() *autonomouspkg.Manager { return autonomousMgrRef })))
 
 	// Batch output lines per session to prevent WebSocket flood.
 	// Accumulates lines for 100ms then sends as one message.
@@ -2625,12 +3005,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	var voiceTranscriber transcribePkg.Transcriber
 	if cfg.Whisper.Enabled {
 		bcfg := transcribePkg.BackendConfig{
-			Backend:  cfg.Whisper.Backend,
-			VenvPath: cfg.Whisper.VenvPath,
-			Model:    cfg.Whisper.Model,
-			Language: cfg.Whisper.Language,
-			Endpoint: cfg.Whisper.Endpoint,
-			APIKey:   cfg.Whisper.APIKey,
+			Backend:      cfg.Whisper.Backend,
+			VenvPath:     cfg.Whisper.VenvPath,
+			Model:        cfg.Whisper.Model,
+			Language:     cfg.Whisper.Language,
+			Endpoint:     cfg.Whisper.Endpoint,
+			APIKey:       cfg.Whisper.APIKey,
+			ChunkSeconds: cfg.Whisper.ChunkSeconds,
 		}
 		// BL201 — inherit endpoint + key from the matching LLM config
 		// when the operator left them blank for an HTTP-shape backend.
@@ -2648,6 +3029,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				backend = "whisper"
 			}
 			fmt.Printf("[voice] enabled (backend=%s, model=%s, language=%s)\n", backend, bcfg.Model, bcfg.Language)
+			if bcfg.ChunkSeconds > 0 {
+				fmt.Printf("[voice] chunking: local whisper slices audio longer than %ds\n", bcfg.ChunkSeconds)
+			} else {
+				fmt.Println("[voice] chunking disabled")
+			}
 
 			// v7.0.0-alpha.14 (#236) — when primary is HTTP (openai-compat
 			// to OpenWebUI/etc.), build a local-whisper venv as silent
@@ -2662,9 +3048,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					fallbackModel = "base"
 				}
 				if local, lerr := transcribePkg.New(bcfg.VenvPath, fallbackModel, bcfg.Language); lerr == nil {
+					var fallback transcribePkg.Transcriber = local
+					if bcfg.ChunkSeconds > 0 {
+						fallback = transcribePkg.NewChunked(local, time.Duration(bcfg.ChunkSeconds)*time.Second)
+					}
 					voiceTranscriber = &transcribePkg.ChainedTranscriber{
 						Primary:       t,
-						Secondary:     local,
+						Secondary:     fallback,
 						PrimaryName:   "openai-compat (" + bcfg.Endpoint + ")",
 						SecondaryName: "local-whisper (" + bcfg.VenvPath + " model=" + fallbackModel + ")",
 					}
@@ -2716,14 +3106,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// backend up here to forward the alert.
 	commBackends := map[string]messaging.Backend{}
 
+	// BL110 — one shared config-write audit sink for this daemon. The SAME
+	// instance is wired into every surface below — the REST server, the MCP
+	// server, and every comm router (including the test-injection router)
+	// — so a config write from a session or federation peer lands as
+	// exactly one record, surface "rest", "mcp", or "comm". Operator (admin)
+	// callers are skipped by every surface; the loopback PUTs that MCP
+	// config_set / comm configure issue are admin and so are not
+	// double-recorded by the REST point.
+	cfgAuditSink := configAuditSinkFor(cfg)
+
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
 		r.SetChannelTracker(chanTracker.Get(backend.Name()))
+		// The standard task reply reads the live task-template settings.
+		r.SetConfig(cfg)
 		// Sx2 — comm-channel parity needs the local REST loopback port.
 		if cfg.Server.Enabled && cfg.Server.Port > 0 {
 			r.SetWebPort(cfg.Server.Port)
+			r.SetWebToken(cfg.Server.Token)
 		}
+		// BL110 — comm configure audit point (surface "comm").
+		r.SetConfigAuditor(cfgAuditSink)
 		// BL102 — register the backend by its declared name. Last
 		// router-construction call wins per name; for parents that
 		// run multiple instances of the same backend (rare) the
@@ -2747,6 +3152,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Pipeline executor (F15)
 		pipeManagerAdapter = pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend)
 		pipeExec = pipelinePkg.NewExecutor(pipeManagerAdapter, cfg.Session.LLMBackend)
+		pipeExec.SetProjectRoots(cfg.AllowedProjectRoots)
 		// BL28 — wire quality-gate config into executor.
 		pipeExec.SetQualityGates(pipelinePkg.QualityGateConfig{
 			Enabled:           cfg.Pipeline.QualityGates.Enabled,
@@ -2769,14 +3175,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			v, _ := fetchLatestVersion()
 			return v
 		})
-		r.SetRestartFunc(func() {
+		r.SetRestartFuncForce(guardRestartForce(func(bool) {
+			// Record the shutdown cause (audit + last-shutdown.json) before we
+			// exec/exit below and lose the ability to write.
+			recordShutdownCause(nil)
+			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
 				_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
 			}
 			os.Exit(0)
-		})
+		}, liveRestartManager, liveRestartSettings))
 		// v5.27.2 — subsystem hot-reload from chat. Routes through the
 		// same in-process Server.ReloadSubsystem path the REST + CLI +
 		// MCP surfaces hit, so chat parity stays in sync without extra
@@ -2797,27 +3207,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// without shelling into the host. Same parity rule as `reload`.
 		r.SetChannelInfoFn(channelInfoSummary)
 		r.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
+		r.SetWorkerProfileInForceFunc(workerProfileInForceReader(cfg))
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			apiURL := loopbackBaseURL(cfg) + "/api/config"
-			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
-			// Try as number or bool
-			if value == "true" || value == "false" {
-				body = fmt.Sprintf(`{"%s":%s}`, key, value)
-			} else if _, err := fmt.Sscanf(value, "%d", new(int)); err == nil {
-				body = fmt.Sprintf(`{"%s":%s}`, key, value)
-			}
+			body := configureRequestBody(key, value)
 			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
 			if err != nil {
 				return err
 			}
 			req.Header.Set("Content-Type", "application/json")
+			// Token-protected daemon: present the loopback as admin, the
+			// same way Router.commGet does — an unauthenticated PUT would
+			// return 401 and comm `configure` would break whenever
+			// server.token is set.
+			if cfg.Server.Token != "" {
+				req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				return fmt.Errorf("API call failed: %w", err)
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != 200 {
+				// Show the daemon's refusal text as-is, so comm carries the same
+				// message as REST (e.g. a bad autonomous.tags value).
+				if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
+					return errors.New(strings.TrimSpace(string(msg)))
+				}
 				return fmt.Errorf("API returned %d", resp.StatusCode)
 			}
 			return nil
@@ -3142,6 +3559,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if pipeAdapter == nil {
 		pipeManagerAdapter = pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend)
 		pipeExec = pipelinePkg.NewExecutor(pipeManagerAdapter, cfg.Session.LLMBackend)
+		pipeExec.SetProjectRoots(cfg.AllowedProjectRoots)
 		pipeExec.SetQualityGates(pipelinePkg.QualityGateConfig{
 			Enabled:           cfg.Pipeline.QualityGates.Enabled,
 			TestCommand:       cfg.Pipeline.QualityGates.TestCommand,
@@ -3155,6 +3573,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
 		server.Version = Version
+		if spendLedger != nil {
+			httpServer.SetCostReportLedger(spendLedger)
+		}
 		// BL334 T43a — wire derived key so file-persisted handlers encrypt
 		// discussion WAL, participants, and channel routing when --secure.
 		if encKey != nil {
@@ -3174,7 +3595,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetQueueStore(queueStore)                 // BL357
 		httpServer.SetDiscussionSubStore(discussionSubStore) // BL358
 		httpServer.SetResultStore(resultStore)               // BL360
-		httpServer.SetSessionTokenStore(sessionTokenStore)   // Design A3
+		httpServer.SetScheduleResultStore(scheduleResultStore)
+		httpServer.SetSessionTokenStore(sessionTokenStore) // Design A3
+		if traceIngestor != nil {
+			httpServer.SetTraceRecorder(traceIngestor)
+		}
+		if traceStore != nil {
+			httpServer.SetTraceStore(traceStore)
+		}
+		// BL110 — REST config-write audit point (surface "rest"): shares the
+		// sink with the MCP and comm surfaces.
+		httpServer.SetConfigAuditor(cfgAuditSink)
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -3250,35 +3681,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		computeNodesPath := filepath.Join(expandHome(cfg.DataDir), "compute", "nodes.json")
 		var computeInitErr error
 		var computeReg *compute.Registry
+		// The inference dispatcher (created inside the
+		// `if computeInitErr == nil` block below) needs call-time
+		// ${secret:name} API-key resolution. The secrets store is not
+		// constructed until further down, so the dispatcher is captured
+		// here and wired in the secrets section below.
+		var inferenceDispatcher *inference.Dispatcher
 		if encKey != nil {
 			computeReg, computeInitErr = compute.NewRegistryEncrypted(computeNodesPath, encKey)
 		} else {
 			computeReg, computeInitErr = compute.NewRegistry(computeNodesPath)
 		}
+		// Hand-started Ollama chat sessions resolve their model through the
+		// node pins. A nil registry passes every model through unchanged.
+		chatPins := inference.NewHostPins(computeReg)
+		ollama.SetModelResolver(func(host, model string) (string, error) {
+			return chatPins.ResolveModel(host, model, "")
+		})
 		if computeInitErr == nil {
 			seed := make([]compute.Node, 0, len(cfg.ComputeNodes))
 			for _, c := range cfg.ComputeNodes {
-				n := compute.Node{
-					Name:               c.Name,
-					Kind:               compute.NodeKind(c.Kind),
-					Address:            c.Address,
-					MonitoringEndpoint: c.MonitoringEndpoint,
-					Tags:               c.Tags,
-					CostPerHour:        c.CostPerHour,
-					SchedulingPriority: c.SchedulingPriority,
-					DeclaredCapacity: compute.DeclaredCapacity{
-						GPUs:                c.DeclaredCapacity.GPUs,
-						GPUMemGB:            c.DeclaredCapacity.GPUMemGB,
-						RAMGB:               c.DeclaredCapacity.RAMGB,
-						MaxConcurrentModels: c.DeclaredCapacity.MaxConcurrentModels,
-						GPUVendor:           c.DeclaredCapacity.GPUVendor,
-						GPUModel:            c.DeclaredCapacity.GPUModel,
-					},
-					Permissions: compute.Permissions{
-						AllowedConsumers: c.Permissions.AllowedConsumers,
-						DeniedConsumers:  c.Permissions.DeniedConsumers,
-					},
-				}
+				n := computeNodeFromConfig(c)
 				seed = append(seed, n)
 			}
 			computeReg.Seed(seed)
@@ -3303,6 +3726,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 				if msErr == nil {
 					httpServer.SetServerStore(msStore)
+					fedPeerRegistry = msStore
 					// BL316 S2 — wire the live store into the remote
 					// dispatcher so CLI --server and comm-channel
 					// cross-host dispatch see peers added after startup.
@@ -3318,6 +3742,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// JSON store at <data-dir>/federation/groups.json.
 			if fedGS, fgsErr := federation.NewGroupStore(expandHome(cfg.DataDir)); fgsErr == nil {
 				httpServer.SetFedGroupStore(fedGS)
+				fedPeerGroups = fedGS
 			} else {
 				fmt.Printf("[federation] group store init failed: %v\n", fgsErr)
 			}
@@ -3472,10 +3897,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					disp.SetServerStore(st)
 				}
 				httpServer.SetInference(llmReg, disp)
+				inferenceDispatcher = disp
+				// Classify runtime: the classifier.* config keys feed the client
+				// built for each verification; the status view shares its prober.
+				classifyWiring.reg = llmReg
+				classifyWiring.nodes = computeReg.Get
+				classifyWiring.dataDir = expandHome(cfg.DataDir)
+				classifyRuntimeProvider = newClassifyRuntimeProvider(cfg, &classifyWiring)
+				httpServer.SetClassifierStatus(newClassifierStatusSource(expandHome(cfg.DataDir), classifyWiring.prober))
+				startRoleContentionScan(ctx, cfg, httpServer)
 
 				// BL-summarizer — wire dual-summary pipeline when enabled.
 				if cfg.Session.Summarizer.Enabled {
 					sumSvc := summarizerPkg.New(cfg, llmReg)
+					sumSvc.SetComputeRegistry(computeReg)
 					mgr.SetDualSummarizer(sumSvc.SummarizeDual, sumSvc.ContextLines)
 					httpServer.SetSummarizerSvc(sumSvc)
 				}
@@ -3655,6 +4090,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			fmt.Printf("[warn] compute registry init: %v\n", computeInitErr)
 		}
+		// Two different models configured on one ollama node evict each
+		// other, so log each collision once at startup.
+		for _, warning := range inference.DetectModelNodeConflicts(cfg.ModelNodeInputs()) {
+			log.Printf("model-node collision: %s", warning.Message)
+		}
 		// AGENT.md's Audit Logging Rule — inject the real version into
 		// every CEF line this package writes (avoids an import cycle).
 		auditpkg.SetCEFVersionFn(func() string { return Version })
@@ -3664,6 +4104,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
 			httpServer.SetAuditLog(auditLog)
 			wiredAuditLog = auditLog
+			shutdownAudit = auditLog
+			setBackoffAuditLog(auditLog) // BL428 Phase 4: automatic back-off set/auto-clear events
 			if cfg.Audit.CEFMirrorEnabled {
 				if err := auditLog.EnableCEFMirror(); err != nil {
 					fmt.Printf("[warn] audit log CEF mirror failed: %v\n", err)
@@ -3672,7 +4114,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
 		}
+		// Pre-push secret scan audit (git.secret_scan): ONE sink over the
+		// operator audit log (a nil log yields a no-op reporter) shared by
+		// both push engines. Each security-relevant scanned push — an
+		// enforce-mode refusal (secret_scan_refused) or a shadow-mode
+		// finding report (secret_scan_shadow) — emits one entry carrying
+		// the redacted findings only (count, detector, file:line,
+		// fingerprint; never the matched secret).
+		secretScanSink := auditpkg.NewSecretScanSink(wiredAuditLog)
+		mgr.SetSecretScanAuditFn(secretScanSink)
 		warnDeprecatedConfigKeys(cfg.DeprecatedKeys, wiredAuditLog)
+		// Node seeding from config runs before the audit log is opened, so
+		// the startup record of nodes configured with verification off is
+		// written here instead, once the log exists.
+		if wiredAuditLog != nil {
+			for _, c := range cfg.ComputeNodes {
+				if !c.TLSInsecureSkipVerify {
+					continue
+				}
+				_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "daemon", Action: "compute_node_tls_verification_off", Details: map[string]any{
+					"resource_type":            "compute_node",
+					"resource_id":              c.Name,
+					"tls_insecure_skip_verify": true,
+					"source":                   "config_seed",
+				}})
+			}
+		}
 		// GH#201 — separate HTTP access / WS lifecycle / auth-failure log.
 		// Own file (access.log, not audit.log) since request volume is
 		// much higher than state-changing operator actions and shouldn't
@@ -3833,6 +4300,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if secretsStore != nil {
 			httpServer.SetSecretsStore(secretsStore)
 			agentMgr.SecretsStore = secretsStore
+			// Vault health monitor: alerts when Vault stays unreachable past
+			// secrets.vault.unreachable_alert_after_seconds.
+			if vaultHealth := httpServer.StartVaultHealth(ctx); vaultHealth != nil {
+				defer vaultHealth.Stop()
+			}
+			// Call-time ${secret:name} API-key resolution in the inference
+			// dispatcher: the dispatcher was created above, before the
+			// secrets store existed, with its creation block already closed,
+			// so wire it here via the captured pointer. The resolution
+			// outcome (llm name, secret name, ok/missing/refused) is written
+			// to the operator audit log via the sink.
+			if inferenceDispatcher != nil {
+				inferenceDispatcher.SetSecretsStore(secretsStore, auditpkg.NewSecretAccessSink(wiredAuditLog))
+			}
 			// BL242 Phase 4 — resolve ${secret:name} refs in config fields.
 			if err := secretspkg.ResolveConfig(cfg, secretsStore); err != nil {
 				fmt.Printf("[warn] config secret ref resolution: %v\n", err)
@@ -4094,29 +4575,96 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		for k, v := range acfgIn.RetryPolicy {
 			retryPolicyBridge[k] = v
 		}
+		// plan_tier_max_inflight bridge — same copy-not-alias rationale as
+		// retryPolicyBridge: the daemon's capacity wiring reads
+		// cfg.Autonomous's map, the mirror copy lives on the manager.
+		tierInflightBridge := make(map[string]int, len(acfgIn.PlanTierMaxInflight))
+		for k, v := range acfgIn.PlanTierMaxInflight {
+			tierInflightBridge[k] = v
+		}
 		amgrCfg := autonomouspkg.Config{
-			Enabled:                    acfgIn.Enabled,
-			PollIntervalSeconds:        acfgIn.PollIntervalSeconds,
-			MaxParallelTasks:           acfgIn.MaxParallelTasks,
-			MaxConcurrentTasks:         acfgIn.MaxConcurrentTasks,
-			PlanningBackend:            acfgIn.PlanningBackend,
-			VerificationBackend:        acfgIn.VerificationBackend,
-			ExecutionBackend:           acfgIn.ExecutionBackend,
-			PlanningModel:              acfgIn.PlanningModel,
-			VerificationModel:          acfgIn.VerificationModel,
-			VerificationBackends:       append([]string(nil), acfgIn.VerificationBackends...),
-			TaskOverrideStatuses:       append([]string(nil), acfgIn.TaskOverrideStatuses...),
-			PlanningEffort:             acfgIn.PlanningEffort,
-			VerificationEffort:         acfgIn.VerificationEffort,
-			PlanningTimeoutSeconds:     acfgIn.PlanningTimeoutSeconds,
-			VerificationTimeoutSeconds: acfgIn.VerificationTimeoutSeconds,
-			SessionIdleTimeoutSeconds:  acfgIn.SessionIdleTimeoutSeconds,
-			CapacityEnabled:            acfgIn.CapacityEnabled,
-			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
-			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,
-			AutoFixRetries:             acfgIn.AutoFixRetries,
-			VerifierDiffMaxBytes:       acfgIn.VerifierDiffMaxBytes,
-			SecurityScan:               acfgIn.SecurityScan,
+			Enabled:                          acfgIn.Enabled,
+			PollIntervalSeconds:              acfgIn.PollIntervalSeconds,
+			BranchRefreshEnabled:             acfgIn.BranchRefreshEnabled,
+			BranchRefreshBehindLimit:         acfgIn.BranchRefreshBehindLimit,
+			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
+			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
+			GateDisagreement:                 acfgIn.GateDisagreement,
+			FailureEscalation:                failureEscalationFromConfig(acfgIn.FailureEscalation),
+			InfraRetry:                       acfgIn.InfraRetry.Clone(),
+			RequestWatch:                     acfgIn.RequestWatch.Clone(),
+			PlanningBackend:                  acfgIn.PlanningBackend,
+			PlanningRouting:                  acfgIn.PlanningRouting,
+			VerificationBackend:              acfgIn.VerificationBackend,
+			ExecutionBackend:                 acfgIn.ExecutionBackend,
+			FirstAttempt:                     autonomouspkg.CloneFirstAttempt(acfgIn.FirstAttempt),
+			PlanningModel:                    acfgIn.PlanningModel,
+			VerificationModel:                acfgIn.VerificationModel,
+			GuardrailModel:                   acfgIn.GuardrailModel,
+			VerificationBackends:             append([]string(nil), acfgIn.VerificationBackends...),
+			SnapshotNeverStage:               append([]string(nil), acfgIn.SnapshotNeverStage...),
+			VerifierPolicy:                   copyVerifierPolicy(acfgIn.VerifierPolicy),
+			HostLoadAlert:                    acfgIn.HostLoadAlert,
+			TaskOverrideStatuses:             append([]string(nil), acfgIn.TaskOverrideStatuses...),
+			OverrideQueuedTasks:              acfgIn.OverrideQueuedTasks,
+			PlanningEffort:                   acfgIn.PlanningEffort,
+			VerificationEffort:               acfgIn.VerificationEffort,
+			PlanningTimeoutSeconds:           acfgIn.PlanningTimeoutSeconds,
+			VerificationTimeoutSeconds:       acfgIn.VerificationTimeoutSeconds,
+			JudgePolicy:                      config.NormalizeJudgePolicy(acfgIn.JudgePolicy),
+			JudgeTimeoutSeconds:              config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
+			JudgeSizeThresholdLines:          acfgIn.JudgeSizeThresholdLines,
+			JudgeStrongBackend:               acfgIn.JudgeStrongBackend,
+			JudgeVerdictCacheEnabled:         acfgIn.JudgeVerdictCacheEnabled,
+			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
+			PlanningRestartPolicy:            acfgIn.PlanningRestartPolicy,
+			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
+			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
+			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
+			VerificationRecordScores:         acfgIn.VerificationRecordScores,
+			ScopeBreadthEnabled:              acfgIn.ScopeBreadthEnabled,
+			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
+			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
+			OrphanGraceSeconds:               acfgIn.OrphanGraceSeconds,
+			DuplicateSessionKeep:             acfgIn.DuplicateSessionKeep,
+			RestartPolicy:                    acfgIn.RestartPolicy,
+			RestartQuietTimeoutSeconds:       acfgIn.RestartQuietTimeoutSeconds,
+			RestartOnTimeout:                 acfgIn.RestartOnTimeout,
+			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
+			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
+			CapacityEnabled:                  acfgIn.CapacityEnabled,
+			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
+			CapacityFallthrough:              acfgIn.CapacityFallthrough,
+			// priority_by_kind (autonomous.priority_by_kind): the
+			// kind→capacity-priority table ResolvePriority resolves against.
+			// Wired as the EFFECTIVE table (shipped defaults bug=80,
+			// maintenance=70, feature=20, other=0 with the operator's
+			// autonomous.priority_by_kind entries layered on top), so a
+			// pristine daemon still assigns kind priorities; runtime
+			// replacement goes through Manager.SetPriorityByKind.
+			PriorityByKind: acfgIn.EffectivePriorityByKind(),
+			// Defect intake (autonomous.defect_intake_automation): the name
+			// of the Automation this installation takes kind-bug filings on;
+			// empty by default — filings are then recorded not_configured.
+			DefectIntakeAutomation: acfgIn.DefectIntakeAutomation,
+			// autonomous.first_attempt_escalate_after_failures: failed attempts
+			// before a task leaves the first-attempt pair (0 reads as 1).
+			FirstAttemptEscalateAfterFailures: acfgIn.FirstAttemptEscalateAfterFailures,
+			// autonomous.retry_resume_max_context_tokens: a retry after a failed
+			// verification resumes the previous session only at or under this size.
+			// 0 is meaningful (every retry starts fresh).
+			RetryResumeMaxContextTokens: acfgIn.RetryResumeMaxContextTokens,
+			// 0 is meaningful (never resume) and -1 passes through as-is;
+			// 3600 arrives only if the daemon config itself supplied nothing
+			// (config.Load merges over DefaultConfig()).
+			ResumeMaxAgeSeconds:   acfgIn.ResumeMaxAgeSeconds,
+			StaleTaskSeconds:      acfgIn.StaleTaskSeconds,
+			TaskMaxAttemptSeconds: acfgIn.TaskMaxAttemptSeconds,
+			TaskNoProgressSeconds: acfgIn.TaskNoProgressSeconds,
+			StuckRunningSeconds:   acfgIn.StuckRunningSeconds,
+			AutoFixRetries:        acfgIn.AutoFixRetries,
+			VerifierDiffMaxBytes:  acfgIn.VerifierDiffMaxBytes,
+			SecurityScan:          acfgIn.SecurityScan,
 			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
 			// Manager has carried these fields since v5.9.0 / v5.10.0
 			// but the YAML + REST + PWA path didn't until now; pre-
@@ -4130,13 +4678,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 			// BL410 Phase 1 — retry-policy bridge.
 			RetryPolicy:             retryPolicyBridge,
+			PlanTierMaxInflight:     tierInflightBridge,
 			RetryCeilingTotal:       acfgIn.RetryCeilingTotal,
 			InfraRetryEscalateAfter: acfgIn.InfraRetryEscalateAfter,
 			CIWatchTimeoutSeconds:   acfgIn.CIWatchTimeoutSeconds,
+			UsageBackoff:            acfgIn.UsageBackoff,
+			BackoffMaxWaitMinutes:   acfgIn.BackoffMaxWaitMinutes,
 			ContentAutoFixEnabled:   acfgIn.ContentAutoFixEnabled,
 			AutoFixSkipApproval:     acfgIn.AutoFixSkipApproval,
 			BlockOnFileDrift:        acfgIn.BlockOnFileDrift,
+			ScopeLint:               acfgIn.ScopeLintMode(),
 			RefuseDirtyTreeStart:    acfgIn.RefuseDirtyTreeStart, // BL428 §3a ii
+			Parallel:                acfgIn.Parallel,
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
@@ -4146,6 +4699,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				TestCommand:       acfgIn.DefaultQualityGates.TestCommand,
 				Timeout:           acfgIn.DefaultQualityGates.Timeout,
 				BlockOnRegression: acfgIn.DefaultQualityGates.BlockOnRegression,
+				Scope:             acfgIn.DefaultQualityGates.Scope,
+				SmokePackages:     acfgIn.DefaultQualityGates.SmokePackages,
 			},
 			// BL369 — prompt injection guard config bridge.
 			InjectionGuard:   acfgIn.InjectionGuard,
@@ -4162,6 +4717,72 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			WorktreeDir:      acfgIn.WorktreeDir,
 			// BL407 Phase 5 — daemon-wide default-AutoPR config bridge.
 			DefaultAutoPR: acfgIn.DefaultAutoPR,
+			// Automation idle-alert + triage-alert thresholds and the
+			// search-before-create keys (autonomous.automation.*).
+			// TriageAlertMinutes is a pointer: nil (unset) resolves to the
+			// 30-minute default in the manager, and 0 keeps off.
+			// CreateSearchThreshold is a pointer too: nil (unset) resolves to
+			// the 0.5 default in the manager. CreateSearchMode resolves an
+			// empty value to the "shadow" default in the manager.
+			Automation: autonomouspkg.AutomationConfig{
+				IdleAlertMinutes:   acfgIn.Automation.IdleAlertMinutes,
+				TriageAlertMinutes: acfgIn.Automation.TriageAlertMinutes,
+				// Merge-pending mode + alert threshold: same nil-means-default
+				// rule as the triage threshold. MergedMemberPolicy resolves an
+				// empty value to the "completed" default in the manager.
+				MergePendingMode:         acfgIn.Automation.MergePendingMode,
+				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
+				MergedMemberPolicy:       acfgIn.Automation.MergedMemberPolicy,
+				CreateSearchMode:         acfgIn.Automation.CreateSearchMode,
+				CreateSearchThreshold:    acfgIn.Automation.CreateSearchThreshold,
+				// Cleanup keys: the effective defaults (report, 24, 10, 85)
+				// resolve in the manager's Effective* accessors, so the bridge
+				// copies raw values and lets unset stay unset.
+				CleanupMode:               acfgIn.Automation.CleanupMode,
+				CleanupRetentionHours:     acfgIn.Automation.CleanupRetentionHours,
+				CleanupMaxRemovalsPerPass: acfgIn.Automation.CleanupMaxRemovalsPerPass,
+				DiskAlertPercent:          acfgIn.Automation.DiskAlertPercent,
+				// Uncommitted-work keys: raw values; the manager's Effective*
+				// accessors resolve the defaults (hold, task_files).
+				UncommittedWorkPolicy: acfgIn.Automation.UncommittedWorkPolicy,
+				UncommittedWorkScope:  acfgIn.Automation.UncommittedWorkScope,
+				// Protected-paths and rules-review keys: raw values; the
+				// Effective* accessors resolve the defaults (default list,
+				// hold, base_commit).
+				ProtectedPaths:       acfgIn.Automation.ProtectedPaths,
+				ProtectedPathsAction: acfgIn.Automation.ProtectedPathsAction,
+				RulesReviewSource:    acfgIn.Automation.RulesReviewSource,
+				// security failure mode (autonomous.automation.security_failure.mode)
+				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
+				// supervisor watch block (autonomous.automation.supervisor_watch.*):
+				// without it the watch re-reads its defaults after every restart.
+				SupervisorWatch: supervisorWatchFromYAML(acfgIn.Automation.SupervisorWatch),
+				// repo CI watch block (autonomous.automation.repo_ci_watch.*):
+				// without it the watch reads off after every restart.
+				RepoCIWatch: repoCIWatchFromYAML(acfgIn.Automation.RepoCIWatch),
+			},
+			// Lane fill (autonomous.lane_fill.*).
+			LaneFill: autonomouspkg.LaneFillConfigFromYAML(acfgIn.LaneFill),
+			// Decompose-lint (autonomous.decompose_lint), task templates
+			// (autonomous.task_templates) and decompose guidance
+			// (autonomous.decompose_guidance): the manager consumes all
+			// three at decompose time (internal/autonomous
+			// decompose_lint_hook.go / decompose_guidance.go).
+			DecomposeLint:     acfgIn.DecomposeLint,
+			TaskTemplates:     acfgIn.TaskTemplates,
+			DecomposeGuidance: acfgIn.DecomposeGuidance,
+			// Model-pull consent (autonomous.model_pull_consent): model list
+			// + publisher allow-list; the zero value allows no pull.
+			ModelPullConsent: acfgIn.ModelPullConsent,
+			// Capability minimum-version overrides (autonomous.requirements.
+			// min_ollama.<capability>); the built-in table ships in code.
+			Requirements: autonomouspkg.RequirementsConfigFromYAML(acfgIn.Requirements),
+			// Global tier of the notify event kinds
+			// (autonomous.notify.default_events). Preserve nil (unset —
+			// resolves to the built-in default set) vs a non-nil empty
+			// list (explicitly turned off): a plain `append([]string(nil),
+			// in...)` would collapse empty into nil.
+			NotifyDefaultEvents: cloneNotifyDefaultEvents(acfgIn.Notify.DefaultEvents),
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.
@@ -4192,11 +4813,42 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = json.Unmarshal(b, &cfg.Autonomous.Scan)
 			}
 		}
+		// Verifier stats show the configured run cap (0 = no cap).
+		autonomouspkg.DefaultVerifierStats.SetRunCapSeconds(config.VerifierRunCapSeconds(acfgIn.VerifierMaxRunSeconds))
 		if amgrCfg.PollIntervalSeconds == 0 {
 			amgrCfg.PollIntervalSeconds = 30
 		}
 		if amgrCfg.MaxConcurrentTasks <= 0 {
 			amgrCfg.MaxConcurrentTasks = 1
+		}
+		// gate_disagreement: default "warn" when unset (unrecognized values
+		// are rejected on the config write paths and read back as "warn"
+		// by Manager.SetConfig and the executor policy helper anyway).
+		if amgrCfg.GateDisagreement != "block" && amgrCfg.GateDisagreement != "warn" {
+			amgrCfg.GateDisagreement = "warn"
+		}
+		// The autonomous config-set path (REST PUT /api/autonomous/config
+		// → autonomous.API.SetConfig; MCP autonomous_config_set) merges
+		// onto the Manager's LIVE config copy, which never reaches the
+		// boot-time amgrCfg literal captured into the closures built
+		// below (they all predate NewManager). Every closure read of a
+		// runtime-tunable field routes through this helper instead: one
+		// Config() snapshot per invocation (not per field), falling back
+		// to the boot-time amgrCfg while the Manager does not yet exist.
+		// Fields read live through it (BL-stale-config fix, 2026-10-19):
+		//   PlanningBackend / PlanningModel (decomposeFn)
+		//   StaleTaskSeconds                (autonomousVerify stall bound)
+		//   VerifierDiffMaxBytes            (autonomousVerify diff truncation)
+		//   VerificationBackends / VerificationBackend / VerificationModel / VerificationEffort
+		//                                     (autonomousVerify verifier selection,
+		//                                      via ResolveVerificationLLM + selectVerifierLLM)
+		//   VerificationBackend / VerificationModel (autonomousGuardrail)
+		//   PlanningBackend (BL221 scan-grader askFn)
+		// Boot-time-only reads (defaults before NewManager, NewManager's
+		// own construction, the startup amgrCfg.Enabled gate) are
+		// intentionally untouched.
+		liveAutonomousConfig := func() autonomouspkg.Config {
+			return effectiveAutonomousConfig(autonomousMgrRef, amgrCfg)
 		}
 		// decomposeFn — REST loopback to /api/ask.
 		//
@@ -4209,7 +4861,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		//   2. The PRD's Backend is for the *worker* (per BL203); the
 		//      planner is a separate concern that should always run
 		//      against an ask-compatible backend.
-		// Resolution order: amgrCfg.PlanningBackend → req.Backend
+		// Resolution order: live PlanningBackend → req.Backend
 		// (only if ask-compatible after kind resolution) → "ollama" default.
 		// BL306: named LLMs from /api/llms are resolved to their adapter kind
 		// before the askCompatible check, so "ollama-datawatch" (kind=ollama)
@@ -4235,6 +4887,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			outputFile := filepath.Join(req.ProjectDir, ".decompose-output-"+hex.EncodeToString(specHash[:8])+".json")
 			sessionTask := fmt.Sprintf(autonomouspkg.PlanningPromptSession, req.ScopeBlock, outputFile, req.Spec)
 
+			// 60 min comfortably exceeds the task-delivery grace
+			// (decomposeDeliveryGrace defaults to ~195 s) plus a realistic
+			// decompose run time, so the delivery-window waiting_input
+			// exemption can never push the session past its timeout.
 			timeout := 60 * time.Minute
 			if req.TimeoutSeconds > 0 {
 				timeout = time.Duration(req.TimeoutSeconds) * time.Second
@@ -4250,14 +4906,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// nothing stopped two PRDs sharing a project_dir from
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
-			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
-				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout)
+			// onSpawned names the planner on the PRD as soon as the session
+			// exists (req.OnPlannerSpawned, wired by the Manager), with the
+			// output file computed above, before relocation.
+			onSpawned := func(sessionID string) {
+				if req.OnPlannerSpawned != nil {
+					req.OnPlannerSpawned(sessionID, outputFile)
+				}
+			}
+			// Same reader and empty effort/node as runOneShotJSONSession.
+			content, _, err := runOneShotJSONSessionWithSpawnHookAttr(decomposeAttr(req.PRDID), cfg, req.PRDID, req.ProjectDir, backend, req.Model, "",
+				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout,
+				autonomouspkg.RelocateProjectFile, "", launchTagsForDecompose(req.PRDID), onSpawned)
+			return content, err
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
+			// One live-config snapshot for this invocation (see
+			// liveAutonomousConfig): runtime config sets must reach these
+			// reads, not the boot-time literal.
+			liveCfg := liveAutonomousConfig()
 			// Per-PRD decomposition_profile takes priority over global planning_backend.
 			rawBackend := req.Backend
 			if rawBackend == "" {
-				rawBackend = amgrCfg.PlanningBackend
+				rawBackend = liveCfg.PlanningBackend
 			}
 			if rawBackend == "" {
 				rawBackend = "ollama"
@@ -4293,7 +4964,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			// When rawBackend was a registry LLM name (not a bare kind string),
 			// send it as "llm" so /api/ask uses the v7 dispatcher path which
-			// resolves the correct compute node (e.g. datawatch-openai with
+			// resolves the correct compute node (e.g. remote-node with
 			// address http://datawatch:3000). Without this, the dispatcher maps
 			// the bare kind "openwebui" back to a legacy LLM named "openwebui"
 			// which doesn't exist, falls through to s.cfg.OpenWebUI.URL
@@ -4302,7 +4973,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				askBody["llm"] = rawBackend
 			}
 			// Prefer explicitly configured model, then the resolved LLM model.
-			planModel := amgrCfg.PlanningModel
+			planModel := liveCfg.PlanningModel
 			if planModel == "" {
 				planModel = resolvedModel
 			}
@@ -4469,6 +5140,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					"effort":          mapEffortToSession(req.Effort), // real claude_effort pass-through is local-session-only for now
 					"permission_mode": req.PermissionMode,
 					"model":           req.Model,
+					"thinking_level":  req.ThinkingLevel,
 					// BL407 Phase 4 — the PRD's own dedicated branch
 					// name (set in Manager.Run, same idempotent
 					// assignment worktree mode's EnsureWorktree does).
@@ -4518,7 +5190,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					vsess := &session.Session{
 						ID:            out.ID[:min(8, len(out.ID))],
 						FullID:        fullID,
-						Name:          "autonomous:" + req.Title,
+						Name:          autonomousTaskSessionName(req.Title),
 						Task:          spec,
 						State:         session.StateRunning,
 						CreatedAt:     time.Now().UTC(),
@@ -4529,6 +5201,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						OutputMode:    "log",
 						InputMode:     "none",
 						PRDID:         req.PRDID,
+						AutomatonID:   req.PRDID,
+						SpendRole:     spendledger.RoleWorker,
 						TaskID:        req.TaskID,
 						StoryID:       req.StoryID,
 					}
@@ -4564,15 +5238,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return autonomouspkg.SpawnResult{}, fmt.Errorf("session start: %s — %s", resp.Status, string(rb))
 			}
 			var out struct {
-				ID string `json:"id"`
+				ID                    string `json:"id"`
+				ComputeNodeRef        string `json:"compute_node_ref"`
+				ProfileFallbackReason string `json:"profile_fallback_reason"`
 			}
 			_ = json.Unmarshal(rb, &out)
-			return autonomouspkg.SpawnResult{SessionID: out.ID, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles, PreTaskDirtyFiles: preTaskDirtyFiles}, nil
+			return autonomouspkg.SpawnResult{SessionID: out.ID, ComputeNode: out.ComputeNodeRef, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles, PreTaskDirtyFiles: preTaskDirtyFiles, ProfileFallbackReason: out.ProfileFallbackReason}, nil
 		}
 		// v4.0.1 — VerifyFn: uses /api/ask to attest the task spec
 		// against the session summary. verification_backend (empty =
 		// inherit) gives cross-backend independence per BL25 design.
 		autonomousVerify := func(ctx context.Context, prd *autonomouspkg.PRD, task *autonomouspkg.Task) (vres autonomouspkg.VerificationResult, verr error) {
+			// One live-config snapshot for this invocation (see
+			// liveAutonomousConfig): runtime config sets must reach the
+			// stale bound, diff truncation, and verifier selection below.
+			liveCfg := liveAutonomousConfig()
 			// v8.20.2 — wait for the spawned session to reach a terminal
 			// state before verifying. Previously verify fired immediately
 			// after spawn, so the verifier saw no git diff and the session
@@ -4591,24 +5271,135 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				var stallScriptOutput string
 				waitTick := 0
 				waitingInputTicks := 0
+				// awaitHandledLine — design §6.ii: line number of the last
+				// DATAWATCH_AWAIT_EXTERNAL marker line already processed this
+				// wait; the same stale marker line must not be re-handled.
+				awaitHandledLine := -1
+				// decisionHandledID — the open blocking worker question this
+				// wait already parked the task on; parked once per question.
+				decisionHandledID := ""
 				// Session idle detector (autonomous.session_idle_timeout_seconds):
 				// idleSince is when the session was first seen parked in
 				// waiting_input in the current unbroken run; the probe only runs
 				// once that run exceeds idleLimit.
 				idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
 				var idleSince time.Time
+				// Start-confirm bound (autonomous.session_start_confirm_seconds,
+				// default 120): a claude-code session sitting in waiting_input
+				// without ever producing an assistant turn, and showing no other
+				// evidence of work, is "session never started" — e.g. parked on
+				// a startup/confirmation dialog that no one will ever dismiss
+				// (see internal/autonomous/session_start.go). The silence is
+				// measured from the last evidence of work by startTracker (see
+				// internal/autonomous/start_tracker.go), so the bound only bounds such
+				// sessions, nothing else.
+				sessionStartLimit := time.Duration(config.NormalizeSessionStartConfirmSeconds(cfg.Autonomous.SessionStartConfirmSeconds)) * time.Second
 				// Genuine worker-stall bound (see staleWorkerCheck): the log file's own
 				// mtime, not session liveness state, which a cosmetic pane change can
 				// refresh without any real output.
-				staleThreshold := time.Duration(amgrCfg.StaleTaskSeconds) * time.Second
+				staleThreshold := time.Duration(liveCfg.StaleTaskSeconds) * time.Second
 				if staleThreshold <= 0 {
 					staleThreshold = time.Duration(cfg.Session.StaleTimeoutSeconds) * time.Second
 				}
 				var staleLogPath, family string
+				var startTracker *autonomouspkg.StartTracker
 				if s, ok := mgr.GetSession(task.SessionID); ok {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
+					if family == "claude-code" && sessionStartLimit > 0 {
+						// A launched session's silent window starts at the first silent
+						// waiting_input tick. An adopted session is judged in the adopted mode,
+						// anchored at the attempt's launch and seeded from its last evidence of
+						// life, so the bound does not charge the time the daemon was down.
+						startTracker = autonomouspkg.NewWaitStartTracker(sessionStartLimit, task.AdoptedSession, s, task.StartedAt, time.Now())
+					}
 				}
+				// claude-code idle nudge: one nudge after worker_idle_nudge_seconds of
+				// idle, a stall after worker_idle_nudge_stall_seconds more. Both
+				// windows are shorter than the session idle timeout, so the nudge
+				// fires first. Inert for other families. The family is read on every
+				// tick until the session is visible (see postTurnNudge.Step), so a
+				// session that appears after wait start is nudged from its first tick.
+				nudge := newPostTurnNudge(postTurnDeps{
+					sessions:  managerPostTurnSessions{mgr: mgr},
+					recorder:  managerPostTurnRecorder{mgr: autonomousMgrRef},
+					probes:    postTurnProbes{hasWork: hasLiveChildProcess, logAge: staleLogAge(idleLimit)},
+					idleLimit: idleLimit,
+				}, liveCfg, task)
+				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
+				// nothing to the log until they finish, so the log-mtime stall check
+				// is (correctly) disabled for this family — see staleWorkerAppliesTo.
+				// That leaves a silently exited pi with no state-independent
+				// safety net: the tracker below measures silence from now with the
+				// same idleLimit budget and only fires after the runner process is
+				// gone and the log has not grown. Nil for other families, so
+				// exitSilenceTick is a no-op for them.
+				var exitSilenceTracker *autonomouspkg.ExitSilenceTracker
+				if family == "pi-prompt" {
+					exitSilenceTracker = autonomouspkg.NewExitSilenceTracker(time.Now(), idleLimit)
+				}
+				// pi-prompt descendant-only stall detector (autonomous.descendant_stall_seconds).
+				// The log-mtime check below is disabled for this family (see
+				// staleWorkerAppliesTo), leaving one hole the exit-silence detector above
+				// also leaves open: a pi run whose runner has exited but whose work
+				// descendant — a build, a test, a long command — is still alive with no
+				// other sign of life. The tracker measures silence from now, against the
+				// descendant_stall_seconds budget read from the same live config the wait
+				// loop already reads StaleTaskSeconds from (idleLimit / staleThreshold), so
+				// a runtime config change applies without a daemon restart. It fires only
+				// once the silence exceeds the limit and a live work descendant is the
+				// sole sign of life; nil for other families so descendantStallTick is a
+				// no-op for them.
+				descendantStallLimit := time.Duration(config.NormalizeDescendantStallSeconds(liveCfg.DescendantStallSeconds)) * time.Second
+				var descendantStallTracker *autonomouspkg.DescendantStallTracker
+				if family == "pi-prompt" {
+					descendantStallTracker = autonomouspkg.NewDescendantStallTracker(time.Now(), descendantStallLimit)
+				}
+				// The descendants this attempt was accounting for while awaiting results
+				// (union across observations); at stall time they are the identity that the
+				// evidence carries and the only set that the kill path signals.
+				var recordedDescendants map[int]descendantProcess
+				// Per-attempt "output is fresh" observation that feeds the
+				// descendant stall tracker (see descendantOutputObservation): a pane
+				// or the channel moving since the last look resets the silence clock
+				// before the observation. internal/autonomous cannot see the pane or
+				// the channel, so the wait loop supplies the signal here.
+				var descendantOutputObs descendantOutputObservation
+				// Attempt-limit stopper: autonomous.task_max_attempt_seconds
+				// (wall-clock cap on one attempt) and autonomous.task_no_progress_seconds
+				// (how long an attempt may go without real progress — log growth,
+				// file changes, commits or child CPU). Unlike the other stall
+				// detectors these apply to EVERY backend unconditionally: checked
+				// on every tick, no cadence gate and no staleWorkerAppliesTo
+				// filter. The limits are read live off cfg on every tick (the REST
+				// config patch, handlePutConfig -> applyConfigPatch, mutates this
+				// same *config.Config in place), so a runtime change takes effect
+				// without a daemon restart. When both limits are 0 none of this
+				// observes or stops.
+				attemptStart := time.Now()
+				// The first observation is only worth taking when at least one
+				// limit is on right now (a limit enabled later via a runtime
+				// config patch is fine: the first tick that sees it takes a
+				// fresh observation anyway).
+				firstObs := attemptObservation{Now: attemptStart}
+				if cfg.Autonomous.TaskMaxAttemptSeconds > 0 || cfg.Autonomous.TaskNoProgressSeconds > 0 {
+					firstTmux := ""
+					if sess, sok := mgr.GetSession(task.SessionID); sok {
+						firstTmux = sess.TmuxSession
+					}
+					firstObs = buildAttemptObservation(
+						attemptStart,
+						attemptLogSizeOf,
+						workDirFingerprint,
+						childCPUTicks,
+						staleLogPath, taskDir, firstTmux,
+					)
+				}
+				attemptW := newAttemptLimitWatcher(attemptStart, firstObs, mgr, autonomousMgrRef, taskDir, task, task.SessionID)
+				// Keep each tick cheap: take a fresh observation at most every
+				// 15 seconds and reuse the previous one in between.
+				var lastAttemptObs = firstObs
+				var lastAttemptObsAt time.Time
 			waitLoop:
 				for {
 					select {
@@ -4622,7 +5413,156 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							continue
 						}
 						if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
+							// The session is over: drop its scan-history entry so
+							// the fresh-tracker map cannot grow without bound.
+							sseFreshTracker.forget(s.FullID)
+							forgetLoopState(s.FullID) // worker finished: don't carry its streak into a future run
+							if s.State == session.StateComplete {
+								// Completion ends an open nudge as answered.
+								nudge.Close()
+							}
 							break waitLoop
+						}
+						// Design §6.ii — await-external: the worker emitted a
+						// DATAWATCH_AWAIT_EXTERNAL marker and parked on an external
+						// condition (e.g. a long CI run). Handle this BEFORE any
+						// stall detector below: a parked pane is not stalled, and
+						// the one-shot kill paths (waiting_input kill, idle kill,
+						// stale-log kill) must not fire while the worker is parked
+						// by design. The cycle releases the task's inference slot,
+						// keeps the tree lock only if the tree has unpushed work,
+						// re-admits (bounded), then prompts the session to
+						// continue — no retry is counted.
+						if autonomousMgrRef != nil {
+							if tail, terr2 := mgr.TailOutput(s.FullID, 300); terr2 == nil {
+								if mline, cond, fresh := autonomouspkg.ExtractAwaitExternalCondition(tail); fresh && mline != awaitHandledLine {
+									log.Printf("[autonomous] verifier: task %s/%s parked on external condition (%q) — releasing its inference slot and re-admitting",
+										task.PRDID, task.ID, cond)
+									if aerr := autonomousMgrRef.AwaitExternal(ctx, prd, task, cond); aerr != nil {
+										log.Printf("[autonomous] verifier: await-external for task %s/%s failed: %v (handing back to the retry machinery)",
+											task.PRDID, task.ID, aerr)
+										stallErr = aerr
+										break waitLoop
+									}
+									awaitHandledLine = mline
+									// Suppress the stall detectors for the (parked) session.
+									waitingInputTicks = 0
+									idleSince = time.Time{}
+									if exitSilenceTracker != nil {
+										exitSilenceTracker.Reset(time.Now())
+									}
+									if descendantStallTracker != nil {
+										descendantStallTracker.Reset(time.Now())
+										descendantOutputObs.reset()
+									}
+									continue
+								}
+							}
+							// A blocking worker question raised for this task and still
+							// open: park the task on it once (inference slot released, tree
+							// lock kept only with unpushed work, no retry counted) and keep
+							// the session running. It resumes through the coordinator tick
+							// task, not here. While the question stays open the stall
+							// detectors below stay suppressed — the worker is waiting on
+							// the operator by design.
+							if q, ok := autonomousMgrRef.OpenBlockingQuestionForTask(task.ID); ok {
+								if q.ID != decisionHandledID {
+									log.Printf("[autonomous] verifier: task %s/%s raised blocking question %s — parking it for the decision",
+										task.PRDID, task.ID, q.ID)
+									autonomousMgrRef.ParkForDecision(prd, task, q.ID)
+									decisionHandledID = q.ID
+								}
+								waitingInputTicks = 0
+								idleSince = time.Time{}
+								if exitSilenceTracker != nil {
+									exitSilenceTracker.Reset(time.Now())
+								}
+								if descendantStallTracker != nil {
+									descendantStallTracker.Reset(time.Now())
+									descendantOutputObs.reset()
+								}
+								continue
+							}
+						}
+						// Attempt-limit check: every tick, every backend. The
+						// limits are read from the live config object each tick so
+						// a runtime config patch takes effect immediately.
+						maxAttemptLimit := time.Duration(cfg.Autonomous.TaskMaxAttemptSeconds) * time.Second
+						noProgressLimit := time.Duration(cfg.Autonomous.TaskNoProgressSeconds) * time.Second
+						if maxAttemptLimit > 0 || noProgressLimit > 0 {
+							nowObs := time.Now()
+							if lastAttemptObsAt.IsZero() || nowObs.Sub(lastAttemptObsAt) >= 15*time.Second {
+								lastAttemptObs = buildAttemptObservation(
+									nowObs,
+									attemptLogSizeOf,
+									workDirFingerprint,
+									childCPUTicks,
+									staleLogPath, taskDir, s.TmuxSession,
+								)
+								lastAttemptObsAt = nowObs
+							}
+							if limErr := attemptW.check(lastAttemptObs, maxAttemptLimit, noProgressLimit); limErr != nil {
+								// check already preserved the attempt work and killed
+								// the worker session; the code after the loop returns
+								// this reason to the executor, which retries via the
+								// normal budget and finally fails the task with it.
+								log.Printf("[autonomous] attempt limit hit for session %s task %s/%s: %v",
+									task.SessionID, task.PRDID, task.ID, limErr)
+								alertspkg.EmitSystem(alertspkg.LevelError, "Task attempt limit hit",
+									fmt.Sprintf("session=%s prd=%s task=%s: %v", task.SessionID, prd.ID, task.Title, limErr))
+								stallErr = limErr
+								break waitLoop
+							}
+						}
+						if werr := nudge.Step(time.Now()); werr != nil {
+							stallErr = werr
+							break waitLoop
+						}
+						// Progress visibility (this PRD, task-progress endpoint
+						// work) — refresh the task's live Progress snapshot from the
+						// worker session's own log, throttled to once per ~30s so
+						// the periodic poll does not re-parse the (potentially large)
+						// session log every tick. Non-pi backends have no log here so
+						// the refresh is a no-op; pi backends get a real snapshot plus
+						// a looping warning when the identical tool call keeps
+						// repeating across polls.
+						if waitTick%10 == 0 && task.SessionID != "" { // 10 ticks ≈ 30s at the default 3s tick
+							snap, loopWarn, finding, looping := refreshTaskProgress(s, taskDir, config.LoopDetectTurnsEffective(cfg.Autonomous.LoopDetectTurns))
+							// A live loop finding (loop_detect.go over the session log's
+							// recent turns) supersedes the coarser streak-based warning
+							// for what is recorded on the task: it names the announced
+							// action and carries the corrective hint.
+							warn := loopWarn
+							if looping {
+								warn = finding.Warning()
+							}
+							if autonomousMgrRef != nil && (snap != nil || warn != "") {
+								if !autonomousMgrRef.RefreshTaskProgress(task.ID, snap, warn) {
+									log.Printf("[autonomous] progress refresh: task %s not found (skipping progress store)", task.ID)
+								}
+							}
+							// Loop rescue (loop_rescue.go): record the 'looping'
+							// warning + emit the task.looping event, then either send
+							// the corrective message (input-capable session) or stop
+							// the one-shot print worker and route the existing retry
+							// path with the finding's hint appended to the spec.
+							if looping && autonomousMgrRef != nil {
+								action, rerr := autonomousMgrRef.RescueLoop(task.ID, newLoopSessionView(s, mgr), finding)
+								if rerr != nil {
+									log.Printf("[autonomous] wait tick %d: loop rescue %s failed: %v (task %s/%s, action %q)", waitTick, action, rerr, prd.ID, task.ID, finding.Action)
+								} else {
+									log.Printf("[autonomous] wait tick %d: worker loop detected (action %q): %s (task %s/%s)", waitTick, finding.Action, action, prd.ID, task.ID)
+								}
+								if action == autonomouspkg.LoopRescueStopped {
+									// One-shot print worker (no input possible): RescueLoop
+									// stopped it above. Route the existing retry path —
+									// LoopRetryError wraps ErrWorkerStalled (retry trigger,
+									// executor.go) and carries a RetryHint naming the stuck
+									// action, which main.go prepends to the re-spawned spec.
+									stallErr = autonomouspkg.LoopRetryError(finding)
+									break waitLoop
+								}
+							}
 						}
 						// v8.36.1 — every autonomous task session spawns with
 						// one_shot=true (it's expected to run to completion via
@@ -4654,14 +5594,58 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// claude-code specifically, the only backend this was
 						// validated against; other backends fall back to
 						// staleWorkerCheck's log-mtime staleness check below.
-						var stalled bool
-						if s.BackendFamily == "claude-code" {
-							waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, s.State)
+						// Start-confirm check, evaluated before the debounced
+						// waiting_input stall below: while a claude-code session
+						// sits in waiting_input with no assistant turn in the
+						// pane it has never started — a slow, normally
+						// auto-dismissing startup dialog is NOT a worker asking
+						// an interactive question (there is no assistant output to
+						// point at), so the start-confirm bound arbitrates the
+						// whole window instead of the ~9s waiting_input kill.
+						// Sessions that do show a first assistant turn (or leave
+						// waiting_input) are left exactly as before.
+						startSupersedes := false
+						if startTracker != nil {
+							// Every tick feeds the tracker, not only waiting_input
+							// ticks, so the evidence clock follows the pane while the
+							// worker runs. A failed capture is observed as an empty
+							// pane: no evidence, and no stall either.
+							startPane, perr := mgr.CapturePaneVisible(s.FullID)
+							if perr != nil {
+								startPane = ""
+							}
+							startObs := startTracker.Observe(autonomouspkg.StartInput{
+								Now:       time.Now(),
+								State:     string(s.State),
+								Pane:      startPane,
+								Delivered: mgr.TaskDelivered(s.FullID),
+								ChannelAt: s.LastChannelEventAt,
+								ChildPIDs: runnerDescendantPIDs(s.TmuxSession),
+							})
+							if s.State == session.StateWaitingInput && startPane != "" && !startObs.HasAssistantOutput {
+								startSupersedes = true
+								if startStalled, _ := startObs.Stalled(); startStalled {
+									task.StartFailureTail = autonomouspkg.LastLines(startPane, 20)
+									log.Printf("[autonomous] one-shot session %s task %s/%s never started: %s in waiting_input without assistant output for %s (limit %s); killing for retry",
+										task.SessionID, task.PRDID, task.ID, autonomouspkg.SessionStartFailureReason, startObs.WaitingFor.Round(time.Second), sessionStartLimit)
+									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerSessionStart, Reason: sessionStartEndReason(startObs)})
+									stallErr = fmt.Errorf("%s: no assistant output after %s (last %d pane line(s) recorded on the task) — %w; %w",
+										autonomouspkg.SessionStartFailureReason, startObs.WaitingFor.Round(time.Second), len(task.StartFailureTail),
+										autonomouspkg.ErrSessionNeverStarted, autonomouspkg.ErrWorkerStalled)
+									break waitLoop
+								}
+							}
 						}
-						if stalled {
+						var stalled bool
+						// The nudge tracker owns claude-code idleness: the 3-tick
+						// debounce would kill the worker long before the nudge window.
+						if s.BackendFamily == "claude-code" && !nudge.Active() {
+							waitingInputTicks, stalled = decomposeWaitingInputTick(waitingInputTicks, s.State, time.Since(s.CreatedAt), decomposeDeliveryGrace(cfg))
+						}
+						if stalled && !startSupersedes {
 							log.Printf("[autonomous] one-shot session %s task %s/%s is waiting_input (not disclaimer-oscillation); killing for retry",
 								task.SessionID, task.PRDID, task.ID)
-							_ = mgr.Kill(task.SessionID)
+							_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerWaitingInput, Reason: waitingInputEndReason(waitingInputTicks)})
 							stallErr = fmt.Errorf("worker stopped and asked an interactive question instead of completing the one-shot task — this is a one-shot run, no one will answer; make the most reasonable judgment call yourself (e.g. if output already exists from a prior attempt, verify it's still correct and either finish or redo it) and continue to DATAWATCH_COMPLETE without asking: %w", autonomouspkg.ErrWorkerStalled)
 							break waitLoop
 						}
@@ -4677,6 +5661,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							}
 							if idleFor := time.Since(idleSince); idleFor > idleLimit {
 								_, outputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
+								// HasLiveChildProcess carries runner liveness for pi-prompt (a one-shot
+								// print run has no child), work children for every other family.
 								idleObs := autonomouspkg.SessionIdleObservation{
 									SessionID:           task.SessionID,
 									Backend:             s.BackendFamily,
@@ -4684,18 +5670,64 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									State:               string(s.State),
 									IdleFor:             idleFor,
 									OutputAge:           outputAge,
-									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+									LogLastEventAge:     piLogLastEventAge(s.BackendFamily, piSessionsRoot(), taskDir, s.CreatedAt, time.Now()),
+									HasLiveChildProcess: idleLivenessProbe(s.BackendFamily)(s.TmuxSession, s.ProjectDir),
 									Limit:               idleLimit,
+									Nudge:               sessionNudgeNote(autonomousMgrRef, prd.ID, task.ID, task.SessionID),
 								}
 								if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
 									log.Printf("[autonomous] session idle detector fired for %s task %s/%s: %s; killing for retry",
 										task.SessionID, task.PRDID, task.ID, idleReason)
-									_ = mgr.Kill(task.SessionID)
+									if family == "pi-prompt" {
+										pane, paneErr := mgr.CapturePaneScrollback(s.FullID, 300)
+										if paneErr != nil {
+											pane = ""
+										}
+										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+									}
+									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerIdleDetector, Reason: idleDetectorEndReason(idleObs)})
 									alertspkg.EmitSystem(alertspkg.LevelError, "Task session idle without completion",
 										fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, idleReason))
-									stallErr = autonomouspkg.SessionIdleError(idleObs)
+									stallErr = withRunnerExitStatus(autonomouspkg.SessionIdleError(idleObs), task.RunnerEvidence)
 									break waitLoop
 								}
+							}
+						}
+						// pi-prompt exit-silence detector: a `pi --print` run that
+						// exits without a completion or verdict leaves no log growth
+						// and may never reach a terminal state, so silence after the
+						// runner stops is the stall signal. Deliberately
+						// state-independent (unlike the idle detector above): it must
+						// fire even if the pane is parked anywhere other than
+						// waiting_input. Only the pi-prompt family runs it (nil tracker
+						// otherwise), and mgr.Kill below is the only kill path — no
+						// tmux kill commands.
+						if exitSilenceTracker != nil {
+							// Runner liveness, not work children, feeds the tracker: the question is
+							// whether the runner has exited. A generating pi run may have no child
+							// process, and the tracker treats a live runner as activity.
+							if stalled, reason := exitSilenceTick(exitSilenceTracker, family, time.Now(),
+								func() bool { return hasLiveRunnerProcess(s.TmuxSession) },
+								func() time.Time {
+									if fst, serr := os.Stat(staleLogPath); serr == nil {
+										return fst.ModTime()
+									}
+									return time.Time{}
+								}); stalled {
+								log.Printf("[autonomous] exit-silence detector fired for session %s task %s/%s: %s; killing for retry",
+									task.SessionID, task.PRDID, task.ID, reason)
+								if family == "pi-prompt" {
+									pane, paneErr := mgr.CapturePaneScrollback(s.FullID, 300)
+									if paneErr != nil {
+										pane = ""
+									}
+									task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+								}
+								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerExitSilence, Reason: exitSilenceEndReason(reason)})
+								alertspkg.EmitSystem(alertspkg.LevelError, "Task session exited silently",
+									fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, reason))
+								stallErr = withRunnerExitStatus(autonomouspkg.ExitSilenceError(reason), task.RunnerEvidence)
+								break waitLoop
 							}
 						}
 						// Every ~30s scan scrollback for SSE stall patterns that
@@ -4703,12 +5735,65 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// session will never self-terminate.
 						if waitTick%10 == 9 && s.TmuxSession != "" {
 							if sb, sbErr := mgr.CapturePaneScrollback(s.FullID, 300); sbErr == nil && sb != "" {
-								if pat, matched := matchSSEStallPattern(sb); matched {
-									log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (%q); killing for retry",
-										task.SessionID, task.PRDID, task.ID, pat)
-									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID)
-									stallErr = fmt.Errorf("opencode SSE stall detected (%q): %w", pat, autonomouspkg.ErrWorkerStalled)
+								if m, matched := sseStallScan(s.FullID, family, sb, sseStallSourceWaitLoop); matched {
+									log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (backend %s, source %s, line %q, pattern %q); killing for retry",
+										task.SessionID, task.PRDID, task.ID, m.Backend, m.Source, m.Line, m.Pattern)
+									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
+										session.EndReason{Caller: endCallerSSEStall, Reason: sseStallEndReason(m)})
+									stallErr = fmt.Errorf("opencode SSE stall detected (line %q): %w", m.Line, autonomouspkg.ErrWorkerStalled)
 									break waitLoop
+								}
+							}
+							if descendantStallTracker != nil {
+								// Observe on this ~30s cadence. A readable work-descendant
+								// tree is a precondition: nil means the tree could not be read,
+								// no observation is made and the stall clock must not move. A
+								// fresh log write, a fresh workdir file, or fresh output —
+								// pane growth or a newer channel event — resets the silence;
+								// the detector fires once the silence exceeds the limit with
+								// a live work descendant as the sole sign of life.
+								if ds := workDescendantPIDs(s.TmuxSession, s.ProjectDir); ds != nil {
+									recordedDescendants = recordDescendants(ds, recordedDescendants)
+									var logModTime time.Time
+									if fst, serr := os.Stat(staleLogPath); serr == nil {
+										logModTime = fst.ModTime()
+									}
+									// Output is the "output resets the silence clock" liveness
+									// signal: pane (worker stdout) growth since the last look, or
+									// a channel event newer than the last look, moves the clock
+									// before the observation. A failed pane capture counts as
+									// not-fresh, never as a reset.
+									now := time.Now()
+									sb, serr := mgr.CapturePaneScrollback(s.FullID, 500)
+									if stalled, reason := descendantWaitStep(descendantStallTracker, &descendantOutputObs, family, now, len(ds),
+										logModTime, newestWorkDirMtime(taskDir), sb, serr == nil, s.LastChannelEventAt); stalled {
+										log.Printf("[autonomous] descendant-stall detector fired for session %s task %s/%s: %s; killing for retry",
+											task.SessionID, task.PRDID, task.ID, reason)
+										pane, paneErr := mgr.CapturePaneScrollback(s.FullID, 300)
+										if paneErr != nil {
+											pane = ""
+										}
+										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+										appendDescendantEvidence(task.RunnerEvidence, recordedDescendants)
+										killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
+											session.EndReason{Caller: endCallerDescendantStall, Reason: descendantStallEndReason(reason)})
+										// Kill ends the session, not the process tree: signal the
+										// descendants we accounted for — 5s grace, a real kernel
+										// signal, and only where the pid still carries the
+										// recorded start time. Never a name pattern.
+										ended, survivors := endRecordedDescendants(recordedDescendants, 5*time.Second,
+											signalRecordedPID,
+											func(rec descendantProcess) bool {
+												st, ok := readProcessStartTime(rec.PID)
+												return ok && st == rec.StartTime
+											})
+										appendDescendantEvidence(task.RunnerEvidence, descendantEvidenceLines(ended))
+										appendDescendantEvidence(task.RunnerEvidence, descendantEvidenceLines(survivors))
+										alertspkg.EmitSystem(alertspkg.LevelError, "Task worker descendant-only stall",
+											fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, reason))
+										stallErr = withRunnerExitStatus(autonomouspkg.DescendantStallError(reason), task.RunnerEvidence)
+										break waitLoop
+									}
 								}
 							}
 							if staleWorkerAppliesTo(family) {
@@ -4718,12 +5803,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								// whose backend was active within the threshold is not
 								// stalled, even with a silent log.
 								obs := workerStallObservation{
-									LogPath:   staleLogPath,
-									WorkDir:   taskDir,
-									Threshold: staleThreshold,
-									Now:       time.Now(),
+									LogPath:         staleLogPath,
+									WorkDir:         taskDir,
+									Threshold:       staleThreshold,
+									Now:             time.Now(),
+									LogLastEventAge: piLogLastEventAge(s.BackendFamily, piSessionsRoot(), taskDir, s.CreatedAt, time.Now()),
+									// Runner liveness, not work children: this check asks whether the
+									// worker is still running at all. An idle claude worker still reads as
+									// alive here, which keeps the pre-existing stall behaviour unchanged.
 									ChildAlive: func() bool {
-										return hasLiveChildProcess(s.TmuxSession)
+										return hasLiveRunnerProcess(s.TmuxSession)
 									},
 									BackendBusy: func() bool {
 										return !s.LastChannelEventAt.IsZero() && time.Since(s.LastChannelEventAt) <= staleThreshold
@@ -4744,13 +5833,42 @@ func runStart(cmd *cobra.Command, _ []string) error {
 											summary = session.ExtractCompletionSummary(tail)
 										}
 										pg := session.NewProjectGit(taskDir)
-										// Bound unscoped staging to this run's own changes.
+										// Bound unscoped staging to this run's own changes,
+										// and honour the autonomous never-stage patterns.
 										if !s.CreatedAt.IsZero() {
 											pg.SetRunStart(s.CreatedAt)
 										}
-										sha, cerr := pg.CommitSessionWork(s.ID, s.Task, summary, s.WriteScope)
+										pg.SetNeverStagePatterns(cfg.Autonomous.EffectiveSnapshotNeverStage())
+										// Verification has passed, so the commit may carry the
+										// session's commit token.
+										mgr.AuthorizeCommit(s.FullID, pg)
+										// The checkpoint verification script passed before this
+										// closure runs, so the commit body records it as passed.
+										sha, cerr := pg.CommitTaskWork(s.ID, session.TaskCommitLabel{
+											PRDID:        s.PRDID,
+											TaskTitle:    s.TaskTitle,
+											Prompt:       s.Task,
+											Summary:      summary,
+											Verification: "passed",
+										}, s.WriteScope)
+										if gitguard.IsNonProject(cerr) {
+											// Refused once and audited; retrying cannot help.
+											return nil
+										}
 										if cerr != nil {
 											return cerr
+										}
+										for _, sk := range pg.LastStagingSkipped() {
+											log.Printf("[autonomous] verifier commit: left %q unstaged (%s)", sk.Path, sk.Reason)
+										}
+										// Record the staging-guard skip list on the task result
+										// (advisory evidence; last staging pass wins).
+										if autonomousMgrRef != nil {
+											if skipped := pg.LastStagingSkipped(); len(skipped) > 0 {
+												if rerr := autonomousMgrRef.RecordTaskSkippedSnapshotPaths(task.PRDID, task.ID, autonomouspkg.TaskSnapshotSkippedFrom(skipped)); rerr != nil {
+													log.Printf("[autonomous] verifier: RecordTaskSkippedSnapshotPaths(%s/%s): %v", task.PRDID, task.ID, rerr)
+												}
+											}
 										}
 										if sha != "" && autonomousMgrRef != nil {
 											if rerr := autonomousMgrRef.RecordTaskAttemptCommit(task.PRDID, task.ID, sha); rerr != nil {
@@ -4769,7 +5887,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									}
 									log.Printf("[autonomous] worker stall detected in session %s task %s/%s (%s); killing for retry",
 										task.SessionID, task.PRDID, task.ID, reason)
-									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID)
+									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
+										session.EndReason{Caller: endCallerActivityStall, Reason: activityStallEndReason(reason)})
 									stallErr = workerStallError(reason, staleThreshold)
 									if stallScriptOutput != "" {
 										stallErr = fmt.Errorf("%w; task verification script output: %s", stallErr, stallScriptOutput)
@@ -4817,7 +5936,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 					if s.State != session.StateKilled {
-						_ = mgr.Kill(task.SessionID)
+						_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerPostWait, Reason: postWaitEndReason(s.State)})
 					}
 					// Record the worker session's deterministic commit sha (if
 					// any) on the task's ordered, de-duplicated attempt record.
@@ -4828,12 +5947,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							log.Printf("[autonomous] verifier: RecordTaskAttemptCommit(%s/%s): %v", task.PRDID, task.ID, rerr)
 						}
 					}
+					// Best-effort: record the files the completion commit left
+					// unstaged on the task's snapshot record. Never fails
+					// verification (same posture as RecordTaskAttemptCommit).
+					if len(s.StagingSkipped) > 0 && autonomousMgrRef != nil {
+						if rerr := autonomousMgrRef.RecordTaskSkippedSnapshotPaths(task.PRDID, task.ID, autonomouspkg.TaskSnapshotSkippedFrom(s.StagingSkipped)); rerr != nil {
+							log.Printf("[autonomous] verifier: RecordTaskSkippedSnapshotPaths(%s/%s): %v", task.PRDID, task.ID, rerr)
+						}
+					}
 				}
 				if doneVerdict != nil {
 					return *doneVerdict, nil
 				}
 				if stallErr != nil {
-					return autonomouspkg.VerificationResult{}, stallErr
+					// Boundary mapping: a prompt-delivery failure from the
+					// session package (ErrPromptNotSubmitted) is surfaced to the
+					// autonomous executor as its own start-failure sentinel so
+					// it takes the start-failure budget path, not the stall path.
+					return autonomouspkg.VerificationResult{}, mapSessionStartError(stallErr)
+				}
+				// A claude-code worker is handed its task after launch (channel
+				// delivery). If it ended without the delivery ever being
+				// recorded, nothing ran: classify it as a launch failure and
+				// retry rather than verifying an untouched tree.
+				if ls, ok := mgr.GetSession(task.SessionID); ok && ls.OneShot && ls.AgentID == "" &&
+					ls.BackendFamily == "claude-code" && !mgr.TaskDelivered(ls.FullID) {
+					log.Printf("[autonomous] launch failure: session %s task %s/%s ended (%s) with no task delivery recorded; retrying",
+						ls.FullID, task.PRDID, task.ID, ls.State)
+					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureError(ls.FullID, ls.BackendFamily, string(ls.State))
 				}
 			}
 			// BL366 — git-diff grounding: capture the worker's actual change.
@@ -4972,13 +6113,41 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// signature in the session's own output: a crash mid-run, not a
 					// judgment, is Category "infra" and should be auto-retryable
 					// under BL410 instead of exhausted after one attempt.
+					// A read-only task writes no tree changes; its declared report
+					// file (under the tree-status-excluded .datawatch/) is the output.
+					reportPresent, reportDeclared := readOnlyReportPresent(task, taskDir)
+					if reportVerdict, handled := verdictForReadOnlyReport(reportPresent, reportDeclared); handled && reportVerdict.OK {
+						if strings.TrimSpace(task.VerificationScript) != "" {
+							out, code, rerr := autonomouspkg.RunVerificationScriptExit(task.VerificationScript, taskDir)
+							if rerr != nil || code != 0 {
+								msg := fmt.Sprintf("verifier: read-only report %s exists, but the task's verification script %q failed (exit %d)", reportDeclared, task.VerificationScript, code)
+								issues := scriptFailureIssues(task.VerificationScript, code, out)
+								if rerr != nil {
+									msg = fmt.Sprintf("verifier: read-only report %s exists, but the task's verification script %q could not run: %v", reportDeclared, task.VerificationScript, rerr)
+									issues = []string{msg}
+								}
+								return autonomouspkg.VerificationResult{OK: false, Severity: "medium", Summary: msg, Issues: issues, VerifiedAt: time.Now()}, nil
+							}
+						}
+						return reportVerdict, nil
+					}
 					// Work already landed by an earlier attempt: if the task's own
 					// verification script passes, accept instead of no-output failure.
 					if alreadyLanded, ok := verdictForAlreadyLanded(task.VerificationScript, taskDir, task.PriorAttemptCount); ok {
 						return alreadyLanded, nil
 					}
+					// A note task that changes nothing by design passes on its
+					// exemption reason; without a reason the failure below stands.
+					if exempt, handled := verdictForExemptNoChange(task.VerificationScriptReason, task.VerificationScript); handled {
+						return exempt, nil
+					}
 					category := ""
 					summary := "verifier: no changes detected (diff empty and no new files); task produced no output"
+					if reportDeclared != "" {
+						// Read-only task whose declared report is absent or empty.
+						missing, _ := verdictForReadOnlyReport(false, reportDeclared)
+						summary = missing.Summary
+					}
 					if crashLine := detectHarnessCrash(mgr.TailOutput, task.SessionID); crashLine != "" {
 						category = "infra"
 						summary = "verifier: harness crashed mid-run (" + crashLine + "); diff empty — not a content judgment, retrying as infra"
@@ -4990,7 +6159,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						Category:   category,
 					}, nil
 				}
-				maxBytes := amgrCfg.VerifierDiffMaxBytes
+				maxBytes := liveCfg.VerifierDiffMaxBytes
 				if maxBytes <= 0 {
 					maxBytes = 8192
 				}
@@ -5099,7 +6268,8 @@ Pre-existing files written by task (not tracked by git):
 %s%s
 
 Verify whether the diff plausibly implements the spec. Reply with STRICT JSON only — no prose before or after:
-{"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
+{"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}
+issues must be an array of plain strings, one sentence each, never objects.`,
 				trustNotice, specPart, diffSection)
 			// v8.36.0 — acquire the same node:/llm: pool a task on vbackend
 			// would use before firing the ask call, and hold it for the
@@ -5113,7 +6283,7 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// (non-blocking) before committing to the single-backend
 			// default's normal, potentially hours-long wait. See
 			// resolveVerifierCandidates' doc comment for why.
-			// Per-task / story / Automaton verification overrides: an
+			// Per-task / story / Automaton / Automation verification overrides: an
 			// explicit override skips the verification_backends pool and
 			// goes through resolveVerifierBackendModel's safety logic as
 			// the configured backend/model; with no override (Source
@@ -5121,32 +6291,163 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// before. Effort is applied only from an explicit override —
 			// the global verification_effort is still not consumed by
 			// verify (pre-existing gap, unchanged here).
-			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, amgrCfg)
-			explicitEffortCfg := amgrCfg
+			var vauto *autonomouspkg.Automation
+			if autonomousMgrRef != nil {
+				vauto = autonomousMgrRef.AutomationForPRD(prd)
+			}
+			// The resolved LLM also carries the configured verification_mode of
+			// the serving registry entry. An invalid stored mode fails closed
+			// with a setup verdict; it is never coerced.
+			resolvedVLLM, modeErr := autonomouspkg.ResolveVerificationLLMWithMode(prd, task, vauto, liveCfg, verificationModeLookup(autonomousInferenceReg))
+			if modeErr != nil {
+				return autonomouspkg.VerificationResult{
+					OK:         false,
+					Severity:   "high",
+					Summary:    "verifier: judge never ran — " + modeErr.Error(),
+					Issues:     []string{"configuration failure, not a finding about the task"},
+					VerifiedAt: time.Now(),
+					Category:   "setup",
+				}, nil
+			}
+			// Infra escalation: after enough consecutive infra verifier
+			// failures on this task, this one verification runs on the
+			// fallback backend; the count resets when it finishes.
+			verifierEscalated := false
+			if autonomousMgrRef != nil {
+				configuredVBackend := resolvedVLLM.Backend
+				if configuredVBackend == "" && len(liveCfg.VerificationBackends) > 0 {
+					configuredVBackend = liveCfg.VerificationBackends[0]
+				}
+				if configuredVBackend == "" {
+					configuredVBackend = liveCfg.VerificationBackend
+				}
+				if to, esc := autonomouspkg.DecideVerifierBackend(task.VerifierInfraFailures,
+					config.NormalizeVerifierInfraEscalationThreshold(liveCfg.VerifierInfraEscalationThreshold),
+					configuredVBackend,
+					config.NormalizeFallbackVerificationBackend(liveCfg.FallbackVerificationBackend)); esc {
+					verifierEscalated = true
+					if rerr := autonomousMgrRef.RecordVerifierEscalation(prd.ID, task.ID, configuredVBackend, to, task.VerifierInfraFailures); rerr != nil {
+						log.Printf("[autonomous] verifier: RecordVerifierEscalation(%s/%s): %v", prd.ID, task.ID, rerr)
+					}
+					resolvedVLLM.Backend, resolvedVLLM.Model, resolvedVLLM.Source = to, "", autonomouspkg.VerifierSourceTask
+				}
+				defer func() {
+					infra := verr == nil && !vres.OK && vres.Category == "infra"
+					if rerr := autonomousMgrRef.RecordVerifierOutcome(prd.ID, task.ID, infra, verifierEscalated); rerr != nil {
+						log.Printf("[autonomous] verifier: RecordVerifierOutcome(%s/%s): %v", prd.ID, task.ID, rerr)
+					}
+				}()
+			}
+			// Cost metrics: queue wait runs from here until the lease is
+			// granted, run time from the grant to the verifier result.
+			vRequestedAt := time.Now()
+			var vGrantedAt time.Time
+			// vRunCapEnded is set by the onCap hook below when the run cap
+			// ended a verifier session, so the record counts it as run_cap.
+			var vRunCapEnded bool
+			defer func() {
+				end := time.Now()
+				var wait, run time.Duration
+				if vGrantedAt.IsZero() {
+					wait = end.Sub(vRequestedAt)
+				} else {
+					wait, run = vGrantedAt.Sub(vRequestedAt), end.Sub(vGrantedAt)
+				}
+				summary := vres.Summary
+				if verr != nil {
+					summary += " " + verr.Error()
+				}
+				ok := verr == nil && vres.OK
+				cat := verifierStatsCategory(ok, vres.Category, summary, verifierEscalated, verr, vRunCapEnded)
+				autonomouspkg.DefaultVerifierStats.Record(wait, run, cat)
+				metricsPkg.VerifierRuns.WithLabelValues(cat).Inc()
+				metricsPkg.VerifierWaitSeconds.Add(wait.Seconds())
+				metricsPkg.VerifierRunSeconds.Add(run.Seconds())
+			}()
+			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
-			var verifierTryAdmit func(backend, model string) (func(), bool)
+			var verifierTryAdmit func(backend, model string) (func(), string, bool)
 			if verifierCapacityTryAdmit != nil {
-				verifierTryAdmit = func(backend, model string) (func(), bool) {
-					return verifierCapacityTryAdmit(ctx, backend, model, "verify:"+task.ID, prd.ID)
+				verifierTryAdmit = func(backend, model string) (func(), string, bool) {
+					return verifierCapacityTryAdmit(ctx, backend, model, task.ID, prd.ID, task.SessionID)
 				}
 			}
-			vsel := selectVerifierLLM(verifierSelectInput{
-				Resolved:       resolvedVLLM,
-				ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, explicitEffortCfg).Effort,
-				Pool:           amgrCfg.VerificationBackends,
-				GlobalBackend:  amgrCfg.VerificationBackend,
-				GlobalModel:    amgrCfg.VerificationModel,
-				PRDBackend:     prd.Backend,
-				PRDModel:       prd.Model,
-				ProjectDir:     taskDir,
-			}, verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
+			// BL-stale-config tests (live_autonomous_config_test.go) pin
+			// this exact projection: pool / global backend / global model
+			// always come from the live snapshot, never a captured value.
+			vpool, vglobalBackend, vglobalModel := effectiveVerifierSelection(liveCfg)
+			// Verifier policy: a non-fixed mode (or a stronger-verifier /
+			// Claude-cap trigger) picks the backend; otherwise, and when no
+			// backend is eligible, the selection below is unchanged. An infra
+			// escalation sets the source to task, so it keeps precedence.
+			vsel, policyDecided := policyVerifierSelection(autonomousMgrRef, prd, task, resolvedVLLM, liveCfg, taskDir,
+				verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
+			if !policyDecided {
+				vsel = selectVerifierLLM(verifierSelectInput{
+					Resolved:       resolvedVLLM,
+					ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, vauto, explicitEffortCfg).Effort,
+					Pool:           vpool,
+					GlobalBackend:  vglobalBackend,
+					GlobalModel:    vglobalModel,
+					PRDBackend:     prd.Backend,
+					PRDModel:       prd.Model,
+					ProjectDir:     taskDir,
+				}, verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
+			}
 			vbackend, vkind, verifyModel, useSession := vsel.Backend, vsel.Kind, vsel.Model, vsel.UseSession
+			// v9.10.19 — a pi-family VERIFY session must be pinned to an
+			// explicit model; it must never run on pi's own host default.
+			// selectVerifierLLM already applied the documented chain
+			// (task → story → PRD → autonomous.verification_model); if
+			// the pi/pi-prompt session still has no model, guardPiFamilyVerifyModel
+			// takes the last documented tier (autonomous.planning_model)
+			// and, when even that is unset, returns a loud "setup" verdict
+			// naming the configuration keys (same verdict class as a
+			// missing verifier script: the judge never ran, so the block
+			// costs no auto-fix budget).
+			if useSession && isPiFamilyKind(vkind) && verifyModel == "" {
+				if m, setup := guardPiFamilyVerifyModel(vbackend, amgrCfg.VerificationModel, amgrCfg.PlanningModel); setup != nil {
+					return *setup, nil
+				} else {
+					verifyModel = m
+				}
+			}
 			release := vsel.Release
+			// vnode is the compute node the verifier's lease holds ("" for a
+			// one-node entry): the judge session or ask call runs there.
+			vnode := vsel.Node
+			if release != nil {
+				vGrantedAt = time.Now()
+			}
 			// Every result returned from here on records which LLM judged it.
-			defer func() { vsel.stamp(&vres) }()
+			defer func() {
+				vsel.stamp(&vres)
+			}()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
-					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID, prd.ID)
+					// A pick the policy made from the load is re-run while the
+					// request waits; any other pick waits on its backend alone.
+					waitSel := vsel
+					waitSel.Model = verifyModel
+					lease, aerr := awaitVerifierLease(ctx, waitSel, verifierLeaseWait{
+						Admit: func(c context.Context, b, m string) (func(), string, error) {
+							return verifierCapacityAdmit(c, b, m, task.ID, prd.ID, task.SessionID)
+						},
+						Take:    verifierTryAdmit,
+						Changed: verifierCapacityChanged,
+						Pin: func(s *verifierSelection) *autonomouspkg.VerificationResult {
+							if s.UseSession && isPiFamilyKind(s.Kind) && s.Model == "" {
+								// Same setup verdict as for the first pick.
+								m, setup := guardPiFamilyVerifyModel(s.Backend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)
+								if setup != nil {
+									return setup
+								}
+								s.Model = m
+							}
+							return nil
+						},
+						Mgr: autonomousMgrRef, PRDID: prd.ID, TaskID: task.ID,
+					})
 					if aerr != nil {
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
@@ -5157,11 +6458,30 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 							Category:   "infra",
 						}, nil
 					}
-					release = r
+					if lease.Setup != nil {
+						return *lease.Setup, nil
+					}
+					release = lease.Release
+					vnode = lease.Node
+					if lease.Moved {
+						// Run, count and stamp the result under the backend the
+						// lease landed on.
+						vsel = lease.Sel
+						vbackend, vkind, verifyModel, useSession = vsel.Backend, vsel.Kind, vsel.Model, vsel.UseSession
+					}
+					vGrantedAt = time.Now()
 				}
 			}
 			if release != nil {
 				defer release()
+			}
+			// Classify mode: the verdict (ok and severity) is read from the
+			// classifier's option scores; there is no generate-and-parse
+			// fallback. Generate mode skips this block entirely and runs the
+			// unchanged path below.
+			if resolvedVLLM.Mode == autonomouspkg.VerifierModeClassify {
+				return runClassifyVerification(ctx, vnode, vbackend, verifyModel, prompt,
+					autonomouspkg.RecordScoresEnabled(liveCfg.VerificationRecordScores)), nil
 			}
 			// B124 — vkind has no /api/ask adapter but is a real
 			// tool-using backend and taskDir exists to run it in:
@@ -5172,19 +6492,54 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			if useSession {
 				specHash := sha256.Sum256([]byte(task.ID + "|" + prompt))
 				outputFile := filepath.Join(taskDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
-				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
-				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
-					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg))
+				deliverPrompt := autonomouspkg.JudgePromptForDelivery(taskDir, task.ID+"-verify", vbackend, prompt, cfg.Autonomous.JudgePromptFileThresholdLines)
+				sessionTask := sessionJudgmentTask(deliverPrompt, taskDir, outputFile)
+				// A session ended at the run cap is retried exactly once on the
+				// next backend in the verifier policy order; the retry backend
+				// runs on its registry default model (or the pi-family guard).
+				// Only the first backend keeps the lease's node.
+				content, serr := runVerifierSessionWithRunCapHook(
+					effectiveVerifierPolicy(liveCfg).EffectiveBackends(vpool, vglobalBackend), vbackend, verifyModel,
+					func(backend, model string) (string, error) {
+						node := vnode
+						if backend != vbackend {
+							node = ""
+						}
+						return runOneShotJSONSessionWithEffortAttr(verifyAttr(prd.ID, task.ID), cfg, prd.ID, taskDir, backend, model,
+							mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
+							"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), node,
+							withSessionProfile(autonomousMgrRef, launchTagsForVerify(prd.ID, task.StoryID), "verifier", prd, task))
+					},
+					func(backend string) (string, bool) {
+						if resolveAskBackend == nil {
+							return "", true
+						}
+						kind, model, rerr := resolveAskBackend(backend)
+						if rerr != nil {
+							return "", false
+						}
+						if isPiFamilyKind(kind) && model == "" {
+							m, setup := guardPiFamilyVerifyModel(backend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)
+							if setup != nil || m == "" {
+								return "", false
+							}
+							return m, true
+						}
+						return model, true
+					},
+					// Before the retry decision: free the verifier's lease and
+					// record the run-cap decision.
+					func(capEnd *autonomouspkg.OneShotNoOutputError) {
+						if capEnd != nil && capEnd.RunCap {
+							vRunCapEnded = true
+						}
+						verifierRunCapDecision(autonomousMgrRef, prd.ID, task.ID, capEnd)
+					})
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
-					return autonomouspkg.VerificationResult{
-						OK: false, Severity: "medium",
-						Summary:    "verifier(session): " + serr.Error(),
-						VerifiedAt: time.Now(),
-						Category:   "infra",
-					}, nil
+					// A run-cap end lands here too, as infra.
+					return verifierSessionInfraResult(serr), nil
 				}
 				var parsed autonomouspkg.VerificationResult
 				if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
@@ -5204,24 +6559,17 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 						Summary:    fmt.Sprintf("decompose judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
 						VerifiedAt: time.Now(),
 						Category:   "invalid-response",
+						RawJudge:   truncate(content, 16*1024),
 						Issues:     []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
 					}, nil
 				}
+				parsed.RawJudge = truncate(content, 16*1024)
 				parsed.VerifiedAt = time.Now()
 				return parsed, nil
 			}
 			// /api/ask has no effort field — an override effort is only
 			// recorded (VerifierEffort) on this path, not applied.
-			askBody := map[string]any{
-				"question": prompt,
-				"backend":  vkind,
-			}
-			if vbackend != vkind && vbackend != "" {
-				askBody["llm"] = vbackend
-			}
-			if verifyModel != "" {
-				askBody["model"] = verifyModel
-			}
+			askBody := judgeAskBody(prompt, vkind, vbackend, verifyModel, vnode)
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",
@@ -5270,9 +6618,11 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					Summary:    fmt.Sprintf("verifier judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
 					VerifiedAt: time.Now(),
 					Category:   "invalid-response",
+					RawJudge:   truncate(ask.Answer, 16*1024),
 					Issues:     []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
 				}, nil
 			}
+			parsed.RawJudge = truncate(ask.Answer, 16*1024)
 			parsed.VerifiedAt = time.Now()
 			return parsed, nil
 		}
@@ -5281,163 +6631,375 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 		// configured in autonomous.guardrail_backend (or inherit). Output
 		// JSON shape mirrors the BL117 orchestrator's Verdict so the
 		// downstream UI renders uniformly.
-		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
+		// autonomousGuardrailAttempt is one judge attempt on one backend. The
+		// outer autonomousGuardrail below runs it once per backend in the
+		// judge policy (runJudgeAttempts) and sets att.TimedOut when the
+		// session hit its time limit.
+		autonomousGuardrailAttempt := func(ctx context.Context, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			prompt := buildAutonomousGuardrailPrompt(req)
+			if req.Prompt != "" {
+				// The plan-review judge supplies its own prompt.
+				prompt = req.Prompt
+			}
 			// BL416 Phase 3 — per-unit resolved backend/model win over the flat config.
-			gbackend, guardrailModel := guardrailBackendModel(req, amgrCfg.VerificationBackend, amgrCfg.VerificationModel)
+			gbackend, guardrailModel := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
+			if backend != gbackend {
+				// A judge policy entry replaces the unit's backend. The unit's
+				// model was chosen for that backend, so it is not carried over.
+				gbackend, guardrailModel = backend, ""
+				req.GuardrailModel = ""
+			}
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
-			if !askCompatible(gkind) {
-				// B124 — a real tool-using backend with somewhere to run
-				// it: spawn a one-shot session instead of silently
-				// downgrading to ollama (what this used to do
-				// unconditionally). No project_dir (headless PRD) still
-				// downgrades — there's nowhere to spawn into.
-				if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {
-					// B124 follow-up (v9.0.45) — guardrailModel may hold
-					// the flat ask-compatible VerificationModel default
-					// (guardrailBackendModel's own fallback when
-					// req.GuardrailModel is empty), which must never be
-					// applied to a session call — found live, the
-					// identical bug fixed in resolveVerifierBackendModel
-					// for verify: a real claude-code session rejected an
-					// Ollama model name outright and hung until the
-					// session timeout. Only a genuine per-unit override
-					// (req.GuardrailModel) carries through; otherwise
-					// prefer the session backend's own registry-default
-					// model (gmodel).
-					sessionModel := req.GuardrailModel
-					if sessionModel == "" {
-						sessionModel = gmodel
+
+			// Capacity admission: the guardrail judge acquires the backend+node
+			// pools as soon as backend and model are decided — before it
+			// spawns or asks — and releases on every path (success, setup
+			// verdict, session error, unparseable output, ask failure, panic)
+			// via the deferred release. The judge runner's own deferred
+			// session kill runs before this closure's release, which is the
+			// order we want. A nil judgeCapacityAdmit (unset — e.g. tests)
+			// means no admission, exactly like the verifier's.
+			// judgeNode is the compute node the judge's lease holds ("" for a
+			// one-node entry): the session or ask call runs there.
+			// An admission failure (wait expired or context cancelled) is the
+			// infra verdict runJudgeLeased returns; the judge never ran.
+			admModel := guardrailModel
+			if admModel == "" {
+				admModel = gmodel
+			}
+			return runJudgeLeased(ctx, judgeCapacityAdmit, att, admModel, req.UnitID, req.PRDID,
+				func(judgeNode string) (autonomouspkg.GuardrailVerdict, error) {
+					if !askCompatible(gkind) {
+						// B124 — a real tool-using backend with somewhere to run
+						// it: spawn a one-shot session instead of silently
+						// downgrading to ollama (what this used to do
+						// unconditionally). No project_dir (headless PRD) still
+						// downgrades — there's nowhere to spawn into.
+						if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {
+							// B124 follow-up (v9.0.45) — guardrailModel may hold
+							// the flat ask-compatible VerificationModel default
+							// (guardrailBackendModel's own fallback when
+							// req.GuardrailModel is empty), which must never be
+							// applied to a session call — found live, the
+							// identical bug fixed in resolveVerifierBackendModel
+							// for verify: a real claude-code session rejected an
+							// Ollama model name outright and hung until the
+							// session timeout. So only a genuine per-unit override
+							// (req.GuardrailModel) carries through for non-pi
+							// session backends.
+							var sessionModel string
+							if model, verdict := guardPiFamilySessionModel(
+								gkind, gbackend, req.Guardrail,
+								req.GuardrailModel,
+								amgrCfg.GuardrailModel,
+								amgrCfg.VerificationModel,
+								amgrCfg.PlanningModel,
+								gmodel, // non-pi fallback only
+							); verdict != nil {
+								return *verdict, nil
+							} else {
+								sessionModel = model
+							}
+							specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
+							outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
+							deliverPrompt := autonomouspkg.JudgePromptForDelivery(req.ProjectDir, req.UnitID+"-"+req.Guardrail, gbackend, prompt, cfg.Autonomous.JudgePromptFileThresholdLines)
+							sessionTask := sessionJudgmentTask(deliverPrompt, req.ProjectDir, outputFile)
+							var judgePRD *autonomouspkg.PRD
+							var judgeTask *autonomouspkg.Task
+							if autonomousMgrRef != nil {
+								judgePRD, _ = autonomousMgrRef.Store().GetPRD(req.PRDID)
+								if req.Level == "task" {
+									judgeTask, _ = autonomousMgrRef.Store().GetTask(req.UnitID)
+								}
+							}
+							content, judgeID, serr := runOneShotJudgeSessionCaptureIDAttr(guardrailAttr(req), cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
+								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
+								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode,
+								withSessionProfile(autonomousMgrRef, launchTagsForJudge(req.PRDID, req.Rejudge), "judge", judgePRD, judgeTask))
+							if serr != nil {
+								att.TimedOut = isOneShotTimeout(serr)
+								// BL410 Phase 0 — the SESSION itself failed (timeout,
+								// crash); no judgment ever ran. "infra", not a real
+								// content finding. See FailureReason's doc comment —
+								// this is the exact collapse that made B127's 10-minute
+								// timeout indistinguishable from a genuine block.
+								return judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{
+									Outcome: "block", Severity: "medium",
+									Summary:   "guardrail(session): " + serr.Error(),
+									VerdictAt: time.Now(),
+									Category:  "infra",
+								}, judgeID, outputFile), nil
+							}
+							var parsed autonomouspkg.GuardrailVerdict
+							if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
+								// Written but unparseable — a TERMINAL, non-retryable
+								// "invalid-response" verdict, NOT "infra": an infra
+								// block makes runGuardrailWithInfraRetry re-run the
+								// whole judge, and the retry re-delivers the same
+								// already-relocated output file (runOneShotJSONSession*),
+								// so the response is consumed twice or not at all (PRD
+								// bbf70001, 8.6KB guardrail output). It must not be
+								// empty either — an empty category reads as a
+								// content-category block eligible for content auto-fix
+								// in runPerTaskGuardrails/runPerStoryGuardrails. Only a
+								// genuine no-output session failure (the serr branch
+								// above) is "infra".
+								return judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{
+									Outcome:   "block",
+									Severity:  "medium",
+									Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
+									VerdictAt: time.Now(),
+									Category:  "invalid-response",
+									RawJudge:  truncate(content, 16*1024),
+									Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
+								}, judgeID, outputFile), nil
+							}
+							parsed.RawJudge = truncate(content, 16*1024)
+							parsed.Category = judgedGuardrailCategory(parsed.Category)
+							parsed.VerdictAt = time.Now()
+							return judgeVerdictWithSession(parsed, judgeID, outputFile), nil
+						}
+						gkind = "ollama"
 					}
-					specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
-					outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
-					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
-					content, serr := runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
-						"autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg))
-					if serr != nil {
-						// BL410 Phase 0 — the SESSION itself failed (timeout,
-						// crash); no judgment ever ran. "infra", not a real
-						// content finding. See FailureReason's doc comment —
-						// this is the exact collapse that made B127's 10-minute
-						// timeout indistinguishable from a genuine block.
+					if guardrailModel == "" {
+						guardrailModel = gmodel
+					}
+					askBody := judgeAskBody(prompt, gkind, gbackend, guardrailModel, judgeNode)
+					body, _ := json.Marshal(askBody)
+					// The ask call runs under the judge's time limit, which starts
+					// now that the lease is granted; a run that hits it is a timeout.
+					status, rb, timedOut, err := judgeAskRun(ctx, att.Limit,
+						loopbackBaseURL(cfg)+"/api/ask", cfg.Server.Token, body)
+					if timedOut {
+						att.TimedOut = true
+						return judgeAskTimeoutVerdict(att.Limit), nil
+					}
+					if err != nil {
+						// The answer was not read in full: no judgment ran, so
+						// it is an infra failure, never a parsed verdict.
+						return judgeAskFailedVerdict(err), nil
+					}
+					if reason, failed := askFailureReason(status, rb); failed {
+						// BL410 Phase 0 — the /api/ask call itself failed; no
+						// judgment ever ran.
 						return autonomouspkg.GuardrailVerdict{
 							Outcome: "block", Severity: "medium",
-							Summary:   "guardrail(session): " + serr.Error(),
+							Summary:   "guardrail: ask call failed: " + reason,
 							VerdictAt: time.Now(),
 							Category:  "infra",
 						}, nil
 					}
+					var ask struct {
+						Answer string `json:"answer"`
+					}
+					_ = json.Unmarshal(rb, &ask)
+					// v8.25.11: unparseable guardrail response is a block, not a pass.
+					// Failing safe here prevents PRD from advancing on malformed output.
 					var parsed autonomouspkg.GuardrailVerdict
-					if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
+					if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &parsed); uerr != nil {
 						// Written but unparseable — a TERMINAL, non-retryable
-						// "invalid-response" verdict, NOT "infra": an infra
-						// block makes runGuardrailWithInfraRetry re-run the
-						// whole judge, and the retry re-delivers the same
-						// already-relocated output file (runOneShotJSONSession*),
-						// so the response is consumed twice or not at all (PRD
-						// bbf70001, 8.6KB guardrail output). It must not be
-						// empty either — an empty category reads as a
-						// content-category block eligible for content auto-fix
-						// in runPerTaskGuardrails/runPerStoryGuardrails. Only a
-						// genuine no-output session failure (the serr branch
-						// above) is "infra".
+						// "invalid-response" verdict, never "infra" (which would
+						// auto-retry a judge whose written response we could not
+						// parse) and never empty (which would trigger content
+						// auto-fix on a failure that was never a judgment).
 						return autonomouspkg.GuardrailVerdict{
 							Outcome:   "block",
 							Severity:  "medium",
-							Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
+							Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
 							VerdictAt: time.Now(),
 							Category:  "invalid-response",
-							Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
+							RawJudge:  truncate(ask.Answer, 16*1024),
+							Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
 						}, nil
 					}
+					parsed.RawJudge = truncate(ask.Answer, 16*1024)
 					parsed.Category = judgedGuardrailCategory(parsed.Category)
 					parsed.VerdictAt = time.Now()
 					return parsed, nil
-				}
-				gkind = "ollama"
-			}
-			if guardrailModel == "" {
-				guardrailModel = gmodel
-			}
-			askBody := map[string]any{
-				"question": prompt,
-				"backend":  gkind,
-			}
-			if gbackend != gkind && gbackend != "" {
-				askBody["llm"] = gbackend
-			}
-			if guardrailModel != "" {
-				askBody["model"] = guardrailModel
-			}
-			body, _ := json.Marshal(askBody)
-			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-				loopbackBaseURL(cfg)+"/api/ask",
-				bytes.NewReader(body))
-			if err != nil {
-				return autonomouspkg.GuardrailVerdict{}, err
-			}
-			httpReq.Header.Set("Content-Type", "application/json")
-			if cfg.Server.Token != "" {
-				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-			}
-			resp, err := http.DefaultClient.Do(httpReq)
-			if err != nil {
-				return autonomouspkg.GuardrailVerdict{}, err
-			}
-			defer resp.Body.Close() //nolint:errcheck
-			rb, _ := io.ReadAll(resp.Body)
-			if reason, failed := askFailureReason(resp.StatusCode, rb); failed {
-				// BL410 Phase 0 — the /api/ask call itself failed; no
-				// judgment ever ran.
-				return autonomouspkg.GuardrailVerdict{
-					Outcome: "block", Severity: "medium",
-					Summary:   "guardrail: ask call failed: " + reason,
-					VerdictAt: time.Now(),
-					Category:  "infra",
-				}, nil
-			}
-			var ask struct {
-				Answer string `json:"answer"`
-			}
-			_ = json.Unmarshal(rb, &ask)
-			// v8.25.11: unparseable guardrail response is a block, not a pass.
-			// Failing safe here prevents PRD from advancing on malformed output.
-			var parsed autonomouspkg.GuardrailVerdict
-			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &parsed); uerr != nil {
-				// Written but unparseable — a TERMINAL, non-retryable
-				// "invalid-response" verdict, never "infra" (which would
-				// auto-retry a judge whose written response we could not
-				// parse) and never empty (which would trigger content
-				// auto-fix on a failure that was never a judgment).
-				return autonomouspkg.GuardrailVerdict{
-					Outcome:   "block",
-					Severity:  "medium",
-					Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
-					VerdictAt: time.Now(),
-					Category:  "invalid-response",
-					Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
-				}, nil
-			}
-			parsed.Category = judgedGuardrailCategory(parsed.Category)
-			parsed.VerdictAt = time.Now()
-			return parsed, nil
+				})
 		}
+		// autonomousGuardrail routes the judge: one attempt per backend, moving
+		// on only when a run hits its time limit. The backends come from
+		// autonomous.judge_policy, or from the verifier routing policy when that
+		// list is empty. A unit that pins its own guardrail backend keeps that one.
+		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
+			// One live-config snapshot for the whole judge (see liveAutonomousConfig).
+			gcfg := liveAutonomousConfig()
+			unitBackend, _ := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
+			// Size rule: a large diff routes the judge to the configured strong
+			// backend first (autonomous.judge_strong_backend; empty = the judge
+			// policy's last entry). The choice is made once per run and the
+			// decision sentence rides every pick's reason, so the verdict and the
+			// review state can report a reroute. A pinned unit backend keeps its
+			// own behaviour and is not measured.
+			size := judgeSizeFor(ctx, gcfg.JudgeSizeThresholdLines, gcfg.JudgeStrongBackend, req, func(id string) (*autonomouspkg.PRD, bool) {
+				if autonomousMgrRef == nil {
+					return nil, false
+				}
+				return autonomousMgrRef.Store().GetPRD(id)
+			})
+			route := judgeRouteForSize(ctx, autonomousMgrRef, req, gcfg, unitBackend, size)
+			alert := func(level, title, body string) { emitJudgeAlert(autonomousMgrRef, level, title, body) }
+			return runJudgeAttempts(req, route.Choose, judgeSessionTimeout(gcfg), alert, judgeTryLogFor(autonomousMgrRef, req),
+				route.Retarget, route.Pick,
+				func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
+					return autonomousGuardrailAttempt(ctx, req, gcfg, backend, att)
+				})
+		}
+		var questionAPI atomic.Pointer[autonomouspkg.API]
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// merge_pipeline — the merge-shadow comparison after a ship reads
+			// version files and the registry file from it.
+			amgr.SetMergePipelineConfig(cfg.Autonomous.MergePipeline)
+			// autonomous.merge_shadow — the finish-time shadow merge plan reads
+			// its enabled switch and gate timeout from it.
+			amgr.SetMergeShadowConfig(cfg.Autonomous.MergeShadow)
+			// autonomous.shipped.backfill_on_start (default off) — now that the
+			// stores have loaded, run the shipped-state backfill pass in a
+			// goroutine: it is logged and never blocks or fails startup.
+			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
+			// autonomous.ship — install the configured push/tag/ci_watch modes so
+			// the ship step honours off and shadow instead of the built-in default.
+			autonomouspkg.SetShipConfig(cfg.Autonomous.Ship)
+			autonomouspkg.SetChecksConfig(cfg.Autonomous.Checks)
+			// autonomous.rules_context — install the per-project rules/context
+			// file names + digest settings so the decomposer's pointer (and the
+			// verification-script and completion-rule pointers) resolve them,
+			// falling back to rules_file/context_file and the defaults.
+			autonomouspkg.SetRulesContextConfig(cfg.Autonomous.RulesContext)
+			// Session-end scratch releases by the owner are counted into the
+			// cleanup status (owner bucket) so the safety-net sweep's count
+			// stays separate (cleanup_status.go).
+			scratchOwnerReleaseHook = amgr.RecordOwnerTempRelease
 			// Planning/verification pairing check at startup. Each warning is
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			// Per-commit judge verdict cache (judge_verdict_cache.go): replay a
+			// completed pass/block verdict for a (commit, judge policy, rules)
+			// triple instead of re-running the judge. The live
+			// autonomous.judge_verdict_cache_enabled (unset = on, per
+			// NormalizeJudgeVerdictCacheEnabled) gates it, so a runtime config set
+			// is honored without a restart.
+			amgr.SetJudgeVerdictCacheEnabled(func() bool {
+				return config.NormalizeJudgeVerdictCacheEnabled(liveAutonomousConfig().JudgeVerdictCacheEnabled)
+			})
+			amgr.SetGeneratedArtefacts(func() config.EffectiveGeneratedArtefactsSettings {
+				return cfg.Autonomous.EffectiveGeneratedArtefacts()
+			})
+			if spendLedger != nil {
+				amgr.SetGeneratedCostLedger(autonomouspkg.NewSpendLedgerCost(spendLedger,
+					func() config.CostReportConfig { return cfg.CostReport }, nil,
+					func(backend string) config.EffectiveBillingProfile { return cfg.Usage.EffectiveBillingProfile(backend) }))
+			}
+			// Classify-mode gate over guardrail findings: active only for a
+			// judge entry whose verification_mode is classify.
+			amgr.SetGuardrailClassify(verificationModeLookup(autonomousInferenceReg),
+				func(ctx context.Context, backend, model, prompt string) autonomouspkg.VerificationResult {
+					return runClassifyVerification(ctx, "", backend, model, prompt,
+						autonomouspkg.RecordScoresEnabled(cfg.Autonomous.VerificationRecordScores))
+				})
+			// Scope-breadth classifier: off unless autonomous.scope_breadth_enabled.
+			amgr.SetScopeBreadth(func() bool { return cfg.Autonomous.ScopeBreadthEnabled },
+				func(ctx context.Context, text string) autonomouspkg.ScopeBreadthResult {
+					return runScopeBreadth(ctx, text)
+				})
+			// Worker profiles: the daemon-wide name, role/kind defaults and user
+			// profiles are read from the live config at every launch, so a
+			// settings change applies to the next launch without a restart.
+			amgr.SetWorkerProfileSettings(func() autonomouspkg.WorkerProfileSettings {
+				return autonomouspkg.WorkerProfileSettings{
+					GlobalName:   cfg.Autonomous.WorkerProfile,
+					RoleDefaults: cfg.Autonomous.WorkerProfileDefaults.Role,
+					KindDefaults: cfg.Autonomous.WorkerProfileDefaults.Kind,
+					UserProfiles: cfg.Autonomous.WorkerProfiles,
+				}
+			})
+			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
+			// The plan-review judge goes through the same routed, leased and
+			// time-limited judge path as the guardrail judge.
+			amgr.SetPlanReview(planReviewViaJudge(autonomousGuardrail, func(prdID string) string {
+				if prd, ok := amgr.Store().GetPRD(prdID); ok {
+					return prd.ProjectDir
+				}
+				return ""
+			}, func() (string, string) {
+				live := liveAutonomousConfig()
+				return live.PlanReviewBackend, live.PlanReviewModel
+			}))
+			// Daily and milestone progress snapshots, stored with the other
+			// autonomous data; the runner starts with amgr.Start below.
+			if _, err := amgr.EnableProgressSnapshots(func() autonomouspkg.ProgressSnapshotSettings {
+				return progressSnapshotSettings(cfg)
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "[warn] progress snapshots: %v\n", err)
+			}
 			// Foreign-file drift (and future autonomous audit events) →
 			// operator audit log, so they land in JSON-lines + CEF mirror.
+			// lifecycleAuditFn is the operator audit writer for autonomous
+			// records. The lifecycle webhook sink (BL427 phase 5) shares it
+			// with the subscription engine, so both write the same log.
+			var lifecycleAuditFn func(string, map[string]any)
 			if wiredAuditLog != nil {
-				amgr.SetAuditFn(func(a string, d map[string]any) {
-					_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: a, Details: d})
-				})
+				lifecycleAuditFn = func(a string, d map[string]any) {
+					// The Events view renders Subject; a judge outcome's and a
+					// release mode change's plain-language headline become that subject.
+					subject := ""
+					if a == auditpkg.ActionJudgeOutcome || a == auditpkg.ActionReleaseModeChanged {
+						subject, _ = d["headline"].(string)
+					}
+					_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: a, Subject: subject, Details: d})
+				}
+				amgr.SetAuditFn(lifecycleAuditFn)
 			}
+			// Push-on-complete settings (git.push_on_complete /
+			// git.push_remote): the closure is stored, not its result —
+			// it is read on every push attempt, so a runtime configure
+			// change applies without a restart (same live-config pattern
+			// as the CommSink closures above).
+			amgr.SetGitPushSettings(func() (string, string) {
+				return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
+			})
+			// Pre-push secret scan (git.secret_scan) for the autonomous
+			// push engine: enforce mode refuses the push
+			// (Kind=secret_found, remote untouched, redacted reason),
+			// shadow mode pushes and records the redacted findings via
+			// the same Decision + alert mechanism as push failures.
+			amgr.SetSecretScanSettings(func() gitpkg.SecretScanPolicy {
+				al := cfg.Git.EffectiveSecretScanAllowList()
+				return gitpkg.SecretScanPolicy{
+					Mode:         cfg.Git.EffectiveSecretScanMode(),
+					Detectors:    cfg.Git.EffectiveSecretScanDetectors(),
+					PathPatterns: al.Paths,
+					Fingerprints: al.Fingerprints,
+				}
+			})
+			// Same shared audit sink as the session manager: enforce
+			// refusals and shadow finding reports for Automaton pushes
+			// land in the operator audit log, redacted fields only.
+			amgr.SetSecretScanAuditFn(secretScanSink)
+			// Defect intake (autonomous.defect_intake_automation):
+			// when an Automaton is filed with kind bug and the setting names
+			// an Automation, it is offered to that Automation's bugs stage
+			// through the member insert (defectIntakeAdapter, below — BL431's
+			// held PendingInsert on a non-draft Automation). The name is read
+			// live on every offer, so a runtime config set applies with no
+			// restart; the outcome (offered / not_configured / skipped / error)
+			// is recorded on the Automaton for the surfaces to show.
+			amgr.SetDefectIntake(&defectIntakeAdapter{
+				amgr:           amgr,
+				automationName: func() string { return liveAutonomousConfig().DefectIntakeAutomation },
+			})
+			// Defect queue (autonomous.defect_queue.*): batches of related
+			// defects, the tiny-fix lane and the intake decision log behind
+			// POST /api/autonomous/defects/* and the MCP/CLI/comm verbs.
+			// Without this the endpoints answer 503. The settings are read
+			// live from cfg on every call (the REST config handler mutates
+			// cfg in place), so a runtime config set needs no restart.
+			wireDefectQueue(httpServer, amgr, cfg)
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
 			// actually exist before persisting them onto a PRD.
@@ -5454,18 +7016,32 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// get exactly the same prd_update frames as before;
 			// enriching the WS payload is a later phase.
 			amgr.Subscribe(autonomouspkg.LifecycleFilter{Kinds: []string{autonomouspkg.KindPRDUpdated}}, func(ev autonomouspkg.LifecycleEvent) {
+				if ev.Forward != nil {
+					// A peer-forwarded update names an Automaton this daemon may not
+					// hold: it is not broadcast to the local Autonomous tab.
+					return
+				}
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
+			// Tag registry and assignment changes reach every client as
+			// tag_update frames (id-only), so open tag browsers refresh
+			// their counts. A callback rather than a lifecycle subscriber:
+			// tag events are not Automaton lifecycle transitions.
+			amgr.SetTagEventFn(func(ev autonomouspkg.TagEvent) {
+				httpServer.BroadcastTagUpdate(ev)
+			})
 			// Built-in lifecycle-event sinks (alert store + topic push) plus the
-			// comm fan-out. They act on exactly the kinds the operator enabled
-			// via autonomous.notify.default_events; an empty list (the default)
-			// makes this a no-op, so the default behavior is unchanged.
+			// comm fan-out. They subscribe to every notify event kind; which
+			// of those actually deliver is decided per Automaton by the resolver
+			// (autonomouspkg.ResolveNotifyEvents): Automaton's own notify_events
+			// > guardrail profile > autonomous.notify.default_events (shipped
+			// default is the five-kind baseline, autonomouspkg.DefaultNotifyEvents
+			// — `default_events: []` turns the global tier off).
 			// InstallLifecycleSinks wraps the CommSink below in a comm fan-out
 			// sink (autonomouspkg.NewCommFanoutSink) that coalesces events
 			// within CommWindow — the same 5s quiet window as the remote-alert
 			// bundler above.
 			_ = autonomouspkg.InstallLifecycleSinks(amgr, autonomouspkg.SinkConfig{
-				Kinds: cfg.Autonomous.Notify.DefaultEvents,
 				RecordAlert: func(level, title, body string) {
 					lv := alertspkg.LevelInfo
 					switch level {
@@ -5508,13 +7084,527 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				},
 				CommWindow: 5 * time.Second, // same quiet window as the remote-alert bundler
 			})
-			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
+			// BL427 (phase 3) — run the operator's persisted lifecycle
+			// subscriptions from the SubscriptionStore: each subscription's
+			// filter is registered on the dispatcher and matching events are
+			// delivered to the target session via that session's Claude Code
+			// channel bridge (POST http://127.0.0.1:<ChannelPort>/send, the
+			// same payload the session push endpoints accept), falling back
+			// to SendInput when the port is 0 or the bridge POST errors. A
+			// send_input action on task.session_started targets the worker
+			// session the event records. Delivery runs on the dispatcher's
+			// subscriber goroutine, so a stalled bridge or busy session can
+			// never block the executor path. One-shot subscriptions are
+			// consumed (store delete + audit record) only after a successful
+			// delivery; on failure the engine retries once, logs, and leaves
+			// the subscription armed for a later event.
+			if lifeSubStore, err := autonomouspkg.NewSubscriptionStore(
+				filepath.Join(expandHome(cfg.DataDir), "lifecycle_subscriptions.json"), encKey,
+			); err != nil {
+				log.Printf("[warn] lifecycle subscription store: %v", err)
+			} else {
+				lifeSubCommSend := func(text string) {
+					// Same notify pipeline as the CommSink above, honouring
+					// notify_exclude per send.
+					excludeSet := notifyExcludeSet(cfg.NotifyExclude)
+					for _, r := range routers {
+						if !isNotifyExcluded(excludeSet, r.BackendName()) {
+							r.SendDirect(text)
+						}
+					}
+					if ntfyBackend != nil && !isNotifyExcluded(excludeSet, "ntfy") {
+						ntfyBackend.Send(cfg.Ntfy.Topic, text) //nolint:errcheck
+					}
+					if emailBackend != nil && !isNotifyExcluded(excludeSet, "email") {
+						emailBackend.Send(cfg.Email.To, text) //nolint:errcheck
+					}
+				}
+				// BL427 (phase 5) — outbound webhook sink. It ships disabled
+				// (autonomous.notify.webhook.enabled defaults to false). The
+				// settings are read from cfg on every call, so a PUT
+				// /api/config change takes effect on the next delivery with no
+				// restart. cfg is the same pointer the HTTP server writes to.
+				lifecycleWebhookSettings := func() autonomouspkg.WebhookSettings {
+					return autonomouspkg.WebhookSettingsFromConfig(cfg.Autonomous.Notify)
+				}
+				// BL427 (phase 5) — federation peer forwarding. It ships disabled
+				// (autonomous.notify.forwarding.enabled defaults to false). Read
+				// from cfg on every call, as for the webhook sink.
+				lifecycleForwardSettings := func() autonomouspkg.ForwardSettings {
+					return autonomouspkg.ForwardSettingsFromConfig(cfg.Autonomous.Notify)
+				}
+				// lifecycleLookupPeer resolves a registered federation peer for a peer
+				// subscription. A disabled entry resolves to nothing. The token is read
+				// here and passed only to the forwarder; nothing logs it.
+				lifecycleLookupPeer := func(name string) (autonomouspkg.PeerRef, bool) {
+					if fedPeerRegistry == nil {
+						return autonomouspkg.PeerRef{}, false
+					}
+					e, ok := fedPeerRegistry.Get(name)
+					if !ok || !e.Enabled {
+						return autonomouspkg.PeerRef{}, false
+					}
+					var custom map[string]*federation.CapabilityGroup
+					if fedPeerGroups != nil {
+						custom = fedPeerGroups.AsMap()
+					}
+					caps := federation.Resolve(e.Capabilities, custom)
+					return autonomouspkg.PeerRef{
+						Name:               e.Name,
+						URL:                e.URL,
+						Token:              e.Token,
+						TLSSkipVerify:      e.TLSSkipVerify,
+						Federated:          e.Federated,
+						HasAutonomousWrite: federation.Check(caps, federation.CapAutonomousWrite),
+					}, true
+				}
+				// Creation check: the store refuses a webhook subscription whose
+				// delivery is disabled or whose target fails the URL policy, and a
+				// peer subscription whose peer is not usable. The same constructor
+				// backs the REST, MCP, CLI and comm surfaces' parity test.
+				lifeSubStore.SetSinkValidator(autonomouspkg.NewLifecycleSinkValidator(lifecycleWebhookSettings, lifecycleForwardSettings, lifecycleLookupPeer))
+				webhookSink := autonomouspkg.NewWebhookSink(autonomouspkg.WebhookSinkConfig{
+					Settings: lifecycleWebhookSettings,
+					// The signing key is resolved from the vault on every delivery
+					// and never cached. Nothing here logs the value.
+					ResolveSecret: func(ref string) (string, error) {
+						if secretsStore == nil {
+							return "", fmt.Errorf("no secrets store is configured")
+						}
+						if !secretspkg.IsRef(ref) {
+							return "", fmt.Errorf("the signing secret is not a ${secret:name} reference")
+						}
+						return secretspkg.ResolveRef(ref, secretsStore)
+					},
+					Audit: lifecycleAuditFn,
+					RaiseAlert: func(level, title, body string) {
+						lv := alertspkg.LevelInfo
+						switch level {
+						case "warn":
+							lv = alertspkg.LevelWarn
+						case "error":
+							lv = alertspkg.LevelError
+						}
+						_ = alertStore.AddSystem(lv, title, body)
+					},
+				})
+				// The local name is the federation self-name, the same one the
+				// federation pusher registers under. The forwarder and the receiving
+				// endpoint share it, so a visited list compares like with like.
+				lifecycleLocalHost := func() string { return federationSelfName(cfg.Observer.Federation.PeerName) }
+				peerForwarder := autonomouspkg.NewPeerForwarder(autonomouspkg.PeerForwarderConfig{
+					LookupPeer: lifecycleLookupPeer,
+					LocalHost:  lifecycleLocalHost,
+					Settings:   lifecycleForwardSettings,
+					// The daemon's peer client: a peer's TLS skip-verify setting
+					// behaves as on every other peer call.
+					NewClient: multiserver.HTTPClient,
+					Audit:     lifecycleAuditFn,
+					RaiseAlert: func(level, title, body string) {
+						lv := alertspkg.LevelInfo
+						switch level {
+						case "warn":
+							lv = alertspkg.LevelWarn
+						case "error":
+							lv = alertspkg.LevelError
+						}
+						_ = alertStore.AddSystem(lv, title, body)
+					},
+				})
+				// BL427 (phase 5) — receiving side of peer forwarding. It reads the
+				// same live settings as the forwarder, so one enabled flag governs both
+				// directions. Disabled by default.
+				amgr.SetForwardReceive(autonomouspkg.ForwardReceiveConfig{
+					Settings:  lifecycleForwardSettings,
+					LocalHost: lifecycleLocalHost,
+				})
+				lifeSubEngine := autonomouspkg.NewLifecycleSubscriptionEngine(amgr, lifeSubStore, autonomouspkg.SessionPushConfig{
+					Webhook:   webhookSink,
+					Forwarder: peerForwarder,
+					// Resolve a session name, full ID, or short ID to the
+					// session's full ID and channel-bridge port (0 when the
+					// session has no bridge — then the engine uses SendInput
+					// directly). GetSession matches full and short IDs; a
+					// human-readable name falls through to FindSessionByName.
+					FindSession: func(nameOrID string) (string, int, bool) {
+						s, ok := mgr.GetSession(nameOrID)
+						if !ok {
+							s, ok = mgr.FindSessionByName(nameOrID)
+						}
+						if !ok {
+							return "", 0, false
+						}
+						return s.FullID, s.ChannelPort, true
+					},
+					// PostBridge left nil — the engine defaults to
+					// DefaultBridgePost (5s timeout, falls to SendInput on
+					// any error).
+					SendInput: mgr.SendInput, // source tag "lifecycle-sub" is set by the engine
+					Comm:      autonomouspkg.CommSinkConfig{Send: lifeSubCommSend, Window: 5 * time.Second},
+					RecordAlert: func(level, title, body string) {
+						lv := alertspkg.LevelInfo
+						switch level {
+						case "warn":
+							lv = alertspkg.LevelWarn
+						case "error":
+							lv = alertspkg.LevelError
+						}
+						_ = alertStore.Add(lv, title, body, "")
+					},
+					PublishTopics: func(topics []string, title, message string) {
+						for _, tp := range topics {
+							server.PublishToTopic(tp, server.PushEvent{
+								Title:   title,
+								Message: message,
+								Tags:    []string{"lifecycle"},
+							})
+						}
+					},
+					PendingQueue: autonomouspkg.NewPendingEventQueue(cfg.Autonomous.Notify.EffectivePendingEventsMax()),
+				})
+				if err := lifeSubEngine.Start(); err != nil {
+					log.Printf("[warn] lifecycle subscription engine: %v", err)
+				} else {
+					defer lifeSubEngine.Close()
+				}
+				// BL427 (phase 3) — expose the same store over REST
+				// (GET/POST/DELETE /api/autonomous/subscriptions). The
+				// engine above re-attaches its dispatcher sinks on every
+				// store change, so a subscription created or deleted over
+				// REST takes effect without a restart.
+				httpServer.SetAutonomousSubscriptions(lifeSubStore)
+				// The operator question channel over REST (POST/GET /api/questions):
+				// one generic question record, the label being the type, not the
+				// structure. Append-only JSONL under the data dir. The handler gates
+				// it on autonomous.questions.enabled (off by default); the store's
+				// answer and withdraw paths are not this surface (404 under a question id).
+				if qstore, qerr := autonomouspkg.NewQuestionStore(filepath.Join(expandHome(cfg.DataDir), "questions.jsonl")); qerr != nil {
+					fmt.Fprintf(os.Stderr, "[warn] operator question store: %v\n", qerr)
+				} else {
+					if lifecycleAuditFn != nil {
+						qstore.SetAuditFn(lifecycleAuditFn)
+					}
+					// Every question raised with an Automaton id lands on that
+					// Automaton's decision log, and its answer as a second
+					// entry; the store calls this after each change, outside
+					// its lock.
+					//
+					// An answer also reaches the Automaton API, which wakes the
+					// executor holding a task that waits on the decision. The API
+					// is built further down, so the hook reads it from a pointer
+					// set once it exists.
+					qstore.SetChangeHook(func(c autonomouspkg.QuestionChange) {
+						amgr.RecordQuestionChange(c)
+						if api := questionAPI.Load(); api != nil {
+							api.OnQuestionChange(c)
+						}
+					})
+					// The decision gate reads the same store, and the live
+					// autonomous.questions config on every scan.
+					amgr.SetDecisionGate(qstore, func() config.AutonomousQuestionsConfig {
+						return cfg.Autonomous.Questions
+					})
+					// The decision records: structured decisions whose queue
+					// question the daemon builds and keeps in step. The service
+					// reads both switches from the live config on every call.
+					if drstore, drerr := autonomouspkg.NewDecisionRecordStore(filepath.Join(expandHome(cfg.DataDir), "decision_records.jsonl")); drerr != nil {
+						fmt.Fprintf(os.Stderr, "[warn] decision record store: %v\n", drerr)
+					} else {
+						decisionRecords := autonomouspkg.NewDecisionRecords(drstore, qstore,
+							func() config.AutonomousDecisionsConfig { return cfg.Autonomous.Decisions },
+							func() config.AutonomousQuestionsConfig { return cfg.Autonomous.Questions },
+							time.Now)
+						// An answered decision record question is applied to
+						// its record promptly: the service chains onto the
+						// change hook set above (it does not replace it) and
+						// wakes the executor holding a task on the answer the
+						// same way any other answered question does.
+						decisionRecords.SetAnswerRelease(func(c autonomouspkg.QuestionChange) {
+							if api := questionAPI.Load(); api != nil {
+								api.OnQuestionChange(c)
+							}
+						})
+						decisionRecords.ChainQuestionHook()
+						amgr.SetDecisionRecords(decisionRecords)
+					}
+					// The question lifecycle events (question.answered /
+					// question.withdrawn) fire through the same dispatcher and
+					// the engine's per-subscriber queue as every other kind:
+					// the store builds and fires them on answer and withdrawal,
+					// then marks the record so the exactly-once guarantee holds.
+					// The switch decides whether the sink is wired at all: off
+					// means no event and no reconcile. It is applied here at
+					// start and again by the server whenever a config write
+					// changes autonomous.questions.enabled, so a live enable
+					// needs no restart.
+					applyQuestionEvents := func(enabled bool) {
+						qstore.ApplyEventSwitch(enabled, amgr.EmitQuestionEvent, log.Printf)
+					}
+					applyQuestionEvents(cfg.Autonomous.Questions.Enabled)
+					httpServer.SetQuestionEventsSwitch(applyQuestionEvents)
+					httpServer.SetQuestions(qstore)
+					// An answer may name a configured follow-up; the decision
+					// record service records the request before the answer.
+					if dr := amgr.DecisionRecords(); dr != nil {
+						httpServer.SetDecisionFollowUps(dr)
+						httpServer.SetDecisionRecords(dr)
+					}
+					// Question-raise notification (the "notify" legs beside the
+					// channel): the server dispatches non-blockingly on each
+					// successful raise — WS broadcast for the PWA, this fan-out to
+					// the active messaging groups (same notify_exclude rules as the
+					// lifecycle CommSink), and a high-priority-only alert. The
+					// autonomous.questions switch and the notify_* toggles are
+					// read live per raise, so nothing here fires while off.
+					httpServer.SetQuestionRaiseNotifier(questionRaiseNotifier{routers: routers, cfg: cfg})
+					// Per-question opt-in session line on answer (the question
+					// raised with return_path true): one line of DATAWATCH_ANSWER:
+					// into the asking session, through the same send the daemon
+					// uses for operator input. The sender is bound behind a small
+					// seam so the tests fake it; delivery never blocks or fails
+					// the answer call — a gone session or a failed send is one
+					// line in this log, and the answer stays in the store.
+					httpServer.SetQuestionAnswerReturnPath(autonomouspkg.NewQuestionAnswerReturnPath(
+						func(sessionID, line string) error {
+							return mgr.SendInput(sessionID, line, "questions-answer")
+						},
+						log.Printf,
+					))
+					// Worker question marker: a DATAWATCH_QUESTION: line a worker
+					// session prints is raised into this same store, with the same
+					// audit, decision-log entry and raise notifications as a REST
+					// raise. Both switches are read live at each event, so a config
+					// write takes effect with no restart. The hook runs on the
+					// output scanner, so it hands the event to a goroutine.
+					mgr.SetWorkerQuestionGate(func() bool {
+						return cfg.Autonomous.Questions.Enabled && cfg.Autonomous.Questions.EffectiveWorkerMarker()
+					})
+					// UI prompt handling: the manager reads the live session config
+					// on every call, so a PUT /api/config (or configure / config_set
+					// / config set) takes effect with no daemon restart.
+					mgr.SetUIPromptSettings(func() session.UIPromptSettings {
+						return session.UIPromptSettings{
+							Enabled:           cfg.Session.EffectiveDismissUIPrompts(),
+							DelaySeconds:      cfg.Session.EffectiveUIPromptDismissDelaySeconds(),
+							ClearBoundSeconds: cfg.Session.EffectiveUIPromptClearBoundSeconds(),
+							MaxAttempts:       cfg.Session.EffectiveUIPromptMaxAttempts(),
+						}
+					})
+					// Interstitial UI-prompt dismissals: every final outcome
+					// (dismissed, not_cleared, refused) the session manager books
+					// arrives on the capture goroutine — the hook is invoked
+					// synchronously at the moment of the decision — and lands as
+					// one audit-log line (and CEF mirror line) plus one
+					// Prometheus counter increment. It must never block or fail
+					// the capture loop: both sinks are non-fatal.
+					mgr.SetUIPromptAuditHook(func(ev session.UIPromptAuditEvent) {
+						action := ""
+						switch ev.Outcome {
+						case session.UIPromptOutcomeDismissed:
+							action = auditpkg.ActionUIPromptDismissed
+						case session.UIPromptOutcomeNotCleared:
+							action = auditpkg.ActionUIPromptNotCleared
+						case session.UIPromptOutcomeRefused:
+							action = auditpkg.ActionUIPromptRefused
+						default:
+							return
+						}
+						details := map[string]any{
+							"session_id": ev.SessionFullID,
+							"backend":    ev.Backend,
+							"kind":       ev.Kind,
+							"key":        ev.Key,
+							"attempt":    ev.Attempt,
+						}
+						if ev.SelectedOption != "" {
+							details["selected_option"] = ev.SelectedOption
+						}
+						if wiredAuditLog != nil {
+							_ = wiredAuditLog.Write(auditpkg.Entry{
+								Timestamp: time.Now(),
+								Actor:     "autonomous",
+								Action:    action,
+								SessionID: ev.SessionFullID,
+								Subject:   ev.SessionFullID,
+								Details:   details,
+							})
+						}
+						metricsPkg.UIPromptDismissalsTotal.WithLabelValues(ev.Kind, ev.Outcome).Inc()
+					})
+					workerQuestionDeps := autonomouspkg.WorkerQuestionDeps{
+						Store:  qstore,
+						Audit:  lifecycleAuditFn,
+						Notify: httpServer.NotifyQuestionRaised,
+						Logf:   log.Printf,
+					}
+					mgr.SetWorkerQuestionHook(func(ev session.WorkerQuestionEvent) {
+						go autonomouspkg.RaiseWorkerQuestion(workerQuestionDeps, ev)
+					})
+					// UI prompt escalation: when the safe-dismiss rules could not
+					// clear a recognised interstitial prompt — the attempts cap is
+					// used up and the prompt is still on screen, or dismissal is
+					// off and the prompt has sat past the delay plus one clear
+					// bound — the session is stalled and the operator gets one
+					// question on this same question channel (deduped per prompt
+					// occurrence, withdrawn when the prompt clears or the session
+					// ends). When the channel is off or the raise failed, exactly
+					// one high-priority alert replaces it. The channel on/off is
+					// read live on each event, like the worker-question gate above.
+					uiPromptEscalationDeps := autonomouspkg.UIPromptEscalationDeps{
+						Store: qstore,
+						ChannelOn: func() bool {
+							return cfg.Autonomous.Questions.Enabled
+						},
+						Audit:  lifecycleAuditFn,
+						Notify: httpServer.NotifyQuestionRaised,
+						FallbackAlert: func(sessionID, title, body string) {
+							alertStore.Add(alertspkg.LevelError, title, body, sessionID)
+						},
+						Logf: log.Printf,
+					}
+					mgr.SetUIPromptQuestionHook(func(ev session.UIPromptEscalateEvent) (questionID string, err error) {
+						// Runs on the capture loop: the raise is in-memory (the question
+						// store keeps its questions in RAM) and only the fallback path
+						// touches the alert store - safe to do synchronously, and the hook
+						// must answer with the question id so the manager can book it on
+						// the session's UIPrompt record (staying unlinked on failure, the
+						// daemon having already sent its one alert).
+						defer func() {
+							if r := recover(); r != nil {
+								log.Printf("[autonomous] ui prompt escalation handler panic for %s: %v", ev.SessionFullID, r)
+								alertStore.Add(alertspkg.LevelError,
+									"ui prompt escalation for "+ev.SessionFullID+" failed",
+									fmt.Sprintf("the escalation handler panicked: %v", r),
+									ev.SessionFullID)
+							}
+						}()
+						q, _, err := autonomouspkg.RaiseUIPromptEscalation(uiPromptEscalationDeps, ev)
+						if err != nil {
+							return "", err
+						}
+						return q.ID, nil
+					})
+					mgr.SetUIPromptEscalateWithdrawHook(func(ev session.UIPromptEscalateWithdrawEvent) {
+						go func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Printf("[autonomous] ui prompt escalation withdraw panic for %s: %v", ev.SessionFullID, r)
+								}
+							}()
+							autonomouspkg.WithdrawUIPromptEscalation(uiPromptEscalationDeps, ev)
+						}()
+					})
+				}
+				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
+				// forwarded event is re-emitted into this daemon's dispatcher.
+				httpServer.SetAutonomousForwardedEvents(amgr)
+				// POST /api/autonomous/subscriptions/{id}/test delivers
+				// through the engine's own sink wiring.
+				lifeSubStore.SetTestFirer(lifeSubEngine.FireTest)
+				// The mcp_queue sink's read side: GET /api/autonomous/events.
+				if pq := lifeSubEngine.PendingEvents(); pq != nil {
+					httpServer.SetAutonomousEvents(pq)
+				}
+			}
+			// Request watch: the poller observes the in-flight model request of
+			// each worker and verifier session whose model runs on a registered
+			// compute node, and GET /api/autonomous/request-watch reads it. The
+			// live autonomous.request_watch block is read on every tick and on
+			// every request, so a config change applies with no restart. The
+			// observer peer registry is wired later in startup, so it is looked
+			// up at poll time.
+			requestWatchCfg := func() config.RequestWatchConfig {
+				return cfg.Autonomous.RequestWatch
+			}
+			requestWatcher = startRequestWatch(ctx, requestWatchCfg,
+				newRequestWatchLister(mgr, amgr, computeReg), cfg.Hostname,
+				func(peer string) *observerpkg.StatsResponse {
+					if reg := httpServer.PeerRegistry(); reg != nil {
+						return reg.LastPayload(peer)
+					}
+					return nil
+				}, amgr)
+			var requestWatchReader requestwatch.Reader = requestWatcher
+			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
+			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
+			}, alertStore)
+			// Pin-time model check: refuse (or warn on) a worker or verifier
+			// model that no registered node serves.
+			wireModelRouting(cfg, amgr, httpServer)
+			classifyWiring.ledger.Store(capLedger)
+			// placement-tags — restart backfill: the ledger now holds the leases that
+			// survived the restart (adoption hold still on, so the session manager
+			// accepts no new work yet). Restore each running lease-bound session's
+			// placement system tags under the live tags.placement block: a no-op
+			// when already in place, and only those sessions' SystemTags are ever
+			// written, never their operator or inherited tags.
+			if res := autonomouspkg.BackfillPlacementTags(capLedger, mgr, cfg.Autonomous.Tags.Placement); res.Failed > 0 {
+				log.Printf("[autonomous] placement tags backfill: %d of %d lease tag writes failed", res.Failed, res.Leases)
+			} else if res.Backfilled > 0 {
+				log.Printf("[autonomous] placement tags backfill: restored system tags on %d running session(s)", res.Backfilled)
+			}
+			// Tag sweep — once per tags.placement settings change: re-derive the
+			// system tags of every existing session and record under the live
+			// block ("anything we can tag should be tagged"), guarded by a done
+			// marker holding the settings hash it last ran against, so a restart
+			// with unchanged settings does not repeat the pass and a settings
+			// change does.
+			if swept, res, err := amgr.SweepTagsOnce(autonomouspkg.PlacementSettingsHash(cfg.Autonomous.Tags.Placement)); err != nil {
+				log.Printf("[autonomous] tag sweep: marker write: %v", err)
+			} else if swept {
+				log.Printf("[autonomous] tag sweep: sessions %d/%d changed, automata %d/%d, automations %d/%d, tasks %d/%d, templates %d/%d, decision records %d/%d, questions %d/%d",
+					res.Sessions.Changed, res.Sessions.Examined,
+					res.Automata.Changed, res.Automata.Examined,
+					res.Automations.Changed, res.Automations.Examined,
+					res.Tasks.Changed, res.Tasks.Examined,
+					res.Templates.Changed, res.Templates.Examined,
+					res.DecisionRecords.Changed, res.DecisionRecords.Examined,
+					res.Questions.Changed, res.Questions.Examined)
+			} else {
+				log.Printf("[autonomous] tag sweep: settings unchanged since last sweep, skipping")
+			}
+			// Resource-fingerprint reconciliation (§3c): match store under the
+			// data dir, exporter + matches wired to the server, slow syncer
+			// over opted-in peers, and the shared-node admission gate composed
+			// into the ledger above. Idle (no HTTP, no blocking) unless a peer
+			// opted in AND a match was confirmed by the operator.
+			wireFingerprint(ctx, cfg, httpServer, capLedger)
+			// Usage calculator advice service (design decision 6): composes the live
+			// config, the shared readings series and the daemon-local typed figure,
+			// and prices the finish-early estimate from the daemon's queued tasks.
+			// Serves GET /api/usage/advice and PUT/DELETE /api/usage/remaining-work.
+			if err := httpServer.AttachUsageCalculator(usagecalcQueue{m: amgr}); err != nil {
+				log.Printf("[usage] wire calculator advice service: %v", err)
+			}
+			// The auto-lanes status endpoint's special-item counter:
+			// open Automata at the configured priority threshold.
+			httpServer.SetAutoLanesSpecialCounter(func(threshold int) int {
+				if amgr == nil {
+					return 0
+				}
+				return amgr.CountOpenPRDsWithPriority(threshold)
 			})
+			// Auto-lanes (usage.calculator.auto_lanes): the hourly loop applies the
+			// freshest advice lanes plus the special open Automata, clamped to
+			// auto_lanes_max, to the first enabled claude-code LLM entry's
+			// max_inflight — through the same registry save as the operator's LLM
+			// update, decision logged beside the usage series. When auto_lanes is
+			// false the loop does nothing. The call blocks for the daemon's lifetime
+			// (it owns the hour ticker), so it runs in its own goroutine.
+			go startAutoLanesLoop(ctx, cfg, httpServer, amgr, expandHome(cfg.DataDir))
+			// Burn guard: projects the weekly burn against the pace line and steps the
+			// admission ladder; it never ends a running session.
+			wireBurnGuard(ctx, cfg, httpServer, mgr, capLedger)
+			// Pin keepers re-pin each pinned compute node's model after ollama drops it.
+			stopPinKeepers := startPinKeepers(ctx, cfg, computeReg, alertStore, capLedger)
+			go func() {
+				<-ctx.Done()
+				stopPinKeepers()
+			}()
 			// Wire session killer so Cancel also terminates running task sessions.
-			amgr.SetSessionKillerFn(func(sessionID string) error {
-				return mgr.Kill(sessionID)
-			})
+			amgr.SetSessionKillerFn(sessionEndFromAutonomous(mgr))
+			wirePlanningReattach(amgr, cfg)
 			amgr.SetDecomposeSessionsFn(func(prdID string) []string {
 				var ids []string
 				for _, s := range mgr.ListSessions() {
@@ -5525,6 +7615,20 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				}
 				return ids
 			})
+			// Make the task->session link durable before the task text is delivered.
+			mgr.SetOnSessionCreated(func(s *session.Session) {
+				amgr.LinkTaskSession(s.PRDID, s.TaskID, s.FullID)
+			})
+			// Retry resume reads the previous session's context size. TokensIn is the
+			// session's running input total: it overstates the live context, so the
+			// limit errs toward a fresh session rather than an oversized resume.
+			amgr.SetSessionContextTokensFn(func(sessionID string) int {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok {
+					return 0
+				}
+				return s.TokensIn
+			})
 			// Wire liveness check for boot-time stuck-task reconciliation (B90).
 			amgr.SetSessionAliveFn(func(sessionID string) bool {
 				s, ok := mgr.GetSession(sessionID)
@@ -5534,6 +7638,98 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				return s.State != session.StateComplete &&
 					s.State != session.StateFailed &&
 					s.State != session.StateKilled
+			})
+			// Boot reconcile adoption: find a live session for a task with no session link.
+			amgr.SetSessionListerFn(func() []autonomouspkg.SessionInfo {
+				var out []autonomouspkg.SessionInfo
+				for _, s := range mgr.ListSessions() {
+					out = append(out, autonomouspkg.SessionInfo{
+						ID: s.FullID, Name: s.Name, TaskID: s.TaskID, PRDID: s.PRDID, Task: s.Task,
+						ProjectDir: s.ProjectDir, CreatedAt: s.CreatedAt, TmuxSession: s.TmuxSession,
+						Alive: s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled,
+					})
+				}
+				return out
+			})
+			// Boot-resume age gate: a live worker's last activity counts as PRD activity.
+			amgr.SetSessionLastOutputFn(func(sessionID string) (time.Time, bool) {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok || s.UpdatedAt.IsZero() {
+					return time.Time{}, false
+				}
+				return s.UpdatedAt, true
+			})
+			// Design §6.ii — await-external: resume a worker session parked on an
+			// external condition after its lease was re-admitted. The worker keeps
+			// its own context; it re-checks the condition and finishes the task.
+			amgr.SetSessionContinueFn(func(sessionID string) error {
+				return mgr.SendInput(sessionID, "[automaton await-external] Your await-external cycle is complete — your capacity slot is live again and you have the project tree. Re-check the external condition you were waiting on (CI run, deploy, upstream review, …) and, if it has resolved, continue the task from where you left off toward its DATAWATCH_COMPLETE marker. If it has NOT resolved yet, emit the "+autonomouspkg.AwaitExternalMarker+" marker again and stop.", "automaton")
+			})
+			// Resume of a task parked on a blocking worker question: the
+			// coordinator tick prompts the session with one line that carries the
+			// operator's decision (or that the question was withdrawn).
+			amgr.SetSessionContinueLineFn(func(sessionID, line string) error {
+				return mgr.SendInput(sessionID, line, "automaton")
+			})
+			// Boot-resume: recorded output of a session that ended while the daemon
+			// was down, so a finished worker is verified instead of redone.
+			amgr.SetSessionOutputFn(func(sessionID string) (string, bool) {
+				out, err := mgr.TailOutput(sessionID, 500)
+				if err != nil {
+					return "", false
+				}
+				return out, true
+			})
+			// Boot-resume: adopt a live session only once its agent has started. A
+			// live bare shell from a boot-time launch failure is ended and requeued.
+			amgr.SetSessionAgentStartedFn(mgr.AgentStarted)
+			// Start-confirm bound for an adopted worker: the same limit the worker
+			// wait loop applies. Only claude-code sessions are held to it, since the
+			// assistant-turn marker is claude-code's; other families report no state
+			// and are never failed by it.
+			amgr.SetSessionPaneFn(mgr.CapturePaneVisible)
+			amgr.SetSessionStateFn(func(sessionID string) string {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok || s.BackendFamily != "claude-code" {
+					return ""
+				}
+				return string(s.State)
+			})
+			amgr.SetSessionStartLimit(time.Duration(config.NormalizeSessionStartConfirmSeconds(cfg.Autonomous.SessionStartConfirmSeconds)) * time.Second)
+			// The window is measured from the adopted worker's last evidence of life
+			// (update, channel event, log write), as the worker wait loop does.
+			amgr.SetSessionLastLifeFn(func(sessionID string) time.Time {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok {
+					return time.Time{}
+				}
+				return autonomouspkg.SessionLastLifeAt(s)
+			})
+			// Wait for an adopted session by its state / completion marker, so it
+			// works for any backend (claude-code, opencode, pi-prompt). A claude-code
+			// worker also gets the same idle-nudge decision as a fresh one, seeded
+			// from the nudge already on its task (see autonomouspkg.WaitAdopted).
+			amgr.SetSessionWaitFn(func(ctx context.Context, w autonomouspkg.AdoptedWait) error {
+				nudgeAfter, stallAfter := workerNudgeWindows(liveAutonomousConfig())
+				idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
+				return autonomouspkg.WaitAdopted(ctx, w, autonomouspkg.AdoptedWaitPorts{
+					NudgeAfter: nudgeAfter,
+					StallAfter: stallAfter,
+					Status: func(sessionID string) (session.State, string, bool) {
+						s, ok := mgr.GetSession(sessionID)
+						if !ok {
+							return "", "", false
+						}
+						return s.State, s.BackendFamily, true
+					},
+					Completed: func(sessionID string) bool {
+						out, err := mgr.TailOutput(sessionID, 200)
+						return err == nil && session.ExtractCompletionSummary(out) != ""
+					},
+					Nudge: func(sessionID string) autonomouspkg.WorkerNudgeHooks {
+						return workerNudgeHooks(mgr, amgr, sessionID, w.PRDID, w.TaskID, idleLimit, stallAfter)
+					},
+				})
 			})
 			// Wire session cleanup so executor sessions are removed from the list
 			// once their task reaches a terminal state (completed/failed).
@@ -5576,11 +7772,144 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				})
 			}
 			aAPI := autonomouspkg.NewAPI(amgr)
+			questionAPI.Store(aAPI)
+			// The follow-ups an answered decision record can run (the
+			// configured autonomous.decisions.follow_ups): start a template or
+			// open a held Automaton, through the same Automaton API calls the
+			// MCP tools use.
+			if dr := amgr.DecisionRecords(); dr != nil {
+				dr.SetFollowUpTargets(aAPI, autonomouspkg.NewDecisionAutomatonOpener(aAPI))
+			}
+			aAPI.SetStoreSideFileCapKB(cfg.Session.EffectiveStoreSideFileCapKB())
+			// Automation coordinator: advances an Automation's cursor from
+			// member lifecycle events (nil-safe if it could not be built).
+			autoCoord := autonomouspkg.NewCoordinator(amgr, aAPI)
+			autoCoord.SetLaneFillEvidenceSource(newLaneFillEvidenceSource(amgr, httpServer, computeReg, cfg.Ollama.Host))
+			autoCoord.SetLaneFillProposalReader(newLaneFillProposalReader(amgr))
+			autoCoord.SetLaneFillMainProbe(newLaneFillMainProbe(amgr))
+			autoCoord.SetLaneFillWorktreeFS(autonomouspkg.NewShellSupervisorWatchWorktreeFS())
+			autoCoord.SetLaneCapSource(newLaneFillCapSource(httpServer.InferenceRegistry,
+				func() map[string]int { return cfg.Autonomous.PlanTierMaxInflight }))
+			// 2026-11-01 — per-project policy tier: wire the three-tier
+			// resolver (config.ResolveProjectPolicy; automaton > project >
+			// daemon) into the autonomous manager's policy reads. A PRD with
+			// no project policy resolves to pure daemon defaults, so absent
+			// policy is behaviorally unchanged.
+			projPolicy := func(prd *autonomouspkg.PRD) *config.ProjectPolicy {
+				if prd == nil || prd.ProjectDir == "" {
+					return nil
+				}
+				for _, entry := range cfg.Projects {
+					if entry.Dir == prd.ProjectDir {
+						return entry.Policy
+					}
+				}
+				return nil
+			}
+			amgr.SetEffectivePolicy(func(prd *autonomouspkg.PRD) config.EffectivePolicy {
+				var auto config.AutomatonOverrides
+				if prd != nil {
+					auto = prd.PolicyOverrides()
+				}
+				return config.ResolveProjectPolicy(config.DaemonPolicySource{
+					Autonomous: cfg.Autonomous,
+					BurnGuard:  cfg.Usage.BurnGuard,
+				}, projPolicy(prd), auto)
+			})
+			// Shared-budget lane caps: a project's lanes are a floor, so the
+			// daemon runs the shared budget at no more than the smallest
+			// count any project's tier sets per lane kind (0 = off);
+			// (0,0) = no project tier set a cap, i.e. no clamp.
+			amgr.SetLaneFillPolicyCaps(func() (int, int) {
+				gpu, claude := 0, 0
+				gpuSet, claudeSet := false, false
+				for _, entry := range cfg.Projects {
+					p := entry.Policy
+					if p == nil {
+						continue
+					}
+					if e := p.LaneFillGPULanes; e != nil {
+						if v := *e; !gpuSet || v < gpu {
+							gpu, gpuSet = v, true
+						}
+					}
+					if e := p.LaneFillClaudeLanes; e != nil {
+						if v := *e; !claudeSet || v < claude {
+							claude, claudeSet = v, true
+						}
+					}
+				}
+				return gpu, claude
+			})
+			// Supervisor loop: the eight mechanical steps run once per idle
+			// tick, and an escalation raises a question in the queue.
+			wireSupervisorLoop(autoCoord, amgr, cfg, autonomousInferenceReg, httpServer)
+			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning
 			// executor sessions (prevents "connection refused" on daemon restart).
 			aAPI.SetServerReadyCh(httpServer.ReadyCh())
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
+			// B165 — boot-resume gate: alert the operator when a PRD is
+			// parked (stale work or removed project dir) instead of resumed.
+			amgr.SetAlertFn(func(title, body string) {
+				_ = alertStore.AddSystem(alertspkg.LevelWarn, title, body)
+			})
+			// Undeclared-edit detection: raise the operator alert at the
+			// level the manager asks for (warn by default).
+			amgr.SetAlertSink(func(level, title, body string) string {
+				a := alertStore.AddSystem(autonomousAlertLevel(level), title, body)
+				if a == nil {
+					return ""
+				}
+				return a.ID
+			})
+			// Supervisor watch pass — wire the production views so the
+			// host, work and worktree checks run for real in the
+			// coordinator's idle loop. The probes only read; the pass
+			// stores findings, marks shadow would-alerts, and raises the
+			// operator alert through the sink set above (the pass itself
+			// never calls a model).
+			{
+				nodeAddresses := map[string]string{}
+				if computeReg != nil {
+					for _, n := range computeReg.List() {
+						if n != nil && n.Name != "" && n.Address != "" {
+							nodeAddresses[n.Name] = n.Address
+						}
+					}
+				}
+				watchProbe := autonomouspkg.NewShellSupervisorWatchHostProbe(nodeAddresses, cfg.Hostname)
+				if wiredAuditLog != nil {
+					watchProbe.SetUnverifiedProbeNotice(func(node string) {
+						_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "daemon", Action: "compute_node_tls_verification_off", Details: map[string]any{
+							"resource_type": "compute_node",
+							"resource_id":   node,
+							"source":        "supervisor_watch_probe",
+						}})
+					})
+				}
+				if computeReg != nil {
+					// Live lookup: a node added or edited after startup is
+					// probed with its current address and TLS settings.
+					watchProbe.SetNodeLookup(func(name string) (*compute.Node, bool) {
+						n, err := computeReg.Get(name)
+						return n, err == nil && n != nil
+					})
+				}
+				amgr.SetSupervisorWatchProbe(watchProbe)
+				if computeReg != nil {
+					amgr.SetSupervisorWatchNodeView(computeReg)
+				}
+				amgr.SetSupervisorWatchSessionLookup(mgr.GetSession)
+				// The silence check reuses the session package's own
+				// liveness signal: an assessment on each working session
+				// (ClassifyLiveness via Manager.LivenessAssessmentFor,
+				// verdict plus the alive-and-silent fact) is authoritative
+				// over the worktree signals; no assessment and the check
+				// falls back exactly as before.
+				amgr.SetSupervisorWatchLiveness(autonomouspkg.SessionSupervisorWatchLiveness{Assessment: mgr.LivenessAssessmentFor})
+			}
 			// PRD/automata watchdog — scans every 60 s for autonomous task
 			// sessions that have been in a non-terminal state for >5 min and
 			// whose scrollback contains an SSE stall pattern. Kills the
@@ -5606,6 +7935,12 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 									continue
 								}
 								s, ok := mgr.GetSession(task.SessionID)
+								if s != nil && (s.State == session.StateComplete ||
+									s.State == session.StateFailed || s.State == session.StateKilled) {
+									// The session is over: drop its scan-history entry
+									// so the fresh-tracker map cannot grow without bound.
+									sseFreshTracker.forget(s.FullID)
+								}
 								if !ok || s.State == session.StateComplete ||
 									s.State == session.StateFailed ||
 									s.State == session.StateKilled {
@@ -5619,10 +7954,10 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 								if sbErr != nil || sb == "" {
 									continue
 								}
-								if pat, matched := matchSSEStallPattern(sb); matched {
-									log.Printf("[automata-watchdog] stall detected PRD=%s task=%s session=%s (%q); killing",
-										prd.ID, task.ID, task.SessionID, pat)
-									_ = mgr.Kill(task.SessionID)
+								if m, matched := sseStallScan(s.FullID, s.BackendFamily, sb, sseStallSourceWatchdog); matched {
+									log.Printf("[automata-watchdog] stall detected PRD=%s task=%s session=%s (backend %s, source %s, line %q, pattern %q); killing",
+										prd.ID, task.ID, task.SessionID, m.Backend, m.Source, m.Line, m.Pattern)
+									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerSSEWatchdog, Reason: sseWatchdogEndReason(m, s.State, time.Since(s.CreatedAt))})
 								}
 							}
 						}
@@ -5632,7 +7967,9 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// BL221 (v6.2.0) Phase 3 — wire scan grader + rule editor via
 			// POST /api/ask loopback (Option C: same pattern as decomposeFn).
 			askFn := func(prompt string) (string, error) {
-				backend := amgrCfg.PlanningBackend
+				// Live config, not the boot-time literal (see
+				// liveAutonomousConfig).
+				backend := liveAutonomousConfig().PlanningBackend
 				if backend == "" {
 					backend = "ollama"
 				}
@@ -5719,7 +8056,10 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			}
 			amgr.SetScanGrader(scanGrader)
 			amgr.SetRuleEditorFn(ruleEditor)
+			recordReap := amgr.RecordSessionEndReap
+			sessionEndReapRecorder.Store(&recordReap)
 			httpServer.SetAutonomousAPI(aAPI)
+			wireTagRegistry(ctx, cfg, amgr, httpServer)
 			// Phase 4 follow-up (v5.26.67) — wire the post-session
 			// diff hook now that the autonomous Manager exists.
 			autonomousFilesHook = func(sess *session.Session) {
@@ -5754,11 +8094,12 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 		// surface is reachable for opt-in configuration; discovery is
 		// a no-op when plugins.enabled=false.
 		pcfg := pluginspkg.Config{
-			Enabled:   cfg.Plugins.Enabled,
-			Dir:       expandHome(cfg.Plugins.Dir),
-			TimeoutMs: cfg.Plugins.TimeoutMs,
-			Disabled:  cfg.Plugins.Disabled,
-			Managed:   cfg.Plugins.Managed,
+			Enabled:        cfg.Plugins.Enabled,
+			Dir:            expandHome(cfg.Plugins.Dir),
+			TimeoutMs:      cfg.Plugins.TimeoutMs,
+			Disabled:       cfg.Plugins.Disabled,
+			Managed:        cfg.Plugins.Managed,
+			HealthInterval: time.Duration(cfg.Plugins.Services.EffectiveHealthInterval()) * time.Second,
 		}
 		if pcfg.Dir == "" {
 			pcfg.Dir = filepath.Join(expandHome(cfg.DataDir), "plugins")
@@ -5772,7 +8113,44 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			if secretsStore != nil {
 				reg.SetSecretsStore(secretsStore) // BL242 Phase 5b — plugin env secret injection
 			}
-			httpServer.SetPluginsAPI(pluginspkg.NewAPI(reg))
+			// Service event recorder for this process: fed by the attach
+			// and managed health probes (via the registry observer) and the
+			// model-node events task; reports the open-conditions count the
+			// plugin service status card's events link renders. Its own
+			// alerts land in the global alerts store and its entries in the
+			// plugin service audit log, once per transition.
+			serviceRec := pluginspkg.NewServiceEventRecorder(pluginspkg.ServiceEventOptions{
+				BacklogRisePulls: cfg.Plugins.Services.EffectiveBacklogGrowthPulls(),
+				Audit: func(action, subject string, details map[string]any) {
+					httpServer.AuditPluginService(subject, action, details)
+				},
+			})
+			httpServer.SetModelNodeRecorder(serviceRec)
+			reg.SetHealthObserver(func(name string, healthy bool, code int) {
+				serviceRec.RecordHealthProbe(name, healthy)
+				if code != 0 {
+					serviceRec.RecordHTTPStatus(name, "probe", code)
+				}
+			})
+			pluginsAPI := pluginspkg.NewAPI(reg)
+			pluginsAPI.SetOpenEventsCounter(func(name string) int {
+				down, token, backlog, node := serviceRec.Active(name, "")
+				open := 0
+				if down {
+					open++
+				}
+				if token {
+					open++
+				}
+				if backlog {
+					open++
+				}
+				if node {
+					open++
+				}
+				return open
+			})
+			httpServer.SetPluginsAPI(pluginsAPI)
 			// v4.0.1 — plugin hot-reload via fsnotify. No-op when
 			// plugins.enabled=false; debounces 500 ms to coalesce
 			// editor-save storms.
@@ -5788,6 +8166,28 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 				httpServer.AuditPluginService(ev.Plugin, ev.Action, ev.Details)
 			})
 			reg.StartManaged(ctx)
+			// Attach-only service-kind plugins: health-probe their
+			// endpoints (attach_health.go) so the API can report version,
+			// uptime and the last health check. No process is ever
+			// launched for these; the probes are read-only HTTP.
+			reg.StartAttachProbes(ctx)
+			defer reg.StopAttachProbes()
+			// Model-node events task: on every interval pass it resolves
+			// each service plugin's model-use report and feeds node
+			// reachability to the shared recorder, so
+			// model_node_unreachable is raised from a background task —
+			// not by a request to the model-use endpoint — and cleared
+			// when the node answers again. The endpoint now reports node
+			// reachability in its body only.
+			httpServer.StartModelNodeEvents(ctx, func() []string {
+				var names []string
+				for _, p := range reg.List() {
+					if p.Kind == pluginspkg.KindService {
+						names = append(names, p.Name)
+					}
+				}
+				return names
+			})
 			// Deferred so it runs on every return from runStart — signal
 			// shutdown (ctx cancelled) and normal exit alike — reaping the
 			// supervised children before the process exits.
@@ -5810,6 +8210,10 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			// push-token registry and the pull scheduler. Only when plugins
 			// are enabled; otherwise the widget endpoints stay 503.
 			if cfg.Plugins.Enabled {
+				// Per-plugin token usage (GET /api/plugins/{name}/tokens):
+				// secret refs the manifest uses + service token names;
+				// values never.
+				httpServer.SetPluginTokens(pluginspkg.NewAPI(reg))
 				dataDir := expandHome(cfg.DataDir)
 				widgetStore, wsErr := pluginspkg.NewWidgetStore(dataDir)
 				if wsErr != nil {
@@ -5974,7 +8378,8 @@ PRD %s summary:
 %s
 
 Return STRICT JSON:
-{"outcome":"pass|warn|block","severity":"info|low|medium|high|critical","summary":"<one line>","issues":["..."]}`,
+{"outcome":"pass|warn|block","severity":"info|low|medium|high|critical","summary":"<one line>","issues":["..."]}
+issues must be an array of plain strings, one sentence each, never objects.`,
 					sys, req.PRDID, req.Summary)
 				gbackend := ocfg.GuardrailBackend
 				if !askCompatible(gbackend) {
@@ -6171,6 +8576,8 @@ Return STRICT JSON:
 			obsCollector.Start(context.Background())
 			httpServer.SetObserverAPI(observerpkg.NewAPI(obsCollector))
 			obsCollectorRef = obsCollector // S14b: wire into alert-rules evaluator
+			// The request watch reads the local daemon's own node GPU load from here.
+			requestWatchLocalStats = obsCollector.Latest
 			fmt.Printf("[observer] plugin started (tick=%dms, topN=%d)\n",
 				obsCfg.TickIntervalMs, obsCfg.ProcessTree.TopNBroadcast)
 			// BL172 (S11) — Shape B / C peer registry. Disabled when
@@ -6181,6 +8588,14 @@ Return STRICT JSON:
 					fmt.Printf("[warn] observer peer registry: %v\n", err)
 				} else {
 					httpServer.SetPeerRegistry(reg)
+					// Peer silence watcher: one alert per outage when a
+					// registered observer peer stops pushing stats. The
+					// threshold is read from the live config on every check,
+					// so a runtime change applies with no restart (0 = off).
+					peerSilence := observerpkg.NewPeerSilenceWatcher(reg, alertStore,
+						func() int { return cfg.Observer.Peers.SilentAlertMinutes }, nil)
+					peerSilence.SetSelfName(cfg.Hostname)
+					go peerSilence.Run(ctx, time.Minute)
 					// S13 — give the agent manager the same registry so
 					// Manager.Spawn mints + Manager.Terminate drops a
 					// per-agent peer. agentMgr already exists from F10
@@ -6209,14 +8624,7 @@ Return STRICT JSON:
 			// PushIntervalSeconds. Loop prevention is enforced by the
 			// receiver via the chain field.
 			if fed := obsCfg.Federation; fed.ParentURL != "" {
-				selfName := fed.PeerName
-				if selfName == "" {
-					if h, err := os.Hostname(); err == nil {
-						selfName = h
-					} else {
-						selfName = "datawatch-primary"
-					}
-				}
+				selfName := federationSelfName(fed.PeerName)
 				httpServer.SetFederationSelfName(selfName)
 				go startFederationPusher(obsCollector, fed, selfName, Version)
 			}
@@ -6243,9 +8651,19 @@ Return STRICT JSON:
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
 		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
+		// The comm verbs that proxy REST (autonomous tags, attention, ...) need
+		// the local loopback port, the same as the messaging routers above.
+		if cfg.Server.Enabled && cfg.Server.Port > 0 {
+			testRouter.SetWebPort(cfg.Server.Port)
+			testRouter.SetWebToken(cfg.Server.Token)
+		}
 		testRouter.SetScheduleStore(schedStore)
 		testRouter.SetAlertStore(alertStore)
 		testRouter.SetCmdLibrary(cmdLib)
+		// BL110 — the comm configure path in this router audits (surface
+		// "comm") through the shared sink; session attribution +
+		// config:write decision arrive from the REST layer per request.
+		testRouter.SetConfigAuditor(cfgAuditSink)
 		testRouter.SetProjectStore(projectStore)
 		testRouter.SetClusterStore(clusterStore)
 		testRouter.SetAgentManager(agentMgr)
@@ -6268,25 +8686,31 @@ Return STRICT JSON:
 		// /api/test/message surface would return "Channel info not wired".
 		testRouter.SetChannelInfoFn(channelInfoSummary)
 		testRouter.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
+		testRouter.SetWorkerProfileInForceFunc(workerProfileInForceReader(cfg))
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			apiURL := loopbackBaseURL(cfg) + "/api/config"
-			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
-			if value == "true" || value == "false" {
-				body = fmt.Sprintf(`{"%s":%s}`, key, value)
-			} else if _, err := fmt.Sscanf(value, "%d", new(int)); err == nil {
-				body = fmt.Sprintf(`{"%s":%s}`, key, value)
-			}
+			body := configureRequestBody(key, value)
 			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
 			if err != nil {
 				return err
 			}
 			req.Header.Set("Content-Type", "application/json")
+			// Token-protected daemon: present the loopback as admin, the
+			// same way Router.commGet does — an unauthenticated PUT would
+			// return 401 and comm `configure` would break whenever
+			// server.token is set.
+			if cfg.Server.Token != "" {
+				req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				return fmt.Errorf("API call failed: %w", err)
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != 200 {
+				if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
+					return errors.New(strings.TrimSpace(string(msg)))
+				}
 				return fmt.Errorf("API returned %d", resp.StatusCode)
 			}
 			return nil
@@ -6311,9 +8735,16 @@ Return STRICT JSON:
 				pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend),
 				cfg.Session.LLMBackend,
 			)
+			testPipeExec.SetProjectRoots(cfg.AllowedProjectRoots)
 			testRouter.SetPipelineExecutor(pipelinePkg.NewRouterAdapter(testPipeExec))
 		}
-		httpServer.SetTestMessageHandler(testRouter.HandleTestMessage)
+		httpServer.SetTestMessageHandler(func(text string, at server.TestMessageAttribution) []string {
+			return testRouter.HandleAttributedTestMessage(text, router.ConfigureAttribution{
+				Caller:             at.Caller,
+				ConfigWriteAllowed: at.ConfigWriteAllowed,
+				DenyReason:         at.DenyReason,
+			})
+		})
 		// Start system statistics collector (assign to shared var for router access)
 		statsCollector = statspkg.NewCollector(expandHome(cfg.DataDir))
 		statsCollector.SetSessionCountFunc(func() (int, int) {
@@ -6500,6 +8931,24 @@ Return STRICT JSON:
 				statsCollector.SetEBPFStatus(true, false, "Degraded — run: datawatch setup ebpf")
 			}
 		}
+		// Interstitial UI-prompt dismissal outcome counters (in-memory on the
+		// manager, reset at daemon restart) surfaced as ui_prompts in every
+		// collected stats snapshot — GET /api/stats and the get_stats MCP
+		// tool both marshal SystemStats, so the field rides along.
+		statsCollector.SetUIPromptsFunc(func() *statspkg.UIPromptStats {
+			dismissed, notCleared, refused, byKind := mgr.UIPromptStatsSnapshot()
+			if dismissed == 0 && notCleared == 0 && refused == 0 {
+				return nil
+			}
+			out := &statspkg.UIPromptStats{Dismissed: dismissed, NotCleared: notCleared, Refused: refused}
+			if len(byKind) > 0 {
+				out.ByKind = make(map[string]statspkg.UIPromptKindStats, len(byKind))
+				for kind, c := range byKind {
+					out.ByKind[kind] = statspkg.UIPromptKindStats{Dismissed: c.Dismissed, NotCleared: c.NotCleared, Refused: c.Refused}
+				}
+			}
+			return out
+		})
 		statsCollector.SetSessionStatsFunc(func() []statspkg.SessionStat {
 			var stats []statspkg.SessionStat
 			// Observer session attribution: the pane PIDs resolved
@@ -6685,9 +9134,32 @@ Return STRICT JSON:
 		}
 		// GH#201 — HTTP access / WS lifecycle / auth-failure log stats.
 		statsCollector.SetAccessLogStatsFunc(httpServer.PopulateAccessLogStats)
+		// Host load check (autonomous.host_load_alert) — created once here,
+		// before the stats wiring below reads its snapshot. It alerts when
+		// the load average stays above a multiple of the core count for the
+		// configured minutes; in reap mode it additionally ends the leftover
+		// processes of ended sessions (same tick as the alert). Reads
+		// autonomous.host_load_alert from the live config on every tick, so a
+		// change needs no restart. Its read-only status feeds the stats
+		// snapshot, the autonomous status (and the autonomous_status MCP
+		// tool) and the datawatch_host_load_* gauges.
+		hostLoadCheck = newHostLoadCheck(
+			func() autonomouspkg.Config {
+				return effectiveAutonomousConfig(autonomousMgrRef, autonomouspkg.Config{HostLoadAlert: cfg.Autonomous.HostLoadAlert})
+			},
+			mgr.ListSessions,
+			hostLoadAlertSink(alertStore),
+		)
+		if autonomousMgrRef != nil {
+			autonomousMgrRef.SetHostLoadProvider(hostLoadCheck.Status)
+		}
 		// BL367 — autonomous quality gate stats in WS broadcast.
 		if autonomousMgrRef != nil {
 			amgrRef := autonomousMgrRef
+			// Worker startup averages per profile and role (worker_startup block).
+			statsCollector.SetWorkerStartupStatsFunc(func(s *statspkg.SystemStats) {
+				s.WorkerStartup = statspkg.BuildWorkerStartupStats(workerStartupAttempts(amgrRef))
+			})
 			statsCollector.SetAutonomousStatsFunc(func(s *statspkg.SystemStats) {
 				st := amgrRef.Status()
 				s.QualityGateRuns = st.QualityGateRuns
@@ -6697,6 +9169,54 @@ Return STRICT JSON:
 				s.StoriesCancelled = st.StoriesCancelled
 				s.TasksCancelled = st.TasksCancelled
 				s.TasksRequeued = st.TasksRequeued
+				wq := autonomouspkg.WorkerQuestionCountsSnapshot()
+				s.WorkerQuestionsRaised = wq.Raised
+				s.WorkerQuestionsDuplicate = wq.Duplicate
+				s.WorkerQuestionsRefused = wq.Refused
+				s.WorkerQuestionsParked = wq.Parked
+				s.WorkerQuestionsResumed = wq.Resumed
+				sw := amgrRef.SupervisorWatchStatus().Stats(time.Now())
+				s.SupervisorWatchMode = sw.Mode
+				s.SupervisorWatchLastPollAgeSeconds = sw.LastPollAgeSeconds
+				s.SupervisorWatchFindingsOpen = sw.FindingsOpen
+				s.SupervisorWatchFindingsWouldAlert = sw.FindingsWouldAlert
+				s.SupervisorWatchFindingsAlerted = sw.FindingsAlerted
+				s.SupervisorWatchAgreedDays = sw.AgreedDays
+				// Safe-to-delete report stats.
+				sd := amgrRef.SafeDeleteStats()
+				s.SafeDeleteLastMS = sd.LastDurationMs
+				s.SafeDeleteSlowReports = sd.SlowReports
+				s.SafeDeleteRefreshFailures = sd.RefreshFailures
+				// Branch refresh results (branch refresh stats).
+				br := amgrRef.BranchRefreshStats()
+				s.BranchRefreshClean = br.Clean
+				s.BranchRefreshConflict = br.Conflict
+				s.BranchRefreshError = br.Error
+				s.BranchRefreshStopped = br.Stopped
+				// Host load check status (off/alert/reap): mode, last load
+				// reading vs threshold, breach state, orphans reaped.
+				if hl := st.HostLoad; hl != nil {
+					s.HostLoadMode = hl.Mode
+					s.HostLoadLast = hl.LastLoad
+					s.HostLoadLimit = hl.LastLimit
+					s.HostLoadBreached = hl.Breached
+					s.HostLoadLastCheckAt = hl.LastCheckAt
+					s.HostLoadOrphansReaped = hl.OrphansReaped
+				}
+			})
+		}
+		// Supervisor loop stats in the WS broadcast and the Prometheus collector.
+		statsCollector.SetSupervisorLoopStatsFunc(func(s *statspkg.SystemStats) {
+			fillSupervisorLoopStats(s, httpServer.SupervisorLoopStats())
+		})
+		// Burn guard stats in the WS broadcast and the Prometheus collector.
+		statsCollector.SetBurnGuardStatsFunc(func(s *statspkg.SystemStats) {
+			fillBurnGuardStats(s, httpServer.BurnGuardStats())
+		})
+		// Agent tracing stats in the WS broadcast and the Prometheus collector.
+		if traceStore != nil {
+			statsCollector.SetTraceStatsFunc(func(s *statspkg.SystemStats) {
+				fillTraceStats(s, traceStore.Stats(), time.Now())
 			})
 		}
 		// BL372 — wire web search stats into the collector.
@@ -6726,6 +9246,23 @@ Return STRICT JSON:
 				s.WebSearchLastQueryAt = last
 			}
 		})
+		// Pre-push secret-scan counters (runs, findings, shadow reports,
+		// refusals). Copied from the git package's package-level counters;
+		// nil (key omitted from the JSON) when the daemon never scanned.
+		statsCollector.SetSecretScanStatsFunc(func(s *statspkg.SystemStats) {
+			ss := gitpkg.SecretScanStatsSnapshot()
+			if ss.Runs == 0 && ss.Findings == 0 && ss.ShadowReports == 0 && ss.Refusals == 0 {
+				return
+			}
+			s.SecretScan = &statspkg.SecretScanStats{
+				Runs:          ss.Runs,
+				Findings:      ss.Findings,
+				ShadowReports: ss.ShadowReports,
+				Refusals:      ss.Refusals,
+				LastRunAt:     ss.LastRunAt,
+				LastRefusalAt: ss.LastRefusalAt,
+			}
+		})
 		// Update Prometheus metrics on each stats collection
 		statsCollector.SetOnCollect(func(s statspkg.SystemStats) {
 			metricsPkg.CPUUsage.Set(s.CPULoadAvg1)
@@ -6736,6 +9273,29 @@ Return STRICT JSON:
 			metricsPkg.UptimeSeconds.Set(float64(s.UptimeSeconds))
 			metricsPkg.RTKTokensSaved.Set(float64(s.RTKTotalSaved))
 			metricsPkg.RTKSavingsPct.Set(s.RTKAvgSavings)
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("open").Set(float64(s.SupervisorWatchFindingsOpen))
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("would_alert").Set(float64(s.SupervisorWatchFindingsWouldAlert))
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("alerted").Set(float64(s.SupervisorWatchFindingsAlerted))
+			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
+			// Host load check (autonomous.host_load_alert).
+			if s.HostLoadMode != "" {
+				metricsPkg.HostLoadLastRead.Set(s.HostLoadLast)
+				metricsPkg.HostLoadLimit.Set(s.HostLoadLimit)
+				var breached float64
+				if s.HostLoadBreached {
+					breached = 1
+				}
+				metricsPkg.HostLoadBreached.Set(breached)
+				metricsPkg.HostLoadOrphansReaped.Set(float64(s.HostLoadOrphansReaped))
+			}
+			updateBurnGuardMetrics(s)
+			updateTraceMetrics(s)
+			updateSupervisorLoopMetrics(s)
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("clean").Set(float64(s.BranchRefreshClean))
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("conflict").Set(float64(s.BranchRefreshConflict))
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("error").Set(float64(s.BranchRefreshError))
+			metricsPkg.BranchRefreshStopped.Set(float64(s.BranchRefreshStopped))
+			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()
 			for _, ss := range s.SessionStats {
@@ -6770,6 +9330,10 @@ Return STRICT JSON:
 		})
 
 		daemonRestartFn := func() {
+			// Record the shutdown cause (API-marked via is picked up by
+			// shutdowncause.Capture) before either exit path below.
+			recordShutdownCause(nil)
+			_ = mgr.Close()
 			// Under systemd, let its own Restart= policy bring the service
 			// back up — exiting non-zero so Restart=on-failure fires —
 			// rather than spawning selfRestart's detached shell chain,
@@ -6793,7 +9357,10 @@ Return STRICT JSON:
 			fmt.Printf("[daemon] Update complete. Spawning new process and exiting (v%s → %s).\n", Version, exe)
 			os.Exit(0)
 		}
-		httpServer.SetRestartFunc(daemonRestartFn)
+		// autonomous.restart_policy runs before the restart; the ACME renewal
+		// path keeps the plain function, because it restarts to reload a cert.
+		guardedRestartFn := guardRestartForce(func(bool) { daemonRestartFn() }, liveRestartManager, liveRestartSettings)
+		httpServer.SetRestartFuncForce(guardedRestartFn)
 
 		// BL397 — native ACME subsystem. Disabled by default (acme.enabled
 		// is false unless the operator opts in); failure to start it never
@@ -6856,6 +9423,7 @@ Return STRICT JSON:
 				canonicalACP = "Activity"
 			}
 			if canonicalACP != "" {
+				mgr.NoteHookBoardEvent(fullID, canonicalACP)
 				server.RecordHookEvent(fullID, canonicalACP, eventType, map[string]any{
 					"backend":     "opencode-acp",
 					"acp_event":   eventType,
@@ -6891,7 +9459,9 @@ Return STRICT JSON:
 		}
 		addr := fmt.Sprintf("%s://%s:%d", scheme, cfg.Server.Host, cfg.Server.Port)
 		fmt.Printf("[%s] PWA server: %s\n", cfg.Hostname, addr)
+		httpStopped = make(chan struct{})
 		go func() {
+			defer close(httpStopped)
 			defer func() {
 				if p := recover(); p != nil {
 					fmt.Printf("[%s] PWA server panic (recovered): %v\n", cfg.Hostname, p)
@@ -6976,6 +9546,23 @@ Return STRICT JSON:
 				}
 			}
 		}
+		// System alerts (no session, e.g. the triage alert or the
+		// Automation-blocked alert) fan out over the comm channels, using
+		// the same per-send notify_exclude as the lifecycle comm sinks.
+		// The body reaches each chat sink verbatim (no truncation):
+		// the triage alert body is the shared triage record text, and
+		// it must arrive intact. Session alerts keep flowing through
+		// bundleRemoteAlert's bundled messages.
+		if a.SessionID == "" {
+			var sendNtfy, sendEmail func(text string) error
+			if ntfyBackend != nil {
+				sendNtfy = func(text string) error { return ntfyBackend.Send(cfg.Ntfy.Topic, text) }
+			}
+			if emailBackend != nil {
+				sendEmail = func(text string) error { return emailBackend.Send(cfg.Email.To, text) }
+			}
+			sendSystemAlertToComm(a, cfg.Hostname, cfg.NotifyExclude, routers, sendNtfy, sendEmail)
+		}
 	})
 
 	// Start the scheduler goroutine (fires timed commands and on-input-prompt commands)
@@ -7015,27 +9602,41 @@ Return STRICT JSON:
 		}
 	}()
 
+	// Host load check (created above, with the stats wiring). Alert and
+	// reap state are already in the stats snapshot and autonomous status
+	// via the check's Status snapshot.
+	startHostLoadCheck(ctx, hostLoadTickInterval, hostLoadCheck)
+
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:    alertStore,
-		SchedStore:    schedStore,
-		ExitHookStore: exitHookStore,
-		QueueStore:    queueStore,         // BL357
-		SubStore:      discussionSubStore, // BL358
-		ResultStore:   resultStore,        // BL360
-		CmdLib:        cmdLib,
-		AcmeManager:   acmeMgr, // BL397
-		Version:       Version,
-		LatestVersion: fetchLatestVersion,
-		FallbackToken: cfg.Server.Token, // SEC-002
-		RestartFn: func() {
+		AlertStore:          alertStore,
+		SchedStore:          schedStore,
+		ExitHookStore:       exitHookStore,
+		QueueStore:          queueStore,          // BL357
+		SubStore:            discussionSubStore,  // BL358
+		ResultStore:         resultStore,         // BL360
+		ScheduleResultStore: scheduleResultStore, // result panel (GH#204)
+		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:              cmdLib,
+		AcmeManager:         acmeMgr, // BL397
+		Version:             Version,
+		LatestVersion:       fetchLatestVersion,
+		FallbackToken:       cfg.Server.Token, // SEC-002
+		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
+		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		ConfigAudit:         cfgAuditSink,     // BL110 — shared sink (same instance as REST + comm)
+		RestartForceFn: guardRestartForce(func(bool) {
+			// Record the shutdown cause (audit + last-shutdown.json) before we
+			// exec/exit below and lose the ability to write.
+			recordShutdownCause(nil)
+			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
 				_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
 			}
 			os.Exit(0)
-		},
+		}, liveRestartManager, liveRestartSettings),
 	})
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 	mcpSrv.SetWebPort(cfg.Server.Port)
@@ -7059,12 +9660,7 @@ Return STRICT JSON:
 			fmt.Println("[docsindex] LLM translator attached (uses configured Ollama/OpenWebUI backend)")
 		}
 	}
-	// BL110 — default self-modify audit path when AllowSelfConfig is on
-	// and the operator hasn't picked an explicit one.
-	if cfg.MCP.AllowSelfConfig && cfg.MCP.SelfConfigAuditPath == "" {
-		cfg.MCP.SelfConfigAuditPath = filepath.Join(expandHome(cfg.DataDir),
-			"audit", "config-self-modify.jsonl")
-	}
+	// BL110 — the audit path default is applied by configAuditSinkFor (see runStart setup).
 	if pipeAdapter != nil {
 		mcpSrv.SetPipelineAPI(pipeAdapter)
 	}
@@ -7146,6 +9742,15 @@ Return STRICT JSON:
 				fmt.Printf("[%s] MCP SSE server error: %v\n", cfg.Hostname, srvErr)
 			}
 		}()
+	}
+
+	// Wire the MCP SSE listener state into /api/health (mcp_sse) so
+	// operators read the bind state from the health endpoint rather
+	// than the server logs.
+	if cfg.MCP.SSEEnabled {
+		httpServer.SetMCPSSEStateFn(func() string { return mcpSrv.SSEListenerState() })
+	} else {
+		httpServer.SetMCPSSEStateFn(func() string { return "disabled" })
 	}
 
 	// Remote channel alert bundler: collects events per-session for 5s
@@ -7376,25 +9981,19 @@ Return STRICT JSON:
 		if claudeAutoAccept && sess.State == session.StateWaitingInput &&
 			sess.BackendFamily == "claude-code" &&
 			claudeDisclaimerResponse(sess.LastPrompt) != "" {
-			lastPrompt := sess.LastPrompt
 			if _, loaded := claudeStartupAccepted.LoadOrStore(sess.FullID, struct{}{}); !loaded {
 				go func(sessID string) {
 					defer claudeStartupAccepted.Delete(sessID)
 					time.Sleep(750 * time.Millisecond)
-					// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
-					if isTrustDialogLine(lastPrompt) {
-						if err := mgr.SendTrustDialogAccept(sessID); err != nil {
-							fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-						}
-						return
-					}
+					// Classifier-driven: answers whichever startup dialog is
+					// on the live pane (trust arrow keys, Enter-type accepts,
+					// or a single Esc for unsafe dialogs), not only the one the
+					// prompt line named. At most one answer per appearance;
+					// re-capture a few times in case the TUI is still
+					// rendering.
 					for i := 0; i < 5; i++ {
-						liveResp := mgr.GetActiveStartupPromptInput(sessID)
-						if liveResp != "" {
-							if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
-								fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-								break
-							}
+						if respondStartupDialog(mgr, sessID) {
+							break
 						}
 						time.Sleep(500 * time.Millisecond)
 					}
@@ -7487,6 +10086,7 @@ Return STRICT JSON:
 				"prev_state": string(old),
 				"task":       sess.Task,
 			})
+			mgr.NoteHookBoardEvent(sess.FullID, canonical)
 		}
 		// Local web server: notify immediately
 		if httpServer != nil {
@@ -7693,6 +10293,25 @@ Return STRICT JSON:
 			})
 	})
 
+	// A worker whose main prompt never appeared is ended on the session end
+	// path by DeliverOneShotTask; record that failure on the owning task so it
+	// is visible on the PRD. Wired once at startup, not per task launch.
+	mgr.SetOnTaskDeliveryFailed(func(fullID, reason string) {
+		if autonomousMgrRef == nil {
+			log.Printf("[autonomous] delivery failure for %s not recorded (no autonomous manager): %s", fullID, reason)
+			return
+		}
+		sess, ok := mgr.GetSession(fullID)
+		if !ok || sess.PRDID == "" || sess.TaskID == "" {
+			return
+		}
+		if rerr := autonomousMgrRef.RecordTaskDeliveryFailure(sess.PRDID, sess.TaskID, reason, time.Now()); rerr != nil {
+			log.Printf("[autonomous] record delivery failure for %s/%s: %v", sess.PRDID, sess.TaskID, rerr)
+			return
+		}
+		log.Printf("[autonomous] recorded delivery failure for %s/%s: %s", sess.PRDID, sess.TaskID, reason)
+	})
+
 	// BL355: zombie detection — alert when Claude process dies in active session.
 	mgr.SetClaudeAliveChangeHandler(func(sess *session.Session) {
 		alertStore.Add(alertspkg.LevelWarn,
@@ -7830,6 +10449,33 @@ Return STRICT JSON:
 		// No routers — keep alive for HTTP server / proxy mode
 		<-ctx.Done()
 	}
+
+	// Shutdown tail. A signal cancels ctx, which makes the PWA server shut
+	// down. Wait for that to finish so no new launch arrives over HTTP, then
+	// drain the launches still in flight before the process exits. The wait
+	// applies only after a signal, not when the routers simply finish.
+	if ctx.Err() != nil && httpStopped != nil {
+		select {
+		case <-httpStopped:
+		case <-time.After(shutdownHTTPWait):
+		}
+	}
+	// Flush the question notify fan-out goroutines before exit. A fan-out in
+	// flight can still be writing the alert store JSON file, so give it a
+	// bounded wait (same style as the HTTP shutdown wait above) so shutdown
+	// cannot hang if a leg never finishes.
+	if ctx.Err() != nil && httpServer != nil {
+		notifiesDone := make(chan struct{})
+		go func() {
+			httpServer.WaitQuestionNotifies()
+			close(notifiesDone)
+		}()
+		select {
+		case <-notifiesDone:
+		case <-time.After(shutdownHTTPWait):
+		}
+	}
+	drainLaunchesOnShutdown(mgr, os.Stdout)
 	return nil
 }
 
@@ -8230,7 +10876,7 @@ func downloadChannelBinary(dataDir, targetVersion string) (string, error) {
 	// with its own archive id, both named "datawatch-channel") for some
 	// time now -- the main archive never contained it, so both this and
 	// the legacy bare-binary fallback below 404'd on every real release,
-	// confirmed live against v9.0.5 on ralfthewise.
+	// confirmed live against v9.0.5 on peer-d.
 	var archiveName, chanBin string
 	if goos == "windows" {
 		archiveName = fmt.Sprintf("datawatch-channel_%s_%s_%s.zip", targetVersion, goos, goarch)
@@ -8404,7 +11050,7 @@ func coalesceHost(h string) string {
 // v5.26.17 — operator-reported: "loopback may not exist if someone
 // changes the default interfaces, validate". Hardcoding 127.0.0.1
 // breaks when the daemon binds to a specific non-loopback interface
-// (cfg.Server.Host = "192.168.1.5") — the daemon listens at 192.x
+// (cfg.Server.Host = "192.0.2.35") — the daemon listens at 192.x
 // but DOESN'T accept on 127.0.0.1, so loopback POSTs fail.
 //
 // Resolution:
@@ -8472,6 +11118,29 @@ func validateLoopback(cfg *config.Config) error {
 	return nil
 }
 
+// configAuditSinkFor (BL110) builds the shared config-write audit sink for
+// this invocation: mcp.self_config_audit_path (defaulting to
+// <data>/audit/config-self-modify.jsonl while self-config is enabled and the
+// path is unset) plus the mcp.self_config_audit_denied flag. runStart wires
+// the same instance into every surface (REST server, MCP server, comm
+// routers) and runMCP into its MCP server, so a config write from a session
+// or federation peer is recorded exactly once regardless of surface.
+func configAuditSinkFor(cfg *config.Config) *federation.ConfigAuditor {
+	if cfg.MCP.SelfConfigEnabled() && cfg.MCP.SelfConfigAuditPath == "" {
+		cfg.MCP.SelfConfigAuditPath = filepath.Join(expandHome(cfg.DataDir),
+			"audit", "config-self-modify.jsonl")
+	}
+	sink := federation.NewConfigAuditor(cfg.MCP.SelfConfigAuditPath, cfg.MCP.SelfConfigAuditDeniedOn())
+	// AGENT.md's Audit Logging Rule: the config-write sink, like the operator
+	// audit log, is emittable in both JSON-lines and CEF. When the daemon
+	// mirrors the operator audit log to CEF (audit.cef_mirror_enabled), the
+	// self-config audit trail mirrors too (<path>.cef).
+	if cfg.Audit.CEFMirrorEnabled {
+		sink.EnableCEFMirror()
+	}
+	return sink
+}
+
 func expandHome(p string) string {
 	if strings.HasPrefix(p, "~/") || p == "~" {
 		home, _ := os.UserHomeDir()
@@ -8489,6 +11158,19 @@ func expandHome(p string) string {
 //
 // Best-effort: registration failures are logged and retried on the
 // next tick. The collector keeps running locally regardless.
+// federationSelfName is the name this daemon is known by in the federation:
+// the configured peer name, else the host name. The federation pusher and the
+// lifecycle peer forwarder both use it, so every hop names this daemon alike.
+func federationSelfName(peerName string) string {
+	if peerName != "" {
+		return peerName
+	}
+	if h, err := os.Hostname(); err == nil {
+		return h
+	}
+	return "datawatch-primary"
+}
+
 func startFederationPusher(coll *observerpkg.Collector, fed observerpkg.FederationCfg, selfName, version string) {
 	tokenPath := fed.TokenPath
 	if tokenPath == "" {
@@ -8560,15 +11242,16 @@ func ensureChannelExtracted(cfg *config.Config) error {
 // ---- stop command ---------------------------------------------------------
 
 // ensureTmuxTmpdirEnv sets TMUX_TMPDIR from the dedicated tmux socket
-// (session.TmuxSocketDir()) when it isn't already in this process's
-// environment, so the daemon's own tmux calls resolve against the right
-// server. Returns the socket dir it set, or "" if nothing needed changing
-// (TMUX_TMPDIR already set, or no dedicated socket exists).
-func ensureTmuxTmpdirEnv() string {
+// (session.TmuxSocketDirFor(dataDir)) when it isn't already in this
+// process's environment, so the daemon's own tmux calls resolve against the
+// right server. dataDir is the daemon's configured, already-expanded data
+// directory. Returns the socket dir it set, or "" if nothing needed
+// changing (TMUX_TMPDIR already set, or no dedicated socket exists).
+func ensureTmuxTmpdirEnv(dataDir string) string {
 	if os.Getenv("TMUX_TMPDIR") != "" {
 		return ""
 	}
-	d := session.TmuxSocketDir()
+	d := session.TmuxSocketDirFor(dataDir)
 	if d == "" {
 		return ""
 	}
@@ -8708,12 +11391,23 @@ func runStop(cmd *cobra.Command, _ []string) error {
 // ---- restart command ------------------------------------------------------
 
 func newRestartCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	c := &cobra.Command{
 		Use:   "restart",
 		Short: "Restart the datawatch daemon",
-		Long:  "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.",
-		RunE:  runRestart,
+		Long: "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.\n\n" +
+			"While running Automata work would be interrupted, the restart is refused: the interruption report " +
+			"(planning Automata, verifying tasks, running judges, running tasks and live sessions) is printed and " +
+			"the command exits non-zero. Pass --force to restart anyway. See docs/howto/restart-with-work-running.md.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := restartCLIGuard(force, progressGet, cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			return runRestart(cmd, args)
+		},
 	}
+	c.Flags().BoolVar(&force, "force", false, "restart even when running Automata work would be interrupted")
+	return c
 }
 
 func runRestart(_ *cobra.Command, _ []string) error {
@@ -8886,6 +11580,14 @@ func newStatsCmd() *cobra.Command {
 					fmt.Printf("  %s %-20s %-14s %8s  %s\n", sid, name, state, fmtB(rss), uptime)
 				}
 			}
+
+			// Worker startup averages per profile and role (worker_startup block).
+			var workerStartup statspkg.WorkerStartupStats
+			if raw, err := json.Marshal(s["worker_startup"]); err == nil {
+				_ = json.Unmarshal(raw, &workerStartup)
+			}
+			fmt.Println()
+			fmt.Println(statspkg.WorkerStartupText(workerStartup))
 
 			if cs, ok := s["comm_stats"].([]interface{}); ok && len(cs) > 0 {
 				fmt.Println()
@@ -9105,6 +11807,7 @@ func runStatus(cfg *config.Config) error {
 	if len(sessions) == 0 {
 		store, err := session.NewStore(filepath.Join(dataDir, "sessions.json"))
 		if err == nil {
+			defer func() { _ = store.Close() }()
 			for _, s := range store.List() {
 				sessions = append(sessions, apiSession{
 					FullID:        s.FullID,
@@ -9485,7 +12188,53 @@ func newConfigSetCmd() *cobra.Command {
 		Use:   "set <key> <value>",
 		Short: "Set a config value via the running daemon's REST API",
 		Long: "Sends PUT /api/config to the running daemon. Refuses when the daemon isn't reachable — " +
-			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.",
+			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.\n\n" +
+			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
+			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
+			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model), " +
+			"autonomous.parallel.merge_retry_seconds (whole seconds >= 0; default 60, 0 = timer off).\n\n" +
+			"Merge pipeline release keys: autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch|minor|major|none), " +
+			"autonomous.merge_pipeline.major_trigger (manual|milestone|never), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet) and " +
+			"autonomous.merge_pipeline.version_scheme (semver; other schemes are not available yet). Each also takes the form autonomous.merge_pipeline.projects.<project>.<key> for one project.\n\n" +
+			"Merge pipeline release approval keys: autonomous.merge_pipeline.release_approval.<size> " +
+			"(the global value) and autonomous.merge_pipeline.projects.<project>.release_approval.<size> " +
+			"(one project's value; unset inherits the global value), where <size> is patch, minor or major " +
+			"and the value is one of:\n" +
+			"  auto    - ship the release without waiting for the operator (default for patch and minor)\n" +
+			"  ask     - ask the operator before the release ships (default for major)\n" +
+			"  manual  - leave the release for the operator to ship\n" +
+			"Any other value is refused and the error names the key.\n\n" +
+			"Peer silence key: observer.peers.silent_alert_minutes (whole minutes >= 0; 0 = silence watcher off, default 5). Read it back with `config get observer.peers.silent_alert_minutes`.\n\n" +
+			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
+			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
+			"an unknown backend or a non-whole-number value is refused).\n\n" +
+			"Verifier run cap key: autonomous.verifier_max_run_seconds (whole seconds >= 0; 0 = no cap; a negative or non-whole value is refused).\n\n" +
+			"Memory ceiling keys: resource_limits.memory_share_percent (1 to 100), " +
+			"resource_limits.memory_floor_mb and resource_limits.memory_cap_mb (whole MB; the floor may not be above the cap).\n\n" +
+			"Platform context keys: platform_context.enabled (true|false; default true) turns the platform context " +
+			"section delivered to each session on or off, and a project can override it; " +
+			"platform_context.note (text, at most 2000 bytes; empty = none) is operator text appended to that section..\n\n" +
+			"Service-plugin watch keys: plugins.services.health_interval_seconds (whole seconds >= 5), " +
+			"plugins.services.backlog_growth_pulls (>= 1), plugins.services.node_load_ratio (> 0), " +
+			"plugins.services.small_model_max_params_billions (> 0), plugins.services.small_model_context_tokens (>= 1), " +
+			"plugins.services.per_service.<service> (attach_only|managed; empty clears it) — the daemon validates " +
+			"each against the same rules a config load runs and refuses a value that breaks the block.\n\n" +
+			"Automata placement tag keys: autonomous.tags.placement.enabled (true|false; the master switch), " +
+			"and per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind) " +
+			"autonomous.tags.placement.<axis>.enabled (true|false; default true) and autonomous.tags.placement.<axis>.template " +
+			"(a string carrying the axis' placeholder, e.g. 'lane:{lane}'; a template without its placeholder is refused).\n\n" +
+			"Project defaults keys: projects_defaults.branch_retention_days (whole days, 0 = unset), " +
+			"projects_defaults.weekly_share_percent (0 to 100, 0 = unset), and projects_defaults.major_trigger " +
+			"(manual, milestone or never; default manual). A project with its own value keeps it.\n\n" +
+			"Worker profile keys: worker_profile (a profile name, built-in or user-defined; empty clears it), " +
+			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
+			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
+			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
+			"starts with worker_profile is refused as unknown.\n\n" +
+			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).\n\n" +
+			"MCP permission keys: mcp.allow_self_config and mcp.allow_sensitive_writes (each true|false; default true). " +
+			"mcp.allow_sensitive_writes gates the sensitive write tool class for session and peer callers; " +
+			"set it to false to refuse those writes and back to true to allow them. Each is sent as a boolean.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -9512,14 +12261,89 @@ func newConfigGetCmd() *cobra.Command {
 	}
 }
 
+// verifierRunCapConfigKey is the dotted key that caps one verifier session's
+// wall-clock length. runConfigSet refuses bad values for it before any request.
+const verifierRunCapConfigKey = "autonomous.verifier_max_run_seconds"
+
+// parseVerifierRunCapValue accepts a whole, non-negative number of seconds
+// (0 = no cap). A negative value is refused by config.ValidateVerifierRunCapSeconds;
+// any other non-whole text is refused here. Both errors name the key.
+func parseVerifierRunCapValue(value string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a whole number of seconds (0 = no cap), got %q", verifierRunCapConfigKey, value)
+	}
+	if err := config.ValidateVerifierRunCapSeconds(n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func runConfigSet(cfg *config.Config, key, value string) error {
+	if isWorkerProfileConfigKeyFamily(key) {
+		return runWorkerProfileConfigSet(cfg, key, value)
+	}
 	url := loopbackBaseURL(cfg) + "/api/config"
+	if isMergePipelineReleaseApprovalKey(key) {
+		// auto|ask|manual only; refused here before anything is sent. The
+		// cli surface is named so the daemon records the change as a CLI change.
+		return runMergePipelineReleaseApprovalSet(url+"?surface=cli", cfg.Server.Token, key, value)
+	}
+	// the merge-shadow settings are validated with the API's own rules and
+	// sent typed, with their help link printed on success.
+	if handled, err := mergeShadowConfigSet(cfg, key, value); handled {
+		return err
+	}
+	if key == verifierRunCapConfigKey {
+		n, err := parseVerifierRunCapValue(value)
+		if err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		if err := putConfig(url, cfg.Server.Token, fmt.Sprintf(`{"%s": %d}`, key, n)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %d\n", key, n)
+		return nil
+	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
+	if key == "session.liveness_idle_timeout_overrides" {
+		// A JSON object or backend=seconds pairs; bad text is refused here, and
+		// an unknown backend or negative value by the daemon, both with a message.
+		m, err := config.ParseLivenessOverridesText(value)
+		if err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		b, _ := json.Marshal(map[string]any{key: m})
+		if err := putConfig(url, cfg.Server.Token, string(b)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %s\n", key, value)
+		return nil
+	}
+	if isAttemptCostDottedKey(key) {
+		// A per-kind backend or model is a string, so it is sent as one even
+		// when it looks like a number (a model named "3"); the daemon refuses
+		// a bad kind or a backend that needs a model with its own message.
+		b, _ := json.Marshal(map[string]any{key: value})
+		if err := putConfig(url, cfg.Server.Token, string(b)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %s\n", key, value)
+		return nil
+	}
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
+		// A liveness, merge-pipeline release or attempt-cost value that is valid
+		// JSON and was refused keeps the daemon's message; quoting it again would
+		// replace it with a bad-JSON error.
+		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key)) && json.Valid([]byte(value)) {
+			return fmt.Errorf("config set: %w", err)
+		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
 		if err2 := putConfig(url, cfg.Server.Token, bodyQuoted); err2 != nil {
-			return fmt.Errorf("config set: %w (also tried quoted: %v)", err, err2)
+			// The quoted attempt is the one that carries a value refusal, so its
+			// message is the daemon's text as every other surface shows it.
+			return fmt.Errorf("config set: %w", err2)
 		}
 	}
 	fmt.Printf("Set %s = %s\n", key, value)
@@ -9527,6 +12351,8 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 }
 
 func runConfigGet(cfg *config.Config, key string) error {
+	inForceKey := isWorkerProfileInForceKey(key)
+	key = workerProfileGetKey(key)
 	url := loopbackBaseURL(cfg) + "/api/config"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	if cfg.Server.Token != "" {
@@ -9549,9 +12375,35 @@ func runConfigGet(cfg *config.Config, key string) error {
 	if v == nil {
 		return fmt.Errorf("config key %q not found", key)
 	}
-	out, _ := json.MarshalIndent(v, "", "  ")
-	fmt.Println(string(out))
+	fmt.Println(formatConfigGetOutput(full, key, v))
+	if inForceKey {
+		lines, err := workerProfileInForceLines(raw)
+		if err != nil {
+			return err
+		}
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+	}
 	return nil
+}
+
+// formatConfigGetOutput renders one config key for `config get <key>`.
+// It is a pure function of the daemon's GET /api/config body so the source
+// marker can be tested without a daemon: usage.calculator.reset_zone prints
+// the effective zone with a "(server zone)" suffix when the operator left
+// the zone unset (reset_zone_source == "server"); every other key and a
+// configured zone print the value itself.
+func formatConfigGetOutput(full map[string]interface{}, key string, v interface{}) string {
+	if key == "usage.calculator.reset_zone" {
+		if zone, ok := v.(string); ok {
+			if src, ok2 := lookupConfigKey(full, "usage.calculator.reset_zone_source").(string); ok2 && src == "server" {
+				return zone + " (server zone)"
+			}
+		}
+	}
+	out, _ := json.MarshalIndent(v, "", "  ")
+	return string(out)
 }
 
 // putConfig POSTs/PUTs a single-field config update to the daemon.
@@ -9696,6 +12548,8 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Printf("  default_project_dir:   %s\n", cfg.Session.DefaultProjectDir)
 			fmt.Printf("  max_sessions:          %d\n", cfg.Session.MaxSessions)
 			fmt.Printf("  input_idle_timeout:    %ds\n", cfg.Session.InputIdleTimeout)
+			fmt.Printf("  liveness_window_seconds:          %d (0 = default %d)\n", cfg.Session.LivenessWindowSeconds, config.DefaultLivenessWindowSeconds)
+			fmt.Printf("  liveness_idle_timeout_overrides:  %s\n", formatLivenessOverrides(cfg.Session.LivenessIdleTimeoutOverrides))
 			fmt.Printf("  tail_lines:            %d\n", cfg.Session.TailLines)
 			fmt.Printf("  auto_git_commit:       %v\n", cfg.Session.AutoGitCommit)
 			fmt.Printf("  auto_git_init:         %v\n", cfg.Session.AutoGitInit)
@@ -9779,6 +12633,11 @@ func newSessionCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List all sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if groupBy, _ := cmd.Flags().GetString("group-by"); groupBy != "" {
+				// Grouping read: GET /api/sessions?group_by=... — the grouping lives
+				// in the REST handler; the CLI only sends the query and renders it.
+				return daemonGetSessionGroups(cmd)
+			}
 			allServers, _ := cmd.Flags().GetBool("all-servers")
 			orphaned, _ := cmd.Flags().GetBool("orphaned")
 			if orphaned {
@@ -9813,13 +12672,25 @@ func newSessionCmd() *cobra.Command {
 	sessionListCmd.Flags().Bool("summary", false, "compact JSON list: long text fields truncated, only the newest finished sessions kept")
 	sessionListCmd.Flags().String("states", "", "comma list of states to include (e.g. running,waiting_input); 'active' = every non-finished state")
 	sessionListCmd.Flags().String("since", "", "only sessions updated after this time (RFC3339 or unix seconds)")
+	var listTags []string
+	var listTagMatch string
+	sessionListCmd.Flags().StringArrayVar(&listTags, "tag", nil, "filter to sessions carrying this tag (repeatable); own or inherited from the Automaton that spawned it")
+	sessionListCmd.Flags().StringVar(&listTagMatch, "tag-match", "", "match at least one --tag (any, default) or every --tag (all)")
+	// Axis shortcuts: each adds one "<axis>:<value>" tag, combined with --tag
+	// under the same --tag-match rule.
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role"} {
+		sessionListCmd.Flags().String(axis, "", "axis shortcut: filter by tag "+axis+":<value> (same as --tag "+axis+":<value>)")
+	}
+	sessionListCmd.Flags().String("group-by", "", "group the list by tag, state, node, project or automaton (a header with count and state mix, then the group's sessions indented underneath)")
+	sessionListCmd.Flags().String("tag-prefix", "", "with --group-by tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group")
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"
 	newCmd := &cobra.Command{
-		Use:   "new [task]",
-		Short: "Start a new AI coding session",
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "new [task]",
+		Aliases: []string{"start"},
+		Short:   "Start a new AI coding session",
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -9839,7 +12710,13 @@ func newSessionCmd() *cobra.Command {
 			killChildren, _ := cmd.Flags().GetBool("kill-children")
 			killChildrenRecursive, _ := cmd.Flags().GetBool("kill-children-recursive")
 			validate, _ := cmd.Flags().GetStringArray("validate")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate)
+			git, _ := cmd.Flags().GetBool("git")
+			priority, err := sessionPriorityFlag(cmd)
+			if err != nil {
+				return err
+			}
+			launchRole, _ := cmd.Flags().GetString("launch-role")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -9852,6 +12729,9 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().Bool("kill-children", false, "When set, killing this session will also kill direct child sessions it spawns.")
 	newCmd.Flags().StringArray("validate", nil, "Shell command run in the project dir before a one-shot may commit (repeatable). Ad-hoc one-shots with no --validate never auto-commit.")
 	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
+	newCmd.Flags().Bool("git", false, "opt in to git init, snapshot and automatic commit")
+	newCmd.Flags().String("priority", "", "capacity-queue priority (integer; higher is admitted first when capacity is contended; default 0)")
+	newCmd.Flags().String("launch-role", "", "placement role: worker|verifier|planner|judge|supervisor (use supervisor for the operator's supervisor session; sent as launch_role)")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -9907,10 +12787,16 @@ func newSessionCmd() *cobra.Command {
 				return err
 			}
 			n, _ := cmd.Flags().GetInt("lines")
-			return runSessionTail(cfg, args[0], n)
+			follow, _ := cmd.Flags().GetBool("follow")
+			statusInterval, _ := cmd.Flags().GetDuration("status-interval")
+			return runSessionTail(cfg, args[0], n, follow, statusInterval)
 		},
 	}
 	tailCmd.Flags().IntP("lines", "n", 20, "Number of lines to show")
+	tailCmd.Flags().BoolP("follow", "f", false,
+		"Keep running and emit one pi status line per interval (default: one-shot)")
+	tailCmd.Flags().Duration("status-interval", 60*time.Second,
+		"Interval between status lines with --follow (default 60s)")
 	sessionCmd.AddCommand(tailCmd)
 
 	// session attach <id>
@@ -9956,6 +12842,9 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// session tags <id> --tags <list> — set the tags a session carries itself
+	sessionCmd.AddCommand(newSessionTagsCmd())
+
 	// session rename <id> <name>
 	sessionCmd.AddCommand(&cobra.Command{
 		Use:   "rename <id> <name>",
@@ -9967,6 +12856,24 @@ func newSessionCmd() *cobra.Command {
 				return err
 			}
 			return runSessionRename(cfg, args[0], strings.Join(args[1:], " "))
+		},
+	})
+
+	// session priority <id> <n> — set a session's capacity-queue priority
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "priority <id> <n>",
+		Short: "Set a session's capacity-queue priority (integer; higher is admitted first)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			p, err := session.ParsePriority(args[1])
+			if err != nil {
+				return err
+			}
+			return runSessionPriority(cfg, args[0], p)
 		},
 	})
 
@@ -10466,6 +13373,7 @@ func runSessionList(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sessions := store.List()
 	if len(sessions) == 0 {
 		fmt.Println("No sessions.")
@@ -10503,8 +13411,47 @@ func runSessionList(cfg *config.Config) error {
 	return w.Flush()
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string) error {
-	// Try the structured HTTP API first
+// sessionNewStartBody builds the JSON request body the `session new` command
+// POSTs to /api/sessions/start. chrome is sent only when true; git (opt-in
+// to git init, snapshot and automatic commit) is sent only when true, matching
+// the `omitempty` field on the server's StartSession request struct.
+func sessionNewStartBody(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool) ([]byte, error) {
+	return sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, nil)
+}
+
+// sessionPriorityFlag reads --priority from cmd. It returns nil when the flag
+// was not given and an error when the value is not an integer.
+func sessionPriorityFlag(cmd *cobra.Command) (*int, error) {
+	raw, _ := cmd.Flags().GetString("priority")
+	if !cmd.Flags().Changed("priority") {
+		return nil, nil
+	}
+	p, err := session.ParsePriority(raw)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// sessionNewStartBodyRole is sessionNewStartBodyPriority plus the optional
+// launch_role placement fact (worker|verifier|planner|judge|supervisor),
+// sent only when one was given; the server validates it.
+func sessionNewStartBodyRole(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) ([]byte, error) {
+	body, err := sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
+	if err != nil || strings.TrimSpace(launchRole) == "" {
+		return body, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	m["launch_role"] = strings.TrimSpace(launchRole)
+	return json.Marshal(m)
+}
+
+// sessionNewStartBodyPriority is sessionNewStartBody plus the optional
+// capacity-queue priority, sent only when one was given.
+func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int) ([]byte, error) {
 	type startReq struct {
 		Task                  string   `json:"task"`
 		ProjectDir            string   `json:"project_dir,omitempty"`
@@ -10517,13 +13464,23 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 		KillChildren          bool     `json:"kill_children,omitempty"`
 		KillChildrenRecursive bool     `json:"kill_children_recursive,omitempty"`
 		ValidateCommands      []string `json:"validate_commands,omitempty"`
+		Git                   bool     `json:"git,omitempty"`
+		Priority              *int     `json:"priority,omitempty"`
 	}
-	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive, ValidateCommands: validate}
+	req := startReq{Priority: priority, Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive, ValidateCommands: validate, Git: git}
 	if chrome {
 		t := true
 		req.Chrome = &t
 	}
-	body, _ := json.Marshal(req)
+	return json.Marshal(req)
+}
+
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) error {
+	// Try the structured HTTP API first
+	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
+	if err != nil {
+		return err
+	}
 	httpReq, _ := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("http://localhost:%d/api/sessions/start", cfg.Server.Port),
 		bytes.NewReader(body))
@@ -10592,6 +13549,7 @@ func runSessionStatus(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -10654,6 +13612,7 @@ func runSessionSend(cfg *config.Config, id, text string) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -10694,6 +13653,7 @@ func runSessionKill(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -10707,6 +13667,7 @@ func runSessionKill(cfg *config.Config, id string) error {
 		return fmt.Errorf("tmux kill-session: %w\n%s", err, out)
 	}
 	fmt.Printf("Session %s killed (tmux: %s)\n", id, sess.TmuxSession)
+	fmt.Printf("  ended by=%s reason=%s\n", endCallerCLIKill, cliKillEndReason(sess.ID, sess.TmuxSession))
 	return nil
 }
 
@@ -10719,11 +13680,19 @@ func runSessionRestart(cfg *config.Config, idOrName string, task string) error {
 	return daemonJSON(http.MethodPost, "/api/sessions/restart", body)
 }
 
-func runSessionTail(cfg *config.Config, id string, n int) error {
+// runSessionTail shows the last N lines of the session output log, then
+// emits one one-line status for pi sessions (e.g.
+// "progress: turns=7 tools=write:2,bash:5 last=bash idle=12s"). With follow
+// it keeps emitting a status line every statusInterval until interrupted.
+// The status line goes to stdout only; it is never appended to the stored
+// session output log, so DATAWATCH_COMPLETE: completion detection is
+// unaffected.
+func runSessionTail(cfg *config.Config, id string, n int, follow bool, statusInterval time.Duration) error {
 	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -10734,7 +13703,29 @@ func runSessionTail(cfg *config.Config, id string, n int) error {
 	cmd := exec.Command("tail", "-n", fmt.Sprintf("%d", n), sess.LogFile)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	out := os.Stdout
+	if !follow {
+		if line := piTailStatusLine(sess, time.Now()); line != "" {
+			_, _ = fmt.Fprintln(out, line)
+		}
+		return nil
+	}
+	if !session.IsPiBackendFamily(sess.BackendFamily) {
+		return fmt.Errorf("session %s is a %s session; status following only supports pi sessions", sess.ID, sess.BackendFamily)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ticker := &session.PiStatusTicker{
+		Interval:      statusInterval,
+		BackendFamily: sess.BackendFamily,
+		Progress:      func() (pilog.Progress, error) { return piTailProgress(sess) },
+		Emit:          func(line string) { _, _ = fmt.Fprintln(out, line) },
+	}
+	ticker.Start(ctx) // immediate tick, then one line per interval until signaled
+	return nil
 }
 
 func runSessionAttach(cfg *config.Config, id string) error {
@@ -10750,6 +13741,7 @@ func runSessionAttach(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -10757,7 +13749,7 @@ func runSessionAttach(cfg *config.Config, id string) error {
 	if !ok {
 		return fmt.Errorf("session not found: %s", id)
 	}
-	fmt.Println(session.TmuxAttachCommand(sess.TmuxSession))
+	fmt.Println(session.TmuxAttachCommand(sess.TmuxSession, expandHome(cfg.DataDir)))
 	return nil
 }
 
@@ -10766,6 +13758,7 @@ func runSessionLog(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -10782,6 +13775,7 @@ func runSessionHistory(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -10794,6 +13788,36 @@ func runSessionHistory(cfg *config.Config, id string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// sessionPriorityBody builds the /api/sessions/set_priority request body.
+func sessionPriorityBody(id string, priority int) ([]byte, error) {
+	return json.Marshal(map[string]any{"id": id, "priority": priority})
+}
+
+func runSessionPriority(cfg *config.Config, id string, priority int) error {
+	body, err := sessionPriorityBody(id, priority)
+	if err != nil {
+		return err
+	}
+	httpReq, _ := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("http://localhost:%d/api/sessions/set_priority", cfg.Server.Port),
+		bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if cfg.Server.Token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("daemon not reachable: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to set priority: %s", strings.TrimSpace(string(msg)))
+	}
+	fmt.Printf("Session %s priority set to %d\n", id, priority)
+	return nil
 }
 
 func runSessionRename(cfg *config.Config, id, name string) error {
@@ -10813,6 +13837,7 @@ func runSessionRename(cfg *config.Config, id, name string) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -11070,6 +14095,7 @@ func runSessionStopAll(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = store.Close() }()
 	sessions := store.List()
 	killed := 0
 	for _, sess := range sessions {
@@ -11081,9 +14107,11 @@ func runSessionStopAll(cfg *config.Config) error {
 			fmt.Printf("[warn] kill session %s: %v %s\n", sess.ID, err, out)
 			continue
 		}
+		why := cliStopAllEndReason(sess.TmuxSession, sess.State)
 		sess.State = session.StateKilled
 		_ = store.Save(sess)
 		fmt.Printf("Killed session %s (%s)\n", sess.ID, truncate(sess.Task, 40))
+		fmt.Printf("  ended by=%s reason=%s\n", endCallerCLIStopAll, why)
 		killed++
 	}
 	if killed == 0 {
@@ -11225,6 +14253,10 @@ func discussionSubStorePath(cfg *config.Config) string {
 
 func resultStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "result_store.json")
+}
+
+func scheduleResultStorePath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "schedule_results.json")
 }
 
 func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {
@@ -11680,6 +14712,7 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					OneShot:            ds.OneShot,
 					EphemeralWorkspace: ds.Ephemeral,
 					Subprocess:         ds.Subprocess,
+					Git:                ds.Git,
 				}
 				sess, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
 				if err != nil {
@@ -12340,6 +15373,9 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
+	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
+	mgr.SetArchiveAfter(time.Duration(cfg.Session.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
+	mgr.SetFieldCap(cfg.Session.EffectiveStoreFieldCapKB() << 10)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -12357,20 +15393,26 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpSchedStore, _ := session.NewScheduleStore(schedStorePath(cfg))
 	mcpCmdLib, _ := session.NewCmdLibrary(cmdLibPath(cfg))
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
-	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))               // BL357
-	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg)) // BL358
-	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))            // BL360
+	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                            // BL357
+	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))              // BL358
+	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360
+	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:    mcpAlertStore,
-		SchedStore:    mcpSchedStore,
-		QueueStore:    mcpQueueStore,  // BL357
-		SubStore:      mcpSubStore,    // BL358
-		ResultStore:   mcpResultStore, // BL360
-		CmdLib:        mcpCmdLib,
-		Version:       Version,
-		LatestVersion: fetchLatestVersion,
-		FallbackToken: cfg.Server.Token, // SEC-002
+		AlertStore:          mcpAlertStore,
+		SchedStore:          mcpSchedStore,
+		QueueStore:          mcpQueueStore,  // BL357
+		SubStore:            mcpSubStore,    // BL358
+		ResultStore:         mcpResultStore, // BL360
+		ScheduleResultStore: mcpScheduleResultStore,
+		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:              mcpCmdLib,
+		Version:             Version,
+		LatestVersion:       fetchLatestVersion,
+		FallbackToken:       cfg.Server.Token,        // SEC-002
+		CostReportCfg:       cfg.CostReport,          // cost_report MCP tool (internal/costreport)
+		UsageCfg:            cfg.Usage,               // usage.billing profiles → cost_report rows' billing fields
+		ConfigAudit:         configAuditSinkFor(cfg), // BL110 — shared sink
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP
@@ -13413,7 +16455,7 @@ func runSetupTwilio(_ *cobra.Command, _ []string) error {
 	// verify X-Twilio-Signature; without it the webhook accepts any POST
 	// unsigned (see twilio.New's own warning if left blank).
 	cfg.Twilio.WebhookPublicURL = cliPrompt(reader,
-		"Public webhook URL (exact URL you'll set in Twilio console, e.g. https://host.ts.net/sms — blank disables signature verification)",
+		"Public webhook URL (exact URL you'll set in Twilio console, e.g. https://host.example.net/sms — blank disables signature verification)",
 		cfg.Twilio.WebhookPublicURL)
 	cfg.Twilio.Enabled = true
 
@@ -15964,6 +19006,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("open session store: %w", err)
 	}
+	defer func() { _ = store.Close() }()
 	sess, ok := store.Get(target)
 	if !ok {
 		sess, ok = store.GetByShortID(target)
@@ -16429,12 +19472,18 @@ func runExitHookSetEnabled(cfg *config.Config, id string, enabled bool) error {
 // runExitHookRestart kills the zombie/failed session and relaunches it with the same task.
 func runExitHookRestart(mgr *session.Manager, sess *session.Session, hook *session.ExitHookEntry) {
 	// Kill the zombie (ignore error — may already be dead).
-	_ = mgr.Kill(sess.FullID)
+	_ = mgr.EndSession(sess.FullID, session.EndReason{Caller: endCallerExitHook, Reason: exitHookRestartEndReason(hook.ID)})
 	time.Sleep(500 * time.Millisecond)
 	ctx := context.Background()
 	opts := &session.StartOptions{
 		Name:    sess.Name,
 		Backend: sess.BackendFamily,
+		// The restart keeps the original session's owner.
+		PRDID:       sess.PRDID,
+		TaskID:      sess.TaskID,
+		StoryID:     sess.StoryID,
+		AutomatonID: sess.AutomatonID,
+		SpendRole:   sess.SpendRole,
 	}
 	newSess, err := mgr.Start(ctx, sess.Task, sess.GroupID, sess.ProjectDir, opts)
 	if err != nil {
@@ -17002,4 +20051,48 @@ func scanConfigIsUnset(c config.ScanConfig) bool {
 		c.FailOnSeverity == "" && c.MaxFindings == 0 &&
 		!c.RulesGraderEnabled && !c.FixLoopEnabled && c.FixLoopMaxRetries == 0 &&
 		len(c.ProjectRules) == 0
+}
+
+// computeNodeFromConfig maps a config.yaml compute node onto a registry node.
+func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
+	return compute.Node{
+		Name:               c.Name,
+		Kind:               compute.NodeKind(c.Kind),
+		Address:            c.Address,
+		MonitoringEndpoint: c.MonitoringEndpoint,
+		Tags:               c.Tags,
+		CostPerHour:        c.CostPerHour,
+		SchedulingPriority: c.SchedulingPriority,
+		DeclaredCapacity: compute.DeclaredCapacity{
+			GPUs:                c.DeclaredCapacity.GPUs,
+			GPUMemGB:            c.DeclaredCapacity.GPUMemGB,
+			RAMGB:               c.DeclaredCapacity.RAMGB,
+			MaxConcurrentModels: c.DeclaredCapacity.MaxConcurrentModels,
+			GPUVendor:           c.DeclaredCapacity.GPUVendor,
+			GPUModel:            c.DeclaredCapacity.GPUModel,
+		},
+		Permissions: compute.Permissions{
+			AllowedConsumers: c.Permissions.AllowedConsumers,
+			DeniedConsumers:  c.Permissions.DeniedConsumers,
+		},
+		NodePinnedModel:       c.NodePinnedModel,
+		AllowModelSwap:        c.AllowModelSwap,
+		SessionSlots:          c.SessionSlots,
+		VerifierSlots:         c.VerifierSlots,
+		VerifierMinFreeMemMB:  c.VerifierMinFreeMemMB,
+		VerifierContextMB:     c.VerifierContextMB,
+		TLSInsecureSkipVerify: c.TLSInsecureSkipVerify,
+		TLSCAFile:             c.TLSCAFile,
+		TLSCertFingerprint:    c.TLSCertFingerprint,
+	}
+}
+
+// daemonCertPath returns the TLS certificate the daemon serves: the
+// configured server.tls_cert, else the auto-generated
+// <data_dir>/tls/server/cert.pem (internal/tlsutil ensureSelfSigned).
+func daemonCertPath(cfg *config.Config) string {
+	if cfg.Server.TLSCert != "" {
+		return expandHome(cfg.Server.TLSCert)
+	}
+	return filepath.Join(expandHome(cfg.DataDir), "tls", "server", "cert.pem")
 }

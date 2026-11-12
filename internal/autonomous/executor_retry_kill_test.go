@@ -43,7 +43,7 @@ func TestExecutor_RetrySpawn_KillsStaleSessionBeforeRespawn(t *testing.T) {
 		}
 		return VerificationResult{OK: true}, nil
 	}
-	m.SetSessionKillerFn(func(sessionID string) error {
+	m.SetSessionKillerFn(func(sessionID, _, _ string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		killedIDs = append(killedIDs, sessionID)
@@ -70,17 +70,7 @@ func TestExecutor_RetrySpawn_KillsStaleSessionBeforeRespawn(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, ok := m.Store().GetPRD(prd.ID)
-		if !ok {
-			t.Fatal("PRD disappeared")
-		}
-		if got.Status == PRDCompleted || got.Status == PRDFailed {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	pollPRDTerminal(t, m, prd.ID, 5*time.Second)
 
 	got, _ := m.Store().GetPRD(prd.ID)
 	if got.Status != PRDCompleted {
@@ -124,7 +114,7 @@ func TestResumeRunningPRDs_SkipsPRDWithLiveExecutor(t *testing.T) {
 	}
 
 	killed := false
-	m.SetSessionKillerFn(func(string) error { killed = true; return nil })
+	m.SetSessionKillerFn(func(string, string, string) error { killed = true; return nil })
 
 	// Register runCancels[prd.ID] directly — mimics API.Run() already
 	// having claimed this PRD, without needing a real spawn/verify walk.

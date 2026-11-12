@@ -23,6 +23,11 @@ func TestHandleAutonomousConfig_PUT_ReturnsPairingWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session.NewManager: %v", err)
 	}
+	allowTestTemp(sm)
+	trackSessionManager(t, sm)
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
+	t.Cleanup(sm.WaitBackground)
 	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
 	if err != nil {
 		t.Fatalf("autonomous.NewManager: %v", err)
@@ -31,7 +36,7 @@ func TestHandleAutonomousConfig_PUT_ReturnsPairingWarning(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 	srv := NewServer(NewHub(), sm, "h", "", nil, &config.Config{}, filepath.Join(dir, "config.yaml"))
-	srv.SetAutonomousAPI(autonomous.NewAPI(mgr))
+	srv.SetAutonomousAPI(newTestAPI(mgr))
 
 	body := `{"planning_backend":"claude-code","planning_model":"ollama/qwen3.8:27b"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/autonomous/config", strings.NewReader(body))

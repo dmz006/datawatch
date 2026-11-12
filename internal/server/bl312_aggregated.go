@@ -128,7 +128,7 @@ func (s *Server) handleAggregatedPRDs(w http.ResponseWriter, r *http.Request) {
 			wg.Add(1)
 			go func(sv config.RemoteServerConfig) {
 				defer wg.Done()
-				items, err := fetchRemoteJSON(sv.URL, sv.Token, "/api/autonomous/prds")
+				items, err := fetchRemoteJSON(sv.URL, sv.Token, "/api/autonomous/prds?full=1")
 				if err != nil {
 					log.Printf("[bl312] aggregated prds %s: %v", sv.Name, err)
 					return

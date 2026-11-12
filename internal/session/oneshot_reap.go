@@ -12,6 +12,12 @@ import (
 // worker has returned. See the pi backend's buildLaunchCmd.
 const oneShotCompletionMarker = "DATAWATCH_COMPLETE:"
 
+// BL468 — piFailureMarker is the line the pi launch wrapper prints when pi
+// exits non-zero ("DATAWATCH_PI_FAILED: pi exited with status <N>", with an
+// optional " (model <m>)" suffix on the one-shot path). It is a FAILURE
+// signal, never a completion; see isRealFailureLine/parsePiFailureExit.
+const piFailureMarker = "DATAWATCH_PI_FAILED:"
+
 // defaultSessionRetentionDays is used when session_retention_days is unset.
 const defaultSessionRetentionDays = 30
 
@@ -38,8 +44,20 @@ func (m *Manager) oneShotFinished(sess *Session) bool {
 	if err != nil {
 		return false
 	}
+	// BL468 — note the state guard above already leaves sessions in a
+	// terminal state (complete/failed/killed) alone, so a StateFailed
+	// record is never reaped or re-transitioned here.
+	// The same real-completion rules as the pane scanners: the wrapped tail of
+	// the typed launch command ("...echo 'DATAWATCH_COMPLETE: claude done'")
+	// and an instruction placeholder are not the worker's own completion.
+	// BL468 — the pi non-zero-exit failure marker is a failure signal, not a
+	// completion: even a malformed marker line must never satisfy this check.
 	for _, line := range strings.Split(StripANSI(out), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), oneShotCompletionMarker) {
+		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, piFailureMarker) {
+			continue
+		}
+		if strings.HasPrefix(l, oneShotCompletionMarker) && isRealCompletionLine(l, oneShotCompletionMarker) {
 			return true
 		}
 	}
@@ -62,18 +80,32 @@ func (m *Manager) FinishedOneShots() []*Session {
 // completion path, so the validation gate still decides whether anything is
 // committed, then it marks the session complete and closes its pane. Returns
 // the full IDs it completed. Safe to call repeatedly.
+//
+// BL468 — sessions already in StateFailed are never listed by
+// FinishedOneShots (oneShotFinished requires running/waiting_input), so a
+// recorded failure is left alone — its pane and scratch are the failure
+// path's problem, not the completion reaper's.
 func (m *Manager) ReapFinishedOneShots() []string {
 	var reaped []string
 	for _, sess := range m.FinishedOneShots() {
 		oldState := sess.State
 		m.commitOnCompletion(sess, NewProjectGit(sess.ProjectDir))
+		// If completion left work unpushed (no commit made, or its push
+		// failed / was refused), save it now — a reaped one-shot never
+		// gets a second completion chance. commitOnCompletion's own push
+		// already ran, so work it pushed is not pushed twice (the helper
+		// sees zero unpushed commits and does nothing).
+		m.pushUnpushedBeforeTeardown(sess)
 		sess.State = StateComplete
 		sess.UpdatedAt = time.Now()
 		_ = m.store.Save(sess)
+		m.releaseCommitGuard(sess.FullID, sess.ProjectDir)
+		reason := "one-shot completion marker found in the pane"
+		m.recordEnd(sess, m.getTracker(sess.FullID), oldState, StateComplete, EndReason{Caller: callerAt(0), Reason: reason})
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
-		m.KillTmuxSession(sess.FullID)
+		m.killTmuxSessionFor(sess.FullID, reason)
 		removeOneShotScratch(sess.TmuxSession)
 		reaped = append(reaped, sess.FullID)
 	}
@@ -107,16 +139,35 @@ func (m *Manager) StartOneShotReaper(ctx context.Context) {
 	}()
 }
 
-// removeOneShotScratch deletes the scratch task files the pi launch command
-// writes for one tmux session. The launch command removes its file itself
-// only when pi returns normally, so a zombie or a killed run leaves one behind.
+// piScratchNamePart sanitizes a tmux session name the same way the pi
+// backend's scratchNamePart does, so cleanup globs match the files buildLaunchCmd
+// reserved: every non-alphanumeric rune becomes '-'.
+func piScratchNamePart(s string) string {
+	b := make([]byte, 0, len(s))
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b = append(b, byte(r))
+		} else {
+			b = append(b, '-')
+		}
+	}
+	return string(b)
+}
+
+// removeOneShotScratch deletes the scratch task, output and status files the pi
+// launch command writes for one tmux session. The launch command removes its
+// files itself only when pi returns normally, so a zombie or a killed run
+// leaves them behind.
 func removeOneShotScratch(tmuxSession string) {
 	if tmuxSession == "" {
 		return
 	}
-	matches, _ := filepath.Glob("/tmp/datawatch-pi-task-" + tmuxSession + "-*.txt")
-	for _, f := range matches {
-		_ = os.Remove(f)
+	session := piScratchNamePart(tmuxSession)
+	for _, prefix := range []string{"datawatch-pi-task-", "datawatch-pi-status-", "datawatch-pi-out-"} {
+		matches, _ := filepath.Glob(filepath.Join(os.TempDir(), prefix+session+"-*"))
+		for _, f := range matches {
+			_ = os.Remove(f)
+		}
 	}
 }
 

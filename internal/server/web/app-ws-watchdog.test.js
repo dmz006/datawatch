@@ -46,16 +46,16 @@ test('_wsIsStale: fresh activity is not stale', () => {
 
 test('_wsIsStale: activity exactly at the threshold is not yet stale', () => {
   const sandbox = loadAppJS();
-  // WS_STALE_MS is 50000 in app.js; exactly at the boundary must not trip
+  // WS_STALE_MS is 35000 in app.js; exactly at the boundary must not trip
   // (the check is a strict >, matching "more than two ping cycles of
   // silence", not "at least two").
-  const isStale = vm.runInContext('_wsIsStale(1000000 - 50000, 1000000)', sandbox);
+  const isStale = vm.runInContext('_wsIsStale(1000000 - 35000, 1000000)', sandbox);
   assert.equal(isStale, false);
 });
 
 test('_wsIsStale: activity older than the threshold is stale', () => {
   const sandbox = loadAppJS();
-  const isStale = vm.runInContext('_wsIsStale(1000000 - 50001, 1000000)', sandbox);
+  const isStale = vm.runInContext('_wsIsStale(1000000 - 35001, 1000000)', sandbox);
   assert.equal(isStale, true);
 });
 

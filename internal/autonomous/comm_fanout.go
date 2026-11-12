@@ -164,7 +164,7 @@ func (c *CommFanoutSink) deliver(lines []string) {
 	if c.send == nil {
 		return
 	}
-	defer func() { recover() }()
+	defer func() { _ = recover() }()
 	c.send(commFanoutMessage(lines))
 }
 

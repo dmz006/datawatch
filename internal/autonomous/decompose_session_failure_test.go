@@ -5,8 +5,6 @@
 package autonomous
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -71,10 +69,7 @@ func TestDecompose_SessionNoOutputTwice_StopsPRDWithoutThirdSpawn(t *testing.T) 
 		t.Errorf("LastDecomposeFailure.Detail = %q, want it to name the model default and the reset-to-draft recovery", final.LastDecomposeFailure.Detail)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(dataDir, "autonomous", "prds.jsonl"))
-	if err != nil {
-		t.Fatalf("read prds.jsonl: %v", err)
-	}
+	raw := []byte(persistedPRDRecords(t, dataDir))
 	if !strings.Contains(string(raw), `"decompose_session_failures":2`) {
 		t.Errorf("saved PRD missing decompose_session_failures:2, got: %s", raw)
 	}

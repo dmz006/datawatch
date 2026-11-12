@@ -20,8 +20,14 @@
 //                      Direct StateComplete transition.
 //
 // Plus the watcher: any Running session whose LastChannelEventAt is older
-// than the configured gap (default 15 s) flips to WaitingInput. This is the
-// universal fallback for backends with no structural idle signal.
+// than the input-idle timeout for its backend flips to WaitingInput. That
+// timeout resolves per backend through the config accessors: an explicit
+// override wins, print-mode backends default to off (silence alone never
+// decides them), and interactive families get the global input-idle
+// timeout; opencode-acp keeps its longer silence floor. Before the flip, the
+// liveness rule governs every recorded non-claude-code family: a dead
+// process stalls the session (StateStalled, never WaitingInput), and a live
+// process with fresh writes stays Running with LastChannelEventAt refreshed.
 //
 // PWA-side: the LastChannelEventAt timestamp is broadcast as part of the
 // Session payload so the UI can render an amber "stale comms" badge after
@@ -43,6 +49,19 @@ const (
 	EventIdle
 	EventComplete
 )
+
+// String names the event kind for the journal and for timeline reasons.
+func (k ChannelEventKind) String() string {
+	switch k {
+	case EventRunning:
+		return "running"
+	case EventIdle:
+		return "idle"
+	case EventComplete:
+		return "complete"
+	}
+	return "unknown"
+}
 
 // DefaultRunningToWaitingGap is the universal-fallback silence window. A
 // Running session whose LastChannelEventAt is older than this is flipped
@@ -88,49 +107,63 @@ func (m *Manager) markChannelEventAt(fullID string, kind ChannelEventKind, ts ti
 	if ts.IsZero() {
 		ts = time.Now()
 	}
-	oldState := sess.State
-	sess.LastChannelEventAt = ts
+	var oldState, newState State
+	sticky := false
+	// Field writes go through store.Mutate so they cannot race with
+	// persist() marshalling this session on another goroutine.
+	m.store.Mutate(func() {
+		oldState = sess.State
+		sess.LastChannelEventAt = ts
 
-	// Sticky locks — never override these from a channel event. RateLimited
-	// is intentionally locked too: only the rate-limit cooldown timer (or
-	// an operator-issued resume) can leave that state, otherwise a benign
-	// channel keep-alive would silently kick us back into Running and
-	// re-trigger the rate-limit hammer.
-	if oldState == StateComplete || oldState == StateFailed || oldState == StateKilled || oldState == StateRateLimited {
-		_ = m.store.Save(sess)
+		// Sticky locks — never override these from a channel event. RateLimited
+		// is intentionally locked too: only the rate-limit cooldown timer (or
+		// an operator-issued resume) can leave that state, otherwise a benign
+		// channel keep-alive would silently kick us back into Running and
+		// re-trigger the rate-limit hammer.
+		if oldState == StateComplete || oldState == StateFailed || oldState == StateKilled || oldState == StateRateLimited {
+			sticky = true
+			return
+		}
+
+		defer func() { newState = sess.State }()
+		switch kind {
+		case EventRunning:
+			if oldState == StateWaitingInput {
+				sess.State = StateRunning
+				sess.UpdatedAt = ts
+				m.debugf("MarkChannelEvent(running): %s %s → Running", sess.FullID, oldState)
+			}
+		case EventIdle:
+			if oldState == StateRunning {
+				sess.State = StateWaitingInput
+				sess.UpdatedAt = ts
+				m.debugf("MarkChannelEvent(idle): %s Running → WaitingInput (structural)", sess.FullID)
+			}
+		case EventComplete:
+			if oldState == StateRunning || oldState == StateWaitingInput {
+				sess.State = StateComplete
+				sess.UpdatedAt = ts
+				m.debugf("MarkChannelEvent(complete): %s %s → Complete (structural)", sess.FullID, oldState)
+			}
+		}
+	})
+	_ = m.store.Save(sess)
+	if sticky {
 		return
 	}
-
-	switch kind {
-	case EventRunning:
-		if oldState == StateWaitingInput {
-			sess.State = StateRunning
-			sess.UpdatedAt = ts
-			m.debugf("MarkChannelEvent(running): %s %s → Running", sess.FullID, oldState)
-		}
-	case EventIdle:
-		if oldState == StateRunning {
-			sess.State = StateWaitingInput
-			sess.UpdatedAt = ts
-			m.debugf("MarkChannelEvent(idle): %s Running → WaitingInput (structural)", sess.FullID)
-		}
-	case EventComplete:
-		if oldState == StateRunning || oldState == StateWaitingInput {
-			sess.State = StateComplete
-			sess.UpdatedAt = ts
-			m.debugf("MarkChannelEvent(complete): %s %s → Complete (structural)", sess.FullID, oldState)
-		}
+	if newState == StateComplete && oldState != newState {
+		m.recordEnd(sess, m.getTracker(sess.FullID), oldState, newState,
+			EndReason{Caller: "channel-event", Reason: "channel event: " + kind.String()})
 	}
-	_ = m.store.Save(sess)
 	// Fire downstream hooks for state changes (mirrors the historical
 	// MarkChannelActivityFromText behaviour). onStateChange always; onSessionEnd
 	// only on the Running/WaitingInput → Complete transition.
-	if oldState != sess.State {
+	if oldState != newState {
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
-		if sess.State == StateComplete && m.onSessionEnd != nil {
-			m.onSessionEnd(sess)
+		if newState == StateComplete {
+			m.emitSessionEnd(sess)
 		}
 	}
 }
@@ -144,11 +177,11 @@ func (m *Manager) markChannelEventAt(fullID string, kind ChannelEventKind, ts ti
 // because the on-disk LastChannelEventAt timestamps were necessarily
 // older than the gap. Two changes:
 //
-//   1. ResumeMonitors now resets LCE to time.Now() for sessions whose
-//      tmux pane is confirmed alive (positive evidence of activity).
-//   2. The watcher takes a 30 s warm-up grace period after start before
-//      its first transition, so any sessions that resumed without
-//      pane-content changes still have a chance to settle.
+//  1. ResumeMonitors now resets LCE to time.Now() for sessions whose
+//     tmux pane is confirmed alive (positive evidence of activity).
+//  2. The watcher takes a 30 s warm-up grace period after start before
+//     its first transition, so any sessions that resumed without
+//     pane-content changes still have a chance to settle.
 //
 // Sessions with zero LastChannelEventAt are skipped (no events seen yet
 // — could be a fresh session that hasn't produced output).
@@ -185,6 +218,32 @@ func (m *Manager) runChannelStateWatcherTick(now time.Time, gap time.Duration) {
 	if m == nil || m.store == nil {
 		return
 	}
+	// Busy probe, recovery pass: a delivered one-shot worker that went
+	// WaitingInput while its pane still shows work returns to Running. Running
+	// first, so the gap pass below sees the refreshed LastChannelEventAt.
+	// For liveness-rule families the same tick also notices a worker whose
+	// process died while the record was still open: that is Stalled, never
+	// WaitingInput.
+	for _, sess := range m.store.List() {
+		if sess == nil || sess.State != StateWaitingInput || !sess.OneShot {
+			continue
+		}
+		if !m.TaskDelivered(sess.FullID) {
+			continue
+		}
+		if livenessRuleApplies(sess.BackendFamily) && m.tmux != nil &&
+			m.livenessVerdictFor(sess, now) == LivenessStalled {
+			sess.State = StateStalled
+			sess.UpdatedAt = now
+			_ = m.store.Save(sess)
+			if m.onStateChange != nil {
+				m.onStateChange(sess, StateWaitingInput)
+			}
+			m.debugf("ChannelStateWatcher: %s WaitingInput → Stalled (liveness rule, family %s)", sess.FullID, sess.BackendFamily)
+			continue
+		}
+		m.applyBusyProbe(sess.FullID, now)
+	}
 	for _, sess := range m.store.List() {
 		if sess == nil || sess.State != StateRunning {
 			continue
@@ -201,13 +260,57 @@ func (m *Manager) runChannelStateWatcherTick(now time.Time, gap time.Duration) {
 		// would never fire even when LCE was minutes stale. LCE only.
 		ref := sess.LastChannelEventAt
 		sessGap := gap
+		idleOff := false
+		if m.cfg != nil && sess.BackendFamily != "" {
+			// Per-backend input-idle timeout (LivenessInputIdleTimeoutEffective):
+			// an explicit override wins; a print-mode backend with no override
+			// gets 0 — off — headless runs never wait for input, so silence
+			// alone must not decide their state; an interactive family gets
+			// the global input-idle timeout.
+			sec := m.cfg.LivenessInputIdleTimeoutEffective(sess.BackendFamily)
+			if sec == 0 {
+				idleOff = true
+			} else {
+				sessGap = time.Duration(sec) * time.Second
+			}
+		}
 		if sess.BackendFamily == "opencode-acp" && sessGap < acpSilenceGap {
 			// ACP reports idle explicitly (session.status idle / session.idle), and a
 			// slow model can be silent for well over 15 s mid-turn. The fallback
 			// only guards a dropped event stream.
 			sessGap = acpSilenceGap
+			idleOff = false
 		}
-		if now.Sub(ref) < sessGap {
+		if !idleOff && now.Sub(ref) < sessGap {
+			continue
+		}
+		// The liveness rule is the first decision for every recorded
+		// non-claude-code family: a dead process with the record still open
+		// is a stalled session, never a waiting one; live and writing stays
+		// Running with LastChannelEventAt refreshed, restarts the gap, and
+		// the next silence check is a full gap later.
+		if livenessRuleApplies(sess.BackendFamily) && m.tmux != nil {
+			switch m.livenessVerdictFor(sess, now) {
+			case LivenessRunning:
+				m.markChannelEventAt(sess.FullID, EventRunning, now)
+				continue
+			case LivenessStalled:
+				sess.State = StateStalled
+				sess.UpdatedAt = now
+				_ = m.store.Save(sess)
+				if m.onStateChange != nil {
+					m.onStateChange(sess, StateRunning)
+				}
+				m.debugf("ChannelStateWatcher: %s Running → Stalled (liveness rule, family %s)", sess.FullID, sess.BackendFamily)
+				continue
+			}
+			// LivenessWaitingInput and LivenessNoOpinion both fall through to
+			// the universal flip below.
+		}
+		// Busy probe, gap pass: a silent but working pane keeps the session
+		// Running. applyBusyProbe refreshes LastChannelEventAt, so the gap
+		// restarts and the next flip check is a full gap later.
+		if m.applyBusyProbe(sess.FullID, now) {
 			continue
 		}
 		oldState := sess.State
@@ -313,4 +416,3 @@ func (m *Manager) acpTurnSeen(fullID string, set bool) bool {
 	}
 	return m.acpBusySeen[fullID]
 }
-

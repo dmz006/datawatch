@@ -3,8 +3,10 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -13,6 +15,10 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -52,16 +58,23 @@ type Router struct {
 	version              string
 	checkUpdate          func() string                          // optional func that returns latest version string
 	restartFn            func()                                 // optional func to restart the daemon
+	restartForceFn       func(force bool)                       // optional force-aware restart (the guard); preferred over restartFn
 	reloadFn             func(subsystem string) (string, error) // v5.27.2 — subsystem hot-reload
 	channelInfoFn        func() string                          // v5.27.10 — channel bridge introspection
 	channelDiagnosticsFn func() string                          // BL362 — per-session bridge diagnostics
 	statsFn              func() string                          // optional func returning system stats summary
 	capacityFn           func() string                          // optional func returning the capacity ledger summary
 	configureFn          func(key, value string) error          // optional func to set a config value
-	chanTracker          *stats.ChannelCounters                 // per-channel message counters
-	transcriber          transcribe.Transcriber                 // optional voice-to-text transcriber
-	visioner             Visioner                               // optional image-to-text describer (BL368)
-	remote               *proxy.RemoteDispatcher                // optional remote server dispatcher
+	workerProfileInForce WorkerProfileInForceFunc               // optional func reading the worker profile in force
+	attemptCostStateFn   func() AttemptCostState                // optional func returning the stored attempt-cost settings
+	// configAudit (BL110 extension) — the shared config-write audit sink
+	// for the comm-channel configure path (surface "comm"); nil = the
+	// configure path produces no audit record.
+	configAudit *federation.ConfigAuditor
+	chanTracker *stats.ChannelCounters  // per-channel message counters
+	transcriber transcribe.Transcriber  // optional voice-to-text transcriber
+	visioner    Visioner                // optional image-to-text describer (BL368)
+	remote      *proxy.RemoteDispatcher // optional remote server dispatcher
 
 	// Memory system — optional, nil when memory is disabled
 	memoryRetriever MemoryRetriever
@@ -77,13 +90,29 @@ type Router struct {
 	// configured".
 	webPort int
 
+	// webToken is the bearer token the loopback presents to the REST
+	// surface (server.token). Empty when the daemon has no token set.
+	webToken string
+
 	// BL244 — plugin-declared comm commands (Manifest v2.1).
 	pluginReg PluginRegistry
+
+	// cfg is the live daemon config. The "standard tasks" reply reads the
+	// task-template settings from it; nil reports the shipped defaults.
+	cfg *config.Config
 }
 
 // SetWebPort (Sx2) wires the local HTTP port so comm-parity handlers
 // can proxy through the REST API.
 func (r *Router) SetWebPort(port int) { r.webPort = port }
+
+// SetConfig wires the live daemon config for the comm replies that read
+// settings (the standard task list).
+func (r *Router) SetConfig(cfg *config.Config) { r.cfg = cfg }
+
+// SetWebToken wires the bearer token the loopback presents to the REST
+// surface, so the comm-parity verbs reach a token-protected daemon.
+func (r *Router) SetWebToken(token string) { r.webToken = token }
 
 // BackendName returns the underlying backend's own Name() (e.g.
 // "signal", "imap_mcp") — used by the notify_exclude config to filter
@@ -133,6 +162,11 @@ func (r *Router) SetUpdateChecker(fn func() string) { r.checkUpdate = fn }
 // SetRestartFunc sets an optional function that restarts the daemon.
 func (r *Router) SetRestartFunc(fn func()) { r.restartFn = fn }
 
+// SetRestartFuncForce wires the force-aware restart function (the restart
+// guard). A comm `restart` refused for running work is retried with force only
+// when its message carries the word force.
+func (r *Router) SetRestartFuncForce(fn func(force bool)) { r.restartForceFn = fn }
+
 // SetReloadFn (v5.27.2) wires the subsystem-aware hot reload entry
 // so chat-channel `reload [subsystem]` can fire the same /api/reload
 // handler the REST + CLI + MCP surfaces hit. The fn returns a one-line
@@ -181,6 +215,137 @@ func (r *Router) handleReload(cmd Command) {
 func (r *Router) SetStatsFunc(fn func() string)                     { r.statsFn = fn }
 func (r *Router) SetCapacityFunc(fn func() string)                  { r.capacityFn = fn }
 func (r *Router) SetConfigureFunc(fn func(key, value string) error) { r.configureFn = fn }
+
+// SetWorkerProfileInForceFunc wires the read behind a bare worker-profile key
+// (configure autonomous.worker_profile etc.), which adds the profile in force.
+func (r *Router) SetWorkerProfileInForceFunc(fn WorkerProfileInForceFunc) {
+	r.workerProfileInForce = fn
+}
+
+// AttemptCostState is the attempt-cost block of the autonomous config as the
+// daemon has it stored right now. The configure verb reads it before a
+// candidate write to the four attempt-cost keys (see SetAttemptCostStateFn)
+// so it can check the combined state with the shared validator.
+type AttemptCostState struct {
+	// FirstAttempt maps a task kind (implementation, docs, note, final_gate)
+	// to the backend and model its first attempt runs on. Nil = unset.
+	FirstAttempt map[string]config.FirstAttemptChoice
+	// FirstAttemptEscalateAfterFailures is how many failed attempts move
+	// before the next attempt escalates (stored value; 0 = unset).
+	FirstAttemptEscalateAfterFailures int
+	// RetryResumeMaxContextTokens caps retry resume context (stored value;
+	// 0 = unset).
+	RetryResumeMaxContextTokens int
+}
+
+// SetAttemptCostStateFn wires the stored attempt-cost settings so the
+// configure verb can validate a candidate write before it is applied.
+func (r *Router) SetAttemptCostStateFn(fn func() AttemptCostState) { r.attemptCostStateFn = fn }
+
+// attempt-cost configure keys. The <kind> of autonomous.first_attempt.<kind>
+// .{backend,model} is one of the task kinds; the other two are fixed keys.
+const (
+	attemptCostFirstAttemptPrefix = "autonomous.first_attempt."
+	attemptCostEscalateKey        = "autonomous.first_attempt_escalate_after_failures"
+	attemptCostResumeKey          = "autonomous.retry_resume_max_context_tokens"
+)
+
+// validateAttemptCostKey checks one configure write to an attempt-cost key
+// against the shared config.ValidateAttemptCostSettings over the stored
+// settings layered with the candidate value. It returns nil when the key is
+// not one of the four attempt-cost keys, so ordinary keys never see this
+// check. A non-nil error is the validator's own message, which names the
+// offending key — the caller sends it back and applies nothing.
+func (r *Router) validateAttemptCostKey(key, value string) error {
+	cfg := r.attemptCostCandidate()
+	switch {
+	case key == attemptCostEscalateKey:
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("%s: %q is not a whole number", key, value)
+		}
+		cfg.FirstAttemptEscalateAfterFailures = n
+		return config.ValidateAttemptCostSettings(cfg)
+	case key == attemptCostResumeKey:
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("%s: %q is not a whole number", key, value)
+		}
+		cfg.RetryResumeMaxContextTokens = n
+		return config.ValidateAttemptCostSettings(cfg)
+	case strings.HasPrefix(key, attemptCostFirstAttemptPrefix):
+		rest := strings.TrimPrefix(key, attemptCostFirstAttemptPrefix)
+		kind := rest
+		variant := ""
+		switch {
+		case strings.HasSuffix(rest, ".backend"):
+			kind, variant = strings.TrimSuffix(rest, ".backend"), "backend"
+		case strings.HasSuffix(rest, ".model"):
+			kind, variant = strings.TrimSuffix(rest, ".model"), "model"
+		}
+		if kind == "" || variant == "" {
+			return fmt.Errorf("%s: expected autonomous.first_attempt.<kind>.backend or .model with kind implementation, docs, note or final_gate", key)
+		}
+		choice := cfg.FirstAttempt[kind]
+		if variant == "backend" {
+			choice.Backend = value
+		} else {
+			choice.Model = value
+		}
+		cfg.FirstAttempt[kind] = choice
+		return config.ValidateAttemptCostSettings(cfg)
+	default:
+		return nil
+	}
+}
+
+// attemptCostCandidate layers the daemon's stored attempt-cost settings onto
+// an empty autonomous config so a candidate key/value can be validated with
+// the same shared validator every other surface uses.
+func (r *Router) attemptCostCandidate() config.AutonomousConfig {
+	cfg := config.AutonomousConfig{FirstAttempt: map[string]config.FirstAttemptChoice{}}
+	if r.attemptCostStateFn == nil {
+		return cfg
+	}
+	state := r.attemptCostStateFn()
+	cfg.FirstAttemptEscalateAfterFailures = state.FirstAttemptEscalateAfterFailures
+	cfg.RetryResumeMaxContextTokens = state.RetryResumeMaxContextTokens
+	for kind, choice := range state.FirstAttempt {
+		cfg.FirstAttempt[kind] = choice
+	}
+	return cfg
+}
+
+// SetConfigAuditor wires the shared config-write audit sink (BL110
+// extension) into the comm-channel configure path. The daemon (runStart)
+// wires the same instance into every surface — REST server, MCP server,
+// and every router — so a config write from any surface lands as exactly
+// one record. Nil (the default) means the configure path produces no
+// audit record.
+func (r *Router) SetConfigAuditor(a *federation.ConfigAuditor) { r.configAudit = a }
+
+// ConfigureAttribution carries the principal for a session-attributed
+// comm invocation (BL110): which session or peer the configure write is
+// on behalf of, whether that credential holds the config:write
+// capability, and — when it does not — the denial reason. The zero
+// value is an operator (admin) message: real comm-channel traffic
+// arrives without a session credential, runs the loopback REST write on
+// the admin token, and is NOT audited as a session write (consistent
+// with the REST and MCP surfaces, which skip admin callers); the daemon
+// uses it only for the session-attributed test-injection path
+// (HandleAttributedTestMessage), where the REST layer resolves the
+// calling session's token to this struct.
+type ConfigureAttribution struct {
+	// Caller names the session or peer the write is on behalf of
+	// ("session:<id>" or "peer:<name>"). Empty = operator/admin.
+	Caller string
+	// ConfigWriteAllowed is the capability decision (config:write) made
+	// by the surface that owns the credential.
+	ConfigWriteAllowed bool
+	// DenyReason is the denial carried into the audit record when
+	// ConfigWriteAllowed is false (e.g. the exact missing capability).
+	DenyReason string
+}
 
 // SetChannelTracker sets the per-channel stats counters for this router.
 func (r *Router) SetChannelTracker(ct *stats.ChannelCounters) { r.chanTracker = ct }
@@ -842,18 +1007,41 @@ func formatMemories(memories []Memory) string {
 	return b.String()
 }
 
+// handleConfigure is the operator-facing entry point (channel traffic with
+// no session credential → zero attribution → not audited as a session
+// write). Tests and the plain comm path keep using it.
 func (r *Router) handleConfigure(cmd Command) {
+	r.handleConfigureAttributed(cmd, ConfigureAttribution{})
+}
+
+// handleConfigureAttributed is the session-attributed variant (BL110
+// extension): an attempted `configure` from a session or peer credential
+// records exactly ONE audit record (surface "comm") — allowed, denied
+// (capability, the BL412 built-in-group removal), or failed — naming the
+// credential, its decision, and the exact key that should have changed.
+// A zero attribution behaves exactly like handleConfigure.
+func (r *Router) handleConfigureAttributed(cmd Command, at ConfigureAttribution) {
 	if r.configureFn == nil {
 		r.send(fmt.Sprintf("[%s] Configuration not available.", r.hostname))
 		return
 	}
 	text := strings.TrimSpace(cmd.Text)
 	if text == "" || text == "help" {
-		r.send(fmt.Sprintf("[%s] Usage: configure <key>=<value>\nExample: configure session.console_cols=120\n\nCommon keys:\n  session.llm_backend, session.max_sessions, session.console_cols, session.console_rows\n  ollama.host, ollama.model, ollama.enabled\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown, detection.alert_settle, detection.alert_repeat\n  autonomous.capacity_enabled, autonomous.capacity_wait_timeout_seconds, autonomous.capacity_gpu_util_pct\n  autonomous.ci_watch_timeout_seconds, autonomous.per_prd_guardrails (rules-review, ci-watch)\n  autonomous.block_on_file_drift, autonomous.max_concurrent_tasks\n  autonomous.max_engines_per_node\n  session.reserved_interactive\n  server.host, server.port", r.hostname))
+		r.send(fmt.Sprintf("[%s] Usage: configure <key>=<value>\nExample: configure session.console_cols=120\n\nCommon keys:\n  session.llm_backend, session.max_sessions, session.console_cols, session.console_rows\n  projects_defaults.branch_retention_days (whole days, 0 = unset), projects_defaults.weekly_share_percent (0-100), projects_defaults.major_trigger (manual|milestone|never; default manual)\n  ollama.host, ollama.model, ollama.enabled\n  pi.thinking_level (off, minimal, low, medium, high)\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown, detection.alert_settle, detection.alert_repeat\n  autonomous.capacity_enabled, autonomous.capacity_fallthrough (true/false, default false), autonomous.capacity_wait_timeout_seconds, autonomous.capacity_gpu_util_pct\n  autonomous.ci_watch_timeout_seconds, autonomous.per_prd_guardrails (rules-review, ci-watch)\n  observer.peers.silent_alert_minutes (whole minutes; 0 = peer silence watcher off, default 5)\n  autonomous.planning_restart_policy (reattach, restart or draft: what a daemon restart does to Automata still in planning)\n  autonomous.worker_idle_nudge_seconds, autonomous.worker_idle_nudge_stall_seconds\n  autonomous.push_and_tag (true/false), autonomous.release_path (direct_push or pull_request), git.release_ci_window_minutes (whole minutes, greater than 0)\n  autonomous.stuck_running_seconds (whole seconds; 0 = 900)\n  autonomous.task_max_attempt_seconds (whole seconds; 0 = off)\n  autonomous.task_no_progress_seconds (whole seconds; 0 = off)\n  autonomous.verifier_max_run_seconds (whole seconds; 0 = no cap; default 2700; negative refused)\n  autonomous.judge_policy (ordered backends, empty = follow the verifier routing policy), autonomous.judge_timeout_seconds (default 1800), autonomous.judge_size_threshold_lines (whole number; default 400, 0 = size rule off), autonomous.judge_prompt_file_threshold_lines (whole number; judge prompts longer than this many lines are sent as a file, 0 = always send the full prompt), autonomous.judge_delivery_wait_per_thousand_lines_seconds (whole seconds of extra wait per thousand prompt lines, 0 = no extra wait), autonomous.judge_strong_backend (LLM backend name, empty = the last entry of the judge policy), autonomous.judge_verdict_cache_enabled (true|false, default true)\n  autonomous.block_on_file_drift, autonomous.undeclared_edit_mode (off|warn|block), autonomous.max_concurrent_tasks, autonomous.resume_max_age_seconds\n  autonomous.snapshot_never_stage (comma list of path patterns the snapshot must never git add; blank entries rejected; empty = no protected patterns, unset = built-in defaults)\n  autonomous.loop_detect_turns (0 = off)\n  autonomous.branch_refresh_enabled (true|false; default false), autonomous.branch_refresh_behind_limit (whole number >= 0; 0 = 5)\n  autonomous.max_engines_per_node\n  autonomous.host_load_alert.mode (off|alert|reap; default alert), autonomous.host_load_alert.multiple (load-to-cores multiple; default 1.5), autonomous.host_load_alert.minutes (default 10)\n  (host load by chat: autonomous host-load)\n  autonomous.capacity_rate_requests, autonomous.capacity_rate_tokens (per-LLM ceilings per window; 0 = none), autonomous.capacity_rate_window_seconds (default 3600), autonomous.capacity_strict_node_limit, autonomous.capacity_count_pool_by_node, autonomous.capacity_adopt_before_admit (true/false, default true), autonomous.capacity_adoption_wait_seconds (default 30)\n  autonomous.verifier_policy.mode (fixed|prefer-free|balance|gpu-only|claude-only; default fixed), autonomous.verifier_policy.backends (ordered, comma list)\n  autonomous.verifier_policy.claude_session_cap, autonomous.verifier_policy.claude_cap_window_minutes (whole numbers; 0 = unlimited / default 60)\n  autonomous.verifier_policy.force_stronger_on_retry, autonomous.verifier_policy.final_gate_stronger (true|false), autonomous.verifier_policy.stronger_backend, autonomous.verifier_policy.stronger_model\n  (verifier routing by chat: autonomous verifier-policy | verifier-policy-set key=value | set-verifier-policy <automaton> | set-task-verifier-policy <automaton> <task>)\n  (judge routing by chat: autonomous judge-policy | judge-policy-set judge_policy=a,b judge_timeout_seconds=n judge_size_threshold_lines=n judge_strong_backend=name judge_verdict_cache_enabled=true|false)\n  autonomous.gate_disagreement (warn|block; default warn)\n  autonomous.failure_escalation.enabled (true|false), autonomous.failure_escalation.max_failures (whole number >= 1; default 3), autonomous.failure_escalation.steps (backend:model[@attempts],...)\n  autonomous.default_quality_gates.scope (full|touched-plus-smoke|touched; default full), autonomous.default_quality_gates.smoke_packages (comma list of package patterns for the touched-plus-smoke scope)\n  autonomous.plan_coverage_check (off|warn|block; default block), autonomous.plan_coverage_min_ratio (0-1; default 1.0)\n  autonomous.plan_coverage_suppress_created_files (true|false; default true), autonomous.plan_coverage_scoped_requirements (true|false; default true)\n  autonomous.plan_coverage_requirement_sections (comma-separated string; empty = the scope,constraints default), autonomous.plan_coverage_min_requirement_chars (whole number >= 0; 0 = the 30-character default)\n  autonomous.generated_artefacts.change_record, .gate_report, .changelog_draft, .parity_draft, .tracker_rows, .registry_row, .combined_docs_task (true|false; each defaults on; which artefacts an Automaton generates)\n  autonomous.tags.default_view (auto|attention|tags; default auto), autonomous.tags.attention_statuses (comma list of Automaton statuses; default blocked, needs_review, paused)\n  autonomous.tags.default_match_mode (any|all; default any), autonomous.tags.direct_counts_visible (true|false; default false)\n  autonomous.tags.registry_keeper (federation peer name; empty = this daemon keeps the registry), autonomous.tags.registry_sync_seconds (whole seconds >= 5; default 30)\n  autonomous.tags.placement.enabled (true|false; default true), and per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind): autonomous.tags.placement.<axis>.enabled (true|false; default true) and autonomous.tags.placement.<axis>.template (a string carrying the axis' placeholder, e.g. 'lane:{lane}')\n  autonomous.auto_tags.enabled (true|false; default true), autonomous.auto_tags.automation_template (default automation:{automation}), autonomous.auto_tags.stage_template (default stage:{stage}), autonomous.auto_tags.kind_template (default kind:{kind})\n  autonomous.auto_tags.kind_labels (kinds feature, bug or other to label strings; default feature:feature, bug:bug, other:maintenance)\n  autonomous.inherited_tags_cache_seconds (whole seconds; 0 = the 15-second default, negative = shared inherited-tags cache off)\n  autonomous.usage_backoff (pause_backend|off; default pause_backend), autonomous.backoff_max_wait_minutes (whole minutes >= 1; default 60)\n  autonomous.plan_tier_max_inflight (tier=inflight pairs, e.g. max_5x=2,api=0 — or a JSON object)\n  autonomous.requirements (object: {\"min_ollama\":{\"<capability>\":\"<min Ollama version, empty clears the floor>\"}})\n  autonomous.requirements.min_ollama.<capability> (a min Ollama version, e.g. 0.35.0; empty clears that capability's floor)\n  autonomous.automation.idle_alert_minutes (whole minutes; 0 = off)\n  autonomous.automation.triage_alert_minutes (whole minutes; 0 = triage alert off, unset reads the 30-minute default)\n  autonomous.automation.merge_pending_mode (off|shadow|on; default off), autonomous.automation.merge_pending_alert_minutes (whole minutes; 0 = merge-pending alert off, unset reads the 30-minute default)\n  autonomous.automation.merged_member_policy (completed|manual|block; default completed)\n  autonomous.automation.agent_insert_policy (allow|require_operator; default allow)\n  autonomous.automation.uncommitted_work_policy (hold|warn|off; what an Automaton does when a finished task leaves files uncommitted in its worktree)\n  autonomous.automation.uncommitted_work_scope (task_files|worktree; which uncommitted files that check looks at)\n  (uncommitted work by chat: autonomous uncommitted-work [automaton-id])\n  autonomous.automation.protected_paths (comma list of repository-relative paths; empty = the default list), autonomous.automation.protected_paths_action (hold|warn|block|off; what an Automaton does when a task's commit changes a protected path), autonomous.automation.rules_review_source (base_commit|worktree; where the rules are read from)\n  (protected paths by chat: autonomous protected-paths [automaton-id] | authorize-paths <automaton-id> <path> [<path>...] | authorize-paths <automaton-id> clear)\n  autonomous.request_watch.enabled, autonomous.request_watch.observe_workers, autonomous.request_watch.observe_verifiers, autonomous.request_watch.use_gpu_signal, autonomous.request_watch.unreachable_counts, autonomous.request_watch.raise_alert, autonomous.request_watch.raise_question (true|false; each defaults on when unset)\n  autonomous.request_watch.poll_seconds (whole seconds >= 1; default 30), autonomous.request_watch.no_progress_minutes (whole minutes >= 1; default 30), autonomous.request_watch.gpu_busy_percent (1-100; default 10)\n  autonomous.request_watch.remediation_options (comma list of keep_waiting, end_worker, retry_other_backend, unload_reload_model; unset = all four)\n  (model request watch by chat: autonomous request-watch [session <id> | automaton <id>])\n\n  autonomous.automation.repo_ci_watch.mode (off|shadow|on; default off)\n  autonomous.automation.repo_ci_watch.repos (comma list of absolute repository paths; empty = nothing watched)\n  autonomous.automation.repo_ci_watch.poll_seconds (whole seconds >= 60; unset reads the 300-second default)\n  autonomous.automation.repo_ci_watch.alert_minutes (whole minutes >= 0; 0 = alert off, unset reads the 30-minute default)\n  autonomous.automation.repo_ci_watch.tag_count (whole number >= 0; 0 = none, unset reads the 5 default)\n  autonomous.automation.repo_ci_watch.hung_after_minutes (whole minutes >= 1; unset reads the 60-minute default)\n  autonomous.automation.repo_ci_watch.security_workflows (comma list; empty = none, unset reads the default list)\n  autonomous.automation.repo_ci_watch.delete_superseded (report|delete; default report)\n  (supervisor loop by chat: autonomous supervisor jobs | supervisor runs [job=X] [outcome=Y] [limit=N] | supervisor run job=NAME [input=X] [candidates=A,B])\n  (supervisor loop settings: configure supervisor_loop.<key>=<value> — the supervisor_loop block: enabled, the step switches, the model jobs' style/backend/model, validator retries, escalation and run retention)\nautonomous.automation.security_failure.mode (off|shadow|on; default shadow)\n  autonomous.progress.lanes (whole number; 0 = 5), autonomous.progress.inactive_gap_hours (hours; 0 = 3), autonomous.progress.snapshot_retention_days (whole days; 0 = 90)\n  autonomous.progress.backlog_path (default docs/plans/README.md), autonomous.progress.since (YYYY-MM-DD; empty = first record's creation date)\n  autonomous.lane_fill.mode (off|shadow|on; default shadow), autonomous.lane_fill.gpu_lanes, autonomous.lane_fill.claude_lanes (whole numbers)\n  autonomous.lane_fill.idle_alert_minutes (whole minutes; 0 = off), autonomous.lane_fill.decompose_ahead_min, autonomous.lane_fill.poll_seconds (whole seconds; minimum 5)\n  autonomous.lane_fill.gpu_backend, autonomous.lane_fill.gpu_model, autonomous.lane_fill.claude_backend\n  autonomous.lane_fill.count_verifier_wait (true|false; default true)\n  autonomous.lane_fill.stale_after_hours (whole hours; 0 = stale rule off, unset reads the 72-hour default)\n  autonomous.lane_fill.require_confirmed_proposal, autonomous.lane_fill.check_main_carries, autonomous.lane_fill.require_worktree, autonomous.lane_fill.lane_counts_from_caps (true|false; each defaults true)\n  autonomous.lane_fill.gpu_mode, autonomous.lane_fill.claude_mode (off|shadow|on; empty = follow autonomous.lane_fill.mode)\n  autonomous.infra_retry.enabled (true|false; default true), autonomous.infra_retry.max_tries (whole number >= 1; default 3), autonomous.infra_retry.backoff_seconds (comma list of seconds; default 60,300,540)\n  autonomous.infra_retry.categories (comma list of spawn_error, storage_write, session_killed_before_delivery, daemon_restart), autonomous.infra_retry.exhausted_action (hold|count; default hold)\n  autonomous.infra_retry.retry_dependents, autonomous.infra_retry.raise_question (true|false; default true)\n  autonomous.model_routing.refusal_mode (refuse|warn; default refuse), autonomous.model_routing.served_models_cache_seconds (whole seconds >= 0; default 300, 0 = read from the node every time)\n  autonomous.model_routing.verifier_follows_worker_node (true|false; default true), autonomous.model_routing.unknown_node_policy (assume_serves|assume_not; default assume_serves)\n  autonomous.model_routing.probe_timeout_seconds (whole seconds >= 1; default 8), autonomous.model_routing.alert_on_refusal (true|false; default true)\n  (served models and node pins by chat: compute node models [name] [model=<m>] [backend=<b>] [refresh] | autonomous set-task-node <automaton> <task> <node|clear> | set-story-node <automaton> <story> <node|clear>)\n  autonomous.merge_pipeline.file_name (pipeline file inside a project; default .datawatch/merge-pipeline.yaml), autonomous.merge_pipeline.source_order (comma list of file, record, default), autonomous.merge_pipeline.fallback_on_bad_file, autonomous.merge_pipeline.conflict_policy, autonomous.merge_pipeline.conflict_model (an LLM registry name; empty = none), autonomous.merge_pipeline.conflict_mode (shadow or on; default shadow), autonomous.merge_pipeline.conflict_confirm_first_n (whole number; default 5; 0 = off), autonomous.merge_pipeline.version_files (comma list of files inside a project), autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch, minor, major or none), autonomous.merge_pipeline.major_trigger (manual, milestone or never; default manual), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet and are refused) and autonomous.merge_pipeline.version_scheme (semver; other schemes are not available yet and are refused); for one project use autonomous.merge_pipeline.projects.<project>.<key>; autonomous.merge_pipeline.release_approval.patch, .minor and .major (auto|ask|manual; default patch and minor auto, major ask); post-ship hooks are global for all projects (no projects.<project> form): autonomous.merge_pipeline.post_ship.enabled (true|false; default false, when false no hook runs), autonomous.merge_pipeline.post_ship.registry_file (the registry_row builtin's registry file, relative to the project) and autonomous.merge_pipeline.post_ship.registry_row_pattern (its row line template), autonomous.merge_pipeline.post_ship.companion_repository (the owner/name the parity_issue builtin files its issue in) and autonomous.merge_pipeline.post_ship.issue_title_template (its issue title), autonomous.merge_pipeline.post_ship.notify_template (the notify builtin's message body, and the parity_issue body; may name {project} and {version}), autonomous.merge_pipeline.post_ship.hooks (a JSON array of {name, builtin or command, enabled} objects; builtins are registry_row, parity_issue, tag or notify; at most 20; an enabled registry_row needs registry_file and registry_row_pattern, an enabled parity_issue needs companion_repository and issue_title_template, an enabled notify needs notify_template, tag needs none; null or an empty text clears the list)\n  (merge pipeline by chat: autonomous merge-pipeline [show] [project] | set-record [project=NAME] <pipeline> | clear-record [project] | validate [project=NAME] <pipeline>|file[=NAME])\n  autonomous.notify.default_events (kind list; default prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled; task.session_started, task.session_cleared, scope_warning and guardrail_warn are opt-in — off unless listed; empty = off)\n  autonomous.questions.enabled (true|false; default false), autonomous.questions.notify_messaging, autonomous.questions.notify_alert, autonomous.questions.return_path (true|false; each defaults on when absent)\n  autonomous.questions.decision_gate (true|false; default true), autonomous.questions.decision_gate_mode (shadow|on; default shadow)\n  autonomous.task_templates.mode.<template id> (llm|daemon|off), autonomous.script_gate_timeout_seconds (whole seconds), autonomous.project_gate_command (command run as the project gate, empty = none)\n  autonomous.questions.held_mode (off|shadow|on; default shadow), autonomous.questions.held_states (comma list of the state ids blocked, review_held, revision_requested, awaiting_decision, pending_insert; empty = none, unset = all five)\n  autonomous.questions.worker_marker (true|false; default false)\n  autonomous.questions.quality_mode (off|warn|refuse; default warn), autonomous.questions.quality_min_text_chars (whole number >= 0; default 60)\n  autonomous.questions.quality_tracker_id_pattern (regular expression; empty = the built-in pattern), autonomous.questions.queue_preview_lines (whole number >= 1; default 3)\n  autonomous.decisions.enabled (true|false; default true), autonomous.decisions.folder (folder of decision files to watch; empty = watch off), autonomous.decisions.folder_glob (default *.md), autonomous.decisions.folder_withdraw_on_delete (true|false; default true)\n  autonomous.decisions.front_matter_delimiter (default ---), autonomous.decisions.front_matter_separator (default :), autonomous.decisions.front_matter_field_separator (default |), autonomous.decisions.front_matter_keys (JSON object, canonical name to file name; empty = canonical names)\n  autonomous.decisions.clarity_mode (off|warn|refuse; default warn), autonomous.decisions.clarity_min_text_chars (whole number >= 0; default 60), autonomous.decisions.clarity_require_tradeoffs, autonomous.decisions.clarity_require_label (true|false; each defaults true)\n  autonomous.decisions.clarity_tracker_id_pattern (regular expression; empty = the built-in pattern)\n  autonomous.decisions.doc_root (folder document paths resolve against; empty = the daemon's working directory), autonomous.decisions.doc_status_mode (off|report|on; default report)\n  autonomous.decisions.doc_status_pattern (regular expression; default ^Confirmed:.*$), autonomous.decisions.doc_status_template (placeholders {choice}, {choice_label}, {quote}, {actor}, {date}, {decision_id})\n  autonomous.decisions.follow_ups (JSON list of {name, kind, target}; kind is start_template or open_automaton; empty = none)\n  autonomous.parallel.worktree_per_task (true|false; default true), autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage; default additive_then_model), autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model), autonomous.parallel.merge_retry_seconds (whole seconds; default 60, 0 = timer off)\n  autonomous.merge_shadow.enabled (true|false; absent or true = on, false turns the plan off), autonomous.merge_shadow.gate_timeout (a Go duration such as 20m; default 20m), autonomous.merge_shadow.plan_keep (whole number >= 1; default 200) — the finish-time shadow merge plan (what merging an Automaton's branch would do), kept per project for comparison with the real merge\n  classifier.timeout_seconds, classifier.top_logprobs, classifier.probe_ttl_seconds, classifier.probe_timeout_seconds (whole numbers; 0 = default)\n  classifier.abstain_margin, classifier.min_probability, classifier.min_option_mass (0-1; 0 = default 0.10 / 0.50 / 0.50), classifier.rotate_options (true|false; default false), classifier.thinking_off_models (comma list; default qwen3)\n  classifier.calibration.test_fraction (0 up to 1, exclusive; default 0.30), classifier.calibration.split_seed, classifier.calibration.min_fit_samples (default 20), classifier.calibration.false_pass_weight (default 5), classifier.calibration.rotation_bias_threshold, classifier.calibration.rotation_flip_threshold (0-1; default 0.10)\n  (classifier publisher allowlist is not set here: llm classifier add-publisher <name> confirm=true)\n  pin_check_seconds (whole seconds; 0 = pin keeper off)\n  compute_placement.missing_model (ask|auto_load|refuse; default ask), compute_placement.mem_headroom_pct (0-100; default 10), compute_placement.disk_headroom_gb (0 or more; default 5), compute_placement.ask_timeout_minutes (0 or more; default 30), compute_placement.assume_model_size_gb (0 or more; 0 = size unknown)\n  usage.calculator.auto_lanes (true|false; default false), usage.calculator.auto_lanes_max (whole number 1-8; default 2), usage.calculator.auto_lanes_special_priority (whole number 0 or above; default 1 = only special automations count)\n  autonomous.first_attempt.<kind>.backend, autonomous.first_attempt.<kind>.model (kind = implementation, docs, note or final_gate; a backend that needs a model must name one), autonomous.first_attempt_escalate_after_failures (whole number 0-20; default 1), autonomous.retry_resume_max_context_tokens (whole number 0-2000000; 0 = retries start fresh; default 150000) — failed-attempt cost, see docs/howto/failed-attempt-cost.md\n  usage.burn_guard.ask_on_change (true|false; default false — when false (default) the guard sends one alert per change and no question; when true it keeps at most one open question)\n  usage.burn_guard.max_projection_gap_points (number 0-100; 0 never compares the guard with the usage advice; default 25)\n  session.reserved_interactive\n  secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120)\n  session.liveness_window_seconds (whole seconds >= 0; 0 = default), session.liveness_idle_timeout_overrides (JSON object of backend name to whole seconds, e.g. {\"pi\":300}, or backend=seconds pairs; 0 = off; unknown backend refused)\n  session.store_flush_interval (ms; 0 = write through), session.store_archive_after_days (0 = off), session.store_field_cap_kb, session.store_side_file_cap_kb\n  session.task_delivery_window_seconds (whole seconds >= 1), session.task_delivery_attempts (>= 1)\n  session.dismiss_ui_prompts (true|false; default true), session.ui_prompt_dismiss_delay_seconds (whole seconds >= 0; 0 = send at once; default 5), session.ui_prompt_clear_bound_seconds (whole seconds >= 1; default 30), session.ui_prompt_max_attempts (whole number >= 1; default 2)\n  ui.splash_min_seconds (whole seconds 0-60; 0 = keep the legacy timing, default 6), ui.splash_min_seconds_new_version (whole seconds 0-60; 0 = keep the legacy timing, default 9)\n  dashboard.hide_inactive_cards (true|false), dashboard.console.enabled (true|false), dashboard.console.show_questions, dashboard.console.show_held_blocked, dashboard.console.show_lanes, dashboard.console.show_usage, dashboard.console.show_ci_release (true|false)\n  tracing.mode (off|summary|full; default summary), tracing.arg_cap_bytes (whole bytes, 0 = default 512; max 1048576), tracing.retention_days (whole days, 0 = default 14; max 3650), tracing.backends.<backend> (true|false; a backend not listed is traced)\n  (agent trace by chat: trace session|automaton|rollup|coverage)\n  server.host, server.port\n  resource_limits.memory_share_percent (1-100), resource_limits.memory_floor_mb, resource_limits.memory_cap_mb (whole MB; floor not above cap)\n  git.push_on_complete, git.push_remote\n  server.allowed_project_roots (comma list of absolute folders; added to the Automaton worktree base and the workspace root, which are always allowed; the workspace root is session.workspace_root, or ~/workspace when unset)\n  autonomous.priority_by_kind (kind=priority pairs, e.g. bug=90,maintenance=50 — or a JSON object; empty value clears the table)\n  autonomous.defect_intake_automation (Automation name for new kind:bug filings; empty string clears it)\n  (tag browsing by chat: autonomous tags [counts] | tags sweep [dry-run] | attention | session-tags list | session-tags <session-id> <tag-ids> | set-primary <automaton-id> <tag-id|none>\n"+strings.Join(PluginServicesConfigureHelpLines(), "\n")+"\n"+strings.Join(WorkerProfileConfigureHelpLines(), "\n"), r.hostname))
 		return
 	}
 	if text == "list" {
-		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown, detection.alert_settle, detection.alert_repeat\n  autonomous.capacity_enabled, autonomous.capacity_wait_timeout_seconds, autonomous.capacity_gpu_util_pct\n  autonomous.ci_watch_timeout_seconds, autonomous.per_prd_guardrails (rules-review, ci-watch)\n  autonomous.block_on_file_drift, autonomous.max_concurrent_tasks\n  autonomous.max_engines_per_node\n  session.reserved_interactive\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port", r.hostname))
+		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  projects_defaults.branch_retention_days, projects_defaults.weekly_share_percent, projects_defaults.major_trigger (daemon defaults a project inherits)\n  autonomous.first_attempt.<kind>.backend, autonomous.first_attempt.<kind>.model (kind = implementation, docs, note or final_gate; a backend that needs a model must name one), autonomous.first_attempt_escalate_after_failures (whole number 0-20; default 1), autonomous.retry_resume_max_context_tokens (whole number 0-2000000; 0 = retries start fresh; default 150000) — failed-attempt cost, see docs/howto/failed-attempt-cost.md\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  pi.thinking_level (off, minimal, low, medium, high)\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown, detection.alert_settle, detection.alert_repeat\n  autonomous.capacity_enabled, autonomous.capacity_fallthrough (true/false, default false), autonomous.capacity_wait_timeout_seconds, autonomous.capacity_gpu_util_pct\n  autonomous.ci_watch_timeout_seconds, autonomous.per_prd_guardrails (rules-review, ci-watch)\n  autonomous.planning_restart_policy (reattach, restart or draft: what a daemon restart does to Automata still in planning)\n  autonomous.worker_idle_nudge_seconds, autonomous.worker_idle_nudge_stall_seconds\n  autonomous.push_and_tag (true/false), autonomous.release_path (direct_push or pull_request), git.release_ci_window_minutes (whole minutes, greater than 0)\n  autonomous.stuck_running_seconds (whole seconds; 0 = 900)\n  autonomous.task_max_attempt_seconds (whole seconds; 0 = off)\n  autonomous.task_no_progress_seconds (whole seconds; 0 = off)\n  autonomous.verifier_max_run_seconds (whole seconds; 0 = no cap; default 2700; negative refused)\n  autonomous.judge_policy (ordered backends, empty = follow the verifier routing policy), autonomous.judge_timeout_seconds (default 1800), autonomous.judge_size_threshold_lines (whole number; default 400, 0 = size rule off), autonomous.judge_prompt_file_threshold_lines (whole number; judge prompts longer than this many lines are sent as a file, 0 = always send the full prompt), autonomous.judge_delivery_wait_per_thousand_lines_seconds (whole seconds of extra wait per thousand prompt lines, 0 = no extra wait), autonomous.judge_strong_backend (LLM backend name, empty = the last entry of the judge policy), autonomous.judge_verdict_cache_enabled (true|false, default true)\n  autonomous.block_on_file_drift, autonomous.undeclared_edit_mode (off|warn|block), autonomous.max_concurrent_tasks, autonomous.resume_max_age_seconds\n  autonomous.snapshot_never_stage (comma list of path patterns the snapshot must never git add; blank entries rejected; empty = no protected patterns, unset = built-in defaults)\n  autonomous.loop_detect_turns (0 = off)\n  autonomous.branch_refresh_enabled (true|false; default false), autonomous.branch_refresh_behind_limit (whole number >= 0; 0 = 5)\n  autonomous.max_engines_per_node, autonomous.scope_lint (off|warn|enforce; default enforce)\n  autonomous.host_load_alert.mode (off|alert|reap; default alert), autonomous.host_load_alert.multiple (load-to-cores multiple; default 1.5), autonomous.host_load_alert.minutes (default 10)\n  (host load by chat: autonomous host-load)\n  autonomous.capacity_rate_requests, autonomous.capacity_rate_tokens (per-LLM ceilings per window; 0 = none), autonomous.capacity_rate_window_seconds (default 3600), autonomous.capacity_strict_node_limit, autonomous.capacity_count_pool_by_node, autonomous.capacity_adopt_before_admit (true/false, default true), autonomous.capacity_adoption_wait_seconds (default 30)\n  autonomous.verifier_policy.mode (fixed|prefer-free|balance|gpu-only|claude-only; default fixed), autonomous.verifier_policy.backends (ordered, comma list)\n  autonomous.verifier_policy.claude_session_cap, autonomous.verifier_policy.claude_cap_window_minutes (whole numbers; 0 = unlimited / default 60)\n  autonomous.verifier_policy.force_stronger_on_retry, autonomous.verifier_policy.final_gate_stronger (true|false), autonomous.verifier_policy.stronger_backend, autonomous.verifier_policy.stronger_model\n  (verifier routing by chat: autonomous verifier-policy | verifier-policy-set key=value | set-verifier-policy <automaton> | set-task-verifier-policy <automaton> <task>)\n  (judge routing by chat: autonomous judge-policy | judge-policy-set judge_policy=a,b judge_timeout_seconds=n judge_size_threshold_lines=n judge_strong_backend=name judge_verdict_cache_enabled=true|false)\n  autonomous.gate_disagreement (warn|block; default warn)\n  autonomous.failure_escalation.enabled (true|false), autonomous.failure_escalation.max_failures (whole number >= 1; default 3), autonomous.failure_escalation.steps (backend:model[@attempts],...)\n  autonomous.default_quality_gates.scope (full|touched-plus-smoke|touched; default full), autonomous.default_quality_gates.smoke_packages (comma list of package patterns for the touched-plus-smoke scope)\n  autonomous.plan_coverage_check (off|warn|block; default block), autonomous.plan_coverage_min_ratio (0-1; default 1.0)\n  autonomous.plan_coverage_suppress_created_files (true|false; default true), autonomous.plan_coverage_scoped_requirements (true|false; default true)\n  autonomous.plan_coverage_requirement_sections (comma-separated string; empty = the scope,constraints default), autonomous.plan_coverage_min_requirement_chars (whole number >= 0; 0 = the 30-character default)\n  autonomous.generated_artefacts.change_record, .gate_report, .changelog_draft, .parity_draft, .tracker_rows, .registry_row, .combined_docs_task (true|false; each defaults on; which artefacts an Automaton generates)\n  autonomous.tags.default_view (auto|attention|tags; default auto), autonomous.tags.attention_statuses (comma list of Automaton statuses; default blocked, needs_review, paused)\n  autonomous.tags.default_match_mode (any|all; default any), autonomous.tags.direct_counts_visible (true|false; default false)\n  autonomous.tags.registry_keeper (federation peer name; empty = this daemon keeps the registry), autonomous.tags.registry_sync_seconds (whole seconds >= 5; default 30)\n  autonomous.tags.placement.enabled (true|false; default true), and per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind): autonomous.tags.placement.<axis>.enabled (true|false; default true) and autonomous.tags.placement.<axis>.template (a string carrying the axis' placeholder, e.g. 'lane:{lane}')\n  autonomous.auto_tags.enabled (true|false; default true), autonomous.auto_tags.automation_template (default automation:{automation}), autonomous.auto_tags.stage_template (default stage:{stage}), autonomous.auto_tags.kind_template (default kind:{kind})\n  autonomous.auto_tags.kind_labels (kinds feature, bug or other to label strings; default feature:feature, bug:bug, other:maintenance)\n  autonomous.inherited_tags_cache_seconds (whole seconds; 0 = the 15-second default, negative = shared inherited-tags cache off)\n  autonomous.usage_backoff (pause_backend|off; default pause_backend), autonomous.backoff_max_wait_minutes (whole minutes >= 1; default 60)\n  autonomous.plan_tier_max_inflight (tier=inflight pairs, e.g. max_5x=2,api=0 — or a JSON object)\n  autonomous.requirements (object: {\"min_ollama\":{\"<capability>\":\"<min Ollama version, empty clears the floor>\"}})\n  autonomous.requirements.min_ollama.<capability> (a min Ollama version, e.g. 0.35.0; empty clears that capability's floor)\n  autonomous.automation.idle_alert_minutes (whole minutes; 0 = off)\n  autonomous.automation.triage_alert_minutes (whole minutes; 0 = triage alert off, unset reads the 30-minute default)\n  autonomous.automation.merge_pending_mode (off|shadow|on; default off), autonomous.automation.merge_pending_alert_minutes (whole minutes; 0 = merge-pending alert off, unset reads the 30-minute default)\n  autonomous.automation.merged_member_policy (completed|manual|block; default completed)\n  autonomous.automation.agent_insert_policy (allow|require_operator; default allow)\n  autonomous.automation.uncommitted_work_policy (hold|warn|off; what an Automaton does when a finished task leaves files uncommitted in its worktree)\n  autonomous.automation.uncommitted_work_scope (task_files|worktree; which uncommitted files that check looks at)\n  (uncommitted work by chat: autonomous uncommitted-work [automaton-id])\n  autonomous.automation.protected_paths (comma list of repository-relative paths; empty = the default list), autonomous.automation.protected_paths_action (hold|warn|block|off; what an Automaton does when a task's commit changes a protected path), autonomous.automation.rules_review_source (base_commit|worktree; where the rules are read from)\n  (protected paths by chat: autonomous protected-paths [automaton-id] | authorize-paths <automaton-id> <path> [<path>...] | authorize-paths <automaton-id> clear)\n  autonomous.request_watch.enabled, autonomous.request_watch.observe_workers, autonomous.request_watch.observe_verifiers, autonomous.request_watch.use_gpu_signal, autonomous.request_watch.unreachable_counts, autonomous.request_watch.raise_alert, autonomous.request_watch.raise_question (true|false; each defaults on when unset)\n  autonomous.request_watch.poll_seconds (whole seconds >= 1; default 30), autonomous.request_watch.no_progress_minutes (whole minutes >= 1; default 30), autonomous.request_watch.gpu_busy_percent (1-100; default 10)\n  autonomous.request_watch.remediation_options (comma list of keep_waiting, end_worker, retry_other_backend, unload_reload_model; unset = all four)\n  (model request watch by chat: autonomous request-watch [session <id> | automaton <id>])\n\n  autonomous.automation.repo_ci_watch.mode (off|shadow|on; default off)\n  autonomous.automation.repo_ci_watch.repos (comma list of absolute repository paths; empty = nothing watched)\n  autonomous.automation.repo_ci_watch.poll_seconds (whole seconds >= 60; unset reads the 300-second default)\n  autonomous.automation.repo_ci_watch.alert_minutes (whole minutes >= 0; 0 = alert off, unset reads the 30-minute default)\n  autonomous.automation.repo_ci_watch.tag_count (whole number >= 0; 0 = none, unset reads the 5 default)\n  autonomous.automation.repo_ci_watch.hung_after_minutes (whole minutes >= 1; unset reads the 60-minute default)\n  autonomous.automation.repo_ci_watch.security_workflows (comma list; empty = none, unset reads the default list)\n  autonomous.automation.repo_ci_watch.delete_superseded (report|delete; default report)\n  (supervisor loop by chat: autonomous supervisor jobs | supervisor runs [job=X] [outcome=Y] [limit=N] | supervisor run job=NAME [input=X] [candidates=A,B])\n  (supervisor loop settings: configure supervisor_loop.<key>=<value> — the supervisor_loop block: enabled, the step switches, the model jobs' style/backend/model, validator retries, escalation and run retention)\nautonomous.automation.security_failure.mode (off|shadow|on; default shadow)\n  autonomous.progress.lanes (whole number; 0 = 5), autonomous.progress.inactive_gap_hours (hours; 0 = 3), autonomous.progress.snapshot_retention_days (whole days; 0 = 90)\n  autonomous.progress.backlog_path (default docs/plans/README.md), autonomous.progress.since (YYYY-MM-DD; empty = first record's creation date)\n  autonomous.lane_fill.mode (off|shadow|on; default shadow), autonomous.lane_fill.gpu_lanes, autonomous.lane_fill.claude_lanes (whole numbers)\n  autonomous.lane_fill.idle_alert_minutes (whole minutes; 0 = off), autonomous.lane_fill.decompose_ahead_min, autonomous.lane_fill.poll_seconds (whole seconds; minimum 5)\n  autonomous.lane_fill.gpu_backend, autonomous.lane_fill.gpu_model, autonomous.lane_fill.claude_backend\n  autonomous.lane_fill.count_verifier_wait (true|false; default true)\n  autonomous.lane_fill.stale_after_hours (whole hours; 0 = stale rule off, unset reads the 72-hour default)\n  autonomous.lane_fill.require_confirmed_proposal, autonomous.lane_fill.check_main_carries, autonomous.lane_fill.require_worktree, autonomous.lane_fill.lane_counts_from_caps (true|false; each defaults true)\n  autonomous.lane_fill.gpu_mode, autonomous.lane_fill.claude_mode (off|shadow|on; empty = follow autonomous.lane_fill.mode)\n  autonomous.infra_retry.enabled (true|false; default true), autonomous.infra_retry.max_tries (whole number >= 1; default 3), autonomous.infra_retry.backoff_seconds (comma list of seconds; default 60,300,540)\n  autonomous.infra_retry.categories (comma list of spawn_error, storage_write, session_killed_before_delivery, daemon_restart), autonomous.infra_retry.exhausted_action (hold|count; default hold)\n  autonomous.infra_retry.retry_dependents, autonomous.infra_retry.raise_question (true|false; default true)\n  autonomous.model_routing.refusal_mode (refuse|warn; default refuse), autonomous.model_routing.served_models_cache_seconds (whole seconds >= 0; default 300, 0 = read from the node every time)\n  autonomous.model_routing.verifier_follows_worker_node (true|false; default true), autonomous.model_routing.unknown_node_policy (assume_serves|assume_not; default assume_serves)\n  autonomous.model_routing.probe_timeout_seconds (whole seconds >= 1; default 8), autonomous.model_routing.alert_on_refusal (true|false; default true)\n  (served models and node pins by chat: compute node models [name] [model=<m>] [backend=<b>] [refresh] | autonomous set-task-node <automaton> <task> <node|clear> | set-story-node <automaton> <story> <node|clear>)\n  autonomous.merge_pipeline.file_name (pipeline file inside a project; default .datawatch/merge-pipeline.yaml), autonomous.merge_pipeline.source_order (comma list of file, record, default), autonomous.merge_pipeline.fallback_on_bad_file, autonomous.merge_pipeline.conflict_policy, autonomous.merge_pipeline.conflict_model (an LLM registry name; empty = none), autonomous.merge_pipeline.conflict_mode (shadow or on; default shadow), autonomous.merge_pipeline.conflict_confirm_first_n (whole number; default 5; 0 = off), autonomous.merge_pipeline.version_files (comma list of files inside a project), autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch, minor, major or none), autonomous.merge_pipeline.major_trigger (manual, milestone or never; default manual), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet and are refused) and autonomous.merge_pipeline.version_scheme (semver; other schemes are not available yet and are refused); for one project use autonomous.merge_pipeline.projects.<project>.<key>; autonomous.merge_pipeline.release_approval.patch, .minor and .major (auto|ask|manual; default patch and minor auto, major ask); post-ship hooks are global for all projects (no projects.<project> form): autonomous.merge_pipeline.post_ship.enabled (true|false; default false, when false no hook runs), autonomous.merge_pipeline.post_ship.registry_file (the registry_row builtin's registry file, relative to the project) and autonomous.merge_pipeline.post_ship.registry_row_pattern (its row line template), autonomous.merge_pipeline.post_ship.companion_repository (the owner/name the parity_issue builtin files its issue in) and autonomous.merge_pipeline.post_ship.issue_title_template (its issue title), autonomous.merge_pipeline.post_ship.notify_template (the notify builtin's message body, and the parity_issue body; may name {project} and {version}), autonomous.merge_pipeline.post_ship.hooks (a JSON array of {name, builtin or command, enabled} objects; builtins are registry_row, parity_issue, tag or notify; at most 20; an enabled registry_row needs registry_file and registry_row_pattern, an enabled parity_issue needs companion_repository and issue_title_template, an enabled notify needs notify_template, tag needs none; null or an empty text clears the list)\n  (merge pipeline by chat: autonomous merge-pipeline [show] [project] | set-record [project=NAME] <pipeline> | clear-record [project] | validate [project=NAME] <pipeline>|file[=NAME])\n  autonomous.notify.default_events (kind list; default prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled; task.session_started, task.session_cleared, scope_warning and guardrail_warn are opt-in — off unless listed; empty = off)\n  autonomous.questions.enabled (true|false; default false), autonomous.questions.notify_messaging, autonomous.questions.notify_alert, autonomous.questions.return_path (true|false; each defaults on when absent)\n  autonomous.questions.decision_gate (true|false; default true), autonomous.questions.decision_gate_mode (shadow|on; default shadow)\n  autonomous.task_templates.mode.<template id> (llm|daemon|off), autonomous.script_gate_timeout_seconds (whole seconds), autonomous.project_gate_command (command run as the project gate, empty = none)\n  autonomous.questions.held_mode (off|shadow|on; default shadow), autonomous.questions.held_states (comma list of the state ids blocked, review_held, revision_requested, awaiting_decision, pending_insert; empty = none, unset = all five)\n  autonomous.questions.worker_marker (true|false; default false)\n  autonomous.questions.quality_mode (off|warn|refuse; default warn), autonomous.questions.quality_min_text_chars (whole number >= 0; default 60)\n  autonomous.questions.quality_tracker_id_pattern (regular expression; empty = the built-in pattern), autonomous.questions.queue_preview_lines (whole number >= 1; default 3)\n  autonomous.decisions.enabled (true|false; default true), autonomous.decisions.folder (folder of decision files to watch; empty = watch off), autonomous.decisions.folder_glob (default *.md), autonomous.decisions.folder_withdraw_on_delete (true|false; default true)\n  autonomous.decisions.front_matter_delimiter (default ---), autonomous.decisions.front_matter_separator (default :), autonomous.decisions.front_matter_field_separator (default |), autonomous.decisions.front_matter_keys (JSON object, canonical name to file name; empty = canonical names)\n  autonomous.decisions.clarity_mode (off|warn|refuse; default warn), autonomous.decisions.clarity_min_text_chars (whole number >= 0; default 60), autonomous.decisions.clarity_require_tradeoffs, autonomous.decisions.clarity_require_label (true|false; each defaults true)\n  autonomous.decisions.clarity_tracker_id_pattern (regular expression; empty = the built-in pattern)\n  autonomous.decisions.doc_root (folder document paths resolve against; empty = the daemon's working directory), autonomous.decisions.doc_status_mode (off|report|on; default report)\n  autonomous.decisions.doc_status_pattern (regular expression; default ^Confirmed:.*$), autonomous.decisions.doc_status_template (placeholders {choice}, {choice_label}, {quote}, {actor}, {date}, {decision_id})\n  autonomous.decisions.follow_ups (JSON list of {name, kind, target}; kind is start_template or open_automaton; empty = none)\n  autonomous.parallel.worktree_per_task (true|false; default true), autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage; default additive_then_model), autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model), autonomous.parallel.merge_retry_seconds (whole seconds; default 60, 0 = timer off)\n  autonomous.merge_shadow.enabled (true|false; absent or true = on, false turns the plan off), autonomous.merge_shadow.gate_timeout (a Go duration such as 20m; default 20m), autonomous.merge_shadow.plan_keep (whole number >= 1; default 200) — the finish-time shadow merge plan (what merging an Automaton's branch would do), kept per project for comparison with the real merge\n  classifier.timeout_seconds, classifier.top_logprobs, classifier.probe_ttl_seconds, classifier.probe_timeout_seconds (whole numbers; 0 = default)\n  classifier.abstain_margin, classifier.min_probability, classifier.min_option_mass (0-1; 0 = default 0.10 / 0.50 / 0.50), classifier.rotate_options (true|false; default false), classifier.thinking_off_models (comma list; default qwen3)\n  classifier.calibration.test_fraction (0 up to 1, exclusive; default 0.30), classifier.calibration.split_seed, classifier.calibration.min_fit_samples (default 20), classifier.calibration.false_pass_weight (default 5), classifier.calibration.rotation_bias_threshold, classifier.calibration.rotation_flip_threshold (0-1; default 0.10)\n  (classifier publisher allowlist is not set here: llm classifier add-publisher <name> confirm=true)\n  pin_check_seconds (whole seconds; 0 = pin keeper off)\n  compute_placement.missing_model (ask|auto_load|refuse; default ask), compute_placement.mem_headroom_pct (0-100; default 10), compute_placement.disk_headroom_gb (0 or more; default 5), compute_placement.ask_timeout_minutes (0 or more; default 30), compute_placement.assume_model_size_gb (0 or more; 0 = size unknown)\n  usage.calculator.auto_lanes (true|false; default false), usage.calculator.auto_lanes_max (whole number 1-8; default 2), usage.calculator.auto_lanes_special_priority (whole number 0 or above; default 1 = only special automations count)\n  usage.burn_guard.max_projection_gap_points (number 0-100; 0 never compares the guard with the usage advice; default 25)\n  session.reserved_interactive\n  secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120)\n  session.liveness_window_seconds (whole seconds >= 0; 0 = default), session.liveness_idle_timeout_overrides (JSON object of backend name to whole seconds, e.g. {\"pi\":300}, or backend=seconds pairs; 0 = off; unknown backend refused)\n  session.store_flush_interval (ms; 0 = write through), session.store_archive_after_days (0 = off), session.store_field_cap_kb, session.store_side_file_cap_kb\n  session.task_delivery_window_seconds, session.task_delivery_attempts\n  session.dismiss_ui_prompts (true|false; default true), session.ui_prompt_dismiss_delay_seconds (0 = send at once; default 5), session.ui_prompt_clear_bound_seconds (default 30), session.ui_prompt_max_attempts (default 2)\n  ui.splash_min_seconds (whole seconds 0-60; 0 = keep the legacy timing, default 6), ui.splash_min_seconds_new_version (whole seconds 0-60; 0 = keep the legacy timing, default 9)\n  dashboard.hide_inactive_cards (true|false), dashboard.console.enabled (true|false), dashboard.console.show_questions, dashboard.console.show_held_blocked, dashboard.console.show_lanes, dashboard.console.show_usage, dashboard.console.show_ci_release (true|false)\n  tracing.mode (off|summary|full; default summary), tracing.arg_cap_bytes (whole bytes, 0 = default 512; max 1048576), tracing.retention_days (whole days, 0 = default 14; max 3650), tracing.backends.<backend> (true|false; a backend not listed is traced)\n  (agent trace by chat: trace session|automaton|rollup|coverage)\n    autonomous.notify.webhook.enabled, autonomous.notify.webhook.allow_hosts (host or host:port, comma-separated; empty = nothing receives), autonomous.notify.webhook.max_attempts, autonomous.notify.webhook.backoff_seconds (comma list of seconds), autonomous.notify.webhook.jitter_percent (1-100), autonomous.notify.webhook.attempt_timeout_seconds, autonomous.notify.webhook.max_body_bytes, autonomous.notify.webhook.signature_tolerance_seconds\n  autonomous.notify.forwarding.enabled, autonomous.notify.forwarding.max_hops, autonomous.notify.forwarding.max_attempts, autonomous.notify.forwarding.backoff_seconds, autonomous.notify.forwarding.jitter_percent (1-100), autonomous.notify.forwarding.attempt_timeout_seconds\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port, mcp.public_url, mcp.allow_sensitive_writes (true/false; default true)\n  autonomous.priority_by_kind (kind=priority pairs, e.g. bug=90,maintenance=50 — or a JSON object; empty value clears the table)\n  autonomous.defect_intake_automation (Automation name for new kind:bug filings; empty string clears it)\n  git.push_on_complete, git.push_remote\n  resource_limits.memory_share_percent (1-100), resource_limits.memory_floor_mb, resource_limits.memory_cap_mb (whole MB; floor not above cap)\n"+strings.Join(PluginServicesConfigureHelpLines(), "\n")+"\n"+strings.Join(WorkerProfileConfigureHelpLines(), "\n"), r.hostname))
+		return
+	}
+	if _, ok := parsePlatformContextConfigure(text); ok {
+		r.handleConfigurePlatformContext(text)
+		return
+	}
+	// A bare worker-profile key (no "=") reads back its help text, so the
+	// operator can see what the key takes without opening the howto.
+	if help, ok := WorkerProfileConfigureKeyHelp(text); ok {
+		r.send(fmt.Sprintf("[%s] %s: %s%s", r.hostname, text, help, workerProfileInForceReply(r.workerProfileInForce)))
 		return
 	}
 	eqIdx := strings.Index(text, "=")
@@ -863,19 +1051,198 @@ func (r *Router) handleConfigure(cmd Command) {
 	}
 	key := strings.TrimSpace(text[:eqIdx])
 	value := strings.TrimSpace(text[eqIdx+1:])
-	if err := r.configureFn(key, value); err != nil {
+	if msg := planningRestartPolicyRefusal(key, value); msg != "" {
+		r.send(fmt.Sprintf("[%s] %s", r.hostname, msg))
+		return
+	}
+	err := r.configureAudited(key, value, at)
+	var refused *configureRefused
+	if errors.As(err, &refused) {
+		r.send(fmt.Sprintf("[%s] Refused: %s", r.hostname, refused.msg))
+		return
+	}
+	if err != nil {
 		r.send(fmt.Sprintf("[%s] Configure failed: %v", r.hostname, err))
 	} else {
 		r.send(fmt.Sprintf("[%s] Set %s = %s. Restart may be required.", r.hostname, key, value))
 	}
 }
 
+// handleConfigurePlatformContext applies "platform_context enabled on|off" and
+// "platform_context note <text>" through the same configure path as key=value,
+// and replies with what changed.
+func (r *Router) handleConfigurePlatformContext(text string) {
+	pc, _ := parsePlatformContextConfigure(text)
+	if pc.Err != "" {
+		r.send(fmt.Sprintf("[%s] %s", r.hostname, pc.Err))
+		return
+	}
+	if err := r.configureFn(pc.Key, pc.Value); err != nil {
+		r.send(fmt.Sprintf("[%s] Configure failed: %v", r.hostname, err))
+		return
+	}
+	switch pc.Key {
+	case "platform_context.enabled":
+		state := "off"
+		if pc.Value == "true" {
+			state = "on"
+		}
+		r.send(fmt.Sprintf("[%s] Platform context is now %s (platform_context.enabled = %s).", r.hostname, state, pc.Value))
+	default:
+		if pc.Value == "" {
+			r.send(fmt.Sprintf("[%s] Platform context note cleared.", r.hostname))
+		} else {
+			r.send(fmt.Sprintf("[%s] Platform context note set to: %s", r.hostname, pc.Value))
+		}
+	}
+}
+
+// configureRefused is a configure write turned away by a pre-write check
+// (the attempt-cost validator, the burn guard). It is replied as
+// "Refused: <msg>", and still reaches the audit record as a failed attempt.
+type configureRefused struct{ msg string }
+
+func (e *configureRefused) Error() string { return e.msg }
+
+// configureWrite runs the pre-write checks for one configure key and then
+// the write itself. It is the body the audit point wraps, so a refused
+// write is audited exactly like a failed one.
+//
+// The four attempt-cost keys refuse through the shared validator before
+// anything is written: the candidate value is layered over the stored
+// settings (AttemptCostState) and checked with
+// config.ValidateAttemptCostSettings. On refusal the validator's message
+// is sent back as-is and configureFn is never called, so nothing is
+// written.
+func (r *Router) configureWrite(key, value string) error {
+	if verr := r.validateAttemptCostKey(key, value); verr != nil {
+		return &configureRefused{msg: verr.Error()}
+	}
+	if err := checkMergePipelineConfigure(key, value); err != nil {
+		return err
+	}
+	if err := checkBurnGuardConfigure(key, value); err != nil {
+		return &configureRefused{msg: err.Error()}
+	}
+	if key == verifierRunCapKey {
+		if err := checkVerifierRunCapValue(value); err != nil {
+			return fmt.Errorf("Automaton verifier run cap: %v", err) //nolint:staticcheck // Automaton is a proper noun, as in the message the verifier-run-cap check always gave
+		}
+	}
+	if isMergePipelineReleaseApprovalKey(key) {
+		// Release approval modes are applied by the daemon through
+		// SetReleaseApprovalMode, which needs the comm surface named.
+		return r.configureMergePipelineReleaseMode(key, value)
+	}
+	return r.configureFn(key, value)
+}
+
+// configureAudited is the single audit point for the comm-channel
+// configure path: it runs the real write (configureFn — a loopback REST
+// PUT on the admin token) and, when the invocation is session-attributed
+// (at.Caller set), records exactly one federation.ConfigAuditRecord per
+// attempted write with surface "comm" — denied (capability) and failed
+// writes included, with the reason. Operator (zero-attribution) traffic
+// is not audited as a session write, consistent with the REST and MCP
+// surfaces (admin callers skip their own audit points; the loopback PUT
+// this make is admin, so the REST point skips it too). When configAudit
+// is nil the audit is a silent no-op.
+func (r *Router) configureAudited(key, value string, at ConfigureAttribution) error {
+	body, merr := json.Marshal(map[string]any{key: value})
+	// Session-attributed but the credential lacks the config:write
+	// capability: the write is refused before it runs and recorded once
+	// as a denied attempt naming the capability it is missing — exactly
+	// as the REST fedCap gate and the MCP middleware do for their
+	// surfaces.
+	if at.Caller != "" && !at.ConfigWriteAllowed {
+		reason := at.DenyReason
+		if reason == "" {
+			reason = "denied: missing capability " + federation.CapConfigWrite
+		}
+		if r.configAudit != nil {
+			rec := federation.ConfigAuditRecord{
+				Surface: "comm",
+				Tool:    "configure",
+				Caller:  at.Caller,
+				Allowed: false,
+				Reason:  reason,
+			}
+			if merr == nil {
+				rec.Keys, rec.Values = federation.ExtractConfigPatch(body)
+			}
+			r.configAudit.Record(rec)
+		}
+		return fmt.Errorf("%s", reason)
+	}
+	err := r.configureWrite(key, value)
+	if at.Caller == "" || r.configAudit == nil {
+		return err
+	}
+	rec := federation.ConfigAuditRecord{
+		Surface: "comm",
+		Tool:    "configure",
+		Caller:  at.Caller,
+		Allowed: err == nil,
+	}
+	if merr == nil {
+		rec.Keys, rec.Values = federation.ExtractConfigPatch(body)
+	}
+	if err != nil {
+		rec.Reason = "denied: " + err.Error()
+	}
+	r.configAudit.Record(rec)
+	return err
+}
+
 func (r *Router) handleCapacity() {
+	// Through the REST loopback the reply is the same text the CLI prints.
+	if r.webPort != 0 {
+		body, err := r.commGet("/api/capacity", nil)
+		if err != nil {
+			r.reply("capacity failed", err.Error())
+			return
+		}
+		text, err := autonomous.FormatCapacityText([]byte(body))
+		if err != nil {
+			r.reply("capacity failed", err.Error())
+			return
+		}
+		r.reply("Capacity:", strings.TrimRight(text, "\n"))
+		return
+	}
 	if r.capacityFn == nil {
 		r.send(fmt.Sprintf("[%s] Capacity admission not available.", r.hostname))
 		return
 	}
 	r.send(fmt.Sprintf("[%s] Capacity:\n%s", r.hostname, r.capacityFn()))
+}
+
+// handleCapacityAdmission answers "capacity admission <backend> [node] [model]"
+// through the REST loopback, with the text the CLI prints.
+func (r *Router) handleCapacityAdmission(args string) {
+	f := strings.Fields(args)
+	if len(f) == 0 || len(f) > 3 {
+		r.send(fmt.Sprintf("[%s] Usage: capacity admission <backend> [node] [model]", r.hostname))
+		return
+	}
+	q := url.Values{"backend": {f[0]}}
+	if len(f) > 1 {
+		q.Set("node", f[1])
+	}
+	if len(f) > 2 {
+		q.Set("model", f[2])
+	}
+	body, err := r.commGet("/api/capacity/admission", q)
+	if err != nil {
+		r.reply("capacity admission failed", err.Error())
+		return
+	}
+	text, err := capacity.FormatDecisionJSON([]byte(body))
+	if err != nil {
+		r.reply("capacity admission failed", err.Error())
+		return
+	}
+	r.reply("Capacity admission:", text)
 }
 
 func (r *Router) handleStats() {
@@ -906,6 +1273,14 @@ func (r *Router) Run(ctx context.Context) error {
 
 // handleMessage processes an incoming message.
 func (r *Router) handleMessage(msg messaging.Message) {
+	r.processMessage(msg, ConfigureAttribution{})
+}
+
+// processMessage is the real message processor. at is the
+// session-attribution for this message (zero = operator/admin traffic,
+// which is not audited as a session write); it only affects the
+// configure path's audit point (BL110).
+func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) {
 	// Only process messages from our configured group
 	if msg.GroupID != r.groupID {
 		// Log mismatches for debugging (use -v flag to see)
@@ -1004,12 +1379,16 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleNew(cmd)
 	case CmdList:
 		r.handleList(cmd.Text)
+	case CmdSessionGroups:
+		r.handleSessionGroups(cmd.Text)
 	case CmdStatus:
 		r.handleStatus(cmd)
 	case CmdSend:
 		r.handleSend(cmd)
 	case CmdKill:
 		r.handleKill(cmd)
+	case CmdPriority:
+		r.handlePriority(cmd)
 	case CmdTail:
 		r.handleTail(cmd)
 	case CmdAttach:
@@ -1019,7 +1398,7 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	case CmdVersion:
 		r.handleVersion()
 	case CmdRestart:
-		r.handleRestart()
+		r.handleRestart(cmd)
 	case CmdUpdateCheck:
 		r.handleUpdateCheck()
 	case CmdSchedule:
@@ -1032,8 +1411,12 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleStats()
 	case CmdCapacity:
 		r.handleCapacity()
+	case CmdCapacityAdmission:
+		r.handleCapacityAdmission(cmd.Text)
+	case CmdProgress:
+		r.handleProgress(cmd.Text)
 	case CmdConfigure:
-		r.handleConfigure(cmd)
+		r.handleConfigureAttributed(cmd, at)
 	case CmdCopy:
 		r.handleCopy(cmd)
 	case CmdPrompt:
@@ -1086,6 +1469,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleChannelDiagnostics()
 	case CmdProfile:
 		r.handleProfile(cmd)
+	case CmdProject:
+		r.handleProjectCmd(cmd)
 	case CmdAgent:
 		r.handleAgent(cmd)
 	case CmdBind:
@@ -1097,21 +1482,40 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleRest(cmd)
 	case CmdCost:
 		r.handleCostCmd(cmd)
+	case CmdCostReport:
+		r.handleCostReportCmd(cmd)
+	case CmdTrace:
+		r.handleTraceCmd(cmd)
 	case CmdCooldown:
 		r.handleCooldown(cmd)
+	case CmdUsageBackoff:
+		r.handleUsageBackoff(cmd)
+	case CmdBudget:
+		r.handleBudget(cmd)
+	case CmdUsage:
+		r.handleUsage(cmd)
 	case CmdStale:
 		r.handleStale(cmd)
 	case CmdPeers:
 		r.handlePeers(cmd)
 	case CmdAutonomous:
+		// The autonomous comm verbs (triage, repo-ci-watch, supervisor-watch, security-failure, tags,
+		// templates, lane-fill, ...) take their verb dispatch in
+		// handleAutonomous — this is the command-level dispatch.
 		r.handleAutonomous(cmd)
+	case CmdQuestion:
+		r.handleQuestion(cmd)
 	case CmdAudit:
 		r.handleAudit(cmd)
+	case CmdDashboardConsole:
+		r.handleDashboardConsole()
 	// BL220 — Configuration Accessibility Rule gap closures.
 	case CmdOrchestrator:
 		r.handleOrchestrator(cmd)
 	case CmdPlugins:
 		r.handlePlugins(cmd)
+	case CmdPluginStatus:
+		r.handlePluginStatus(cmd)
 	case CmdTemplates:
 		r.handleTemplates(cmd)
 	case CmdRouting:
@@ -1162,6 +1566,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleGuardrailCmd(cmd)
 	case CmdRetry: // BL410 Phase 1 remediation
 		r.handleRetryCmd(cmd)
+	case CmdAutomation:
+		r.handleAutomationCmd(cmd)
 	case CmdMCPRes: // BL302 S1
 		r.handleMCPResCmd(cmd)
 	case CmdServer: // BL312 S1
@@ -1176,9 +1582,20 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleDiscussionSubCmd(cmd)
 	case CmdResultStore: // BL360
 		r.handleResultCmd(cmd)
+	case CmdScheduleResults:
+		r.handleScheduleResultsCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
+		// Operator questions (decision item 23) — bare-reply rule: when
+		// exactly one question is open, a plain option number/label
+		// answers it; with several open it is refused and the open
+		// questions listed. Not a bare reply, or the daemon is
+		// unreachable: fall through to the existing plain-text handling.
+		if r.tryQuestionBareReply(msg.Text) {
+			return
+		}
+
 		// BL244 — plugin-declared comm commands take priority over implicit send.
 		if r.pluginReg != nil {
 			parts := strings.Fields(msg.Text)
@@ -1265,13 +1682,27 @@ func (r *Router) handleAlerts(cmd Command) {
 	r.send(sb.String())
 }
 
-// SendAlert formats an alert and broadcasts it to this router's backend group.
-// Called by main.go's alert listener for each active messaging backend.
-func (r *Router) SendAlert(a *alerts.Alert) {
-	body := ""
+// AlertText renders an alert in the comm channel format: a header line
+// with host, level and title, then the body verbatim on the following
+// lines. The body is never truncated or reformatted — the triage
+// alert's body is the shared triage record text, and it must reach
+// the chat sink intact.
+func AlertText(hostname string, a *alerts.Alert) string {
+	out := fmt.Sprintf("[%s] ALERT [%s] %s", hostname, strings.ToUpper(string(a.Level)), a.Title)
 	if a.Body != "" {
-		body = "\n" + truncate(a.Body, 200)
+		out += "\n" + a.Body
 	}
+	return out
+}
+
+// AlertText renders an alert for this router: the same format as the
+// package AlertText, stamped with this router's host.
+func (r *Router) AlertText(a *alerts.Alert) string { return AlertText(r.hostname, a) }
+
+// SendAlert formats an alert and broadcasts it to this router's backend
+// group. Called by main.go's alert listener for each active messaging
+// backend. The body carries through untruncated (see AlertText).
+func (r *Router) SendAlert(a *alerts.Alert) {
 	// Append quick-reply hints when a session is waiting for input and saved commands exist.
 	quickHints := ""
 	if a.SessionID != "" && r.cmdLib != nil {
@@ -1289,8 +1720,7 @@ func (r *Router) SendAlert(a *alerts.Alert) {
 			}
 		}
 	}
-	r.send(fmt.Sprintf("[%s] ALERT [%s] %s%s%s",
-		r.hostname, strings.ToUpper(string(a.Level)), a.Title, body, quickHints))
+	r.send(r.AlertText(a) + quickHints)
 }
 
 func (r *Router) handleVersion() {
@@ -1327,18 +1757,6 @@ func (r *Router) aboutText() string {
     ║  Sessions: %d active / %-10d ║
     ║  Backend:  %-22s  ║
     ╚═══════════════════════════════════╝`, v, r.hostname, active, len(sessions), r.manager.ActiveBackend())
-}
-
-func (r *Router) handleRestart() {
-	if r.restartFn == nil {
-		r.send(fmt.Sprintf("[%s] restart not available.", r.hostname))
-		return
-	}
-	r.send(fmt.Sprintf("[%s] Restarting daemon…", r.hostname))
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		r.restartFn()
-	}()
 }
 
 func (r *Router) handleUpdateCheck() {
@@ -1571,6 +1989,7 @@ func (r *Router) handleScheduleSpawn(cmd Command) {
 		RunAt:        runAt,
 		OneShot:      cmd.SpawnOneShot,
 		Ephemeral:    cmd.SpawnEphemeral,
+		Git:          cmd.SpawnGit,
 	})
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Failed to schedule spawn: %v", r.hostname, err))
@@ -1616,7 +2035,11 @@ func (r *Router) handleNew(cmd Command) {
 	// v8.8.3 — also forward when chrome=true is set.
 	// v8.10.0 — also forward when parent/kill_children are set.
 	// Otherwise fall through to the direct manager.Start (legacy path).
-	if (cmd.LLMRef != "" || cmd.Chrome || cmd.ParentID != "" || cmd.KillChildren) && r.webPort > 0 {
+	if cmd.PriorityErr != "" {
+		r.send(fmt.Sprintf("[%s] Failed to start session: %s", r.hostname, cmd.PriorityErr))
+		return
+	}
+	if (cmd.LLMRef != "" || cmd.Chrome || cmd.ParentID != "" || cmd.KillChildren || cmd.HasPriority) && r.webPort > 0 {
 		body := map[string]any{"task": cmd.Text, "llm": cmd.LLMRef}
 		if cmd.ComputeNodeRef != "" {
 			body["compute_node"] = cmd.ComputeNodeRef
@@ -1627,11 +2050,17 @@ func (r *Router) handleNew(cmd Command) {
 		if cmd.Chrome {
 			body["chrome"] = true
 		}
+		if cmd.Git {
+			body["git"] = true
+		}
 		if cmd.ParentID != "" {
 			body["parent_id"] = cmd.ParentID
 		}
 		if cmd.KillChildren {
 			body["kill_children"] = true
+		}
+		if cmd.HasPriority {
+			body["priority"] = cmd.Priority
 		}
 		bodyJSON, _ := json.Marshal(body)
 		out, err := r.commJSON("POST", "/api/sessions/start", string(bodyJSON))
@@ -1659,37 +2088,71 @@ func (r *Router) handleNew(cmd Command) {
 		t := true
 		startOpts.Chrome = &t
 	}
+	if cmd.Git {
+		startOpts.Git = true
+	}
 	if cmd.ParentID != "" {
 		startOpts.ParentID = cmd.ParentID
 	}
 	if cmd.KillChildren {
 		startOpts.KillChildren = true
 	}
+	startOpts.Priority = cmd.Priority
 	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID, cmd.ProjectDir, startOpts)
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Failed to start session: %v", r.hostname, err))
 		return
 	}
 	r.send(fmt.Sprintf("[%s][%s] Started session for: %s\nTmux: %s\nAttach: %s",
-		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, session.TmuxAttachCommand(sess.TmuxSession)))
+		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, session.TmuxAttachCommand(sess.TmuxSession, r.manager.DataDir())))
 }
 
+// handleList answers the chat `list` command. After the optional active or
+// inactive state filter it accepts repeatable tag=<tag> tokens and a
+// tag_match=any|all token; the tag filter counts the session's own tags and
+// the tags it inherits from the Automaton that spawned it.
 func (r *Router) handleList(filter string) {
-	sessions := r.manager.ListSessions()
+	stateFilter := ""
+	tagMatch := ""
+	var tags []string
+	for _, tok := range strings.Fields(filter) {
+		tok = strings.TrimPrefix(tok, "--")
+		switch {
+		case strings.HasPrefix(tok, "tag="):
+			if v := strings.TrimSpace(strings.TrimPrefix(tok, "tag=")); v != "" {
+				tags = append(tags, v)
+			}
+		case strings.HasPrefix(tok, "tag_match="):
+			tagMatch = strings.TrimSpace(strings.TrimPrefix(tok, "tag_match="))
+		case tok == "active" || tok == "inactive" || tok == "":
+			stateFilter = tok
+		default:
+			r.send(fmt.Sprintf("[%s] list: unknown argument %q (filters: active|inactive, tag=<tag>, tag_match=any|all)", r.hostname, tok))
+			return
+		}
+	}
+	if tagMatch != "" && tagMatch != "any" && tagMatch != "all" {
+		r.send(fmt.Sprintf("[%s] list: tag_match must be any or all", r.hostname))
+		return
+	}
 	doneStates := map[session.State]bool{
 		session.StateComplete: true,
 		session.StateFailed:   true,
 		session.StateKilled:   true,
 	}
-
 	filterFn := func(s *session.Session) bool {
-		switch strings.TrimPrefix(filter, "--") {
+		switch stateFilter {
 		case "active":
 			return !doneStates[s.State]
 		case "inactive":
 			return doneStates[s.State]
 		}
 		return true
+	}
+	sessions := r.manager.ListSessions()
+	if len(tags) > 0 {
+		filter := session.SessionFilter{Tags: tags, TagMatch: tagMatch}
+		sessions = r.manager.ListSessionsFiltered(filter)
 	}
 
 	var mine []*session.Session
@@ -1923,11 +2386,36 @@ func (r *Router) handleKill(cmd Command) {
 		return
 	}
 
-	if err := r.manager.Kill(sess.FullID); err != nil {
+	why := session.EndReason{Caller: endCallerCommChannelKill, Reason: "comm channel kill from " + r.commChannelName()}
+	if err := r.manager.EndSession(sess.FullID, why); err != nil {
 		r.send(fmt.Sprintf("[%s][%s] Failed to kill: %v", r.hostname, sess.ID, err))
 		return
 	}
 	r.send(fmt.Sprintf("[%s][%s] Session killed.", r.hostname, sess.ID))
+}
+
+func (r *Router) handlePriority(cmd Command) {
+	if cmd.SessionID == "" || !cmd.HasPriority {
+		r.send(fmt.Sprintf("[%s] Usage: priority <id> <integer>", r.hostname))
+		return
+	}
+	if cmd.PriorityErr != "" {
+		r.send(fmt.Sprintf("[%s] Failed to set priority: %s", r.hostname, cmd.PriorityErr))
+		return
+	}
+	sess, ok := r.manager.GetSession(cmd.SessionID)
+	if !ok {
+		if r.tryRemoteCommand(cmd.SessionID, fmt.Sprintf("priority %s %d", cmd.SessionID, cmd.Priority)) {
+			return
+		}
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
+		return
+	}
+	if err := r.manager.SetPriority(sess.FullID, cmd.Priority); err != nil {
+		r.send(fmt.Sprintf("[%s][%s] Failed to set priority: %v", r.hostname, sess.ID, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s][%s] Priority set to %d.", r.hostname, sess.ID, cmd.Priority))
 }
 
 func (r *Router) handleTail(cmd Command) {
@@ -1972,7 +2460,7 @@ func (r *Router) handleAttach(cmd Command) {
 	}
 
 	r.send(fmt.Sprintf("[%s][%s] Run on %s:\n  %s",
-		r.hostname, sess.ID, sess.Hostname, session.TmuxAttachCommand(sess.TmuxSession)))
+		r.hostname, sess.ID, sess.Hostname, session.TmuxAttachCommand(sess.TmuxSession, r.manager.DataDir())))
 }
 
 // handleImplicitSend routes an unrecognised message to the single waiting session, if any.
@@ -2048,9 +2536,23 @@ func (r *Router) send(text string) {
 	}()
 }
 
-// HandleTestMessage simulates an incoming message and captures all responses.
-// Used by the API test endpoint for comm channel testing.
+// HandleTestMessage simulates an incoming message and captures all
+// responses. Used by the API test endpoint for comm channel testing.
+// The message is operator-attributed: no session credential is involved
+// and the configure path (if any) is not audited as a session write.
 func (r *Router) HandleTestMessage(text string) []string {
+	return r.HandleAttributedTestMessage(text, ConfigureAttribution{})
+}
+
+// HandleAttributedTestMessage simulates an incoming message on behalf of
+// the session or peer named by at and captures all responses — the
+// daemon's session-attributed comm test-injection path (wired by
+// runStart to POST /api/test/message, where the REST layer resolves the
+// calling credential to at). When at names a session/peer with the
+// config:write capability, a configure command lands exactly one audit
+// record (surface "comm", caller = at.Caller); without the capability it
+// is refused and recorded with allowed=false and the denial reason.
+func (r *Router) HandleAttributedTestMessage(text string, at ConfigureAttribution) []string {
 	var responses []string
 	var mu sync.Mutex
 
@@ -2062,13 +2564,13 @@ func (r *Router) HandleTestMessage(text string) []string {
 	}
 
 	// Simulate the message
-	r.handleMessage(messaging.Message{
+	r.processMessage(messaging.Message{
 		ID:      "test-" + fmt.Sprintf("%d", time.Now().UnixNano()),
 		GroupID: r.groupID,
 		Sender:  "test-api",
 		Text:    text,
 		Backend: "test",
-	})
+	}, at)
 
 	// Wait briefly for async sends
 	time.Sleep(200 * time.Millisecond)

@@ -31,7 +31,7 @@ GET /api/project/summary?dir=<absolute-path>
 
 ```json
 {
-  "dir":               "/home/op/work/foo",
+  "dir":               "/home/<user>/work/foo",
   "is_git_repo":       true,
   "branch":            "main",
   "uncommitted_count": 2,

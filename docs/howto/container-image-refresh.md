@@ -28,6 +28,124 @@ Every day at 05:30 UTC it:
 Staging tags older than three days are removed by the weekly `ghcr-cleanup`
 workflow (see below).
 
+## How CI installs Trivy
+
+Found in a 2026-11-09 release run: the inline
+`curl -sfL …/trivy/main/contrib/install.sh | sh` form of an "Install Trivy"
+step can **fail silently**. A flaky or partial download finishes the step
+without an error, and the worker ends up with no Trivy. A blocking scan step
+then dies with `trivy: command not found`, and a non-blocking one (a trailing
+`|| true`) skips the scan without saying so.
+
+`scripts/ci-install-trivy.sh` is the hardened installer; an install step
+invokes it as:
+
+```bash
+bash scripts/ci-install-trivy.sh "<trivy-version-tag>" <install-dir>
+```
+
+It guarantees, in order:
+
+- **Fails loudly.** `set -euo pipefail` throughout. A download that fails
+  exits non-zero with curl's status and the failing URL named on stderr
+  (for example `error: failed to download Trivy install script (curl exit
+  status 22): https://raw.githubusercontent.com/aquasecurity/trivy/v0.73.0/contrib/install.sh`) and the install
+  directory is left empty. Step fails, run red, nothing hides.
+- **Retries before giving up.** The download gets 5 attempts, 10 s apart, on
+  any error (`--retry-all-errors`), with a 20 s connect timeout and a 120 s
+  total cap. A transient blip is absorbed; an outage is not.
+- **Pinned, not moving.** The install script is fetched for the **pinned
+  version tag** (`aquasecurity/trivy/<tag>/contrib/install.sh`), not from
+  the moving `main` branch — the script that runs is the one that belongs to
+  the version being installed.
+- **No pipe-to-shell.** The script downloads first into a temp file
+  (created with `mktemp`), then feeds that file to
+  `sh -s -- -b <install-dir> <tag>` — `sh` never reads a pipe, so a
+  truncated download can never run as partial code, and the temp file is
+  removed on exit.
+
+Run its coverage with
+`bash scripts/tests/ci-install-trivy_test.sh` — the test fakes `curl` on the
+PATH and exercises the success, the persistent-failure, and the
+missing-argument paths, asserting the error text, the exit code and the state
+left behind.
+
+**One pin, one place.** The Trivy version is pinned in a single file,
+`scripts/trivy-version.txt`, which holds one `vX.Y.Z` tag (currently
+`v0.73.0`). Every workflow that installs Trivy reads that file and passes the
+tag to the installer:
+
+```bash
+bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
+```
+
+No workflow carries a `TRIVY_VERSION:` value or a literal tag of its own, so
+`release.yaml`, `containers.yaml` and `image-refresh.yaml` can no longer drift
+apart.
+
+**Why `v0.73.0`.** The three workflows used to disagree: release and
+image-refresh pinned `v0.73.0` and the container build pinned `v0.70.0`. All
+three scan the same shipped images, so the newer tag was chosen: a scan result
+that differs by workflow only because of the scanner version is noise. The
+kind smoke workflow installs helm the same way: pinned, with a retrying
+download (see [Helm in the kind smoke workflow](#helm-in-the-kind-smoke-workflow)).
+
+**To bump Trivy,** edit `scripts/trivy-version.txt` only. A scan that begins
+failing or passing after the bump is the new Trivy's doing, not drift.
+
+**The guard.** `bash scripts/check-trivy-version-single.sh` fails when the file
+is missing or does not hold exactly one `vX.Y.Z` line, when a workflow carries
+a `TRIVY_VERSION:` value or passes a literal tag to `ci-install-trivy.sh`, or
+when a workflow calls the installer without reading the version file. Its
+coverage is `bash scripts/tests/check-trivy-version-single_test.sh`, which runs
+it against fixture trees.
+
+## Helm in the kind smoke workflow
+
+The "Install kind + kubectl + helm" step of `.github/workflows/kind-smoke.yaml`
+used to pipe the moving `get-helm-3` script into `bash`. It now follows the
+Trivy pattern:
+
+```bash
+sudo bash scripts/ci-install-helm.sh "$(cat scripts/helm-version.txt)" /usr/local/bin
+```
+
+- **One pin.** The Helm version is the single `vX.Y.Z` tag in
+  `scripts/helm-version.txt` (currently `v3.17.3`). To bump Helm, edit that
+  file only; the workflow holds no literal tag.
+- **Pinned download.** `scripts/ci-install-helm.sh <tag> <install-dir>` fetches
+  `https://get.helm.sh/helm-<tag>-linux-amd64.tar.gz` for that exact tag.
+- **Retries.** 5 attempts, 10 s apart, on any error, with a 20 s connect and a
+  120 s total timeout.
+- **No pipe-to-shell.** The archive goes to a temp file first, then only
+  `linux-amd64/helm` is unpacked and installed into the install directory
+  (mode 0755). Temp files are removed on exit.
+- **Fails loudly.** A persistent download failure exits non-zero with curl's
+  status and the URL on stderr (`error: failed to download helm archive (curl
+  exit status N): <url>`), so the step goes red. Missing arguments exit 2 with
+  a usage line.
+
+Coverage: `bash scripts/tests/ci-install-helm_test.sh` (fake curl, no network).
+
+The helm script does not verify an archive checksum, and the version guard
+covers only the Trivy pin. The kind and kubectl downloads in the same step are
+separate: kind is pinned to `v0.24.0`; kubectl follows `stable.txt`.
+
+## Why versions are pinned
+
+For CI maintainers: the scanner and helm versions are deliberately fixed, so
+changing either is a deliberate version change made in one file, never a side
+effect of a moving download.
+
+- A new Trivy release can change scan results, and a blocking release job can
+  turn red because of it. With a pin, that happens when you bump the file,
+  where you can see and review it, not on an arbitrary day.
+- Helm is pinned for the same reason: a new helm release must not silently
+  change what the kind smoke install does.
+- Pinning the scanner does **not** freeze its vulnerability database. The
+  database is refreshed on every run regardless of the pin, so new advisories
+  still show up without a version change.
+
 ## Running it by hand
 
 GitHub > Actions > `image-refresh` > Run workflow. Options:
@@ -97,12 +215,34 @@ and packages are listed; a version-anchored false positive would require
 Trivy's own package inventory to be wrong, not just its vulnerability
 labeling, which is a much rarer failure mode than ID churn.
 
+## Throwaway recheck image cleanup
+
+Because the recheck job scans fresh rebuilds before anything else, it
+pushes, for each shipped image on each run, a throwaway image tagged
+`cve-recheck-RUN_ID` (where `RUN_ID` is the GitHub Actions run id, `github.run_id`).
+The cleanup step deletes those throwaway tags again once the run is over.
+
+To do that it lists, for each shipped image package, the versions that
+carry the recheck tag. The listing is paged: `gh api --paginate` fetches
+all pages (one JSON array per page), the pages are folded with `jq -s`
+and flattened into a single list, first trying the user endpoint and
+falling back to the organization endpoint. It then deletes the
+throwaway versions it finds.
+
+A listing or delete failure never fails the run: a warning names the package
+that could not be handled, and cleanup moves on to the next package or the
+next version. At the end, the step writes a counts-only report to the job
+summary: the number of packages checked, listing failures, throwaway
+versions found, versions deleted, and delete failures. The report contains
+no version IDs and no tag names.
+
 ## Registry housekeeping
 
 `ghcr-cleanup` runs weekly, once per image package. It always deletes stale
 `refresh-*` staging tags. It also lists old patch versions of closed minor
 lines, but that part is a dry run unless started manually with
-`dry_run=false`.
+`dry_run=false`. Its version listing is paged too: it fetches the listing
+in pages and flattens them the same way the recheck cleanup does.
 
 ## See also
 

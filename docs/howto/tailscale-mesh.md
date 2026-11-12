@@ -88,7 +88,7 @@ Restart: `datawatch restart`.
 ```sh
 # 1. Confirm Tailscale is configured + the daemon node is healthy.
 datawatch tailscale status
-#  → node: dw-host-kona  ip: 100.64.0.1  status: connected
+#  → node: dw-host-kona  ip: 198.51.100.1  status: connected
 #    control plane: http://headscale.your.host:8080  reachable: yes
 
 # 2. Spawn an agent worker — it auto-joins.
@@ -97,13 +97,20 @@ datawatch sessions start \
   --agent k8s \
   --cluster lab-east \
   --task "Run integration tests"
-#  → spawned session ralfthewise-abcd; agent dw-agent-abcd joining mesh ...
+#  → spawned session peer-d-abcd; agent dw-agent-abcd joining mesh ...
 
 # 3. List peers.
 sleep 10
 datawatch tailscale nodes
-#  → dw-host-kona       100.64.0.1   self
-#    dw-agent-abcd      100.64.0.42  online (1m ago)
+#  → dw-host-kona       198.51.100.1   self
+#    dw-agent-abcd      198.51.100.142  online (1m ago)
+```
+
+> The node names and addresses shown are examples; the real node layout and
+> tailnet addresses live in the operator config/Tailscale control plane and
+> are not committed to this repository.
+
+```sh
 
 # 4. Generate + push an ACL that locks down the fleet.
 datawatch tailscale acl-generate > /tmp/acl-preview.json

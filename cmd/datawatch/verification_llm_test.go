@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -12,8 +13,8 @@ func selectInputFor(prd *autonomouspkg.PRD, task *autonomouspkg.Task, cfg autono
 	noEffort := cfg
 	noEffort.VerificationEffort = ""
 	return verifierSelectInput{
-		Resolved:       autonomouspkg.ResolveVerificationLLM(prd, task, cfg),
-		ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, noEffort).Effort,
+		Resolved:       autonomouspkg.ResolveVerificationLLM(prd, task, nil, cfg),
+		ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, nil, noEffort).Effort,
 		Pool:           cfg.VerificationBackends,
 		GlobalBackend:  cfg.VerificationBackend,
 		GlobalModel:    cfg.VerificationModel,
@@ -26,9 +27,9 @@ func selectInputFor(prd *autonomouspkg.PRD, task *autonomouspkg.Task, cfg autono
 // poolAdmitter records tryAdmit calls and admits every candidate.
 type poolAdmitter struct{ calls []string }
 
-func (p *poolAdmitter) tryAdmit(backend, _ string) (func(), bool) {
+func (p *poolAdmitter) tryAdmit(backend, _ string) (func(), string, bool) {
 	p.calls = append(p.calls, backend)
-	return func() {}, true
+	return func() {}, "", true
 }
 
 func overrideFixture() (*autonomouspkg.PRD, *autonomouspkg.Task, autonomouspkg.Config) {
@@ -132,7 +133,7 @@ func TestSelectVerifierLLM_GlobalFallsBackLikeToday(t *testing.T) {
 	prd, task, cfg := overrideFixture()
 	resolve, compatible := fakeAskResolver(
 		map[string]string{"pool-a": "ollama", "pool-b": "ollama"}, nil)
-	full := func(string, string) (func(), bool) { return nil, false }
+	full := func(string, string) (func(), string, bool) { return nil, "", false }
 
 	in := selectInputFor(prd, task, cfg)
 	sel := selectVerifierLLM(in, full, resolve, compatible, fakeIsSessionKind)
@@ -261,9 +262,10 @@ func TestSelectVerifierLLM_GlobalSessionModelPiFamily(t *testing.T) {
 		},
 		{
 			// (c) empty verification_model: the named backend's own default
-			// (bogusNamedModel) must not leak in. Model stays empty so the
-			// manager's pi / pi-prompt configured-model fallback applies;
-			// an explicit request model would still override that fallback.
+			// (bogusNamedModel) must not leak in. Model stays empty; the
+			// caller's pi-family pinned-model guard (v9.10.19) then applies
+			// the global pin from the verification chain or fails loudly.
+			// An explicit request model would still override that fallback.
 			name: "pi-prompt empty model", backend: "pi-prompt", model: "",
 			kind: "pi-prompt", projectDir: "/work/p1", wantModel: "", wantSess: true,
 		},
@@ -335,5 +337,98 @@ func TestSelectVerifierLLM_GlobalPiFamilyNoProjectDirDowngrades(t *testing.T) {
 
 	if sel.UseSession || sel.Backend != "ollama" || sel.Kind != "ollama" {
 		t.Errorf("got %+v, want ollama downgrade without a session", sel)
+	}
+}
+
+// TestPiFamilyClearModelConditionEquivalence proves the De Morgan rewrite
+// of selectVerifierLLM's "clear the model" guard is equivalent to the
+// original negated-compound form. It exercises every combination of the
+// operands: piFamily, useSession, usesPRDBackend (bools) and whether the
+// global / PRD model strings are set.
+func TestPiFamilyClearModelConditionEquivalence(t *testing.T) {
+	type operand struct {
+		name           string
+		piFamily       bool
+		useSession     bool
+		globalModel    string
+		usesPRDBackend bool
+		prdModel       string
+	}
+	original := func(o operand) bool {
+		// The pre-rewrite guard, negation applied to the compound.
+		compound := o.usesPRDBackend && o.prdModel != ""
+		return o.piFamily && o.useSession && o.globalModel == "" && !compound
+	}
+	rewritten := func(o operand) bool {
+		return o.piFamily && o.useSession && o.globalModel == "" && (!o.usesPRDBackend || o.prdModel == "")
+	}
+
+	cases := []operand{}
+	for _, piFamily := range []bool{false, true} {
+		for _, useSession := range []bool{false, true} {
+			for _, globalModel := range []string{"", "prov/model"} {
+				for _, usesPRDBackend := range []bool{false, true} {
+					for _, prdModel := range []string{"", "sonnet-4"} {
+						cases = append(cases, operand{
+							name: fmt.Sprintf("piFamily=%v useSession=%v globalModel=%q usesPRDBackend=%v prdModel=%q",
+								piFamily, useSession, globalModel, usesPRDBackend, prdModel),
+							piFamily: piFamily, useSession: useSession, globalModel: globalModel,
+							usesPRDBackend: usesPRDBackend, prdModel: prdModel,
+						})
+					}
+				}
+			}
+		}
+	}
+	if len(cases) != 32 {
+		t.Fatalf("expected 32 operand combinations, got %d", len(cases))
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			if original(c) != rewritten(c) {
+				t.Fatalf("De Morgan rewrite diverges from original: operand=%+v original=%v rewritten=%v", c, original(c), rewritten(c))
+			}
+		})
+	}
+}
+
+func TestSelectVerifierLLMAutomationSourceBypassesPool(t *testing.T) {
+	prd, task, cfg := overrideFixture()
+	auto := &autonomouspkg.Automation{
+		VerificationBackend: "openwebui",
+		VerificationModel:   "m-automation",
+		VerificationEffort:  "medium",
+	}
+	in := selectInputFor(prd, task, cfg)
+	in.Resolved = autonomouspkg.ResolveVerificationLLM(prd, task, auto, cfg)
+	noEffort := cfg
+	noEffort.VerificationEffort = ""
+	in.ExplicitEffort = autonomouspkg.ResolveVerificationLLM(prd, task, auto, noEffort).Effort
+	if in.Resolved.Source != autonomouspkg.VerifierSourceAutomation {
+		t.Fatalf("resolved source = %q, want automation", in.Resolved.Source)
+	}
+	if len(in.Pool) == 0 {
+		t.Fatal("fixture must carry a non-empty verification_backends pool")
+	}
+	resolve, compatible := fakeAskResolver(nil, nil)
+	pool := &poolAdmitter{}
+
+	sel := selectVerifierLLM(in, pool.tryAdmit, resolve, compatible, fakeIsSessionKind)
+
+	if len(pool.calls) != 0 {
+		t.Errorf("pool consulted for an Automation override: %v", pool.calls)
+	}
+	if sel.Release != nil {
+		t.Error("Release set without a pool admission")
+	}
+	if sel.Source != autonomouspkg.VerifierSourceAutomation {
+		t.Errorf("source = %q, want automation", sel.Source)
+	}
+	if sel.Backend != "openwebui" || sel.Kind != "openwebui" || sel.Model != "m-automation" || sel.UseSession {
+		t.Errorf("got %+v, want openwebui/m-automation ask call", sel)
+	}
+	if sel.Effort != "medium" {
+		t.Errorf("effort = %q, want medium", sel.Effort)
 	}
 }

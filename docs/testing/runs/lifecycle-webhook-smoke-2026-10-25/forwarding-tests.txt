@@ -1,0 +1,257 @@
+=== RUN   TestForwardReceive_AcceptReemitsWithOriginHost
+--- PASS: TestForwardReceive_AcceptReemitsWithOriginHost (0.00s)
+=== RUN   TestForwardReceive_AssignsIDAndTimeWhenAbsent
+--- PASS: TestForwardReceive_AssignsIDAndTimeWhenAbsent (0.00s)
+=== RUN   TestForwardReceive_DisabledOrUnwired
+=== RUN   TestForwardReceive_DisabledOrUnwired/nil_manager
+=== RUN   TestForwardReceive_DisabledOrUnwired/never_wired
+=== RUN   TestForwardReceive_DisabledOrUnwired/forwarding_disabled
+=== RUN   TestForwardReceive_DisabledOrUnwired/no_local_host_name
+--- PASS: TestForwardReceive_DisabledOrUnwired (0.00s)
+    --- PASS: TestForwardReceive_DisabledOrUnwired/nil_manager (0.00s)
+    --- PASS: TestForwardReceive_DisabledOrUnwired/never_wired (0.00s)
+    --- PASS: TestForwardReceive_DisabledOrUnwired/forwarding_disabled (0.00s)
+    --- PASS: TestForwardReceive_DisabledOrUnwired/no_local_host_name (0.00s)
+=== RUN   TestForwardReceive_LiveSettingsRead
+--- PASS: TestForwardReceive_LiveSettingsRead (0.00s)
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/unsupported_version
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/not_a_forwarded_envelope
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/event_already_marked_forwarded
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/empty_origin_host
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/origin_host_too_long
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/zero_hops
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/hop_count_differs_from_visited_list
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/empty_visited_entry
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/visited_list_does_not_start_at_origin
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/sender_is_not_the_last_visited_host
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/unknown_status_in_a_prd_kind
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/unknown_status_in_a_task_kind
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/unknown_automation_status
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/kind_without_a_level_prefix
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/prd_kind_at_task_level
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/task_session_kind_at_prd_level
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/prd_update_at_task_level
+=== RUN   TestForwardReceive_RejectsInvalidEnvelopes/envelope_over_the_size_cap
+--- PASS: TestForwardReceive_RejectsInvalidEnvelopes (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/unsupported_version (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/not_a_forwarded_envelope (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/event_already_marked_forwarded (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/empty_origin_host (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/origin_host_too_long (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/zero_hops (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/hop_count_differs_from_visited_list (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/empty_visited_entry (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/visited_list_does_not_start_at_origin (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/sender_is_not_the_last_visited_host (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/unknown_status_in_a_prd_kind (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/unknown_status_in_a_task_kind (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/unknown_automation_status (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/kind_without_a_level_prefix (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/prd_kind_at_task_level (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/task_session_kind_at_prd_level (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/prd_update_at_task_level (0.00s)
+    --- PASS: TestForwardReceive_RejectsInvalidEnvelopes/envelope_over_the_size_cap (0.00s)
+=== RUN   TestForwardReceive_AcceptsKnownKinds
+--- PASS: TestForwardReceive_AcceptsKnownKinds (0.00s)
+=== RUN   TestForwardReceive_LoopRefusals
+=== RUN   TestForwardReceive_LoopRefusals/origin_is_this_host
+=== RUN   TestForwardReceive_LoopRefusals/already_in_visited_list
+=== RUN   TestForwardReceive_LoopRefusals/hop_cap_reached_with_the_default_cap
+=== RUN   TestForwardReceive_LoopRefusals/hop_cap_reached_with_a_lower_cap
+=== RUN   TestForwardReceive_LoopRefusals/below_the_default_cap_is_accepted
+=== RUN   TestForwardReceive_LoopRefusals/below_an_explicit_cap_of_three_is_accepted
+--- PASS: TestForwardReceive_LoopRefusals (0.00s)
+    --- PASS: TestForwardReceive_LoopRefusals/origin_is_this_host (0.00s)
+    --- PASS: TestForwardReceive_LoopRefusals/already_in_visited_list (0.00s)
+    --- PASS: TestForwardReceive_LoopRefusals/hop_cap_reached_with_the_default_cap (0.00s)
+    --- PASS: TestForwardReceive_LoopRefusals/hop_cap_reached_with_a_lower_cap (0.00s)
+    --- PASS: TestForwardReceive_LoopRefusals/below_the_default_cap_is_accepted (0.00s)
+    --- PASS: TestForwardReceive_LoopRefusals/below_an_explicit_cap_of_three_is_accepted (0.00s)
+=== RUN   TestForwardReceive_ForwardedEventNeverForwardedOn
+--- PASS: TestForwardReceive_ForwardedEventNeverForwardedOn (0.00s)
+=== RUN   TestForwardReceive_DoesNotDriveCoordinator
+--- PASS: TestForwardReceive_DoesNotDriveCoordinator (0.20s)
+=== RUN   TestForwardReceive_CoordinatorDirectSkipsForwarded
+--- PASS: TestForwardReceive_CoordinatorDirectSkipsForwarded (0.00s)
+=== RUN   TestForwardReceive_DescribeNamesOrigin
+--- PASS: TestForwardReceive_DescribeNamesOrigin (0.00s)
+=== RUN   TestForwardReceive_WebhookEnvelopeCarriesForwardBlock
+--- PASS: TestForwardReceive_WebhookEnvelopeCarriesForwardBlock (0.00s)
+=== RUN   TestForwardReceive_PeerSinkPositiveControlAndNoForwardOn
+--- PASS: TestForwardReceive_PeerSinkPositiveControlAndNoForwardOn (0.21s)
+=== RUN   TestForwardDeliversOnceWithBearerAndEnvelope
+--- PASS: TestForwardDeliversOnceWithBearerAndEnvelope (0.00s)
+=== RUN   TestForwardRetriesServerErrorsThenDelivers
+--- PASS: TestForwardRetriesServerErrorsThenDelivers (0.00s)
+=== RUN   TestForwardPermanentStatusesAreNotRetried
+=== RUN   TestForwardPermanentStatusesAreNotRetried/redirect_is_never_followed
+=== RUN   TestForwardPermanentStatusesAreNotRetried/bad_request_is_permanent
+=== RUN   TestForwardPermanentStatusesAreNotRetried/loop_refusal_from_the_peer
+--- PASS: TestForwardPermanentStatusesAreNotRetried (0.00s)
+    --- PASS: TestForwardPermanentStatusesAreNotRetried/redirect_is_never_followed (0.00s)
+    --- PASS: TestForwardPermanentStatusesAreNotRetried/bad_request_is_permanent (0.00s)
+    --- PASS: TestForwardPermanentStatusesAreNotRetried/loop_refusal_from_the_peer (0.00s)
+=== RUN   TestForwardOfflinePeerIsBoundedAndAlertsOnce
+--- PASS: TestForwardOfflinePeerIsBoundedAndAlertsOnce (0.00s)
+=== RUN   TestForwardContextCancelledBeforeSendMakesNoRequest
+--- PASS: TestForwardContextCancelledBeforeSendMakesNoRequest (0.00s)
+=== RUN   TestForwardUnknownPeerRefused
+--- PASS: TestForwardUnknownPeerRefused (0.00s)
+=== RUN   TestForwardPeerRefusedWhenNotGranted
+=== RUN   TestForwardPeerRefusedWhenNotGranted/not_a_federation_peer
+=== RUN   TestForwardPeerRefusedWhenNotGranted/lacks_autonomous:write
+=== RUN   TestForwardPeerRefusedWhenNotGranted/no_bearer_token
+=== RUN   TestForwardPeerRefusedWhenNotGranted/no_usable_URL
+--- PASS: TestForwardPeerRefusedWhenNotGranted (0.00s)
+    --- PASS: TestForwardPeerRefusedWhenNotGranted/not_a_federation_peer (0.00s)
+    --- PASS: TestForwardPeerRefusedWhenNotGranted/lacks_autonomous:write (0.00s)
+    --- PASS: TestForwardPeerRefusedWhenNotGranted/no_bearer_token (0.00s)
+    --- PASS: TestForwardPeerRefusedWhenNotGranted/no_usable_URL (0.00s)
+=== RUN   TestForwardLoopRulesRefuseWithoutRequest
+=== RUN   TestForwardLoopRulesRefuseWithoutRequest/already_forwarded_from_another_origin
+=== RUN   TestForwardLoopRulesRefuseWithoutRequest/local_host_already_in_the_visited_list
+=== RUN   TestForwardLoopRulesRefuseWithoutRequest/event_originated_on_this_host
+=== RUN   TestForwardLoopRulesRefuseWithoutRequest/hop_cap_reached
+=== RUN   TestForwardLoopRulesRefuseWithoutRequest/received_event_under_the_cap_is_still_never_forwarded_on
+--- PASS: TestForwardLoopRulesRefuseWithoutRequest (0.00s)
+    --- PASS: TestForwardLoopRulesRefuseWithoutRequest/already_forwarded_from_another_origin (0.00s)
+    --- PASS: TestForwardLoopRulesRefuseWithoutRequest/local_host_already_in_the_visited_list (0.00s)
+    --- PASS: TestForwardLoopRulesRefuseWithoutRequest/event_originated_on_this_host (0.00s)
+    --- PASS: TestForwardLoopRulesRefuseWithoutRequest/hop_cap_reached (0.00s)
+    --- PASS: TestForwardLoopRulesRefuseWithoutRequest/received_event_under_the_cap_is_still_never_forwarded_on (0.00s)
+=== RUN   TestForwardPingPongTerminatesWithinHopCap
+--- PASS: TestForwardPingPongTerminatesWithinHopCap (0.00s)
+=== RUN   TestForwardRefusesWithoutLocalHostOrFactory
+=== RUN   TestForwardRefusesWithoutLocalHostOrFactory/local_host_unknown
+=== RUN   TestForwardRefusesWithoutLocalHostOrFactory/no_local_host_seam
+=== RUN   TestForwardRefusesWithoutLocalHostOrFactory/no_client_factory
+--- PASS: TestForwardRefusesWithoutLocalHostOrFactory (0.00s)
+    --- PASS: TestForwardRefusesWithoutLocalHostOrFactory/local_host_unknown (0.00s)
+    --- PASS: TestForwardRefusesWithoutLocalHostOrFactory/no_local_host_seam (0.00s)
+    --- PASS: TestForwardRefusesWithoutLocalHostOrFactory/no_client_factory (0.00s)
+=== RUN   TestForwardEndpointPolicy
+--- PASS: TestForwardEndpointPolicy (0.00s)
+=== RUN   TestForwardTokenNeverInAuditOrAlert
+=== RUN   TestForwardTokenNeverInAuditOrAlert/offline_peer
+=== RUN   TestForwardTokenNeverInAuditOrAlert/server_error
+--- PASS: TestForwardTokenNeverInAuditOrAlert (0.00s)
+    --- PASS: TestForwardTokenNeverInAuditOrAlert/offline_peer (0.00s)
+    --- PASS: TestForwardTokenNeverInAuditOrAlert/server_error (0.00s)
+=== RUN   TestForwardSkipVerifyPassedToClientFactory
+--- PASS: TestForwardSkipVerifyPassedToClientFactory (0.00s)
+=== RUN   TestForwardRefusesOversizeEnvelopeWithoutSending
+--- PASS: TestForwardRefusesOversizeEnvelopeWithoutSending (0.00s)
+=== RUN   TestForwardDisabledMakesNoRequest
+--- PASS: TestForwardDisabledMakesNoRequest (0.00s)
+=== RUN   TestForwardSubscriptionValidation
+=== RUN   TestForwardSubscriptionValidation/valid_name
+=== RUN   TestForwardSubscriptionValidation/name_at_the_length_cap
+=== RUN   TestForwardSubscriptionValidation/one-shot_is_accepted
+=== RUN   TestForwardSubscriptionValidation/empty_target
+=== RUN   TestForwardSubscriptionValidation/blank_target
+=== RUN   TestForwardSubscriptionValidation/name_too_long
+=== RUN   TestForwardSubscriptionValidation/space_in_name
+=== RUN   TestForwardSubscriptionValidation/slash_in_name
+=== RUN   TestForwardSubscriptionValidation/action_refused
+=== RUN   TestForwardSubscriptionValidation/secret_reference_refused
+--- PASS: TestForwardSubscriptionValidation (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/valid_name (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/name_at_the_length_cap (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/one-shot_is_accepted (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/empty_target (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/blank_target (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/name_too_long (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/space_in_name (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/slash_in_name (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/action_refused (0.00s)
+    --- PASS: TestForwardSubscriptionValidation/secret_reference_refused (0.00s)
+=== RUN   TestForwardPeerSubscriptionTargetChecks
+=== RUN   TestForwardPeerSubscriptionTargetChecks/disabled_names_the_key
+=== RUN   TestForwardPeerSubscriptionTargetChecks/bad_name_is_checked_first
+=== RUN   TestForwardPeerSubscriptionTargetChecks/no_registry
+=== RUN   TestForwardPeerSubscriptionTargetChecks/unknown_peer
+=== RUN   TestForwardPeerSubscriptionTargetChecks/not_federated
+=== RUN   TestForwardPeerSubscriptionTargetChecks/no_write_grant
+=== RUN   TestForwardPeerSubscriptionTargetChecks/accepted
+=== RUN   TestForwardPeerSubscriptionTargetChecks/webhook_sinks_are_not_this_check's_business
+--- PASS: TestForwardPeerSubscriptionTargetChecks (0.00s)
+    --- PASS: TestForwardPeerSubscriptionTargetChecks/disabled_names_the_key (0.00s)
+    --- PASS: TestForwardPeerSubscriptionTargetChecks/bad_name_is_checked_first (0.00s)
+    --- PASS: TestForwardPeerSubscriptionTargetChecks/no_registry (0.00s)
+    --- PASS: TestForwardPeerSubscriptionTargetChecks/unknown_peer (0.00s)
+    --- PASS: TestForwardPeerSubscriptionTargetChecks/not_federated (0.00s)
+    --- PASS: TestForwardPeerSubscriptionTargetChecks/no_write_grant (0.00s)
+    --- PASS: TestForwardPeerSubscriptionTargetChecks/accepted (0.00s)
+    --- PASS: TestForwardPeerSubscriptionTargetChecks/webhook_sinks_are_not_this_check's_business (0.00s)
+=== RUN   TestForwardStoreRefusesPeerSubscriptionWhenDisabled
+--- PASS: TestForwardStoreRefusesPeerSubscriptionWhenDisabled (0.00s)
+=== RUN   TestForwardChainHelpers
+--- PASS: TestForwardChainHelpers (0.00s)
+=== RUN   TestForwardSettingsDefaults
+--- PASS: TestForwardSettingsDefaults (0.00s)
+=== RUN   TestForwardWirePinned
+--- PASS: TestForwardWirePinned (0.00s)
+=== RUN   TestForwardEventJSONOmitsForwardWhenLocal
+--- PASS: TestForwardEventJSONOmitsForwardWhenLocal (0.00s)
+=== RUN   TestForwardEngineRoutesPeerSinkAndSkipsForwarded
+--- PASS: TestForwardEngineRoutesPeerSinkAndSkipsForwarded (0.00s)
+=== RUN   TestForwardEngineOneShotConsumedOnlyAfterSuccess
+2026/10/25 15:03:15 [autonomous] lifecycle sub sub-1: peer forward: peer forwarding failed: peer peer-b: receiver answered 500
+--- PASS: TestForwardEngineOneShotConsumedOnlyAfterSuccess (0.00s)
+=== RUN   TestForwardEngineDisabledLeavesOneShotArmed
+--- PASS: TestForwardEngineDisabledLeavesOneShotArmed (0.00s)
+=== RUN   TestForwardEngineRetryDoesNotBlockEmit
+2026/10/25 15:03:15 [autonomous] lifecycle sub sub-1: peer forward: peer forwarding failed: peer peer-b: receiver answered 500
+--- PASS: TestForwardEngineRetryDoesNotBlockEmit (0.00s)
+=== RUN   TestForwardDefaultTimerWaitsBetweenAttempts
+=== RUN   TestForwardDefaultTimerWaitsBetweenAttempts/timer_fires_then_delivers
+=== RUN   TestForwardDefaultTimerWaitsBetweenAttempts/context_ends_during_the_wait
+--- PASS: TestForwardDefaultTimerWaitsBetweenAttempts (0.98s)
+    --- PASS: TestForwardDefaultTimerWaitsBetweenAttempts/timer_fires_then_delivers (0.83s)
+    --- PASS: TestForwardDefaultTimerWaitsBetweenAttempts/context_ends_during_the_wait (0.15s)
+=== RUN   TestForwardNilClientFactoryResultFallsBack
+--- PASS: TestForwardNilClientFactoryResultFallsBack (0.00s)
+PASS
+ok  	github.com/dmz006/datawatch/internal/autonomous	1.419s
+=== RUN   TestForwardedEvents_AcceptReachesMCPQueueAndTopicWithOrigin
+--- PASS: TestForwardedEvents_AcceptReachesMCPQueueAndTopicWithOrigin (0.01s)
+=== RUN   TestForwardedEvents_CapabilityMissing403
+--- PASS: TestForwardedEvents_CapabilityMissing403 (3.00s)
+=== RUN   TestForwardedEvents_NoTokenThroughAuthWrapper401
+--- PASS: TestForwardedEvents_NoTokenThroughAuthWrapper401 (3.00s)
+=== RUN   TestForwardedEvents_DisabledIs503
+--- PASS: TestForwardedEvents_DisabledIs503 (0.00s)
+=== RUN   TestForwardedEvents_MalformedAndOversize400
+=== RUN   TestForwardedEvents_MalformedAndOversize400/malformed_json
+=== RUN   TestForwardedEvents_MalformedAndOversize400/unknown_kind
+=== RUN   TestForwardedEvents_MalformedAndOversize400/oversized_body
+=== RUN   TestForwardedEvents_MalformedAndOversize400/not_a_forwarded_envelope
+--- PASS: TestForwardedEvents_MalformedAndOversize400 (0.00s)
+    --- PASS: TestForwardedEvents_MalformedAndOversize400/malformed_json (0.00s)
+    --- PASS: TestForwardedEvents_MalformedAndOversize400/unknown_kind (0.00s)
+    --- PASS: TestForwardedEvents_MalformedAndOversize400/oversized_body (0.00s)
+    --- PASS: TestForwardedEvents_MalformedAndOversize400/not_a_forwarded_envelope (0.00s)
+=== RUN   TestForwardedEvents_MethodNotAllowed405
+--- PASS: TestForwardedEvents_MethodNotAllowed405 (0.00s)
+=== RUN   TestForwardedEvents_BadSignature401
+--- PASS: TestForwardedEvents_BadSignature401 (0.00s)
+=== RUN   TestForwardedEvents_LoopsAre409
+=== RUN   TestForwardedEvents_LoopsAre409/visited_list_already_holds_this_host
+=== RUN   TestForwardedEvents_LoopsAre409/origin_is_this_host
+=== RUN   TestForwardedEvents_LoopsAre409/hop_cap_reached
+--- PASS: TestForwardedEvents_LoopsAre409 (3.01s)
+    --- PASS: TestForwardedEvents_LoopsAre409/visited_list_already_holds_this_host (0.00s)
+    --- PASS: TestForwardedEvents_LoopsAre409/origin_is_this_host (0.00s)
+    --- PASS: TestForwardedEvents_LoopsAre409/hop_cap_reached (0.00s)
+=== RUN   TestForwardedEvents_ForwardedEventNotForwardedAgain
+--- PASS: TestForwardedEvents_ForwardedEventNotForwardedAgain (0.21s)
+=== RUN   TestForwardedEvents_ExecutorStateUntouched
+--- PASS: TestForwardedEvents_ExecutorStateUntouched (0.01s)
+=== RUN   TestForwardedEvents_TwoDaemonRoundTrip
+--- PASS: TestForwardedEvents_TwoDaemonRoundTrip (0.40s)
+PASS
+ok  	github.com/dmz006/datawatch/internal/server	9.660s
+testing: warning: no tests to run
+PASS
+ok  	github.com/dmz006/datawatch/cmd/datawatch	0.006s [no tests to run]

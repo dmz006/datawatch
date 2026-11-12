@@ -1,0 +1,1 @@
+{"name":"pass_two_candidates","input":"Mechanical refactors go to the cheapest local backend.","candidates":["pi-prompt","claude-code"],"expected_validator":"pass","expected_value":"pi-prompt"}

@@ -150,6 +150,23 @@ datawatch config init
 
 ---
 
+## Optional: What sessions may change about the daemon
+
+datawatch's sessions can change the daemon's own settings through their usual tools (MCP `config_set`, the comm `configure` verb, session-scoped REST) — this is **on by default** (`mcp.allow_self_config` enables the builtin **self-config** group, which carries `config:write` in every session's scoped credential). Everything they can change is a *setting*; identity, tokens, secrets and daemon control stay out of that set, and the alias itself cannot be flipped by a session (bootstrap-protected). Every attempt — allowed or refused — is audit-logged (`mcp.self_config_audit_path`).
+
+If you don't want sessions touching daemon settings, harden now:
+
+```yaml
+mcp:
+  allow_self_config: false   # sessions lose config:write; config_set is refused + audit-logged
+```
+
+then restart. Full walkthrough, the complete capability set, and the audit queries: [howto/self-config-capability.md](howto/self-config-capability.md); the setting's definition: [datawatch-definitions.md — Self-config](datawatch-definitions.md#self-config).
+
+A separate, smaller switch covers the high-impact tools (secrets, identity, daemon restart and reload, plugin install, starting sessions and a few more): `mcp.allow_sensitive_writes`, also **on by default**. Turn it off with the **Allow sensitive writes** toggle in Settings → General → Self-config, with `datawatch config set mcp.allow_sensitive_writes false`, or by setting it to `false` in the same `mcp:` block and restarting; sessions and peers are then refused those tools, while your own Web UI, CLI and REST calls still work. A session can still change the setting through `config_set` while self-config is on, so close `mcp.allow_self_config` too if only you should control it. See [howto/self-config-capability.md — Sensitive writes](howto/self-config-capability.md#sensitive-writes-a-separate-switch).
+
+---
+
 ## Optional: Set up Voice Input (Whisper)
 
 Voice messages sent via Telegram or Signal can be automatically transcribed to text. This requires OpenAI Whisper running locally.
@@ -536,6 +553,87 @@ pipeline cancel pipe-12345
 See [docs/memory.md](memory.md) for full memory documentation.
 
 ---
+
+## Usage calculator setup (optional)
+
+To get lane advice against your provider's weekly allowance, set the reset
+moment to match what the provider shows, then choose a policy. Choose the
+layout with `usage.calculator.variant`; leave it on `all` to compare the three
+PWA variants for a full Sunday-to-Sunday week before picking one.
+
+```yaml
+usage:
+  calculator:
+    variant: all
+    policy: pace
+    reset_weekday: sunday
+    reset_time: "08:00"
+    reset_zone: America/New_York
+```
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `usage.calculator.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch config set usage.calculator.<key> <value>`; `datawatch usage advice` |
+| **Web UI** | The calculator screen and its Settings fields (not yet shipped; use another method) |
+| **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
+| **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
+
+See [howto/usage-calculator.md](howto/usage-calculator.md). The burn guard settings (`usage.burn_guard.*`: `enabled`, `interval_minutes`, `margin_points`, `max_projection_gap_points`, `ladder`, `step_back`, the two cache prices, `refit_on_reading`, `retry_limit_claude`) are set the same way, from the Burn guard card in the Web UI, `datawatch usage burn-guard config`, `PUT /api/usage/burn-guard/config`, the `burn_guard_config_set` MCP tool or `configure usage.burn_guard.<key>=<value>`; see [howto/burn-guard.md](howto/burn-guard.md). The cost report needs no setup to read: it reports the sessions already recorded, over your provider's configured [cost rates](datawatch-definitions.md#cost-rates-usd--1k-tokens) where you set them, and every group without a rate simply shows tokens. Where the owning provider has a `usage.billing` profile — say `usage.billing.claude-code` with `mode: bundled_plan` and a `monthly_price` — its rows are labeled **"bundled plan — API-equivalent, not billed"** with the API-equivalent figure, the usage points it represents, and its share of the monthly price; a provider with no profile reads back with the "(assumed)" label and an ordinary estimate. Set one with `datawatch config set usage.billing.<provider>.<field> <value>` or `PUT /api/config`; the fields and defaults are in [api/cost.md](api/cost.md#billing-profiles-usagebilling). When you do set the report's defaults, the keys live under `cost_report.`: `default_group_by` (`automaton`), `default_window_days` (7), `show_usd_estimates` (true), `week_start` (`monday`), `include_peer_spend` (false).
+
+```yaml
+cost_report:
+  default_group_by: automaton
+  default_window_days: 7
+  show_usd_estimates: true
+  week_start: monday
+  include_peer_spend: false
+```
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch cost report [--group-by …] [--since …] [--until …] [--format json]`; `datawatch config set cost_report.<key> <value>` |
+| **Web UI** | The **Cost report** card on the dashboard; Settings → Cost Report for the five defaults |
+| **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; `PUT /api/config` with `{"cost_report.<key>": value}` |
+| **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
+
+See [howto/cost-report.md](howto/cost-report.md).
+
+## Post-ship hooks setup (optional)
+
+Post-ship hooks are the steps a project runs after a merge pipeline's push step
+succeeds — marking its registry row shipped, filing a parity issue, tagging the
+release, notifying people, or running any shell line. They are off by default
+and a failed hook never blocks or fails the ship; its failure is recorded on the
+merge run record (`pipeline_runs`) and, when the run belongs to an Automaton, as
+a triage note on that Automaton. To turn them on, set the block's `enabled`
+switch, list the hooks, and give each built-in its target:
+
+```yaml
+autonomous:
+  merge_pipeline:
+    post_ship:
+      enabled: true
+      hooks:
+        - {name: registry row, builtin: registry_row, enabled: true}
+        - {name: notify, builtin: notify, enabled: true}
+      registry_file: docs/registry.md
+      registry_row_pattern: myproject
+      companion_repository: owner/parity-tracker
+      issue_title_template: "Parity: {project} {version}"
+      notify_template: "Shipped {version} of {project}"
+```
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `autonomous.merge_pipeline.post_ship.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch autonomous merge-pipeline post-ship set <key> <value>`; read it back with `post-ship show` |
+| **Web UI** | Settings → the **Merge pipeline** card → the **Post-ship hooks** card directly below it |
+| **REST API** | `PUT /api/config` with `{"autonomous.merge_pipeline.post_ship.<key>": value}`; read with `GET /api/config` |
+| **Comm channel** | `configure autonomous.merge_pipeline.post_ship.<key>=<value>` |
+
+The full guide is [howto/post-ship-hooks.md](howto/post-ship-hooks.md).
 
 ## Troubleshooting
 

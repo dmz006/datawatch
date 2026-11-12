@@ -69,17 +69,22 @@ services:
       - ../../testdata/mock-opencode/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ../../testdata/mock-opencode/response.json:/usr/share/nginx/html/response.json:ro
 
-  # Playwright runner (PWA tests)
+  # Playwright runner (PWA story suite in scripts/test-stories/pwa).
+  # Image tag matches playwright's version in scripts/test-stories/pwa/package-lock.json.
   playwright:
-    image: mcr.microsoft.com/playwright:v1.44.0-focal
+    image: mcr.microsoft.com/playwright:v1.60.0-noble
     depends_on:
       datawatch:
         condition: service_healthy
     volumes:
-      - ../../test/e2e:/tests
+      - ../../scripts/test-stories/pwa:/tests/pwa
     working_dir: /tests/pwa
-    command: bash -c "npm install --quiet && npx playwright test --reporter=line"
+    # Installs from the lockfile (npm install only if npm ci cannot run), then runs the story suite.
+    command: bash -c "(npm ci --quiet || npm install --quiet) && node run-all.mjs"
     environment:
-      - DW_BASE_URL=http://datawatch:8080
-      - OLLAMA_URL=http://ollama:11434
-      - DW_PEER_URL=http://datawatch-peer:8080
+      # lib.mjs reads these; the daemon's HTTP port inside the compose network is 8080.
+      - TEST_HTTP=http://datawatch:8080
+      # Empty server.token in testdata/datawatch.yaml means the daemon accepts unauthenticated
+      # requests, so this value is not checked. It is the lib.mjs default, passed for consistency.
+      - TEST_TOKEN=dw-test-token-12345
+      - EVIDENCE_DIR=/tmp/dw-pwa-evidence

@@ -1,0 +1,98 @@
+Final gate: shared navigation mobile fit
+Branch: automaton/b54f0001
+Merge-base with main: f096e8f47d533a4bfb9961f8c49d2e34ffa98813 (main has since moved to 9.15.0)
+Gate run: 2026-10-25, 14:08 to 14:10 local
+
+Step 1. node --test internal/server/web/*.test.js
+  result: PASS
+  TAP summary: # tests 968, # pass 968, # fail 0, # cancelled 0, # skipped 0, # todo 0
+
+Step 2. bash scripts/check-no-unscoped-tmux.sh
+  result: PASS
+  output: "OK: no unscoped tmux kills", exit 0
+
+Step 3. bash scripts/check-no-internal-refs.sh
+  result: PASS
+  output: "PASS: no internal refs in user-facing surfaces.", exit 0
+  No file changed by this PRD is named in the output.
+
+Step 4. env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh group:shared-nav
+  result: PASS
+  exit code: 0
+  summary: 1 passed, 0 failed, 0 skipped, 1 total (shared-nav-mobile-fit PASS)
+  probe line: "shared-nav-mobile-fit-probe: gate pass, 0 nav findings at phone widths"
+  log: docs/testing/runs/shared-nav-mobile-fit/final-gate-e2e.log (gitignored)
+  side effect: the run's "npm ci" replaced the tracked symlink scripts/test-stories/pwa/node_modules with a real directory. As the how-to documents, the gate removed that gitignored directory and restored the symlink with git checkout. The worktree is clean after the restore.
+  note: the script writes its evidence under /tmp/dw-e2e-pwa-*, outside this worktree. That is the script's default; the gate did not read it.
+
+Step 5. Go files and Version lines
+  result: PASS
+  Go files changed between merge-base and HEAD: none. No uncommitted changes.
+  Version on the branch (cmd/datawatch/main.go:119 and internal/server/api.go:199): "9.11.0", the same as at the merge-base.
+  Main is now 9.15.0. The merge helper sets the next patch above main, per the plan.
+
+Step 6. Plan Phases, supporting entries, sync issue
+  result: FAIL
+  Phases lines in docs/plans/2026-10-25-shared-nav-mobile-fit.md:
+    Phase 1 (baseline report-only run): In Progress. Not Done.
+    Phase 2 (one-line shared style findings): In Progress, not Done. Seven header rows are still flagged at the 44 px probe threshold.
+    Phase 3 (per-tab findings): Planned. Not Done.
+    Phase 4 (operator docs, tracker rows, sync issue): Done (2026-10-25).
+  Supporting entries, present:
+    how-to: docs/howto/navigation-mobile-fit.md, listed in docs/howto/README.md
+    testing tracker: "Shared navigation mobile fit" section in docs/testing-tracker.md
+    changelog: [Unreleased] entry, "Shared navigation fits phone widths", in CHANGELOG.md
+    sync issue: dmz006/datawatch-app#271 recorded in the plan (Phase 4)
+  Reason for FAIL: Step 6 requires every Phases line to be Done. Phases 1 to 3 are not.
+
+Changed files on this branch (git diff --name-only f096e8f47d533a4bfb9961f8c49d2e34ffa98813 HEAD):
+  CHANGELOG.md
+  Makefile
+  docs/howto/README.md
+  docs/howto/navigation-mobile-fit.md
+  docs/plans/2026-10-25-shared-nav-mobile-fit.md
+  docs/testing-tracker.md
+  docs/testing.md
+  docs/testing/runs/shared-nav-mobile-fit/live-smoke.txt
+  docs/testing/runs/shared-nav-mobile-fit/live/live-smoke.json
+  docs/testing/runs/shared-nav-mobile-fit/live/live-smoke.mjs
+  docs/testing/runs/shared-nav-mobile-fit/live/run-live-smoke.sh
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/1280x800-alerts.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/1280x800-autonomous.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/1280x800-observer.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/1280x800-sessions.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/1280x800-settings.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/320x568-alerts.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/320x568-autonomous.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/320x568-observer.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/320x568-sessions.png
+  docs/testing/runs/shared-nav-mobile-fit/live/screens/320x568-settings.png
+  docs/testing/runs/shared-nav-mobile-fit/make-run/gate-reports/repro-report.json
+  docs/testing/runs/shared-nav-mobile-fit/make-run/gate-reports/repro-report.txt
+  docs/testing/runs/shared-nav-mobile-fit/nav-baseline.json
+  docs/testing/runs/shared-nav-mobile-fit/occurrences.json
+  docs/testing/runs/shared-nav-mobile-fit/post-fix-report.json
+  docs/testing/runs/shared-nav-mobile-fit/post-fix-report.txt
+  docs/testing/runs/shared-nav-mobile-fit/post-fix/nav-baseline.json
+  docs/testing/runs/shared-nav-mobile-fit/post-fix/report-only/occurrences.json
+  docs/testing/runs/shared-nav-mobile-fit/post-fix/report-only/report-only.json
+  docs/testing/runs/shared-nav-mobile-fit/post-fix/repro-report.json
+  docs/testing/runs/shared-nav-mobile-fit/post-fix/repro-report.txt
+  docs/testing/runs/shared-nav-mobile-fit/report-only.json
+  docs/testing/runs/shared-nav-mobile-fit/report-only.txt
+  docs/testing/runs/shared-nav-mobile-fit/repro-report.json
+  docs/testing/runs/shared-nav-mobile-fit/repro-report.txt
+  docs/testing/runs/shared-nav-mobile-fit/sandbox/npm-ci-shim.sh
+  docs/testing/runs/shared-nav-mobile-fit/sandbox/run-daemon.sh
+  internal/server/web/app-shared-nav.test.js
+  internal/server/web/index.html
+  internal/server/web/style.css
+  scripts/check-howto-coverage.sh
+  scripts/release-smoke.sh
+  scripts/test-stories/pwa/run-all.mjs
+  scripts/test-stories/pwa/shared-nav-mobile-fit-probe.mjs
+  scripts/test-stories/pwa/shared-nav-mobile-fit.mjs
+
+Working tree before this file was written: clean. This file is the only new tracked-path deliverable; the e2e log is gitignored.
+
+result: FAIL
