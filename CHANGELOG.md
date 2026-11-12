@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Skills: find, install, write, coverage and publishing are now documented.** New how-to [skills-find-install-write.md](docs/howto/skills-find-install-write.md) covers finding a skill in a registry, installing it, writing one (SKILL.md fields, the rules for a generic skill, USAGE.md and test cases), reading the coverage matrix and its gaps, and keeping the matrix current with `scripts/skills-coverage-check.sh`. New [publish-instructions.md](docs/skills/publish-instructions.md) describes the operator-approved step that publishes a staged skill to the community registry (Automata stop at the staged folder). Three glossary entries were added to [datawatch-definitions.md](docs/datawatch-definitions.md): Coverage matrix, Feature inventory and Staged skill. The how-to index in [docs/howto/README.md](docs/howto/README.md) lists the new page. Docs only; no behavior change.
+
 ## v9.135.0 — Self-config is a built-in capability group
 
 ### Added
