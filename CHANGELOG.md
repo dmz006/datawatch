@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.157.0 — Projects view sub-tabs
+
+### Added
+
+- **The project page on the Projects view is split into sub-tabs.** A strip under the project name shows Overview, Arcs, Gantt, Unassigned, History, Policy and Events, one body at a time. Overview holds the header fields and Progress, Policy holds the effective policy and the merge pipeline, and Events holds the notes and the project's event stream. The Events sub-tab is in the strip only while the project has notes. The choice is remembered in this browser, and `#projects/<name>/<subtab>` opens a sub-tab directly; no sub-tab in the address opens Overview. The strip scrolls sideways on a phone. The eight new labels are in English, German, Spanish, French and Japanese, and no endpoint or setting changed.
+- A sub-tab that holds one block (Arcs, Gantt, Unassigned, History) shows it without a card; the sub-tabs that hold several blocks keep the collapsible cards, and the Gantt keeps its width cap.
+- Docs: the Projects how-to lists the sub-tabs and the new address form.
+
 ## v9.156.1 — Projects view layout fixes for wide browsers
 
 ### Fixed
