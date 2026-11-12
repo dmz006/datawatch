@@ -77,6 +77,27 @@ const REQUIRED_KEYS = [
   'sessions_view_new',
   'sessions_view_ok',
   'sessions_view_name_ph',
+  'sessions_search_placeholder',
+  'sessions_search_label',
+  'sessions_search_tip',
+  'sessions_search_clear',
+  'sessions_search_count',
+  'sessions_filters_btn',
+  'sessions_filters_tip',
+  'sessions_filters_title',
+  'sessions_filters_close',
+  'sessions_filters_status',
+  'sessions_filters_backend',
+  'sessions_filters_tags',
+  'sessions_summary_clear_tip',
+  'sessions_summary_filter_tip',
+  'sessions_fold_all',
+  'sessions_unfold_all',
+  'sessions_fold_all_tip',
+  'sessions_unfold_all_tip',
+  'sessions_tags_less',
+  'sessions_tags_collapse_tip',
+  'sessions_tags_expand_tip',
 ].sort();
 
 test('extraction finds the sessions UI keys used in app.js', () => {
@@ -117,7 +138,7 @@ test('the five locale bundles have identical key sets', () => {
 });
 
 // Short product/UI terms that are acceptable unchanged outside English.
-const PRODUCT_TERMS = new Set(['OK', 'Compact', 'sessions', 'Tag']);
+const PRODUCT_TERMS = new Set(['OK', 'Compact', 'sessions', 'Tag', 'Tags', 'Status', 'Backend']);
 
 for (const lang of LANGS) {
   if (lang === 'en') continue;
