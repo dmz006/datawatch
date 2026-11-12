@@ -4774,6 +4774,9 @@ const (
 	DefaultLaneFillGPUBackend        = "pi-prompt"
 	DefaultLaneFillClaudeBackend     = "claude-code"
 	DefaultLaneFillStaleAfterHours   = 72
+	// DefaultLaneFillHostDownAfterMinutes is how long a pool host may stay
+	// unreachable before lane fill treats it as down (0 = never).
+	DefaultLaneFillHostDownAfterMinutes = 10
 )
 
 // AutonomousLaneFillConfig — autonomous.lane_fill sub-config: automatic lane
@@ -4807,6 +4810,11 @@ type AutonomousLaneFillConfig struct {
 	// treated as stale and is not started automatically. Nil (absent) means
 	// 72; an explicit 0 turns the stale rule off.
 	StaleAfterHours *int `yaml:"stale_after_hours,omitempty" json:"stale_after_hours,omitempty"`
+	// HostDownAfterMinutes: a pool host whose loaded models cannot be read is
+	// treated as down once it has been unreachable this many minutes. Nil
+	// (absent) means 10; an explicit 0 never treats an unreachable host as
+	// down, so every failed read blocks the lane builder.
+	HostDownAfterMinutes *int `yaml:"host_down_after_minutes,omitempty" json:"host_down_after_minutes,omitempty"`
 	// RequireConfirmedProposal: when true (the default, nil) an Automaton
 	// created from a proposal is eligible only once the operator has confirmed
 	// that proposal.
@@ -5009,6 +5017,15 @@ func (c AutonomousLaneFillConfig) EffectiveStaleAfterHours() int {
 	return *c.StaleAfterHours
 }
 
+// EffectiveHostDownAfterMinutes returns the host-down threshold in effect: nil
+// means 10 and an explicit 0 means an unreachable host is never treated as down.
+func (c AutonomousLaneFillConfig) EffectiveHostDownAfterMinutes() int {
+	if c.HostDownAfterMinutes == nil || *c.HostDownAfterMinutes < 0 {
+		return DefaultLaneFillHostDownAfterMinutes
+	}
+	return *c.HostDownAfterMinutes
+}
+
 // laneFillBoolDefaultTrue reads a tri-state boolean: nil means true.
 func laneFillBoolDefaultTrue(b *bool) bool { return b == nil || *b }
 
@@ -5049,6 +5066,9 @@ func (c AutonomousLaneFillConfig) validate() error {
 	}
 	if c.StaleAfterHours != nil && *c.StaleAfterHours < 0 {
 		return fmt.Errorf("autonomous.lane_fill.stale_after_hours: %d must be >= 0", *c.StaleAfterHours)
+	}
+	if c.HostDownAfterMinutes != nil && *c.HostDownAfterMinutes < 0 {
+		return fmt.Errorf("autonomous.lane_fill.host_down_after_minutes: %d must be >= 0", *c.HostDownAfterMinutes)
 	}
 	for k, v := range map[string]int{
 		"gpu_lanes":           c.GPULanes,

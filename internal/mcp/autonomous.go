@@ -209,6 +209,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("lane_fill_gpu_model", mcpsdk.Description("Model the GPU lanes run. Empty leaves the model to the backend.")),
 		mcpsdk.WithString("lane_fill_claude_backend", mcpsdk.Description("LLM backend the Claude lanes run (default claude-code).")),
 		mcpsdk.WithNumber("lane_fill_stale_after_hours", mcpsdk.Description("Hours an Automaton may sit queued before lane fill treats it as stale and does not start it. Whole number >= 0; 0 turns the stale rule off, unset keeps the 72-hour default.")),
+		mcpsdk.WithNumber("lane_fill_host_down_after_minutes", mcpsdk.Description("Minutes a pool host may stay unreachable before lane fill treats it as down and judges the lanes from the readable hosts. Whole number >= 0, default 10; 0 = never treat an unreachable host as down.")),
 		mcpsdk.WithBoolean("lane_fill_require_confirmed_proposal", mcpsdk.Description("Lane fill starts an Automaton made from a proposal only after the operator has confirmed that proposal (default true).")),
 		mcpsdk.WithBoolean("lane_fill_check_main_carries", mcpsdk.Description("Lane fill checks whether the default branch already carries an Automaton's work before counting it as eligible (default true).")),
 		mcpsdk.WithBoolean("lane_fill_require_worktree", mcpsdk.Description("Lane fill counts an Automaton as eligible only when it has its own worktree (default true).")),
