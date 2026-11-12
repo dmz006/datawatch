@@ -333,3 +333,17 @@ func TestStuckRunningWatchdog_FailedTaskKeepsOldPath(t *testing.T) {
 		t.Fatalf("status = %s, want blocked", p.Status)
 	}
 }
+
+// The blocked reason names the cancelled tasks, states the new behaviour, and
+// stays one line in Automaton wording.
+func TestStuckRunningCancelledReason(t *testing.T) {
+	r := stuckRunningCancelledReason(90*time.Second, []string{"Fix login", "Add docs"})
+	for _, want := range []string{"Fix login", "Add docs", "2 cancelled tasks", "skipped", "completion review", "grace period", "removed while the Automaton is running"} {
+		if !strings.Contains(r, want) {
+			t.Errorf("reason %q missing %q", r, want)
+		}
+	}
+	if strings.Contains(r, "\n") || strings.Contains(strings.ToUpper(r), "PRD") {
+		t.Errorf("reason must be one line without the word PRD: %q", r)
+	}
+}

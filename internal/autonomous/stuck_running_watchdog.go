@@ -111,9 +111,7 @@ func (m *Manager) sweepStuckRunning() {
 		}
 		refired := m.stuckRefired[id]
 		var cancelledTitles []string
-		if !refired {
-			m.readLocked(func() { cancelledTitles = prdCancelledOnlyTitles(prd) })
-		}
+		m.readLocked(func() { cancelledTitles = prdCancelledOnlyTitles(prd) })
 		if !refired {
 			m.stuckRefired[id] = true
 		}
@@ -141,6 +139,9 @@ func (m *Manager) sweepStuckRunning() {
 		}
 
 		reason := fmt.Sprintf("stuck running: every task terminal and no live session or executor for %s after the completion rollup was re-fired once", age.Round(time.Second))
+		if len(cancelledTitles) > 0 {
+			reason = stuckRunningCancelledReason(age.Round(time.Second), cancelledTitles)
+		}
 		old, ok := m.commitRollupStatus(prd, PRDRunning, rev, PRDBlocked, "stuck_running", reason)
 		m.mu.Lock()
 		delete(m.stuckSeen, id)
@@ -172,6 +173,15 @@ func (m *Manager) sweepStuckRunning() {
 		}
 	}
 	m.mu.Unlock()
+}
+
+// stuckRunningCancelledReason is the one-line blocked reason when cancelled
+// tasks are the blocker: it names them and states that cancelled tasks are
+// skipped, the Automaton advances to its completion review after the grace
+// period, and a cancelled task can be removed while the Automaton is running.
+func stuckRunningCancelledReason(age time.Duration, titles []string) string {
+	return fmt.Sprintf("stuck running: every task terminal for %s, blocked by %d cancelled tasks: %s; cancelled tasks are skipped, the Automaton advances to its completion review after the grace period, and a cancelled task can be removed while the Automaton is running",
+		age, len(titles), strings.Join(titles, ", "))
 }
 
 // recordStuckDecision appends a Decision to the PRD, re-fetched from the store,
