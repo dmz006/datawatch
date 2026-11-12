@@ -198,7 +198,24 @@ Set `autonomous.plan_records.enabled` to `false` (or leave `write_through` off
 to keep the registry file as the hook's target). Records are kept on disk.
 Removing the `plan-records` directory under the data dir discards every
 record; the original files are never changed by an import, so re-importing
-rebuilds them.
+rebuilds them. One caveat: rows shipped by write-through while it was on exist
+only as records, so copy them back into the registry file by hand before you
+remove the directory.
+
+## Still for the operator to review
+
+Nothing here turns on by itself. These are yours to settle:
+
+- **Records marked `needs_review`.** After the first real import, look through
+  the records an import flagged and settle each one (rename, merge or accept).
+- **Write-through.** `autonomous.plan_records.write_through` stays off until
+  you turn it on. Decide when the registry hook should write records instead of
+  editing `docs/plans/README.md`.
+- **The old files.** `docs/plans/README.md` and the findings files stay in
+  place as the read-only archive. Whether and when to clean them up is a later
+  step you decide.
+- **Mobile apps.** Android and iPhone do not show plan records yet; that is
+  tracked in the datawatch-app repository.
 
 ## If something looks wrong
 
