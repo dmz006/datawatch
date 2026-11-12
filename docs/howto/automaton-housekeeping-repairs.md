@@ -48,7 +48,8 @@ mechanical step the [supervisor loop](supervisor-loop.md) already has:
 | `leftovers` | Leftover files crossed the disk cleanup alert threshold. | Runs the cleanup sweep, which only refreshes the cleanup status and raises the disk alert. |
 
 The `task_chain` group also has three repairs for stuck task chains, each run in
-`on` and only reported in `report`:
+`on` and only reported in `report`. They are written and tested but, like the
+rest of the pass, the daemon does not start them yet, so none acts today:
 
 - **Dependent reset.** A task that failed only because a task it depends on
   failed is reset (a plain reset, never a force-cancel) once every dependency is
@@ -81,6 +82,9 @@ shipped code before you turn any group to `on`:
   worktree pruning, lease and placement fixes) are the design; the shipped
   repairs are the four above. Confirm which of the table's rows you still want
   built.
+- The three task chain repairs run fixed commands (`make sync-docs`, `git clean -f -- <one path>`) in
+  the Automaton worktree. Confirm you accept those commands, and that a final-gate failure
+  naming `internal/server/web/docs` as stale is a reliable signal, before turning `task_chain` to `on`.
 - An unsafe finding is never repaired: it is recorded as skipped, and one
   warning alert is raised for that subject until it stops being found.
 
