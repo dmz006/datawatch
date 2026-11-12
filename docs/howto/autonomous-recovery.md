@@ -547,7 +547,9 @@ a restart.
    `stuck_running_cancelled_advance` decision that names the skipped cancelled
    tasks, and the completion review runs without ending, signalling or
    touching any session. An Automaton whose tasks are all cancelled is never
-   advanced this way, because there is no work to review; it follows step 2. The re-fire is an ordinary completion review: if the branch head
+   advanced this way, because there is no work to review; it follows step 2.
+
+   The re-fire is an ordinary completion review: if the branch head
    moved since the stored verdict was made (for example a fix was committed
    while the Automaton was held), the judge runs again on the new head, and a
    `pass` or `warn` completes the Automaton instead of leaving it for the
@@ -566,8 +568,8 @@ a restart.
 
 The clock starts over whenever the state stops holding: a session starts, a
 task is reset to pending, or the Automaton leaves `running`. To clear a blocked
-Automaton, use `rejudge` (above) when every task is completed or cancelled (at least one completed), or `reset_task`
-for a task that did not.
+Automaton, use `rejudge` (above) when every task is completed or cancelled
+(at least one completed), or `reset_task` for a task that did not.
 
 Set the bound on the PWA Settings Automata card ("Stuck Automaton timeout"),
 with `datawatch config set autonomous.stuck_running_seconds <n>`, through
