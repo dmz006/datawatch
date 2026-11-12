@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.157.1 — Sessions page tag filter and view modes
+
+### Fixed
+
+- **The Sessions page tag filter is usable with many tags.** The Filters sheet no longer draws one chip per tag. It has a tag search box and chips grouped under Kind, Role, Lane, Compute node, Project, Your tags and Other headers (six chips per group, then Show all), with counts taken from the sessions in the current list. Automaton, stage, task and story tags get no chips; a Find an Automaton picker (title first, id second) takes their place. The selected tags show above the session list as removable chips with a Clear all control.
+- **The List, Tiles and Compact buttons work with no grouping.** A saved lineage-tree choice used to override every mode while its toggle was hidden. The tree now shows only in List mode, and clicking a view mode button clears it.
+- The state-count line above the session list is removed; the state filter stays in the Filters sheet.
+- Eighteen new strings in English, German, Spanish, French and Japanese; no setting, endpoint or command changed.
+- Docs: the Sessions tiles and grouping how-to covers the tag filter and the view modes.
+
 ## v9.157.0 — Projects view sub-tabs
 
 ### Added
