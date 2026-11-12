@@ -44,10 +44,10 @@ func newCostChartsCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(out))
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				return nil
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), charts.Text())
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), charts.Text())
 			return nil
 		},
 	}
