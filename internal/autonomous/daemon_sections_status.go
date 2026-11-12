@@ -38,7 +38,15 @@ func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGit
 	if ctx.Err() != nil {
 		return false
 	}
-	cur, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+	if strings.ContainsRune(rel, 0) {
+		return false
+	}
+	relOS := filepath.FromSlash(rel)
+	if !filepath.IsLocal(relOS) {
+		return false
+	}
+	checkedRel := relOS
+	cur, err := os.ReadFile(filepath.Join(dir, checkedRel))
 	if err != nil {
 		return false
 	}
