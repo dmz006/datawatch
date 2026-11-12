@@ -419,6 +419,20 @@ writer ships, treat the reporting rows as empty by design, not as an error.
 - **The usage table shows an error** — the route is not registered yet; the usage
   summary is computed from the trace files, which remain the source of truth.
 
+## For the operator to review
+
+Open items that this how-to describes but the operator must still decide or check:
+
+- **The resolver is not given `packs.active` yet** — an installed pack does not add
+  or change tasks until that wiring ships; confirm the timing before relying on a pack.
+- **No web list, install, accept or remove** — the Packs sub-tab is a shell today;
+  use REST, MCP, CLI or the chat command for those actions.
+- **Pack inputs are saved but not read** — task creation ignores stored inputs.
+- **The usage route and the derived index are not live** — the trace files stay the
+  source of truth until the later Automaton lands.
+- **Trust is the operator's call** — review each pack's digest and version diff
+  before accepting, and before turning on auto-accept for a source.
+
 ## See also
 
 - [Standard tasks](automata-standard-tasks.md) — what a standard task is and how the
