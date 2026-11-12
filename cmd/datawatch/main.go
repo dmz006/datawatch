@@ -15354,9 +15354,9 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 		CmdLib:              mcpCmdLib,
 		Version:             Version,
 		LatestVersion:       fetchLatestVersion,
-		FallbackToken:       cfg.Server.Token, // SEC-002
-		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
-		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		FallbackToken:       cfg.Server.Token,        // SEC-002
+		CostReportCfg:       cfg.CostReport,          // cost_report MCP tool (internal/costreport)
+		UsageCfg:            cfg.Usage,               // usage.billing profiles → cost_report rows' billing fields
 		ConfigAudit:         configAuditSinkFor(cfg), // BL110 — shared sink
 	})
 

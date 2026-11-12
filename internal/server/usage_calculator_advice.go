@@ -34,7 +34,6 @@ import (
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
-
 // usageWeekday maps the config's lowercase weekday names to the calendar weekday the
 // calculator's reset spec takes.
 var usageWeekday = map[string]time.Weekday{
