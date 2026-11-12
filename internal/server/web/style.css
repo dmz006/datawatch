@@ -7747,3 +7747,14 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .sessions-topbar .sessions-mode-btn { font-size: 0; padding: 3px 7px; }
   .sessions-topbar .sessions-mode-btn::before { content: attr(data-icon); font-size: 14px; line-height: 1; }
 }
+
+/* ── Sessions: fold-all control and phone tag collapse ── */
+.sessions-fold-row { display: flex; justify-content: flex-end; padding: 2px 12px; }
+.sessions-fold-all { font-size: 12px; padding: 3px 10px; }
+.sessions-group-header, .automaton-header, .story-header { min-height: 40px; box-sizing: border-box; }
+.session-card-tags { display: contents; }
+.session-tags-more-chip { font-size: 10px; padding: 1px 7px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg3); color: var(--text2); cursor: pointer; font-weight: 600; }
+@media (max-width: 640px) {
+  .session-card-tags:not(.open) { display: inline-flex; flex-wrap: nowrap; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; }
+  .session-card-tags:not(.open) .tag-chip { white-space: nowrap; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
+}
