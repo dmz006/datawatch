@@ -122,11 +122,26 @@ and whether the pane listing worked for both parts. A run that finalises
 something writes one line to the daemon journal with the counts and nothing
 else.
 
-Runs are scheduled by the finaliser loop. It runs once as soon as it starts
-(the start-up run), then again after each interval. The interval is read again
-on every cycle, so a change applies without a restart; an interval of zero or
-less switches scheduled runs off, and the loop then only re-reads the interval
-once a minute. It stops when the daemon shuts down.
+Runs are scheduled by the finaliser loop. The daemon starts it right after it
+resumes its sessions. It runs once as soon as it starts (the start-up run), then
+again after each interval. The interval is the setting
+`session.finalise_interval_minutes` (whole minutes, default 10). It is read again
+on every cycle, so a change applies without a restart; zero switches scheduled
+runs off, and the loop then only re-reads the interval once a minute. The
+start-up run still happens at zero. A negative value in `config.yaml` falls back
+to 10, and a negative value sent to the config API is ignored. The loop stops
+when the daemon shuts down.
+
+To change the interval, use any of these:
+
+- **Settings page:** General, **Sessions**, *Session finalise interval (min)*.
+- **CLI:** `datawatch config set session.finalise_interval_minutes 5`
+- **Chat:** `configure session.finalise_interval_minutes=5`
+- **MCP:** the `config_set` tool with `key` `session.finalise_interval_minutes`
+  (it needs `mcp.allow_self_config`, which is on by default).
+- **REST:** `PUT /api/config` with `{"session.finalise_interval_minutes": 5}`;
+  `GET /api/config` shows the current value.
+- **Config file:** `finalise_interval_minutes` under `session:`.
 
 **What to check.** `datawatch sessions get <id> | jq '.state, .ended_at, .end_note'`
 shows whether a record was finalised this way. A `killed` record with the end
@@ -135,16 +150,19 @@ note means the output did not end with a completion line; read
 from the prior one). For a folder, `jq '.state, .ended_at, .end_note'
 ~/.datawatch/sessions/<id>/session.json` shows the same three fields.
 
-**Status today.** The registry, the judgement, the final-state rule, the two
-fields, both finaliser passes, the combined run with its summary and the
-scheduler are in place in the session package, and subprocess sessions are
-registered as runners. The daemon does not start the finaliser yet: nothing
-starts the loop, no setting supplies its interval, and no REST, CLI, MCP or
-chat command shows the last run's summary. So you will not see `ended_at` or
-`end_note` on a record or a folder yet, and a restart still treats a missing
-terminal pane as described in
-[operations — Restart safety](../operations.md#restart-safety). Chat-mode and
-other non-pane sessions are not registered as runners yet.
+**Status today.** The daemon runs the finaliser: it starts at boot, runs on
+the interval above, and finalises gone records and folders, so a finalised
+record or folder carries `ended_at` and `end_note`. The restart check in
+[operations — Restart safety](../operations.md#restart-safety) still runs first
+and still marks a missing terminal pane `failed`; the finaliser never changes a
+record that is already in a final state, so it covers the records that check
+does not reach. Two things are not there yet. Nothing shows the last run's
+summary (no REST, CLI, MCP or chat command and no part of the PWA), and the PWA
+does not yet show `end_note` on a session, so the only trace of a run is the
+`[finalise]` line in the daemon journal. And chat-mode and other non-pane
+sessions are not registered as runners yet, so only subprocess sessions count
+as held by a runner. Watch the journal after the first scheduled run on a busy
+daemon to confirm that a session you are still using is not finalised.
 
 ## How a worker pane is capped
 
