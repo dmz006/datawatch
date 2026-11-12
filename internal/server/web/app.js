@@ -9000,6 +9000,16 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
+  settings_pending_items: DOCS_DEFINITIONS + '#pending-items',
+  settings_pending_item_policy: DOCS_DEFINITIONS + '#pending-item-policy',
+  settings_pending_item_auto_resume: DOCS_DEFINITIONS + '#pending-item-auto-resume',
+  settings_pending_item_source_path: DOCS_DEFINITIONS + '#pending-item-file-registry-path',
+  settings_pending_item_source_id_pattern: DOCS_DEFINITIONS + '#pending-item-file-registry-id-pattern',
+  settings_pending_item_source_id_column: DOCS_DEFINITIONS + '#pending-item-file-registry-id-column',
+  settings_pending_item_source_title_column: DOCS_DEFINITIONS + '#pending-item-file-registry-title-column',
+  settings_pending_item_source_state_column: DOCS_DEFINITIONS + '#pending-item-file-registry-state-column',
+  settings_pending_item_source_done_values: DOCS_DEFINITIONS + '#pending-item-file-registry-done-values',
+  settings_pending_item_source_on_missing_row: DOCS_DEFINITIONS + '#pending-item-file-registry-missing-rows',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
   // Settings -> Plugins
@@ -16569,6 +16579,20 @@ const GENERAL_CONFIG_FIELDS = [
       optionLabelKeys: { hold: 'uncommitted_work_policy_hold', warn: 'uncommitted_work_policy_warn', off: 'uncommitted_work_policy_off' } },
     { key: 'autonomous.automation.uncommitted_work_scope', label: 'Automaton uncommitted-work scope (task_files or worktree; default task_files)', labelKey: 'settings_automation_uncommitted_work_scope', type: 'select', options: ['task_files', 'worktree'], default: 'task_files',
       optionLabelKeys: { task_files: 'uncommitted_work_scope_task_files', worktree: 'uncommitted_work_scope_worktree' } },
+    // Pending items — an Automation member that is a named piece of work with no Automaton yet. The
+    // daemon keeps the registry; the optional file registry below only feeds it new names.
+    { label: 'Pending items', labelKey: 'settings_pending_items_group', docsKey: 'settings_pending_items', type: 'group' },
+    { key: 'autonomous.automation.pending_item_policy', label: 'Pending item policy (hold or skip; default hold)', labelKey: 'settings_automation_pending_item_policy', docsKey: 'settings_pending_item_policy', type: 'select', options: ['hold', 'skip'], default: 'hold',
+      optionLabelKeys: { hold: 'pending_item_policy_hold', skip: 'pending_item_policy_skip' } },
+    { key: 'autonomous.automation.pending_item_auto_resume', label: 'Pending item auto-resume (an Automation held on a pending item continues when an Automaton is attached; default on)', labelKey: 'settings_automation_pending_item_auto_resume', docsKey: 'settings_pending_item_auto_resume', type: 'toggle' },
+    { key: 'autonomous.automation.pending_item_source.path', label: 'Pending item file registry path (empty = no file registry)', labelKey: 'settings_automation_pending_item_source_path', docsKey: 'settings_pending_item_source_path', type: 'text', placeholder: '' },
+    { key: 'autonomous.automation.pending_item_source.id_pattern', label: 'Pending item file registry id pattern (regular expression, default ^\\S+$)', labelKey: 'settings_automation_pending_item_source_id_pattern', docsKey: 'settings_pending_item_source_id_pattern', type: 'text', placeholder: '^\\S+$', default: '^\\S+$' },
+    { key: 'autonomous.automation.pending_item_source.id_column', label: 'Pending item file registry id column (header name or column number from 1, default 1)', labelKey: 'settings_automation_pending_item_source_id_column', docsKey: 'settings_pending_item_source_id_column', type: 'text', placeholder: '1', default: '1' },
+    { key: 'autonomous.automation.pending_item_source.title_column', label: 'Pending item file registry title column (header name or column number from 1, default 2)', labelKey: 'settings_automation_pending_item_source_title_column', docsKey: 'settings_pending_item_source_title_column', type: 'text', placeholder: '2', default: '2' },
+    { key: 'autonomous.automation.pending_item_source.state_column', label: 'Pending item file registry state column (header name or column number from 1, empty = none)', labelKey: 'settings_automation_pending_item_source_state_column', docsKey: 'settings_pending_item_source_state_column', type: 'text', placeholder: '' },
+    { key: 'autonomous.automation.pending_item_source.done_values', label: 'Pending item file registry done values (comma separated, default done, closed, shipped)', labelKey: 'settings_automation_pending_item_source_done_values', docsKey: 'settings_pending_item_source_done_values', type: 'text', placeholder: 'done, closed, shipped', csv: true },
+    { key: 'autonomous.automation.pending_item_source.on_missing_row', label: 'Pending item file registry when a row goes missing (keep or drop; default keep)', labelKey: 'settings_automation_pending_item_source_on_missing_row', docsKey: 'settings_pending_item_source_on_missing_row', type: 'select', options: ['keep', 'drop'], default: 'keep',
+      optionLabelKeys: { keep: 'pending_item_on_missing_row_keep', drop: 'pending_item_on_missing_row_drop' } },
     { key: 'autonomous.automation.disk_alert_percent', label: 'Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)', labelKey: 'settings_automation_disk_alert_percent', type: 'number', placeholder: '85', min: 1, max: 100, step: 1, default: '85' },
     // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
     // Repo CI watch (autonomous.automation.repo_ci_watch.*) — the
