@@ -36,7 +36,7 @@ const computeUsage = `Usage:
   compute node get <name>                          fetch one
   compute node add <name> kind=<k> [k=v ...]       add (kind = ollama|openai-compat|gemini-api|opencode-api)
                                                    pin: node_pinned_model=<model> allow_model_swap=true|false
-                                                   tls: tls_ca_file=<path> tls_cert_fingerprint=<sha256-hex> tls_insecure_skip_verify=true|false
+                                                   tls: tls_ca_file=<path> tls_cert_fingerprint=<sha256-hex> tls_insecure_skip_verify=true|false verify_tls=true|false
   compute node update <name> [k=v ...]             update (replaces the node; repeat node_pinned_model and the tls_ keys to keep them)
   compute pin                                      show pin_check_seconds (0 = keeper off)
   compute pin <seconds>                            set pin_check_seconds
@@ -83,7 +83,9 @@ TLS keys (https nodes):
   tls_cert_fingerprint=<hex>       pin the node's leaf certificate (SHA-256, colons allowed)
   tls_insecure_skip_verify=true    turn certificate checking off for this node; audited
                                    and shown in the PWA; cannot be combined with the two above
-  update replaces the whole node, so a tls_ key you leave out is cleared`
+  verify_tls=true                  model pulls to this node verify its certificate against the
+                                   system roots; default off
+  update replaces the whole node, so a tls_ key or verify_tls you leave out is cleared`
 
 func (r *Router) handleComputeCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -464,6 +466,7 @@ func withTLSSummary(body string) string {
 		TLSCAFile             string `json:"tls_ca_file"`
 		TLSCertFingerprint    string `json:"tls_cert_fingerprint"`
 		TLSInsecureSkipVerify bool   `json:"tls_insecure_skip_verify"`
+		VerifyTLS             bool   `json:"verify_tls"`
 	}
 	if err := json.Unmarshal([]byte(body), &n); err != nil || n.Name == "" {
 		return pretty
@@ -480,6 +483,9 @@ func withTLSSummary(body string) string {
 		summary = "pinned"
 	default:
 		summary = "verify"
+	}
+	if n.VerifyTLS {
+		summary += ", model pulls verify certificate"
 	}
 	return pretty + "\ntls: " + summary
 }
@@ -513,7 +519,7 @@ func parseKVPairs(s string) map[string]any {
 			cap[k] = v
 		case "node_pinned_model":
 			out[k] = strings.TrimSpace(v)
-		case "allow_model_swap", "tls_insecure_skip_verify":
+		case "allow_model_swap", "tls_insecure_skip_verify", "verify_tls":
 			out[k] = v == "true" || v == "1" || v == "yes"
 		case "tls_ca_file", "tls_cert_fingerprint":
 			out[k] = strings.TrimSpace(v)

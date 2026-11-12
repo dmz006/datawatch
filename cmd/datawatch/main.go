@@ -20083,6 +20083,7 @@ func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
 		VerifierMinFreeMemMB:  c.VerifierMinFreeMemMB,
 		VerifierContextMB:     c.VerifierContextMB,
 		TLSInsecureSkipVerify: c.TLSInsecureSkipVerify,
+		VerifyTLS:             c.VerifyTLS,
 		TLSCAFile:             c.TLSCAFile,
 		TLSCertFingerprint:    c.TLSCertFingerprint,
 	}

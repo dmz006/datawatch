@@ -25,6 +25,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -302,7 +303,7 @@ func (s *Server) handleComputeNodeModelPull(w http.ResponseWriter, r *http.Reque
 		UpdatedAt: time.Now().UTC(),
 	}
 	globalPullTasks.add(task)
-	go s.runOllamaPull(taskID, n.Address, body.Model)
+	go s.runOllamaPull(taskID, n, body.Model)
 	writeJSONOK(w, task)
 }
 
@@ -354,7 +355,7 @@ func (s *Server) handleComputeNodeModelDelete(w http.ResponseWriter, r *http.Req
 // write still honors the consent in force when it actually runs. The
 // allow decision was already audited where the pull was requested, so
 // only a refusal here (a drift case) is recorded.
-func (s *Server) runOllamaPull(taskID, addr, model string) {
+func (s *Server) runOllamaPull(taskID string, n *compute.Node, model string) {
 	var consent config.ModelPullConsent
 	if s.cfg != nil {
 		consent = s.cfg.Autonomous.ModelPullConsent
@@ -366,11 +367,8 @@ func (s *Server) runOllamaPull(taskID, addr, model string) {
 		return
 	}
 	globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "in_progress" })
-	client := &http.Client{
-		Timeout:   0,                                                                       // pulls can be very long
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, // #nosec G402
-	}
-	err := inference.PullModel(context.Background(), client, addr, model, func(p inference.PullProgress) {
+	client := compute.PullHTTPClient(n)
+	err := inference.PullModel(context.Background(), client, n.Address, model, func(p inference.PullProgress) {
 		globalPullTasks.update(taskID, func(t *PullTask) {
 			if p.BytesTotal > 0 {
 				t.BytesTotal = p.BytesTotal
@@ -384,6 +382,7 @@ func (s *Server) runOllamaPull(taskID, addr, model string) {
 		})
 	})
 	if err != nil {
+		err = compute.WrapPullError(n, err)
 		globalPullTasks.update(taskID, func(t *PullTask) { t.Status = "failed"; t.Error = err.Error() })
 		return
 	}
