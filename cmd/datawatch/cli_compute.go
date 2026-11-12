@@ -29,6 +29,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dmz006/datawatch/internal/compute"
 )
 
 func newComputeCmd() *cobra.Command {
@@ -289,11 +291,19 @@ func newComputeNodeCmd() *cobra.Command {
 		Use:   "node",
 		Short: "ComputeNode CRUD + health + on-demand detail",
 	}
-	cmd.AddCommand(&cobra.Command{
+	listCmd := &cobra.Command{
 		Use:   "list",
-		Short: "List every ComputeNode",
-		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/compute/nodes") },
-	})
+		Short: "List every ComputeNode, observed peers with no node, and auto-created nodes that never answered",
+		Long: "On a terminal, prints the nodes followed by the 'Observed peers with no node' and\n" +
+			"'Auto-created nodes that never answered' sections. When stdout is piped, or with\n" +
+			"--json, prints the raw JSON body (nodes, observed_peers, unanswered_auto_created).",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			raw, _ := cmd.Flags().GetBool("json")
+			return computeNodeList(raw || !stdoutIsTerminal())
+		},
+	}
+	listCmd.Flags().Bool("json", false, "print the raw JSON body")
+	cmd.AddCommand(listCmd)
 	cmd.AddCommand(&cobra.Command{
 		Use:   "get <name>",
 		Short: "Fetch one ComputeNode",
@@ -304,7 +314,9 @@ func newComputeNodeCmd() *cobra.Command {
 		Use:   "versions <name>",
 		Short: "The node's reported backend version and which capability minimums it meets",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/compute/nodes/" + args[0] + "/versions") },
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/compute/nodes/" + args[0] + "/versions")
+		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "health <name>",
@@ -614,3 +626,55 @@ func splitCSV(s string) []string {
 }
 
 var _ = fmt.Sprintf
+
+// stdoutIsTerminal reports whether stdout is an interactive terminal, so
+// piped (scripted) use keeps receiving the raw JSON body.
+func stdoutIsTerminal() bool {
+	fi, err := os.Stdout.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// computeNodeList prints the node list: raw JSON when raw is set, else
+// the human-readable text with the observed-peer and unanswered sections.
+func computeNodeList(raw bool) error {
+	if raw {
+		return daemonGet("/api/compute/nodes")
+	}
+	body, err := daemonGetBody("/api/compute/nodes")
+	if err != nil {
+		return err
+	}
+	fmt.Print(formatComputeNodeList(body))
+	return nil
+}
+
+// formatComputeNodeList is the CLI text formatter; it falls back to the
+// pretty-printed body when the body does not parse.
+func formatComputeNodeList(body []byte) string {
+	txt, err := compute.FormatListText(body, compute.CLIAddLine)
+	if err != nil {
+		return string(body) + "\n"
+	}
+	return txt
+}
+
+// daemonGetBody GETs path from the daemon and returns the body.
+func daemonGetBody(path string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, daemonURL()+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if tok := daemonToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := daemonClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("daemon not reachable (%s): %w", daemonURL(), err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	return body, nil
+}
