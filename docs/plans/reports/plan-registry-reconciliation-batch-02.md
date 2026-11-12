@@ -1,0 +1,40 @@
+# Plan registry reconciliation — batch 02 (entries 21 to 40 of 118)
+
+Entries 21 to 40 of [plan-registry-reconciliation-list.md](plan-registry-reconciliation-list.md),
+checked against the registry in `docs/plans/README.md`. Class a means the
+subject of the file already has a registry row (the row is named); class b
+means a real plan or shipped feature with no registry row (a proposed row is
+given, in the registry's "description | status" shape with the pipe escaped);
+class c means the file is not a plan (the reason is given). "Row N" refers to
+the registry's own N row, whose first column is that number.
+
+Operator review: the one class-`b` proposed row in this batch
+(`2026-10-26-autonomous-triage-mobile-parity-note.md`) is still not in the
+registry (checked 2026-11-11); accept or reject it before it is added to
+`docs/plans/README.md`. The class-`a` row for
+`2026-10-26-autonomous-triage-read-route.md` is a judgment call that leans on
+that proposed row rather than an existing one; confirm it when deciding on the
+proposal.
+
+| file | class | evidence | proposed row |
+|---|---|---|---|
+| 2026-10-25-shared-nav-mobile-fit.md | a | The shared navigation and cross-tab mobile-fit work (gate wrapper `shared-nav-mobile-fit.mjs`, root-cause nav fix, the howto, the `dmz006/datawatch-app#271` sync issue); row 175 (BL592, shared mobile fit: the navigation bar and other cross-tab elements, split out of the Observer mobile-fit PRD) covers it, and the file's own line 70 scopes the Observer rows to BL572 (row 153) | |
+| 2026-10-25-tag-browsing-decisions.md | a | Operator decisions 1 to 10 answering the ten open questions of the tag-browsing design (the file's own title names BL461); row 36 (BL461, tag-based browsing and tile redesign) is the registry row and names this design thread | |
+| 2026-10-25-usage-calculator-mobile-contract.md | a | The mobile contract (REST endpoints, `usage:read` capability, settings keys, locale key set) for the daemon-shipped calculator of PRD `07630001`; row 53 (BL472, usage and cost calculator) already records the `usage.read`/`usage.write` capabilities, the PWA card, datawatch-app parity issue 288 and the operator guide for that same PRD | |
+| 2026-10-26-autonomous-triage-mobile-parity-note.md | b | Daemon-side plan and parity note for the autonomous-triage records (triage pass, record and alert, the datawatch-app #284 owed surface, version 9.17.1). No registry row covers autonomous triage (searches for triage, autonomous triage, 9.17.1 and #284 in `docs/plans/README.md` find nothing) | Autonomous triage records: the triage of failed and blocked Automata is readable through the daemon's surfaces (REST GET /api/autonomous/triage, MCP, CLI, comm channel, the PWA card in the Automaton detail view, five locale bundles), with the Android / iPhone surface owed to datawatch-app issue 284 \| done, shipped in 9.17.1 |
+| 2026-10-26-autonomous-triage-read-route.md | a | The implementation half of the autonomous-triage records (route, record body, config key, capability gate, MCP tool, CLI, comm verb, PWA card, story TS-874, version 9.17.1), the daemon side of the same feature as the preceding parity note; no existing registry row covers it, but its subject is already registered by this batch's proposed row next to the parity note instead of a duplicate second row | |
+| 2026-10-28-ci-watch-flake.md | a | Root-cause and fix for the flaky `TestCIWatch_TimeoutPending` (the `.tmp-*` cleanup race in the PRD-record store, Status: Done); row 231 (BL640, the last three CodeQL alerts) is adjacent, and row 232 (BL641, `TestCIWatch_TimeoutPending` is flaky: it sometimes becomes a real timeout) is the registry row, fixed in v9.31.0 | |
+| 2026-10-28-codeql-last-three-alerts.md | a | The disposition of the last three open CodeQL alerts (two fixed in code and merged, #661 dismissed as won't fix on the operator's decision); row 231 (BL640, the last three CodeQL alerts: fix the two, leave the one with a recorded reason) is the registry row | |
+| 2026-10-28-pi-descendant-only-stall.md | a | The plan for the `autonomous.descendant_stall_seconds` detector for the pi-prompt backend family (status: code Done and documented, v9.30.1); row 215 (BL628, P1, worker with a hung child process is never treated as stalled; descendant-only stall boundary, default 2700 seconds) is the registry row, shipped in 9.30.1 | |
+| 2026-10-28-ten-oh-arc-automation-draft.md | a | The operator-directed draft of the 10.0.0 arc as Automations (drafts `0ff316f1`, `cd2204c0`, `aba71c4a`, never activated) and its five model-fit suggestions; the registry records the arc and its outcomes at row 234 (BL644, automation members for work that has no PRD yet — the draft's gap 1), row 253 (steps added to the 10.0.0 arc) and row 293 (restructure of the 10.0.0 work into the release arc `150dcc06`) | |
+| 2026-10-29-automation-cli-status-gaps-final-gate-report.md | a | The final gate report for the Automation CLI and status gaps branch `automaton/cde90001`; row 250 is the registry row for PRD `cde90001`, shipped in 9.34.2 | |
+| 2026-10-29-automation-merge-pending-final-gate-report.md | a | The final gate for the merge-pending feature (state, the two read endpoints, the two config keys, the merge badge, the safe-to-delete report) — the gate of the branch for PRD `f1f20050`; row 253 records Step 5 merge-pending by content `f1f20050` shipped in 9.40.0 | |
+| 2026-10-29-automation-merge-pending-live-check.md | a | The sandbox live check (v9.34.3, shadow then on mode, three completed Automata in a throwaway repo) of the same merge-pending surfaces; same feature as the preceding file, row 253 (Step 5 `f1f20050`, shipped in 9.40.0) | |
+| 2026-10-29-bl412-self-config-gate-proposal.md | a | The design proposal for the BL412 self-config permission-gate generalization (its own tracker line: BL412, registry row 42; Confirmed: option C); row 42 is the registry row, answered 2026-11-01 and filed as self-config folded into capabilities (`16760001`) | |
+| 2026-10-29-bl414-cost-rollup-proposal.md | a | The design proposal for the BL414 PRD cost rollup and cost reporting (its own tracker line: BL414, registry row 38; Confirmed: option A); row 38 is the registry row, answered 2026-11-01 and shipped as the cost report (`090f0001`) | |
+| 2026-10-29-bl422-tier-mismatch-event-proposal.md | a | The design proposal for the BL422 follow-up tier-mismatch lifecycle event (its own tracker line: registry row 182); row 182 is the registry row, Confirmed: no, option A, parked until after 10.0 | |
+| 2026-10-29-bl473-automation-coordinator-proposal.md | a | The design proposal for building the Automation coordinator to the supervisor rules (its own tracker line: BL473; Confirmed: option C); row 54 (BL473) is the registry row — built inside the Automation coordinator, checks running | |
+| 2026-10-29-bl556-parallel-tasks-proposal.md | a | The design proposal for parallel tasks inside one Automaton (its own tracker line: BL556, registry row 137); row 137 is the registry row | |
+| 2026-10-29-bl620-protect-rules-files-proposal.md | a | The design proposal for protecting the rules files from workers and from the daemon (its own tracker line: BL620, registry row 207; Confirmed: option B first, operator 2026-10-30); row 207 (BL620, external report GH#207 follow-up) is the registry row | |
+| 2026-10-29-decision-gate-final-gate-report.md | a | The Phase Completion Checklist run for the operator decision line and decision gate on branch `automaton/f1f20053` (PRD `f1f20053`); row 253 records Step 8 structured decisions and the design-point gate `f1f20053` shipped in 9.35.0 (shadow mode first) | |
+| 2026-10-29-decision-gate-live-check.md | a | The sandbox live check (v9.34.3) of the same decision-gate feature, the Testing Tracker's required live validation of that branch; same feature as the preceding file, row 253 (Step 8 `f1f20053`, shipped in 9.35.0) | |
