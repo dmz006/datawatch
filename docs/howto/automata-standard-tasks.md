@@ -187,7 +187,9 @@ For Automaton templates, open the Automata tab's **Templates** tab and its
 **Automaton templates** sub-tab. The **Start from template** strip on the Automaton create form and the **Clone to Template**
 action both use it.
 
-## Installable packs (backend only, not yet wired)
+<a id="installable-packs-backend-only-not-yet-wired"></a>
+
+## Installable packs (manage them on every surface; not yet applied to tasks)
 
 A **pack** is a named, versioned folder that ships standard tasks and Automaton
 templates together: the task prompts, their verification scripts and the template
@@ -215,13 +217,52 @@ The real standard-tasks pack is published in the community registry repository
 (operator decision, 2026-11-09); the fixtures do not replace it, and installing either
 fixture is not a way to get the standard tasks on a daemon.
 
-**Status: the rules below exist in the `internal/packs` package, and the config keys
-are read, but no daemon surface calls them yet.** There is no REST, MCP, CLI or PWA
-action to install, accept or enable a pack, no default install folder, and the
-`packs.*` settings are not checked at start-up. Treat this section as the contract the
-surfaces will follow, not as a feature you can use today. The open items are listed in
+**Status: you can manage packs on every surface, but the active list does not yet change the
+tasks an Automaton gets.** Installing, accepting, removing, enabling and setting inputs all
+work (see [Managing packs](#managing-packs-on-each-surface)). What is **not** wired yet:
+the resolver is not given the result of `packs.ActivePacks`, so `packs.active` and an
+installed pack do not yet change the standard-task list, and stored pack inputs are not
+read when a task is created. The open items are listed in
 [Open items to check](#open-items-to-check) and in
 [operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
+
+### Managing packs on each surface
+
+All surfaces call the same REST routes (`/api/packs`), so they behave alike. Reads need the
+config-read permission and writes the config-write permission, including over federation.
+
+| Action | REST | MCP tool | CLI (`datawatch packs ...`) | Chat command | Web |
+|---|---|---|---|---|---|
+| List installed packs and trust state | `GET /api/packs` | `packs_list` | `list` | `packs` | not in Settings |
+| Read the setting | `GET /api/packs/config` | `packs_setting_get` | not a verb; use `list` | `packs setting` | Settings > General > Standard task packs |
+| Set `enabled` / `active` | `PUT /api/packs/config` | `packs_setting_set` | `enable`, `disable` | `packs setting enabled=true active=a,b` | the two fields in that card |
+| Install a folder | `POST /api/packs/install` | `packs_install` | `install <source-dir>` | `packs install <source_dir>` | none |
+| Accept a pack | `POST /api/packs/accept` | `packs_accept` | `accept <name> <version>` | `packs accept <name> <version>` | none |
+| Remove a pack | `DELETE /api/packs/{name}/{version}` | `packs_remove` | `remove <name> <version>` | `packs remove <name> <version>` | none |
+| Read / replace inputs | `GET` / `PUT /api/packs/inputs` | `packs_inputs_get`, `packs_inputs_set` | `inputs get`, `inputs set` | `packs inputs get` / `set` | the four input fields |
+
+- **Install root.** Packs install to `<data dir>/packs/<name>/<version>/`, beside
+  `trust.json` and `inputs.json`.
+- **Setting writes are checked.** `packs.active` is refused (HTTP 400) when it holds an
+  empty name, a repeat, or a name that is neither `builtin` nor an installed pack.
+  Turning `enabled` from off to on is refused (HTTP 409) with "packs need at least one
+  connected skills registry source" when no registry source is connected and enabled. The
+  web switch is put back to off and shows the refusal.
+- **Accept** records the operator's acceptance of the installed digest as accepted by
+  `operator`. A pack that is not installed gives HTTP 404.
+- **Remove** deletes one installed version and its trust record. It does not touch
+  Automata, their tasks or trace records: an Automaton keeps the tasks it was created with.
+  The trust record goes first, so a failed delete leaves a pack that is on disk but no
+  longer runnable. Removing does **not** edit `packs.active`; a removed name stays in the
+  list until you change it, and the next write of that list is then refused.
+- **Inputs** are stored per pack at the `global`, `project` (key is the project
+  directory) or `automaton` (key is the Automaton id) level. A save **replaces** that
+  scope. Every name must be an input the pack declares, and a secret input accepts only a
+  `${secret:NAME}` reference. Reads show secrets as references or `***`.
+- **Web inputs** take the `global` or `project` level only; the web form has no Automaton
+  level. Use REST, MCP, CLI or chat for Automaton-level inputs.
+- **Not on the web yet:** install, accept, remove and list. Use the CLI, chat command,
+  MCP or REST for those.
 
 ### Turning packs on
 
@@ -233,7 +274,9 @@ and enabled; the community registry is that source by default. The check is
 `packs.CheckEnable` (`internal/packs/enable_gate.go`): it looks only at the list of
 registry sources it is given and refuses with "packs need at least one connected skills
 registry source; connect one in the skills registry settings" when none is enabled. The
-daemon does not call it yet, so setting `packs.enabled: true` is not refused today.
+daemon calls it when `packs.enabled` is changed from off to on through REST, MCP, CLI,
+chat or the web switch, so the switch is refused when no source is connected. Editing the
+config file by hand skips the check.
 
 ### Which packs apply to an Automaton
 
@@ -251,7 +294,7 @@ Automaton:
 An Automaton's own list is the `packs` field on the Automaton (JSON `packs`, omitted
 when empty). It is assigned with `Automation.SetPacks`, which trims each name, drops
 empty names and later repeats, and keeps the order given (it is a priority order and is
-never sorted). **Not wired yet:** no REST, MCP, CLI, comm or PWA call sets the field, and
+never sorted). **Not wired yet:** no REST, MCP, CLI, chat or web call sets the field, and
 the resolver is not yet given the result of `ActivePacks`. A per-project pack list was
 planned and is **not** in the config today: the project entry has no `packs` key, so
 `ActivePacks` has no project list to read until one is added. Operator review needed:
@@ -334,13 +377,16 @@ created with. If resolving fails, the error is logged and the task is created wi
 
 Limits today, flagged for review:
 
-- **No input source is wired.** The daemon passes no Automaton, project or global input
-  values, so only declared defaults apply. There is no config key, REST, MCP, CLI or web
-  action to set a pack input at any level.
-- **The built-in pack declares no inputs**, so `pack_inputs` is empty on every task the
+- **Inputs can be saved but are not read.** REST, MCP, CLI, chat and the web settings
+  fields write inputs to `inputs.json` at any level (the web at global and project
+  level), but the daemon still creates tasks with no Automaton, project or global values
+  (`RecordPackTaskInputs` is called with empty maps), so only declared defaults apply
+  and a saved value changes nothing yet.
+- **The built-in pack declares no inputs**, so saving an input for `builtin` is refused
+  (the pack declares no input of that name) and `pack_inputs` is empty on every task the
   daemon creates today.
-- **`CheckSecretInput` is not called by the daemon.** Nothing refuses a literal value for
-  a secret input at write time because no input can be written yet.
+- **Secrets are checked at write time.** The save refuses a literal value for a secret
+  input; only `${secret:NAME}` is accepted.
 - **Only daemon-run tasks record inputs.** Tasks that run as a model session do not.
 
 ### Pack attribution: traces, audit and cost
@@ -403,19 +449,27 @@ yet:
   project config entry has no `packs` key (it was removed from the change as out of
   scope). Only the Automaton's own list and the global `packs.active` can exist today.
   Operator review needed: decide whether to add the project key and where it is edited.
-- **Packs are not wired.** The install, trust, auto-accept, enable-check and
-  list-order rules are in the `internal/packs` package only. Nothing calls them from the daemon, so the
-  `packs.enabled` switch is not enforced, `packs.active` is not validated, and no surface
-  installs or accepts a pack. See the [Installable packs](#installable-packs-backend-only-not-yet-wired)
+- **Packs are managed but not applied.** Install, accept, remove, the enable check, the
+  `packs.active` validation and inputs work on every surface except as listed in
+  [Managing packs](#managing-packs-on-each-surface). The resolver is still not given
+  `packs.active`, so an installed pack does not yet add tasks, and nothing calls the
+  auto-accept or first-party acceptance rules from the daemon. See the
+  [Installable packs](#installable-packs-manage-them-on-every-surface-not-yet-applied-to-tasks)
   section and [operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
+- **The web has no list, install, accept or remove.** Only the setting and the inputs are
+  in Settings. Operator review needed: decide where the installed-pack list and actions
+  live in the web UI, and whether the web inputs form needs an Automaton level.
+- **Removing a pack does not update `packs.active`.** A removed name stays in the list
+  until edited. Operator review needed: decide whether remove should refuse while the
+  pack is active, or drop it from the list.
 - **The trace `pack` filter is not honoured over REST.** The MCP `trace_session` and
   `trace_rollup` tools send `?pack=`, and the REST trace routes ignore it. Operator review
   needed: wire the parameter on the REST routes, or drop it from the MCP tools.
-- **Pack inputs have no source.** Resolution, the secret reference check and redaction
-  exist and daemon-run tasks record `pack_inputs`, but nothing can set an input yet, and
-  the built-in pack declares none. Operator review needed: decide where inputs are set at
-  the Automaton, project and global levels, and whether `pack_inputs` should be shown on
-  the task in the web UI and the REST task read.
+- **Saved pack inputs are not read.** Inputs can be set at the Automaton, project and
+  global levels, but task creation passes empty maps, and the built-in pack declares none.
+  Operator review needed: decide when the daemon reads `inputs.json` when it creates a
+  task, and whether `pack_inputs` should be shown on the task in the web UI and the REST
+  task read.
 - **The per-pack usage summary and the pack cost breakdown have no surface.**
   `packs.UsageByPack` and the cost report's pack breakdown are library functions only.
   The Packs sub-tab named in the change does not call them yet. Decide where they show
