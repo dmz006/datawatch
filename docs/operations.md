@@ -7804,6 +7804,7 @@ web usage cards do not read it yet. See
 [howto/cost-report.md](howto/cost-report.md#dollars-and-points-are-never-added-together),
 [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards) and
 [howto/usage-calculator.md](howto/usage-calculator.md#unit-labels-on-the-usage-page).
+
 ## Skills coverage check
 
 Run `bash scripts/skills-coverage-check.sh` before a release and after any change that adds or removes an MCP tool, how-to, route, command or setting. It prints `ok: skills coverage` or one `FAIL:` line per drift and exits non-zero. Fix a drift by updating `docs/skills/inventory.yaml` and `docs/skills/coverage-matrix.yaml`. `docs/skills/registry-skills.txt` is refreshed by hand from the connected registry's skill list. Its failure-mode tests run with `bash tests/ci/test-skills-coverage-check.sh`. Operator guide: [howto/skills-sync.md](howto/skills-sync.md).
