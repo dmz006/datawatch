@@ -40,10 +40,13 @@ Projects is the first sub-tab of the **Automata** view, to the left of
 **Automation**. The sub-tab order is **Projects**, **Automation**, **Automata**,
 **Events**, **Templates**. It is not a tab of its own in the bottom navigation.
 
-The sub-tab is read-only. It shows what the daemon holds and links to the Settings
-entries where you change things. The project record itself (owner, target, arcs,
-lane defaults, weekly share, branch retention, major trigger) is changed from the
-CLI, REST, MCP and the comm channel, as shown below.
+The sub-tab shows what the daemon holds and links to the Settings entries where
+you change things. It also has a **Manage projects** block where you add, edit and
+remove a project (its name, directory, description and default backend) without
+leaving the page; see [Manage projects in the web app](#manage-projects-in-the-web-app).
+The rest of the project record (owner, target, arcs, lane defaults, weekly share,
+branch retention, major trigger) is changed from the CLI, REST, MCP and the comm
+channel, as shown below.
 
 Three words are used in this guide, and only these three:
 
@@ -73,7 +76,9 @@ Project  "core-api"
 ## Setup
 
 1. **Register the project.** Give it a name and an absolute directory. The alias
-   is what every surface uses afterwards.
+   is what every surface uses afterwards. In the web app you can do this with the
+   **Manage projects** form on the Projects sub-tab (see
+   [Manage projects in the web app](#manage-projects-in-the-web-app)); the CLI form is:
 
    ```bash
    datawatch projects upsert core-api --dir /srv/projects/core-api --backend claude-code --description "Public REST API"
@@ -94,6 +99,32 @@ Project  "core-api"
 
 3. **Fill in the record.** Set the owner, the target and the lane defaults, then
    the arcs. Each step is shown in the walkthrough.
+
+## Manage projects in the web app
+
+**Manage projects** is a collapsible block on the Projects sub-tab, under the
+project picker. It is open when there are no projects, while you edit one and when
+an error is showing; otherwise it is collapsed.
+
+| To do this | Do this |
+|---|---|
+| Add a project | Fill in **Name**, **Directory (absolute path)** and, if you want, **Description** and **Default backend**, then choose **Add project**. Name and directory are required; the page says "Enter a project name." or "Enter the project directory." when one is missing |
+| Edit a project | Choose **Edit** on its row. The form switches to "Edit project <name>", with the name read-only. Change the directory, description or default backend and choose **Save changes**, or **Cancel** |
+| Remove a project | Choose **Remove** on its row and confirm. Only the project record is removed. Running sessions and Automaton work are not stopped, and the directory is not touched |
+
+After a save or a remove the list and the picker reload and the page shows
+"Project <name> saved." or "Project <name> removed." If the daemon refuses the
+change, its message is shown above the form and nothing is changed. Removing the
+project you are viewing returns the picker to **Overview**.
+
+Editing sends the project's whole record back with only these three fields
+changed, so its policy, arcs, owner, target and other record fields keep their
+stored values. The block is the web form of `POST /api/projects` and
+`DELETE /api/projects/{name}`; the same actions are on the CLI, MCP and comm
+channel below.
+
+With no projects the picker area reads "No projects yet. Add your first project
+with the form below." and the form is open, so setup starts there.
 
 ## Walkthrough: from an empty project to a working page
 
@@ -182,8 +213,8 @@ Choose **Automata**, then the **Projects** sub-tab, then `core-api`. From the to
 | Unassigned Automata | Automata of this project that no arc holds |
 | Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now" |
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
-| Effective policy | Read-only summary of the project's policy, with a link to the policy panel in Settings |
-| Merge pipeline | Read-only, with a link to the merge pipeline settings |
+| Effective policy | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section |
+| Merge pipeline | Read-only, with an **Open settings** link that opens Settings on the Automata tab at the Merge pipeline group |
 | Events | The event stream filtered to this project. It is hidden while it has nothing to show, and it lists notes for empty sections (no arcs, no unassigned Automata) and a missing weekly share, but only when the project has an arc or an unassigned Automaton that needs one |
 
 A row links to its Automaton view, and a session link opens the session. The
@@ -287,11 +318,15 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
 | Change the window of the Gantt | Gantt header: 7, 30 or 90 days |
 | Page through history | **Load more** at the foot of History |
-| Change policy | **Settings → Automation → Project policy** (link on the page) |
-| Change the merge pipeline | **Settings → Automation → Merge pipeline** (link on the page) |
+| Change policy | **Settings → Automata → Project policy** (the **Open settings** link on the page opens the Automata tab, expands that section and scrolls to it) |
+| Change the merge pipeline | **Settings → Automata**, the **Merge pipeline** group of the Automata settings card (the **Open settings** link on the page opens the Automata tab, expands that card and scrolls to it) |
+| Add a project | **Manage projects** block under the picker: fill in the form, **Add project**. With no projects the form is already open |
+| Edit a project's directory, description or default backend | **Manage projects**, **Edit** on the project's row, then **Save changes** |
+| Remove a project | **Manage projects**, **Remove** on the project's row, then confirm. Only the record goes; sessions keep running |
 
-The page has no edit control for the record. Arcs, target, lane defaults and the
-numeric record fields are changed with the surfaces below.
+The block edits the directory, description and default backend only. Arcs,
+target, lane defaults, owner and the numeric record fields are changed with the
+surfaces below.
 
 ### REST
 
@@ -387,7 +422,9 @@ the lane defaults. Use REST, MCP or the CLI for those.
 
 | Symptom | Cause and fix |
 |---|---|
-| The Projects sub-tab says "No projects yet" | No alias is registered. Run `datawatch projects upsert` (step 1) |
+| The Projects sub-tab says "No projects yet" | No alias is registered. Use the **Manage projects** form on the page, or run `datawatch projects upsert` (step 1) |
+| **Add project** says "Enter a project name." or "Enter the project directory." | Both fields are required. The directory must be an absolute path |
+| A save or remove shows an error above the form | The daemon refused the change and nothing was saved; read the message, fix the field and try again |
 | Roll-up shows "Could not load the roll-up" | The autonomous store is off or the alias is unknown. Check the daemon with `datawatch projects get <name>` |
 | An arc shows no Automata | Its Automation has no member Automata yet, or the Automata are of another project |
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each arc needs a unique id; an arc whose state is not `planned`, `active` or `done` is refused |
@@ -403,8 +440,9 @@ the lane defaults. Use REST, MCP or the CLI for those.
   the project's own values yet.
 - Lane defaults are recorded for new work but do not yet decide where an Automaton
   runs.
-- The page is read-only. Changes go through REST, MCP, the CLI or the comm
-  channel.
+- The **Manage projects** block changes only the name, directory, description
+  and default backend. Arcs, target, lane defaults, owner and the numeric record
+  fields go through REST, MCP, the CLI or the comm channel.
 
 ## For the operator to review
 
@@ -417,6 +455,15 @@ the lane defaults. Use REST, MCP or the CLI for those.
   same reason; rename it only if you also redirect the links that point here.
 - **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
   order shipped. Confirm it is the order you want before the next release.
+- **Empty-state link.** The empty Projects picker used to show an **Open Settings**
+  button that went to Project policy. This page now describes the **Manage
+  projects** form as the place to start, and the button is no longer listed.
+  Confirm that is the intended behavior in the shipped web app.
+- **Edit keeps the record.** The page says editing keeps the policy, arcs, owner,
+  target and other record fields. That follows the shipped form's behavior as
+  documented in the change; confirm it on a project that has a policy and arcs.
+- **Mobile parity.** The Manage projects form is web-only; the Android and iPhone
+  apps need the matching add, edit and remove controls (tracked in datawatch-app).
 
 ## Related
 

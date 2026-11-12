@@ -80,6 +80,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_observer_peer_silent_alert_minutes",
 		"settings_observer_peer_silent_alert_minutes_hint",
 		"observer_peer_never_pushed",
+		// Projects manage form action keys.
+		"projects_manage_add_action",
+		"projects_manage_save_action",
+		"projects_manage_cancel_action",
+		"projects_manage_remove_action",
 		// b4220001 — PWA splash dwell settings and the previous-version line.
 		"splash_version_previous",
 		"settings_splash_min_seconds",

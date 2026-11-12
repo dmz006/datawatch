@@ -152,13 +152,16 @@ test('a blocked history.replaceState does not stop the choice from applying', as
   assert.match(out.view, /data-project="zeta"/);
 });
 
-test('with no projects the tab points at Settings and shows no picker', async () => {
+test('with no projects the tab shows the add form and no picker', async () => {
   const { sb, out } = loadView({ projects: [] });
   sb.renderProjectsView();
   await flushAsync();
   assert.match(out.view, /id="projectsNone"/);
-  assert.match(out.view, /No projects yet\. Add one in Settings, then pick it here\./);
-  assert.match(out.view, /onclick="navigate\('settings'\)"/);
+  assert.match(out.view, /No projects yet\. Add your first project with the form below\./);
+  assert.match(out.view, /id="projectsManageForm"/);
+  assert.match(out.view, /id="projectsManageName"/);
+  assert.match(out.view, /id="projectsManageDir"/);
+  assert.doesNotMatch(out.view, /_projectsOpenSettings/);
   assert.doesNotMatch(out.view, /id="projectsPicker"/);
 });
 

@@ -4,14 +4,15 @@ Parent release: datawatch next release
 
 ## What changed in datawatch
 
-The PWA gains a top-level **Projects** tab in the bottom navigation. It is read-only: the record is changed through REST, MCP, the CLI or the comm channel, not from the page.
+The PWA gains a top-level **Projects** tab in the bottom navigation. The page has a **Manage projects** block to add, edit and remove a project's name, directory, description and default backend; the rest of the record is changed through REST, MCP, the CLI or the comm channel.
 
-- **Projects picker.** The tab opens with a **Project** picker fed by `GET /api/projects`. **Overview** is the first choice and is the cross-project in-flight view. An empty list shows "No projects yet" with an **Open Settings** button.
+- **Projects picker.** The tab opens with a **Project** picker fed by `GET /api/projects`. **Overview** is the first choice and is the cross-project in-flight view. An empty list shows "No projects yet. Add your first project with the form below." with the **Manage projects** form open; there is no **Open Settings** button in the empty state.
 - **Project page.** Choosing a project (or opening `#projects/<name>`) shows the project header: owner, repository, default branch, target, definition of done, lane defaults, weekly share and priority. The last project opened is remembered in the browser.
 - **Arcs, Automata and sessions.** Arcs are listed in their stored order with their state (planned, active, done). Each arc shows its Automata and their sessions, and sessions link to the existing session view. Automata not in any arc sit under **Unassigned Automata**.
 - **Progress roll-up.** Per-arc and whole-project progress bars, cost in points, and throughput over a window of days. Cost in points is marked "Not priced" when the backends are not on a bundled plan.
 - **History and Gantt.** **History** lists finished Automata and tasks with progress snapshots and pages with **Load more**. The **Gantt** draws Automata and tasks over a window of 7, 30 or 90 days; the newest rows are drawn first when the window is bounded.
-- **Effective policy and merge pipeline.** The page shows the effective project policy, with links to **Settings → Automation → Project policy** and **Settings → Automation → Merge pipeline**.
+- **Effective policy and merge pipeline.** The page shows the effective project policy, with links to **Settings → Automata → Project policy** and the **Merge pipeline** group in **Settings → Automata**. Each link switches Settings to the Automata tab, expands the section if it is collapsed, and scrolls to it.
+- **Manage projects.** A collapsible block under the picker: a list with **Edit** and **Remove** per project and one form. **Add project** posts the new record to `POST /api/projects`; **Edit** loads the listed record, makes the name read-only and posts it back whole with only directory, description and default backend changed, so policy and arcs are kept; **Remove** asks for confirmation, then calls `DELETE /api/projects/{name}` and removes only the record (no session is stopped). Name and directory are required. Errors from the daemon are shown above the form. Removing the viewed project returns the picker to Overview.
 - **Events.** A read-only stream of events filtered to the project, with a note of the queue it reads and a notice when earlier events were dropped before they were read.
 - **Project defaults in Settings.** The Settings automation area gains a **Project defaults** card for `projects_defaults`: branch retention days, weekly share percent and major release trigger. These are stored daemon-wide defaults, used when a project sets none of its own.
 
@@ -55,7 +56,15 @@ The Projects tab uses 67 `projects_*` keys, plus the three `settings_projects_de
 |---|---|
 | `projects_overview` | Overview |
 | `projects_picker_label` | Project |
-| `projects_none` | No projects yet. Add one in Settings, then pick it here. |
+| `projects_none` | No projects yet. Add your first project with the form below. |
+| `projects_manage_title` | Manage projects |
+| `projects_manage_add_title` / `projects_manage_edit_title` | Add project / Edit project %1$s |
+| `projects_manage_col_name`, `_col_dir`, `_col_backend`, `_col_description` | Table column headings |
+| `projects_manage_field_name`, `_field_dir`, `_field_description`, `_field_backend` | Form field labels |
+| `projects_manage_add_action`, `_save_action`, `_cancel_action`, `_edit_action`, `_remove_action` | Button labels |
+| `projects_manage_confirm_remove` | Remove project %1$s? Only the project record is removed. Running sessions and Automaton work are not stopped. |
+| `projects_manage_err_name`, `_err_dir` | Enter a project name. / Enter the project directory. |
+| `projects_manage_saved`, `_removed` | Project %1$s saved. / Project %1$s removed. |
 | `projects_page_arcs` | Arcs |
 | `projects_rollup_heading` | Progress |
 | `projects_history_heading` | History |
@@ -79,7 +88,8 @@ Android and iOS should match the PWA on these points. The daemon contract above 
 - The effective policy lists each setting with its tier, and the two links open the matching Settings sections.
 - The events list is read-only and filtered to the project; a dropped-events notice is shown when the daemon reports it.
 - All five locales are present; no screen shows an untranslated English string in DE, ES, FR or JA.
-- Reads never change the record; the page offers no edit control for the record fields.
+- Reads never change the record. Only the **Manage projects** block writes, and only the directory, description and default backend; an edit keeps the stored policy and arcs.
+- Add, edit and remove each show a result line or the daemon's error; a removed project leaves the picker and its sessions keep running.
 
 ## Filing record
 

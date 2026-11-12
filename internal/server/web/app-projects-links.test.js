@@ -109,7 +109,7 @@ test('the policy section lists each value with its source and links to Settings,
   assert.ok(html.includes('max_concurrent_tasks:'), 'policy key shown');
   assert.ok(html.includes('(project)'), 'source shown');
   assert.ok(html.includes("_projectsOpenSettings(&quot;project_policy&quot;)") || html.includes('_projectsOpenSettings("project_policy")'), 'link opens the project policy settings');
-  assert.ok(html.includes('_projectsOpenSettings(&quot;&quot;)') || html.includes('_projectsOpenSettings("")'), 'merge pipeline link opens Settings');
+  assert.ok(html.includes('_projectsOpenSettings(&quot;gc_autonomous&quot;)') || html.includes('_projectsOpenSettings("gc_autonomous")'), 'merge pipeline link opens the merge pipeline settings section');
   assert.ok(!/<(input|select|textarea|button)\b/i.test(html), 'no edit controls in the links block');
 });
 

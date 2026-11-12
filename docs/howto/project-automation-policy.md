@@ -133,8 +133,13 @@ value lands nowhere at all.
 
 ### In the panel
 
-Open Settings on the PWA, go to **Automata > Project policy**, and ask for a project by name.
-The panel shows every setting in one view.
+A project must exist before it has a policy. Create it first on the **Projects** sub-tab
+(**Automata**, then **Projects**): open the **Manage projects** block, fill in the name and
+directory, and choose **Add project**. See [projects-tab](projects-tab.md) for the form.
+
+Then open Settings on the PWA, go to **Automata > Project policy**, and ask for a project by name.
+The panel shows every setting in one view. The **Open settings** link on the Projects sub-tab opens
+this same section.
 
 ### Before you change anything
 
@@ -148,7 +153,8 @@ The panel shows every setting in one view.
 
 ### In the panel
 
-Pick the field whose badge you want to flip, choose a value, and the panel writes one key of
+With the project already added on the Projects sub-tab, open **Settings → Automata → Project policy**,
+then pick the field whose badge you want to flip, choose a value, and the panel writes one key of
 `projects.<name>.policy`. The daemon re-checks the key before it stores it — a value outside the
 field's range is refused with the reason shown, and nothing is half-written.
 
