@@ -22,3 +22,7 @@ TAGS is invoice-fix."
 
 Result: the alias is resolved, existing sessions are checked for duplicates,
 the session is started and tagged, and its name and state are reported.
+
+## Note
+
+No second-ranked skill was added: the gap ranking report was not present in the repository, so no rank-2 gap could be read.
