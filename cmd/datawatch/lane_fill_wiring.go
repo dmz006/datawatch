@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/server"
@@ -107,14 +108,73 @@ func registryNodeLookup(reg *compute.Registry) autonomous.NodeLookup {
 	}
 }
 
+// laneFillHostHolders names the pool hosts that hold work: the nodes of the
+// capacity ledger's leases, the nodes of running sessions, and the nodes of
+// Automaton tasks that are running or pinned to a node.
+type laneFillHostHolders struct {
+	leases   func() []capacity.Lease
+	sessions autonomous.SessionLister
+	prds     func() []*autonomous.PRD
+}
+
+func (h laneFillHostHolders) HeldHosts(ctx context.Context) map[string]bool {
+	held := map[string]bool{}
+	add := func(name string) {
+		if name = strings.TrimSpace(name); name != "" {
+			held[name] = true
+		}
+	}
+	if h.leases != nil {
+		for _, l := range h.leases() {
+			add(l.Node)
+			for _, p := range l.Pools {
+				if n, ok := strings.CutPrefix(p, "node:"); ok {
+					add(n)
+				}
+			}
+		}
+	}
+	if h.sessions != nil {
+		sessions, _ := h.sessions.RunningSessions(ctx)
+		for _, s := range sessions {
+			add(s.Node)
+		}
+	}
+	if h.prds != nil {
+		for _, prd := range h.prds() {
+			if prd == nil {
+				continue
+			}
+			for _, st := range prd.Story {
+				for _, t := range st.Tasks {
+					if t.Status == autonomous.TaskInProgress {
+						add(t.ComputeNode)
+					}
+				}
+			}
+		}
+	}
+	return held
+}
+
 // newLaneFillEvidenceSource builds the pool evidence source lane fill plans
 // with, over the real session list and the compute registry.
-func newLaneFillEvidenceSource(mgr *autonomous.Manager, httpServer *server.HTTPServer, reg *compute.Registry, ollamaHost string) autonomous.PoolEvidenceSource {
+func newLaneFillEvidenceSource(mgr *autonomous.Manager, httpServer *server.HTTPServer, reg *compute.Registry, ollamaHost string, ledger *capacity.Ledger) autonomous.PoolEvidenceSource {
+	lister := federationSessionLister{sessions: httpServer.FederationSessions}
+	holders := laneFillHostHolders{
+		sessions: lister,
+		prds:     func() []*autonomous.PRD { return mgr.Store().ListPRDs() },
+	}
+	if ledger != nil {
+		holders.leases = ledger.Leases
+	}
 	return autonomous.NewPoolEvidenceSource(
-		federationSessionLister{sessions: httpServer.FederationSessions},
+		lister,
 		computePoolHosts{reg: reg, localHost: func() string { return ollamaHost }},
 		autonomous.NewHTTPModelFetcherForNodes(nil, registryNodeLookup(reg)),
 		autonomous.PoolEvidenceGPUBackend(func() string { return mgr.Config().LaneFill.EffectiveGPUBackend() }),
+		autonomous.PoolEvidenceHostDownAfter(func() int { return mgr.Config().LaneFill.EffectiveHostDownAfterMinutes() }),
+		autonomous.PoolEvidenceHolders(holders),
 	)
 }
 

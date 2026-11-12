@@ -41,11 +41,16 @@ type PoolEvidence struct {
 	ActiveGPUSessions int
 	LoadedModels      []LoadedModel
 	CheckedAt         time.Time
+	// Degraded lists the hosts whose loaded models could not be read but
+	// whose failure does not block planning (see NewPoolEvidenceSource).
+	Degraded []PoolHostDegraded
 }
 
-// PoolEvidenceSource reads the GPU pool. Until one is set with
-// SetLaneFillEvidenceSource the evidence is reported unavailable, so no GPU
-// lane is called idle.
+// PoolEvidenceSource reads the GPU pool. Check returns an error only for a
+// blocking fault; a host that is degraded (unreachable past the host-down
+// threshold and holding no work) is reported in PoolEvidence.Degraded instead,
+// with a nil error. Until one is set with SetLaneFillEvidenceSource the
+// evidence is reported unavailable, so no GPU lane is called idle.
 type PoolEvidenceSource interface {
 	Check(ctx context.Context) (PoolEvidence, error)
 }
@@ -132,6 +137,18 @@ type LaneFillEvidence struct {
 	GPUActiveSessions int           `json:"gpu_active_sessions"`
 	LoadedModels      []LoadedModel `json:"loaded_models"`
 	Error             string        `json:"error"`
+	// Degraded lists pool hosts that could not be read but do not block
+	// planning. It is separate from the lane blockers and empty when nothing
+	// is degraded.
+	Degraded []LaneFillDegradedHost `json:"degraded"`
+}
+
+// LaneFillDegradedHost is a pool host that is unreachable past the host-down
+// threshold and holds no work, so lanes are judged from the other hosts.
+type LaneFillDegradedHost struct {
+	Host  string    `json:"host"`
+	Error string    `json:"error"`
+	Since time.Time `json:"since"`
 }
 
 // LaneFillAlert is an idle-lane alert raised by lane fill.
@@ -732,6 +749,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		Evidence: LaneFillEvidence{
 			CheckedAt: ev.CheckedAt, GPUActiveSessions: ev.ActiveGPUSessions,
 			LoadedModels: append([]LoadedModel{}, ev.LoadedModels...), Error: evErr,
+			Degraded: laneFillDegradedView(ev.Degraded),
 		},
 		Lanes: make([]LaneFillLaneStatus, 0, len(model.Lanes)),
 	}
@@ -793,9 +811,22 @@ func (c *Coordinator) laneFillEvidence(ctx context.Context, src PoolEvidenceSour
 		ev.CheckedAt = now
 	}
 	if err != nil {
-		return PoolEvidence{CheckedAt: ev.CheckedAt}, err.Error()
+		// A blocking fault blocks every GPU lane as before; the degraded
+		// list is still reported next to the error.
+		return PoolEvidence{CheckedAt: ev.CheckedAt, Degraded: ev.Degraded}, err.Error()
 	}
+	// Only degraded faults, or none: the readable hosts' evidence stands.
 	return ev, ""
+}
+
+// laneFillDegradedView converts the degraded hosts for the status; the result
+// is never nil so the JSON list is empty, not null.
+func laneFillDegradedView(in []PoolHostDegraded) []LaneFillDegradedHost {
+	out := make([]LaneFillDegradedHost, 0, len(in))
+	for _, d := range in {
+		out = append(out, LaneFillDegradedHost{Host: d.Host, Error: d.Error, Since: d.Since})
+	}
+	return out
 }
 
 // laneFillLaneBackend is the backend and model the lane type runs.
