@@ -254,6 +254,15 @@ so registering or removing an alias changes the field on the next read. When no
 alias matches, the field is left out. See
 [Derived project alias](../datawatch-definitions.md#derived-project-alias).
 
+### Plan records on the project page
+
+Below the history, the project page lists the project's plan records: switch
+between **Registry rows** and **Findings**, filter by state, search titles and
+text, open one to change its title, state, notes or linked Automaton, create a
+record, or preview and apply an import of the old plans files. Records are never
+deleted; closing one is a state change. Full guide:
+[plan-records.md](plan-records.md).
+
 ### Arc states
 
 | State | Meaning on the page |
@@ -426,11 +435,12 @@ the lane defaults. Use REST, MCP or the CLI for those.
   and the Projects link open the sub-tab, so bookmarks and the Settings help
   links stay valid. This page keeps its file name (`projects-tab.md`) for the
   same reason; rename it only if you also redirect the links that point here.
-- **Plan records.** The registry rows and findings of `docs/plans/` now have a
-  record store and a read-only importer, but no REST, MCP, CLI, comm or web app
-  surface yet, so this page does not list them. Decide which surface comes first
-  and where a records view belongs before it is built; see
-  [operations.md](../operations.md#plan-records-store-and-import).
+- **Plan records.** The project page has a Plan records section (registry rows
+  and findings, state filter, search, detail edit, New record, Import archive…).
+  It hides when `autonomous.plan_records.enabled` is false. Confirm that its
+  position below the history and above the links is where you want it, and that
+  the section label and the project label wording read well; see
+  [plan-records.md](plan-records.md). Mobile apps do not have it yet.
 - **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
   order shipped. Confirm it is the order you want before the next release.
 

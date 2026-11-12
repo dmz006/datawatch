@@ -2893,7 +2893,7 @@ The **Helm version pin** is `scripts/helm-version.txt`, a file holding one `vX.Y
 
 ## Plan records
 
-A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. The file-backed store and the importer exist in this release; no REST route, MCP tool, CLI command, comm verb or web app view reads them yet. See [operations.md](operations.md#plan-records-store-and-import).
+A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. Records are read and changed through REST (`/api/plan-records`), the MCP `plan_record_*` tools, `datawatch plan-record`, the `autonomous plan-record` chat verbs and the Plan records section of the Projects page. See [howto/plan-records.md](howto/plan-records.md) and [operations.md](operations.md#plan-records-store-and-import).
 
 ### Registry row record
 
@@ -2909,7 +2909,7 @@ Every plan record has a short readable **id**, unique in the installation, and a
 
 ### Record reference
 
-A **record reference** is how a caller names a plan record. It is tried in this order: id, uid, `row <number>`, exact title, an old title alias, an unambiguous title prefix. An ambiguous reference returns the list of candidates so the caller can ask which one was meant. Records are never deleted; closing one is a state change.
+A **record reference** is how a caller names a plan record. It is tried in this order: id, uid, `row <number>`, exact title, an old title alias, an unambiguous title prefix. An ambiguous reference returns the list of candidates so the caller can ask which one was meant. Records are never deleted; closing one is a state change. A reference in a URL writes the row form as `row-<n>`.
 
 ### Plan record import
 
@@ -2918,6 +2918,14 @@ The **plan record import** reads the numbered rows of `docs/plans/README.md` and
 ### Import conflict policy
 
 The **import conflict policy** decides what happens to a title already taken in the project, a duplicate row number or a row that cannot be parsed. `suffix` (the default) appends ` (row <n>)` or ` (<file>)` and flags the record `needs_review`; `rename` takes a new title from the caller's map; `skip` leaves the record out. A real run applies the policy to every conflict and never stops half way.
+
+### Plan record write-through
+
+**Plan record write-through** is the setting `autonomous.plan_records.write_through` (default off). When on, the merge pipeline's `registry_row` post-ship hook records the shipped row as a plan record (marks the matching registry row `shipped` with the Automaton id and version, or creates one) instead of editing `docs/plans/README.md`. A failed write fails the hook and never falls back to the README. It does not mirror hand edits of a record back into the plans files. See [howto/plan-records.md](howto/plan-records.md#what-happens-when-an-automaton-ships).
+
+### Plan records switch
+
+The **plan records switch** is `autonomous.plan_records.enabled` (default on). While off, every `/api/plan-records` route answers 404 and the Plan records section of the Projects page hides. Records on disk are kept.
 
 ### Derived project alias
 
