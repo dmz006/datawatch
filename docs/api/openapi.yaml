@@ -3156,6 +3156,7 @@ paths:
                     type: integer
                     minimum: 0
                     description: Operator-set worker count (0 = derive from observer GPU data, one slot per GPU limited by free GPU memory). Capped by max_concurrent_sessions when that is set.
+                  verify_tls: {type: boolean, default: false, description: "When true, model pulls to this node verify its HTTPS certificate against the system roots; false (the default) skips verification for a node on a private network. Independent of the usage-probe TLS settings."}
     put:
       summary: Replace one compute node
       description: Replaces the whole node. Omitting session_slots clears the override, and omitting max_concurrent_sessions clears the ceiling.
@@ -3172,6 +3173,7 @@ paths:
               properties:
                 max_concurrent_sessions: {type: integer, minimum: 0}
                 session_slots: {type: integer, minimum: 0, description: Operator-set worker count; 0 derives the count from observer GPU data.}
+                verify_tls: {type: boolean, default: false, description: "Verify this node's HTTPS certificate on model pulls (default false = skip verification). Omitting it on a replace resets it to false."}
       responses:
         "200":
           description: The updated node record
