@@ -180,6 +180,12 @@ under each arc with their task progress, cost in points and throughput over the
 last seven days. Ask for another window through REST or MCP (`window`, 1 to 365
 days).
 
+Throughput counts an Automaton as finished when it is completed, when it is
+cancelled or archived and its work branch is already on the project's default
+branch, or when it carries a shipped record. Its finish time is the merge or ship
+time when known, else its last update. A task counts from its own completion time
+in the window, whatever the Automaton's final status, and never twice.
+
 Costs are **points** from the billing profile, never API dollars. A project with
 no priced Automaton shows the note that the backends are not on a bundled plan.
 

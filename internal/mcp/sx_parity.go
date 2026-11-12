@@ -459,7 +459,7 @@ func arcsArg(decoded any) ([]any, error) {
 func (s *Server) toolProjectRollup() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_rollup",
 		mcpsdk.WithDescription(
-			"Project roll-up: arcs in order with their Automata, task progress, cost in points and throughput over a window of days. Read-only."),
+			"Project roll-up: arcs in order with their Automata, task progress, cost in points and throughput over a window of days. An Automaton counts as finished when it is completed, when it is cancelled or archived and its work branch is already on the default branch, or when it carries a shipped record; a task counts from its own completion time in the window, whatever the Automaton status. Read-only."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
 		mcpsdk.WithNumber("window", mcpsdk.Description("Throughput window in days (1–365, default 7).")),
 	)
