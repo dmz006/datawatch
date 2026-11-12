@@ -290,8 +290,6 @@ func DecisionLogLine(rec RepairRecord) string {
 
 // ---- Repairs over the supervisor loop steps ----
 
-type loopStepRepairs struct{ s *SupervisorLoopSteps }
-
 // NewSupervisorStepRepairs returns the four repairs backed by the mechanical
 // supervisor loop steps (start next chain step, retry failed infra, lane
 // count, cleanup sweep). Nil steps give none.

@@ -558,7 +558,7 @@ func (o ManagerChainOps) ChainTasks(_ context.Context) []ChainTask {
 // ResetTask is a plain reset (force off) that also resumes the run.
 func (o ManagerChainOps) ResetTask(_ context.Context, automatonID, taskID string) error {
 	if o.API == nil {
-		return errors.New("Automaton API not wired")
+		return errors.New("automaton API not wired")
 	}
 	_, err := o.API.ResetTaskWithOptions(automatonID, taskID, "housekeeping-repair", false, false)
 	return err

@@ -319,7 +319,7 @@ func (o ManagerAdvanceOps) Automata(_ context.Context) []AdvanceAutomaton {
 // moves on.
 func (o ManagerAdvanceOps) Advance(_ context.Context, id string) error {
 	if o.API == nil {
-		return errors.New("Automaton API not wired")
+		return errors.New("automaton API not wired")
 	}
 	_, err := o.API.refireRollup(id)
 	return err
@@ -329,11 +329,11 @@ func (o ManagerAdvanceOps) Advance(_ context.Context, id string) error {
 // it with a plain reset, and records the decision.
 func (o ManagerAdvanceOps) RepairJudge(_ context.Context, id string, findings []string) error {
 	if o.API == nil {
-		return errors.New("Automaton API not wired")
+		return errors.New("automaton API not wired")
 	}
 	prd, ok := o.API.M.Store().SnapshotPRD(id)
 	if !ok || len(prd.Story) == 0 {
-		return errors.New("Automaton or its stories not found")
+		return errors.New("automaton or its stories not found")
 	}
 	story := prd.Story[len(prd.Story)-1]
 	spec := "Fix every finding from the completion rules review, then finish:\n- " + strings.Join(findings, "\n- ")
