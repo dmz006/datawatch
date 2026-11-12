@@ -1215,6 +1215,8 @@ The model-pull consent gate decides which models may be downloaded — both the 
 
 Everything else is refused, and the refusal names what to set (`autonomous.model_pull_consent.models` or `autonomous.model_pull_consent.publishers`). A listed entry with `allowed: false` is an explicit refusal and its `note` travels with the refusal, for example `refused: model "big-model-65b" is denied by operator — too large for the pool`. Matching is case-insensitive and ignores the `:tag` suffix: a listed `gpt-oss` matches a pull of `gpt-oss:20b`. The policy is read at pull time, so changes apply without a restart.
 
+**Pulls and node certificates.** Consent decides what may be pulled; it does not decide how the node is trusted. A pull to an `https://` node does not check the node's certificate unless that node has `verify_tls` on. With it on, a certificate that does not verify against the system roots fails the pull with an error naming the node and the problem, and the node's `tls_ca_file` and `tls_cert_fingerprint` are not used for pulls. Review which nodes have it on before relying on it, and see [howto/compute-nodes.md](howto/compute-nodes.md#verify-the-certificate-on-model-pulls).
+
 **The set is complete.** Every write surface *replaces* the stored policy, it does not append: read what you have, compose the whole new list, write it back.
 
 | Method | How |
