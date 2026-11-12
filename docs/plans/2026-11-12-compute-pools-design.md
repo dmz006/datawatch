@@ -476,6 +476,30 @@ Estimated total: about **26 Automata** (range 22–32), run sequentially by phas
 8. **What release size should this carry?** Options: (a) next minor above main, because it adds an object and six surfaces; (b) next patch above main. *Recommendation: (a).* It is new operator-visible feature surface, which the release numbering rule treats as a minor; the operator sets the final number at merge.
 9. **Should the pool be exposed to peers for read at all?** Options: (a) never (local only); (b) read-only pool list behind an explicit grant; (c) full read. *Recommendation: (a).* A peer needs the placement capabilities, not the coordinator's layout, and (b) can be added later without breaking (a).
 
+## Documentation impact
+
+This change is design only, so no user-facing document describes pools yet and none may claim they exist. When the build phases land, each document below is updated in the same change as the phase that ships the behavior (the Phase Completion Checklist in `AGENT.md`). Every existing link and anchor into these files stays reachable: pool material is added as new sections or new rows, and no heading is renamed or removed.
+
+| Document | Entry to update after the build | Phase |
+|---|---|---|
+| `docs/howto/compute-nodes.md` | New section "Grouping nodes into pools": a node in none, one or several pools, unpooled nodes staying usable, peer members by name or whole, pool-scoped drain. Cross-link to the existing `Node.Permissions` and drain sections. | 5 |
+| `docs/howto/automation-lane-fill.md` | Extend "The lane counts rule" and "Pool evidence and a node with a private certificate" with the pool as the unit of lane counting, the `min(lane_count, free)` arithmetic, and the shadow to on switch for `compute_pools.mode`. Keep the term "ledger pool" for the `node:` and `llm:` keys. | 3 |
+| `docs/howto/federation-cbac.md` and `docs/howto/compute-routing.md` | Peer members need `placement:advertise` and `placement:submit`; a peer never learns pool names. | 8 |
+| `docs/operations.md` | Operator procedures: split a pool, drain one member in one pool, read the empty-pool and exhausted-pool alerts, roll back from `on` to `shadow`, downgrade steps. | 10 |
+| `docs/datawatch-definitions.md` | New definitions: compute pool, member, unpooled node, spill-over, pool source (winning precedence level), explain. Clarify that "ledger pool" is a different, older meaning. Add the Pools card under Settings, Compute. | 6 |
+| `docs/config-reference.yaml` | Commented `compute_pools`, `compute_pools.health` and `compute_pools.mode` entries. | 5 |
+| `docs/plans/README.md` | The design-docs link and registry row 496 exist now; the row moves from design to done as phases ship. | each |
+
+## Operator review before this becomes a build
+
+These need the operator's eyes; none is decided here beyond the recommendation in the Operator decisions section.
+
+- The nine decisions above, in particular decision 2 (unpooled nodes stay usable but count for no lane) and decision 8 (release size).
+- **Unconfirmed claims** that a build must prove first: finding 12 (the `placement:` capabilities are not yet in `capabilities.go`, so phase 8 is blocked), finding 15 (the real stale limit for peer data, so 90 s and 300 s are proposals), finding 16 (the exact data contract of the lane utilization view), and the two downgrade claims in section 9.
+- **Web placement** of the Pools card and the editor selectors is a design question for the operator before phase 6.
+- **Mobile parity:** a `datawatch-app` issue is due at each web-changing phase; none is filed by this documentation change.
+- The word "pool" is already used by the capacity ledger; confirm that user-facing text says "compute pool" throughout.
+
 ## Parity surface
 
 Per the parity-surface rule in `AGENT.md`, this lists every channel the pool feature touches. All surfaces are included except the two mobile clients, which are tracked in the companion app and not built here.
