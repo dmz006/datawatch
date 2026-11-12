@@ -664,6 +664,10 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// ArchiveGraceMinutes is the minutes a cancelled Automaton is kept before
+	// the supervisor loop archives it (mirrors config.AutonomousConfig). Nil
+	// reads as 60; an explicit 0 archives at once.
+	ArchiveGraceMinutes *int `json:"archive_grace_minutes,omitempty"`
 	// CapacityFallthrough admits a task on another idle allowed pool when its
 	// requested pool is full (default off; mirrors config.AutonomousConfig).
 	CapacityFallthrough bool `json:"capacity_fallthrough,omitempty"`

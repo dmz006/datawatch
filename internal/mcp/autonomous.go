@@ -282,6 +282,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithNumber("archive_grace_minutes", mcpsdk.Description("Whole minutes a cancelled Automaton is kept before the supervisor loop archives it (default 60; 0 archives at once; negative or fractional values are rejected)")),
 		mcpsdk.WithBoolean("capacity_fallthrough", mcpsdk.Description("Pool fall-through: when a task's requested LLM pool is full, admit it on another idle allowed pool (default false)")),
 		mcpsdk.WithBoolean("capacity_strict_node_limit", mcpsdk.Description("Strict per-node limit: verifier and resumed workers never over-admit a compute node (default true; false restores the earlier behaviour)")),
 		mcpsdk.WithBoolean("capacity_count_pool_by_node", mcpsdk.Description("Count an LLM pool by node: sessions piled on one node use at most that node's limit of the pool (default true)")),
@@ -795,6 +796,11 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			if _, ok := args[k]; ok {
 				body[k] = int(req.GetFloat(k, 0))
 			}
+		}
+	}
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["archive_grace_minutes"]; ok {
+			body["archive_grace_minutes"] = req.GetFloat("archive_grace_minutes", 0)
 		}
 	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {

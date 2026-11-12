@@ -497,6 +497,19 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 			}
 		}
+		// archive_grace_minutes: a whole number of minutes >= 0; a bad value
+		// rejects the whole PUT.
+		if raw, ok := top["archive_grace_minutes"]; ok {
+			var v any
+			if json.Unmarshal(raw, &v) != nil {
+				http.Error(w, "autonomous.archive_grace_minutes: must be a whole number of minutes >= 0", http.StatusBadRequest)
+				return
+			}
+			if _, verr := config.ParseArchiveGraceMinutes(v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
 		if err := s.autonomousMgr.SetConfig(body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

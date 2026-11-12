@@ -37,15 +37,21 @@ func slCancelRecord(t *testing.T, h *coordHarness, i int, cancelAt time.Time) {
 	}
 }
 
-// slGraceSet returns a fresh steps rig whose archive_cancelled_after_minutes
+// slGraceRig returns a fresh steps rig whose autonomous.archive_grace_minutes
 // setting is grace, reading a controllable clock.
 func slGraceRig(t *testing.T, grace int) (*coordHarness, *SupervisorLoopSteps) {
 	t.Helper()
-	set := supervisorloop.DefaultSettings()
-	if err := set.Set(supervisorloop.KeyArchiveCancelledAfterMinutes, grace); err != nil {
-		t.Fatal(err)
-	}
-	h, steps, _ := newStepsRig(t, SupervisorLoopHooks{Settings: func() supervisorloop.Settings { return set }})
+	h, steps := slUnsetGraceRig(t)
+	cfg := h.m.Config()
+	cfg.ArchiveGraceMinutes = &grace
+	h.m.SetConfig(cfg)
+	return h, steps
+}
+
+// slUnsetGraceRig is a rig where autonomous.archive_grace_minutes was never set.
+func slUnsetGraceRig(t *testing.T) (*coordHarness, *SupervisorLoopSteps) {
+	t.Helper()
+	h, steps, _ := newStepsRig(t, SupervisorLoopHooks{Settings: func() supervisorloop.Settings { return supervisorloop.DefaultSettings() }})
 	return h, steps
 }
 
@@ -123,5 +129,61 @@ func TestSupervisorLoopArchiveGraceCompletedAtOnce(t *testing.T) {
 	}
 	if slStatus(t, h, 0) != PRDArchived {
 		t.Errorf("completed record = %s, want archived at once", slStatus(t, h, 0))
+	}
+}
+
+// Unset means the 60-minute default: a record cancelled 5 minutes ago is held,
+// one cancelled 61 minutes ago is archived.
+func TestSupervisorLoopArchiveGraceUnsetUsesDefault(t *testing.T) {
+	h, steps := slUnsetGraceRig(t)
+	slCancelRecord(t, h, 0, slBase.Add(-5*time.Minute))
+	slSetClock(t, steps, slBase)
+	if r := resultFor(t, steps.RunPass(context.Background()), stepCloseFinishedRecords); r.Err != nil {
+		t.Fatalf("pass: %+v", r)
+	}
+	if slStatus(t, h, 0) != PRDCancelled {
+		t.Errorf("record cancelled 5 minutes ago = %s, want held under the default", slStatus(t, h, 0))
+	}
+	if slStatus(t, h, 0) != PRDCancelled {
+		t.Errorf("record cancelled 5 minutes ago = %s, still want held", slStatus(t, h, 0))
+	}
+	// A fresh rig, still unset: a record cancelled 61 minutes ago goes.
+	h2, steps2 := slUnsetGraceRig(t)
+	slCancelRecord(t, h2, 0, slBase.Add(-61*time.Minute))
+	slSetClock(t, steps2, slBase)
+	if r := resultFor(t, steps2.RunPass(context.Background()), stepCloseFinishedRecords); r.Err != nil {
+		t.Fatalf("pass: %+v", r)
+	}
+	if slStatus(t, h2, 0) != PRDArchived {
+		t.Errorf("record cancelled 61 minutes ago = %s, want archived", slStatus(t, h2, 0))
+	}
+}
+
+// The superseded loop key does not drive the step any more.
+func TestSupervisorLoopArchiveGraceIgnoresLoopKey(t *testing.T) {
+	set := supervisorloop.DefaultSettings()
+	if err := set.Set(supervisorloop.KeyArchiveCancelledAfterMinutes, 0); err != nil {
+		t.Fatal(err)
+	}
+	h, steps, _ := newStepsRig(t, SupervisorLoopHooks{Settings: func() supervisorloop.Settings { return set }})
+	slCancelRecord(t, h, 0, slBase.Add(-5*time.Minute))
+	slSetClock(t, steps, slBase)
+	if r := resultFor(t, steps.RunPass(context.Background()), stepCloseFinishedRecords); r.Err != nil {
+		t.Fatalf("pass: %+v", r)
+	}
+	if slStatus(t, h, 0) != PRDCancelled {
+		t.Errorf("loop key 0 archived a record inside the default grace")
+	}
+}
+
+func TestSupervisorLoopArchiveGraceRejectedAtOnce(t *testing.T) {
+	h, steps := slGraceRig(t, 60)
+	h.setStatus(0, PRDRejected)
+	slSetClock(t, steps, slBase)
+	if r := resultFor(t, steps.RunPass(context.Background()), stepCloseFinishedRecords); r.Err != nil {
+		t.Fatalf("pass: %+v", r)
+	}
+	if slStatus(t, h, 0) != PRDArchived {
+		t.Errorf("rejected record = %s, want archived at once", slStatus(t, h, 0))
 	}
 }

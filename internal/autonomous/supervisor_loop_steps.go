@@ -33,6 +33,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
@@ -243,8 +244,11 @@ func (c *Coordinator) SetSupervisorLoopSteps(s *SupervisorLoopSteps) {
 //
 // Completed and rejected records are archived in the pass, as before. A
 // cancelled record earns a grace first: it is archived only once the time
-// since its most recent cancel reaches the supervisor_loop.archive_cancelled_after_minutes
-// setting (0 archives it at once). The grace is so a cancelled branch can
+// since its most recent cancel reaches the autonomous.archive_grace_minutes
+// setting (default 60 when unset; 0 archives it at once). The older
+// supervisor_loop.archive_cancelled_after_minutes key is still accepted on
+// every surface so existing configurations and callers keep working, but it no
+// longer drives this step. The grace is so a cancelled branch can
 // still be inspected, or re-cancelled to push it back, before it disappears.
 func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, error) {
 	var errs []error
@@ -252,7 +256,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 	held := 0
 	kept := 0
 	now := s.now()
-	grace := s.settings().ArchiveCancelledAfterMinutes
+	grace := s.archiveGraceMinutes()
 	for _, p := range s.c.m.Store().ListPRDs() {
 		switch p.Status {
 		case PRDCompleted, PRDRejected, PRDCancelled:
@@ -285,6 +289,20 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		detail += fmt.Sprintf(" (kept %d cancelled with unmerged branch work)", kept)
 	}
 	return detail, errors.Join(errs...)
+}
+
+// archiveGraceMinutes reads autonomous.archive_grace_minutes live from the
+// manager's config. Unset is the 60-minute default, never zero, so a cancelled
+// record is not archived early just because nothing was configured.
+func (s *SupervisorLoopSteps) archiveGraceMinutes() int {
+	if s == nil || s.c == nil || s.c.m == nil {
+		return config.DefaultArchiveGraceMinutes
+	}
+	cfg := s.c.m.Config()
+	if cfg.ArchiveGraceMinutes == nil || *cfg.ArchiveGraceMinutes < 0 {
+		return config.DefaultArchiveGraceMinutes
+	}
+	return *cfg.ArchiveGraceMinutes
 }
 
 // cancelTime is when the grace for a cancelled record starts running: the
