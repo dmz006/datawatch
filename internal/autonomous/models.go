@@ -270,6 +270,10 @@ type PRD struct {
 	Spec       string           `json:"spec"` // raw operator input
 	Title      string           `json:"title,omitempty"`
 	ProjectDir string           `json:"project_dir"`
+	// Project is the explicit project link: the name of a configured project.
+	// When set it decides which project this Automaton belongs to, ahead of any
+	// directory match. Empty on older records.
+	Project string `json:"project,omitempty"`
 	// v5.26.19 — operator-reported: "Prd should be based on directory or
 	// profile, should be able to check out repo and do work" + "Prd
 	// should also support using cluster profiles". When ProjectProfile
