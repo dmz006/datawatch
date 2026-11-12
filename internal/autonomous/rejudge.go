@@ -169,6 +169,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// same answer. Refuse before touching anything.
 	if heldReview {
 		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
+		m.stampReviewIdentity(ctx, prd, &inv)
 		head := judgeVerdictCommitSHA(prd, inv)
 		heldSHA := ""
 		if stored := lastBlockVerdict(prd.Verdicts); stored != nil {
@@ -188,11 +189,17 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// new key. A stored verdict with no recorded commit cannot be shown to
 	// match the head, so it is treated as stale too.
 	cacheOn := m.judgeVerdictCacheEnabled()
-	var headSHA string
+	var headSHA, fingerprint string
 	if cacheOn {
 		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
+		m.stampReviewIdentity(ctx, prd, &inv)
 		headSHA = judgeVerdictCommitSHA(prd, inv)
-		if stored := lastBlockVerdict(prd.Verdicts); stored != nil && headSHA != "" && stored.JudgedCommitSHA != headSHA {
+		fingerprint = inv.RulesFingerprint
+		if stored := lastBlockVerdict(prd.Verdicts); stored != nil &&
+			((headSHA != "" && stored.JudgedCommitSHA != headSHA) ||
+				stored.RulesFingerprint == "" || stored.RulesFingerprint != fingerprint) {
+			// Judged on another head, or under other rules text, or recorded
+			// before the rules fingerprint existed: judge again.
 			ctx = withJudgeVerdictCacheLookupBypassed(ctx)
 		}
 	}
@@ -210,9 +217,12 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	v.Guardrail = "rules-review"
 	if headSHA == "" {
 		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
+		m.stampReviewIdentity(ctx, prd, &inv)
 		headSHA = judgeVerdictCommitSHA(prd, inv)
+		fingerprint = inv.RulesFingerprint
 	}
 	v.JudgedCommitSHA = headSHA
+	v.RulesFingerprint = fingerprint
 
 	// Record the verdict durably BEFORE anything else changes — the same
 	// guardrail_verdict Decision + save + judge-output cleanup

@@ -202,7 +202,9 @@ func (m *Manager) presentRulesContextFiles(prd *PRD) string {
 // model the backend can serve; callers must then record
 // NoGuardrailModelVerdict instead of launching a judge (v9.10.18).
 func (m *Manager) prdRulesReviewInvocation(ctx context.Context, prd *PRD) (GuardrailInvocation, error) {
-	return m.buildPRDRulesReviewInvocation(prd, m.rulesReviewSuffix(ctx, prd))
+	inv, err := m.buildPRDRulesReviewInvocation(prd, m.rulesReviewSuffix(ctx, prd))
+	m.stampReviewIdentity(ctx, prd, &inv)
+	return inv, err
 }
 
 // buildPRDRulesReviewInvocation is prdRulesReviewInvocation with the
@@ -243,6 +245,7 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	}
 
 	inv, resErr := m.buildPRDRulesReviewInvocation(prd, suffix)
+	m.stampReviewIdentity(ctx, prd, &inv)
 
 	// BL410 Phase 1 — bounded, escalating auto-retry for an infra-
 	// category block (the guardrail session itself failed — this is
@@ -276,6 +279,7 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	// rejudge can tell whether it still describes the current head. This
 	// is recorded whether or not the verdict cache is enabled.
 	v.JudgedCommitSHA = judgeVerdictCommitSHA(prd, inv)
+	v.RulesFingerprint = inv.RulesFingerprint
 	m.store.WithLock(func() { prd.Verdicts = append(prd.Verdicts, v) })
 	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
 		return false, nil, err
