@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.152.0 — Per-LLM billing mode and usage charts
+
+### Added
+
+- **A billing mode on every LLM.** Each LLM registry entry has a `billing_mode`: `api` (metered per token), `allowance` (a flat plan allowance that resets on a schedule) or `local` (your own hardware, no per-call charge). An empty value resolves from the provider's usage billing profile, then from the kind default. When the daemon loads its configuration it writes the resolved value onto every entry that has none, so a cost report reads the same before and after. It is on every surface: the config file, REST (`POST` and `PUT /api/llms`, `PUT /api/config`), the MCP `llm_add` and `llm_update` tools, the CLI (`llm add|update --billing-mode`, `config set llms.<name>.billing_mode`), the chat commands and a Billing mode select in the LLM edit form, in all five languages. An unknown value is refused with a message naming the allowed values.
+- **The budget, the burn guard and the usage advice read the billing mode.** `GET /api/usage/advice` and the MCP `usage_advice` tool carry `unit_labels`, a map of LLM name to a unit label for dollars or points.
+- **Dollars and points are never added together.** Cost report rows carry `billing_mode` and `billing_label`; a row that spans units reads `mixed`, has no dollar estimate and lists one total per unit. No figure is invented: money is omitted where no rate or monthly price is set, and when `cost_report.show_usd_estimates` is off.
+- **Four usage chart cards on the Automata page.** Cost over time, tool usage, retries and failure categories, and a combined usage report, with controls for the grouping (Project, Automation or Automaton), the window (7 days to 8 weeks) and tokens or money. A card whose data is empty or off is not drawn; its reason and next action appear at the top of the Events tab instead. Tool usage shows counts only, never tool names.
+- **The chart data on every surface.** REST `GET /api/cost/series`, `GET /api/cost/tool-usage` and `GET /api/cost/failures`, the MCP tool `cost_charts` (read-only), the CLI `datawatch cost charts` and the chat verb `cost charts`.
+- Docs: the cost report, LLM registry, usage calculator, burn guard and Automata capacity how-tos, the definitions, the API reference, the OpenAPI spec, the MCP reference, the operations notes and the testing tracker describe the billing mode and the charts.
+
 ## v9.151.0 — Weekly dependency update Automation replacing dependabot version updates
 
 ### Changed
