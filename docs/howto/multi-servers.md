@@ -154,8 +154,16 @@ no "all servers" form: while **All servers** is the active entry they are
 deliberately not re-rendered, so they keep showing the single server whose
 data they last rendered (operator decision, 2026-10-07).
 
-The active entry persists in `state.activeServer` for the duration of the
-session, and the dropdown follows you as you navigate between pages.
+The active entry is remembered by the browser: it persists in
+`state.activeServer` for the duration of the session, so the dropdown
+follows you as you navigate between pages. It works with any number of
+registered peers — one native entry list, not a chip row, so a roster of
+two or of two hundred is the same control, with long names truncating to an
+ellipsis instead of wrapping the header. Being a native selection control,
+it is fully keyboard-operable (focus it, move through the entries with the
+arrow keys, pick with Enter) and readable by a screen reader, which
+announces it as a dropdown with the current entry and each option,
+including the ` (unreachable)` marker on a peer that is not answering.
 
 ### Switch in place
 
