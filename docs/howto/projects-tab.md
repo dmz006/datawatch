@@ -35,7 +35,7 @@ exec_steps:
 
 The **Projects** sub-tab is where you look at one project as a whole. It gathers the
 project's arcs (the ordered Automations the project works through), the Automata
-and sessions under each arc, progress in points, a Gantt of recent work, the
+and sessions under each arc, progress in points, an expandable Gantt timeline with a focus view per Automation, the
 finished history, the policy and merge pipeline that apply to it, and the events
 that belong to it. Use it to answer "where does this project stand, what is next,
 and what did it cost" without opening each Automation.
@@ -214,7 +214,7 @@ Choose **Automata**, then the **Projects** sub-tab, then `core-api`. From the to
 | Header | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share |
 | Progress | Tasks and Automata done, cost in points, throughput over the last seven days |
 | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
-| Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. (The expandable, per-arc timeline described in [The project timeline](#the-project-timeline) is available on REST, MCP, the CLI and the comm channel; this block still draws the history Gantt until the web app switches to it.) Running work reads "now". On a wide browser it is capped at 720 pixels wide, left-aligned, so its text keeps its authored size instead of growing with the window; on a phone it is unchanged |
+| Gantt | One expandable timeline. It opens with one row per arc and a bar from the arc's first to its last task, coloured by state; work still running is drawn to now and reads "now". Click a row's arrow to open the Automata under the arc, and an Automaton's arrow to open its tasks; an arc with no activity yet reads **Planned** with no bar. Automata that no arc holds sit in the **Automata with no arc** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; the mouse wheel zooms and a drag pans the chart. Each arc row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
 | Unassigned Automata | Automata of this project that no arc holds |
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Effective policy | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section |
@@ -228,13 +228,15 @@ blocks storage starts with the defaults each time. Collapsing only changes what
 is shown. There are no sub-tabs on the page, and the cards cannot be hidden or
 reordered.
 
-**For the operator to review (timeline):** the operator decision of 2026-11-12 is to
-rebuild this page's Gantt as one expandable timeline with a focus view per
-Automation. The server read, REST route, MCP tool, CLI command and chat verb are
-in place. The web app block, the focus view and the mobile apps are not part of
-this documentation change, so this guide still describes the history Gantt in the
-web app. Update the Gantt row above and the "Change the window of the Gantt" row
-below when the web app change ships, and check mobile parity.
+**For the operator to review (timeline):** the operator decision of 2026-11-12 (rebuild
+the Gantt as one expandable timeline with a focus view per Automation) is now in the
+web app. Which rows are expanded is remembered per project in this browser's local
+storage (key `cs_projects_gantt_expanded_<project>`), like the section state below, and has
+no REST, MCP, CLI, chat or configuration form; a browser that blocks storage shows
+everything collapsed. The window selector (7, 30, 90 days) and the history Gantt rows in
+the page are gone; `GET /api/projects/{name}/history` still returns its `gantt` rows
+for other clients. The mobile apps are not covered by this change and need a parity
+check (see `docs/plans/parity-issues/`).
 
 **For the operator to review:** the remembered open or closed state uses the
 browser's local storage and has no REST, MCP, CLI, chat or configuration form.
@@ -268,7 +270,8 @@ datawatch projects history core-api --limit 20
 
 Each page carries `next_cursor` when there is more. Pass it back with
 `--cursor` to read the next page. The Gantt rows cover every matching Automaton
-and are not paged.
+and are not paged. The web app no longer draws them; it draws the project
+timeline below.
 
 #### The project timeline
 
@@ -301,6 +304,19 @@ datawatch projects timeline core-api --focus <arc-id>                 # one arc,
   answer is 503 while Automata are disabled.
 
 The timeline is a pure read. It has no configuration key and stores nothing.
+
+#### Focus on one Automation
+
+**Focus** opens one Automation's own timeline on a page of its own: every Automaton
+under it with every task, in one read of the timeline with `focus=<id>`, so nothing
+is capped or paged. The range runs from the first task to the last (the header
+reads "First task … – last task …"), with the same presets, wheel zoom and drag pan
+as the Gantt; each Automaton can be collapsed and the state is remembered. An
+Automation with nothing started reads "This Automation has no Automata or tasks yet.
+It is planned." and is not an error. **Back** returns to the project page, or to the
+Automation page when you came from its header. From the Automation page the Focus
+button looks the Automation up in each project in turn and skips projects that do not
+hold it. The page only reads; it stores nothing and sends no write.
 
 ### 8. Move work through the arcs
 
@@ -371,7 +387,9 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Open the sub-tab | Bottom navigation **Automata**, then the **Projects** sub-tab (first, left of **Automation**); the old Projects link and `#projects` land here |
 | Pick a project | **Project** picker at the top (the same Overview picker as before); **Overview** is the cross-project view |
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
-| Change the window of the Gantt | Gantt header: 7, 30 or 90 days |
+| Change the range of the Gantt | Gantt header: **All time**, 90, 30 or 7 days; wheel to zoom, drag to pan |
+| Expand or collapse a Gantt row | The arrow at the left of an arc, an Automaton or the **Automata with no arc** group; **Load more** pages a long level |
+| Focus on one Automation | **Focus** on an arc's Gantt row or card, or in the header of the Automation page; **Back** returns |
 | Page through history | **Load more** at the foot of History |
 | Collapse or expand a section | Toggle in the section header |
 | Change policy | **Settings → Automata → Project policy** (the **Open settings** link on the page opens the Automata tab, expands that section and scrolls to it) |
