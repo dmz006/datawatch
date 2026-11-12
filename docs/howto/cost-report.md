@@ -44,11 +44,15 @@ with:
   in that group. Where a rate is missing, the row shows the tokens and no
   dollar figure, and `rate_configured` is `false`.
 
-Where the owning provider has a **billing profile** (the `usage.billing.*`
-settings), the row says how its money figures should be read:
+Each row says how its money figures should be read, from the **billing mode of
+the LLM entries** its backends run on (the `billing_mode` field of each
+[LLM registry entry](llm-registry.md#set-the-billing-mode-of-an-llm); `api`,
+`allowance` or `local`), falling back to the provider's **billing profile** (the
+`usage.billing.*` settings) where the entry has no value:
 
-- `billing_mode` — `bundled_plan`, `api_metered` or `free_local` (a row that
-  spans differently-priced providers says `mixed`),
+- `billing_mode` — `bundled_plan` (an `allowance` entry), `api_metered` (an `api`
+  entry) or `free_local` (a `local` entry); a row that spans differently-priced
+  backends says `mixed`,
 - `billing_label` — the one line every UI family shows, e.g.
   **“bundled plan — API-equivalent, not billed”** or
   **“api_metered (assumed — no usage.billing entry)”**,
@@ -56,8 +60,11 @@ settings), the row says how its money figures should be read:
   (an equivalence, not a charge), the **usage points** it represents, and its
   **share of the monthly price**.
 
-No profile? The row keeps its ordinary tokens and estimate and says so with
-the “(assumed)” label — nothing is invented, nothing is billed.
+No entry value and no profile? The row keeps its ordinary tokens and estimate
+and says so with the “(assumed)” label — nothing is invented, nothing is billed.
+An entry that carries its own `billing_mode` is never “assumed”, even with no
+`usage.billing` profile: the row reads “api_metered — billed per use” for an
+`api` entry.
 
 ### The columns, in order
 
@@ -69,10 +76,11 @@ absent (not zero) when the daemon does not have a figure to show:
 | `key` | yes | The group: the Automaton name, Automation name, backend family, release, or week — whichever `group_by` you asked for. Work with no owner lands under `unattributed`; work not yet shipped, under `unreleased`. |
 | `sessions` | yes | How many recorded sessions landed in the group. |
 | `tokens_in` / `tokens_out` | yes | The tokens the group used, shown first on every surface. These are the figures you can always trust in the row. |
-| `usd_estimate` | only when priced | A provider estimate at your configured rates — present only when a rate covers **every** backend in the group and `show_usd_estimates` is on. Never a zero and never a fallback price where missing. |
+| `usd_estimate` | only when priced | A provider estimate at your configured rates — present only when a rate covers **every** backend in the group and `show_usd_estimates` is on. Never a zero and never a fallback price where missing. **Absent on `mixed` rows**: the dollars of `api` backends and the points of `allowance` backends are not summed into one number; read the row's `unit_totals`. |
 | `rate_configured` | yes | Whether the row's backends all had a rate; `false` is why a priced-looking row has no dollar figure. |
-| `billing_mode` | when profiles are read | `bundled_plan`, `api_metered`, `free_local`, or `mixed` (the row spans differently-priced providers). |
-| `billing_label` | when profiles are read | The one line every UI family shows for the row, verbatim — see the label table below. |
+| `billing_mode` | when billing is read | `bundled_plan`, `api_metered`, `free_local`, or `mixed` (the row spans backends billed in different units). Read from each backend's LLM entry `billing_mode`, then the `usage.billing` profile. |
+| `billing_label` | when billing is read | The one line every UI family shows for the row, verbatim — see the label table below. |
+| `unit_totals` | when billing is read | One total per billing unit the row spans, in the order `dollars`, `points`, `none` — see [Dollars and points are never added together](#dollars-and-points-are-never-added-together). Each carries `unit`, `billing_mode`, `sessions`, `tokens_in`, `tokens_out`, `active_seconds`, and the figure for its unit (`dollars`, or `points` and `percent`; none for `none`). |
 | `api_equivalent_usd` | bundled-plan rows only | The money the group would have cost at API rates — an **equivalence, not a charge**; the row's `usd_estimate` is absent on these rows by design. |
 | `estimated_usage_points` | bundled-plan rows, priced only | The usage points that amount represents against the allowance, from the profile's monthly price. An estimate. |
 | `share_of_monthly_price` | bundled-plan rows, priced only | The fraction of the plan's monthly price (0.05 is 5%). An estimate. |
@@ -82,30 +90,64 @@ absent (not zero) when the daemon does not have a figure to show:
 | `window_partial` / `window_note` | when the window cuts the group off | Set when the window is older than the ledger or the group started mid-window. |
 | `units` | `release` rows only | The shipped units the release carries, from the daemon's shipped-unit state; blank when the record has none |
 
-The body also carries `retention_days`, `retention_note` and
-`lifetime_fallback` — see [the retention window](#the-retention-window)
-below.
+The body also carries `totals_by_unit` (the same per-unit totals across every
+row) and `retention_days`, `retention_note` and `lifetime_fallback` — see
+[the retention window](#the-retention-window) below.
 
 ### The row labels
 
-The label on a row is set by the *set of* profiles the row's backends have,
-not by any single provider. The five labels, verbatim:
+The label on a row is set by the *set of* billing modes the row's backends
+resolve to (their LLM entry `billing_mode`, then the profile), not by any single
+provider. The five labels, verbatim:
 
 | Label | When |
 |---|---|
-| **“bundled plan — API-equivalent, not billed”** | Every backend in the row is a `bundled_plan` profile. The three point figures accompany it wherever the row was priced. |
-| **“free local inference — not billed, token usage only”** | Every backend is `free_local`. The row has no money figure at all. |
-| **“api_metered — billed per use”** | Every backend is `api_metered` and at least one operator set that profile. |
-| **“api_metered (assumed — no usage.billing entry)”** | No backend in the row has any profile: the row runs on the assumed default, and the label says so. |
-| **“mixed billing modes — only the usd_estimate is unambiguous”** | The row's backends span more than one mode; the mode-specific point figures are not meaningful for it. |
+| **“bundled plan — API-equivalent, not billed”** | Every backend in the row bills as a `bundled_plan` (`allowance` entry or `bundled_plan` profile). The three point figures accompany it wherever the row was priced. |
+| **“free local inference — not billed, token usage only”** | Every backend is `free_local` (a `local` entry or `free_local` profile). The row has no money figure at all. |
+| **“api_metered — billed per use”** | Every backend is `api_metered` and at least one operator set it — an `api` entry value or a `usage.billing` profile. |
+| **“api_metered (assumed — no usage.billing entry)”** | No backend in the row has an entry value or a profile: the row runs on the assumed default, and the label says so. |
+| **“mixed billing modes — see the per-unit totals”** | The row's backends span more than one mode. The row carries no single money figure (no `usd_estimate`, no point figures); its `unit_totals` give each unit's figure separately. |
+
+### Dollars and points are never added together
+
+Backends are paid for in different units, so the report never sums across them.
+Each backend's LLM entry `billing_mode` picks its unit:
+
+| Entry `billing_mode` | Unit | What the total carries |
+|---|---|---|
+| `api` | `dollars` | `dollars`: the estimate at your configured rates, for `api` backends only. |
+| `allowance` | `points` | `points` (the usage points the API-equivalent spend represents) and `percent` (its share of the plan's monthly price) — both only where the profile has a `monthly_price`. Never a dollar total. |
+| `local` | `none` | Tokens, sessions and active time only. No money figure and no points. |
+
+Every group row has `unit_totals` (one entry per unit that row spans) and the
+report body has `totals_by_unit` (one entry per unit across all rows). Each entry
+also carries its own `sessions`, `tokens_in`, `tokens_out` and `active_seconds`,
+so a mixed row still tells you how much of its work ran on each kind of backend.
+An entry's `dollars`, `points` and `percent` are omitted, not zero, where a rate
+or `monthly_price` is missing.
+
+The CLI prints them under the table as a `totals by unit:` block, one line per
+unit — for example `dollars (api_metered): dollars $0.02; sessions 1 …` and
+`points (bundled_plan): points 1.2, 0.6% of the allowance; sessions 1 …`.
+
+Example: a row holding one `claude-code` session (an `allowance` entry), one
+`aider` session (an `api` entry) and one `ollama` session (a `local` entry) reads
+`billing_mode: mixed`, has no `usd_estimate`, and carries three `unit_totals`:
+`dollars` (the aider spend alone), `points` (the claude-code spend alone) and
+`none` (the ollama tokens and time).
 
 ## The billing profiles
 
-The labels above come from the per-provider profiles under
-**`usage.billing`** — one entry per provider key, where the key is the
+Which mode a row is read against comes from each backend's LLM entry
+`billing_mode`. When the entry has none, the per-provider profile under
+**`usage.billing`** decides — one entry per provider key, where the key is the
 provider name from your LLM registry (`claude-code`, `openai`, `gemini`,
-`ollama`, or any other name without dots). A profile says *how you pay* for
-that provider, so the report can label the money instead of guessing it:
+`ollama`, or any other name without dots) — and then the kind default (see
+[Set the billing mode of an LLM](llm-registry.md#set-the-billing-mode-of-an-llm)).
+**The entry's value wins over the profile's `mode`.** The profile still supplies
+everything else the figures need: `monthly_price` (the points and the share of
+the price), `plan`, the reset and the allowance unit. A profile says *how you pay*
+for that provider, so the report can label the money instead of guessing it:
 
 | `mode` | How that provider's spend is read | A row of it shows |
 |---|---|---|
@@ -113,7 +155,7 @@ that provider, so the report can label the money instead of guessing it:
 | `api_metered` | Pay-per-use spend, no allowance. | The “api_metered — billed per use” label and the ordinary `usd_estimate` where rates cover the row. |
 | `free_local` | Local inference at no charge. | The “free local inference — not billed, token usage only” label and **no money figure at all** — tokens are the whole answer. |
 
-**The default assumption.** A provider with *no* profile is read as
+**The default assumption.** A provider with *no* entry value and *no* profile is read as
 `api_metered` with percent allowances — an assumption flagged on the row with
 the “(assumed — no usage.billing entry)” label, not a fact about the
 provider. The assumed default carries no price and no allowance: the row keeps
@@ -318,7 +360,7 @@ default.
 | Method | How |
 |---|---|
 | **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml`; see `docs/config-reference.yaml` |
-| **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`, a table by default, JSON the raw body |
+| **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`, a table by default (with a `totals by unit` block under it), JSON the raw body |
 | **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); the **Overview** of an Automaton's detail view shows its cost; Settings → Cost Report for the five keys |
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; settings via `PUT /api/config` with `cost_report.<key>` and read back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only), `config_set` with `key: cost_report.<key>` |
@@ -338,6 +380,8 @@ recorded sessions, so the same window and grouping give the same rows.
 - It does not bill. The USD figures are estimates at configured rates, and a
   bundled-plan row’s money figures are **API-equivalents — not bills**. Where
   no rate is configured there is no figure, not a zero.
+- It does not add dollars to points. A row that mixes billing units shows each
+  unit's total separately instead of one blended number.
 - It does not retain more than the ledger does: 31 days of recorded sessions,
   with older spend visible only through lifetime totals.
 

@@ -147,9 +147,11 @@ Response fields:
 | `rows[].key` | The group (Automaton name, Automation name, backend family, release, or week) |
 | `rows[].sessions` | Sessions that landed in the group |
 | `rows[].tokens_in` / `rows[].tokens_out` | Always present, always first |
-| `rows[].usd_estimate` | Present only when a rate covers the whole group; absent (not zero) otherwise |
-| `rows[].billing_mode` | `bundled_plan` \| `api_metered` \| `free_local` \| `mixed` (the group spans differently-priced providers) |
-| `rows[].billing_label` | One line the whole UI family reuses, e.g. `bundled plan — API-equivalent, not billed` or `api_metered (assumed — no usage.billing entry)` |
+| `rows[].usd_estimate` | Present only when a rate covers the whole group; absent (not zero) otherwise, and always absent on a `mixed` row (dollars are never summed with points) |
+| `rows[].billing_mode` | `bundled_plan` \| `api_metered` \| `free_local` \| `mixed` (the group spans backends billed in different units). Read from each backend's LLM entry `billing_mode` (`allowance` → `bundled_plan`, `api` → `api_metered`, `local` → `free_local`), then its `usage.billing` profile |
+| `rows[].billing_label` | One line the whole UI family reuses, e.g. `bundled plan — API-equivalent, not billed`, `api_metered (assumed — no usage.billing entry)` or, for a `mixed` row, `mixed billing modes — see the per-unit totals` |
+| `rows[].unit_totals[]` | One total per billing unit the row spans, ordered `dollars`, `points`, `none`: `unit`, `billing_mode`, `sessions`, `tokens_in`, `tokens_out`, `active_seconds`, and `dollars` (unit `dollars`) or `points` and `percent` (unit `points`); `none` carries tokens and time only. A figure is omitted, not zero, where a rate or `monthly_price` is missing. Present when billing is read |
+| `totals_by_unit[]` | The same per-unit totals across every row; dollars are never summed with points |
 | `rows[].api_equivalent_usd` | Bundled rows: the money equivalent at API rates — an equivalence, not a charge |
 | `rows[].estimated_usage_points` | Bundled rows: the usage points that amount represents against the allowance |
 | `rows[].share_of_monthly_price` | Bundled rows: the fraction of the plan's monthly price (0.05 = 5%) |
@@ -188,8 +190,11 @@ curl -s 'http://127.0.0.1:8929/api/cost/report?group_by=backend&since=2026-10-01
 
 # Billing profiles (`usage.billing`)
 
-The per-provider billing mode behind the cost report's labels and the usage
-calculator's point-value line. Set under `usage.billing.<provider>`, where
+The per-provider billing profile behind the usage calculator's point-value line
+and, as the fallback for an LLM entry that has no `billing_mode` of its own, the
+cost report's labels. An entry's `billing_mode` (`api`, `allowance` or `local`)
+wins over the profile's `mode`; the profile still supplies `monthly_price`,
+`plan`, the reset and the allowance unit. Set under `usage.billing.<provider>`, where
 `<provider>` is the provider name from your LLM registry (any name without
 dots, e.g. `claude-code`, `ollama`).
 

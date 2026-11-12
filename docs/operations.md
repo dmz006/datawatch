@@ -728,7 +728,10 @@ true: it also keeps at most one open question),
 `cache_write_points_per_million` (0.373), `cache_read_points_per_million`
 (0.0069), `refit_on_reading` (true), `effort_ceiling` and `retry_limit_claude`
 (2). Settings apply without a restart. The effort ceiling is set per Automation,
-not through the config keys.
+not through the config keys. The guard acts on the `claude-code` backend only when
+that entry's [billing mode](#llm-billing-mode) is `allowance` (the default) or the
+entry has a dollar budget; for an `api` or `local` entry without one it releases
+its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards).
 
 | Method | How |
 |--------|-----|
@@ -5497,6 +5500,13 @@ Reading it back, on every surface, gives the same fields:
 Each entry shows spend, ceiling, remaining dollars, the window, when it
 rolls over (`rolls_over_at`) and `full`.
 
+The budget reads each LLM's [billing mode](#llm-billing-mode): `api` compares
+dollars, `allowance` behaves as before, and **`local` has no budget** — a `local`
+entry never makes admission wait, is left out of the status lists above
+(`GET /api/budget`, the `budgets` array of `GET /api/capacity`, `budget_status`,
+`datawatch budget status`, `budget`), and `GET /api/budget?llm=<name>` returns 404
+for it. Its stored `budget` object is kept and counts again if the mode changes.
+
 ### What "budget window full" means
 
 Once an LLM's spend in the window reaches its ceiling, autonomous work that
@@ -7257,6 +7267,27 @@ unknown value with the same message, and `datawatch llm add|update` takes
 (`claude-code` allowance; `ollama`, `openwebui`, `shell` local; else `api`).
 On load the daemon writes the resolved value onto every entry that has none
 (behavior unchanged; an entry with a value is never touched, a second run
-changes nothing). The cost report still reads the per-provider
-`usage.billing` profile for its labels, not this field. See
-[howto/llm-registry.md](howto/llm-registry.md#set-the-billing-mode-of-an-llm).
+changes nothing).
+
+The resolved mode is read by four things:
+
+| Reader | `api` | `allowance` | `local` |
+|---|---|---|---|
+| Cost report (`GET /api/cost/report`, `datawatch cost report`, MCP `cost_report`, comm `cost report`) | Dollars | Points and percent of the plan's price | Tokens and time only |
+| Dollar budget (`GET /api/budget`, `budget_status`) | Compares dollars | As before | No budget applies |
+| Burn guard (`usage.burn_guard.*`) | Not guarded unless the entry has a dollar budget | Guarded as before | Not guarded unless the entry has a dollar budget |
+| Usage page (`GET /api/usage/advice`, field `unit_labels`) | `usage_unit_dollars` | `usage_unit_points` | `none` |
+
+The cost report reads the entry's value **before** the `usage.billing` profile's
+`mode`; the profile still supplies `monthly_price`, `plan` and the reset. The
+report never sums dollars and points: each row and the report body carry
+`unit_totals` / `totals_by_unit`, one total per unit. The burn guard watches the
+`claude-code` backend, and an entry with no registry row counts as the
+`claude-code` allowance. The usage advice payload carries one unit label key per
+backend (`unit_labels`, keyed by LLM name; `usage_unit_dollars` and
+`usage_unit_points` are locale keys in all five locales, `none` has no label); the
+web usage cards do not read it yet. See
+[howto/llm-registry.md](howto/llm-registry.md#what-the-billing-mode-changes),
+[howto/cost-report.md](howto/cost-report.md#dollars-and-points-are-never-added-together),
+[howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards) and
+[howto/usage-calculator.md](howto/usage-calculator.md#unit-labels-on-the-usage-page).
