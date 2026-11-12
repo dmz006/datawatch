@@ -60,7 +60,7 @@ func placementMCP(t *testing.T) *Server {
 	return &Server{webPort: port}
 }
 
-func toolText(t *testing.T, res *mcpsdk.CallToolResult) string {
+func placementToolText(t *testing.T, res *mcpsdk.CallToolResult) string {
 	t.Helper()
 	if res == nil {
 		return "<nil result>"
@@ -89,7 +89,7 @@ func TestComputePlacementListTool(t *testing.T) {
 	if res == nil || res.IsError {
 		t.Fatalf("expected success, got %+v", res)
 	}
-	body := toolText(t, res)
+	body := placementToolText(t, res)
 	for _, want := range []string{"ask-1", "llama3.1-8b", "gpu-box"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("list body missing %q: %s", want, body)
@@ -123,8 +123,8 @@ func TestComputePlacementAnswerToolApproveAndDeny(t *testing.T) {
 		} else {
 			want = "approved"
 		}
-		if !strings.Contains(toolText(t, res), want) {
-			t.Errorf("%s body missing %q: %s", decision, want, toolText(t, res))
+		if !strings.Contains(placementToolText(t, res), want) {
+			t.Errorf("%s body missing %q: %s", decision, want, placementToolText(t, res))
 		}
 	}
 	if *gotApprove != "yes" || *gotDeny != "yes" {
@@ -150,7 +150,7 @@ func TestComputePlacementAnswerToolRejectsBadInput(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: handler err: %v", c.name, err)
 		}
-		got := toolText(t, res)
+		got := placementToolText(t, res)
 		if !strings.Contains(got, c.wantErr) {
 			t.Errorf("%s: body = %q; want mention of %q", c.name, got, c.wantErr)
 		}
@@ -179,7 +179,7 @@ func TestComputePlacementAnswerToolRequiresCapComputeWrite(t *testing.T) {
 	if res == nil || !res.IsError {
 		t.Fatalf("expected capability refusal, got %+v", res)
 	}
-	if got := toolText(t, res); !strings.Contains(got, "capability") {
+	if got := placementToolText(t, res); !strings.Contains(got, "capability") {
 		t.Errorf("refusal body = %q; want capability mention", got)
 	}
 

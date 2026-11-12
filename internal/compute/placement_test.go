@@ -9,9 +9,9 @@ import (
 
 const testGIB = uint64(1024) * 1024 * 1024
 
-var testNow = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+var placeTestNow = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
-func testNode(name string) *Node {
+func placeTestNode(name string) *Node {
 	return &Node{
 		Name:    name,
 		Kind:    KindOllama,
@@ -20,10 +20,10 @@ func testNode(name string) *Node {
 }
 
 func maintenanceNode(name string) *Node {
-	n := testNode(name)
+	n := placeTestNode(name)
 	n.MaintenanceWindows = []MaintenanceWindow{{
-		From:   testNow.Add(-time.Hour),
-		To:     testNow.Add(time.Hour),
+		From:   placeTestNow.Add(-time.Hour),
+		To:     placeTestNow.Add(time.Hour),
 		Reason: "planned reboot",
 	}}
 	return n
@@ -35,7 +35,7 @@ func placementReq(model string, cands ...PlacementCandidate) PlacementRequest {
 	return PlacementRequest{
 		Model:          model,
 		Consumer:       "ask",
-		Now:            testNow,
+		Now:            placeTestNow,
 		ModelSizeGB:    14,
 		MemHeadroomPct: 10,
 		DiskHeadroomGB: 5,
@@ -44,10 +44,10 @@ func placementReq(model string, cands ...PlacementCandidate) PlacementRequest {
 }
 
 func TestPlaceServingNodeWins(t *testing.T) {
-	big := testNode("big")
+	big := placeTestNode("big")
 	result := PlaceMissingModel(placementReq("gpt-oss-120b",
 		PlacementCandidate{
-			Node:          testNode("serving"),
+			Node:          placeTestNode("serving"),
 			MemTotalBytes: 16 * testGIB,
 			MemFreeBytes:  16 * testGIB, // enough for itself already
 			DiskFreeBytes: 100 * testGIB,
@@ -69,13 +69,13 @@ func TestPlaceServingNodeWins(t *testing.T) {
 func TestPlaceServingNodeWinsOverFittingOnes(t *testing.T) {
 	result := PlaceMissingModel(placementReq("gpt-oss-120b",
 		PlacementCandidate{
-			Node:          testNode("roomy"),
+			Node:          placeTestNode("roomy"),
 			MemTotalBytes: 512 * testGIB,
 			MemFreeBytes:  480 * testGIB,
 			DiskFreeBytes: 2 * 1024 * testGIB,
 		},
 		PlacementCandidate{
-			Node:          testNode("serving"),
+			Node:          placeTestNode("serving"),
 			MemTotalBytes: 32 * testGIB,
 			MemFreeBytes:  20 * testGIB,
 			DiskFreeBytes: 40 * testGIB,
@@ -90,13 +90,13 @@ func TestPlaceServingNodeWinsOverFittingOnes(t *testing.T) {
 func TestPlaceMostFreeNodeChosen(t *testing.T) {
 	result := PlaceMissingModel(placementReq("gpt-oss-120b",
 		PlacementCandidate{
-			Node:          testNode("small"),
+			Node:          placeTestNode("small"),
 			MemTotalBytes: 64 * testGIB,
 			MemFreeBytes:  48 * testGIB,
 			DiskFreeBytes: 60 * testGIB,
 		},
 		PlacementCandidate{
-			Node:          testNode("large"),
+			Node:          placeTestNode("large"),
 			MemTotalBytes: 128 * testGIB,
 			MemFreeBytes:  120 * testGIB,
 			DiskFreeBytes: 200 * testGIB,
@@ -110,19 +110,19 @@ func TestPlaceMostFreeNodeChosen(t *testing.T) {
 func TestPlaceRefusalListsEveryNode(t *testing.T) {
 	req := placementReq("gpt-oss-120b",
 		PlacementCandidate{
-			Node:          testNode("alpha"),
+			Node:          placeTestNode("alpha"),
 			MemTotalBytes: 32 * testGIB,
 			MemFreeBytes:  3 * testGIB,
 			DiskFreeBytes: 50 * testGIB,
 		},
 		PlacementCandidate{
-			Node:          testNode("beta"),
+			Node:          placeTestNode("beta"),
 			MemTotalBytes: 32 * testGIB,
 			MemFreeBytes:  24 * testGIB, // fits after 10% headroom...
 			DiskFreeBytes: 10 * testGIB, // ...but not the disk need
 		},
 		PlacementCandidate{
-			Node:          testNode("gamma"),
+			Node:          placeTestNode("gamma"),
 			MemTotalBytes: 16 * testGIB,
 			MemFreeBytes:  4 * testGIB,
 			DiskFreeBytes: 500 * testGIB,
@@ -158,13 +158,13 @@ func TestPlaceRefusalListsEveryNode(t *testing.T) {
 func TestPlaceTaskPinOnlyChecksPinned(t *testing.T) {
 	req := placementReq("gpt-oss-120b",
 		PlacementCandidate{
-			Node:          testNode("pinned"),
+			Node:          placeTestNode("pinned"),
 			MemTotalBytes: 16 * testGIB,
 			MemFreeBytes:  8 * testGIB,
 			DiskFreeBytes: 100 * testGIB,
 		},
 		PlacementCandidate{
-			Node:          testNode("roomy"),
+			Node:          placeTestNode("roomy"),
 			MemTotalBytes: 512 * testGIB,
 			MemFreeBytes:  480 * testGIB,
 			DiskFreeBytes: 2 * 1024 * testGIB,
@@ -190,13 +190,13 @@ func TestPlaceTaskPinOnlyChecksPinned(t *testing.T) {
 func TestPlaceTaskPinHonoredWhenItFits(t *testing.T) {
 	req := placementReq("gpt-oss-120b",
 		PlacementCandidate{
-			Node:          testNode("pinned"),
+			Node:          placeTestNode("pinned"),
 			MemTotalBytes: 128 * testGIB,
 			MemFreeBytes:  100 * testGIB,
 			DiskFreeBytes: 300 * testGIB,
 		},
 		PlacementCandidate{
-			Node:          testNode("roomy"),
+			Node:          placeTestNode("roomy"),
 			MemTotalBytes: 512 * testGIB,
 			MemFreeBytes:  480 * testGIB,
 			DiskFreeBytes: 2 * 1024 * testGIB,
@@ -212,7 +212,7 @@ func TestPlaceTaskPinHonoredWhenItFits(t *testing.T) {
 func TestPlacePinNamedButAbsentFromCandidates(t *testing.T) {
 	req := placementReq("gpt-oss-120b",
 		PlacementCandidate{
-			Node:          testNode("roomy"),
+			Node:          placeTestNode("roomy"),
 			MemTotalBytes: 512 * testGIB,
 			MemFreeBytes:  480 * testGIB,
 			DiskFreeBytes: 2 * 1024 * testGIB,
@@ -226,14 +226,14 @@ func TestPlacePinNamedButAbsentFromCandidates(t *testing.T) {
 }
 
 func TestPlaceExclusionsDisabledMaintenanceConsumer(t *testing.T) {
-	disabled := testNode("off")
+	disabled := placeTestNode("off")
 	disabled.Disabled = true
 
 	req := placementReq("gpt-oss-120b",
 		PlacementCandidate{Node: disabled, MemTotalBytes: 512 * testGIB, MemFreeBytes: 480 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
 		PlacementCandidate{Node: maintenanceNode("maint"), MemTotalBytes: 512 * testGIB, MemFreeBytes: 480 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
-		PlacementCandidate{Node: testNode("no-ask"), MemTotalBytes: 512 * testGIB, MemFreeBytes: 480 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
-		PlacementCandidate{Node: testNode("healthy"), MemTotalBytes: 512 * testGIB, MemFreeBytes: 480 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
+		PlacementCandidate{Node: placeTestNode("no-ask"), MemTotalBytes: 512 * testGIB, MemFreeBytes: 480 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
+		PlacementCandidate{Node: placeTestNode("healthy"), MemTotalBytes: 512 * testGIB, MemFreeBytes: 480 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
 	)
 	req.Candidates[2].Node.Permissions = Permissions{DeniedConsumers: []string{"ask"}}
 
@@ -246,9 +246,9 @@ func TestPlaceExclusionsDisabledMaintenanceConsumer(t *testing.T) {
 // With no candidate allowed to take the model, every refusal line must say
 // what that node lacks.
 func TestPlaceExclusionOnlyRefusal(t *testing.T) {
-	disabled := testNode("off")
+	disabled := placeTestNode("off")
 	disabled.Disabled = true
-	denied := testNode("no-agent")
+	denied := placeTestNode("no-agent")
 	denied.Permissions = Permissions{AllowedConsumers: []string{"council"}}
 
 	req := placementReq("gpt-oss-120b",
@@ -280,7 +280,7 @@ func TestPlaceExclusionOnlyRefusal(t *testing.T) {
 }
 
 func TestPlaceNodePinnedToDifferentModel(t *testing.T) {
-	pinned := testNode("pinned-llm")
+	pinned := placeTestNode("pinned-llm")
 	pinned.NodePinnedModel = "qwen3.8:27b"
 
 	p := PlaceMissingModel(placementReq("gpt-oss-120b",
@@ -303,7 +303,7 @@ func TestPlaceNodePinnedToDifferentModel(t *testing.T) {
 	}
 
 	// The pin admits its own model.
-	q := testNode("q")
+	q := placeTestNode("q")
 	q.NodePinnedModel = "qwen3.8:27b"
 	p = PlaceMissingModel(placementReq("qwen3.8:27b",
 		PlacementCandidate{Node: q, MemFreeBytes: 480 * testGIB, MemTotalBytes: 512 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
@@ -314,7 +314,7 @@ func TestPlaceNodePinnedToDifferentModel(t *testing.T) {
 }
 
 func TestPlaceNoAddress(t *testing.T) {
-	bare := testNode("bare")
+	bare := placeTestNode("bare")
 	bare.Address = ""
 	p := PlaceMissingModel(placementReq("gpt-oss-120b",
 		PlacementCandidate{Node: bare, MemFreeBytes: 480 * testGIB, MemTotalBytes: 512 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
@@ -326,8 +326,8 @@ func TestPlaceNoAddress(t *testing.T) {
 
 func TestPlaceUnknownSize(t *testing.T) {
 	req := placementReq("gpt-oss-120b",
-		PlacementCandidate{Node: testNode("a"), MemFreeBytes: 480 * testGIB, MemTotalBytes: 512 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
-		PlacementCandidate{Node: testNode("b"), MemFreeBytes: 960 * testGIB, MemTotalBytes: 1024 * testGIB, DiskFreeBytes: 4 * 1024 * testGIB},
+		PlacementCandidate{Node: placeTestNode("a"), MemFreeBytes: 480 * testGIB, MemTotalBytes: 512 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
+		PlacementCandidate{Node: placeTestNode("b"), MemFreeBytes: 960 * testGIB, MemTotalBytes: 1024 * testGIB, DiskFreeBytes: 4 * 1024 * testGIB},
 	)
 	req.ModelSizeGB = 0 // unknown
 
@@ -345,8 +345,8 @@ func TestPlaceUnknownSize(t *testing.T) {
 // Unknown size never blocks a node that already serves the model.
 func TestPlaceUnknownSizeStillChoosesServingNode(t *testing.T) {
 	req := placementReq("gpt-oss-120b",
-		PlacementCandidate{Node: testNode("a"), MemFreeBytes: 480 * testGIB, MemTotalBytes: 512 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
-		PlacementCandidate{Node: testNode("serving"), MemFreeBytes: 8 * testGIB, MemTotalBytes: 16 * testGIB, DiskFreeBytes: 80 * testGIB, ServesModel: true},
+		PlacementCandidate{Node: placeTestNode("a"), MemFreeBytes: 480 * testGIB, MemTotalBytes: 512 * testGIB, DiskFreeBytes: 2 * 1024 * testGIB},
+		PlacementCandidate{Node: placeTestNode("serving"), MemFreeBytes: 8 * testGIB, MemTotalBytes: 16 * testGIB, DiskFreeBytes: 80 * testGIB, ServesModel: true},
 	)
 	req.ModelSizeGB = 0
 
@@ -358,8 +358,8 @@ func TestPlaceUnknownSizeStillChoosesServingNode(t *testing.T) {
 
 func TestPlaceTieGoToSmallerName(t *testing.T) {
 	p := PlaceMissingModel(placementReq("gpt-oss-120b",
-		PlacementCandidate{Node: testNode("zeta"), MemFreeBytes: 64 * testGIB, MemTotalBytes: 128 * testGIB, DiskFreeBytes: 200 * testGIB},
-		PlacementCandidate{Node: testNode("beta"), MemFreeBytes: 64 * testGIB, MemTotalBytes: 128 * testGIB, DiskFreeBytes: 200 * testGIB},
+		PlacementCandidate{Node: placeTestNode("zeta"), MemFreeBytes: 64 * testGIB, MemTotalBytes: 128 * testGIB, DiskFreeBytes: 200 * testGIB},
+		PlacementCandidate{Node: placeTestNode("beta"), MemFreeBytes: 64 * testGIB, MemTotalBytes: 128 * testGIB, DiskFreeBytes: 200 * testGIB},
 	))
 	if p.Node != "beta" {
 		t.Fatalf("ties on free memory go to the smaller name: got %q (refusal %v)", p.Node, p.Refusal)
@@ -389,7 +389,7 @@ func TestMemHeadroomBytes(t *testing.T) {
 // an already-serving one is chosen.
 func TestPlaceNoNumbersRefuses(t *testing.T) {
 	p := PlaceMissingModel(placementReq("gpt-oss-120b",
-		PlacementCandidate{Node: testNode("a"), MemFreeBytes: 0, MemTotalBytes: 0, DiskFreeBytes: 0},
+		PlacementCandidate{Node: placeTestNode("a"), MemFreeBytes: 0, MemTotalBytes: 0, DiskFreeBytes: 0},
 	))
 	if p.Chosen() || len(p.Refusal) != 1 {
 		t.Fatalf("node with no resource numbers cannot fit a known-size model: %+v", p)
