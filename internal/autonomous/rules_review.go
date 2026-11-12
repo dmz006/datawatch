@@ -262,29 +262,72 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	// backend's built-in default model.
 	var v GuardrailVerdict
 	var ferr error
+	reused := false
 	if resErr != nil {
 		v = NoGuardrailModelVerdict("rules-review", resErr)
 	} else {
-		v, ferr = m.runRulesReviewJudge(ctx, prd, inv, fn)
-		v = m.classifyGate(ctx, inv, v)
+		v, reused, ferr = m.runRulesReviewJudgeReusing(ctx, prd, inv, fn)
+		if !reused {
+			v = m.classifyGate(ctx, inv, v)
+		}
 	}
 	if ferr != nil {
 		return false, nil, fmt.Errorf("rules review for prd %s: %w", prd.ID, ferr)
 	}
-	if v.VerdictAt.IsZero() {
-		v.VerdictAt = time.Now()
+	headSHA := judgeVerdictCommitSHA(prd, inv)
+	if reused {
+		// A stored verdict came back: nothing new was judged. Keep the copy
+		// already on the Automaton as it was made, and record only a reuse
+		// Decision -- no second classification, judge-outcome entry or
+		// verdict entry.
+		if rec, found := recordedVerdictMatching(prd, v, headSHA, inv.RulesFingerprint); found {
+			v = rec
+		}
+		v.Guardrail = "rules-review"
+		if v.VerdictAt.IsZero() {
+			v.VerdictAt = time.Now()
+		}
+		if v.JudgedCommitSHA == "" {
+			v.JudgedCommitSHA = headSHA
+		}
+		if v.RulesFingerprint == "" {
+			v.RulesFingerprint = inv.RulesFingerprint
+		}
+		m.store.WithLock(func() {
+			if !verdictAlreadyRecorded(prd, v) {
+				prd.Verdicts = append(prd.Verdicts, v)
+			}
+			prd.Decisions = append(prd.Decisions, Decision{
+				At:              time.Now(),
+				Kind:            "guardrail_reuse",
+				Actor:           "autonomous",
+				VerdictOutcome:  v.Outcome,
+				FailureCategory: v.Category,
+				Note:            reusedVerdictNote(v.JudgedCommitSHA, v.VerdictAt),
+				JudgeSessionID:  v.JudgeSessionID,
+				JudgedCommitSHA: v.JudgedCommitSHA,
+				VerdictReused:   true,
+			})
+		})
+		if err := m.savePRDOwn(prd); err != nil {
+			return false, nil, err
+		}
+	} else {
+		if v.VerdictAt.IsZero() {
+			v.VerdictAt = time.Now()
+		}
+		v.Guardrail = "rules-review"
+		// Anchor the completion verdict to the head it judged, so a later
+		// rejudge can tell whether it still describes the current head. This
+		// is recorded whether or not the verdict cache is enabled.
+		v.JudgedCommitSHA = headSHA
+		v.RulesFingerprint = inv.RulesFingerprint
+		m.store.WithLock(func() { prd.Verdicts = append(prd.Verdicts, v) })
+		if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
+			return false, nil, err
+		}
+		m.recordJudgeOutcomeKind(prd.ID, v)
 	}
-	v.Guardrail = "rules-review"
-	// Anchor the completion verdict to the head it judged, so a later
-	// rejudge can tell whether it still describes the current head. This
-	// is recorded whether or not the verdict cache is enabled.
-	v.JudgedCommitSHA = judgeVerdictCommitSHA(prd, inv)
-	v.RulesFingerprint = inv.RulesFingerprint
-	m.store.WithLock(func() { prd.Verdicts = append(prd.Verdicts, v) })
-	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
-		return false, nil, err
-	}
-	m.recordJudgeOutcomeKind(prd.ID, v)
 	if v.Outcome != "block" {
 		return false, nil, nil
 	}
@@ -385,14 +428,24 @@ func (m *Manager) nextJudgeBackend(tried []string) string {
 // verdict, so the Automaton is not blocked; once they are used up the last
 // result is returned unchanged.
 func (m *Manager) runRulesReviewJudge(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
+	v, _, err := m.runRulesReviewJudgeReusing(ctx, prd, inv, fn)
+	return v, err
+}
+
+// runRulesReviewJudgeReusing is runRulesReviewJudge that also reports whether
+// the returned verdict is a stored one that was replayed (no judge ran) rather
+// than one the judge produced just now. The could-not-start retry loop is the
+// same; a replayed verdict is never a could-not-start result, so it ends the
+// loop on its first pass.
+func (m *Manager) runRulesReviewJudgeReusing(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, bool, error) {
 	cfg := m.infraRetryConfig()
 	key := judgeCouldNotStartTryKey(inv)
 	used := len(m.JudgeTries(prd.ID, key))
 	for {
-		v, err := m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
-		if !judgeCouldNotStart(v, err) || !cfg.EffectiveEnabled() {
+		v, reused, err := m.runGuardrailReusing(ctx, prd, inv, fn)
+		if reused || !judgeCouldNotStart(v, err) || !cfg.EffectiveEnabled() {
 			_ = m.ClearJudgeTries(prd.ID, key)
-			return v, err
+			return v, reused, err
 		}
 		started := time.Now()
 		backend := inv.GuardrailBackend
@@ -405,7 +458,7 @@ func (m *Manager) runRulesReviewJudge(ctx context.Context, prd *PRD, inv Guardra
 		max := cfg.EffectiveMaxTries()
 		if used > max {
 			_ = m.ClearJudgeTries(prd.ID, key)
-			return v, err
+			return v, false, err
 		}
 		var tried []string
 		for _, t := range m.JudgeTries(prd.ID, key) {
@@ -430,7 +483,7 @@ func (m *Manager) runRulesReviewJudge(ctx context.Context, prd *PRD, inv Guardra
 		})
 		_ = m.savePRDOwn(prd)
 		if serr := infraSleep(ctx, delay); serr != nil {
-			return GuardrailVerdict{}, WithContextCause(ctx, serr)
+			return GuardrailVerdict{}, false, WithContextCause(ctx, serr)
 		}
 	}
 }
