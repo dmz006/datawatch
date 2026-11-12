@@ -67,3 +67,15 @@ func TestAutomationPacksOmittedWhenEmpty(t *testing.T) {
 		t.Fatalf("empty packs should be omitted, got %s", raw)
 	}
 }
+
+func TestAutomationSetPacksNormalizes(t *testing.T) {
+	a := &Automation{}
+	a.SetPacks([]string{" b ", "a", "b", ""})
+	if len(a.Packs) != 2 || a.Packs[0] != "b" || a.Packs[1] != "a" {
+		t.Fatalf("Packs = %v, want [b a]", a.Packs)
+	}
+	a.SetPacks([]string{" ", ""})
+	if a.Packs != nil {
+		t.Fatalf("Packs = %v, want nil", a.Packs)
+	}
+}

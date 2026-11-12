@@ -119,9 +119,9 @@ type Automation struct {
 	Milestone bool `json:"milestone,omitempty"`
 
 	// Packs names the template packs this Automaton draws from, in the order
-	// configured (earlier packs take priority). Callers put a list in
-	// canonical form with normalizePacks (trimmed, non-empty, unique,
-	// first-seen order) before storing it; the field is persisted with the
+	// configured (earlier packs take priority). Assign it with SetPacks, which puts the list in
+	// canonical form via normalizePacks (trimmed, non-empty, unique,
+	// first-seen order); the field is persisted with the
 	// Automaton like every other field.
 	Packs []string `json:"packs,omitempty"`
 

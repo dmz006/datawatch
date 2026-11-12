@@ -24,3 +24,10 @@ func normalizePacks(in []string) []string {
 	}
 	return out
 }
+
+// SetPacks stores the given pack names on the Automaton in canonical form (see
+// normalizePacks). It is the one way to assign Packs, so the stored list is
+// always trimmed, unique and in priority order.
+func (a *Automation) SetPacks(packs []string) {
+	a.Packs = normalizePacks(packs)
+}
