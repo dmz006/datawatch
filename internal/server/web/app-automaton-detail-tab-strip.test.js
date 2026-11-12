@@ -47,7 +47,7 @@ test('strip emits all nine tabs in order when scan and rules are enabled', () =>
   const html = sb._renderDetailTabStrip({ scan_enabled: true, rules_enabled: true }, 'overview');
   assert.deepEqual(tabKeys(html),
     ['overview', 'stories', 'timeline', 'decisions', 'memory', 'subscriptions', 'scan', 'rules', 'trace']);
-  assert.match(html, /class="output-tabs prd-detail-tabs"/);
+  assert.match(html, /class="output-tabs prd-detail-tabs[^"]*"/);
 });
 
 test('strip omits Scan and Rules when neither is enabled nor has results', () => {

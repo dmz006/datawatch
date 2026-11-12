@@ -6781,7 +6781,7 @@ function renderSessionDetail(sessionId) {
   // tab strip with Status (default) / Stats. Outer tab id stays
   // tabStatus so existing handlers + badge code keep working.
   const outputAreaHtml = showChannel
-    ? `<div class="output-tabs">
+    ? `<div class="output-tabs tab-strip-scroll">
         <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${isChatMode ? (t('session_detail_tab_chat')||'Chat') : (t('session_detail_tab_tmux')||'Tmux')}</button>
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">${t('session_detail_tab_channel')||'Channel'}</button>
         <button class="output-tab" id="tabStatus" onclick="switchOutputTab('status')">${t('session_detail_tab_status')||'Status'} <span id="tabStatusBadge" style="display:none;"></span></button>
@@ -6816,7 +6816,7 @@ function renderSessionDetail(sessionId) {
       `
     : (sess?.output_mode === 'chat'
        ? `<div class="output-area chat-mode" id="chatArea"></div>`
-       : `<div class="output-tabs">
+       : `<div class="output-tabs tab-strip-scroll">
             <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${t('session_detail_tab_tmux')||'Tmux'}</button>
             <button class="output-tab" id="tabStatus" onclick="switchOutputTab('status')">${t('session_detail_tab_status')||'Status'} <span id="tabStatusBadge" style="display:none;"></span></button>
             <span style="margin-left:auto;"></span>
@@ -8363,6 +8363,7 @@ function switchOutputTab(tab) {
       wrap.innerHTML = `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="${t('btn_send_tmux')||'Send via tmux'}">&#9654;</button>`;
     }
   }
+  if (typeof _tabStripsRevealAll === 'function') _tabStripsRevealAll();
 }
 
 // v6.11.21 — Stats tab renderer. Mirrors mobile's SessionStatsPanel.kt.
@@ -12236,6 +12237,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
+  _tabStripsRevealAll();
   if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadFingerprintMatchesPanel(); loadPushPanel(); }
 }
 window.switchSettingsTab = switchSettingsTab;
@@ -12281,7 +12283,7 @@ function renderSettingsView() {
 
   view.innerHTML = `
     <div class="view-content">
-      <div class="settings-tabs-bar">
+      <div class="settings-tabs-bar tab-strip-scroll">
         ${tabBtns}
       </div>
       <div class="settings-view">
@@ -13610,6 +13612,7 @@ function renderSettingsView() {
   if (typeof _applyCardOrderForTab === 'function') {
     _applyCardOrderForTab(_settingsTab);
   }
+  _tabStripsRevealAll();
   // The whole settings panel re-renders as one innerHTML assignment on every
   // tab switch, so #aboutSplashCanvas is a fresh DOM node each call — stop
   // any previous loop (same stacking hazard as setInterval on re-render)
@@ -29201,7 +29204,7 @@ function _automataTmplSubtabEntry() {
 // switch logic read _AUTOMATA_TEMPLATE_SUBTABS, so adding an entry later is
 // one new registry object — the mechanism never changes.
 function _templatesSubtabsBarHTML() {
-  return `<div class="output-tabs automata-templates-subtabs" role="tablist">`
+  return `<div class="output-tabs automata-templates-subtabs tab-strip-scroll" role="tablist">`
     + _AUTOMATA_TEMPLATE_SUBTABS.map(s => `
         <button class="output-tab ${_automataTmplSubtab === s.key ? 'active' : ''}" role="tab" aria-selected="${_automataTmplSubtab === s.key ? 'true' : 'false'}" data-tmplsubtab="${s.key}" onclick="switchTemplatesSubtab('${s.key}')">${escHtml(t(s.titleKey))}</button>`).join('')
     + `
@@ -29217,6 +29220,7 @@ function _templatesSubtabsSyncActive() {
     btn.classList.toggle('active', on);
     btn.setAttribute('aria-selected', on ? 'true' : 'false');
   });
+  _tabStripsRevealAll();
 }
 window._templatesSubtabsSyncActive = _templatesSubtabsSyncActive;
 
@@ -30537,6 +30541,7 @@ function _automataDetailTabsReveal() {
     const strip = btn.parentElement;
     if (!strip || typeof btn.offsetLeft !== 'number') return;
     strip.scrollLeft = btn.offsetLeft - Math.max(0, (strip.clientWidth - btn.offsetWidth) / 2);
+    _tabStripFade(strip);
   } catch (e) { /* cosmetic only */ }
 }
 window._automataDetailTabsReveal = _automataDetailTabsReveal;
@@ -38128,7 +38133,7 @@ function _renderDetailTabStrip(prd, currentTab) {
     ['rules',     t('prd_tab_rules')     || 'Rules',     hasRules],
     ['trace',     t('trace_card_title')  || 'Trace',     true],
   ];
-  return `<div class="output-tabs prd-detail-tabs">
+  return `<div class="output-tabs prd-detail-tabs tab-strip-scroll">
     ${tabs.filter(t => t[2]).map(([k, label]) => `
       <button class="output-tab ${k===currentTab?'active':''}" onclick="switchAutomataDetailTab('${k}')">${escHtml(label)}</button>
     `).join('')}
@@ -40223,7 +40228,7 @@ function _tabStripFade(stripEl) {
 }
 function _tabStripsRevealAll() {
   try {
-    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar').forEach(_tabStripReveal);
+    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar, .tab-strip-scroll').forEach(_tabStripReveal);
   } catch (e) { /* cosmetic only */ }
 }
 window._tabStripReveal = _tabStripReveal;
