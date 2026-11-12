@@ -6280,6 +6280,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"reserved_interactive":            s.cfg.Session.EffectiveReservedInteractive(),
 				"input_idle_timeout":              s.cfg.Session.InputIdleTimeout,
 				"liveness_window_seconds":         s.cfg.Session.LivenessWindowSeconds,
+				"finalise_interval_minutes":       s.cfg.Session.FinaliseIntervalMinutes,
 				"liveness_idle_timeout_overrides": livenessOverridesForDisplay(s.cfg.Session.LivenessIdleTimeoutOverrides),
 				"tail_lines":                      s.cfg.Session.TailLines,
 				"alert_context_lines":             s.cfg.Session.AlertContextLines,
@@ -8694,6 +8695,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "session.liveness_window_seconds":
 			if n, ok := wholeNumber(v); ok {
 				cfg.Session.LivenessWindowSeconds = n
+			}
+		case "session.finalise_interval_minutes":
+			// Read live by the finaliser each cycle; a negative value is
+			// ignored and zero switches scheduled runs off.
+			if n, ok := wholeNumber(v); ok && n >= 0 {
+				cfg.Session.FinaliseIntervalMinutes = n
 			}
 		case "session.liveness_idle_timeout_overrides":
 			if m, ok := livenessOverridesFromValue(v); ok {
