@@ -69,6 +69,10 @@ type BurnGuardInputs struct {
 	TranscriptDir string
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Applies reports whether the guard acts on the backend: true for an allowance
+	// entry, and for an api or local entry only with a dollar budget set. nil means
+	// it always applies (the behaviour before billing modes).
+	Applies func(backend string) bool
 }
 
 // BurnGuardNotifier raises the alert and the queue question of one step.
@@ -244,6 +248,11 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 		MaxProjectionGapPoints: cfg.MaxProjectionGapPoints, AskOnChange: cfg.AskOnChange,
 	}
 
+	if g.in.Applies != nil && !g.in.Applies(burnguard.ClaudeBackend) {
+		// The entry in use is api or local with no dollar budget: nothing to guard.
+		cfg.Enabled = false
+		set.Enabled = false
+	}
 	var proj burnguard.Projection
 	if cfg.Enabled {
 		proj = g.project(ctx, cfg, now)
@@ -520,6 +529,7 @@ func (n burnGuardNotifier) Question(text string) error {
 func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessions, transcriptDir string) error {
 	in := BurnGuardInputs{
 		TranscriptDir: transcriptDir,
+		Applies:       s.burnGuardApplies,
 		Config: func() config.BurnGuardConfig {
 			if s.cfg == nil {
 				return config.DefaultBurnGuard()

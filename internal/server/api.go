@@ -7102,6 +7102,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	if warnings := s.modelNodeWarnings(); len(warnings) > 0 {
 		out["model_node_warnings"] = warnings
 	}
+	out["llms"] = s.llmBillingModes()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
 }
@@ -7123,6 +7124,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	var patch map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if code, verr := s.firstLLMBillingModeError(patch); verr != nil {
+		http.Error(w, verr.Error(), code)
 		return
 	}
 	// Tag browser settings (autonomous.tags.*): every key goes through the
@@ -8182,6 +8187,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusServiceUnavailable
 		}
 		http.Error(w, err.Error(), status)
+		return
+	}
+	if err := s.applyLLMBillingModePatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	skipped := applyConfigPatch(s.cfg, patch)

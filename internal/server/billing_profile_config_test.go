@@ -242,11 +242,11 @@ func TestBillingProfile_DrivesCostReportBilling(t *testing.T) {
 			t.Errorf("share_of_monthly_price missing/<=0 while api_equivalent_usd=%v: %v", est, cc)
 		}
 	}
-	if ol["billing_mode"] != "api_metered" {
-		t.Errorf("ollama billing_mode = %v, want api_metered", ol["billing_mode"])
+	// Resolver kind default: an ollama backend with no entry bills as local.
+	if ol["billing_mode"] != "free_local" {
+		t.Errorf("ollama billing_mode = %v, want free_local", ol["billing_mode"])
 	}
-	label, _ := ol["billing_label"].(string)
-	if !strings.Contains(label, "assumed") {
-		t.Errorf("ollama billing_label %q must name it as the assumed default", label)
+	if ol["usd_estimate"] != nil {
+		t.Errorf("ollama local row must carry no dollars: %v", ol)
 	}
 }

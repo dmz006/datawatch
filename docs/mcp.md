@@ -1159,9 +1159,19 @@ Cost report over the daemon's recorded session spend: the `internal/costreport` 
   "rows": [
     {"key": "claude-code", "sessions": 3, "tokens_in": 120000, "tokens_out": 24000, "rate_configured": true, "usd_estimate": 0.78,
      "billing_mode": "bundled_plan", "billing_label": "bundled plan — API-equivalent, not billed",
-     "api_equivalent_usd": 0.78, "estimated_usage_points": 3.9, "share_of_monthly_price": 0.008},
-:    {"key": "opencode", "sessions": 1, "tokens_in": 50000, "tokens_out": 9000, "rate_configured": true,
-     "billing_mode": "free_local", "billing_label": "free local inference — not billed, token usage only"}
+     "api_equivalent_usd": 0.78, "estimated_usage_points": 3.9, "share_of_monthly_price": 0.008,
+     "unit_totals": [{"unit": "points", "billing_mode": "bundled_plan", "sessions": 3, "tokens_in": 120000, "tokens_out": 24000,
+                      "active_seconds": 5400, "points": 3.9, "percent": 0.78}]},
+    {"key": "opencode", "sessions": 1, "tokens_in": 50000, "tokens_out": 9000, "rate_configured": true,
+     "billing_mode": "free_local", "billing_label": "free local inference — not billed, token usage only",
+     "unit_totals": [{"unit": "none", "billing_mode": "free_local", "sessions": 1, "tokens_in": 50000, "tokens_out": 9000,
+                      "active_seconds": 1200}]}
+  ],
+  "totals_by_unit": [
+    {"unit": "points", "billing_mode": "bundled_plan", "sessions": 3, "tokens_in": 120000, "tokens_out": 24000,
+     "active_seconds": 5400, "points": 3.9, "percent": 0.78},
+    {"unit": "none", "billing_mode": "free_local", "sessions": 1, "tokens_in": 50000, "tokens_out": 9000,
+     "active_seconds": 1200}
   ],
   "retention_days": 31,
   "lifetime_fallback": false,
@@ -1169,9 +1179,33 @@ Cost report over the daemon's recorded session spend: the `internal/costreport` 
 }
 ```
 
-Rows are sorted by key. `rate_configured` is `false` when at least one session in the row has no rate (the row then has no `usd_estimate`). `billing_mode` and `billing_label` are set where the row's providers have a billing profile — a fully-unprofiled row reads mode `api_metered` with the "(assumed — no usage.billing entry)" label. A `free_local` row carries no `usd_estimate` at all (nothing to bill and no rate to price by — the `rate_configured: true` above is why it isn't omitted). `api_equivalent_usd`, `estimated_usage_points` and `share_of_monthly_price` appear only on bundled rows whose profile carries a `monthly_price`. `units` only in `release` rows (REST/CLI only).
+Rows are sorted by key. `rate_configured` is `false` when at least one session in the row has no rate (the row then has no `usd_estimate`). `billing_mode` and `billing_label` are read from each backend's LLM entry `billing_mode` (`api` → `api_metered`, `allowance` → `bundled_plan`, `local` → `free_local`), then from its `usage.billing` profile — a row with neither reads mode `api_metered` with the "(assumed — no usage.billing entry)" label. A row whose backends are billed in different units reads `mixed` ("mixed billing modes — see the per-unit totals") and has no `usd_estimate`: dollars are never added to points. `unit_totals` (per row) and `totals_by_unit` (whole report) give one total per unit — `dollars` for `api`, `points` and `percent` for `allowance`, tokens and time only for `local` — each with `sessions`, `tokens_in`, `tokens_out` and `active_seconds`. A `free_local` row carries no `usd_estimate` at all (nothing to bill and no rate to price by — the `rate_configured: true` above is why it isn't omitted). `api_equivalent_usd`, `estimated_usage_points` and `share_of_monthly_price` appear only on bundled rows whose profile carries a `monthly_price`. `units` only in `release` rows (REST/CLI only).
 
 ---
+
+### `cost_charts`
+
+Read-only. The combined usage report: cost over time (`GET /api/cost/series`), tool usage (`GET /api/cost/tool-usage`) and retries and failure categories (`GET /api/cost/failures`) joined into one payload. It reads the three REST routes through the loopback and returns each body unchanged under `cost_over_time`, `tool_usage` and `failures`, so it needs the REST loopback. Tool usage carries a count per group, never a tool name. Capability: `analytics:read`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `group_by` | string | No | One of `automaton`, `project`, `model`, `automation`. Cost over time and tool usage group by `automaton`, `project` or `model`; retries and failures group by `project`, `automation` or `automaton`. A grouping a view does not know leaves that view on its default and is named in `notes`. |
+| `window` | string | No | How far back from now: `36h`, `7d`, `2w`. Defaults to the `cost_report` default window (twelve weeks for retries and failures). |
+
+**Example response:**
+```json
+{
+  "group_by": "project",
+  "window": "7d",
+  "cost_over_time": {"group_by": "project", "bucket": "day", "groups": [{"key": "datawatch", "tokens": 4500}]},
+  "tool_usage": {"group_by": "project", "groups": [{"key": "datawatch", "tool_calls": 31}], "total_tool_calls": 31},
+  "failures": {"group_by": "project", "groups": [{"key": "datawatch", "attempts": 6, "tasks": 3, "retries": 5}], "total_retries": 5}
+}
+```
+
+The same report is available from the CLI (`datawatch cost charts`) and the comm channel (`cost charts`).
 
 ### `list_sessions`
 

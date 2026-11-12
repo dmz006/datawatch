@@ -13955,6 +13955,13 @@ function buildLLMBudgetGroup(l) {
     <div style="${hint}">${escHtml(t('llm_budget_peers_hint')||'Federation peer spend is off for every peer unless the peer is listed here.')}</div>
     <label style="${lbl}">${escHtml(t('llm_billing_group_label')||'Billing group')}</label>
     <input id="fe_llm_billing_group" class="form-input" value="${escHtml(l.billing_group||'')}" title="Free-text label grouping LLM entries that share a billing account / plan" />
+    <label style="${lbl}">${escHtml(t('billing_mode_label')||'Billing mode')}${settingsHelpLink({ helpDocs: 'howto/cost-report.md', helpKey: 'billing_mode_help' })}</label>
+    <select id="fe_llm_billing_mode" class="form-select">
+      <option value=""${l.billing_mode ? '' : ' selected'}>—</option>
+      <option value="api"${l.billing_mode === 'api' ? ' selected' : ''}>${escHtml(t('billing_mode_option_api')||'api')}</option>
+      <option value="allowance"${l.billing_mode === 'allowance' ? ' selected' : ''}>${escHtml(t('billing_mode_option_allowance')||'allowance')}</option>
+      <option value="local"${l.billing_mode === 'local' ? ' selected' : ''}>${escHtml(t('billing_mode_option_local')||'local')}</option>
+    </select>
     </div>`;
 }
 // Reads the budget group back into the REST "budget" value. An empty
@@ -14035,6 +14042,8 @@ function collectLLMForm(originalRecord) {
   // empty value clears it (the daemon trims on save and omits it when blank).
   const billingGroup = String((document.getElementById('fe_llm_billing_group')||{}).value || '').trim();
   if (billingGroup) out.billing_group = billingGroup; else delete out.billing_group;
+  const billingMode = String((document.getElementById('fe_llm_billing_mode')||{}).value || '').trim();
+  if (billingMode) out.billing_mode = billingMode; else delete out.billing_mode;
   out.tags = getBadgeInputValue('fe_llm_tags').split(',').map(s => s.trim()).filter(Boolean);
   return out;
 }
@@ -29198,7 +29207,7 @@ function automataEventsLoad(append) {
   automataEventsFetch(before)
     .then(events => {
       if (gen !== st.gen || !document.getElementById('automataEventsList')) return;
-      st.events = append ? st.events.concat(events) : events;
+      st.events = append ? st.events.concat(events) : costChartsMergeEvents(events);
       st.lastEvents = st.events;
       st.events.forEach(ev => { if (ev && ev.project) st.projects.add(ev.project); });
       paintAutomataEvents(st.events);
@@ -37845,6 +37854,533 @@ registerAutomationCardSlot('events', {
   html: `<div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
   mount: () => listLoaderAll([_automationCleanupLoader()]),
   stop: () => _automationStopLoaders(['automation_cleanup']),
+});
+// ── Cost report chart cards ──────────────────────────────────────────────────
+// Four bounded cards in the Automata page's cost report area: cost over time,
+// tool usage, retries and failure categories, and the combined report. Each
+// reads its own REST view (GET /api/cost/series, /api/cost/tool-usage,
+// /api/cost/failures) and says its purpose, state, reason and next action in
+// one line each, with a "?" that opens docs/howto/cost-report.md.
+//
+// Helper extended: the Projects Gantt helpers. _costChartsLinesSVG and
+// _costChartsBarsSVG extend _projectGanttSVG (same 640-wide viewBox, the same
+// five dated ticks along the top, the palette from _projectGanttPalette) with
+// a value axis, and take their polyline scaling from _sparkline. No chart
+// library is added.
+//
+// A card whose data is empty or off is not drawn. Its reason becomes an
+// Events entry instead (costChartsMergeEvents puts it at the top of the
+// Events list), so nothing is silently missing.
+//
+// COST_CHARTS_TAB is the one constant that places the cards. It names the
+// Automata sub-tab whose slot (automationCostChartsCard) holds them; the
+// operator moves the cards by changing this single value to another key of
+// _AUTOMATION_CARD_SLOTS.
+const COST_CHARTS_TAB = 'progress';
+const COST_CHARTS_SLOT_ID = 'automationCostChartsCard';
+const COST_CHARTS_SLOT_ORDER = 110;
+const COST_CHARTS_DOC_HREF = '/diagrams.html#docs/howto/cost-report.md';
+// The groupings, like the counts elsewhere on the page: Project, Automation
+// and Automaton. The cost and tool-usage views are not recorded per
+// Automation, so under that grouping those cards are off and say why.
+const COST_CHARTS_GROUPS = ['project', 'automation', 'automaton'];
+const COST_CHARTS_WINDOWS = ['7d', '14d', '30d', '8w'];
+const COST_CHARTS_METRICS = ['tokens', 'money'];
+// Bounds: lines drawn per chart, points per line (neighbouring buckets are
+// summed past this), table rows per card, and Events entries kept.
+const COST_CHARTS_MAX_LINES = 6;
+const COST_CHARTS_MAX_POINTS = 60;
+const COST_CHARTS_MAX_ROWS = 8;
+const COST_CHARTS_COLOURS = ['#7c3aed', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#64748b'];
+const COST_CHARTS_VIEWS = ['cost', 'tools', 'failures', 'report'];
+// Locale keys by choice, listed whole so each can be found by search.
+const COST_CHARTS_GROUP_KEYS = { project: 'cost_charts_group_project', automation: 'cost_charts_group_automation', automaton: 'cost_charts_group_automaton' };
+const COST_CHARTS_METRIC_KEYS = { tokens: 'cost_charts_metric_tokens', money: 'cost_charts_metric_money' };
+const COST_CHARTS_CARD_IDS = {
+  cost: 'costChartsCostCard', tools: 'costChartsToolsCard',
+  failures: 'costChartsFailuresCard', report: 'costChartsReportCard',
+};
+
+const _costCharts = {
+  group: 'project', window: '7d', metric: 'tokens',
+  loading: false, loaded: false, gen: 0,
+  data: null,   // { cost, tools, failures }, each { body } | { error } | { unsupported }
+  events: [],   // the Events entries of the cards that are not shown
+};
+
+function _ccNum(n) {
+  n = Number(n) || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'G';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(Math.round(n));
+}
+function _ccMoney(n) { return (Number(n) || 0).toFixed(2); }
+
+// _ccReduce sums neighbouring values so a line never has more than max points.
+function _ccReduce(values, max) {
+  if (values.length <= max) return values.slice();
+  const size = Math.ceil(values.length / max);
+  const out = [];
+  for (let i = 0; i < values.length; i += size) {
+    out.push(values.slice(i, i + size).reduce((a, b) => a + b, 0));
+  }
+  return out;
+}
+// _ccReduceStarts keeps the first bucket start of each merged run.
+function _ccReduceStarts(starts, max) {
+  if (starts.length <= max) return starts.slice();
+  const size = Math.ceil(starts.length / max);
+  const out = [];
+  for (let i = 0; i < starts.length; i += size) out.push(starts[i]);
+  return out;
+}
+
+// costChartsMoneyUnits lists the money units a series carries a figure for,
+// in the server's order (dollars, then points). A unit with no figure (no rate
+// or monthly price, or USD estimates off) is not listed, and free local
+// inference has no money unit at all.
+function costChartsMoneyUnits(series) {
+  const totals = (series && Array.isArray(series.totals_by_unit)) ? series.totals_by_unit : [];
+  return totals.filter(u => u && ((u.unit === 'dollars' && u.dollars != null) || (u.unit === 'points' && u.points != null)));
+}
+
+// costChartsUnitLabel names a money axis from its unit and its billing mode,
+// so a dollar axis and a points axis can never be read as one another.
+function costChartsUnitLabel(unit, billingMode) {
+  let unitText;
+  if (unit === 'dollars') unitText = t('cost_charts_unit_dollars');
+  else if (unit === 'points') unitText = t('cost_charts_unit_points');
+  else unitText = t('cost_charts_unit_tokens');
+  let modeText = '';
+  if (billingMode === 'bundled_plan') modeText = t('cost_charts_mode_bundled_plan');
+  else if (billingMode === 'api_metered') modeText = t('cost_charts_mode_api_metered');
+  else if (billingMode === 'free_local') modeText = t('cost_charts_mode_free_local');
+  else if (billingMode) modeText = String(billingMode);
+  return modeText ? unitText + ' · ' + modeText : unitText;
+}
+
+function _ccFigure(units, unit) {
+  const u = Array.isArray(units) ? units.find(x => x && x.unit === unit) : null;
+  if (!u) return 0;
+  return Number(unit === 'dollars' ? u.dollars : u.points) || 0;
+}
+
+// costChartsLines turns a series-shaped body into the lines to draw: one per
+// group, the value of each bucket by pick(point), the largest totals first,
+// at most COST_CHARTS_MAX_LINES, each with at most COST_CHARTS_MAX_POINTS.
+function costChartsLines(body, pick, keep) {
+  const groups = (body && Array.isArray(body.groups)) ? body.groups : [];
+  const all = groups.filter(g => !keep || keep(g)).map(g => {
+    const raw = (Array.isArray(g.points) ? g.points : []).map(p => Number(pick(p)) || 0);
+    return { key: String(g.key), total: raw.reduce((a, b) => a + b, 0), values: _ccReduce(raw, COST_CHARTS_MAX_POINTS) };
+  });
+  all.sort((a, b) => b.total - a.total);
+  return { lines: all.slice(0, COST_CHARTS_MAX_LINES), total: all.length };
+}
+
+// _costChartsLinesSVG draws lines on a shared time axis, extending
+// _projectGanttSVG: a unit caption row, then the five dated ticks, then the
+// plot with the largest value and zero on the left.
+function _costChartsLinesSVG(spec) {
+  const W = 640, PAD_L = 52, PAD_R = 8, CAP_Y = 10, TICK_Y = 23, TOP = 30, PLOT_H = 110, H = TOP + PLOT_H + 4;
+  const pal = _projectGanttPalette();
+  const starts = _ccReduceStarts(spec.buckets, COST_CHARTS_MAX_POINTS);
+  const n = Math.max(1, starts.length);
+  let max = 0;
+  spec.lines.forEach(l => l.values.forEach(v => { if (v > max) max = v; }));
+  if (max <= 0) max = 1;
+  const x = i => PAD_L + (n <= 1 ? 0 : i / (n - 1)) * (W - PAD_L - PAD_R);
+  const y = v => TOP + PLOT_H - (v / max) * PLOT_H;
+  const fmt = spec.money ? _ccMoney : _ccNum;
+  let svg = `<text x="0" y="${CAP_Y}" font-size="10" font-weight="600" fill="${pal.txt}">${escHtml(spec.axis)}</text>`;
+  for (let i = 0; i <= 4; i++) {
+    const idx = Math.round((n - 1) * i / 4);
+    const tx = x(idx);
+    const anchor = i === 0 ? 'start' : (i === 4 ? 'end' : 'middle');
+    const when = starts[idx] ? new Date(starts[idx]) : null;
+    svg += `<line x1="${tx.toFixed(1)}" y1="${TOP}" x2="${tx.toFixed(1)}" y2="${TOP + PLOT_H}" stroke="${pal.bdr}" stroke-width="0.5" stroke-dasharray="2,6"/>`;
+    if (when && !isNaN(when.getTime())) svg += `<text x="${tx.toFixed(1)}" y="${TICK_Y}" text-anchor="${anchor}" font-size="9" fill="${pal.txt2}">${escHtml(when.toLocaleDateString())}</text>`;
+  }
+  svg += `<line x1="${PAD_L}" y1="${TOP + PLOT_H}" x2="${W - PAD_R}" y2="${TOP + PLOT_H}" stroke="${pal.bdr}" stroke-width="0.5"/>`;
+  svg += `<text x="${PAD_L - 4}" y="${TOP + 8}" text-anchor="end" font-size="9" fill="${pal.txt2}">${escHtml(fmt(max))}</text>`;
+  svg += `<text x="${PAD_L - 4}" y="${TOP + PLOT_H}" text-anchor="end" font-size="9" fill="${pal.txt2}">0</text>`;
+  spec.lines.forEach((l, li) => {
+    const colour = COST_CHARTS_COLOURS[li % COST_CHARTS_COLOURS.length];
+    const pts = l.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const tip = `${l.key} · ${fmt(l.total)}`;
+    svg += `<polyline fill="none" stroke="${colour}" stroke-width="1.5" points="${pts}"><title>${escHtml(tip)}</title></polyline>`;
+    const last = l.values.length - 1;
+    if (last >= 0) svg += `<circle cx="${x(last).toFixed(1)}" cy="${y(l.values[last]).toFixed(1)}" r="2.5" fill="${colour}"><title>${escHtml(tip)}</title></circle>`;
+  });
+  return `<svg class="cost-charts-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('cost_charts_chart_aria', [spec.axis]))}" style="display:block;margin-top:4px;">${svg}</svg>`;
+}
+
+// _costChartsBarsSVG draws one stacked bar per week, a segment per failure
+// category, on the same footing as _costChartsLinesSVG.
+function _costChartsBarsSVG(spec) {
+  const W = 640, PAD_L = 52, PAD_R = 8, CAP_Y = 10, TOP = 30, PLOT_H = 90, H = TOP + PLOT_H + 16;
+  const pal = _projectGanttPalette();
+  const weeks = spec.weeks.slice(-COST_CHARTS_MAX_POINTS);
+  const n = Math.max(1, weeks.length);
+  const slot = (W - PAD_L - PAD_R) / n;
+  const barW = Math.max(2, slot * 0.7);
+  let max = 0;
+  weeks.forEach(w => { if (w.total > max) max = w.total; });
+  if (max <= 0) max = 1;
+  let svg = `<text x="0" y="${CAP_Y}" font-size="10" font-weight="600" fill="${pal.txt}">${escHtml(spec.axis)}</text>`;
+  svg += `<text x="${PAD_L - 4}" y="${TOP + 8}" text-anchor="end" font-size="9" fill="${pal.txt2}">${escHtml(_ccNum(max))}</text>`;
+  svg += `<text x="${PAD_L - 4}" y="${TOP + PLOT_H}" text-anchor="end" font-size="9" fill="${pal.txt2}">0</text>`;
+  svg += `<line x1="${PAD_L}" y1="${TOP + PLOT_H}" x2="${W - PAD_R}" y2="${TOP + PLOT_H}" stroke="${pal.bdr}" stroke-width="0.5"/>`;
+  weeks.forEach((w, i) => {
+    const bx = PAD_L + i * slot + (slot - barW) / 2;
+    let acc = 0;
+    spec.categories.forEach((cat, ci) => {
+      const v = w.by[cat] || 0;
+      if (!v) return;
+      const h = (v / max) * PLOT_H;
+      const by = TOP + PLOT_H - ((acc + v) / max) * PLOT_H;
+      acc += v;
+      const colour = COST_CHARTS_COLOURS[ci % COST_CHARTS_COLOURS.length];
+      const when = w.start ? new Date(w.start).toLocaleDateString() : '';
+      svg += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${colour}"><title>${escHtml(`${when} · ${cat} · ${v}`)}</title></rect>`;
+    });
+    if (i === 0 || i === n - 1 || i === Math.round((n - 1) / 2)) {
+      const when = w.start ? new Date(w.start) : null;
+      if (when && !isNaN(when.getTime())) svg += `<text x="${(bx + barW / 2).toFixed(1)}" y="${H - 3}" text-anchor="middle" font-size="9" fill="${pal.txt2}">${escHtml(when.toLocaleDateString())}</text>`;
+    }
+  });
+  return `<svg class="cost-charts-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('cost_charts_chart_aria', [spec.axis]))}" style="display:block;margin-top:4px;">${svg}</svg>`;
+}
+
+function _ccLegend(keys) {
+  return `<div class="cost-charts-legend" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--text2);margin-top:2px;">${keys.map((k, i) =>
+    `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${COST_CHARTS_COLOURS[i % COST_CHARTS_COLOURS.length]};"></span>${escHtml(String(k))}</span>`).join('')}</div>`;
+}
+
+function _ccBoundedNote(shown, total) {
+  return total > shown ? `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_groups', [shown, total]))}</div>` : '';
+}
+
+function _ccLineChart(buckets, picked, axis, money) {
+  return `<div class="cost-charts-chart">${_costChartsLinesSVG({ buckets, lines: picked.lines, axis, money })}${_ccLegend(picked.lines.map(l => l.key))}${_ccBoundedNote(picked.lines.length, picked.total)}</div>`;
+}
+
+// _ccCostBody draws cost over time. Tokens are one chart. Money is one chart
+// per billing unit, each axis labelled with its unit and billing mode, so
+// dollars and points are never drawn on one axis or added together.
+function _ccCostBody(series, metric) {
+  const buckets = Array.isArray(series.buckets) ? series.buckets : [];
+  const units = costChartsMoneyUnits(series);
+  let html = '';
+  if (metric === 'money' && units.length) {
+    units.forEach(u => {
+      const picked = costChartsLines(series, p => _ccFigure(p.units, u.unit),
+        g => Array.isArray(g.unit_totals) && g.unit_totals.some(x => x && x.unit === u.unit));
+      html += _ccLineChart(buckets, picked, costChartsUnitLabel(u.unit, u.billing_mode), true);
+    });
+  } else {
+    html += _ccLineChart(buckets, costChartsLines(series, p => p.tokens), costChartsUnitLabel(null, ''), false);
+    if (metric === 'money') html += `<div class="cost-charts-money-off" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_money_off'))}</div>`;
+  }
+  if (series.unknown_spend_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(series.unknown_spend_note)}</div>`;
+  return html;
+}
+
+function _ccToolsBody(body) {
+  const buckets = Array.isArray(body.buckets) ? body.buckets : [];
+  let html = _ccLineChart(buckets, costChartsLines(body, p => p.tool_calls), t('cost_charts_unit_tool_calls'), false);
+  html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(body.tool_names_note || t('cost_charts_tool_names_note'))}</div>`;
+  if (body.unknown_spend_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(body.unknown_spend_note)}</div>`;
+  return html;
+}
+
+// costChartsWeekStacks sums every group's weekly category counts into one
+// stack per week, for the failure bars.
+function costChartsWeekStacks(failures) {
+  const weeks = (Array.isArray(failures.weeks) ? failures.weeks : []).map(s => ({ start: s, total: 0, by: {} }));
+  (Array.isArray(failures.groups) ? failures.groups : []).forEach(g => {
+    (Array.isArray(g.weeks) ? g.weeks : []).forEach((w, i) => {
+      if (!weeks[i]) return;
+      (Array.isArray(w.categories) ? w.categories : []).forEach(c => {
+        weeks[i].by[c.category] = (weeks[i].by[c.category] || 0) + (Number(c.attempts) || 0);
+        weeks[i].total += Number(c.attempts) || 0;
+      });
+    });
+  });
+  const categories = (Array.isArray(failures.categories) ? failures.categories : []).map(c => String(c.category));
+  return { weeks, categories };
+}
+
+function _ccTable(head, rows, total) {
+  const th = head.map((h, i) => `<th style="text-align:${i ? 'right' : 'left'};padding:2px 6px;font-weight:600;">${escHtml(h)}</th>`).join('');
+  const tr = r => `<tr>${r.map((c, i) => `<td style="text-align:${i ? 'right' : 'left'};padding:2px 6px;">${c}</td>`).join('')}</tr>`;
+  const foot = total ? `<tfoot><tr style="border-top:1px solid var(--border);font-weight:600;">${total.map((c, i) => `<td style="text-align:${i ? 'right' : 'left'};padding:2px 6px;">${c}</td>`).join('')}</tr></tfoot>` : '';
+  return `<table class="cost-charts-table" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;"><thead><tr style="color:var(--text2);">${th}</tr></thead><tbody>${rows.map(tr).join('')}</tbody>${foot}</table>`;
+}
+
+function _ccFailuresBody(f) {
+  const stacks = costChartsWeekStacks(f);
+  let html = `<div class="cost-charts-chart">${_costChartsBarsSVG({ weeks: stacks.weeks, categories: stacks.categories, axis: t('cost_charts_unit_attempts') })}${_ccLegend(stacks.categories)}</div>`;
+  const groups = Array.isArray(f.groups) ? f.groups : [];
+  const rows = groups.slice(0, COST_CHARTS_MAX_ROWS).map(g => {
+    const top = Array.isArray(g.categories) && g.categories[0] ? `${g.categories[0].category} (${g.categories[0].attempts})` : '';
+    return [escHtml(String(g.label || g.key)), String(g.attempts || 0), String(g.tasks || 0), String(g.retries || 0), escHtml(top)];
+  });
+  html += _ccTable([t('cost_charts_col_group'), t('cost_charts_col_attempts'), t('cost_charts_col_tasks'), t('cost_charts_col_retries'), t('cost_charts_col_top_category')], rows,
+    [escHtml(t('cost_charts_total')), String(f.total_attempts || 0), String(f.total_tasks || 0), String(f.total_retries || 0), '']);
+  if (groups.length > rows.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [rows.length, groups.length]))}</div>`;
+  if (f.retry_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(f.retry_note)}</div>`;
+  return html;
+}
+
+// costChartsReportRows joins the three views by group key into the combined
+// report: tokens, tool calls, failed attempts and retries per group. Money is
+// listed per unit on its own line and never added across units. A view that
+// is not recorded for the grouping leaves its cells blank.
+function costChartsReportRows(data) {
+  const rows = new Map();
+  const row = k => { if (!rows.has(k)) rows.set(k, { key: k, label: '', tokens: null, calls: null, attempts: null, retries: null, money: [] }); return rows.get(k); };
+  const body = v => (data && data[v] && data[v].body) || null;
+  const cost = body('cost'), tools = body('tools'), fails = body('failures');
+  if (cost) (cost.groups || []).forEach(g => {
+    const r = row(String(g.key));
+    r.tokens = Number(g.tokens) || 0;
+    r.money = (g.unit_totals || []).filter(u => u && ((u.unit === 'dollars' && u.dollars != null) || (u.unit === 'points' && u.points != null)));
+  });
+  if (tools) (tools.groups || []).forEach(g => { row(String(g.key)).calls = Number(g.tool_calls) || 0; });
+  if (fails) (fails.groups || []).forEach(g => {
+    const r = row(String(g.key));
+    r.attempts = Number(g.attempts) || 0; r.retries = Number(g.retries) || 0; r.label = g.label || '';
+  });
+  const list = Array.from(rows.values());
+  list.sort((a, b) => ((b.tokens || 0) - (a.tokens || 0)) || ((b.attempts || 0) - (a.attempts || 0)) || ((b.calls || 0) - (a.calls || 0)));
+  return list;
+}
+
+function _ccReportBody(data) {
+  const all = costChartsReportRows(data);
+  const cost = data.cost && data.cost.body, tools = data.tools && data.tools.body, fails = data.failures && data.failures.body;
+  const dash = '—';
+  const moneyCell = r => r.money.map(u => `<div>${escHtml(costChartsUnitLabel(u.unit, u.billing_mode))}: ${escHtml(_ccMoney(u.unit === 'dollars' ? u.dollars : u.points))}</div>`).join('') || dash;
+  const num = v => (v == null ? dash : escHtml(_ccNum(v)));
+  const rows = all.slice(0, COST_CHARTS_MAX_ROWS).map(r => [
+    escHtml(r.label || r.key), num(r.tokens), moneyCell(r), num(r.calls), num(r.attempts), num(r.retries)]);
+  const totalMoney = cost ? costChartsMoneyUnits(cost).map(u => `<div>${escHtml(costChartsUnitLabel(u.unit, u.billing_mode))}: ${escHtml(_ccMoney(u.unit === 'dollars' ? u.dollars : u.points))}</div>`).join('') || dash : dash;
+  const sumTokens = cost ? (cost.groups || []).reduce((a, g) => a + (Number(g.tokens) || 0), 0) : null;
+  const total = [escHtml(t('cost_charts_total')), num(sumTokens), totalMoney, num(tools ? tools.total_tool_calls : null), num(fails ? fails.total_attempts : null), num(fails ? fails.total_retries : null)];
+  let html = _ccTable([t('cost_charts_col_group'), t('cost_charts_col_tokens'), t('cost_charts_col_money'), t('cost_charts_col_tool_calls'), t('cost_charts_col_attempts'), t('cost_charts_col_retries')], rows, total);
+  if (all.length > rows.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [rows.length, all.length]))}</div>`;
+  return html;
+}
+
+function _ccHasMoney(series) { return costChartsMoneyUnits(series).length > 0; }
+
+// costChartsModel decides, for each of the four cards, whether it is shown and
+// what its state, reason and next action say. It is pure: the reason and next
+// action are locale keys with their arguments, resolved when drawn. A card is
+// "off" when its view cannot be read or is not recorded for the grouping, and
+// "empty" when the view has no data; neither is drawn.
+function costChartsModel(data, opts) {
+  opts = opts || {};
+  const group = opts.group || 'project';
+  const win = opts.window || '7d';
+  const cards = {};
+  const viewCard = (view, empties, nextWiden) => {
+    const d = (data && data[view]) || {};
+    if (d.unsupported) return { state: 'off', reason: ['cost_charts_reason_not_grouped'], next: ['cost_charts_next_group'] };
+    if (d.error) return { state: 'off', reason: ['cost_charts_reason_unavailable', [String((d.error && d.error.message) || d.error)]], next: ['cost_charts_next_retry'] };
+    if (!d.body) return { state: 'off', reason: ['cost_charts_reason_unavailable', ['']], next: ['cost_charts_next_retry'] };
+    if (empties(d.body)) return { state: 'empty', reason: [view === 'cost' ? 'cost_charts_reason_empty_cost' : (view === 'tools' ? 'cost_charts_reason_empty_tools' : 'cost_charts_reason_empty_failures')], next: [nextWiden] };
+    const n = (d.body.groups || []).length;
+    return { state: 'shown', reason: ['cost_charts_reason_showing', [n, win]], next: ['cost_charts_next_showing'] };
+  };
+  cards.cost = viewCard('cost', b => !(b.groups || []).some(g => (Number(g.tokens) || 0) > 0), 'cost_charts_next_widen');
+  cards.tools = viewCard('tools', b => !(Number(b.total_tool_calls) > 0), 'cost_charts_next_widen');
+  cards.failures = viewCard('failures', b => !(Number(b.total_attempts) > 0 || (b.groups || []).length), 'cost_charts_next_widen');
+  if (cards.cost.state === 'shown' && opts.metric === 'money' && !_ccHasMoney(data.cost.body)) {
+    cards.cost.reason = ['cost_charts_money_off'];
+    cards.cost.next = ['cost_charts_next_money'];
+  }
+  const anyShown = ['cost', 'tools', 'failures'].some(v => cards[v].state === 'shown');
+  if (anyShown) {
+    const partial = ['cost', 'tools'].some(v => cards[v].state === 'off' && data[v] && data[v].unsupported);
+    cards.report = { state: 'shown', reason: [partial ? 'cost_charts_reason_report_partial' : 'cost_charts_reason_report', [costChartsReportRows(data).length, win]], next: ['cost_charts_next_showing'] };
+  } else {
+    cards.report = { state: 'empty', reason: ['cost_charts_reason_empty_report'], next: ['cost_charts_next_widen'] };
+  }
+  COST_CHARTS_VIEWS.forEach(v => { cards[v].view = v; cards[v].group = group; });
+  return cards;
+}
+
+function _ccResolve(pair) { return pair ? t(pair[0], pair[1]) : ''; }
+
+function _ccTitle(view) {
+  if (view === 'cost') return t('cost_charts_title_cost');
+  if (view === 'tools') return t('cost_charts_title_tools');
+  if (view === 'failures') return t('cost_charts_title_failures');
+  return t('cost_charts_title_report');
+}
+function _ccPurpose(view) {
+  if (view === 'cost') return t('cost_charts_purpose_cost');
+  if (view === 'tools') return t('cost_charts_purpose_tools');
+  if (view === 'failures') return t('cost_charts_purpose_failures');
+  return t('cost_charts_purpose_report');
+}
+function _ccStateText(state) {
+  if (state === 'shown') return t('cost_charts_state_showing');
+  if (state === 'empty') return t('cost_charts_state_empty');
+  return t('cost_charts_state_off');
+}
+
+function costChartsHelpLink() {
+  const tip = t('cost_charts_help_tip');
+  return ` <a href="${COST_CHARTS_DOC_HREF}" target="_blank" rel="noopener" class="docs-link cost-charts-help" title="${escHtml(tip)}" aria-label="${escHtml(t('cost_charts_help_label'))}" onclick="event.stopPropagation()" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:4px;">?</a>`;
+}
+
+function _ccCardHtml(view, card, data, metric) {
+  let body = '';
+  if (view === 'cost') body = _ccCostBody(data.cost.body, metric);
+  else if (view === 'tools') body = _ccToolsBody(data.tools.body);
+  else if (view === 'failures') body = _ccFailuresBody(data.failures.body);
+  else body = _ccReportBody(data);
+  const sep = ' · ';
+  return `<div id="${COST_CHARTS_CARD_IDS[view]}" class="cost-charts-card prd-capacity-slot" data-view="${view}" data-state="${card.state}" style="margin:6px 0 0;">`
+    + `<div class="cap-title">${escHtml(_ccTitle(view))}${costChartsHelpLink()}</div>`
+    + `<div class="cost-charts-purpose" style="font-size:12px;color:var(--text2);">${escHtml(_ccPurpose(view))}</div>`
+    + `<div class="cost-charts-status" style="font-size:12px;margin-top:2px;"><strong>${escHtml(t('cost_charts_label_state'))}:</strong> ${escHtml(_ccStateText(card.state))}${sep}<strong>${escHtml(t('cost_charts_label_reason'))}:</strong> ${escHtml(_ccResolve(card.reason))}${sep}<strong>${escHtml(t('cost_charts_label_next'))}:</strong> ${escHtml(_ccResolve(card.next))}</div>`
+    + body
+    + `</div>`;
+}
+
+function _ccControlsHtml(st, hidden) {
+  const opt = (v, cur, label) => `<option value="${escHtml(v)}"${v === cur ? ' selected' : ''}>${escHtml(label)}</option>`;
+  const groupLabel = g => t(COST_CHARTS_GROUP_KEYS[g]);
+  return `<div class="cost-charts-controls" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;">`
+    + `<div class="cap-title" style="margin:0;">${escHtml(t('cost_charts_heading'))}${costChartsHelpLink()}</div>`
+    + `<label style="margin-left:auto;">${escHtml(t('cost_charts_label_group'))} <select id="costChartsGroup" onchange="window.costChartsSetGroup(this.value)" style="font-size:12px;">${COST_CHARTS_GROUPS.map(g => opt(g, st.group, groupLabel(g))).join('')}</select></label>`
+    + `<label>${escHtml(t('cost_charts_label_window'))} <select id="costChartsWindow" onchange="window.costChartsSetWindow(this.value)" style="font-size:12px;">${COST_CHARTS_WINDOWS.map(w => opt(w, st.window, w)).join('')}</select></label>`
+    + `<label>${escHtml(t('cost_charts_label_metric'))} <select id="costChartsMetric" onchange="window.costChartsSetMetric(this.value)" style="font-size:12px;">${COST_CHARTS_METRICS.map(m => opt(m, st.metric, t(COST_CHARTS_METRIC_KEYS[m]))).join('')}</select></label>`
+    + `<button type="button" class="btn-secondary" onclick="window.costChartsRefresh()" style="font-size:12px;padding:2px 10px;">${escHtml(t('cost_charts_refresh'))}</button>`
+    + `</div>`
+    + (hidden ? `<div class="cost-charts-hidden-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_hidden_note', [hidden]))}</div>` : '');
+}
+
+// costChartsCardsHtml is the pure renderer for the whole area: the controls,
+// then each card that has data. data is null while the first load runs.
+window.costChartsCardsHtml = function(data, opts) {
+  const st = Object.assign({ group: 'project', window: '7d', metric: 'tokens' }, opts || {});
+  if (!data) return `${_ccControlsHtml(st, 0)}<div class="cost-charts-loading" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_charts_loading'))}</div>`;
+  const model = costChartsModel(data, st);
+  let html = '';
+  let hidden = 0;
+  COST_CHARTS_VIEWS.forEach(v => {
+    if (model[v].state === 'shown') html += _ccCardHtml(v, model[v], data, st.metric);
+    else hidden++;
+  });
+  return _ccControlsHtml(st, hidden) + html;
+};
+
+// costChartsEventEntries makes the Events entry of every card that is not
+// shown: its reason and next action, so the operator is told why a chart is
+// missing and what to do.
+function costChartsEventEntries(model, st, nowIso) {
+  const out = [];
+  COST_CHARTS_VIEWS.forEach(v => {
+    const c = model[v];
+    if (!c || c.state === 'shown') return;
+    out.push({
+      id: 'cost-charts:' + v,
+      kind: 'cost-chart',
+      time: nowIso,
+      summary: t('cost_charts_event_summary', [_ccTitle(v)]),
+      reason: _ccResolve(c.reason),
+      next_action: _ccResolve(c.next),
+      detail: t('cost_charts_event_detail', [t(COST_CHARTS_GROUP_KEYS[st.group] || COST_CHARTS_GROUP_KEYS.project), st.window, _ccStateText(c.state)]),
+    });
+  });
+  return out.slice(0, COST_CHARTS_VIEWS.length);
+}
+window.costChartsEventEntries = costChartsEventEntries;
+
+// costChartsMergeEvents puts the cost chart entries at the top of the Events
+// list. The daemon's list is returned untouched when any kind, project or
+// search filter is set, because these entries carry none of them.
+function costChartsMergeEvents(events) {
+  const st = _automataEventsState;
+  if (!_costCharts.events.length || st.kinds.size || st.project) return events;
+  const q = String(st.q || '').toLowerCase();
+  const mine = _costCharts.events.filter(e => !q || (e.summary + ' ' + e.reason).toLowerCase().indexOf(q) >= 0);
+  return mine.concat(events);
+}
+window.costChartsMergeEvents = costChartsMergeEvents;
+
+function _costChartsPaint() {
+  const el = document.getElementById(COST_CHARTS_SLOT_ID);
+  if (!el) return;
+  el.style.display = '';
+  el.style.margin = '6px 8px 0';
+  el.innerHTML = window.costChartsCardsHtml(_costCharts.data, _costCharts);
+}
+
+function _costChartsPath(path, group, win) {
+  return path + '?group_by=' + encodeURIComponent(group) + '&window=' + encodeURIComponent(win);
+}
+
+// costChartsLoad reads the three views for the chosen grouping and window,
+// paints the cards that have data and records the Events entries of the rest.
+// A response from an older choice is dropped. The cost and tool-usage views
+// are not requested under the Automation grouping: the daemon does not record
+// them per Automation.
+window.costChartsLoad = function() {
+  const st = _costCharts;
+  const gen = ++st.gen;
+  const group = st.group, win = st.window;
+  st.loading = true;
+  if (!st.data) _costChartsPaint();
+  const get = (path, supported) => {
+    if (!supported) return Promise.resolve({ unsupported: true });
+    return apiFetch(_costChartsPath(path, group, win)).then(body => ({ body: body || {} }), error => ({ error }));
+  };
+  const seriesOk = group !== 'automation';
+  return Promise.all([get('/api/cost/series', seriesOk), get('/api/cost/tool-usage', seriesOk), get('/api/cost/failures', true)]).then(res => {
+    if (gen !== st.gen) return;
+    st.loading = false; st.loaded = true;
+    st.data = { cost: res[0], tools: res[1], failures: res[2] };
+    st.events = costChartsEventEntries(costChartsModel(st.data, st), st, new Date().toISOString());
+    _costChartsPaint();
+  });
+};
+window.costChartsRefresh = function() { return window.costChartsLoad(); };
+window.costChartsSetGroup = function(g) {
+  if (COST_CHARTS_GROUPS.indexOf(g) < 0 || g === _costCharts.group) return;
+  _costCharts.group = g;
+  return window.costChartsLoad();
+};
+window.costChartsSetWindow = function(w) {
+  if (COST_CHARTS_WINDOWS.indexOf(w) < 0 || w === _costCharts.window) return;
+  _costCharts.window = w;
+  return window.costChartsLoad();
+};
+// The metric only changes how the loaded data is drawn: no new request.
+window.costChartsSetMetric = function(m) {
+  if (COST_CHARTS_METRICS.indexOf(m) < 0 || m === _costCharts.metric) return;
+  _costCharts.metric = m;
+  if (_costCharts.data) {
+    _costCharts.events = costChartsEventEntries(costChartsModel(_costCharts.data, _costCharts), _costCharts, new Date().toISOString());
+    _costChartsPaint();
+  }
+};
+window._costChartsState = _costCharts;
+
+// The cards fill the cost report slot reserved above and keep its id and
+// order. Leaving the tab ends any load still in flight by bumping gen.
+registerAutomationCardSlot(COST_CHARTS_TAB, {
+  id: COST_CHARTS_SLOT_ID,
+  order: COST_CHARTS_SLOT_ORDER,
+  html: _automationPlaceholderHTML(COST_CHARTS_SLOT_ID),
+  mount: () => { window.costChartsLoad(); },
+  stop: () => { _costCharts.gen++; _costCharts.loading = false; },
 });
 // The Inbox sub-tab counts everything waiting on the operator, from the data
 // its own loaders already fetch: triage items, open questions, held questions,

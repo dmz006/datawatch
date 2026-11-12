@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -194,6 +195,66 @@ type RateFunc func(backend string) (session.CostRate, bool)
 // their legacy shape — usd_estimate only, no billing fields at all.
 type BillingFunc func(backend string) config.EffectiveBillingProfile
 
+// Units a total can be expressed in. A group never sums across units.
+const (
+	UnitDollars = "dollars"
+	UnitPoints  = "points"
+	UnitNone    = "none"
+)
+
+// UnitTotal is the total of every record whose backend bills in one unit:
+// dollars for api backends, points (and percent of the allowance) for
+// allowance backends, tokens and time only for local backends.
+type UnitTotal struct {
+	Unit          string   `json:"unit"`
+	BillingMode   string   `json:"billing_mode"`
+	Sessions      int      `json:"sessions"`
+	TokensIn      int      `json:"tokens_in"`
+	TokensOut     int      `json:"tokens_out"`
+	ActiveSeconds float64  `json:"active_seconds"`
+	Dollars       *float64 `json:"dollars,omitempty"`
+	Points        *float64 `json:"points,omitempty"`
+	Percent       *float64 `json:"percent,omitempty"`
+}
+
+// LLMLookup finds the LLM entry for a backend name.
+type LLMLookup func(backend string) (inference.LLM, bool)
+
+// ResolvedBilling builds a BillingFunc whose mode comes from
+// config.ResolveBillingMode on the backend's LLM entry (which itself falls
+// back to the usage.billing profile). Backends with no entry resolve as an
+// entry of that kind. lookup and cfg may be nil.
+func ResolvedBilling(cfg *config.Config, lookup LLMLookup) BillingFunc {
+	return func(backend string) config.EffectiveBillingProfile {
+		var entry inference.LLM
+		found := false
+		if lookup != nil {
+			entry, found = lookup(backend)
+		}
+		if !found {
+			entry = inference.LLM{Name: backend, Kind: inference.Kind(backend)}
+		}
+		var eff config.EffectiveBillingProfile
+		if cfg != nil {
+			eff = cfg.Usage.EffectiveBillingProfile(backend)
+		} else {
+			eff = config.EffectiveBillingProfile{Profile: config.DefaultBillingProfile(), IsDefault: true}
+		}
+		switch config.ResolveBillingMode(entry, cfg) {
+		case config.BillingModeAllowance:
+			eff.Profile.Mode = config.BillingModeBundledPlan
+		case config.BillingModeLocal:
+			eff.Profile.Mode = config.BillingModeFreeLocal
+		default:
+			eff.Profile.Mode = config.BillingModeAPIMetered
+		}
+		if found && strings.TrimSpace(entry.BillingMode) != "" {
+			eff.IsDefault = false
+		}
+		return eff
+	}
+}
+
 // ShippedUnit is one shipped PRD or automation in a release.
 type ShippedUnit struct {
 	UnitID  string
@@ -272,6 +333,9 @@ type Row struct {
 	// Units is the count of shipped PRDs / automations in the release;
 	// release groupings only.
 	Units int `json:"units,omitempty"`
+	// UnitTotals is one total per billing unit the row spans; present when
+	// a billing resolver was wired. Dollars are never summed with points.
+	UnitTotals []UnitTotal `json:"unit_totals,omitempty"`
 
 	// WindowPartial is true when the row's first activity precedes the
 	// window start: the row is the in-window slice of a longer life, so
@@ -294,6 +358,9 @@ type Report struct {
 	Until   time.Time
 	// Rows is sorted by Key for stable output.
 	Rows []Row `json:"rows"`
+	// TotalsByUnit is one total per billing unit across all rows; dollars
+	// are never summed with points. Present when a billing resolver was wired.
+	TotalsByUnit []UnitTotal `json:"totals_by_unit,omitempty"`
 	// RetentionDays is the retention horizon of the spend store the
 	// dollar figures rest on.
 	RetentionDays int `json:"retention_days"`
@@ -384,7 +451,7 @@ const (
 	labelMetered  = "api_metered — billed per use"
 	labelAssumed  = "api_metered (assumed — no usage.billing entry)"
 	labelUSDEquiv = "API-equivalent estimate — bundled plan, not billed"
-	labelMixedUSD = "mixed billing modes — only the usd_estimate is unambiguous"
+	labelMixedUSD = "mixed billing modes — see the per-unit totals"
 )
 
 const (
@@ -484,7 +551,8 @@ func applyBilling(row *Row, backends []string, billing BillingFunc, est *float64
 	case len(modes) > 1:
 		row.BillingMode = MixedBillingMode
 		row.BillingLabel = labelMixedUSD
-		row.USDEstimate = est
+		// Dollars of api backends and points of allowance backends are
+		// never summed; the per-unit totals carry each figure.
 
 	case modes[config.BillingModeBundledPlan]:
 		row.BillingMode = config.BillingModeBundledPlan
@@ -524,6 +592,26 @@ func applyBilling(row *Row, backends []string, billing BillingFunc, est *float64
 		}
 		row.USDEstimate = est
 	}
+}
+
+func addPtr(p *float64, v float64) *float64 {
+	if p == nil {
+		return &v
+	}
+	n := *p + v
+	return &n
+}
+
+// sortedUnits returns the unit totals in a stable order (dollars, points,
+// none), or nil when there are none.
+func sortedUnits(m map[string]*UnitTotal) []UnitTotal {
+	var out []UnitTotal
+	for _, k := range []string{UnitDollars, UnitPoints, UnitNone} {
+		if u := m[k]; u != nil {
+			out = append(out, *u)
+		}
+	}
+	return out
 }
 
 // mergeReleaseUnits renders one row per release the daemon has shipped
@@ -629,7 +717,9 @@ func Build(
 		usd                   float64
 		allRate               bool
 		backends              []string
+		units                 map[string]*UnitTotal
 	}
+	total := map[string]*UnitTotal{}
 	buckets := map[string]*acc{}
 	add := func(key string) *acc {
 		a := buckets[key]
@@ -669,6 +759,22 @@ func Build(
 			a.last = hi
 		}
 		a.backends = append(a.backends, r.Backend)
+		var usdRec *float64
+		if rateFor != nil {
+			if rate, ok := rateFor(r.Backend); ok && showUSD {
+				v := session.EstimateCost(rate, r.TokensIn, r.TokensOut)
+				usdRec = &v
+			}
+		}
+		if billing != nil {
+			if a.units == nil {
+				a.units = map[string]*UnitTotal{}
+			}
+			p := billing(r.Backend).Profile
+			for _, m := range []map[string]*UnitTotal{a.units, total} {
+				foldUnit(m, p, r.TokensIn, r.TokensOut, r.ActiveSeconds, usdRec)
+			}
+		}
 		if rateFor == nil {
 			a.allRate = false
 			continue
@@ -698,6 +804,7 @@ func Build(
 		}
 		if billing != nil {
 			applyBilling(&row, a.backends, billing, est)
+			row.UnitTotals = sortedUnits(a.units)
 		} else {
 			row.USDEstimate = est
 		}
@@ -731,6 +838,7 @@ func Build(
 		RetentionDays:    RetentionDays,
 		LifetimeFallback: lifetimeFallback,
 		RetentionNote:    retentionNote(lifetimeFallback),
+		TotalsByUnit:     sortedUnits(total),
 		StartupByProfile: StartupTable(attempts, ProfileKey),
 		StartupByRole:    StartupTable(attempts, RoleKey),
 	}

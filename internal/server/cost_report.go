@@ -37,6 +37,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/spendledger"
 	"github.com/dmz006/datawatch/internal/trace"
 )
@@ -98,18 +99,18 @@ func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport
 			FromLedger:        true,
 			LedgerAutomatonID: e.AutomatonID,
 			AutomatonID:       e.AutomatonID,
-			TaskID:        e.TaskID,
-			Role:          e.Role,
-			Backend:       e.Backend,
-			At:            at,
-			TokensIn:      int(e.TokensIn),
-			TokensOut:     int(e.TokensOut),
-			CacheRead:     int(e.CacheRead),
-			CacheCreation: int(e.CacheCreation),
-			ToolCalls:     int(e.ToolCalls),
-			FirstActivity: e.StartedAt,
-			LastActivity:  e.EndedAt,
-			ActiveSeconds: e.ActiveSeconds,
+			TaskID:            e.TaskID,
+			Role:              e.Role,
+			Backend:           e.Backend,
+			At:                at,
+			TokensIn:          int(e.TokensIn),
+			TokensOut:         int(e.TokensOut),
+			CacheRead:         int(e.CacheRead),
+			CacheCreation:     int(e.CacheCreation),
+			ToolCalls:         int(e.ToolCalls),
+			FirstActivity:     e.StartedAt,
+			LastActivity:      e.EndedAt,
+			ActiveSeconds:     e.ActiveSeconds,
 		}
 		o, ok := costOwner{}, false
 		if e.AutomatonID != "" {
@@ -362,9 +363,7 @@ func (s *Server) handleCostReport(w http.ResponseWriter, r *http.Request) {
 	var billing costreport.BillingFunc
 	if s.cfg != nil {
 		cr = s.cfg.CostReport
-		billing = func(backend string) config.EffectiveBillingProfile {
-			return s.cfg.Usage.EffectiveBillingProfile(backend)
-		}
+		billing = s.resolvedBilling()
 	}
 
 	rep, err := costreport.Build(cr, req, src, src, s.exposedRate, billing, time.Now())
@@ -416,4 +415,19 @@ func parseCostBound(v string) (time.Time, error) {
 		return t.UTC(), nil
 	}
 	return time.Time{}, fmt.Errorf("invalid bound %q: want RFC3339 or YYYY-MM-DD", raw)
+}
+
+// resolvedBilling wires the cost report to each backend's LLM entry billing
+// mode (config.ResolveBillingMode, which falls back to usage.billing).
+func (s *Server) resolvedBilling() costreport.BillingFunc {
+	return costreport.ResolvedBilling(s.cfg, func(backend string) (inference.LLM, bool) {
+		if s.inferenceReg == nil {
+			return inference.LLM{}, false
+		}
+		l, err := s.inferenceReg.Get(backend)
+		if err != nil || l == nil {
+			return inference.LLM{}, false
+		}
+		return *l, true
+	})
 }

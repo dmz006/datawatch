@@ -34,7 +34,6 @@ import (
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
-
 // usageWeekday maps the config's lowercase weekday names to the calendar weekday the
 // calculator's reset spec takes.
 var usageWeekday = map[string]time.Weekday{
@@ -292,7 +291,14 @@ func (s *Server) handleUsageAdvice(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Usage-Copied-At", res.CopiedAt.UTC().Format(time.RFC3339))
 		}
 	}
-	writeJSONOK(w, res)
+	writeJSONOK(w, usageAdviceResponse{AdviceResult: res, UnitLabels: s.backendUnitKeys()})
+}
+
+// usageAdviceResponse is the advice plus a unit label key per backend
+// (usage_unit_dollars, usage_unit_points or none) for the usage cards.
+type usageAdviceResponse struct {
+	*usagecalc.AdviceResult
+	UnitLabels map[string]string `json:"unit_labels"`
 }
 
 // isUsageSelectionError reports the service's own "unknown variant / unknown policy"

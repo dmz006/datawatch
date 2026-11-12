@@ -186,6 +186,30 @@ See the field reference in [api/cost.md — Billing profiles](../api/cost.md#bil
 [billing profile definition](../datawatch-definitions.md#billing-profile-usagebilling), and
 [how a cost-report row reads it](cost-report.md#the-billing-profiles).
 
+## Unit labels on the usage page
+
+The usage advice names, for each backend, the unit its figures are labelled in,
+read from the LLM entry's
+[billing mode](llm-registry.md#set-the-billing-mode-of-an-llm):
+
+| Entry `billing_mode` | Unit label key | English text |
+|---|---|---|
+| `api` | `usage_unit_dollars` | `$ (dollars)` |
+| `allowance` | `usage_unit_points` | `pts (points)` |
+| `local` | `none` | no unit shown |
+
+`GET /api/usage/advice` (and the MCP `usage_advice` tool, which returns the same
+body) carries them as `unit_labels`, a map of LLM name to label key, next to the
+usual advice fields. The map has one key
+per LLM in the registry, and always `claude-code` (points unless its entry says
+otherwise). The two label keys are locale keys in all five locales; `none` is not
+a key and has no text. The calculator's advice itself is unchanged: it is still
+points of the weekly allowance, and only the labels follow the billing mode.
+
+**The web usage cards do not draw these labels yet.** They fetch the same advice
+payload but do not read `unit_labels`, so today the field is for REST and MCP
+clients only. Until the cards read it, the cards show what they showed before.
+
 ## The billing profile (usage.billing)
 
 The point-value line above is driven by one setting the calculator reads:
@@ -194,6 +218,10 @@ The point-value line above is driven by one setting the calculator reads:
 per provider key (`usage.billing.<provider>.<field>`), where the key is the
 provider name from your LLM registry — `claude-code`, `openai`, `gemini`,
 `ollama`, or any other name without dots.
+
+The profile's `mode` is the fallback for an LLM entry that has no
+[`billing_mode`](llm-registry.md#set-the-billing-mode-of-an-llm) of its own; an
+entry's value wins over it (see [how a cost-report row reads it](cost-report.md#the-billing-profiles)).
 
 The calculator uses the `claude-code` entry for two things: the **point
 value** (from `monthly_price`) and, when the profile names a reset, the

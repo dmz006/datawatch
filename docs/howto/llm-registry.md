@@ -124,7 +124,7 @@ for the full migration table and verification steps.
 
 - `datawatch start` — daemon up (v7.0.0).
 - For `ollama` / `openwebui` / `opencode` kinds: at least one Compute
-  Node registered. See [`compute-mode.md`](compute-mode.md).
+  Node registered. See [`compute-nodes.md`](compute-nodes.md).
 - For `claude` kind: an Anthropic API key (literal or `${secret:name}`
   reference — see [`secrets-manager.md`](secrets-manager.md)).
 - For session-backend kinds (`claude-code`, `aider`, …): the relevant
@@ -178,6 +178,98 @@ datawatch llm add claude-code \
 datawatch llm models add claude-code --model claude-opus-4-5
 datawatch llm models add claude-code --model claude-sonnet-5
 ```
+
+## Set the billing mode of an LLM
+
+Each LLM entry carries a `billing_mode` that says how it is paid for:
+
+| Value | Meaning |
+|---|---|
+| `api` | Metered: each call is billed per token. |
+| `allowance` | A flat plan allowance that resets on a schedule; calls draw on it. |
+| `local` | Local inference on your own hardware, no per-call charge. |
+
+Leave it empty and the daemon resolves it in this order: the entry's own
+value, then the `usage.billing` profile for the entry's kind (`bundled_plan`
+reads as `allowance`, `api_metered` as `api`, `free_local` as `local`), then the
+kind default (`claude-code` is `allowance`; `ollama`, `openwebui` and `shell`
+are `local`; everything else is `api`).
+
+**Migration.** On upgrade the daemon writes the resolved value onto every entry
+that has none, so nothing changes behavior: a cost report row reads the same
+before and after. An entry that already has a value is never touched, and a
+second load changes nothing. After it runs, each entry shows its mode in the
+Settings page, `GET /api/llms`, `llm_list` and the YAML, and changing the
+profile's `mode` no longer moves that entry. Details of the resolution are in
+[What api, allowance and local mean](cost-report.md#what-api-allowance-and-local-mean).
+
+```sh
+datawatch llm add claude-api --kind claude --billing-mode api
+datawatch llm update my-ollama --billing-mode local
+# Omitting --billing-mode keeps the stored value.
+datawatch config set llms.claude-api.billing_mode allowance
+```
+
+The same field is accepted by REST (`POST /api/llms`, `PUT /api/llms/{name}`,
+`PUT /api/config` with `llms.<name>.billing_mode`), MCP (`llm_add`,
+`llm_update`; read back with `llm_get` / `llm_list`), the comm channel
+(`llm add|update <name> billing_mode=<mode>`, or `configure
+llm.<name>.billing_mode=<mode>`), `config.yaml` and the Settings →
+Compute → LLM edit form (**Billing mode**, in all five locales). Every path
+refuses an unknown value with the same message naming the allowed values.
+
+### Mixed totals are shown per unit
+
+When one report row spans entries with different modes, for example a
+`claude-code` entry on `allowance`, an `aider` entry on `api` and an `ollama`
+entry on `local`, the cost report does not add them. The row reads `mixed`, has
+no single money figure, and lists one total per unit: dollars for the `api`
+entries, points for the `allowance` entries, and tokens and time only for the
+`local` entries. The usage charts follow the same rule: cost over time draws one
+chart per unit, each axis labelled with its unit, and the combined usage report
+lists money per unit on its own line. See
+[Dollars and points are never added together](cost-report.md#dollars-and-points-are-never-added-together).
+
+### What the billing mode changes
+
+The mode is read, not just stored. The entry's resolved value drives:
+
+| Where | `api` | `allowance` | `local` |
+|---|---|---|---|
+| [Cost report](cost-report.md#dollars-and-points-are-never-added-together) | Figures in **dollars**; row reads `api_metered`. | Figures in **points** (and percent of the plan's price); row reads `bundled_plan`. | **Tokens and time only**; row reads `free_local`. |
+| [Dollar budget](automata-capacity.md#per-llm-dollar-budget) | The budget compares dollars, as set. | Reads the budget as before. | **No budget applies**: a ceiling on the entry is kept but never read, and the LLM is left out of budget status. |
+| [Burn guard](burn-guard.md#which-llms-it-guards) | Ignored, unless the entry has a dollar budget (`ceiling_usd` above 0). | Guarded, exactly as before. | Ignored, unless the entry has a dollar budget. |
+| [Usage advice](usage-calculator.md#unit-labels-on-the-usage-page) (`unit_labels`; the web cards do not draw it yet) | Unit label `usage_unit_dollars`. | Unit label `usage_unit_points`. | No unit label (`none`). |
+
+The cost report reads the entry's value **before** the `usage.billing`
+profile's `mode`: set the entry and the profile's `mode` no longer matters for
+that backend. The profile still supplies the rest (`monthly_price`, `plan`, the
+reset, the allowance unit), so an `allowance` entry still needs a profile with a
+`monthly_price` for the report to show points. See
+[LLM billing mode](../operations.md#llm-billing-mode).
+
+### The usage charts
+
+The Automata page draws the combined usage report as four chart cards: cost over
+time, tool usage, retries and failure categories, and the combined table. They
+read the same resolved billing mode, so an `api` entry's spend is drawn in
+dollars, an `allowance` entry's in points and a `local` entry's as tokens only.
+The report is also available as `GET /api/cost/series`,
+`GET /api/cost/tool-usage` and `GET /api/cost/failures`, `datawatch cost charts`,
+the comm channel `cost charts` verb and the MCP `cost_charts` tool; see
+[the chart cards](cost-report.md#the-chart-cards-on-the-automata-page).
+
+### Parity
+
+| Surface | Billing mode | Usage charts |
+|---|---|---|
+| **REST** | `billing_mode` on `POST /api/llms`, `PUT /api/llms/{name}` and `PUT /api/config`; returned by `GET /api/llms` and `GET /api/config` | `GET /api/cost/series`, `/tool-usage`, `/failures` |
+| **MCP** | `llm_add`, `llm_update`; read back with `llm_get`, `llm_list` | `cost_charts` |
+| **CLI** | `datawatch llm add\|update --billing-mode <mode>`; `datawatch config set llms.<name>.billing_mode <mode>` | `datawatch cost charts` |
+| **Comm channel** | `llm add\|update <name> billing_mode=<mode>`; `configure llm.<name>.billing_mode=<mode>` | `cost charts` |
+| **YAML / config** | `billing_mode:` on each entry under `llms` | No setting of its own; `cost_report.default_window_days` sets the default window |
+| **PWA** | **Billing mode** on the Settings → Compute → LLM edit form | Four chart cards on the Automata page |
+| **Android, iPhone** | Tracked in the parity issue | Tracked in the parity issue |
 
 ## Tag roles on LLMs
 
@@ -680,8 +772,9 @@ tmux process.
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/v7-compute-migration](v7-compute-migration.md)
-- [howto/compute-mode](compute-mode.md)
+- [howto/compute-nodes](compute-nodes.md)
+- [howto/cost-report](cost-report.md) — billing mode and the usage charts
 - [howto/secrets-manager](secrets-manager.md)
 - [howto/council-mode](council-mode.md)
 - [howto/chat-and-llm-quickstart](chat-and-llm-quickstart.md)
-- [api/llms](../api/llms.md)
+- [api/openapi.yaml](../api/openapi.yaml) — the `/api/llms` routes

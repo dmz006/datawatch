@@ -147,9 +147,11 @@ Response fields:
 | `rows[].key` | The group (Automaton name, Automation name, backend family, release, or week) |
 | `rows[].sessions` | Sessions that landed in the group |
 | `rows[].tokens_in` / `rows[].tokens_out` | Always present, always first |
-| `rows[].usd_estimate` | Present only when a rate covers the whole group; absent (not zero) otherwise |
-| `rows[].billing_mode` | `bundled_plan` \| `api_metered` \| `free_local` \| `mixed` (the group spans differently-priced providers) |
-| `rows[].billing_label` | One line the whole UI family reuses, e.g. `bundled plan — API-equivalent, not billed` or `api_metered (assumed — no usage.billing entry)` |
+| `rows[].usd_estimate` | Present only when a rate covers the whole group; absent (not zero) otherwise, and always absent on a `mixed` row (dollars are never summed with points) |
+| `rows[].billing_mode` | `bundled_plan` \| `api_metered` \| `free_local` \| `mixed` (the group spans backends billed in different units). Read from each backend's LLM entry `billing_mode` (`allowance` → `bundled_plan`, `api` → `api_metered`, `local` → `free_local`), then its `usage.billing` profile |
+| `rows[].billing_label` | One line the whole UI family reuses, e.g. `bundled plan — API-equivalent, not billed`, `api_metered (assumed — no usage.billing entry)` or, for a `mixed` row, `mixed billing modes — see the per-unit totals` |
+| `rows[].unit_totals[]` | One total per billing unit the row spans, ordered `dollars`, `points`, `none`: `unit`, `billing_mode`, `sessions`, `tokens_in`, `tokens_out`, `active_seconds`, and `dollars` (unit `dollars`) or `points` and `percent` (unit `points`); `none` carries tokens and time only. A figure is omitted, not zero, where a rate or `monthly_price` is missing. Present when billing is read |
+| `totals_by_unit[]` | The same per-unit totals across every row; dollars are never summed with points |
 | `rows[].api_equivalent_usd` | Bundled rows: the money equivalent at API rates — an equivalence, not a charge |
 | `rows[].estimated_usage_points` | Bundled rows: the usage points that amount represents against the allowance |
 | `rows[].share_of_monthly_price` | Bundled rows: the fraction of the plan's monthly price (0.05 = 5%) |
@@ -184,12 +186,155 @@ curl -s 'http://127.0.0.1:8929/api/cost/report?group_by=backend&since=2026-10-01
 #   the billing label and the API-equivalent point figures
 ```
 
+## Cost series (GET /api/cost/series)
+
+The cost report over time: the spend ledger bucketed by hour or day, one line
+per Automaton, project or model. Tokens are the value on every point; money
+rides beside them in its own unit and is never summed across units.
+
+| Param | Values | Default |
+|-------|--------|---------|
+| `group_by` | `automaton` \| `project` \| `model` | `automaton` |
+| `window` | how far back from now: `36h`, `7d`, `2w` | `cost_report.default_window_days` (7) |
+| `bucket` | `hour` \| `day` | `hour` for windows up to 48 hours, `day` beyond |
+
+`project` is the Automaton's project tag, or its project directory's name when
+it has no tag. `model` is the backend the session ran on; the spend ledger
+records no finer model name. Spend with no owner lands under `unattributed`.
+
+| Field | Meaning |
+|-------|---------|
+| `buckets[]` | Every bucket start (UTC) in the window, in order |
+| `groups[].key` | The Automaton, project or model; a group with no spend in the window is omitted, so an empty window gives `groups: []` |
+| `groups[].points[]` | One point per bucket, zero-filled: `start`, `sessions`, `tokens_in`, `tokens_out`, `tokens` and `units` |
+| `points[].units[]` | The bucket's money per billing unit, ordered `dollars`, `points`, `none`: `dollars` for metered API spend, `points` and `percent` for a bundled plan, tokens and time only for free local inference. A figure is omitted where no rate or `monthly_price` is set, and all of them where `cost_report.show_usd_estimates` is off |
+| `groups[].unit_totals[]` / `totals_by_unit[]` | The same per-unit totals for a line and for the whole series |
+| `retention_days`, `unknown_spend_note`, `unknown_before` | The 31-day ledger and, when the window reaches past it, the spend that is unknown rather than zero |
+
+Errors: `400` for a bad `group_by`, `window` or `bucket`, or a window and
+bucket that need more than 1000 points per line; `503` when the manager is not
+available.
+
+```bash
+curl -s 'http://127.0.0.1:8929/api/cost/series?group_by=project&window=7d'
+curl -s 'http://127.0.0.1:8929/api/cost/series?group_by=model&window=24h&bucket=hour'
+```
+
+## Tool usage (GET /api/cost/tool-usage)
+
+How many tool calls the spend ledger saw over time, one line per Automaton,
+project or model. It takes the same `group_by`, `window` and `bucket` params
+as the cost series and returns the same shape of `buckets[]` and zero-filled
+`groups[].points[]`, with `tool_calls` as the value instead of tokens.
+
+The ledger records one tool-call count per session and never the name of the
+tool, so there is **no per-tool-name breakdown**. Every payload says so in
+`tool_names_note`; nothing is estimated or invented.
+
+| Field | Meaning |
+|-------|---------|
+| `groups[].key` | The Automaton, project or model; spend with no owner lands under `unattributed`. A group with no sessions in the window is omitted, so an empty window gives `groups: []` |
+| `groups[].sessions`, `groups[].tool_calls` | The line's sessions and tool calls over the window |
+| `groups[].points[]` | One point per bucket, zero-filled: `start`, `sessions`, `tool_calls` |
+| `total_tool_calls`, `total_sessions` | The same totals across all groups |
+| `tool_names_note` | States that only counts are recorded, not tool names |
+| `retention_days`, `unknown_spend_note`, `unknown_before` | The 31-day ledger and, when the window reaches past it, the activity that is unknown rather than zero |
+
+Errors: `400` for a bad `group_by`, `window` or `bucket`, or a window and
+bucket that need more than 1000 points per line; `503` when the manager is not
+available.
+
+```bash
+curl -s 'http://127.0.0.1:8929/api/cost/tool-usage?group_by=project&window=7d'
+curl -s 'http://127.0.0.1:8929/api/cost/tool-usage?group_by=model&window=24h&bucket=hour'
+```
+
+## Failures and retries (GET /api/cost/failures)
+
+Failed, stalled and cancelled task attempts, counted per failure category and
+per week, for each project, Automation or Automaton. Each attempt is dated by
+when it ended, or when it started if it never recorded an end; an attempt with
+neither is counted in `undated_attempts` and left out of the weeks. Weeks run
+Monday 00:00 UTC to Sunday.
+
+| Param | Values | Default |
+|-------|--------|---------|
+| `group_by` | `project` \| `automation` \| `automaton` | `project` |
+| `window` | how far back from now: `30d`, `12w` | 12 weeks |
+
+`project` is the Automaton's project tag, or its project directory's name when
+it has no tag. An Automaton belongs to an Automation through its own
+`automation_id` or through the Automation's member list. Attempts with no
+project, Automation or Automaton under the chosen grouping land under
+`unattributed`.
+
+| Field | Meaning |
+|-------|---------|
+| `weeks[]` | Every week start (UTC) in the window, in order |
+| `groups[].key`, `groups[].label` | The project name, Automation or Automaton id, and its readable title where one exists |
+| `groups[].attempts`, `groups[].tasks` | Attempts in the window and the distinct tasks they belong to |
+| `groups[].categories[]` | Attempts per failure category (`infra`, `content`, and `uncategorized` when an attempt recorded none), most frequent first |
+| `groups[].weeks[]` | One entry per week in `weeks[]`, zero-filled: `start`, `attempts`, and `categories` for that week |
+| `groups[].top_summaries[]` | Up to five most frequent failure summaries with their category and count; summaries are trimmed to one line and cut at 200 characters |
+| `groups[].retries` | The sum of each task's current automatic retry count, counted once per task. The count restarts when a task is reset, so it is a floor |
+| `categories[]`, `total_attempts`, `total_tasks`, `total_retries` | The same across all groups |
+| `undated_attempts`, `retry_note` | Attempts with no time, and what `retries` counts |
+
+Errors: `400` for a bad `group_by` or `window`; `503` when the Automaton
+manager is not available.
+
+```bash
+curl -s 'http://127.0.0.1:8929/api/cost/failures'
+curl -s 'http://127.0.0.1:8929/api/cost/failures?group_by=automation&window=8w'
+```
+
+## Combined usage report (CLI, comm channel, MCP)
+
+The three views above (cost over time, tool usage, retries and failure
+categories) joined into one payload and one text rendering. It has no route of
+its own: each surface reads the three routes above and joins the bodies with
+the same helper, so no figure is computed twice.
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch cost charts [--group-by automaton\|project\|model\|automation] [--window 7d] [--json]`; text by default, the combined payload with `--json` |
+| Comm channel | `cost charts [group_by=<g>] [window=<d>]`, replying with the same text |
+| MCP | `cost_charts` (read-only, `analytics:read`), with optional `group_by` and `window`, returning the combined payload as JSON |
+
+`group_by` and `window` are optional and are forwarded to each route
+unchanged, so each view applies its own default. Cost over time and tool usage
+group by `automaton`, `project` or `model`; retries and failures group by
+`project`, `automation` or `automaton`. A grouping one view does not know
+(`model` for retries and failures, `automation` for the other two) leaves that
+view on its default, and the payload says so in `notes`.
+
+| Field | Meaning |
+|---|---|
+| `group_by`, `window` | The request, as given (absent when not named) |
+| `cost_over_time` | The body of `GET /api/cost/series` |
+| `tool_usage` | The body of `GET /api/cost/tool-usage`; a count per group, never a tool name |
+| `failures` | The body of `GET /api/cost/failures` |
+| `notes` | Where a view did not follow the requested grouping |
+
+A view that fails fails the report, naming the view: a `503` from the
+Automaton manager shows as a retries-and-failures error. The text rendering
+shows one section per view, one line per group, money per billing unit and
+never added across units.
+
+```bash
+datawatch cost charts --group-by project --window 14d
+datawatch cost charts --json | jq '.failures.total_retries'
+```
+
 ---
 
 # Billing profiles (`usage.billing`)
 
-The per-provider billing mode behind the cost report's labels and the usage
-calculator's point-value line. Set under `usage.billing.<provider>`, where
+The per-provider billing profile behind the usage calculator's point-value line
+and, as the fallback for an LLM entry that has no `billing_mode` of its own, the
+cost report's labels. An entry's `billing_mode` (`api`, `allowance` or `local`)
+wins over the profile's `mode`; the profile still supplies `monthly_price`,
+`plan`, the reset and the allowance unit. Set under `usage.billing.<provider>`, where
 `<provider>` is the provider name from your LLM registry (any name without
 dots, e.g. `claude-code`, `ollama`).
 

@@ -741,7 +741,10 @@ true: it also keeps at most one open question),
 `cache_write_points_per_million` (0.373), `cache_read_points_per_million`
 (0.0069), `refit_on_reading` (true), `effort_ceiling` and `retry_limit_claude`
 (2). Settings apply without a restart. The effort ceiling is set per Automation,
-not through the config keys.
+not through the config keys. The guard acts on the `claude-code` backend only when
+that entry's [billing mode](#llm-billing-mode) is `allowance` (the default) or the
+entry has a dollar budget; for an `api` or `local` entry without one it releases
+its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards).
 
 | Method | How |
 |--------|-----|
@@ -794,6 +797,22 @@ The cost report is a token-first report of the daemon's recorded sessions: for a
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; `PUT /api/config` with `{"cost_report.<key>": value}`; the block reads back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
+
+#### Usage charts and the combined usage report
+
+Beside the report, three read-only views draw the same recorded spend and the task attempts over time: **cost over time** (`GET /api/cost/series`, grouped by Automaton, project or model, bucketed by hour or day), **tool usage** (`GET /api/cost/tool-usage`, the same grouping, with a count of tool calls per group and never a tool name, because the ledger records only a count per session) and **retries and failure categories** (`GET /api/cost/failures`, grouped by project, Automation or Automaton, counted per week and per category). The cost view keeps billing units apart exactly as the report does: money is a separate line per unit (dollars on an `api` entry, points and percent on an `allowance` entry, nothing on a `local` entry) and is never added across units; with no rate or monthly price set, or `show_usd_estimates` off, only tokens are drawn. The same 31-day ledger limit applies, and a window that reaches past it reports the spend as unknown, not zero. Retries count each task once and restart when a task is reset, so the figure is a floor.
+
+The combined usage report joins the three bodies: `datawatch cost charts [--group-by <g>] [--window <d>] [--json]`, the comm channel `cost charts [group_by=<g>] [window=<d>]` and the read-only MCP `cost_charts` tool (`analytics:read`). A grouping one view does not know leaves that view on its default and the report says so. The Automata page shows the four chart cards (cost over time, tool usage, retries and failure categories, combined report) in the cost area of its **Progress and cost** tab; a card with no data or no view is not drawn and its reason and next action appear at the top of the **Events** tab. There is no new setting: the views read the existing `cost_report.*` keys and each LLM entry's `billing_mode`. Reading guidance: [howto/cost-report.md](howto/cost-report.md#the-chart-cards-on-the-automata-page); reference: [api/cost.md](api/cost.md#cost-series-get-apicostseries).
+
+| Surface | How |
+|--------|-----|
+| **CLI** | `datawatch cost charts [--group-by automaton\|project\|model\|automation] [--window 7d] [--json]` |
+| **Web UI** | The four chart cards on the Automata page, **Progress and cost** tab; grouping, window and tokens-or-money controls above them |
+| **REST API** | `GET /api/cost/series`, `GET /api/cost/tool-usage`, `GET /api/cost/failures` |
+| **MCP** | `cost_charts` (read-only) |
+| **Comm channel** | `cost charts [group_by=<g>] [window=<d>]` |
+
+**Still to review (operator):** the cards were built from tests and the REST bodies, not checked on a live daemon with real spend. Confirm on the **Progress and cost** tab that the card order and placement suit you, that a bundled-plan entry and an `api` entry draw as separate money charts with the right unit labels, and that a hidden card's reason shows in **Events**. The `model` grouping is the backend name (the ledger records no finer model name), and the web UI offers Project, Automation and Automaton only.
 
 ### Worker start-up size
 
@@ -5927,6 +5946,13 @@ Reading it back, on every surface, gives the same fields:
 Each entry shows spend, ceiling, remaining dollars, the window, when it
 rolls over (`rolls_over_at`) and `full`.
 
+The budget reads each LLM's [billing mode](#llm-billing-mode): `api` compares
+dollars, `allowance` behaves as before, and **`local` has no budget** — a `local`
+entry never makes admission wait, is left out of the status lists above
+(`GET /api/budget`, the `budgets` array of `GET /api/capacity`, `budget_status`,
+`datawatch budget status`, `budget`), and `GET /api/budget?llm=<name>` returns 404
+for it. Its stored `budget` object is kept and counts again if the mode changes.
+
 ### What "budget window full" means
 
 Once an LLM's spend in the window reaches its ceiling, autonomous work that
@@ -7674,3 +7700,45 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 ### Android / iPhone
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
+
+## LLM billing mode
+
+Each LLM entry carries a `billing_mode`: `api` (metered), `allowance` (a bundled
+plan allowance) or `local` (local inference). Empty resolves from the usage
+billing profile. Set it in `config.yaml` (`billing_mode:` on the entry), on the
+Settings page, with `PUT /api/config` (`llms.<name>.billing_mode`; `GET
+/api/config` lists each entry under `llms`), on `POST`/`PUT /api/llms`, with the
+comm channel `llm add|update … billing_mode=<mode>`, with the MCP tools
+`llm_add` / `llm_update` (read back with `llm_get` / `llm_list`), or with
+`datawatch config set llms.<name>.billing_mode <mode>`. Every path refuses an
+unknown value with the same message, and `datawatch llm add|update` takes
+`--billing-mode`. Empty resolves in order: the entry's own value, the
+`usage.billing` profile for its kind (`bundled_plan` → `allowance`,
+`api_metered` → `api`, `free_local` → `local`), then the kind default
+(`claude-code` allowance; `ollama`, `openwebui`, `shell` local; else `api`).
+On load the daemon writes the resolved value onto every entry that has none
+(behavior unchanged; an entry with a value is never touched, a second run
+changes nothing).
+
+The resolved mode is read by four things:
+
+| Reader | `api` | `allowance` | `local` |
+|---|---|---|---|
+| Cost report (`GET /api/cost/report`, `datawatch cost report`, MCP `cost_report`, comm `cost report`) | Dollars | Points and percent of the plan's price | Tokens and time only |
+| Dollar budget (`GET /api/budget`, `budget_status`) | Compares dollars | As before | No budget applies |
+| Burn guard (`usage.burn_guard.*`) | Not guarded unless the entry has a dollar budget | Guarded as before | Not guarded unless the entry has a dollar budget |
+| Usage page (`GET /api/usage/advice`, field `unit_labels`) | `usage_unit_dollars` | `usage_unit_points` | `none` |
+
+The cost report reads the entry's value **before** the `usage.billing` profile's
+`mode`; the profile still supplies `monthly_price`, `plan` and the reset. The
+report never sums dollars and points: each row and the report body carry
+`unit_totals` / `totals_by_unit`, one total per unit. The burn guard watches the
+`claude-code` backend, and an entry with no registry row counts as the
+`claude-code` allowance. The usage advice payload carries one unit label key per
+backend (`unit_labels`, keyed by LLM name; `usage_unit_dollars` and
+`usage_unit_points` are locale keys in all five locales, `none` has no label); the
+web usage cards do not read it yet. See
+[howto/llm-registry.md](howto/llm-registry.md#what-the-billing-mode-changes),
+[howto/cost-report.md](howto/cost-report.md#dollars-and-points-are-never-added-together),
+[howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards) and
+[howto/usage-calculator.md](howto/usage-calculator.md#unit-labels-on-the-usage-page).

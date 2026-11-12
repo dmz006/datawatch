@@ -615,6 +615,10 @@ func newAutonomousBudget(cfg *config.Config, dataDir string, registry func() *in
 	}
 	bl.Budgets = func(llm string) *inference.BudgetWindow {
 		if l := lookup(llm); l != nil {
+			// A local entry has no budget; api and allowance read it as before.
+			if config.ResolveBillingMode(*l, cfg) == config.BillingModeLocal {
+				return nil
+			}
 			return l.Budget
 		}
 		return nil

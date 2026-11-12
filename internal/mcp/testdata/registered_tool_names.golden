@@ -237,6 +237,7 @@ configure_identity
 cooldown_clear
 cooldown_set
 cooldown_status
+cost_charts
 cost_rates
 cost_report
 cost_summary

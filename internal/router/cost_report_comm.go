@@ -3,8 +3,11 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/costreport"
 )
 
 // costRow mirrors the wire shape of a costreport.Row; only the fields the
@@ -125,4 +128,39 @@ func automatonCostStatusLines(prdJSON string) []string {
 		lines = append(lines, "cost window note: "+c.ReportWindowNote)
 	}
 	return lines
+}
+
+// handleCostChartsCmd serves "cost charts [group_by=<g>] [window=<d>]": the
+// combined usage report. It reads the cost-over-time, tool-usage and failures
+// REST views through the loopback and joins them with the shared costreport
+// helpers, the same ones the CLI and the MCP tool use; the handler only
+// translates the chat tokens into a request and relays the text back.
+func (r *Router) handleCostChartsCmd(cmd Command) {
+	const usage = "usage: cost charts [group_by=<automaton|project|model|automation>] [window=<36h|7d|2w>]"
+	var req costreport.ChartsRequest
+	for _, tok := range strings.Fields(cmd.Text) {
+		k, v, ok := strings.Cut(tok, "=")
+		if !ok {
+			r.reply("cost charts failed", usage)
+			return
+		}
+		switch k {
+		case "group_by":
+			req.GroupBy = v
+		case "window":
+			req.Window = v
+		default:
+			r.reply("cost charts failed", usage)
+			return
+		}
+	}
+	charts, err := costreport.FetchCharts(req, func(path string, q url.Values) ([]byte, error) {
+		body, err := r.commGet(path, q)
+		return []byte(body), err
+	})
+	if err != nil {
+		r.reply("cost charts failed", err.Error())
+		return
+	}
+	r.reply("cost charts", charts.Text())
 }

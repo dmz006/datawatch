@@ -3890,6 +3890,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if mig := llmReg.MigrateAutoTags(); mig > 0 {
 					fmt.Printf("[inference] migrated auto-tags out of Tags on %d llm(s)\n", mig)
 				}
+				if mig := config.MigrateBillingModes(llmReg, cfg); mig > 0 {
+					fmt.Printf("[inference] set billing mode on %d llm(s)\n", mig)
+				}
 				disp := inference.NewDispatcher(llmReg, func(name string) (*compute.Node, error) {
 					return computeReg.Get(name)
 				})
@@ -12256,7 +12259,9 @@ func newConfigSetCmd() *cobra.Command {
 			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).\n\n" +
 			"MCP permission keys: mcp.allow_self_config and mcp.allow_sensitive_writes (each true|false; default true). " +
 			"mcp.allow_sensitive_writes gates the sensitive write tool class for session and peer callers; " +
-			"set it to false to refuse those writes and back to true to allow them. Each is sent as a boolean.",
+			"set it to false to refuse those writes and back to true to allow them. Each is sent as a boolean.\n\n" +
+			"LLM billing mode key: llm.<name>.billing_mode (api, allowance or local; empty = resolve from the usage billing profile).\n" +
+			config.BillingModeHelp,
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -12302,6 +12307,19 @@ func parseVerifierRunCapValue(value string) (int, error) {
 }
 
 func runConfigSet(cfg *config.Config, key, value string) error {
+	if _, restKey, ok := config.LLMBillingModeConfigKey(key); ok {
+		// Same validator as the REST endpoint, so the error text matches.
+		value = strings.TrimSpace(value)
+		if err := config.ValidateBillingMode(value); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		b, _ := json.Marshal(map[string]any{restKey: value})
+		if err := putConfig(loopbackBaseURL(cfg)+"/api/config", cfg.Server.Token, string(b)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %s\n", key, value)
+		return nil
+	}
 	if isWorkerProfileConfigKeyFamily(key) {
 		return runWorkerProfileConfigSet(cfg, key, value)
 	}
