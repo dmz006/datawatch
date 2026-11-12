@@ -82,7 +82,7 @@ Every subscription is **filter → sink → optional action**:
 | **Flags** | `one_shot` (delete after first *successful* delivery), `expires_at` (TTL), `coalesce` (batch human-facing deliveries in quiet windows). |
 
 Event kinds are a closed set held in one in-daemon **event kind
-registry**: every PRD status kind (`prd.draft`, `prd.planning`,
+registry**: every Automaton status kind (`prd.draft`, `prd.planning`,
 `prd.needs_review`, `prd.completed`, `prd.blocked`, …), every task status
 kind (`task.pending`, `task.queued`, `task.in_progress`, `task.completed`,
 `task.failed`, `task.blocked`, …), the non-status kinds
