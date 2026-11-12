@@ -542,7 +542,7 @@ a restart.
 
 The clock starts over whenever the state stops holding: a session starts, a
 task is reset to pending, or the Automaton leaves `running`. To clear a blocked
-Automaton, use `rejudge` (above) when every task completed, or `reset_task`
+Automaton, use `rejudge` (above) when every task is completed or cancelled (at least one completed), or `reset_task`
 for a task that did not.
 
 Set the bound on the PWA Settings Automata card ("Stuck Automaton timeout"),
