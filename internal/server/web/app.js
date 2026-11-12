@@ -4430,6 +4430,7 @@ function renderSessionsView() {
       state._sessionsGroupPage = {};
     }
   }
+  _sessionsGroupTitlesEnsure(groupBy);
   const groupAxis = state.sessionTreeView ? '' : _sessionsGroupAxis();
   const cards = groupBy
     ? (groupBy.axis === 'automaton'
@@ -4682,6 +4683,76 @@ function _sessionsGroupLabel(key, by) {
   return String(key);
 }
 
+// _sessionsGroupTitleMaps holds the id -> human title lookups for the record
+// axes (Automaton, project, node). Filled best-effort from the Automata,
+// projects and ComputeNodes lists; a miss simply falls back to the id.
+function _sessionsGroupTitleMaps() {
+  if (!state._sessionsGroupTitles) state._sessionsGroupTitles = { automaton: {}, project: {}, node: {}, loaded: {} };
+  return state._sessionsGroupTitles;
+}
+
+// _sessionsGroupTitleInfo resolves a group key to { title, id }. The title is
+// the record's human name when known (the session rows' own prd_title first,
+// then the cached lists); the id is kept for secondary text / a tooltip.
+// title is '' when no title is known, so callers fall back to the id.
+function _sessionsGroupTitleInfo(key, by, sessions) {
+  const id = String(key);
+  if (key === SESSIONS_GROUP_UNGROUPED || !by) return { title: '', id };
+  const maps = _sessionsGroupTitleMaps();
+  let title = '';
+  if (by.axis === 'automaton') {
+    (sessions || []).some(s => {
+      const v = s && (s.prd_title || s.automaton_title);
+      if (typeof v === 'string' && v) { title = v; return true; }
+      return false;
+    });
+    if (!title) title = maps.automaton[id] || '';
+  } else if (by.axis === 'project') {
+    title = maps.project[id.replace(/\/+$/, '')] || '';
+  } else if (by.axis === 'node') {
+    title = maps.node[id] || '';
+  }
+  title = (typeof title === 'string') ? title.trim() : '';
+  if (title === id) title = '';
+  return { title, id };
+}
+
+// _sessionsGroupTitlesEnsure loads the title lists for the active record axis
+// once, then repaints. A failed load latches so it cannot loop.
+function _sessionsGroupTitlesEnsure(by) {
+  if (!by || ['automaton', 'project', 'node'].indexOf(by.axis) < 0) return;
+  const maps = _sessionsGroupTitleMaps();
+  if (maps.loaded[by.axis]) return;
+  maps.loaded[by.axis] = true;
+  let req = null;
+  if (by.axis === 'automaton') {
+    req = apiFetch('/api/autonomous/prds').then(d => {
+      const prds = Array.isArray(d) ? d : (d && Array.isArray(d.prds) ? d.prds : []);
+      prds.forEach(p => { if (p && p.id && p.title) maps.automaton[p.id] = String(p.title); });
+    });
+  } else if (by.axis === 'project') {
+    req = apiFetch('/api/projects').then(list => {
+      (Array.isArray(list) ? list : []).forEach(p => {
+        if (p && p.name && p.dir) maps.project[String(p.dir).replace(/\/+$/, '')] = String(p.name);
+      });
+    });
+  } else {
+    req = apiFetch('/api/compute/nodes').then(d => {
+      ((d && d.nodes) || []).forEach(n => {
+        if (!n || !n.name) return;
+        maps.node[n.name] = String(n.name);
+        if (n.id) maps.node[n.id] = String(n.name);
+        if (n.hostname) maps.node[n.hostname] = String(n.name);
+      });
+    });
+  }
+  Promise.resolve(req).then(() => {
+    if (state.activeView === 'sessions' && typeof renderSessionsView === 'function') renderSessionsView();
+  }).catch(() => { /* ids stay as the fallback */ });
+}
+window._sessionsGroupTitleInfo = _sessionsGroupTitleInfo;
+window._sessionsGroupTitlesEnsure = _sessionsGroupTitlesEnsure;
+
 function _sessionsGroupStateMix(sessions) {
   try { return _sessionsSummaryCounts(sessions); } catch (_) { return []; }
 }
@@ -4704,7 +4775,11 @@ function _sessionsGroupSessions(pool, by) {
     g.sessions.push(sess);
   });
   groups.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
-  groups.forEach(g => { g.mix = _sessionsGroupStateMix(g.sessions); });
+  groups.forEach(g => {
+    g.mix = _sessionsGroupStateMix(g.sessions);
+    const info = _sessionsGroupTitleInfo(g.key, by, g.sessions);
+    if (info.title) { g.label = info.title; g.idText = info.id; }
+  });
   return groups;
 }
 window._sessionsGroupValidate = _sessionsGroupValidate;
@@ -4806,11 +4881,12 @@ function _sessionsGroupShowMoreInGroupHTML(ck, paging) {
   </div>`;
 }
 
-function _sessionsSgpHeaderHTML(ck, label, count, mix, collapsed, cssClass) {
+function _sessionsSgpHeaderHTML(ck, label, count, mix, collapsed, cssClass, idText) {
   const caret = collapsed ? '▸' : '▾';
-  return `<button type="button" class="${cssClass}" onclick="_sessionsGroupToggleCollapse('${escHtml(encodeURIComponent(ck))}')" aria-expanded="${collapsed ? 'false' : 'true'}">
+  const idHtml = idText ? `<small class="sgp-id" style="font-size:10px;color:var(--text2);font-weight:normal;margin-left:6px;">${escHtml(idText)}</small>` : '';
+  return `<button type="button" class="${cssClass}" onclick="_sessionsGroupToggleCollapse('${escHtml(encodeURIComponent(ck))}')" aria-expanded="${collapsed ? 'false' : 'true'}"${idText ? ` title="${escHtml(label + ' (' + idText + ')')}"` : ''}>
     <span class="sgp-caret">${caret}</span>
-    <span class="sgp-label">${escHtml(label)}</span>
+    <span class="sgp-label">${escHtml(label)}</span>${idHtml}
     <span class="sgp-count">${escHtml(String(count))}</span>
     <span class="sgp-mix-row">${_sessionsGroupMixHTML(mix)}</span>
   </button>`;
@@ -4835,7 +4911,7 @@ function renderSessionsGrouped(pool, by, nowMs, viewMode) {
     const shown = g.sessions.slice(0, lim);
     const paging = { shownCount: shown.length, total: g.sessions.length, hasMore: lim < g.sessions.length };
     return `<section class="sessions-group${isCollapsed ? ' collapsed' : ''}" data-sessions-group="${escHtml(ck)}">
-      ${_sessionsSgpHeaderHTML(ck, g.label, g.count, g.mix, isCollapsed, 'sessions-group-header')}
+      ${_sessionsSgpHeaderHTML(ck, g.label, g.count, g.mix, isCollapsed, 'sessions-group-header', g.idText)}
       ${isCollapsed ? '' : `<div class="sessions-group-body">
         ${_sessionsGroupBody(mode, shown, nowMs)}
         ${_sessionsGroupShowMoreInGroupHTML(ck, paging)}
@@ -4894,10 +4970,11 @@ function renderSessionsAutomaton(pool, nowMs, viewMode) {
     }).join('');
     const bCk = 'automaton|::' + b.key;
     const bCol = !!collapsed[bCk];
+    const aInfo = _sessionsGroupTitleInfo(b.key, { axis: 'automaton' }, b.sessions);
     const autoLabel = (b.key === SESSIONS_GROUP_UNGROUPED)
-      ? _stx('sessions_auto_ungrouped', 'Not part of an Automaton') : b.key;
+      ? _stx('sessions_auto_ungrouped', 'Not part of an Automaton') : (aInfo.title || b.key);
     return `<section class="automaton-block${bCol ? ' collapsed' : ''}" data-automaton-block="${escHtml(bCk)}">
-      ${_sessionsSgpHeaderHTML(bCk, autoLabel, b.sessions.length, _sessionsGroupStateMix(b.sessions), bCol, 'automaton-header')}
+      ${_sessionsSgpHeaderHTML(bCk, autoLabel, b.sessions.length, _sessionsGroupStateMix(b.sessions), bCol, 'automaton-header', aInfo.title ? aInfo.id : '')}
       ${bCol ? '' : `<div class="automaton-body">${storyHtml}</div>`}
     </section>`;
   }).join('');
