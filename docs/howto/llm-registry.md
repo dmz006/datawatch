@@ -213,9 +213,22 @@ The same field is accepted by REST (`POST /api/llms`, `PUT /api/llms/{name}`,
 Compute → LLM edit form (**Billing mode**, in all five locales). Every path
 refuses an unknown value with the same message naming the allowed values.
 
-This field is separate from the per-provider `usage.billing` profile that the
-[cost report](cost-report.md#the-billing-profiles) reads; the profile remains
-the source of the cost report's labels. See
+### What the billing mode changes
+
+The mode is read, not just stored. The entry's resolved value drives:
+
+| Where | `api` | `allowance` | `local` |
+|---|---|---|---|
+| [Cost report](cost-report.md#dollars-and-points-are-never-added-together) | Figures in **dollars**; row reads `api_metered`. | Figures in **points** (and percent of the plan's price); row reads `bundled_plan`. | **Tokens and time only**; row reads `free_local`. |
+| [Dollar budget](automata-capacity.md#per-llm-dollar-budget) | The budget compares dollars, as set. | Reads the budget as before. | **No budget applies**: a ceiling on the entry is kept but never read, and the LLM is left out of budget status. |
+| [Burn guard](burn-guard.md#which-llms-it-guards) | Ignored, unless the entry has a dollar budget (`ceiling_usd` above 0). | Guarded, exactly as before. | Ignored, unless the entry has a dollar budget. |
+| [Usage advice](usage-calculator.md#unit-labels-on-the-usage-page) (`unit_labels`; the web cards do not draw it yet) | Unit label `usage_unit_dollars`. | Unit label `usage_unit_points`. | No unit label (`none`). |
+
+The cost report reads the entry's value **before** the `usage.billing`
+profile's `mode`: set the entry and the profile's `mode` no longer matters for
+that backend. The profile still supplies the rest (`monthly_price`, `plan`, the
+reset, the allowance unit), so an `allowance` entry still needs a profile with a
+`monthly_price` for the report to show points. See
 [LLM billing mode](../operations.md#llm-billing-mode).
 
 ## Tag roles on LLMs

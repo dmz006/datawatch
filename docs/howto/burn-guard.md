@@ -39,6 +39,27 @@ It builds on the [usage calculator](usage-calculator.md): it uses the readings
 you type there for the pace line and the ceiling, so a recent reading is the
 one thing it needs from you.
 
+## Which LLMs it guards
+
+The guard watches the `claude-code` backend, and whether it acts depends on that
+LLM entry's [billing mode](llm-registry.md#set-the-billing-mode-of-an-llm):
+
+| `claude-code` entry's `billing_mode` | What the guard does |
+|---|---|
+| `allowance` (the default for `claude-code`) | Guards, exactly as described below. Nothing changes for this entry. |
+| `api` or `local` | **Does not act**, unless that entry has a dollar budget (`ceiling_usd` above 0). With a dollar budget it guards as it does for an allowance entry. |
+
+An entry with no registry row at all is treated as the `claude-code` allowance,
+so a daemon that has never had its LLM registry edited behaves as before.
+
+When the guard does not apply, each tick runs as if the guard were off: it
+releases every rung it had applied (admission is never left restricted), makes
+no projection and shows `off` in its status. Change the entry back to
+`allowance` (or give it a dollar budget) and the next tick guards again; no
+restart is needed. The effort ceiling and the Claude retry limit are published
+from the `enabled` setting as before, so the billing mode does not switch them
+off.
+
 ## What it does each interval
 
 1. Reads the session transcripts and counts input, output, cache-write and

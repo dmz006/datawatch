@@ -586,6 +586,20 @@ command `budget [status] [<llm>]` return the same data; `GET /api/capacity`,
 card carry the same `budgets` list. Each entry shows spend, ceiling, remaining, the window, when
 it rolls over and whether it is full.
 
+### The billing mode decides whether a budget is read
+
+The budget reads the LLM entry's
+[billing mode](llm-registry.md#set-the-billing-mode-of-an-llm):
+
+- `api`: the budget compares **dollars**, as described above.
+- `allowance`: the budget behaves as it always has.
+- `local`: **no budget applies.** Local inference has no per-call charge, so a
+  ceiling on a `local` entry is never read: admission never waits on it, the
+  entry is left out of `datawatch budget status` and the `budgets` list of
+  `GET /api/capacity`, and `GET /api/budget?llm=<name>` answers 404 for it
+  (`no budget for llm <name>`). The stored ceiling is kept, so changing the entry
+  back to `api` or `allowance` makes it count again.
+
 ### What "budget window full" means
 
 When spend reaches the ceiling, any autonomous task that needs that LLM
