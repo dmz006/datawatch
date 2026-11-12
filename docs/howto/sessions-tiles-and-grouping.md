@@ -195,7 +195,7 @@ Group mechanics, in every mode:
   per-state mix (e.g. `4 (running 2, waiting_input 1, complete 1)`), so you
   can read "how much of this group is alive" without expanding it.
 - **Body.** The group's sessions render in the active view mode — list
-  cards, tiles or compact rows — and the body pages with its own **Show
+  cards, tiles or compact tiles — and the body pages with its own **Show
   more** step (shown/total) when it is longer than a page.
 - **Sorting.** Groups sort by key, and the ungrouped group always sorts
   last — in the web UI and in the grouped read alike. Inside an Automaton
