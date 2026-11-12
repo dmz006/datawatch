@@ -339,6 +339,12 @@ type Manager struct {
 	// default.
 	platformContextFirstPromptOff bool
 
+	// finaliseMu guards lastFinalise and finaliseRan, the summary of the most
+	// recent combined finalise run (finalise_report.go). Own mutex, never m.mu.
+	finaliseMu   sync.Mutex
+	lastFinalise FinaliseSummary
+	finaliseRan  bool
+
 	hostname       string
 	dataDir        string
 	llmBin         string      // fallback binary path (legacy; prefer launchFn)
