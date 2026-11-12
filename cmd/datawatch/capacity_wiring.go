@@ -1919,3 +1919,22 @@ func nodeServesModel(n *compute.Node, model string) bool {
 	}
 	return false
 }
+
+// nodeInPooledEntry reports whether a compute node belongs to an LLM entry
+// that lists more than one compute node.
+func nodeInPooledEntry(reg *inference.Registry, node string) bool {
+	if reg == nil || node == "" {
+		return false
+	}
+	for _, l := range reg.List() {
+		if len(l.ComputeNodes) < 2 {
+			continue
+		}
+		for _, n := range l.ComputeNodes {
+			if n == node {
+				return true
+			}
+		}
+	}
+	return false
+}

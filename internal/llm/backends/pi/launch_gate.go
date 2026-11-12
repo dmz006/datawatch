@@ -27,17 +27,23 @@ var launchGate struct {
 	mu       sync.RWMutex
 	marker   NodeHealthMarker
 	nodeName func(addr string) string
+	pooled   func(addr string) bool
 	client   HTTPDoer
 }
 
-// SetLaunchGate wires the unhealthy-mark sink and the address-to-node-name
-// resolver. A nil marker leaves the gate probing without marking. A nil
-// resolver uses the node address as the name.
-func SetLaunchGate(marker NodeHealthMarker, nodeName func(addr string) string) {
+// SetLaunchGate wires the unhealthy-mark sink, the address-to-node-name
+// resolver and the pooled check. A nil marker leaves the gate probing without
+// marking. A nil resolver uses the node address as the name. The pooled check
+// says whether the node at an address belongs to an LLM entry that lists more
+// than one compute node: only such a launch is probed, because a single-node
+// entry has no other node to move to and must make no node call at launch. A
+// nil pooled check probes nothing.
+func SetLaunchGate(marker NodeHealthMarker, nodeName func(addr string) string, pooled func(addr string) bool) {
 	launchGate.mu.Lock()
 	defer launchGate.mu.Unlock()
 	launchGate.marker = marker
 	launchGate.nodeName = nodeName
+	launchGate.pooled = pooled
 }
 
 // setPreflightClient replaces the probe's HTTP client (tests).
@@ -48,7 +54,8 @@ func setPreflightClient(c HTTPDoer) {
 }
 
 // preflightBeforeLaunch probes the node before a pi launch. With no node
-// address (a non-node launch) or no model it does nothing. On failure it
+// address (a non-node launch), no model, or a node that is not part of a
+// pooled entry it does nothing. On failure it
 // marks the node unhealthy with the reason and returns a launch-deferred
 // error; on success it clears the node's mark.
 func preflightBeforeLaunch(ctx context.Context, nodeAddr, model string) error {
@@ -56,8 +63,11 @@ func preflightBeforeLaunch(ctx context.Context, nodeAddr, model string) error {
 		return nil
 	}
 	launchGate.mu.RLock()
-	marker, resolve, client := launchGate.marker, launchGate.nodeName, launchGate.client
+	marker, resolve, pooled, client := launchGate.marker, launchGate.nodeName, launchGate.pooled, launchGate.client
 	launchGate.mu.RUnlock()
+	if pooled == nil || !pooled(nodeAddr) {
+		return nil
+	}
 	if client == nil {
 		client = http.DefaultClient
 	}

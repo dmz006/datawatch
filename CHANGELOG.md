@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A stalled pi worker now says why it stalled.** When the tmux pane is gone, the attempt record takes its evidence from the session output log: the last forty lines with terminal control sequences removed, the exit status from the pi failure line, the compute node and the model. The failure summary on the Automaton page, REST, MCP, the CLI and the comm channel names them.
+- **A pi failure line in the output log fails the attempt at once.** The attempt no longer waits out the silence limit once the log already holds the failure.
+- **A pi request timeout is a model-unresponsive infrastructure failure.** It is counted per compute node, requeues the task without consuming an attempt, and raises an alert naming the node and model when the same node repeats it.
+- **A pi launch on a pooled compute node is preflighted.** A one-token request with a twenty-second limit runs first. A node that fails is marked unhealthy for placement and the launch is deferred without consuming an attempt; a later successful preflight clears the mark. A single-node entry makes no node call at launch.
+- Docs: the pi failure reasons, the preflight and the unhealthy-node mark are explained in the operator how-to and the definitions.
+
 ## v9.147.0 — Projects as the first Automata sub-tab
 
 ### Changed

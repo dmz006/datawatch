@@ -7563,6 +7563,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					}
 				}
 				return ""
+			}, func(addr string) bool {
+				// Only a node that belongs to a multi-node LLM entry is probed;
+				// a single-node entry makes no node call at launch.
+				if computeReg == nil {
+					return false
+				}
+				want := strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://")
+				for _, n := range computeReg.List() {
+					if n.Address == addr || strings.TrimPrefix(strings.TrimPrefix(n.Address, "http://"), "https://") == want {
+						return nodeInPooledEntry(autonomousInferenceReg, n.Name)
+					}
+				}
+				return false
 			})
 			// placement-tags — restart backfill: the ledger now holds the leases that
 			// survived the restart (adoption hold still on, so the session manager

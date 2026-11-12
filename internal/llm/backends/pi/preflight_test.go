@@ -131,9 +131,9 @@ func TestPreflightMarksAndClearsLedger(t *testing.T) {
 	led.SetLimit("node:a", 1)
 	led.SetLimit("node:b", 1)
 	addr := map[string]string{"node-b:11434": "b"}
-	SetLaunchGate(led, func(a string) string { return addr[a] })
+	SetLaunchGate(led, func(a string) string { return addr[a] }, func(string) bool { return true })
 	t.Cleanup(func() {
-		SetLaunchGate(nil, nil)
+		SetLaunchGate(nil, nil, nil)
 		setPreflightClient(&fakeDoer{status: 200})
 	})
 

@@ -40,10 +40,10 @@ func (f *fakeMarker) ClearNodeUnhealthy(node string) {
 
 func withGate(t *testing.T, m NodeHealthMarker, c HTTPDoer) {
 	t.Helper()
-	SetLaunchGate(m, func(addr string) string { return "node-x" })
+	SetLaunchGate(m, func(addr string) string { return "node-x" }, func(string) bool { return true })
 	setPreflightClient(c)
 	t.Cleanup(func() {
-		SetLaunchGate(nil, nil)
+		SetLaunchGate(nil, nil, nil)
 		setPreflightClient(&fakeDoer{status: 200})
 	})
 }
@@ -90,5 +90,34 @@ func TestPreflightSkippedWithoutNode(t *testing.T) {
 	}
 	if f.req != nil || len(mk.marked) != 0 || len(mk.cleared) != 0 {
 		t.Fatal("probe ran for a non-node launch")
+	}
+}
+
+func TestPreflightSkippedForSingleNodeEntry(t *testing.T) {
+	mk := &fakeMarker{}
+	f := &fakeDoer{status: 500}
+	SetLaunchGate(mk, func(string) string { return "node-x" }, func(string) bool { return false })
+	setPreflightClient(f)
+	t.Cleanup(func() {
+		SetLaunchGate(nil, nil, nil)
+		setPreflightClient(&fakeDoer{status: 200})
+	})
+	if err := preflightBeforeLaunch(context.Background(), "node-b:11434", "ollama/m"); err != nil {
+		t.Fatal(err)
+	}
+	if f.req != nil || len(mk.marked) != 0 || len(mk.cleared) != 0 {
+		t.Fatal("probe ran for a single-node entry")
+	}
+}
+
+func TestPreflightRunsForPooledEntry(t *testing.T) {
+	mk := &fakeMarker{}
+	f := &fakeDoer{status: 500}
+	withGate(t, mk, f)
+	if err := preflightBeforeLaunch(context.Background(), "node-b:11434", "ollama/m"); !errors.Is(err, ErrLaunchDeferred) {
+		t.Fatalf("err = %v, want ErrLaunchDeferred", err)
+	}
+	if f.req == nil {
+		t.Fatal("probe did not run for a pooled entry")
 	}
 }
