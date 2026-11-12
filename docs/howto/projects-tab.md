@@ -217,6 +217,7 @@ Choose **Automata**, then the **Projects** sub-tab, then `core-api`. From the to
 | Progress | Tasks and Automata done, cost in points, throughput over the last seven days |
 | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
 | Unassigned Automata | Automata of this project that no arc holds |
+| Automata without a project | The roll-up response also lists Automata with no project link and no directory match in a separate `without_project` group. It is the same for every project and is not counted in any total |
 | Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now" |
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Effective policy | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section |

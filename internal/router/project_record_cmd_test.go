@@ -255,3 +255,14 @@ func TestProjectRecordHandlersLoopback(t *testing.T) {
 		t.Errorf("404 not surfaced:\n%s", out)
 	}
 }
+
+func TestFormatProjectProgressWithoutProject(t *testing.T) {
+	body := `{"window_days":7,"points_priced":false,"arcs":[],"unassigned":{"automata":[]},` +
+		`"without_project":{"automata":[{"id":"a"},{"id":"b"}],"tasks":{"done":1,"total":4}},"total":{"automata":[]}}`
+	if got := formatProjectProgress("acme", body); !strings.Contains(got, "without a project: 2 automata, tasks 1/4") {
+		t.Fatalf("missing without a project line: %s", got)
+	}
+	if got := formatProjectProgress("acme", `{"window_days":7,"arcs":[],"total":{"automata":[]}}`); strings.Contains(got, "without a project") {
+		t.Fatalf("empty group must not print: %s", got)
+	}
+}

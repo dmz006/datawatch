@@ -9417,7 +9417,13 @@ paths:
         Groups the project's Automata by the arc whose Automation holds them.
         Each arc reports its Automata with their session ids, task progress
         (done/total), cost in usage points and throughput. Automata of this
-        project that no arc holds are in `unassigned`; `total` sums everything.
+        project that no arc holds are in `unassigned`. An Automaton is placed in a
+        project by its own project link, then the project of the Automation holding
+        it, then its parent Automaton's project, then its directory; one resolved to
+        another project is never in this project. Automata without a project (no
+        link and no directory match, in no arc) are in `without_project`, which is
+        the same whichever project is asked for and is not part of `total`;
+        `total` sums the arcs and `unassigned`.
         Costs are points from the billing profile's point calibration, never
         API dollars. Throughput counts Automata finished in the window and tasks
         finished in the window, per day. An Automaton is finished when it is
@@ -9445,6 +9451,9 @@ paths:
                   points_priced: {type: boolean, description: "True when at least one Automaton has a point figure"}
                   arcs: {type: array, items: {$ref: "#/components/schemas/ProjectRollupGroup"}}
                   unassigned: {$ref: "#/components/schemas/ProjectRollupGroup"}
+                  without_project:
+                    allOf: [{$ref: "#/components/schemas/ProjectRollupGroup"}]
+                    description: "Automata without a project. Each is listed once, with its own tasks, points and throughput, and is not counted in total."
                   total: {$ref: "#/components/schemas/ProjectRollupGroup"}
         "400":
           description: window is not a whole number of days from 1 to 365
