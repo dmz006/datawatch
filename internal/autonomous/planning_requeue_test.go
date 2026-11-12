@@ -265,7 +265,7 @@ func TestPlanningRequeue_TwoChanges_SingleQueueEntry(t *testing.T) {
 		t.Fatal("decompose did not run after the latest pool admitted the planner")
 	}
 	ranMu.Lock()
-	run, ran := ranReq, ranReq != (DecomposeRequest{})
+	run, ran := ranReq, ranReq.Spec != "" || ranReq.PRDID != ""
 	ranMu.Unlock()
 	if !ran {
 		t.Fatal("the planner's decompose never executed")

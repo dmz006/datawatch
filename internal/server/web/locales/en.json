@@ -2161,6 +2161,8 @@
   "settings_worker_idle_nudge_stall": "Worker stall after nudge (sec, 0=10min)",
   "settings_session_start_confirm": "Session start confirm (seconds)",
   "settings_session_start_confirm_help": "A session with no assistant output after this long is failed as session never started and retried.",
+  "settings_planning_restart_policy": "Planning restart policy",
+  "settings_planning_restart_policy_help": "What happens to an Automaton that is still planning when the daemon restarts. reattach (default): planning keeps running and the decompose is re-attached to the restarted daemon. restart: planning restarts once after the restart and a decision records it. draft: the Automaton returns to draft, as it does today. Until the restart path reads this setting, every value acts like draft. See docs/howto/restart-with-work-running.md.",
   "compute_field_max_sessions": "Max concurrent sessions (0 = unlimited)",
   "compute_field_session_slots": "Session slots (0 = derive from GPU data)",
   "llm_field_max_inflight": "Max in-flight autonomous sessions (0 = unlimited)",

@@ -2187,6 +2187,8 @@
   "settings_worker_idle_nudge_stall": "Blocage du worker après relance (sec, 0=10min)",
   "settings_session_start_confirm": "Confirmation de démarrage de session (secondes)",
   "settings_session_start_confirm_help": "Une session sans sortie de l'assistant après ce délai est déclarée en échec (session jamais démarrée) puis relancée.",
+  "settings_planning_restart_policy": "Politique de redémarrage de la planification",
+  "settings_planning_restart_policy_help": "Ce qui arrive à un automate encore en planification lorsque le daemon redémarre. reattach (par défaut) : la planification continue et la décomposition est rattachée au daemon redémarré. restart : la planification redémarre une fois après le redémarrage et une décision le consigne. draft : l'automate revient en brouillon, comme aujourd'hui. Tant que le chemin de redémarrage ne lit pas ce réglage, chaque valeur se comporte comme draft. Voir docs/howto/restart-with-work-running.md.",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

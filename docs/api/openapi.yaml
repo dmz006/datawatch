@@ -2179,9 +2179,11 @@ paths:
     get:
       summary: What a restart now would interrupt
       description: |
-        The running tasks (executing worker, running tests or verifying) and the
-        live sessions a daemon restart now would interrupt, with their ids and
-        counts, and the configured restart policy (`autonomous.restart_policy`:
+        The planning Automata, verifying tasks, running judges, running tasks
+        (executing worker, running tests or verifying) and live sessions a daemon
+        restart now would interrupt, each with its ids and count, plus
+        `needs_force` (set while any of them is in flight), and the configured
+        restart policy (`autonomous.restart_policy`:
         `immediate`, `wait_quiet` or `drain`, with `restart_quiet_timeout_seconds`
         and `restart_on_timeout`). `launch_draining` is true while a drain holds
         new tasks back. Read-only; needs the autonomous read capability when
@@ -2190,7 +2192,7 @@ paths:
       tags: [Autonomous]
       responses:
         "200":
-          description: The running tasks and live sessions a restart would interrupt
+          description: The work a restart would interrupt and the restart policy
           content:
             application/json:
               schema: {type: object}

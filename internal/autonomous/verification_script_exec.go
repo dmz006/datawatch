@@ -129,7 +129,15 @@ func runVerificationScriptCapped(scriptRelPath, projectDir string, l *verifyLaun
 		return "", -1, fmt.Errorf("%w: %s", ErrVerificationScriptMissing, scriptRelPath)
 	}
 
+	// A live or undelivered durable record for this script is resumed, not
+	// run again (see verification_script_resume.go).
+	if rout, rcode, rerr, handled := resumeVerificationScriptRun(scriptPath); handled {
+		return truncateScriptOutput(rout), rcode, rerr
+	}
 	argv, _, _ := verifyScriptArgv(scriptPath, l) // scriptPath validated above to resolve inside projectDir
+	if rout, rcode, rerr, handled := runVerifyRecorded(argv, projectDir, scriptPath, l); handled {
+		return truncateScriptOutput(rout), rcode, rerr
+	}
 	out, runErr := runVerifyCommand(argv, projectDir, l)
 	output = truncateScriptOutput(out)
 	if runErr != nil {

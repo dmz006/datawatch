@@ -80,7 +80,7 @@ POST   /api/autonomous/merge/run           run a merge through the resolved merg
 GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions, merge_lock (the lock held on the base repository by a running merge, omitted when none); read-only, never runs git
 GET    /api/autonomous/merge/shadow        shadow merge state per project: stored plans, stored comparisons and per-release-size matched/different counts; read-only, stores only
 GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
-GET    /api/autonomous/restart-interruptions  running tasks and live sessions a daemon restart now would interrupt (ids and counts) plus the restart policy; read-only, autonomous read capability
+GET    /api/autonomous/restart-interruptions  the planning Automata, verifying tasks, running judges, running tasks and live sessions a daemon restart now would interrupt (each id + count) plus `needs_force` and the restart policy; read-only, autonomous read capability. `POST /api/restart` (409 + the report while `needs_force` and no force) and `restart_daemon` (error + the report; `force=true` to proceed) reuse it
 
 # The shipped state — orthogonal to status; see "The shipped state"
 POST   /api/autonomous/prds/{id}/shipped   record the Automaton's shipped state; body: {merged_in_release?, merged_at?, merge_commit (required), source: merge_step|backfill (required)}

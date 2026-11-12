@@ -280,6 +280,20 @@ type PRD struct {
 	// be set; ProjectDir is still honored when profiles are empty.
 	ProjectProfile string `json:"project_profile,omitempty"`
 	ClusterProfile string `json:"cluster_profile,omitempty"`
+	// PlannerSessionID names the live planner session that is producing
+	// this PRD's plan. Empty when no planner session is running. A restart
+	// reads it to re-attach to that session instead of losing the plan.
+	PlannerSessionID string `json:"planner_session_id,omitempty"`
+	// PlannerOutputFile is the file the planner session writes the plan to.
+	// It is relative to the Automaton's project directory when the file lives
+	// under it, and otherwise the path as recorded. A restart reads it to
+	// re-attach to the plan the session is producing.
+	PlannerOutputFile string `json:"planner_output_file,omitempty"`
+	// PlanningRestartedOnce is set when a boot-resume restarted planning for
+	// this Automaton (planning_restart_policy restart, or a planner that left
+	// no usable output). It is never cleared, so a second restart cannot loop:
+	// the next boot-resume that would restart falls back to draft instead.
+	PlanningRestartedOnce bool `json:"planning_restarted_once,omitempty"`
 	// Git (BL407 Phase 1) — branch-per-PRD + auto-PR workflow state.
 	// When ProjectDir/ProjectProfile/ClusterProfile are all empty and
 	// the daemon has autonomous.Config.WorktreeBaseRepo configured,

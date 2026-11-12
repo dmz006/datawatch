@@ -2187,6 +2187,8 @@
   "settings_worker_idle_nudge_stall": "Bloqueo del worker tras el aviso (seg, 0=10min)",
   "settings_session_start_confirm": "Confirmación de inicio de sesión (segundos)",
   "settings_session_start_confirm_help": "Una sesión sin salida del asistente tras ese tiempo se marca como fallo por sesión nunca iniciada y se reintenta.",
+  "settings_planning_restart_policy": "Política de reinicio de la planificación",
+  "settings_planning_restart_policy_help": "Qué ocurre con un autómata que todavía está planificando cuando el daemon se reinicia. reattach (predeterminado): la planificación sigue en marcha y la descomposición se vuelve a conectar al daemon reiniciado. restart: la planificación se reinicia una vez tras el reinicio y una decisión lo registra. draft: el autómata vuelve a borrador, como hasta ahora. Hasta que la ruta de reinicio lea este ajuste, todos los valores se comportan como draft. Consulta docs/howto/restart-with-work-running.md.",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

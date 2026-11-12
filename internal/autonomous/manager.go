@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -296,6 +297,11 @@ type Config struct {
 	// guidance text or a file path the decompose prompt loads (see
 	// decompose_guidance.go). No omitempty, same round-trip reason.
 	DecomposeGuidance string `json:"decompose_guidance"`
+	// PlanningRestartPolicy mirrors autonomous.planning_restart_policy
+	// (reattach, restart or draft). Boot-resume reads it through the live
+	// Config to decide what a planning Automaton does after a restart (see
+	// bootResumePlanning in api.go). Empty means reattach.
+	PlanningRestartPolicy string `json:"planning_restart_policy,omitempty"`
 	// SessionIdleTimeoutSeconds mirrors autonomous.session_idle_timeout_seconds
 	// in config. The manager does not consume it: the daemon's autonomous
 	// worker/verifier wait loops in cmd/datawatch/main.go and
@@ -1630,6 +1636,23 @@ type Manager struct {
 	sessionLastLifeFn func(sessionID string) time.Time
 	// decomposeSessionsFn lists live planning sessions linked to a PRD.
 	decomposeSessionsFn func(prdID string) []string
+	// planningReattachFn starts a reader on a planner session that survived a
+	// daemon restart (see SetPlanningReattachFn). Nil means no reader can be
+	// attached, so boot-resume falls back to resetting planning to draft.
+	planningReattachFn func(prdID, sessionID, outputFile string)
+
+	// verifierReattachFn is called for a verifying task whose live verifier
+	// session survived the daemon restart (see SetVerifierReattachFn): it
+	// attaches a waiter to that session and its result file. It must return
+	// promptly and do no waiting. Nil means no waiter is attached — the task
+	// is still kept verifying with the live session (no reset, no retry).
+	verifierReattachFn func(prdID, taskID, sessionID string)
+
+	// verifierVerdictFile reads the persisted verdict result file left by the
+	// task's last verifier run (see SetVerifierResultReader): the verdict if
+	// the file exists and parses, plus false when there is nothing parseable.
+	// Nil (the default) means "no persisted verdict to consume".
+	verifierVerdictFile func(prdID, taskID string) (*VerificationResult, bool)
 
 	// Cost sources (see automation_cost.go): the spend ledger and the
 	// per-session lifetime total used when a window predates the ledger.
@@ -1726,6 +1749,23 @@ type Manager struct {
 	// unit at startup, so a repeated reconcile adopts it as a no-op. Guarded
 	// by mu.
 	judgeAdopts map[string]string
+	// judgeReattachFn — the waiter attach for a guardrail-judge session
+	// that survived a daemon restart (SetJudgeReattachFn): fn(prdID, inv,
+	// sessionID) returns promptly; the daemon's background waiter hands
+	// the collected verdict back with ConsumeJudgeResult. Guarded by mu.
+	// Nil — no attach mechanism (the judge run's daemon-side session
+	// adoption handles a surviving session instead).
+	judgeReattachFn func(prdID string, inv GuardrailInvocation, sessionID string)
+	// judgeResultReader — reads a surviving, still-unrecorded
+	// guardrail-judge result file for (prdID, inv) as
+	// (*GuardrailVerdict, bool) (SetJudgeResultReader). Guarded by mu.
+	// Nil — nothing to consume.
+	judgeResultReader func(prdID string, inv GuardrailInvocation) (*GuardrailVerdict, bool)
+	// judgeWaiters — per-(PRD, unit) channels the guardrail flow selects
+	// on while a re-attached judge's verdict is pending (ConsumeJudgeResult);
+	// guarded by judgeWaitMu, not mu (it is held across waits).
+	judgeWaiters map[string]chan *GuardrailVerdict
+	judgeWaitMu  sync.Mutex
 
 	// orphanSeen records when the orphan sweep first saw each unbound worker
 	// session; orphanNow is the sweep's clock (nil = time.Now). Guarded by mu.
@@ -1973,10 +2013,190 @@ func (m *Manager) SetDecomposeSessionsFn(fn func(prdID string) []string) {
 	m.decomposeSessionsFn = fn
 }
 
-// killOrphanDecomposeSessions kills any live planning session for the PRD.
-// After a daemon restart the decompose goroutine that would consume its output
-// is gone, so the session is an orphan burning compute.
-func (m *Manager) killOrphanDecomposeSessions(prdID string) int {
+// SetPlanningReattachFn wires the reader that a boot-resume re-attaches to a
+// planner session still alive after a restart. fn receives the PRD id, the
+// recorded planner session id and the recorded output file (as stored: it may
+// be relative to the PRD's project directory). fn must return promptly and do
+// its waiting in the background; it finishes the decompose by calling
+// IngestPlannerOutput, or FailPlanningReattach when no output arrives.
+func (m *Manager) SetPlanningReattachFn(fn func(prdID, sessionID, outputFile string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.planningReattachFn = fn
+}
+
+// reattachPlanner hands a live planner session to the wired reader. It reports
+// false, doing nothing, when no reader is wired.
+func (m *Manager) reattachPlanner(prdID, sessionID, outputFile string) bool {
+	m.mu.Lock()
+	fn := m.planningReattachFn
+	m.mu.Unlock()
+	if fn == nil {
+		return false
+	}
+	fn(prdID, sessionID, outputFile)
+	return true
+}
+
+// SetVerifierReattachFn wires the waiter that a boot-resume attaches to a
+// verifier session still judging a task after a daemon restart. fn receives
+// the PRD id, the task id and the surviving verifier session id. fn must
+// return promptly and do no waiting itself; it is the re-attach hook (like
+// SetPlanningReattachFn), so tests can inject a fake. A nil fn means no waiter
+// is attached: the manager still keeps the task verifying with its live
+// session and never resets the worker or counts a retry.
+func (m *Manager) SetVerifierReattachFn(fn func(prdID, taskID, sessionID string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.verifierReattachFn = fn
+}
+
+// SetVerifierResultReader wires the reader for the persisted verdict result
+// file left by a task's last verifier run. fn returns the parsed verdict plus
+// true when the file exists and parses, otherwise false. Boot-resume consumes
+// that verdict as the outcome instead of spawning a new verification; a nil
+// reader (the default) means there is nothing to consume.
+func (m *Manager) SetVerifierResultReader(fn func(prdID, taskID string) (*VerificationResult, bool)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.verifierVerdictFile = fn
+}
+
+// reattachVerifier hands a live verifier session to the wired waiter. It
+// reports false, doing nothing, when no waiter is wired.
+func (m *Manager) reattachVerifier(prdID, taskID, sessionID string) bool {
+	m.mu.Lock()
+	fn := m.verifierReattachFn
+	m.mu.Unlock()
+	if fn == nil {
+		return false
+	}
+	fn(prdID, taskID, sessionID)
+	return true
+}
+
+// verifierVerdict reads the persisted verdict file for the task through the
+// wired reader; it reports nil, false when no reader is wired or the file is
+// missing or unparseable.
+func (m *Manager) verifierVerdict(prdID, taskID string) (*VerificationResult, bool) {
+	m.mu.Lock()
+	fn := m.verifierVerdictFile
+	m.mu.Unlock()
+	if fn == nil {
+		return nil, false
+	}
+	return fn(prdID, taskID)
+}
+
+// completeVerifyingTaskFromVerdict finalizes a verifying task whose ok
+// verdict stands: ends the dead session, completes the task, and records the
+// verdict when it was consumed from the result file (nil verdict = already
+// recorded). Returns the pendingTaskEvent to emit.
+func (m *Manager) completeVerifyingTaskFromVerdict(killerFn func(sessionID, tag, why string) error, why string, prevStatus TaskStatus, t *Task, consumedVerdict *VerificationResult) pendingTaskEvent {
+	if killerFn != nil && t.SessionID != "" {
+		if err := killerFn(t.SessionID, "autonomous.boot-resume.complete-from-verdict", why); err != nil {
+			log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
+		}
+	}
+	now := time.Now()
+	var oldSession string
+	m.store.WithLock(func() {
+		t.Status = TaskCompleted
+		t.CompletedAt = &now
+		t.Error = ""
+		if consumedVerdict != nil {
+			t.Verification = consumedVerdict
+		}
+		oldSession = t.SessionID
+		t.SessionID = ""
+		t.UpdatedAt = now
+	})
+	return pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession}
+}
+
+// ConsumeVerifierResult applies a verifier verdict that the daemon's reattach
+// waiter (SetVerifierReattachFn) collected from a live verifier session after
+// a daemon restart: a pass completes the task the same way the boot-resume
+// recorded-ok path does; a fail is recorded and the task is requeued for the
+// normal retry path, with no verification spawned and no worker re-run forced
+// at this point. It is idempotent: a task that is no longer in the verifying
+// state (already consumed, completed or reset) is left untouched. It reports
+// false when there is nothing to apply.
+func (m *Manager) ConsumeVerifierResult(prdID, taskID string, verdict VerificationResult) bool {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return false
+	}
+	var (
+		t          *Task
+		prevStatus TaskStatus
+	)
+	m.store.WithLock(func() {
+		for i := range prd.Story {
+			for j := range prd.Story[i].Tasks {
+				if prd.Story[i].Tasks[j].ID == taskID {
+					t = &prd.Story[i].Tasks[j]
+				}
+			}
+		}
+		if t == nil || t.Status != TaskVerifying {
+			return
+		}
+		prevStatus = t.Status
+	})
+	if t == nil || prevStatus != TaskVerifying {
+		return false
+	}
+	m.mu.Lock()
+	killerFn := m.sessionKillerFn
+	m.mu.Unlock()
+	why := fmt.Sprintf("reattach waiter: task %s consumed the verdict of its verifier session that survived the daemon restart", t.ID)
+	var ev pendingTaskEvent
+	if verdict.OK {
+		ev = m.completeVerifyingTaskFromVerdict(killerFn, why, prevStatus, t, &verdict)
+	} else {
+		if killerFn != nil && t.SessionID != "" {
+			if err := killerFn(t.SessionID, "autonomous.verifier-resume.consume-fail", why); err != nil {
+				log.Printf("[autonomous] verifier-resume: kill session %s: %v", t.SessionID, err)
+			}
+		}
+		now := time.Now()
+		oldSession := t.SessionID
+		m.releaseCapacity(t.ID)
+		m.store.WithLock(func() {
+			t.Verification = &verdict
+			t.SessionID = ""
+			t.Status = TaskPending
+			t.Error = ""
+			t.UpdatedAt = now
+		})
+		ev = pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession}
+	}
+	if serr := m.store.SavePRD(prd); serr != nil {
+		log.Printf("[autonomous] verifier-resume: save prd=%s: %v", prdID, serr)
+	}
+	m.emitPendingTaskEvents(prd, []pendingTaskEvent{ev}, lastDecision(prd, verifyingResolution))
+	log.Printf("[autonomous] verifier-resume: prd=%s task %s (was %s) applied consumed verdict OK=%v", prdID, t.ID, prevStatus, verdict.OK)
+	return true
+}
+
+// liveDecomposeSessions returns the live planning session ids linked to prdID,
+// or nil when no lookup is wired.
+func (m *Manager) liveDecomposeSessions(prdID string) []string {
+	m.mu.Lock()
+	find := m.decomposeSessionsFn
+	m.mu.Unlock()
+	if find == nil {
+		return nil
+	}
+	return find(prdID)
+}
+
+// killOrphanDecomposeSessions kills the live planning sessions for the PRD,
+// except any id listed in keep (a session a reader now owns). After a daemon
+// restart the decompose goroutine that would consume its output is gone, so an
+// unowned session is an orphan burning compute.
+func (m *Manager) killOrphanDecomposeSessions(prdID string, keep ...string) int {
 	m.mu.Lock()
 	find, kill := m.decomposeSessionsFn, m.sessionKillerFn
 	m.mu.Unlock()
@@ -1986,6 +2206,11 @@ func (m *Manager) killOrphanDecomposeSessions(prdID string) int {
 	n := 0
 	why := fmt.Sprintf("orphan planning session for PRD %s: the decompose goroutine that reads it did not survive the daemon restart", prdID)
 	for _, id := range find(prdID) {
+		// keep carries the recorded (short) planner id; the list reports full
+		// host-prefixed ids, so match either form (see plannerSessionLive).
+		if plannerSessionLive(keep, id) {
+			continue
+		}
 		if err := kill(id, "autonomous.boot-resume.orphan-decompose", why); err != nil {
 			log.Printf("[autonomous] boot-resume: kill orphan decompose session %s (prd=%s): %v", id, prdID, err)
 			continue
@@ -2025,6 +2250,55 @@ func (m *Manager) LinkTaskSession(prdID, taskID, sessionID string) {
 	if led := m.Capacity(); led != nil {
 		led.Bind(taskID, sessionID)
 	}
+}
+
+// RecordPlannerSession names the live planner session producing prdID's plan
+// and the file it writes the plan to, so a restart can re-attach to it. The
+// output file is stored relative to the PRD's project directory when it lies
+// under it, and otherwise as recorded. Unknown PRD ids are ignored.
+func (m *Manager) RecordPlannerSession(prdID, sessionID, outputFile string) {
+	if m == nil || m.store == nil || prdID == "" {
+		return
+	}
+	m.store.MutatePRD(prdID, func(p *PRD) bool {
+		p.PlannerSessionID = sessionID
+		p.PlannerOutputFile = plannerOutputPath(p.ProjectDir, outputFile)
+		return true
+	})
+}
+
+// ClearPlannerSession empties the planner session and output file recorded on
+// prdID. It runs wherever planning ends (success, failure or cancel). Unknown
+// PRD ids and PRDs with nothing recorded are left untouched.
+func (m *Manager) ClearPlannerSession(prdID string) {
+	if m == nil || m.store == nil || prdID == "" {
+		return
+	}
+	m.store.MutatePRD(prdID, clearPlannerFields)
+}
+
+// clearPlannerFields empties the planner fields on p. The caller must hold the
+// store lock, or be inside Store.MutatePRD. It reports whether anything changed.
+func clearPlannerFields(p *PRD) bool {
+	if p.PlannerSessionID == "" && p.PlannerOutputFile == "" {
+		return false
+	}
+	p.PlannerSessionID = ""
+	p.PlannerOutputFile = ""
+	return true
+}
+
+// plannerOutputPath returns outputFile relative to projectDir when it is an
+// absolute path under projectDir, and otherwise returns outputFile unchanged.
+func plannerOutputPath(projectDir, outputFile string) string {
+	if outputFile == "" || projectDir == "" || !filepath.IsAbs(outputFile) || !filepath.IsAbs(projectDir) {
+		return outputFile
+	}
+	rel, err := filepath.Rel(filepath.Clean(projectDir), filepath.Clean(outputFile))
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return outputFile
+	}
+	return rel
 }
 
 // SetSessionOutputFn wires the recorded-output reader used at boot-resume to
@@ -2337,10 +2611,13 @@ func decisionKindExists(prd *PRD, kind string) bool {
 // reset to TaskPending. TaskVerifying/TaskRunningTests tasks with a dead or
 // absent session resolve via ResolveVerifyingTask: a recorded ok verification
 // verdict is applied (TaskCompleted) instead of blindly re-running the task;
-// otherwise the task is reset to TaskPending. A genuinely live session is
-// left alone (still TaskVerifying) so executeOne's own skip-spawn check picks
-// it up and verifies it directly, matching reconcileStuckTasks' logic
-// (B90/B93). This is the canonical boot-time task/session reconciliation;
+// a live adopted verifier session is kept and a waiter is attached to it (no
+// verifier spawn, no worker reset, no retry counted); a parseable verdict
+// result file is consumed as the outcome (pass completes, fail is recorded
+// and requeued); otherwise the task is reset to TaskPending. A genuinely
+// live session is left alone (still TaskVerifying) so executeOne's own
+// skip-spawn check picks it up and verifies it directly, matching
+// reconcileStuckTasks' logic (B90/B93). This is the canonical boot-time task/session reconciliation;
 // executeOne's kill-before-respawn guard (executor.go) is the second line of
 // defense if this pass or its liveness check is wrong.
 // Called from api.resumeRunningPRDs before re-launching the executor.
@@ -2430,7 +2707,14 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				}
 				// Empty or dead session without a marker: orphaned, reset below.
 			case TaskVerifying, TaskRunningTests:
-				switch ResolveVerifyingResume(aliveFn, stableAgentStarted(agentStartedFn), outputFn, t) {
+				resume := ResolveVerifyingResume(aliveFn, stableAgentStarted(agentStartedFn), outputFn, func() (*VerificationResult, bool) { return m.verifierVerdict(prd.ID, t.ID) }, t)
+				if resume == VerifyingResumeReset && prevStatus == TaskVerifying && m.holdVerifyingForScriptRun(prd, t) {
+					// The verification script's run is still alive: keep the task
+					// verifying. The verification path attaches a waiter to that run and
+					// takes its result, so the worker is not reset and no retry is counted.
+					continue
+				}
+				switch resume {
 				case VerifyingResumeStartFailed:
 					// Live bare shell: the worker's agent never launched, so the session is a
 					// boot-time launch failure. End it and requeue the task with the
@@ -2458,26 +2742,45 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					// A recorded ok verification verdict stands: complete the task
 					// instead of resetting it for a blind re-run. Verification is
 					// kept untouched.
-					if killerFn != nil && t.SessionID != "" {
-						why := fmt.Sprintf("boot-resume: task %s had a recorded ok verification; its dead session is ended before the task completes", t.ID)
-						if err := killerFn(t.SessionID, "autonomous.boot-resume.complete-from-verdict", why); err != nil {
-							log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
-						}
-					}
-					now := time.Now()
-					var oldSession string
-					m.store.WithLock(func() {
-						t.Status = TaskCompleted
-						t.CompletedAt = &now
-						t.Error = ""
-						oldSession = t.SessionID
-						t.SessionID = ""
-						t.UpdatedAt = now
-					})
-					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession})
+					reset = append(reset, m.completeVerifyingTaskFromVerdict(killerFn,
+						fmt.Sprintf("boot-resume: task %s had a recorded ok verification; its dead session is ended before the task completes", t.ID),
+						prevStatus, t, nil))
 					completedCount++
 					log.Printf("[autonomous] boot-resume: completed task %s (was %s) for prd=%s from recorded ok verification", t.ID, prevStatus, prd.ID)
 					continue
+				case VerifyingResumeReattach:
+					// A live verifier session (adopted on this task) is still judging it:
+					// attach a fresh waiter to that session and its result file. Do not
+					// spawn a second verifier, do not reset the worker, and do not
+					// count a retry. The daemon's wait loop picks up the verdict.
+					m.adoptCapacity(prd, t)
+					if m.reattachVerifier(prd.ID, t.ID, t.VerifierSessionID) {
+						log.Printf("[autonomous] boot-resume: prd=%s task %s kept (was %s) on live verifier session %s. waiter attached, no verifier spawn, no retry counted", prd.ID, t.ID, prevStatus, t.VerifierSessionID)
+					} else {
+						log.Printf("[autonomous] boot-resume: prd=%s task %s kept (was %s) on live verifier session %s (waiter not yet wired)", prd.ID, t.ID, prevStatus, t.VerifierSessionID)
+					}
+					continue
+				case VerifyingResumeConsume:
+					// The verdict reached the result file even though the verifier ended:
+					// consume that verdict as the outcome. A pass completes the task like
+					// a recorded ok verdict; a fail is recorded and the task is requeued
+					// for the normal retry path. Either way no new verification is spawned
+					// and the worker is not re-run, and no retry is counted.
+					if v, ok := m.verifierVerdict(prd.ID, t.ID); !ok || v == nil {
+						// The file vanished between the decision and the consume: safe
+						// fallback — requeue without a verdict below.
+					} else if v.OK {
+						reset = append(reset, m.completeVerifyingTaskFromVerdict(killerFn,
+							fmt.Sprintf("boot-resume: task %s consumed its passed verification verdict from the result file; its dead session is ended before the task completes", t.ID),
+							prevStatus, t, v))
+						completedCount++
+						log.Printf("[autonomous] boot-resume: completed task %s (was %s) for prd=%s from the consumed ok verdict in the result file", t.ID, prevStatus, prd.ID)
+						continue
+					} else {
+						// Record the consumed failed verdict for the retry path, then
+						// fall through to the reset-to-pending below.
+						m.store.MutateTask(t.ID, func(x *Task) { x.Verification = v })
+					}
 				}
 				// Reset: fall through to the reset-to-pending path below;
 				// it was an orphaned verifying task re-queued for retry.
@@ -2706,6 +3009,7 @@ func (m *Manager) EmitPRDUpdate(prdID string) {
 
 // NewManager constructs the Manager and opens the store under dataDir.
 func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, error) {
+	SetVerificationRunRoot(filepath.Join(scratchRoot(dataDir), "verify-runs"))
 	st, err := NewStore(dataDir)
 	if err != nil {
 		return nil, err
@@ -3204,6 +3508,8 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 		prd.Status = PRDPlanning
 		prd.UpdatedAt = time.Now()
 	})
+	// Planning ends on every return path; drop any planner session it recorded.
+	defer m.ClearPlannerSession(prdID)
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
@@ -3405,6 +3711,8 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 		prd.Status = PRDPlanning
 		prd.UpdatedAt = time.Now()
 	})
+	// Planning ends on every return path; drop any planner session it recorded.
+	defer m.ClearPlannerSession(prdID)
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
@@ -6741,13 +7049,37 @@ func (m *Manager) reconcileStuckTasks() {
 				completing := false
 				startFailed := false
 				if t.Status == TaskVerifying || t.Status == TaskRunningTests {
-					switch ResolveVerifyingResume(aliveFn, stableAgentStarted(agentStartedFn), outputFn, t) {
+					switch ResolveVerifyingResume(aliveFn, stableAgentStarted(agentStartedFn), outputFn, func() (*VerificationResult, bool) { return m.verifierVerdict(prd.ID, t.ID) }, t) {
 					case VerifyingResumeStartFailed:
 						// Live bare shell whose agent never started: never adopted. The reset
 						// below ends the session and requeues the task.
 						startFailed = true
 					case VerifyingResumeKeepLive:
 						continue // session still live; leave it
+					case VerifyingResumeReattach:
+						// A live verifier session (adopted on this task) is still judging
+						// it: attach a fresh waiter to that session and its result file.
+						// No second verifier is spawned, the worker is not reset and no
+						// retry is counted.
+						m.adoptCapacity(prd, t)
+						m.reattachVerifier(prd.ID, t.ID, t.VerifierSessionID)
+						log.Printf("[autonomous] boot-reconcile: prd=%s task=%s kept verifying on live verifier session %s (waiter attached, no verifier spawn, no retry counted)",
+							prd.ID, t.ID, t.VerifierSessionID)
+						continue
+					case VerifyingResumeConsume:
+						// The verdict reached the result file even though the verifier
+						// ended: consume that verdict as the outcome — a pass completes
+						// the task, a fail is recorded and the task is requeued for the
+						// normal retry path. Either way no new verification is spawned
+						// and the worker is not re-run.
+						if v, ok := m.verifierVerdict(prd.ID, t.ID); ok && v != nil {
+							if v.OK {
+								completing = true
+							}
+							m.store.MutateTask(t.ID, func(x *Task) { x.Verification = v })
+						}
+						// A missing/unparseable file at consume time falls through to
+						// the reset below with no verdict recorded.
 					case VerifyingResumeReverify:
 						// The worker finished and no verdict is recorded: keep the
 						// task verifying with its session, result and SHAs

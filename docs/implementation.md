@@ -609,6 +609,18 @@ text is never flagged in any mode. A failed Automaton accepts a spec edit
 `autonomous_config_set`, comm `configure`, CLI `autonomous config-set`, and the PWA
 Settings → Automate → Task scope lint select. See `docs/operations.md`.
 
+### Planning restart policy (`autonomous.planning_restart_policy`)
+
+What a daemon restart does to an Automaton still in planning. `reattach` (default, and
+what an unset or unrecognised value reads as) keeps planning running across the restart;
+`restart` restarts planning once and records a decision; `draft` resets the Automaton to
+draft, as before the setting existed. Parsing lives in `internal/config/planning_restart_policy.go`
+(`NormalizePlanningRestartPolicy`, `ValidPlanningRestartPolicy`). The empty string reads as
+reattach on load but is reported invalid, so write paths can refuse it. A `PUT /api/config`
+with an unknown value is refused with a 400 naming `reattach`, `restart` and `draft`; a
+config file holding an unknown value logs a `[warn]` line at startup and reads as `reattach`.
+The field sits beside `autonomous.restart_policy`; `docs/config-reference.yaml` documents it.
+
 ### Per-task project directory (Automata)
 
 `autonomous.Task.ProjectDir` (JSON `project_dir`) overrides the

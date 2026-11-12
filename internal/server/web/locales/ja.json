@@ -2187,6 +2187,8 @@
   "settings_worker_idle_nudge_stall": "催促後のワーカー停止判定（秒、0=10分）",
   "settings_session_start_confirm": "セッション開始確認（秒）",
   "settings_session_start_confirm_help": "この時間が経過してもアシスタント出力のないセッションは「開始されなかった」として失敗扱いとなり、再試行されます。",
+  "settings_planning_restart_policy": "計画中の再起動ポリシー",
+  "settings_planning_restart_policy_help": "デーモンの再起動時に、まだ計画中の オートマトン をどうするかを決めます。reattach（既定）: 計画を継続し、分解処理を再起動後のデーモンに再接続します。restart: 再起動後に計画を一度だけ開始し、その旨を判断記録に残します。draft: 従来どおり オートマトン を下書きに戻します。再起動処理がこの設定を読むようになるまでは、どの値も draft と同じに動作します。docs/howto/restart-with-work-running.md を参照。",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

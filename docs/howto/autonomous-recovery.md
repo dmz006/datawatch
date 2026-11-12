@@ -287,6 +287,10 @@ When the daemon starts, it looks at every Automaton that was in flight and decid
 
 Each is checked against two things: its age, compared with `autonomous.resume_max_age_seconds`, and whether its project directory still exists.
 
+An Automaton that was in `planning` (decompose in flight) is a third case, with its own rule: it is not reset to `draft`, and its planner session is not ended. At boot the daemon re-attaches a reader to the live planner session and its output file; if the planner session ended while the daemon was down it ingests the complete plan; if neither yields a usable plan it restarts planning once. The plan then proceeds to review (approve/revise) as usual. This is the default `reattach` value of `autonomous.planning_restart_policy`; `restart` re-runs planning once instead of re-attaching, and `draft` restores the old behaviour — ending the decompose session and resetting the Automaton to `draft`. See [restart-with-work-running.md](restart-with-work-running.md) (*Current status*) for the current state of the boot path and for every surface for setting the value. The operator decision (2026-11-08) is recorded in [`restart-matrix-findings.md`](../plans/restart-matrix-findings.md).
+
+A task that was **verifying**, a guardrail judgment that was in flight, and a verification or final gate script that was still running are a fourth case: the restarted daemon picks all three back up instead of redoing them — re-attaching to the live verifier or judgment session where one survived, reading a verdict it left on disk where the session ended, waiting on the still-running script, and only re-running what no usable record covers. None of them has a setting. See [Restarting the daemon while a task is in progress](#restarting-the-daemon-while-a-task-is-in-progress) and [restart-with-work-running.md](restart-with-work-running.md#verifying-judging-and-verification-scripts) (which describes the same three).
+
 | `autonomous.resume_max_age_seconds` | Meaning |
 |---|---|
 | `3600` (default) | Resume only Automata that were active within the last hour |
@@ -342,6 +346,50 @@ surfaces an `adopted_session` marker, and the session list shows the same
 worker session continuing to run. A reset task is the one to question —
 check the session's log for why it died (crash, OOM, operator kill) before
 resetting it again.
+
+### A task still verifying at restart
+
+When a task was `verifying` — the worker finished and the verifier was
+running, or the verification script was — the restart does not redo the
+worker and does not count a retry. The daemon takes the task back in this
+order, stopping at the first hit:
+
+- **The verifier session is still alive** → the daemon re-attaches to it:
+  a new waiter reads the session and its verdict file, and the verdict that
+  lands completes or fails the task as if the daemon had never restarted. The
+  verifier is not started a second time and the worker is not reset.
+- **The verifier session ended while the daemon was down, but its verdict is
+  on disk** → that verdict is used as the outcome. A pass completes the
+  task; a fail goes through the normal retry path. No new verification, no
+  worker re-run.
+- **The verification or final gate script is still running** (the run record
+  shows a live process) → the daemon waits on it and takes its result when
+  it ends. The script's timeout keeps being enforced from its recorded start
+  time, so it ends on time even across the restart.
+- **The script ended while the daemon was down and its exit code is on disk,
+  not yet delivered** → the result is used once, as the script result.
+- **Nothing usable survives** → the old behaviour resumes: a finished worker
+  is re-verified once; a task with no worker result and no usable verdict is
+  reset to `pending` and relaunched.
+
+Guardrail judgments that were in flight (for example the completion
+guardrail on a finished Automaton) resume the same way: re-attach to the
+live judgment session, read a verdict it left, or re-judge once — a judgment
+is never run twice for the same decision. If its verdict is genuinely lost
+instead of left behind, `rejudge` below is the manual tool.
+
+What you see: no extra verifier or judge session in the session list, the
+task's `session_id` still points at the original worker, and an undelivered
+run record of the same script does not cause a second run — a run left
+behind by an earlier attempt is retired before a fresh one starts, so its
+verdict is never consumed. The live verifier/judge adoption and the
+script-run pickup are the parts of this story still owed a live restart check
+on the build in use — and the restart matrix that would run them cannot run
+against this tree's build yet: its sandbox config lacks
+`server.allowed_project_roots`, so its states fail at Automaton creation (see
+*Current status* in restart-with-work-running.md). See the *Still to review
+(operator)* notes in [operations.md](../operations.md) and
+[restart-with-work-running.md](restart-with-work-running.md#verifying-judging-and-verification-scripts).
 
 ### A launch that was held at restart
 
@@ -687,4 +735,5 @@ processes that attempt had been waiting for.
 - [howto/autonomous-planning](autonomous-planning.md)
 - [howto/autonomous-review-approve](autonomous-review-approve.md)
 - [howto/automata-orchestrator](automata-orchestrator.md)
+- [howto/restart-with-work-running](restart-with-work-running.md)
 - [datawatch-definitions](../datawatch-definitions.md)

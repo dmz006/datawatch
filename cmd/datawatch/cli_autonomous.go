@@ -792,6 +792,16 @@ scope_lint takes one of three values: off (skip the lint), warn (spawn the
 task and record a scope_lint_warn decision) or enforce (block the task before
 its session starts; the default). Any other value is rejected.
 
+planning_restart_policy (autonomous.planning_restart_policy) says what a daemon
+restart does to an Automaton that is still in planning (its decompose running):
+reattach (the default) keeps planning running and re-attaches it to the restarted
+daemon; restart restarts planning once after the restart and records a decision
+saying so; draft resets the Automaton to draft, as before this setting existed.
+Any other value is refused before anything is sent. The value is written to the
+daemon config, so the CLI sends it on its own request. See
+docs/howto/restart-with-work-running.md for when to pick each one.
+  datawatch autonomous config-set '{"planning_restart_policy":"restart"}'
+
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -821,8 +831,24 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 			if err := applyHostLoadAlertFlags(cmd, body); err != nil {
 				return err
 			}
-			if len(body) == 0 {
+			// planning_restart_policy is a daemon-config key (PUT /api/config),
+			// not part of the autonomous config body. It is refused here when
+			// invalid, before anything is sent, then written on its own.
+			planningPatch, err := takePlanningRestartPolicy(body)
+			if err != nil {
+				return err
+			}
+			if len(body) == 0 && planningPatch == nil {
 				return fmt.Errorf("give a JSON body or at least one flag")
+			}
+			if planningPatch != nil {
+				if _, err := daemonJSONBody(http.MethodPut, "/api/config", planningPatch); err != nil {
+					return err
+				}
+				fmt.Printf("autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
+				if len(body) == 0 {
+					return nil
+				}
 			}
 			resp, err := daemonJSONBody(http.MethodPut, "/api/autonomous/config", body)
 			if err != nil {

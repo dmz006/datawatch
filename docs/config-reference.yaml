@@ -3406,6 +3406,12 @@ autonomous:
   # reply carries, the count of running tasks and live sessions it interrupts
   # (GET /api/autonomous/restart-interruptions reads the same count).
   restart_policy: immediate
+  # What a daemon restart does to an Automaton still in planning (decompose
+  # running). "reattach" (default) keeps planning running across the restart.
+  # "restart" restarts planning once and records a decision saying so. "draft"
+  # resets the Automaton to draft, as the daemon did before this setting.
+  # Unset or unrecognised reads as reattach.
+  planning_restart_policy: reattach
   restart_quiet_timeout_seconds: 600   # wait_quiet only; 0 or unset => 600
   restart_on_timeout: proceed          # wait_quiet only: "proceed" or "abort"
   loop_detect_turns: 3   # pi worker observability (docs/operations.md): how many of the worker's most recent assistant turns the live loop detector compares (announce-without-acting or identical-call repeats => loop rescue); 0 = loop detection off; negative rejected

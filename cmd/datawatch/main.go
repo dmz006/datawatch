@@ -3167,7 +3167,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			v, _ := fetchLatestVersion()
 			return v
 		})
-		r.SetRestartFunc(guardRestart(func() {
+		r.SetRestartFuncForce(guardRestartForce(func(bool) {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
@@ -4609,6 +4609,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			JudgeStrongBackend:               acfgIn.JudgeStrongBackend,
 			JudgeVerdictCacheEnabled:         acfgIn.JudgeVerdictCacheEnabled,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
+			PlanningRestartPolicy:            acfgIn.PlanningRestartPolicy,
 			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
@@ -4897,9 +4898,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// nothing stopped two PRDs sharing a project_dir from
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
-			return runOneShotJSONSessionAttr(decomposeAttr(req.PRDID), cfg, req.PRDID, req.ProjectDir, backend, req.Model,
+			// onSpawned names the planner on the PRD as soon as the session
+			// exists (req.OnPlannerSpawned, wired by the Manager), with the
+			// output file computed above, before relocation.
+			onSpawned := func(sessionID string) {
+				if req.OnPlannerSpawned != nil {
+					req.OnPlannerSpawned(sessionID, outputFile)
+				}
+			}
+			// Same reader and empty effort/node as runOneShotJSONSession.
+			content, _, err := runOneShotJSONSessionWithSpawnHookAttr(decomposeAttr(req.PRDID), cfg, req.PRDID, req.ProjectDir, backend, req.Model, "",
 				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout,
-				launchTagsForDecompose(req.PRDID))
+				autonomouspkg.RelocateProjectFile, "", launchTagsForDecompose(req.PRDID), onSpawned)
+			return content, err
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			// One live-config snapshot for this invocation (see
@@ -7585,6 +7596,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}()
 			// Wire session killer so Cancel also terminates running task sessions.
 			amgr.SetSessionKillerFn(sessionEndFromAutonomous(mgr))
+			wirePlanningReattach(amgr, cfg)
 			amgr.SetDecomposeSessionsFn(func(prdID string) []string {
 				var ids []string
 				for _, s := range mgr.ListSessions() {
@@ -9339,8 +9351,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		}
 		// autonomous.restart_policy runs before the restart; the ACME renewal
 		// path keeps the plain function, because it restarts to reload a cert.
-		guardedRestartFn := guardRestart(daemonRestartFn, liveRestartManager, liveRestartSettings)
-		httpServer.SetRestartFunc(guardedRestartFn)
+		guardedRestartFn := guardRestartForce(func(bool) { daemonRestartFn() }, liveRestartManager, liveRestartSettings)
+		httpServer.SetRestartFuncForce(guardedRestartFn)
 
 		// BL397 — native ACME subsystem. Disabled by default (acme.enabled
 		// is false unless the operator opts in); failure to start it never
@@ -9605,7 +9617,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
 		ConfigAudit:         cfgAuditSink,     // BL110 — shared sink (same instance as REST + comm)
-		RestartFn: guardRestart(func() {
+		RestartForceFn: guardRestartForce(func(bool) {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
@@ -11371,12 +11383,23 @@ func runStop(cmd *cobra.Command, _ []string) error {
 // ---- restart command ------------------------------------------------------
 
 func newRestartCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	c := &cobra.Command{
 		Use:   "restart",
 		Short: "Restart the datawatch daemon",
-		Long:  "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.",
-		RunE:  runRestart,
+		Long: "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.\n\n" +
+			"While running Automata work would be interrupted, the restart is refused: the interruption report " +
+			"(planning Automata, verifying tasks, running judges, running tasks and live sessions) is printed and " +
+			"the command exits non-zero. Pass --force to restart anyway. See docs/howto/restart-with-work-running.md.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := restartCLIGuard(force, progressGet, cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			return runRestart(cmd, args)
+		},
 	}
+	c.Flags().BoolVar(&force, "force", false, "restart even when running Automata work would be interrupted")
+	return c
 }
 
 func runRestart(_ *cobra.Command, _ []string) error {

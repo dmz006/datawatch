@@ -443,6 +443,16 @@ To give a whole chain of Automata one set of defaults, see
   restart.** Fixed — the executor now kills a task's previous session
   before spawning its replacement, on every path (retry, boot-resume).
   See [`task-session-reconcile-flow.md`](../flow/task-session-reconcile-flow.md).
+- **Daemon restart while planning (decompose in flight).** The in-flight
+  decompose is no longer discarded: the planner session is not ended and
+  the PRD is not reset to `draft`. At boot the daemon re-attaches a
+  reader to the live planner session and its output file; if the planner
+  session ended it ingests the complete plan; if neither yields a usable
+  plan it restarts planning once. The plan then proceeds to review
+  (approve/revise) as usual. See [`autonomous-recovery.md`](autonomous-recovery.md)
+  (what happens to Automata when the daemon restarts) and
+  [`restart-matrix-findings.md`](../plans/restart-matrix-findings.md) for the recorded
+  operator decision.
 
 - **Tasks fail with `scope: ...`, or the Overview shows Scope warnings.**
   Workers and the planner are confined to the project directory (the

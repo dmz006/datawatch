@@ -86,7 +86,8 @@ type Server struct {
 	resultSessionLookup func(string) (*session.Session, bool)
 	cmdLib              *session.CmdLibrary
 	restartFn           func()
-	acmeManager         *acme.Manager // BL397, nil when ACME is disabled
+	restartForceFn      func(force bool) // force-aware restart (the guard); preferred over restartFn
+	acmeManager         *acme.Manager    // BL397, nil when ACME is disabled
 	version             string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
 	latestVersion func() (string, error)
@@ -294,7 +295,8 @@ type Options struct {
 	ResultHistoryLimit  int                          // results.schedule_history_limit
 	CmdLib              *session.CmdLibrary
 	RestartFn           func()
-	AcmeManager         *acme.Manager // BL397, nil when ACME is disabled
+	RestartForceFn      func(force bool) // force-aware restart; preferred over RestartFn
+	AcmeManager         *acme.Manager    // BL397, nil when ACME is disabled
 	Version             string
 	LatestVersion       func() (string, error)
 	// FallbackToken is cfg.Server.Token (SEC-002) — when mcp.token is
@@ -333,6 +335,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		resultHistoryLimit:  opts.ResultHistoryLimit,
 		cmdLib:              opts.CmdLib,
 		restartFn:           opts.RestartFn,
+		restartForceFn:      opts.RestartForceFn,
 		acmeManager:         opts.AcmeManager,
 		version:             opts.Version,
 		latestVersion:       opts.LatestVersion,
@@ -2115,7 +2118,10 @@ func (s *Server) toolMarkAlertRead() mcpsdk.Tool {
 
 func (s *Server) toolRestartDaemon() mcpsdk.Tool {
 	return mcpsdk.NewTool("restart_daemon",
-		mcpsdk.WithDescription("Restart the datawatch daemon. Active tmux sessions are preserved."),
+		mcpsdk.WithDescription("Restart the datawatch daemon. Active tmux sessions are preserved. While running Automata work would be interrupted, the restart is refused and the tool result carries the interruption report; pass force=true to restart anyway. See docs/howto/restart-with-work-running.md."),
+		mcpsdk.WithBoolean("force",
+			mcpsdk.Description("Restart even when running Automata work would be interrupted. Default false: a restart that would interrupt work is refused with the report."),
+		),
 	)
 }
 
@@ -3124,12 +3130,20 @@ func (s *Server) handleMarkAlertRead(_ context.Context, req mcpsdk.CallToolReque
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Alert %s marked as read.", id)), nil
 }
 
-func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleRestartDaemon(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
 		return deny, nil
 	}
-	if s.restartFn == nil {
+	if s.restartFn == nil && s.restartForceFn == nil {
 		return toolErrorf("restart_daemon", "Restart not available (not running as daemon)."), nil
+	}
+	force := req.GetBool("force", false)
+	if !force {
+		// Running work would be interrupted and force was not passed: refuse,
+		// and answer with the read-only report in the tool result.
+		if rep, ok := s.restartDaemonReport(); ok && rep.NeedsForce {
+			return mcpsdk.NewToolResultError(restartDaemonRefusal(rep)), nil
+		}
 	}
 	go func() {
 		time.Sleep(500 * time.Millisecond)
@@ -3137,6 +3151,10 @@ func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolReque
 		// source=api-restart via=mcp-restart (picked up by the daemon's
 		// Capture when it writes the audit entry + last-shutdown.json).
 		shutdowncause.MarkAPIInitiated("mcp-restart")
+		if s.restartForceFn != nil {
+			s.restartForceFn(force)
+			return
+		}
 		s.restartFn()
 	}()
 	msg := "Restarting daemon… active tmux sessions will be preserved."

@@ -3535,23 +3535,46 @@ func prdAllTasksTerminal(p *PRD) bool {
 // nothing is set, a rollup_aborted_stale decision is recorded and ok=false
 // is returned: the concurrent writer (reset_task, cancel, another Run) is
 // authoritative.
+//
+// 2026-11-09 fix — a stale commit is retried a bounded number of times with
+// the expected Rev refreshed: the predicate (status still observed, every
+// task still terminal) is re-checked under the store lock on each attempt, so
+// a reset_task/cancel write still loses as before — but a writer that only
+// bumped the Rev (decision notes, audit, its own uncounted saves) no longer
+// strands the Automaton in "running" forever, which the 2026-11-09 restart
+// matrix hit live (rollup_aborted_stale became terminal: the entry PRD of
+// an Automation never reached completed and its fork never fired).
+const commitRollupMaxAttempts = 3
+
 func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev int, status PRDStatus, reason, blockedReason string) (old PRDStatus, ok bool) {
-	err := m.store.CommitPRDIfRev(prd.ID, expectedRev, func(p *PRD) bool {
-		if p.Status != observed || !prdAllTasksTerminal(p) {
-			return false
+	for attempt := 0; attempt < commitRollupMaxAttempts; attempt++ {
+		err := m.store.CommitPRDIfRev(prd.ID, expectedRev, func(p *PRD) bool {
+			if p.Status != observed || !prdAllTasksTerminal(p) {
+				return false
+			}
+			old = p.Status
+			p.Status = status
+			p.BlockedReason = blockedReason
+			return true
+		})
+		if err == nil {
+			return old, true
 		}
-		old = p.Status
-		p.Status = status
-		p.BlockedReason = blockedReason
-		return true
-	})
-	if err == nil {
-		return old, true
-	}
-	if errors.Is(err, ErrPRDStale) {
+		if !errors.Is(err, ErrPRDStale) {
+			log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
+			return "", false
+		}
+		if attempt+1 < commitRollupMaxAttempts {
+			// Re-read the current Rev and try again; the under-lock predicate
+			// decides whether the concurrent write invalidated the rollup.
+			if fresh, ok := m.store.PRDRev(prd.ID); ok {
+				expectedRev = fresh
+			}
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
 		m.recordRollupAborted(prd.ID, fmt.Sprintf("%s -> %s", reason, status))
-	} else {
-		log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
+		return "", false
 	}
 	return "", false
 }

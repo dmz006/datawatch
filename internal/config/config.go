@@ -3486,6 +3486,13 @@ type AutonomousConfig struct {
 	// tasks starting, lets running ones finish, then restarts. Unset or
 	// unrecognised => "immediate" (see NormalizeRestartPolicy).
 	RestartPolicy string `yaml:"restart_policy,omitempty" json:"restart_policy,omitempty"`
+	// PlanningRestartPolicy is what a daemon restart does to an Automaton
+	// still in planning: "reattach" (default) keeps planning running across
+	// the restart; "restart" restarts planning once and records a decision
+	// saying so; "draft" resets the Automaton to draft, as before this
+	// setting existed. Unset or unrecognised => "reattach" (see
+	// NormalizePlanningRestartPolicy).
+	PlanningRestartPolicy string `yaml:"planning_restart_policy,omitempty" json:"planning_restart_policy,omitempty"`
 	// RestartQuietTimeoutSeconds bounds the wait_quiet wait. 0 or unset => 600
 	// (see NormalizeRestartQuietTimeoutSeconds).
 	RestartQuietTimeoutSeconds int `yaml:"restart_quiet_timeout_seconds,omitempty" json:"restart_quiet_timeout_seconds,omitempty"`
@@ -8130,6 +8137,11 @@ func applyDefaults(cfg *Config) {
 	cfg.Autonomous.BackoffMaxWaitMinutes = normalizeBackoffMaxWaitMinutes(cfg.Autonomous.BackoffMaxWaitMinutes)
 	cfg.Usage.Calculator = normalizeUsageCalculator(cfg.Usage.Calculator, usageCalculatorLogf)
 	cfg.Usage.BurnGuard = normalizeBurnGuard(cfg.Usage.BurnGuard, burnGuardLogf)
+	// An unset planning_restart_policy stays unset; an invalid one is warned
+	// about at startup and read as the default (see planning_restart_policy.go).
+	if cfg.Autonomous.PlanningRestartPolicy != "" {
+		cfg.Autonomous.PlanningRestartPolicy = normalizePlanningRestartPolicyLoaded(cfg.Autonomous.PlanningRestartPolicy, planningRestartPolicyLogf)
+	}
 	if cfg.Autonomous.RoleScanIntervalSeconds < 1 {
 		cfg.Autonomous.RoleScanIntervalSeconds = RoleScanIntervalDefaultSeconds
 	}

@@ -425,7 +425,24 @@ func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv 
 // disabled-cache run). Unless the context bypasses the lookup, a hit from
 // the verdict cache is returned as-is; otherwise the infra-retry loop runs
 // and its result is recorded in the cache.
+//
+// Judge resume at boot (judge_resume.go): if this same judgment was in
+// flight when the daemon restarted, it is not judged again. A surviving
+// guardrail-judge session is re-attached to — the daemon's background
+// waiter collects its verdict (ConsumeJudgeResult) and it is returned —
+// or a surviving, still-unrecorded result file is consumed as the
+// verdict, recorded by the caller exactly as a fresh one. Only when
+// neither survives does the judge below run once, as usual. The resume
+// sits ahead of the cache lookup: a pending judgment's surviving verdict
+// precedes any replay, and a resumed verdict is not cached (a resume is
+// not a fresh judgment). A resumed verdict is not a replayed stored one,
+// so it reports reused false.
 func (m *Manager) runGuardrailReusing(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (v GuardrailVerdict, reused bool, err error) {
+	// Judge resume at boot (judge_resume.go): if a verdict for this unit's
+	// in-flight judgment can resume, it is the answer — no judge spawns.
+	if rv, resumed := m.judgeResume(ctx, prd, inv); resumed {
+		return *rv, false, nil
+	}
 	if !judgeVerdictCacheLookupBypassed(ctx) {
 		if hit, ok := m.judgeVerdictCacheHit(prd, inv); ok {
 			return hit, true, nil

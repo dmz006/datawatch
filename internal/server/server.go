@@ -1245,6 +1245,11 @@ func (s *HTTPServer) SetRestartFunc(fn func()) {
 	s.api.SetRestartFunc(fn)
 }
 
+// SetRestartFuncForce wires the force-aware restart guard for /api/restart.
+func (s *HTTPServer) SetRestartFuncForce(fn func(force bool)) {
+	s.api.SetRestartFuncForce(fn)
+}
+
 // SetACMEManager wires the ACME subsystem (BL397) into the server.
 func (s *HTTPServer) SetACMEManager(m *acme.Manager) {
 	s.api.SetACMEManager(m)

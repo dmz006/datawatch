@@ -99,6 +99,160 @@ func (a *API) refireRollup(id string) (bool, error) {
 	return a.runLocked(id, nil)
 }
 
+// planningResumeHooks are the seams bootResumePlanning reaches through for the
+// outcomes that do work: reading the planner output file, ingesting a finished
+// plan, starting planning again and recording the decision. The live-session
+// lookup, the orphan killer and the reader hook are the Manager's own injected
+// functions (SetDecomposeSessionsFn, SetSessionKillerFn, SetPlanningReattachFn),
+// so a test swaps those the same way the daemon does.
+type planningResumeHooks struct {
+	// readOutput returns the planner output file recorded on prd, or nil.
+	readOutput func(prd *PRD, outputFile string) []byte
+	// ingest stores raw, the finished planner output, as a normal decompose
+	// result and moves the Automaton on (see Manager.IngestPlannerOutput).
+	ingest func(prdID, raw string) error
+	// startDecompose starts planning for prdID again. It must not block the
+	// caller: the boot-resume scan goes on to the next Automaton.
+	startDecompose func(prdID string)
+	// recordDecision records one boot-resume outcome as a decision.
+	recordDecision func(entry BootResumeEntry)
+}
+
+// productionPlanningResumeHooks wires the real seams for the running daemon.
+func (a *API) productionPlanningResumeHooks() planningResumeHooks {
+	return planningResumeHooks{
+		readOutput: readPlannerOutput,
+		ingest:     a.M.IngestPlannerOutput,
+		startDecompose: func(prdID string) {
+			// Called from the boot-resume scan, which itself holds an execWG
+			// count, so this Add cannot race a Wait that has already returned.
+			a.execWG.Add(1)
+			go func() {
+				defer a.execWG.Done()
+				if _, err := a.M.Decompose(prdID); err != nil {
+					fmt.Printf("[autonomous] boot-resume: prd=%s planning restart failed: %v\n", prdID, err)
+				}
+			}()
+		},
+		recordDecision: a.M.recordBootResume,
+	}
+}
+
+// bootResumePlanning decides what a planning Automaton does after a daemon
+// restart. The decision is DecidePlanningResume over the live
+// planning_restart_policy, the restart flag and the state of the recorded
+// planner session:
+//
+//   - attach_reader: the planner session is still alive. The Automaton stays
+//     in planning and a reader is attached to the session (SetPlanningReattachFn).
+//   - ingest_output: the planner ended with a complete, parsable output. The
+//     plan is ingested through the normal decompose path, and a decision says
+//     it was recovered from the output file.
+//   - restart_planning: the policy is restart, or the planner left no usable
+//     output. The planner record is cleared, PlanningRestartedOnce is set and
+//     planning starts again exactly once. When the flag is already set the
+//     Automaton goes to draft instead.
+//   - reset to draft: the policy is draft, or no reader is wired, or a restart
+//     was already used.
+//
+// Every live planner session of the PRD that no reader owns is killed on every
+// path, and the decision says how many were killed.
+func (a *API) bootResumePlanning(prd *PRD) {
+	a.bootResumePlanningWith(prd, a.productionPlanningResumeHooks())
+}
+
+// bootResumePlanningWith is bootResumePlanning with its seams supplied, so the
+// outcomes can be tested with fakes.
+func (a *API) bootResumePlanningWith(prd *PRD, h planningResumeHooks) {
+	var plannerID, outputFile string
+	var restartedOnce bool
+	a.M.store.WithLock(func() {
+		plannerID, outputFile = prd.PlannerSessionID, prd.PlannerOutputFile
+		restartedOnce = prd.PlanningRestartedOnce
+	})
+	policy := config.NormalizePlanningRestartPolicy(a.M.Config().PlanningRestartPolicy)
+	in := PlanningResumeInput{
+		Policy:               a.M.Config().PlanningRestartPolicy,
+		HasPlannerRecord:     plannerID != "",
+		SessionAlive:         plannerID != "" && plannerSessionLive(a.M.liveDecomposeSessions(prd.ID), plannerID),
+		AlreadyRestartedOnce: restartedOnce,
+	}
+	var raw []byte
+	if in.HasPlannerRecord && !in.SessionAlive {
+		raw = h.readOutput(prd, outputFile)
+		in.OutputState = ClassifyPlannerOutput(raw)
+	}
+	action, reason := DecidePlanningResumeWithReason(in)
+	fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart: %s (action=%s)\n", prd.ID, reason, action)
+
+	switch action {
+	case ActionAttachReader:
+		if a.M.reattachPlanner(prd.ID, plannerID, outputFile) {
+			a.M.killOrphanDecomposeSessions(prd.ID, plannerID)
+			return
+		}
+	case ActionIngestOutput:
+		err := h.ingest(prd.ID, string(raw))
+		if err == nil {
+			a.M.ClearPlannerSession(prd.ID)
+			orphans := a.M.killOrphanDecomposeSessions(prd.ID)
+			h.recordDecision(BootResumeEntry{
+				PRDID: prd.ID, Outcome: "planning_ingested", At: time.Now(),
+				Reason: fmt.Sprintf("plan recovered from the planner output file %s: the planner session had ended with complete, parsable output, so it was ingested as a normal decompose result and no new planner ran. %s", outputFile, orphanNote(orphans)),
+			})
+			return
+		}
+		fmt.Printf("[autonomous] boot-resume: prd=%s: ingest of the recorded planner output failed: %v\n", prd.ID, err)
+	case ActionRestartPlanning:
+		if !restartedOnce {
+			a.restartPlanningOnBoot(prd, h, reason, policy)
+			return
+		}
+		reason += "; planning was already restarted once for this Automaton, so it is reset to draft"
+	}
+
+	// Reset to draft: the fallback for every other path.
+	a.M.ClearPlannerSession(prd.ID)
+	a.M.store.WithLock(func() { prd.Status = PRDDraft })
+	if a.M.store.SavePRD(prd) == nil {
+		a.M.emitPRDStatus(prd, PRDPlanning, nil, nil)
+	}
+	orphans := a.M.killOrphanDecomposeSessions(prd.ID)
+	h.recordDecision(BootResumeEntry{
+		PRDID: prd.ID, Outcome: "planning_reset_to_draft", At: time.Now(),
+		Reason: fmt.Sprintf("%s; policy=%s; reset to draft. %s", reason, policy, orphanNote(orphans)),
+	})
+	fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
+}
+
+// restartPlanningOnBoot starts planning again for prd, exactly once: it kills
+// any live planner session no reader owns, clears the planner record, sets
+// PlanningRestartedOnce so a later boot cannot restart it again, records the
+// decision and starts the decompose.
+func (a *API) restartPlanningOnBoot(prd *PRD, h planningResumeHooks, reason, policy string) {
+	orphans := a.M.killOrphanDecomposeSessions(prd.ID)
+	a.M.ClearPlannerSession(prd.ID)
+	a.M.store.MutatePRD(prd.ID, func(p *PRD) bool {
+		p.PlanningRestartedOnce = true
+		return true
+	})
+	h.recordDecision(BootResumeEntry{
+		PRDID: prd.ID, Outcome: "planning_restarted", At: time.Now(),
+		Reason: fmt.Sprintf("%s; policy=%s; planning is started again once and planning_restarted_once is now set, so a further restart falls back to draft. %s", reason, policy, orphanNote(orphans)),
+	})
+	fmt.Printf("[autonomous] boot-resume: prd=%s planning restarted once (policy=%s)\n", prd.ID, policy)
+	h.startDecompose(prd.ID)
+}
+
+// orphanNote says, for a decision record, what happened to live planner
+// sessions that no reader owned.
+func orphanNote(killed int) string {
+	if killed == 0 {
+		return "No live planner session was left without a reader."
+	}
+	return fmt.Sprintf("%d live planner session(s) with no reader were killed.", killed)
+}
+
 // executorLive reports whether a live executor holds the PRD's run slot.
 func (a *API) executorLive(id string) bool {
 	a.runMu.Lock()
@@ -192,15 +346,10 @@ func (a *API) resumeRunningPRDs() {
 		fmt.Printf("[autonomous] boot-resume: scanning prd=%s status=%s\n", prd.ID, status)
 		switch status {
 		case PRDPlanning:
-			// A PRD stuck in planning means the daemon was restarted while
-			// decomposeFnSession was running. The goroutine is gone; reset to
-			// draft so the operator can re-trigger decompose.
-			a.M.store.WithLock(func() { prd.Status = PRDDraft })
-			if a.M.store.SavePRD(prd) == nil {
-				a.M.emitPRDStatus(prd, status, nil, nil)
-			}
-			a.M.killOrphanDecomposeSessions(prd.ID)
-			fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
+			// A PRD stuck in planning means the daemon was restarted while its
+			// planner (decompose) session was running. What happens next is the
+			// planning_restart_policy decision (see bootResumePlanning).
+			a.bootResumePlanning(prd)
 		case PRDCancelled:
 			// An operator-cancelled PRD must never be re-decomposed. A live
 			// planning session still linked to it is an orphan, so kill it.
@@ -953,6 +1102,7 @@ func (a *API) Cancel(id string) error {
 	a.M.Store().WithLock(func() {
 		old = prd.Status
 		prd.Status = PRDCancelled
+		clearPlannerFields(prd) // cancel ends any planning in flight
 	})
 	// Unlike CancelStory/CancelTask, this whole-PRD cancel previously left
 	// no trace in prd.Decisions — an operator (or a future session) had no

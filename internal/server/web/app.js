@@ -20108,6 +20108,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.session_idle_timeout_seconds', label: 'Session idle timeout (sec, 0=15m)', labelKey: 'settings_session_idle_timeout', type: 'number', placeholder: '900' },
     { key: 'autonomous.descendant_stall_seconds', label: 'Descendant stall timeout (sec, 0=45m)', labelKey: 'settings_descendant_stall_seconds', type: 'number', placeholder: '2700' },
     { key: 'autonomous.session_start_confirm_seconds', label: 'Session start confirm (seconds)', labelKey: 'settings_session_start_confirm', type: 'number', placeholder: '120' },
+    { key: 'autonomous.planning_restart_policy', label: 'Planning restart policy', labelKey: 'settings_planning_restart_policy', helpKey: 'settings_planning_restart_policy_help', type: 'select', options: ['reattach', 'restart', 'draft'] },
     { key: 'autonomous.worker_idle_nudge_seconds', label: 'Worker idle nudge (sec, 0=3m)', labelKey: 'settings_worker_idle_nudge', type: 'number', placeholder: '180' },
     { key: 'autonomous.worker_idle_nudge_stall_seconds', label: 'Worker stall after nudge (sec, 0=10m)', labelKey: 'settings_worker_idle_nudge_stall', type: 'number', placeholder: '600' },
     // Worker loop detection window: how many of the worker's most recent

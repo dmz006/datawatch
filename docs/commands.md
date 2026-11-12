@@ -956,10 +956,19 @@ Stop the running daemon and start a fresh one. Active AI sessions in their tmux 
 
 Equivalent to `datawatch stop && datawatch start` but in a single command. The new daemon re-reads the config file.
 
+While running Automata work would be interrupted (a planning Automaton, a verifying task, a running judge, a running task or a live session), the restart is refused. The command prints the interruption report and exits non-zero. Pass `--force` to restart anyway:
+
+```bash
+datawatch restart            # refused with the report while work runs
+datawatch restart --force    # restart anyway
+```
+
 The `restart` command is also available via:
-- **All messaging backends**: send `restart` to your Signal/Telegram/Discord/Slack/Matrix group
+- **All messaging backends**: send `restart` to your Signal/Telegram/Discord/Slack/Matrix group; send `restart force` to restart past a refusal
 - **Web UI**: Settings → About → Restart button (calls `POST /api/restart`)
-- **MCP**: `restart` tool
+- **MCP**: `restart_daemon` tool, with `force=true` to restart past a refusal
+
+See [howto/restart-with-work-running.md](howto/restart-with-work-running.md#forcing-a-restart-past-running-work).
 
 ### `datawatch setup <service>`
 

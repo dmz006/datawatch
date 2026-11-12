@@ -702,6 +702,14 @@ func (m *Manager) replaceStaleLease(ctx context.Context, prd *PRD, t *Task, back
 // task path's taskCancelled) instead of holding its queue position until the
 // global capacity wait timeout. With capacity off the attempt runs unchanged.
 func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req DecomposeRequest) (string, error) {
+	if req.OnPlannerSpawned == nil {
+		// Name the planner session on the PRD as soon as it is spawned, so a
+		// daemon restart can find it (see RecordPlannerSession).
+		prdID := prd.ID
+		req.OnPlannerSpawned = func(sessionID, outputFile string) {
+			m.RecordPlannerSession(prdID, sessionID, outputFile)
+		}
+	}
 	if !m.capacityOn() {
 		return m.decompose(req)
 	}

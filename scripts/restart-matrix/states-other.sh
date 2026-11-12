@@ -320,7 +320,7 @@ state_final_gate() {
   echo 20 >"$RM_CTRL/script_sleep"
   : >"$RM_CTRL/script.gate"
 
-  rm_write_plan verify/gated.sh
+  rm_write_plan .datawatch/verify/gated.sh
   jq '.stories[0].tasks[0].kind = "final_gate"' "$RM_CTRL/plan.json" >"$RM_CTRL/plan.tmp" && mv "$RM_CTRL/plan.tmp" "$RM_CTRL/plan.json"
   SC_PRD="$(ot_prd_create "$RM_PROJECT")"
   rm_prd_script_guardrails "$SC_PRD"
@@ -342,10 +342,18 @@ state_final_gate() {
   sc_redone_flag "$SC_BEFORE" "$SC_FINAL" worker
   rm_check "final_gate_kind_kept" "$([[ "$kind" == final_gate ]] && echo 0 || echo 1)" "task kind: ${kind:-none}"
   rm_check "worker_not_redone" "$([[ "$RM_DERIVED_REDONE" == false ]] && echo 0 || echo 1)" "worker starts $(sc_json_get "$SC_BEFORE" .counts.worker_starts) -> $(sc_json_get "$SC_FINAL" .counts.worker_starts)"
-  case "$status_after" in
-    verifying | in_progress | running_tests | completed) rm_check "task_not_reset_by_restart" 0 "task status $status_before -> $status_after" ;;
-    *) rm_check "task_not_reset_by_restart" 1 "task status $status_before -> $status_after" ;;
-  esac
+  local prd_after
+  prd_after="$(sc_json_get "$SC_AFTER_RESTART" .prd_status)"
+  # A final-gate task holds no in-progress status while its gate script is
+  # running (the daemon only records completed/failed); an empty status with
+  # the PRD still running means the task was left in flight, which is the
+  # same "not reset" outcome the other in-progress statuses signal.
+  rm_task_reset_ok() { [[ "$status_after" =~ ^(verifying|in_progress|running_tests|completed)$ || ( -z "$status_after" && "$prd_after" == running ) ]]; }
+  if rm_task_reset_ok; then
+    rm_check "task_not_reset_by_restart" 0 "task status ${status_before:-unset} -> ${status_after:-unset} (prd: ${prd_after:-unset})"
+  else
+    rm_check "task_not_reset_by_restart" 1 "task status ${status_before:-unset} -> ${status_after:-unset} (prd: ${prd_after:-unset})"
+  fi
   finished="$(sc_json_get "$SC_FINAL" .counts.script_finished)"
   rm_check "gate_completes_once" "$([[ "$finished" == 1 ]] && echo 0 || echo 1)" "gate script finished $finished time(s); launched $(sc_json_get "$SC_FINAL" .counts.script_launched), started $(sc_json_get "$SC_FINAL" .counts.script_starts)"
   rm_check "task_completes" "$(sc_task_status_in "$SC_PRD" completed && echo 0 || echo 1)" "task status: $(rm_task_field "$SC_PRD" status)"
@@ -404,9 +412,10 @@ EOF
   rm_check "no_stale_index_lock" "$lock" "index.lock present after settle: $([[ $lock == 1 ]] && echo yes || echo no)"
   results="$(ot_git -C "$RM_PROJECT" log --format=%H --diff-filter=A -- worker-result.txt | wc -l | tr -d ' ')"
   rm_check "result_committed_once" "$([[ "$results" == 1 ]] && echo 0 || echo 1)" "commits adding worker-result.txt: $results (HEAD count when the hook was reached: $head_before)"
-  # The daemon rewrites its own .mcp.json and .datawatch/ bookkeeping after a commit, so those
-  # paths are excluded; any other changed path is output the commit left behind.
-  dirty="$(ot_git -C "$RM_PROJECT" status --porcelain -- . ':!.mcp.json' ':!.datawatch' ':!.gitignore')"
+  # The daemon rewrites its own .mcp.json, .datawatch/ bookkeeping and docs/plans/
+  # after-done records after a commit, so those paths are excluded; any other
+  # changed path is output the commit left behind.
+  dirty="$(ot_git -C "$RM_PROJECT" status --porcelain -- . ':!.mcp.json' ':!.datawatch' ':!.gitignore' ':!docs/plans')"
   rm_check "repo_clean_after_settle" "$([[ -z "$dirty" ]] && echo 0 || echo 1)" "uncommitted worker output after settle: $(printf '%s' "$dirty" | grep -c . | tr -d ' ') path(s) (daemon bookkeeping excluded)"
   rm_check "task_completes" "$(sc_task_status_in "$SC_PRD" completed && echo 0 || echo 1)" "task status: $(rm_task_field "$SC_PRD" status) (after restart: $status_after)"
   rm_state_end "$SC_BEFORE" "$SC_FINAL" "task-start snapshot commit blocked in a 20s pre-commit hook when the daemon was restarted; the commit of a worker output was not interrupted"

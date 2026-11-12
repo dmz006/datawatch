@@ -151,6 +151,13 @@ rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
 Overall average: **60-90% token reduction** on common development operations.
 <!-- /rtk-instructions -->
 
+## Checkpoints
+
+## 2026-11-09 07:55 — draft written
+- Wrote `docs/plans/parity-issues/2026-11-09-verifier-judge-script-restart-parity.md` — the verifier/judge/verification-script half of the 2026-11-08 restart-safety work (sibling to `2026-11-09-planning-boot-resume-parity.md`, the planning half).
+- Content grounded in the tree: `verifying_status.go` five-outcome decision + `ResolveVerifyingResume`, `ConsumeVerifierResult` in manager.go, detached `verify-runs` record, judge once-only, no new endpoint/field/setting/`boot_resume` value; gaps = 4 matrix rows pending re-run (`verify-session`, `verify-script`, `verify-script-mid`, `final-gate`) + no live deploy-restart confirmation; surfaces table follows the planning draft.
+- File-write only; no issue filed; no session touched.
+
 ## Supervisor sessions
 
 A session acting as PRD supervisor must read `docs/plans/2026-10-17-supervisor-rules-and-lessons.md`

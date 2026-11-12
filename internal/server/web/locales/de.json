@@ -2183,6 +2183,8 @@
   "settings_worker_idle_nudge_stall": "Worker-Stillstand nach Hinweis (Sek., 0=10min)",
   "settings_session_start_confirm": "Sitzungsstart-Bestätigung (Sekunden)",
   "settings_session_start_confirm_help": "Sitzungen, die innerhalb dieser Zeit keine Assistenten-Ausgabe liefern, werden als nie gestartet abgebrochen und erneut versucht.",
+  "settings_planning_restart_policy": "Neustart-Richtlinie für die Planung",
+  "settings_planning_restart_policy_help": "Was mit einem Automaten geschieht, der beim Neustart des Daemons noch geplant wird. reattach (Standard): Die Planung läuft weiter, und die Zerlegung wird an den neu gestarteten Daemon angebunden. restart: Die Planung startet nach dem Neustart einmal neu, und eine Entscheidung hält das fest. draft: Der Automat wird wie bisher auf Entwurf zurückgesetzt. Solange der Neustartpfad diese Einstellung nicht liest, verhält sich jeder Wert wie draft. Siehe docs/howto/restart-with-work-running.md.",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

@@ -130,7 +130,7 @@ func (m *Manager) recordPushOutcome(prd *PRD, res git.PushResult, policy git.Pus
 		log.Printf("autonomous: prd %s push-on-complete (%s) failed: %s", id, policy, reason)
 	}
 	m.store.WithLock(func() { prd.UpdatedAt = time.Now() })
-	if err := m.store.SavePRD(prd); err != nil {
+	if err := m.savePRDOwn(prd); err != nil { // executor-owned: the rollup's expectedRev must see this Rev bump
 		log.Printf("autonomous: prd %s saving push state: %v", id, err)
 	}
 }

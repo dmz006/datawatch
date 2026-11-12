@@ -430,6 +430,11 @@ type Server struct {
 
 	// restartFn is wired from main.go; it restarts the daemon in-place.
 	restartFn func()
+	// restartForceFn is the force-aware restart wired by SetRestartFuncForce
+	// (the restart guard). When set, POST /api/restart and the update restart
+	// call it with the operator's force flag; restartFn stays for the callers
+	// that have no force concept (router, MCP, ACME).
+	restartForceFn func(force bool)
 
 	// acmeManager (BL397) is wired from main.go when acme.enabled is
 	// true. nil when ACME is disabled — every acmeManager consumer must
@@ -1251,6 +1256,25 @@ func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 
 // SetRestartFunc wires the daemon self-restart function.
 func (s *Server) SetRestartFunc(fn func())             { s.restartFn = fn }
+
+// SetRestartFuncForce wires the force-aware restart function (the restart
+// guard). It takes precedence over SetRestartFunc's function for /api/restart.
+func (s *Server) SetRestartFuncForce(fn func(force bool)) { s.restartForceFn = fn }
+
+// restartAvailable reports whether any restart function is wired.
+func (s *Server) restartAvailable() bool { return s.restartFn != nil || s.restartForceFn != nil }
+
+// doRestart runs the wired restart function. The force-aware one takes the
+// force flag; the plain one has no force concept and ignores it.
+func (s *Server) doRestart(force bool) {
+	if s.restartForceFn != nil {
+		s.restartForceFn(force)
+		return
+	}
+	if s.restartFn != nil {
+		s.restartFn()
+	}
+}
 func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
 
 // SetACMEManager wires the ACME subsystem (BL397) into the API server.
@@ -6708,6 +6732,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
 			"duplicate_session_keep":               config.NormalizeDuplicateSessionKeep(s.cfg.Autonomous.DuplicateSessionKeep),
 			"restart_policy":                       config.NormalizeRestartPolicy(s.cfg.Autonomous.RestartPolicy),
+			"planning_restart_policy":              config.NormalizePlanningRestartPolicy(s.cfg.Autonomous.PlanningRestartPolicy),
 			"restart_quiet_timeout_seconds":        config.NormalizeRestartQuietTimeoutSeconds(s.cfg.Autonomous.RestartQuietTimeoutSeconds),
 			"restart_on_timeout":                   config.NormalizeRestartOnTimeout(s.cfg.Autonomous.RestartOnTimeout),
 			"stuck_running_seconds":                s.cfg.Autonomous.StuckRunningSeconds,
@@ -10428,7 +10453,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.OrphanGraceSeconds = n
 			}
 		case "autonomous.restart_policy", "autonomous.restart_on_timeout",
-			"autonomous.restart_quiet_timeout_seconds":
+			"autonomous.restart_quiet_timeout_seconds", "autonomous.planning_restart_policy":
 			// Validated in handlePutConfig (validateRestartPolicyPatch).
 			applyRestartPolicyKey(cfg, k, v)
 		case "autonomous.duplicate_session_keep":
@@ -14317,7 +14342,7 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.restartFn == nil {
+	if !s.restartAvailable() {
 		http.Error(w, "restart not available", http.StatusNotImplemented)
 		return
 	}
@@ -14330,9 +14355,17 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	force := restartForceRequested(r)
+	rep, hasRep := s.restartInterruptions()
+	if hasRep && rep.NeedsForce && !force {
+		// Running work would be interrupted and the operator did not pass
+		// force: refuse, and answer with the read-only report.
+		writeRestartRefused(w, rep)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]interface{}{"status": "restarting"}
-	if rep, ok := s.restartInterruptions(); ok {
+	if hasRep {
 		// What this restart interrupts, counted before the restart policy runs.
 		resp["interrupts"] = rep
 	}
@@ -14344,8 +14377,41 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		// records source=api-restart with via in the audit entry +
 		// last-shutdown.json (picked up by the daemon's Capture).
 		shutdowncause.MarkAPIInitiated("api-restart")
-		s.restartFn()
+		s.doRestart(force)
 	}()
+}
+
+// restartForceRequested reports whether a restart request carries the force
+// flag, as ?force=true or a JSON body {"force": true}.
+func restartForceRequested(r *http.Request) bool {
+	switch strings.ToLower(r.URL.Query().Get("force")) {
+	case "1", "true", "yes":
+		return true
+	}
+	if r.Body == nil || r.ContentLength == 0 {
+		return false
+	}
+	var body struct {
+		Force bool `json:"force"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return false
+	}
+	return body.Force
+}
+
+// writeRestartRefused answers 409 Conflict with the full read-only interruption
+// report, the policy, and how to pass force. Nothing is restarted.
+func writeRestartRefused(w http.ResponseWriter, rep autonomous.RestartInterruption) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"status":       "refused",
+		"error":        "restart refused: running work would be interrupted; pass force to restart anyway",
+		"needs_force":  true,
+		"how_to_force": `POST /api/restart?force=true, or POST /api/restart with {"force": true}`,
+		"interrupts":   rep,
+	})
 }
 
 // handleQuickCommands (BL209, v5.27.7 — datawatch#28) returns the
@@ -14634,11 +14700,20 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			"phase":   "restarting",
 		})
 		time.Sleep(800 * time.Millisecond)
-		if s.restartFn != nil {
+		if s.restartAvailable() {
+			// The restart guard refuses a restart that would interrupt running
+			// work without force. The new binary is installed either way; leave
+			// the daemon up and say so instead of exiting below.
+			if rep, ok := s.restartInterruptions(); ok && rep.NeedsForce {
+				s.hub.Broadcast(MsgNotification, map[string]string{
+					"message": "[update] Installed v" + latest + ". Restart deferred: running work would be interrupted. Restart with force to apply.",
+				})
+				return
+			}
 			// Mark as update-initiated so the cause record shows
 			// source=api-restart via=update-restart.
 			shutdowncause.MarkAPIInitiated("update-restart")
-			s.restartFn() // calls os.Exit(0); never returns
+			s.doRestart(false) // calls os.Exit(0) when it proceeds
 		}
 		// Fallback if restartFn is nil.
 		fmt.Printf("[update] installed v%s — run `datawatch start` to bring the daemon back up\n", latest)
