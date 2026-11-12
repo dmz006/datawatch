@@ -22,7 +22,7 @@ const APP = path.join(__dirname, 'app.js');
 function load(replies = {}, projects = [{ name: 'acme', dir: '/work/acme', arcs: [] }]) {
   const view = makeStubElement(() => {});
   view.insertAdjacentHTML = () => {};
-  const sandbox = buildSandbox({ byId: { view } });
+  const sandbox = buildSandbox({ byId: { automataPanel: view, view } });
   sandbox.__urls = [];
   sandbox.fetch = (url) => {
     const u = String(url);
@@ -43,7 +43,7 @@ function load(replies = {}, projects = [{ name: 'acme', dir: '/work/acme', arcs:
   vm.createContext(sandbox);
   loadScript(APP, sandbox);
   sandbox._i18n.bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
-  vm.runInContext("state.activeView = 'projects'", sandbox);
+  vm.runInContext("state.activeView = 'autonomous'; _automataState.tab = 'projects'", sandbox);
   return { sb: sandbox, view };
 }
 

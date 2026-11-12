@@ -2,8 +2,10 @@ package autonomous
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -306,5 +308,58 @@ func TestVerificationScriptBootHoldsTaskWithLiveRun(t *testing.T) {
 				t.Fatalf("status=%s, want %s", st, tc.wantStatus)
 			}
 		})
+	}
+}
+
+// syntheticStat builds a /proc/<pid>/stat line whose start-time field (22)
+// holds ticks.
+func syntheticStat(ticks string) string {
+	// pid (comm) state, then fields 4..21 (18 values), then field 22.
+	return "123 (synthetic) S " + strings.Repeat("0 ", 18) + ticks + " 0 0\n"
+}
+
+func useSyntheticStat(t *testing.T, content string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "123"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := procStatPathFmt
+	procStatPathFmt = dir + "/%d"
+	t.Cleanup(func() { procStatPathFmt = old })
+}
+
+func TestProcStartRejectsHugeTickCount(t *testing.T) {
+	if _, ok := bootTime(); !ok {
+		t.Skip("/proc boot time unavailable on this host")
+	}
+	for _, ticks := range []string{
+		strconv.FormatUint(maxProcStartTicks+1, 10),
+		strconv.FormatUint(1<<63, 10),
+		strconv.FormatUint(^uint64(0), 10),
+	} {
+		useSyntheticStat(t, syntheticStat(ticks))
+		started, state, ok := procStartAndState(123)
+		if ok || !started.IsZero() || state != 0 {
+			t.Fatalf("ticks=%s: got (%v, %d, %v), want not-found", ticks, started, state, ok)
+		}
+	}
+}
+
+func TestProcStartNormalTickCountUnchanged(t *testing.T) {
+	boot, ok := bootTime()
+	if !ok {
+		t.Skip("/proc boot time unavailable on this host")
+	}
+	for _, ticks := range []uint64{0, 12345, maxProcStartTicks} {
+		useSyntheticStat(t, syntheticStat(fmt.Sprint(ticks)))
+		started, state, ok := procStartAndState(123)
+		if !ok || state != 'S' {
+			t.Fatalf("ticks=%d: ok=%v state=%d", ticks, ok, state)
+		}
+		want := boot.Add(time.Duration(ticks) * (time.Second / verifyClockTicksPerSecond))
+		if !started.Equal(want) {
+			t.Fatalf("ticks=%d: started=%v want %v", ticks, started, want)
+		}
 	}
 }

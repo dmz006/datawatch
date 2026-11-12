@@ -20,7 +20,7 @@ function loadView({ projects = [], rollup = null, rollupFail = false, hash = '' 
   const out = { view: '', rollupCalls: [] };
   const view = makeStubElement(h => { out.view = h; });
   view.insertAdjacentHTML = (pos, h) => { out.view = h + out.view; };
-  const sandbox = buildSandbox({ byId: { view }, initialHash: hash });
+  const sandbox = buildSandbox({ byId: { automataPanel: view, view }, initialHash: hash });
   sandbox.fetch = (url) => {
     const u = String(url);
     const ok = body => Promise.resolve({ ok: true, status: 200, statusText: '', json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body)) });
@@ -35,7 +35,7 @@ function loadView({ projects = [], rollup = null, rollupFail = false, hash = '' 
   vm.createContext(sandbox);
   loadScript(APP, sandbox);
   sandbox._i18n.bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
-  vm.runInContext("state.activeView = 'projects'", sandbox);
+  vm.runInContext("state.activeView = 'autonomous'; _automataState.tab = 'projects'", sandbox);
   return { sb: sandbox, out, view };
 }
 

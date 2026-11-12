@@ -29,29 +29,21 @@ section at the end for the explicit exclusion.
 | Docker image tags (literal `FROM` lines in `docker/dockerfiles/*` and `Dockerfile.dev`) | Dependabot | `.github/dependabot.yml` — `docker` ecosystem |
 | GitHub Actions used in `.github/workflows` | Dependabot | `.github/dependabot.yml` — `github-actions`; every `uses:` is pinned by commit SHA with a trailing `# vN` comment, and Dependabot moves both together |
 | Pinned tool versions (`ARG NAME=value` in `docker/dockerfiles/*` and `Dockerfile.dev`, e.g. Go, gh, rtk, kubectl, helm) | upstream-watch job | `.github/workflows/upstream-watch.yaml` running `scripts/upstream_watch.py` — these `FROM` lines are built from ARGs, which Dependabot cannot see |
-| The Trivy scanner pin (`TRIVY_VERSION` in the workflows) vs the latest `aquasecurity/trivy` release | upstream-watch job | same workflow and script |
-| The Trivy installer fetched from the moving `main` branch | upstream-watch job (monitoring only — never edits the workflow) | same workflow and script; reported as a standing note, plus a finding when the installer text at `main` has drifted from the one at the pinned `v${TRIVY_VERSION}` tag |
+| The Trivy scanner pin (the single tag in `scripts/trivy-version.txt`, read by every Install Trivy step) vs the latest `aquasecurity/trivy` release | upstream-watch job | same workflow and script |
 | Advisory-only feeds (OSV queries for every pin whose package can be named) | upstream-watch job | same script; tools OSV cannot name are listed under "Not checked" |
 | Go vulnerabilities in our code (blocking gate on every push/PR and before release) | existing job — left as is | `govulncheck` in `.github/workflows/security-scan.yaml` and `.github/workflows/release.yaml` |
 | Gate on new or upgraded dependency PRs (high severity, license deny list) | existing job — left as is | `.github/workflows/dependency-review.yaml` |
 | Base-image rebuild, Trivy rescan of shipped images, stale-suppression detection | existing job — left as is | `.github/workflows/image-refresh.yaml` (daily 05:30 UTC) |
 | Accepted-risk registry, daily watch report, dismissed-alert check | existing tooling — left as is | `security/accepted-risks.yml`, `scripts/accepted_risks_daily_watch.py`, `scripts/dismissed_alerts_watch.py` |
 
-**Trivy install step (updated 2026-11-09):** the installer row above
-describes the workflows as they were written — an inline
-`curl … /trivy/main/contrib/install.sh | sh` fetch from the moving `main`
-branch that can fail silently and leave the worker with no scanner. The
-repo now carries a hardened installer, `scripts/ci-install-trivy.sh
-<tag> <dir>`, which pulls the install script **for the pinned version
-tag** (not `main`), into a temp file (no pipe-to-shell), with retries and
-a loud failure on a persistent download error. As of 2026-11-09 all eight
-"Install Trivy" steps in `release.yaml`, `containers.yaml` and
-`image-refresh.yaml` are migrated to it, so the workflows no longer fetch the
-installer from `main`. The watcher itself is unchanged. Verified 2026-11-10:
-`find_installer_refs` over `.github/workflows` now returns no lines, so the
-standing note is no longer emitted. The `main`-vs-pinned-tag installer drift
-finding still runs on every pass but no longer guards anything the workflows
-fetch; retiring it is a separate decision.
+**Trivy install step:** every "Install Trivy" step in `release.yaml`,
+`containers.yaml` and `image-refresh.yaml` runs the hardened installer
+`scripts/ci-install-trivy.sh <tag> <dir>` with the tag read from
+`scripts/trivy-version.txt`. The installer pulls the install script for the
+pinned tag (never the moving `main` branch), into a temp file, with retries and
+a loud failure. The scanner-pin check above reads that file. The earlier
+installer-from-`main` drift check was retired along with the `main` fetch, so
+there is no longer a row for it.
 
 Rule of thumb: Dependabot opens pull requests for the three ecosystems it can
 see; the upstream-watch job reports (it never opens a PR, pushes, or edits a
@@ -151,7 +143,7 @@ findings, opens or edits one tracking issue titled
 `upstream-watch`. Finding something is not a failure — the job fails only if
 the script crashes.
 
-- **What a stale-pin entry means:** the pinned `ARG` value (or `TRIVY_VERSION`)
+- **What a stale-pin entry means:** the pinned `ARG` value (or the Trivy tag in `scripts/trivy-version.txt`)
   is older than the upstream feed's current release, for the named tool. It is
   a report, not a pull request: the workflow's permissions are `contents: read`
   and `issues: write`, and by design the job never edits a file — the edits
@@ -170,8 +162,7 @@ the script crashes.
 - **Major bumps and toolchain (Go) changes are human-only.** The report marks
   them and policy treats them as such — no tier of this tooling proposes them
   and nothing auto-merges them.
-- **Standing notes** (monitoring-only items, e.g. a workflow fetching the Trivy
-  installer from `main` — none do now) are printed in the report body on every run, but they do **not**
+- **Standing notes** (monitoring-only items; there are none at present) are printed in the report body on every run, but they do **not**
   open an issue or keep one open by themselves — only findings do
   (`findings_count > 0` is the gate for create/edit).
 - **How to close or silence:** fix a stale pin, and it stops being a finding;
@@ -179,9 +170,7 @@ the script crashes.
   it automatically, re-opening it on the next run with findings. You can also
   close the issue by hand — it will reappear if there are still findings at the
   next run. A standing note cannot be "closed": it is informational and stays
-  in the body until the underlying situation changes (the Trivy
-  `main`-branch installer note is gone because the workflows now fetch the
-  pinned tag — see Known gaps).
+  in the body until the underlying situation changes.
 
 ## Running it locally
 
@@ -230,16 +219,6 @@ PRD prepares for auto-merge; that is a later decision.
 
 ## Known gaps
 
-- **The workflows' Trivy install steps were moved off the moving `main` branch**
-  on 2026-11-09. All eight steps in `.github/workflows/containers.yaml`,
-  `.github/workflows/image-refresh.yaml` and `.github/workflows/release.yaml`
-  now run `scripts/ci-install-trivy.sh` with the pinned tag. The upstream-watch
-  job's standing note about `main` therefore no longer fires (verified
-  2026-11-10: no workflow line references the `main` installer). Its finding for
-  `main` drift (sha256) from the pinned `v${TRIVY_VERSION}` tag is unchanged and
-  now orphaned, and **changing the watcher itself is a separate decision**, not
-  part of option C as built. `scripts/upstream_watch.py` is monitoring-only
-  and never edits those workflows.
 - **AGENT.md still says "until upstream monitoring exists"** in its dependency
   rule (the operator change of 2026-10-25). The wording is now stale, but
   editing AGENT.md is outside this PRD's scope — flag it separately if the

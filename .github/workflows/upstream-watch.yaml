@@ -8,11 +8,9 @@
 # Dependabot (.github/dependabot.yml) cannot see:
 #   1. Pinned tool versions — `ARG NAME=value` in docker/dockerfiles/*
 #      and Dockerfile.dev — compared against each tool's upstream feed.
-#   2. The scanner pin: TRIVY_VERSION in the workflows vs the latest
-#      aquasecurity/trivy release.
-#   3. The Trivy installer fetched from the moving `main` branch
-#      (standing note, plus a finding when the installer text drifted).
-#   4. Advisory-only: OSV queries for every pin whose package can be
+#   2. The scanner pin: the tag in scripts/trivy-version.txt compared
+#      with the latest aquasecurity/trivy release.
+#   3. Advisory-only: OSV queries for every pin whose package can be
 #      named.
 # Dependabot covers the rest: Go modules, Docker tags, workflow actions.
 #
