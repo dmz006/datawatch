@@ -1516,7 +1516,7 @@
   "session_tag_chip_tip": "%1$s — %2$d Sitzungen",
   "session_tag_clear_tip": "Tagfilter entfernen",
   "session_tree_orphaned": "verwaist — übergeordnete Sitzung existiert nicht mehr",
-  "session_tree_view_tip": "Baumansicht umschalten — gruppiert Sitzungen nach Eltern-Kind-Hierarchie",
+  "session_tree_view_tip": "Baumansicht umschalten — gruppiert Sitzungen nach Eltern-Kind-Hierarchie (nur im Listenmodus)",
   "sessions_add_server": "Server hinzufügen…",
   "sessions_all_servers": "Alle Server",
   "sessions_cancel_selection": "Auswahl aufheben",

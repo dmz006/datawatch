@@ -1516,7 +1516,7 @@
   "session_tag_chip_tip": "%1$s — %2$d セッション",
   "session_tag_clear_tip": "タグフィルタを解除",
   "session_tree_orphaned": "孤立 — 親セッションが存在しなくなりました",
-  "session_tree_view_tip": "ツリービューを切り替え — 親子関係でセッションをグループ化",
+  "session_tree_view_tip": "ツリービューを切り替え — 親子関係でセッションをグループ化（リスト表示のみ）",
   "sessions_add_server": "サーバーを追加…",
   "sessions_all_servers": "すべてのサーバー",
   "sessions_cancel_selection": "選択を解除",
