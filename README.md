@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.159.1 (2026-11-12).** The Automata page fits a phone (tab strips scroll sideways), the Inbox counter and cards follow the selected project, and the Templates sub-tab has its own label. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.160.0 (2026-11-12).** The Projects Gantt is one expandable timeline (arcs, Automata, tasks) with an All time default, zoom presets and a Focus view per Automation, read through a paged project timeline (REST, MCP, CLI and chat). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

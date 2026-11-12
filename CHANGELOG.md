@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.160.0 — Projects Gantt as one expandable timeline with a Focus view
+
+### Added
+
+- **The Projects Gantt is one expandable timeline.** On a project's Gantt sub-tab the chart now opens with one row per arc and a bar from the arc's first to its last task, coloured by state; work still running is drawn to now. Click a row's arrow to open the Automata under an arc and an Automaton's arrow to open its tasks. Automata that no arc holds sit in an **Automata with no arc** group at the foot, and an arc with no activity yet reads **Planned** with no bar. The range selector defaults to **All time** and also offers 90, 30 and 7 days; the mouse wheel zooms and a drag pans. A level draws at most 40 rows and has **Load more** for a longer one. Which rows are open is remembered per project in the browser.
+- **A Focus view for one Automation.** A **Focus** button on an arc's Gantt row, on an arc card and in the header of the Automation page opens that Automation's own timeline: every Automaton and task, with the range running from its first task to its last, and **Back** returns. An Automation with no Automata or tasks yet shows that it is planned.
+- **A paged project timeline read.** `GET /api/projects/{name}/timeline` returns when each arc, Automaton and task of a project started and finished, one level at a time (`level`, `parent`, `automaton`, `limit`, `cursor`), or one Automation in a single reply with `focus=<arc id>`. The same read is the MCP tool `project_timeline`, the CLI command `datawatch projects timeline <name>` (flags `--level`, `--parent`, `--automaton`, `--focus`, `--limit`, `--cursor`) and the chat verb `project timeline <project-name>` with the same options. It is read-only.
+
+### Changed
+
+- **The project Gantt no longer has the fixed 7, 30 and 90 day window or the history rows.** `GET /api/projects/{name}/history` still returns its `gantt` rows for other clients. The 720 pixel width cap on a wide browser stays.
+
 ## v9.159.1 — Automata page phone layout and project-scoped Inbox counter
 
 ### Fixed
