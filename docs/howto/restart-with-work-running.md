@@ -42,14 +42,18 @@ The planning boot path, the verifier/judge re-attach and the detached
 verification-script pickup (below) are all in this tree, and the force-flag
 guard that refuses a non-forced restart while any of that work is in flight is
 unit-tested against fakes on every surface. But the restart matrix cannot be
-run against a build of this tree at all right now: the sandbox config it
-generates does not set `server.allowed_project_roots` (only its compute-node
-variant does), so every state that creates an Automaton fails at creation
+run against a build of this tree for most states right now: the sandbox
+config it generates does not set `server.allowed_project_roots` (only the
+compute-node variant, used by `worker-node-placement`, does), so every state
+that does not set `RM_PI_NODES` and creates an Automaton fails at creation
 with `project_dir refused: project directory is outside the allowed project
-roots`. Confirmed 2026-11-10 on a build of this tree (v9.118.3): the
-enforced `worker-running` state fails at `state_reached`, and the same PRD
-creation succeeds once the sandbox dir is added to `allowed_project_roots`
-(one line in `scripts/restart-matrix/lib.sh`). Until that harness fix lands,
+roots`. Reported from a run on 2026-11-10 on a build of this tree (v9.118.3):
+the enforced `worker-running` state failed at `state_reached`, and the same PRD
+creation succeeded once the sandbox dir was added to `allowed_project_roots`
+(one line in `scripts/restart-matrix/lib.sh`). That live result was not
+re-run when these docs were revised; the static cause (no
+`allowed_project_roots` in the default `rm_write_config`) was re-checked
+against the tree. Until that harness fix lands,
 treat every "verified on a sandbox daemon" claim in this area as stale — the
 `planning` row and its release-smoke run included — and no live
 deploy-restart has confirmed any of it: confirm on the build in use that a
