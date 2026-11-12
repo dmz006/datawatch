@@ -53,6 +53,14 @@ tab, the sub-tab bar reads **Projects**, **Automation**, **Automata**, **Events*
 Automata sub-tab lists single Automata; the Automation sub-tab lists the chains
 that connect them.
 
+On a phone, the top bar (the five sub-tabs and the action buttons) and the second
+row under the Automation sub-tab each stay on one row and scroll sideways. A soft
+fade on the left or right edge shows that more tabs are hidden on that side, and the
+active tab is scrolled into view when you open the page by link or switch tabs.
+Every tab keeps a 40 px tap target. In the header, the Projects sub-tab is titled
+with its short name so the title fits one line. See
+[Tab strips at phone width](navigation-mobile-fit.md#tab-strips-at-phone-width).
+
 ## Opening it, the remembered sub-tab and saved links
 
 - **First visit.** Tapping Automata in the bottom navigation opens on the
