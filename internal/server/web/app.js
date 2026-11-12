@@ -26385,6 +26385,13 @@ const _AUTOMATA_TEMPLATE_SUBTABS = [
     load: () => _automataStandardTasksLoad(),
     render: () => _automataStandardTasksRender(),
   },
+  {
+    key: 'packs',
+    titleKey: 'packs_subtab_title',
+    // Packs: a shell from app-packs-subtab.js; it keeps no pack list.
+    load: () => packsSubtabLoad(),
+    render: () => packsSubtabRender(),
+  },
 ];
 
 // The selected sub-tab key, persisted under its own localStorage key and
