@@ -1189,6 +1189,98 @@ autonomous:
   # `datawatch autonomous uncommitted-work` and the chat verb `autonomous
   # uncommitted-work`.
   #
+  # pending_item_policy: string, `hold` (default) or `skip`. What an
+  # Automation does when its cursor reaches a member that is a pending item
+  # still in the `waiting` state (a named piece of work with no Automaton
+  # yet). `hold` blocks the Automation at that member, with a reason that
+  # names the item, until an Automaton is attached, the item turns done, or
+  # the member is skipped or removed; every later member stays behind it.
+  # `skip` passes the member over on its normal complete edge and the item
+  # stays waiting. An unset key, an empty value and an unrecognized word read
+  # as `hold` from a hand-edited config file; any other word is refused on
+  # every write path and nothing is saved. Read live, no restart. Settable via
+  # PUT /api/config (key autonomous.automation.pending_item_policy; GET
+  # /api/config shows the effective value), PUT /api/autonomous/config
+  # (automation object), CLI `datawatch config set
+  # autonomous.automation.pending_item_policy skip`, comm `configure
+  # autonomous.automation.pending_item_policy=skip`, the PWA (Settings ->
+  # General -> Automata settings -> Pending items), and the MCP
+  # autonomous_config_set tool (automation_pending_item_policy).
+  #
+  # pending_item_auto_resume: bool, default true. Whether attaching an
+  # Automaton to a waiting pending item resumes an Automation that was blocked
+  # on it. true resumes it and starts the Automaton; false leaves the
+  # Automation blocked and the attach reply says so, so it is resumed by hand.
+  # Written as true or false. Read live, no restart. Settable via PUT
+  # /api/config (key autonomous.automation.pending_item_auto_resume), PUT
+  # /api/autonomous/config, CLI `datawatch config set
+  # autonomous.automation.pending_item_auto_resume false`, comm `configure
+  # autonomous.automation.pending_item_auto_resume=false`, the PWA (same
+  # group), and the MCP autonomous_config_set tool
+  # (automation_pending_item_auto_resume).
+  #
+  # pending_item_source: the optional file registry the daemon copies pending
+  # items from. The daemon only reads the file; it never writes to it. Nothing
+  # in this block assumes a numbering sequence, a file name or any naming
+  # convention. The file is read once when the daemon starts and again
+  # whenever the refresh action is used (POST
+  # /api/autonomous/pending-items/refresh, MCP autonomous_pending_items_refresh,
+  # CLI `datawatch autonomous pending-items-refresh`, chat verb `autonomous
+  # pending-items-refresh`, or the Pending items card); it is never polled.
+  # Every key below is settable the same ways as the two above: PUT
+  # /api/config with the dotted key autonomous.automation.pending_item_source.
+  # <name>, PUT /api/autonomous/config, `datawatch config set`, comm
+  # `configure`, the PWA (Settings -> General -> Automata settings -> Pending
+  # items), and the MCP autonomous_config_set tool
+  # (automation_pending_item_source_<name>). Read live, no restart; the new
+  # values apply to the next read of the file.
+  #   path: string, default empty. The registry file, a Markdown file holding
+  #     a pipe table. Empty means no file registry: pending items are then
+  #     only the ones added by hand, and the refresh action reports that
+  #     nothing is configured and changes nothing. An absolute path is used as
+  #     given; a relative path is resolved against the daemon's default
+  #     project directory and may not leave it, by `..` or by a symbolic
+  #     link. The file must be a regular file of at most 2 MiB.
+  #   id_pattern: string, a Go regular expression, default `^\S+$` (any
+  #     non-blank id). Only a row whose id cell matches it becomes a pending
+  #     item; other rows are counted as skipped. At most 512 characters and
+  #     it must compile, or the write is refused.
+  #   id_column: string, default "1". The column holding the id: a header name
+  #     (matched case-insensitively) or a 1-based column number. A header name
+  #     wins when a header carries exactly that text.
+  #   title_column: string, default "2". The column holding the title, set the
+  #     same way as id_column. A row with an empty title is skipped.
+  #   state_column: string, default empty. The column holding the state, set
+  #     the same way. Empty means the table has no state column, so no row is
+  #     ever read as done.
+  #   done_values: list of strings, default [done, closed, shipped]. State
+  #     cell texts, compared case-insensitively, that mean the work is done.
+  #     An item whose row matches becomes done and releases any Automation
+  #     held on it. Written as a list in YAML and as comma separated words in
+  #     `config set`, comm `configure` and `config_set`. Words must not be
+  #     blank.
+  #   on_missing_row: string, `keep` (default) or `drop`. What happens to an
+  #     item supplied by the file when its row has disappeared. `keep` leaves
+  #     it exactly as it is. `drop` removes it, but only when it is still
+  #     waiting and is not a member of any Automation; anything else stays.
+  #     An unset key, an empty value and an unrecognized word read as `keep`;
+  #     any other word is refused on every write path.
+  # Example (a registry whose ids are short names, id in the first column, the
+  # work in the second and a status in the third):
+  #   pending_item_policy: hold
+  #   pending_item_auto_resume: true
+  #   pending_item_source:
+  #     path: registry/work.md
+  #     id_pattern: '^[a-z]+(-[a-z]+)*$'
+  #     id_column: Slug
+  #     title_column: Work
+  #     state_column: Status
+  #     done_values: [done, closed, shipped]
+  #     on_missing_row: keep
+  # The pending items are read with GET /api/autonomous/pending-items, MCP
+  # autonomous_pending_items, CLI `datawatch autonomous pending-items` and the
+  # chat verb `autonomous pending-items`; see howto/automaton-pending-items.md.
+  #
   # Automation objects themselves (members, edges, budget policy, defaults) are
   # runtime data in the automation store, created through the Automation verbs
   # (including `automation import-graph`), not keys in this file.
