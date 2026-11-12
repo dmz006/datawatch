@@ -558,7 +558,7 @@ needs no restart.
 
 ## Housekeeping repair for an idle lane
 
-The housekeeping repairs include a lane fill repair (group `lane_fill`, mode `off`, `report` or `on`, default `report`). When a lane is idle and eligible work waits, and the grace period has passed, it starts the next eligible Automaton through the normal run path. It never changes a model or backend.
+The housekeeping repairs include a lane fill repair (group `lane_fill`, mode `off`, `report` or `on`, default `report`). When a lane is idle and eligible work waits, and the grace period has passed, it starts the next eligible Automaton through the normal run path. It never changes a model or backend. The repair is written and tested, but the daemon does not start the housekeeping repair pass yet, so it acts on nothing today; see [automaton-housekeeping-repairs.md](automaton-housekeeping-repairs.md) for the full state and the points to review before turning the group to `on`.
 
 It refuses, writes one decision-log line (found, done, how to undo) and raises exactly one alert when no eligible work exists, capacity is full, the lane is at its inflight cap, the usage guard is paused, or the only waiting Automata need a backend the lane may not use. In `report` mode it records what it would start and starts nothing.
 
