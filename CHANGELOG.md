@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.155.0 — Gantt charts for Automations and all-projects dashboard
+
+### Added
+
+- **An interval chart of your Automata across all projects.** A read-only timeline draws, one project at a time, each Automaton with its stages and every task as a bar with its start and end, the stretches a task spent blocked or waiting with the reason, and a projected finish for each running Automaton with the reason behind it. It reads the Automata records the daemon already holds, changes nothing and stores no snapshot. Filter by project, Automaton, stage, kind or tag. REST `GET /api/autonomous/timeline`, the MCP tool `autonomous_timeline` (read only), the CLI `datawatch timeline`, the chat verb `timeline`, a **Timeline** tab on the Automaton detail page and an all-projects Gantt card on the Progress tab. The new strings are in all five locales.
+- Docs: the new how-to `automata-timeline`, the commands, MCP and API mapping pages, the definitions and the dashboard how-to describe the timeline.
+
 ## v9.154.5 — Sessions grouping by node, per-option grouping review, and compact tiles
 
 ### Fixed
