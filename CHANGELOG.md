@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.147.1 — Plan registry reconciliation report
+
+### Added
+
+- **Plan registry reconciliation reports.** Six batch reports, a list of the 118 plan files and a summary under `docs/plans/reports/` compare every plan file with the registry in `docs/plans/README.md`: 111 already have a row, 3 need a proposed row and 4 are not plans. The summary carries the proposed rows as a pending list for the operator; no registry rows were edited by this work.
+- **`scripts/check-plan-registry-reports.sh` checks the reports.** It confirms that the batch reports, the list and the summary agree on the file count and on the per-class counts, with its own test, `scripts/check-plan-registry-reports-test.sh`.
+
 ## v9.147.0 — Projects as the first Automata sub-tab
 
 ### Changed

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.147.0 (2026-11-12).** Projects is now the first sub-tab of Automata, to the left of Automation, and the top-level Projects button is gone; old Projects links and saved views land on the sub-tab. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.147.1 (2026-11-12).** A reconciliation of 118 plan files against the registry (111 covered, 3 proposed rows pending the operator, 4 not plans), with a checker script for the reports. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
