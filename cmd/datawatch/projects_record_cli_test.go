@@ -52,7 +52,7 @@ func (f *fakeProjectsDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"project":"acme","items":[],"gantt":[]}`))
 	case r.Method == http.MethodGet && r.URL.Path == "/api/projects/acme/timeline":
 		f.timelineQuery = r.URL.RawQuery
-		_, _ = w.Write([]byte(`{"project":"acme","rows":[]}`))
+		_, _ = w.Write([]byte(timelineNewFieldsBody))
 	default:
 		http.Error(w, "project not found", http.StatusNotFound)
 	}
@@ -382,6 +382,39 @@ func TestProjectsTimelinePassesFlags(t *testing.T) {
 	for _, flag := range []string{"level", "parent", "automaton", "focus", "limit", "cursor"} {
 		if tl.Flags().Lookup(flag) == nil {
 			t.Errorf("timeline is missing the --%s flag", flag)
+		}
+	}
+}
+
+const timelineNewFieldsBody = `{"project":"acme","level":"automata","rows":[{"kind":"automaton","id":"p1","title":"Alpha","first":"2026-11-01T10:00:00Z","last":null,"start":"2026-11-01T10:00:00Z","end":null,"status":"running","release":"v1.2.0","depends_on":["t0"]}],"edges":[{"from":"p0","to":"p1","kind":"chain"}]}`
+
+func TestProjectsTimelinePrintsNewFields(t *testing.T) {
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runProjectsCmd(t, &fakeProjectsDaemon{}, "timeline", "acme", "--level", "automata")
+	})
+	if runErr != nil {
+		t.Fatalf("timeline: %v", runErr)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	rows, _ := got["rows"].([]any)
+	row, _ := rows[0].(map[string]any)
+	if row["status"] != "running" || row["start"] != "2026-11-01T10:00:00Z" || row["end"] != nil || row["release"] != "v1.2.0" {
+		t.Errorf("row fields changed: %v", row)
+	}
+	if deps, _ := row["depends_on"].([]any); len(deps) != 1 || deps[0] != "t0" {
+		t.Errorf("depends_on = %v", row["depends_on"])
+	}
+	if edges, _ := got["edges"].([]any); len(edges) != 1 {
+		t.Errorf("edges = %v", got["edges"])
+	}
+	tl, _, _ := newProjectsCmd().Find([]string{"timeline", "acme"})
+	for _, want := range []string{"status", "dependencies", "chain edges"} {
+		if !strings.Contains(tl.Short, want) {
+			t.Errorf("help lacks %q: %s", want, tl.Short)
 		}
 	}
 }

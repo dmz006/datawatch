@@ -101,7 +101,7 @@ func projectRecordUsage(verb string) string {
 }
 
 // projectTimelineUsage is the usage line for the timeline verb.
-const projectTimelineUsage = "Usage: project timeline <project-name> [level=arcs|automata|tasks] [parent=<arc>|none] [automaton=<id>] [focus=<arc>|none] [limit=<n>] [cursor=<c>]"
+const projectTimelineUsage = "Usage: project timeline <project-name> [level=arcs|automata|tasks] [parent=<arc>|none] [automaton=<id>] [focus=<arc>|none] [limit=<n>] [cursor=<c>]. Each row shows its start, end, status and release; tasks show what they depend on; an Automaton shows chain edges to the next Automaton."
 
 // projectTimelineOptions are the key=value options the timeline verb passes on.
 var projectTimelineOptions = map[string]bool{
@@ -156,7 +156,18 @@ type projectTimelineView struct {
 		First   *string `json:"first"`
 		Last    *string `json:"last"`
 		Running bool    `json:"running"`
+		Status  string  `json:"status"`
+		Release string  `json:"release"`
+		// Start and End mirror First and Last; they are read when First and Last are absent.
+		Start     *string  `json:"start"`
+		End       *string  `json:"end"`
+		DependsOn []string `json:"depends_on"`
 	} `json:"rows"`
+	Edges []struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+		Kind string `json:"kind"`
+	} `json:"edges"`
 }
 
 // formatProjectTimeline renders one line per row: kind, title, first, last or
@@ -186,7 +197,27 @@ func formatProjectTimeline(name, rawBody string, q url.Values) string {
 		case row.Running || row.First != nil:
 			last = "now"
 		}
-		lines = append(lines, fmt.Sprintf("  %s %s: %s to %s", row.Kind, title, first, last))
+		line := fmt.Sprintf("  %s %s: %s to %s", row.Kind, title, first, last)
+		if row.Status != "" {
+			line += " [" + row.Status + "]"
+		}
+		if len(row.DependsOn) > 0 {
+			line += " depends on " + strings.Join(row.DependsOn, ", ")
+		}
+		if row.Release != "" {
+			line += " release " + row.Release
+		}
+		lines = append(lines, line)
+	}
+	if len(v.Edges) > 0 {
+		lines = append(lines, "  Automaton chain edges:")
+		for _, e := range v.Edges {
+			kind := e.Kind
+			if kind == "" {
+				kind = "chain"
+			}
+			lines = append(lines, fmt.Sprintf("    %s -> %s (%s)", e.From, e.To, kind))
+		}
 	}
 	if v.HasMore && v.NextCursor != "" {
 		hint := fmt.Sprintf("project timeline %s level=%s", name, v.Level)

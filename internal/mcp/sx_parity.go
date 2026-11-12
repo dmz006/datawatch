@@ -523,7 +523,7 @@ func (s *Server) handleProjectHistory(_ context.Context, req mcpsdk.CallToolRequ
 func (s *Server) toolProjectTimeline() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_timeline",
 		mcpsdk.WithDescription(
-			"Project timeline: first and last time of each arc, Automaton and task, one level at a time (arcs by default). Rows still running have no last time. Paged with limit and the cursor from the previous page. Read-only."),
+			"Project timeline: start, end, status (completed, running, waiting, blocked, failed or cancelled) and release of each arc, Automaton and task, one level at a time (arcs by default). Task rows carry depends_on; Automaton levels and focus replies carry edges, the chain between Automata. Rows still running have no end. Fields are returned unchanged from the daemon. Paged with limit and the cursor from the previous page. Read-only."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
 		mcpsdk.WithString("level", mcpsdk.Description("Which rows to return: arcs (default), automata or tasks.")),
 		mcpsdk.WithString("parent", mcpsdk.Description("With level automata: the arc id whose Automata to list, or none for Automata no arc holds.")),

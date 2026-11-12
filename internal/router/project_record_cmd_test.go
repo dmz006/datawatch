@@ -332,3 +332,22 @@ func TestProjectTimelineLoopback(t *testing.T) {
 		t.Errorf("usage missing:\n%s", out)
 	}
 }
+
+func TestFormatProjectTimelineNewFields(t *testing.T) {
+	body := `{"project":"acme","level":"automata","rows":[{"kind":"automaton","id":"p1","title":"Alpha","first":"2026-11-01T10:00:00Z","last":null,"start":"2026-11-01T10:00:00Z","end":null,"status":"running","release":"v1.2.0","depends_on":["t0"]}],"edges":[{"from":"p0","to":"p1","kind":"chain"}]}`
+	out := formatProjectTimeline("acme", body, nil)
+	for _, want := range []string{
+		"automaton Alpha: 2026-11-01T10:00:00Z to now [running] depends on t0 release v1.2.0",
+		"Automaton chain edges:",
+		"p0 -> p1 (chain)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	for _, want := range []string{"status", "Automaton", "chain edges"} {
+		if !strings.Contains(projectTimelineUsage, want) {
+			t.Errorf("usage lacks %q", want)
+		}
+	}
+}
