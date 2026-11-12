@@ -35151,6 +35151,10 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'judge.verdict_pass', 'task.final_gate_failed']],
 ];
 const _LIFECYCLE_SUB_KINDS = _LIFECYCLE_SUB_KIND_GROUPS.reduce((all, g) => all.concat(g[2]), []);
+// The kinds the checkboxes stand for, in render order. It starts as the
+// built-in list above and is replaced by the daemon's list once the picker has
+// loaded it (_lifecycleSubLoadKinds), so index i is always checkbox lcSubKind_i.
+let _lifecycleSubKindList = _LIFECYCLE_SUB_KINDS.slice();
 const _LIFECYCLE_SUB_SINKS = ['comm', 'session', 'topic', 'alert', 'mcp_queue', 'webhook', 'peer'];
 const _LIFECYCLE_SUB_SINK_LABELS = {
   comm: 'lifecycle_sub_form_sink_comm',
@@ -35192,7 +35196,7 @@ function _lifecycleSubExpiryHours(expiresAt, nowMs) {
 // Turns the form's values into the request body, or {error} mirroring
 // ValidateSubscription's checks. v.expiryHours is the raw field text.
 function _lifecycleSubBuild(v, nowMs) {
-  const kinds = (v.kinds || []).filter(k => _LIFECYCLE_SUB_KINDS.indexOf(k) >= 0);
+  const kinds = (v.kinds || []).filter(k => _lifecycleSubKindList.indexOf(k) >= 0);
   const level = v.level || '';
   if (!kinds.length && !level) {
     return { error: t('lifecycle_sub_form_err_filter') || 'Choose at least one event kind or a level.' };
@@ -35262,7 +35266,7 @@ function _lifecycleSubBuild(v, nowMs) {
 function _lifecycleSubReadForm() {
   const ctx = _lifecycleSubFormCtx || {};
   return {
-    kinds: _LIFECYCLE_SUB_KINDS.filter((k, i) => _lifecycleSubEl('lcSubKind_' + i).checked),
+    kinds: _lifecycleSubKindList.filter((k, i) => _lifecycleSubEl('lcSubKind_' + i).checked),
     level: _lifecycleSubEl('lcSubLevel').value || '',
     scope: _lifecycleSubEl('lcSubScope').value || 'this',
     prdId: ctx.prdId || '',
@@ -35424,17 +35428,129 @@ function _lifecycleSubTestDetails(res) {
   return out;
 }
 
-function _lifecycleSubKindsHTML(selected) {
-  let idx = 0;
-  return _LIFECYCLE_SUB_KIND_GROUPS.map(([key, fallback, kinds]) => {
-    const boxes = kinds.map(k => {
-      const i = idx++;
-      return `<label style="display:flex;align-items:center;gap:4px;font-size:11px;"><input type="checkbox" id="lcSubKind_${i}"${selected.indexOf(k) >= 0 ? ' checked' : ''}> ${escHtml(k)}</label>`;
-    }).join('');
-    return `<div style="font-size:10px;color:var(--text2);margin:4px 0 2px;">${escHtml(t(key) || fallback)}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:2px 8px;">${boxes}</div>`;
-  }).join('');
+// ── Event picker ────────────────────────────────────────────────────────────
+// The kind checkboxes come from GET /api/autonomous/event-kinds: every kind
+// with its one-line description, grouped Automaton, task, review, capacity and
+// budget. The built-in list renders first and is swapped for the daemon's list
+// when it arrives, keeping what the operator already ticked. Under the picker
+// a line asks POST /api/autonomous/subscriptions/preview how many events the
+// chosen kinds would have matched in the last day, so the rule can be judged
+// before it is saved.
+const _LIFECYCLE_SUB_PICKER_GROUPS = ['automaton', 'task', 'review', 'capacity', 'budget'];
+const _LIFECYCLE_SUB_PICKER_DOCS = 'howto/automaton-lifecycle-subscriptions.md#pwa-walkthrough';
+const _LIFECYCLE_SUB_PREVIEW_DELAY_MS = 300;
+let _lifecycleSubPickerGroups = null; // [[label, [{kind, description}]]] last loaded from the daemon
+let _lifecycleSubPreviewSeq = 0;      // a newer preview request makes older answers stale
+let _lifecycleSubPreviewTimer = null;
+
+// The built-in groups in the picker's shape (no descriptions).
+function _lifecycleSubBuiltinPickerGroups() {
+  return _LIFECYCLE_SUB_KIND_GROUPS.map(([key, fallback, kinds]) => [t(key) || fallback, kinds.map(k => ({ kind: k, description: '' }))]);
 }
+
+// Turns the event-kinds body into [[label, [{kind, description}]]]: the five
+// known groups first in their fixed order, then any other group by name.
+function _lifecycleSubPickerNormalize(body) {
+  const groups = body && Array.isArray(body.groups) ? body.groups : [];
+  const byName = {};
+  groups.forEach(g => {
+    if (!g || typeof g.group !== 'string') return;
+    const kinds = (Array.isArray(g.kinds) ? g.kinds : [])
+      .filter(k => k && typeof k.kind === 'string' && k.kind)
+      .map(k => ({ kind: k.kind, description: typeof k.description === 'string' ? k.description : '' }));
+    if (kinds.length) byName[g.group] = (byName[g.group] || []).concat(kinds);
+  });
+  const names = _LIFECYCLE_SUB_PICKER_GROUPS.filter(n => byName[n])
+    .concat(Object.keys(byName).filter(n => _LIFECYCLE_SUB_PICKER_GROUPS.indexOf(n) < 0));
+  return names.map(n => {
+    const key = 'lifecycle_sub_picker_group_' + n;
+    const label = t(key);
+    return [label && label !== key ? label : n, byName[n]]; // an unknown group shows its own name
+  });
+}
+
+// One checkbox row per kind, grouped. Sets _lifecycleSubKindList to the kinds
+// in render order. A selected kind the groups do not list is kept, in a last
+// group, so an existing rule never loses a kind when it is edited.
+function _lifecycleSubKindsHTML(selected, groups) {
+  const shown = (groups || _lifecycleSubBuiltinPickerGroups()).map(g => [g[0], g[1].slice()]);
+  const known = {};
+  shown.forEach(g => g[1].forEach(k => { known[k.kind] = true; }));
+  const extra = (selected || []).filter(k => !known[k]).map(k => ({ kind: k, description: '' }));
+  if (extra.length) shown.push([t('lifecycle_sub_form_group_other') || 'Other', extra]);
+  const list = [];
+  const html = shown.map(([label, kinds]) => {
+    const rows = kinds.map(k => {
+      const i = list.length;
+      list.push(k.kind);
+      const desc = k.description
+        ? `<span style="display:block;color:var(--text2);font-size:10px;">${escHtml(k.description)}</span>` : '';
+      return `<label style="display:flex;align-items:flex-start;gap:6px;font-size:11px;padding:1px 0;"><input type="checkbox" id="lcSubKind_${i}"${(selected || []).indexOf(k.kind) >= 0 ? ' checked' : ''} onchange="_lifecycleSubPreviewChanged()"><span><span style="overflow-wrap:anywhere;">${escHtml(k.kind)}</span>${desc}</span></label>`;
+    }).join('');
+    return `<div style="font-size:10px;color:var(--text2);margin:6px 0 2px;">${escHtml(label)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:2px 12px;">${rows}</div>`;
+  }).join('');
+  _lifecycleSubKindList = list;
+  return html;
+}
+
+// Loads the daemon's kinds into the open form. On failure the built-in list
+// stays and a note says so. The preview runs either way.
+function _lifecycleSubLoadKinds() {
+  return apiFetch('/api/autonomous/event-kinds').then(body => {
+    const groups = _lifecycleSubPickerNormalize(body);
+    if (!groups.length) throw new Error('empty');
+    _lifecycleSubPickerGroups = groups;
+    const host = document.getElementById('lcSubKindPicker');
+    if (!host) return;
+    host.innerHTML = _lifecycleSubKindsHTML(_lifecycleSubReadForm().kinds, groups);
+    const status = document.getElementById('lcSubKindStatus');
+    if (status) status.innerHTML = '';
+  }).catch(() => {
+    const status = document.getElementById('lcSubKindStatus');
+    if (status) status.innerHTML = escHtml(t('lifecycle_sub_picker_load_failed') || 'Could not load the event kinds from the daemon; showing the built-in list.');
+  }).then(() => _lifecycleSubPreview());
+}
+
+function _lifecycleSubPreviewSet(text, isError) {
+  const el = document.getElementById('lcSubPreview');
+  if (el) el.innerHTML = `<span style="${isError ? 'color:var(--error);' : ''}">${escHtml(text)}</span>`;
+}
+
+// Asks the preview route what the ticked kinds would have matched in the last
+// day. With nothing ticked there is nothing to ask. Only the newest request's
+// answer is shown.
+function _lifecycleSubPreview() {
+  if (!_lifecycleSubFormCtx) return Promise.resolve(); // the form was closed or saved
+  const v = _lifecycleSubReadForm();
+  const seq = ++_lifecycleSubPreviewSeq;
+  if (!v.kinds.length) {
+    _lifecycleSubPreviewSet(t('lifecycle_sub_preview_idle') || 'Pick an event kind to see what it would have matched in the last day.', false);
+    return Promise.resolve();
+  }
+  _lifecycleSubPreviewSet(t('lifecycle_sub_preview_loading') || 'Checking the last day...', false);
+  const body = { kinds: v.kinds };
+  if (v.automationId) body.owner = v.automationId;
+  return apiFetch('/api/autonomous/subscriptions/preview', { method: 'POST', body: JSON.stringify(body) })
+    .then(res => {
+      if (seq !== _lifecycleSubPreviewSeq) return;
+      const n = Number(res && res.count);
+      _lifecycleSubPreviewSet(t('lifecycle_sub_preview_count', [Number.isFinite(n) ? n : 0]) || ('Would have matched in the last day: ' + (Number.isFinite(n) ? n : 0)), false);
+    })
+    .catch(e => {
+      if (seq !== _lifecycleSubPreviewSeq) return;
+      const why = String((e && e.message) || '').trim();
+      _lifecycleSubPreviewSet(t('lifecycle_sub_preview_failed', [why]) || ('Preview unavailable: ' + why), true);
+    });
+}
+
+// Runs the preview shortly after the last tick, so ticking several kinds in a
+// row sends one request.
+function _lifecycleSubPreviewChanged() {
+  clearTimeout(_lifecycleSubPreviewTimer);
+  _lifecycleSubPreviewTimer = setTimeout(_lifecycleSubPreview, _LIFECYCLE_SUB_PREVIEW_DELAY_MS);
+}
+window._lifecycleSubPreviewChanged = _lifecycleSubPreviewChanged;
 
 function _lifecycleSubSelectHTML(id, options, current, onchange) {
   const opts = options.map(([val, label]) => `<option value="${escHtml(val)}"${val === current ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
@@ -35467,9 +35583,11 @@ function _openLifecycleSubscriptionForm(prd, subOrNull) {
       <button class="btn-icon" onclick="_prdCloseModal()" title="${escHtml(t('btn_close')||'Close')}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow-y:auto;">
-      <label style="${small}">${escHtml(t('lifecycle_sub_form_kinds') || 'Event kinds')}</label>
+      <label style="${small}">${escHtml(t('lifecycle_sub_form_kinds') || 'Event kinds')}${settingsHelpLink({ helpDocs: _LIFECYCLE_SUB_PICKER_DOCS, helpKey: 'lifecycle_sub_picker_help' })}</label>
       <div style="${small}">${escHtml(t('lifecycle_sub_form_kinds_hint') || 'Pick at least one kind, or choose a level below.')}</div>
-      <div>${_lifecycleSubKindsHTML(Array.isArray(f.kinds) ? f.kinds : [])}</div>
+      <div id="lcSubKindPicker">${_lifecycleSubKindsHTML(Array.isArray(f.kinds) ? f.kinds : [], _lifecycleSubPickerGroups)}</div>
+      <div id="lcSubKindStatus" style="${small}"></div>
+      <div id="lcSubPreview" style="font-size:12px;"></div>
       <div style="${small}">${escHtml(t('lifecycle_sub_form_opt_in_hint') || "An opt-in kind only fires when the Automaton's notification events include it.")}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
         <div><label style="${small}">${escHtml(t('lifecycle_sub_form_level') || 'Level')}</label>
@@ -35517,6 +35635,7 @@ function _openLifecycleSubscriptionForm(prd, subOrNull) {
   // Live delivery state and the federation peer list, both read on open.
   _lifecycleSubSettings = null;
   _lifecycleSubLoadSettings();
+  _lifecycleSubLoadKinds();
   _lifecycleSubLoadPeers(sinkType === 'peer' ? (sink.target || '') : '');
   _lifecycleSubRenderHelp();
 }

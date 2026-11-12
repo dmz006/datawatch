@@ -224,9 +224,16 @@ Open an Automaton in the PWA (**Automata** → the Automaton) and choose the
    Automaton: rules scoped to it, plus unscoped rules that fire for every
    Automaton ("all automata"). Each row shows the event kinds or level, the
    sink and target, and badges for one-shot, coalesce, expiry and owner.
-2. **Add.** Choose **Add subscription**. Tick at least one event kind (they
-   are grouped as Automaton status, Task status, Other and Warnings (opt-in),
-   the last holding the warning and supervisor kinds) or pick a level.
+2. **Add.** Choose **Add subscription**. Tick at least one event kind or
+   pick a level. The picker loads every kind from
+   `GET /api/autonomous/event-kinds` and shows each with its one-line
+   description, grouped Automaton, Task, Review, Capacity and Budget. If the
+   list cannot be loaded, a note says so and the built-in list is shown. The
+   line under the picker reads "Would have matched in the last day: N" and
+   comes from `POST /api/autonomous/subscriptions/preview`, so you can judge
+   a rule before saving it; it refreshes shortly after each tick and is
+   skipped while nothing is ticked. The **?** beside "Event kinds" opens this
+   page.
    Choose the scope (this Automaton or all automata), an optional task id,
    the sink type and its target, and optionally send-input text (session
    sink only), one-shot, coalesce and an expiry in hours. The form checks
