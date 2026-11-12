@@ -4428,10 +4428,21 @@ filter in the **Filters** sheet. Each tag is one chip under its axis group
 (Kind, Role, Lane, Compute node, Project, Your tags, Other), with a search box
 and a **Show all** control; the per-Automaton, per-stage and per-task tags
 have no chip (an Automaton is picked from the **Find an Automaton** picker),
-and the selected tags also show as removable chips above the list. Chip counts
+and the selected tags also show as removable chips above the list. Every chip
+and picker item leads with the readable name — operator tag name, project or
+folder name, node name, Automaton title — with the id only as small secondary
+text, and **unnamed** with the id when a name cannot be resolved; a raw id is
+never the primary text and filtering keys on the tag's value as before. The
+**Compute node** group is per node: one entry per local host (under its real
+hostname) or federated peer (under its registered peer name), built from the
+sessions in the list rather than the tag inventory — a peer's sessions carry no
+`compute:` tag at all and an alias of one host merges — and the entry is never
+"local" or "all". Chip counts
 are the sessions in the list currently loaded in the browser, not the
 `/api/sessions/tags` inventory counts, so a tag can show a smaller number than
-the inventory. This is a display-only change: it reads no `autonomous.tags`
+the inventory. Session cards render per-record tags whose value is a bare id
+(`automaton:xxxxxxxx` and friends) as the axis word alone — the chip reads
+**Automaton** — with the full tag in the tooltip, so no card shows a raw id. This is a display-only change: it reads no `autonomous.tags`
 key, changes no tag, stored selection or filter result, and needs no migration
 or restart — a refreshed PWA shows the new filter. The tag filter rows
 elsewhere are unchanged. See
