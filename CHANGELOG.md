@@ -19,6 +19,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **New how-to: the event-driven supervisor.** `docs/howto/automaton-event-driven-supervisor.md` walks through the wake settings (`supervisor_loop.wake.enabled`, `.kinds`, `.coalesce_seconds`, `.fallback_interval_minutes`), choosing events in the picker, subscribing to a peer, adding an event kind or sink through the extension registration, MCP resource subscriptions (`mcp.resource_subscriptions`) and what is and is not forwarded across a peer, with every setting on the config file, REST, MCP, CLI, messaging channel and web settings. It is added to the curated how-to set, the how-to indexes and the API-to-MCP mapping, and the definitions gain entries for event kind, subscription, sink, wake, coalesce, fallback check and peer event. The how-to records what the code does today: the wake settings are stored, validated and reported, but the daemon does not yet call the code that registers the wake at start-up, nothing reads the fallback interval, and the peer event subscription has no switch, so a stored subscription with a session sink is the working way to wake the supervisor.
 
+- **The event-driven supervisor how-to lists what the operator must still review.** A new "Open items for the operator" section in `docs/howto/automaton-event-driven-supervisor.md` gathers seven points in one place: the wake is not started by the daemon, the fallback interval is not read, the wake ignores the notify set, pulling a peer's events has no switch, the `peer` filter is set through REST and the MCP resource URI only, a registered sink type is not delivered to, and mobile parity is tracked separately.
+
 ## v9.136.0 — Supervisor wake settings
 
 ### Added
