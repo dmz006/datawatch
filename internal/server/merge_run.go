@@ -86,7 +86,7 @@ var mergeRunMu sync.Mutex
 // and pipeline sources are autonomous.merge_pipeline settings. dataDir is the
 // daemon data directory the record store lives under, resolved by the caller
 // (Server.statePath on the request path).
-func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project, dataDir string, ship mergepipeline.ShipRunner) *mergepipeline.Runner {
+func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project, dataDir string, ship mergepipeline.ShipRunner, opts ...mergeRunnerOption) *mergepipeline.Runner {
 	var records *mergepipeline.RecordStore
 	if rs, err := mergepipeline.NewRecordStore(dataDir); err == nil {
 		records = rs
@@ -164,6 +164,12 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 			runner.Locks = locks
 		}
 	}
+	for _, o := range opts {
+		if o == nil {
+			continue
+		}
+		o(runner)
+	}
 	return runner
 }
 
@@ -211,7 +217,7 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner()).Run(ctx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner(), s.planRecordsOption()).Run(ctx, mergepipeline.RunRequest{
 		Title: body.Title, Branches: body.Branches, AutomatonID: body.Automaton,
 	})
 	if err == nil && body.Automaton != "" {
