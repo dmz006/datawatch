@@ -128,8 +128,7 @@ often than search:
 - **Views** — your saved views: save the current cut under a name, apply,
   rename or delete one (see [Saved views](#saved-views)).
 - **Status chips** — the full set of state chips (running, waiting_input,
-  rate_limited, complete, failed, killed), so you can pick a state even when
-  the one-line count above the list does not show it. The same section
+  rate_limited, complete, failed, killed). The same section
   also holds the **watched only** toggle, the **Backend** chips and, when
   you use tags, the **Tags** filter.
 
@@ -185,14 +184,10 @@ Two details worth knowing:
 - In **tiles** mode the grid keeps following the viewport width on resizes,
   so rotating a tablet re-lays the tiles out without a reload.
 
-### The status counts
+### The state filter
 
-Above the list, one line of status counts shows one chip per state present,
-with its count, and the total session count at the end (e.g.
-`● running 4   ● waiting_input 2   sessions 21`). It takes a single line
-instead of a block of buttons, and the counts still filter: clicking a state
-chip **filters the page to that state**, and clicking it again (or choosing
-**All** in the Filters sheet's status chips) clears the selection. The chip
+The page has no count line above the list. The status chips in the Filters sheet
+**filter the page to that state**, and choosing **All** clears the selection. The chip
 choice is remembered per device (`cs_session_state_chip`). Picking a
 historical state (complete, failed, killed, …) also auto-enables the History
 toggle so those sessions actually become visible instead of silently
@@ -357,7 +352,7 @@ same groups, the same counts and state mixes, wherever you read them:
 
 The Sessions page controls above: the one toolbar row (search, Filters with
 its badge, server chips, mode toggle), the Filters sheet (Group by with the
-tag-prefix entries, Views, status chips), the one-line status counts, Show
+tag-prefix entries, Views, status chips), Show
 more paging, collapsible group headers with the fold-all control and the
 **+N** tag chip on phones. All of it is localised in the five locales — the
 labels you see are the translated ones in your PWA language.
@@ -542,7 +537,7 @@ in your tag registry.
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
-| One-line status counts + state filter | PWA, above the list | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
+| State filter | PWA, Filters sheet | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
 | Saved views (mode + axis + prefix + filter) | PWA Filters sheet | yes (`cs_sessions_saved_views`) | save / apply / rename / delete; names trimmed and capped |
 | Tile ⋯ menu actions | PWA, per tile | no | Stop / Commands (waiting_input) / Restart / Delete / Summary (if summarizer on) / Watch / Mute |
 | Progress on tiles; done/total on automaton blocks | PWA tile bar; grouped read (CLI, comm) | no | tile bar is lifecycle-based; automaton blocks carry their done/total terminal-session tally |

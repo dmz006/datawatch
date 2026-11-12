@@ -4665,7 +4665,7 @@ function renderSessionsView() {
     ${disconnectedBannerHtml}
     <div class="sessions-topbar"><div class="sessions-topbar-servers"></div>${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
     ${toggleBtn}
-    ${renderSessionsSummaryBar(visible)}${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
+    ${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
     ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
 
   // Restore filter input focus and cursor position
@@ -5763,24 +5763,6 @@ function renderSessionsModeToggle(mode) {
   return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
 }
 
-function _sessionsSummaryLabel(st) {
-  const k = { waiting_input: 'waiting', rate_limited: 'rate_limited' }[st] || st;
-  const fb = String(k).replace(/_/g, ' ');
-  return _stx('session_chip_' + k, fb);
-}
-
-function renderSessionsSummaryBar(sessions) {
-  const rows = _sessionsSummaryCounts(sessions);
-  if (!rows.length) return '';
-  const items = rows.map(r => {
-    const cur = r.state === state.sessionStateChip;
-    const next = cur ? 'all' : r.state;
-    const tip = r.state + ': ' + r.count + (cur ? ' — ' + _stx('sessions_summary_clear_tip', 'clear the state filter') : ' — ' + _stx('sessions_summary_filter_tip', 'filter to this state'));
-    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(next)}')" title="${escHtml(tip)}" aria-pressed="${cur ? 'true' : 'false'}" data-state="${escHtml(r.state)}">${escHtml(_sessionsSummaryLabel(r.state))} <span class="sessions-summary-count">${r.count}</span></button>`;
-  }).join('<span class="sessions-summary-sep" aria-hidden="true">·</span>');
-  return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(_stx('sessions_total_label', 'sessions'))} ${escHtml(String(sessions.length))}</span></div>`;
-}
-
 // ── Filters sheet ───────────────────────────────────────────────────────
 // Open state lives in state._sessionsSheetOpen so every re-render redraws the
 // sheet in place. The Escape listener exists only while the sheet is open.
@@ -5874,7 +5856,6 @@ window.sessionsFiltersOpen = sessionsFiltersOpen;
 window.sessionsFiltersClose = sessionsFiltersClose;
 window.sessionsFiltersBackdrop = sessionsFiltersBackdrop;
 window.sessionsFiltersBadgeCount = _sessionsActiveFilterCount;
-window.renderSessionsSummaryBar = renderSessionsSummaryBar;
 
 // Sessions carry no task counts, so progress is lifecycle based: a finished
 // session fills the bar, a failed or stopped one shows how far it got (empty),
