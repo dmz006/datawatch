@@ -4772,5 +4772,8 @@
   "merge_blocked_age_minutes": "%1$s min",
   "merge_blocked_age_hours": "%1$s h",
   "merge_blocked_age_days": "%1$s d",
-  "merge_blocked_help_link": "¿Qué significa una fusión bloqueada? Abrir la ayuda de fusión del Autómata"
+  "merge_blocked_help_link": "¿Qué significa una fusión bloqueada? Abrir la ayuda de fusión del Autómata",
+  "settings_finalise_interval": "Session finalise interval (min)",
+  "settings_finalise_interval_help": "How often the daemon marks sessions whose process is gone as finished. 0 turns the scheduled runs off; a run always happens at start-up.",
+  "session_state_process_gone": "Process gone, finalised"
 }
