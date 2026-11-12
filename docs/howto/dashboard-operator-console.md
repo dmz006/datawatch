@@ -117,6 +117,21 @@ from any read surface above. With `dashboard.hide_inactive_cards` on (the
 default), cards that have no live data stay out of the grid and the Add-Card
 picker; set it false to keep them visible so you can pin your layout.
 
+The board also carries its own feature card besides the five console cards:
+the **Automaton Timeline** card, the Gantt chart of your Automata across
+every project — each stage a band, each member a bar with its start and end,
+blocked and waiting spans hatched on top, a solid today line and a dashed
+projected-finish line — with its own five filters (project, automation,
+stage, kind, tag). It reads `GET /api/autonomous/timeline`, which is a
+different read from the console's five sections: the console is the
+roll-up, the Timeline card is the interval chart. It needs the autonomous
+feature running for its data, and like the other feature cards it leaves the
+grid and the Add-Card picker while it has no live data under
+`dashboard.hide_inactive_cards` (the default). It is a different thing from
+the board's 6h Gantt card, which draws the last six hours of session
+activity. See [automata-timeline.md](automata-timeline.md) for how the chart
+reads and how its blocked and waiting time is measured.
+
 ## REST API
 
 ```console
@@ -168,6 +183,7 @@ parses the same verb.
 | The roll-up itself | the PWA Dashboard view (five console cards), `datawatch dashboard console`, `dashboard_console_get` (MCP), `GET /api/dashboard/console`, or the `dashboard console` chat verb |
 | The data behind one section | the section's PWA anchor — `#questions`, `#held-questions`, `#lanes`, `#usage`, `#releases` |
 | The switches | Settings → General (`dashboard.*` keys), YAML, `datawatch config set`, or `PUT /api/config` |
+| The Automata interval chart itself | the board's *Automaton Timeline* card — [automata-timeline.md](automata-timeline.md) |
 
 ## Notes and limits
 
