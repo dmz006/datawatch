@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.147.2 — Lane fill tolerates an unreachable compute node that holds nothing
+
+### Fixed
+
+- **An unreachable compute node that holds nothing no longer blocks the GPU lanes.** Lane fill used to treat any pool node it could not read as a reason to stop every GPU lane, even a node that had no lease, no Automaton and no session on it. Such a node is now a degraded warning: the lanes are judged from the nodes that can be read, and the unreachable node is listed separately with its name, the error and the time it first failed. A node that holds a lease, an Automaton placement, a running session or a lane still blocks, as before.
+
+### Added
+
+- **`autonomous.lane_fill.host_down_after_minutes` (default 10).** How many minutes an unreachable node that holds no work may stay unreachable before lane fill treats it as down and carries on without it. `0` keeps the old behavior, where any unreadable node blocks. The setting is on every surface: the config file, `GET` and `PUT /api/config`, the MCP config tools, the CLI, the chat commands and Settings in the web page, in all five languages.
+- **Degraded hosts are shown apart from blockers.** The lane fill status in REST, the CLI, MCP and the web lane view lists degraded hosts in their own section, with a note that they are not blocking the lanes. A successful read clears the entry on the next poll.
+- Docs: the lane fill how-to, the definitions entry (Lane fill and Degraded host), the operations setting table and the API reference describe the degraded host rule and the setting.
+
 ## v9.147.1 — Plan registry reconciliation report
 
 ### Added
