@@ -28,3 +28,5 @@ the session is started and tagged, and its name and state are reported.
 No second-ranked skill was added: the gap ranking report was not present in the repository, so no rank-2 gap could be read.
 
 No third-ranked skill was added: the gap ranking report was not present in the repository, so no rank-3 gap could be read.
+
+No fourth-ranked skill was added: the gap ranking report was not present in the repository, so no rank-4 gap could be read.
