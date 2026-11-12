@@ -1351,6 +1351,11 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	if c.Kind != QuestionChangeAnswered || c.Question.ID == "" {
 		return
 	}
+	// The answer to a branch refresh conflict question sets the Automaton's
+	// refresh state (branch_refresh_question.go).
+	if a.M.onBranchRefreshAnswer(c) {
+		return
+	}
 	if a.resolveInfraHoldAnswer(c) {
 		return
 	}

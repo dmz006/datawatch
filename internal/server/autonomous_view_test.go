@@ -585,6 +585,25 @@ func stripReviewState(t *testing.T, m map[string]any) {
 	delete(m, "review_state")
 }
 
+// stripBranchRefreshState removes the branch refresh state the default GET
+// adds (branch_refresh_api.go): branch_refresh and branch_refresh_override
+// are always present (null when unset) and branch_refresh_enabled is derived.
+func stripBranchRefreshState(t *testing.T, m map[string]any) {
+	t.Helper()
+	if v, ok := m["branch_refresh_enabled"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			t.Fatalf("branch_refresh_enabled is not a boolean: %v", v)
+		}
+	}
+	delete(m, "branch_refresh_enabled")
+	if v, ok := m["branch_refresh"]; ok && v == nil {
+		delete(m, "branch_refresh")
+	}
+	if v, ok := m["branch_refresh_override"]; ok && v == nil {
+		delete(m, "branch_refresh_override")
+	}
+}
+
 func TestPRDRESTDefaultUnchanged(t *testing.T) {
 	const specText = "task spec text"
 
@@ -611,8 +630,10 @@ func TestPRDRESTDefaultUnchanged(t *testing.T) {
 		stripNotifyEffective(t, wantMap)
 		stripReviewState(t, got)
 		stripReviewState(t, wantMap)
+		stripBranchRefreshState(t, got)
+		stripBranchRefreshState(t, wantMap)
 		if !reflect.DeepEqual(got, wantMap) {
-			t.Errorf("default GET body differs from stored PRD (notify_events_effective and review_state aside)\n got: %s\nwant: %s", rec.Body.String(), want)
+			t.Errorf("default GET body differs from stored PRD (notify_events_effective, review_state and branch refresh state aside)\n got: %s\nwant: %s", rec.Body.String(), want)
 		}
 		if !strings.Contains(rec.Body.String(), specText) {
 			t.Errorf("default GET body does not contain task spec text %q; body %s", specText, rec.Body.String())

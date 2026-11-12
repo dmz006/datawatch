@@ -536,6 +536,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 				}
 			}
+			// Gap between tasks: bring the branch up to date with its base
+			// when it has fallen behind (branch_refresh.go).
+			m.maybeRefreshBranch(ctx, prd)
 			// Re-read authoritative status: executeOne returns nil even after
 			// exhausting retries (it saves TaskFailed itself), so we must
 			// inspect the stored record rather than relying on the error return.

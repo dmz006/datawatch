@@ -55,6 +55,7 @@ automation_set_verification_llm
 automation_skip_member
 automation_update
 autonomous_attention_list
+autonomous_branch_refresh_stats
 autonomous_cleanup_status
 autonomous_config_get
 autonomous_config_set
@@ -122,6 +123,7 @@ autonomous_prd_scan_fix
 autonomous_prd_scan_results
 autonomous_prd_scan_rules
 autonomous_prd_set_authorized_paths
+autonomous_prd_set_branch_refresh
 autonomous_prd_set_breaking_change
 autonomous_prd_set_continue_on_story_failure
 autonomous_prd_set_failure_escalation

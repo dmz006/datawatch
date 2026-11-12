@@ -392,6 +392,12 @@ type PRD struct {
 	// BL191 Q3 — append-only per-PRD audit timeline.
 	Decisions []Decision `json:"decisions,omitempty"`
 
+	// BranchRefresh is the state of the last branch refresh against main.
+	BranchRefresh *BranchRefresh `json:"branch_refresh,omitempty"`
+	// BranchRefreshOverride overrides the global branch-refresh setting for
+	// this PRD; nil means follow the global setting.
+	BranchRefreshOverride *bool `json:"branch_refresh_override,omitempty"`
+
 	// PlanReview (2026-10-17 plan-review gate) — the latest pre-approval
 	// plan-review verdict for this PRD (see plan_review.go). Nil when the
 	// configured mode is off (default) or no review has been recorded; the
@@ -2173,4 +2179,22 @@ type MergeBlock struct {
 	Since       time.Time `json:"since,omitempty"`
 	LastRetryAt time.Time `json:"last_retry_at,omitempty"`
 	Attempts    int       `json:"attempts,omitempty"`
+}
+
+// BranchRefresh results (BranchRefresh.LastResult).
+const (
+	BranchRefreshClean    = "clean"
+	BranchRefreshConflict = "conflict"
+	BranchRefreshSkipped  = "skipped"
+	BranchRefreshError    = "error"
+)
+
+// BranchRefresh records the outcome of the latest refresh of a PRD branch
+// from main.
+type BranchRefresh struct {
+	LastRefreshAt  time.Time `json:"last_refresh_at"`
+	CommitsBehind  int       `json:"commits_behind"`
+	LastResult     string    `json:"last_result"` // clean | conflict | skipped | error
+	LastMainCommit string    `json:"last_main_commit,omitempty"`
+	Stopped        bool      `json:"stopped,omitempty"`
 }

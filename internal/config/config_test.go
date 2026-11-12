@@ -1359,3 +1359,17 @@ func TestSensitiveWritesEnabled(t *testing.T) {
 		})
 	}
 }
+
+func TestAutonomousBranchRefreshDefaults(t *testing.T) {
+	var a AutonomousConfig
+	if a.BranchRefreshEnabled {
+		t.Error("BranchRefreshEnabled should default off")
+	}
+	if got := a.BranchRefreshLimit(); got != 5 {
+		t.Errorf("default limit = %d, want 5", got)
+	}
+	a.BranchRefreshBehindLimit = 12
+	if got := a.BranchRefreshLimit(); got != 12 {
+		t.Errorf("explicit limit = %d, want 12", got)
+	}
+}

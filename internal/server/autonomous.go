@@ -859,6 +859,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.handleGeneratedArtefactPRD(w, r, id, action)
 		return
 	}
+	// Branch refresh: POST branch-refresh sets or clears the per-Automaton
+	// override (branch_refresh_api.go).
+	if action == "branch-refresh" {
+		s.handleBranchRefreshOverride(w, r, id)
+		return
+	}
 	switch action {
 	case "outputs":
 		if r.Method != http.MethodGet {

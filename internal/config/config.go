@@ -3123,6 +3123,12 @@ var DefaultSnapshotNeverStage = []string{
 type AutonomousConfig struct {
 	// Enabled gates the background loop. Off by default.
 	Enabled bool `yaml:"enabled" json:"enabled"`
+	// BranchRefreshEnabled turns on refreshing an Automaton branch that has
+	// fallen behind its base. Off by default.
+	BranchRefreshEnabled bool `yaml:"branch_refresh_enabled" json:"branch_refresh_enabled"`
+	// BranchRefreshBehindLimit is how many commits behind the base a branch
+	// may be before it is refreshed. Zero reads as 5; see BranchRefreshLimit.
+	BranchRefreshBehindLimit int `yaml:"branch_refresh_behind_limit" json:"branch_refresh_behind_limit"`
 	// PollIntervalSeconds is the loop tick (default 30).
 	PollIntervalSeconds int `yaml:"poll_interval_seconds,omitempty" json:"poll_interval_seconds,omitempty"`
 	// MaxParallelTasks is deprecated and read by nothing: it never
@@ -4220,6 +4226,15 @@ func loadShipped(cfg *Config) error {
 		}
 	}
 	return ValidateShippedSetting(ShippedSettingPrefix+"filter_default", c.FilterDefault)
+}
+
+// BranchRefreshLimit returns the behind-commit limit in effect: the
+// configured value, or 5 when it is zero.
+func (a AutonomousConfig) BranchRefreshLimit() int {
+	if a.BranchRefreshBehindLimit == 0 {
+		return 5
+	}
+	return a.BranchRefreshBehindLimit
 }
 
 // PreserveAttemptWorkEnabled reports whether failed-attempt work is kept.

@@ -211,6 +211,17 @@ var (
 		Help: "Seconds since the coordinator last ran a supervisor watch pass (-1 when it never has)",
 	})
 
+	// Branch refresh gauges: Automata by the result of their latest refresh,
+	// and the Automata whose refreshing a conflict stopped.
+	BranchRefreshAutomata = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_branch_refresh_automata",
+		Help: "Automata by the result of their latest branch refresh (clean, conflict, error)",
+	}, []string{"result"})
+	BranchRefreshStopped = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_branch_refresh_stopped",
+		Help: "Automata whose branch refreshing a merge conflict stopped",
+	})
+
 	// Supervisor loop gauges.
 	SupervisorLoopRuns = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "datawatch_supervisor_loop_runs",
@@ -317,6 +328,7 @@ func Register() {
 			UIPromptDismissalsTotal,
 			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
 			SupervisorLoopRuns, SupervisorLoopJobsEnabled, SupervisorLoopLastRunAge,
+			BranchRefreshAutomata, BranchRefreshStopped,
 			HostLoadLastRead, HostLoadLimit, HostLoadBreached, HostLoadOrphansReaped,
 			BurnGuardLevel, BurnGuardProjectedPercent, BurnGuardOverByPoints, BurnGuardPointsPerHour,
 			BurnGuardTicksTotal, BurnGuardStepsTotal, BurnGuardRefitsTotal, BurnGuardErrorsTotal,
