@@ -136,6 +136,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "sse_port", cfg.MCP.SSEPort, "SSE listen port")
 	fieldi(&b, "sse_bind_timeout", cfg.MCP.SSEBindTimeout, "Max time to retry failed SSE TCP binds (default 120s)")
 	fieldi(&b, "public_url", cfg.MCP.PublicURL, "Public base URL advertised to SSE clients when behind a reverse proxy (empty = bind address)")
+	fieldi(&b, "resource_subscriptions", cfg.MCP.ResourceSubscriptions, "Let MCP clients subscribe to the lifecycle events resource and receive resource-updated notifications (default false; restart needed)")
 	fieldi(&b, "token", cfg.MCP.Token, "Bearer token for SSE connections (empty = no auth)")
 	fieldi(&b, "tls_enabled", cfg.MCP.TLSEnabled, "Enable TLS for SSE server")
 	fieldi(&b, "tls_auto_generate", cfg.MCP.TLSAutoGenerate, "Auto-generate self-signed cert")

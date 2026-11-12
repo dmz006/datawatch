@@ -1960,6 +1960,8 @@
   "prd_settings_priority_hint": "Used when tasks wait for free capacity.",
   "settings_reserved_interactive": "Slots reserved for interactive sessions",
   "settings_mcp_public_url": "SSE public URL (reverse proxy)",
+  "settings_mcp_resource_subscriptions": "Ressourcen-Abonnements (Lebenszyklus-Ereignisse)",
+  "settings_mcp_resource_subscriptions_help": "An: Ein MCP-Client kann die Ressource für Lebenszyklus-Ereignisse (datawatch://events/lifecycle) abonnieren und erhält eine Aktualisierungsmeldung, wenn ein passendes Ereignis der Automaten eintritt – mit demselben Filter und denselben Ereignisarten wie ein Abonnement. Aus (Standard): Abonnieren wird nicht angeboten. Erfordert einen Neustart des Daemons.",
   "settings_acknowledge_unauthenticated": "Acknowledge unauthenticated listeners",
   "settings_acknowledge_unauthenticated_help": "Silences the startup warning for listeners reachable without authentication; changes no listener.",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",

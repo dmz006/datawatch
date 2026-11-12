@@ -218,6 +218,20 @@ See the operations guide for device-specific cert install instructions.
 
 ---
 
+## Resource subscriptions
+
+With `mcp.resource_subscriptions: true` (default `false`) the server advertises `resources.subscribe` and an MCP client can follow Automata lifecycle events. Call `resources/subscribe` on the lifecycle events resource with the filter in the URI's query, and the server sends `notifications/resources/updated` for that URI each time a matching event fires:
+
+```
+datawatch://events/lifecycle?kinds=task.failed,prd.completed&level=task
+```
+
+The query parameters are `kinds` (comma-separated event kinds), `level` (`prd`, `task` or `automation`), `prd_id`, `task_id` and `automation_id`. The filter is the same one a persisted subscription uses, with the same rules: at least one of `kinds` or `level` is required, and every kind must be one `autonomous_event_kinds` lists. An event is also held back when the Automaton's notify-event set excludes its kind, exactly as for a persisted subscription. The notification carries the subscribed `uri` and a `_meta` object with the event's `event_id`, `kind`, `prd_id` and `task_id`; read the resource (or call `autonomous_event_log`) for the recent events.
+
+A resource subscription belongs to its MCP session: nothing is stored, it ends on `resources/unsubscribe` or when the session closes, and a session may hold at most 32. A URI that is not the lifecycle events resource, names an unknown kind or level, or has no filter is refused with an invalid-params error; the daemon log says why. `resources/unsubscribe` of a URI that was never subscribed is not an error.
+
+With the setting off the server does not advertise `subscribe`, lists no lifecycle events resource and refuses `resources/subscribe`, as before. Changing the setting needs a daemon restart. Set it in the `mcp:` block of `config.yaml`, in Settings → General → MCP Server (**Resource subscriptions**), with `PUT /api/config` and `{"mcp.resource_subscriptions": true}`, `datawatch config set mcp.resource_subscriptions true`, the chat command `configure mcp.resource_subscriptions=true`, or the `config_set` MCP tool.
+
 ## Available Tools
 
 The MCP server exposes **150+ tools** across the surfaces below

@@ -2000,6 +2000,8 @@
   "prd_settings_priority_hint": "Used when tasks wait for free capacity.",
   "settings_reserved_interactive": "Slots reserved for interactive sessions",
   "settings_mcp_public_url": "SSE public URL (reverse proxy)",
+  "settings_mcp_resource_subscriptions": "Resource subscriptions (lifecycle events)",
+  "settings_mcp_resource_subscriptions_help": "On: an MCP client can subscribe to the lifecycle events resource (datawatch://events/lifecycle) and get a resource-updated notification when a matching Automata event fires, using the same filter and event kinds as a subscription. Off (default): subscribe is not offered. Needs a daemon restart.",
   "settings_acknowledge_unauthenticated": "Acknowledge unauthenticated listeners",
   "settings_acknowledge_unauthenticated_help": "Silences the startup warning for listeners reachable without authentication; changes no listener.",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
