@@ -44,6 +44,14 @@ const UncommittedCauseAutomatonFinished = "files were still uncommitted when the
 // The daemon's own generated documents a person has not changed do not count
 // as uncommitted work, and the question lists only the files that count.
 func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD) (blocked bool, err error) {
+	if prd.Git.Branch != "" && prd.ClusterProfile == "" && prd.ProjectDir != "" {
+		if removed, rerr := removeCompletionMarker(prd.ProjectDir); rerr != nil {
+			log.Printf("[autonomous] %s uncommitted-work: could not remove the completion marker: %v", prd.ID, rerr)
+		} else if removed {
+			log.Printf("[autonomous] %s uncommitted-work: removed the completion marker from the Automaton worktree", prd.ID)
+		}
+	}
+
 	policy := m.effectiveUncommittedWorkPolicy(prd)
 	if policy == config.UncommittedWorkPolicyOff {
 		return false, nil
@@ -53,7 +61,7 @@ func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD
 		return false, nil
 	}
 
-	files, derr := DetectUncommittedWork(ctx, prd.ProjectDir, m.driftGit)
+	files, skippedMarkers, derr := DetectUncommittedWorkSkipping(ctx, prd.ProjectDir, m.driftGit)
 	if derr != nil {
 		log.Printf("[autonomous] %s uncommitted-work: roll-up check skipped: %v", prd.ID, derr)
 		return false, nil
@@ -63,12 +71,17 @@ func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD
 		return false, nil
 	}
 
+	cause := UncommittedCauseAutomatonFinished
+	if note := skippedMarkerFilesNote(skippedMarkers); note != "" {
+		cause += "; " + note
+	}
+
 	if policy == config.UncommittedWorkPolicyWarn {
-		m.warnUncommittedWork(prd, nil, files, UncommittedCauseAutomatonFinished)
+		m.warnUncommittedWork(prd, nil, files, cause)
 		return false, nil
 	}
 
-	m.holdAutomatonForUncommittedWork(prd, files, UncommittedCauseAutomatonFinished)
+	m.holdAutomatonForUncommittedWork(prd, files, cause)
 	// A hold that was already open is left as it was; show the files as they
 	// are now.
 	all, outside := uncommittedFilePaths(files)

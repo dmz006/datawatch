@@ -26,6 +26,8 @@ dist/
 # restart-matrix sandboxes (RM_TMP_BASE) and their run logs
 /.rm/
 /.rm-work/
+# worker completion marker written into session worktrees
+DATAWATCH_COMPLETE
 
 # Local-environment leak prevention (AGENT.md "No local-environment
 # leaks in git" rule). Operator-specific values stay out of the repo.

@@ -35,19 +35,28 @@ type UncommittedFile struct {
 // gitguard.Default refuses to stage. An empty dir or a git error returns an
 // error so the caller can skip the check.
 func DetectUncommittedWork(ctx context.Context, dir string, run driftGitRunner) ([]UncommittedFile, error) {
+	files, _, err := DetectUncommittedWorkSkipping(ctx, dir, run)
+	return files, err
+}
+
+// DetectUncommittedWorkSkipping does what DetectUncommittedWork does and also
+// returns the sorted, de-duplicated paths of the daemon's marker files (see
+// isDaemonMarkerPath) it left out, whatever their git status, so a caller can
+// tell the operator which files were skipped.
+func DetectUncommittedWorkSkipping(ctx context.Context, dir string, run driftGitRunner) ([]UncommittedFile, []string, error) {
 	if dir == "" {
-		return nil, errors.New("uncommitted work check: empty directory")
+		return nil, nil, errors.New("uncommitted work check: empty directory")
 	}
 	if run == nil {
 		run = defaultDriftGitRunner
 	}
 	out, err := run(ctx, dir, "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	if err != nil {
-		return nil, fmt.Errorf("uncommitted work check in %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("uncommitted work check in %s: %w", dir, err)
 	}
 	files := parsePorcelainZ(out)
 	if len(files) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	paths := make([]string, len(files))
@@ -62,7 +71,16 @@ func DetectUncommittedWork(ctx context.Context, dir string, run driftGitRunner) 
 
 	seen := make(map[string]bool, len(files))
 	result := make([]UncommittedFile, 0, len(files))
+	var skipped []string
+	skippedSeen := map[string]bool{}
 	for _, f := range files {
+		if isDaemonMarkerPath(f.Path) {
+			if !skippedSeen[f.Path] {
+				skippedSeen[f.Path] = true
+				skipped = append(skipped, f.Path)
+			}
+			continue
+		}
 		if !keep[f.Path] || isBookkeepingPath(f.Path) || isDaemonToolingFile(f) || seen[f.Path] {
 			continue
 		}
@@ -78,7 +96,22 @@ func DetectUncommittedWork(ctx context.Context, dir string, run driftGitRunner) 
 		result = append(result, f)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
-	return result, nil
+	sort.Strings(skipped)
+	return result, skipped, nil
+}
+
+// skippedMarkerFilesNote names the daemon marker files the check skipped, in
+// one sentence for the question text. Empty when none were skipped.
+func skippedMarkerFilesNote(skipped []string) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+	names := append([]string(nil), skipped...)
+	sort.Strings(names)
+	if len(names) == 1 {
+		return fmt.Sprintf("Skipped the Automaton marker file %s (the daemon's own file, not work to commit).", names[0])
+	}
+	return fmt.Sprintf("Skipped the Automaton marker files %s (the daemon's own files, not work to commit).", strings.Join(names, ", "))
 }
 
 // parsePorcelainZ parses git status --porcelain=v1 -z output. Each record is
