@@ -2758,7 +2758,9 @@ function tryUpdateSessionsInPlace() {
   const list = document.querySelector('.session-list');
   if (!list) return false; // no list rendered yet
   if (state.selectMode) return false; // checkbox layout differs per render
-  if (state.sessionFilter) return false; // filtered set is highly dynamic
+  if (state.sessionFilter) return false; // free-text filter is dynamic
+  if (_sessionStateSel().length) return false; // status set filter is dynamic
+  if (_sessionBackendSel().length) return false; // backend set filter is dynamic
 
   // Compute visible set the same way renderSessionsView does.
   const now = Date.now();
@@ -4843,15 +4845,180 @@ function _sessionTagSelectedLabel(tag) {
   return { primary: lbl.primary, secondary: (lbl.secondary !== lbl.primary ? lbl.secondary : '') };
 }
 
+// v9 — Status & Backend chips are multi-select SETS (empty = all).
+// Status selection lives in state.sessionStateChips; the legacy
+// single-select state.sessionStateChip stays in step as a reader of the
+// same choice. Backend selection lives in state.sessionBackendSel — its
+// own set, never the free-text search field. Both persist in localStorage.
+const SESSIONS_STATE_CHIPS_KEY = 'cs_session_state_chips';
+const SESSIONS_BACKEND_SEL_KEY = 'cs_session_backend_sel';
+
+function _sessionStateSel() {
+  const legacy = (typeof state.sessionStateChip === 'string') ? state.sessionStateChip : '';
+  const raw = Array.isArray(state.sessionStateChips) ? state.sessionStateChips : [];
+  const arr = raw.filter(c => c === 'active' || c === 'waiting' || c === 'done' || (c && String(c) && String(c) !== 'all'));
+  // Precedence: a true multi-select (2+ chips) is authoritative; otherwise
+  // the single-select legacy reader (state.sessionStateChip) is what the
+  // operator / tests set last — it resets the group when 'all' and picks a
+  // chip when any state name.
+  if (arr.length > 1) return arr;
+  if (legacy && legacy !== 'all') return [legacy];
+  if (arr.length === 1) return arr;
+  return [];
+}
+
+function _sessionStateSave(arr) {
+  try {
+    if (arr && arr.length) localStorage.setItem(SESSIONS_STATE_CHIPS_KEY, JSON.stringify(arr));
+    else localStorage.removeItem(SESSIONS_STATE_CHIPS_KEY);
+  } catch (_) { /* storage blocked: choice lives in memory for this page */ }
+}
+
+function _sessionMatchesState(sel, st) {
+  if (!sel || !sel.length) return true;
+  for (let i = 0; i < sel.length; i++) {
+    const c = sel[i];
+    if (c === 'active') { if (st === 'running' || st === 'rate_limited') return true; }
+    else if (c === 'waiting') { if (st === 'waiting_input') return true; }
+    else if (c === 'done') { if (DONE_STATES.has(st)) return true; }
+    else if (c === st) return true;
+  }
+  return false;
+}
+
+// Human-readable label for a status chip key (chips use state keys; legacy
+// keys map to their t() strings).
+function _sessionStateChipLabel(key) {
+  const k = 'session_chip_' + key;
+  const v = t(k);
+  return (v && v !== k) ? v : String(key);
+}
+
+function _sessionBackendSel() {
+  return (Array.isArray(state.sessionBackendSel) ? state.sessionBackendSel : []).filter(b => String(b) && String(b) !== 'all');
+}
+
+function _sessionBackendSave(arr) {
+  try {
+    if (arr && arr.length) localStorage.setItem(SESSIONS_BACKEND_SEL_KEY, JSON.stringify(arr));
+    else localStorage.removeItem(SESSIONS_BACKEND_SEL_KEY);
+  } catch (_) { /* storage blocked: choice lives in memory for this page */ }
+}
+
+// Is this free-text value a backend family (used to migrate legacy saved
+// views that stored the backend filter in the search box)?
+function _sessionBackendIsFamily(bt) {
+  const s = String(bt || '').trim().toLowerCase();
+  if (!s) return false;
+  const shorts = {
+    'claude-code': 1, 'opencode': 1, 'opencode-acp': 1, 'opencode-prompt': 1,
+    'openwebui': 1, 'ollama': 1, 'aider': 1, 'pi': 1, 'pi-prompt': 1, 'goose': 1,
+    'gemini': 1, 'shell': 1, 'council-virtual': 1, // GH#172 D64
+  };
+  if (shorts[s]) return true;
+  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  for (let i = 0; i < sessions.length; i++) {
+    if (sessions[i] && String(sessions[i].backend_family).toLowerCase() === s) return true;
+  }
+  return false;
+}
+
+// setSessionStateChip — the chip entry point (inline onclick target and
+// legacy API). Multi-select semantics: add an unselected state, remove a
+// selected one (second click removes), 'all' empties the group.
+function setSessionStateChip(chip) {
+  let next;
+  if (chip === 'all') {
+    next = [];
+  } else {
+    next = _sessionStateSel().slice();
+    const i = next.indexOf(chip);
+    if (i >= 0) next.splice(i, 1); else next.push(chip);
+  }
+  state.sessionStateChips = next;
+  // Legacy single-select mirror: one selection reads as that chip, else 'all'.
+  state.sessionStateChip = (next.length === 1) ? next[0] : 'all';
+  _sessionStateSave(next);
+  state.selectedSessions.clear();
+  // GATE finding (operator 2026-05-10): if the filter selects a historical
+  // state, auto-activate History so those sessions are visible.
+  const historical = ['complete', 'failed', 'killed', 'cancelled', 'archived'];
+  if (next.some(c => historical.indexOf(c) >= 0) && !state.showHistory) state.showHistory = true;
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.setSessionStateChip = setSessionStateChip;
+
+// setBackendFilter — its own multi-select toggle; the search box is left
+// alone, so "claude-code" as a chip no longer lands in the search field.
+function setBackendFilter(backend) {
+  let next;
+  if (backend === 'all') {
+    next = [];
+  } else {
+    next = _sessionBackendSel().slice();
+    const i = next.indexOf(backend);
+    if (i >= 0) next.splice(i, 1); else next.push(backend);
+  }
+  state.sessionBackendSel = next;
+  _sessionBackendSave(next);
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.setBackendFilter = setBackendFilter;
+
+// "All" chip click for either group — clears the whole group.
+function sessionsFilterClearGroup(which) {
+  if (which === 'backend') {
+    state.sessionBackendSel = [];
+    _sessionBackendSave([]);
+  } else {
+    state.sessionStateChips = [];
+    state.sessionStateChip = 'all';
+    _sessionStateSave([]);
+  }
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.sessionsFilterClearGroup = sessionsFilterClearGroup;
+
+// Summary-row "Clear all" — every chip group at once (Status, Backend,
+// Tags), back to the empty ("all") state.
+function sessionsSummaryClearAll() {
+  state.sessionStateChips = [];
+  state.sessionStateChip = 'all';
+  _sessionStateSave([]);
+  state.sessionBackendSel = [];
+  _sessionBackendSave([]);
+  if (typeof tagBrowseClear === 'function') tagBrowseClear('session');
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.sessionsSummaryClearAll = sessionsSummaryClearAll;
+
+// v9 — the compact row above the session list (selected Status, Backend and
+// Tag chips) — see _sessionTagSelectedSummaryHTML below.
+
 // _sessionTagSelectedSummaryHTML is the compact row above the session list:
 // one small removable chip per selected tag plus a clear-all. Each chip's
 // primary text is the human-readable name (“unnamed” plus the id's first 8
 // characters when no name is known); the id rides as small secondary text.
 // Empty when nothing is selected.
 function _sessionTagSelectedSummaryHTML() {
-  const sel = _sessionTagSelection();
-  if (!sel.length) return '';
-  const chips = sel.map(tag => {
+  const tagSel = _sessionTagSelection();
+  const stateSel = _sessionStateSel();
+  const backendSel = _sessionBackendSel();
+  if (!tagSel.length && !stateSel.length && !backendSel.length) return '';
+  let chips = '';
+  stateSel.forEach(key => {
+    const shown = _sessionStateChipLabel(key);
+    const rm = _stx('sessions_filters_status_remove', 'Remove %1$s').replace('%1$s', shown);
+    chips += `<span class="sessions-tag-sel-chip" data-filter-chip="status:${escHtml(key)}"><span class="sessions-tag-sel-text">${escHtml(shown)}</span><button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" aria-pressed="true" onclick="setSessionStateChip('${escJsAttr(key)}')">&#10005;</button></span>`;
+  });
+  backendSel.forEach(bt => {
+    const rm = _stx('sessions_filters_backend_remove', 'Remove %1$s').replace('%1$s', bt);
+    chips += `<span class="sessions-tag-sel-chip" data-filter-chip="backend:${escHtml(bt)}"><span class="sessions-tag-sel-text">${escHtml(bt)}</span><button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" aria-pressed="true" onclick="setBackendFilter('${escJsAttr(bt)}')">&#10005;</button></span>`;
+  });
+  tagSel.forEach(tag => {
     const lbl = _sessionTagSelectedLabel(tag);
     const idText = (lbl.secondary && lbl.secondary !== lbl.primary) ? lbl.secondary : '';
     // The tooltip names the tag by its name; the id rides in parentheses
@@ -4859,10 +5026,10 @@ function _sessionTagSelectedSummaryHTML() {
     const tipName = idText ? (lbl.primary + ' (' + idText + ')') : lbl.primary;
     const rm = _stx('sessions_filters_tag_remove', 'Remove %1$s').replace('%1$s', tipName);
     const idHtml = idText ? `<span class="sessions-chip-id">${escHtml(idText)}</span>` : '';
-    return `<span class="sessions-tag-sel-chip"><span class="sessions-tag-sel-text">${escHtml(lbl.primary)}</span>${idHtml}<button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" onclick="sessionTagChipToggle('${escJsAttr(tag)}')">&#10005;</button></span>`;
-  }).join('');
+    chips += `<span class="sessions-tag-sel-chip" data-tag="${escHtml(tag)}"><span class="sessions-tag-sel-text">${escHtml(lbl.primary)}</span>${idHtml}<button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" aria-pressed="true" onclick="sessionTagChipToggle('${escJsAttr(tag)}')">&#10005;</button></span>`;
+  });
   const clear = _stx('sessions_filters_tag_clear_all', 'Clear all');
-  return `<div class="sessions-tag-selected" role="group" aria-label="${escHtml(_stx('sessions_filters_tag_selected', 'Selected filters'))}">${chips}<button type="button" class="sessions-tag-sel-clear" onclick="tagBrowseClear('session')">${escHtml(clear)}</button></div>`;
+  return `<div class="sessions-tag-selected" role="group" aria-label="${escHtml(_stx('sessions_filters_tag_selected', 'Selected filters'))}">${chips}<button type="button" class="sessions-tag-sel-clear" onclick="sessionsSummaryClearAll()">${escHtml(clear)}</button></div>`;
 }
 
 // sessionTagChipToggle flips one inventory tag in the session tag selection.
@@ -4904,27 +5071,39 @@ function renderSessionsView() {
     if (!state.sessionFilter) state.sessionFilter = _sessionsSearchReadStored();
   }
   const filterText = (state.sessionFilter || '').toLowerCase();
-  // v7.0.0-alpha.22 — session-state filter chips (active / waiting /
-  // done / all). Persists in localStorage so the operator's choice
-  // survives page reloads. 'all' is the legacy behavior (gated by
-  // state.showHistory).
-  if (state.sessionStateChip === undefined) {
-    let storedChip = null;
-    try { storedChip = localStorage.getItem('cs_session_state_chip'); } catch (_) { storedChip = null; }
-    state.sessionStateChip = storedChip || 'all';
+  // v7.0.0-alpha.22 (multi-select) — status filter is a SET of chips:
+  // every selected state counts, any unselected state is hidden. Empty
+  // set = 'all'. Persists in localStorage; state.sessionStateChip is the
+  // legacy single-select reader of the same choice.
+  if (!Array.isArray(state.sessionStateChips)) {
+    let stored = null;
+    try { stored = localStorage.getItem(SESSIONS_STATE_CHIPS_KEY); } catch (_) { stored = null; }
+    const storedArr = (stored) ? JSON.parse(stored).filter(x => typeof x === 'string') : null;
+    if (storedArr) state.sessionStateChips = storedArr;
+    else if (state.sessionStateChip === undefined) {
+      let legacy = null;
+      try { legacy = localStorage.getItem('cs_session_state_chip'); } catch (_) { legacy = null; }
+      state.sessionStateChip = (legacy !== null) ? legacy : 'all';
+      state.sessionStateChips = (state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
+    } else {
+      state.sessionStateChips = (state.sessionStateChip && state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
+    }
   }
-  const chip = state.sessionStateChip;
+  // Backend filter — its own multi-select set, NOT the search box text.
+  if (!Array.isArray(state.sessionBackendSel)) {
+    let stored = null;
+    try { stored = localStorage.getItem(SESSIONS_BACKEND_SEL_KEY); } catch (_) { stored = null; }
+    state.sessionBackendSel = (stored) ? (JSON.parse(stored) || []).filter(x => typeof x === 'string') : [];
+  }
+  const chip = _sessionStateSel();
   // Show active + recently completed sessions by default; "Show history" shows all
   let pool = state.showHistory ? state.sessions : [...active, ...recent];
-  if (chip === 'active') {
-    // running + rate_limited (i.e. busy doing work, not waiting on operator)
-    pool = pool.filter(s => s.state === 'running' || s.state === 'rate_limited');
-  } else if (chip === 'waiting') {
-    pool = pool.filter(s => s.state === 'waiting_input');
-  } else if (chip === 'done') {
-    pool = pool.filter(s => DONE_STATES.has(s.state));
-  } else if (chip && chip !== 'all') {
-    pool = pool.filter(s => s.state === chip);
+  if (chip.length) {
+    pool = pool.filter(s => _sessionMatchesState(chip, s.state));
+  }
+  const backendSel = _sessionBackendSel();
+  if (backendSel.length) {
+    pool = pool.filter(s => s.backend_family && backendSel.indexOf(s.backend_family) >= 0);
   }
   if (filterText.trim()) {
     pool = pool.filter(s => _sessionsSearchMatch(s, filterText));
@@ -4943,7 +5122,7 @@ function renderSessionsView() {
   // tag selection, history) starts the paging back at page one.
   let tagSel = '';
   try { tagSel = (_tagBrowse && _tagBrowse.session ? (_tagBrowse.session.sel || []).join(',') : ''); } catch (_) { tagSel = ''; }
-  const pageKey = [chip, filterText, state.sessionWatchFilter ? 'w' : 'n', state.showHistory ? 'h' : 'n', tagSel].join('|');
+  const pageKey = [chip.join(','), backendSel.join(','), filterText, state.sessionWatchFilter ? 'w' : 'n', state.showHistory ? 'h' : 'n', tagSel].join('|');
   if (state._sessionsPageKey !== pageKey) {
     state._sessionsPageKey = pageKey;
     state._sessionsPageLimit = _sessionsPageSize();
@@ -5005,15 +5184,15 @@ function renderSessionsView() {
   if (state._llmFilterOpen === undefined) state._llmFilterOpen = false;
   if (state._stateFilterOpen === undefined) state._stateFilterOpen = false;
   const llmCount = backendTypes.length;
-  const llmActiveLabel = filterText && backendTypes.find(bt => bt.toLowerCase() === filterText) ? filterText : '';
+  const llmActiveLabel = backendSel.join(', ');
   const llmBtnLabel = llmActiveLabel ? `LLM: ${escHtml(llmActiveLabel)}` : `LLM (${llmCount})`;
   // State chips — shared helper so the open sheet's in-place patch uses
   // byte-identical markup (see _sessionsSheetStateChips).
   const _stateChipInfo = _sessionsSheetStateChips();
   const stateCounts = _stateChipInfo.counts;
   const visibleStateChips = _stateChipInfo.chips;
-  const stateActiveKey = (chip && chip !== 'all') ? chip : '';
-  const stateBtnLabel = stateActiveKey ? `State: ${escHtml(stateActiveKey)}` : `State (${visibleStateChips.length - 1})`;
+  const stateActiveKey = chip.join(' + ');
+  const stateBtnLabel = stateActiveKey ? `State: ${escHtml(stateActiveKey)}` : `State (all)`;
   const stateBadges = _stateChipInfo.html;
   // Tag filter — chip list grouped by axis, drawn from the tag inventory
   // (GET /api/sessions/tags). Shown only while some session carries a tag:
@@ -5159,7 +5338,7 @@ function renderSessionsView() {
             : (viewMode === 'list'
                 ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
                 : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode))));
-  const filtersActive = !!(filterText.trim() || (chip && chip !== 'all') || state.sessionWatchFilter || tagSel);
+  const filtersActive = !!(filterText.trim() || chip.length || backendSel.length || state.sessionWatchFilter || tagSel);
   paint(`<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
@@ -6203,6 +6382,10 @@ function saveSessionsView(name) {
     mode,
     groupBy: (by && SESSIONS_GROUP_AXES.indexOf(by.axis) >= 0) ? by : null,
     filter,
+    // v9 — multi-select: new views carry their backend-chip selection. (The
+    // legacy view shape may store a backend family inside `filter`; that is
+    // migrated on apply.)
+    backends: Array.isArray(state.sessionBackendSel) ? state.sessionBackendSel.slice() : [],
   };
   views.push(v);
   _savedViewsWrite(views);
@@ -6231,6 +6414,25 @@ function applySavedView(id) {
   }
   _sessionsGroupSave();
   state.sessionFilter = (typeof v.filter === 'string') ? v.filter : '';
+  // v9 — multi-select: the backend chips are their own set. A legacy saved
+  // view stored a backend family in the free-text filter: move it into the
+  // set (case-insensitive match) so the box isn't pre-filled with a chip
+  // value. Otherwise apply the saved set, else fall back to legacy filter
+  // text if it names a known backend family only (already handled above),
+  // else keep the set empty.
+  let backends = (Array.isArray(v.backends)) ? v.backends.slice() : [];
+  const legacyFt = String(state.sessionFilter || '').trim().toLowerCase();
+  if (legacyFt) {
+    const known = (typeof _sessionBackendIsFamily === 'function' && _sessionBackendIsFamily(legacyFt)) ? true
+      : ((state.sessions || []).some(s => s && s.backend_family && String(s.backend_family).toLowerCase() === legacyFt));
+    if (known) {
+      const real = (state.sessions || []).find(s => s && s.backend_family && String(s.backend_family).toLowerCase() === legacyFt);
+      const bt = real ? real.backend_family : legacyFt;
+      state.sessionFilter = '';
+      if (backends.indexOf(bt) < 0) backends.push(bt);
+    }
+  }
+  state.sessionBackendSel = backends;
   state._sessionsPageKey = null;
   state.selectedSessions.clear();
   _sessionsSyncPeerRows();
@@ -6540,8 +6742,9 @@ function _sessionsSheetWatchBtnHTML() {
 }
 
 function _sessionsSheetStateChips() {
-  const chip = state.sessionStateChip;
   const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  const sel = _sessionStateSel();
+  const allLabel = _stx('sessions_filters_all', 'All');
   // State badges — every real state, not just buckets (item 4).
   const realStateChips = [
     {key: 'all',          label: t('session_chip_all'),          color: 'var(--text2)'},
@@ -6559,35 +6762,39 @@ function _sessionsSheetStateChips() {
     else stateCounts[c.key] = sessions.filter(s => s.state === c.key).length;
   });
   // GATE finding (operator 2026-05-10): only show state chips that have
-  // entries in the current list — 0-count chips are confusing. 'all'
-  // always visible. The currently-active filter ALSO stays visible even
-  // if 0 (so operator can see what they picked + back out).
-  const visibleStateChips = realStateChips.filter(c => c.key === 'all' || stateCounts[c.key] > 0 || chip === c.key);
+  // entries in the current list — 0-count chips are confusing. A selected
+  // chip ALSO stays visible even if 0 (so operator can see what they
+  // picked + back out). 'all' is a separate button up front (multi-select
+  // set: empty set === all).
+  const visibleStateChips = realStateChips.filter(c => c.key !== 'all' && (stateCounts[c.key] > 0 || sel.indexOf(c.key) >= 0));
+  const allBtn = `<button class="backend-filter-badge ${sel.length === 0 ? 'active' : ''}" type="button" onclick="sessionsFilterClearGroup('status')" title="${escHtml(allLabel)} (${stateCounts.all||0})" aria-pressed="${sel.length === 0 ? 'true' : 'false'}">${escHtml(allLabel)}<span class="badge-count">${stateCounts.all||0}</span></button>`;
   const html = visibleStateChips.map(c => {
-    const isActive = chip === c.key;
-    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
+    const isActive = sel.indexOf(c.key) >= 0;
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" type="button" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" aria-pressed="${isActive ? 'true' : 'false'}" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
   }).join('');
-  return { chips: visibleStateChips, counts: stateCounts, html };
+  return { chips: visibleStateChips, counts: stateCounts, html: allBtn + html };
 }
 
 function _sessionsSheetLlmChips() {
   const sessions = Array.isArray(state.sessions) ? state.sessions : [];
   // Unique backend families, same order as the pre-refactor renderer.
   const types = [...new Set(sessions.map(s => s.backend_family).filter(Boolean))].sort();
-  const filterText = (state.sessionFilter || '').toLowerCase();
+  const sel = _sessionBackendSel();
+  const allLabel = _stx('sessions_filters_all', 'All');
   const backendShort = {
     'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
     'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
     'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi-p', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
     'council-virtual': '🎭 Council', // GH#172 D64
   };
+  const allBtn = `<button class="backend-filter-badge ${sel.length === 0 ? 'active' : ''}" type="button" onclick="sessionsFilterClearGroup('backend')" title="${escHtml(allLabel)}" aria-pressed="${sel.length === 0 ? 'true' : 'false'}">${escHtml(allLabel)}</button>`;
   const html = types.map(bt => {
-    const isActive = filterText === bt.toLowerCase();
+    const isActive = sel.indexOf(bt) >= 0;
     const label = backendShort[bt] || bt;
     const count = sessions.filter(s => s.backend_family === bt).length;
-    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" type="button" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})" aria-pressed="${isActive ? 'true' : 'false'}">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
   }).join('');
-  return { types, html };
+  return { types, html: allBtn + html };
 }
 
 // The single in-place refresh of an OPEN sheet: text/counts/options are
@@ -6652,10 +6859,10 @@ function _sessionsActiveFilterCount() {
   try {
     if (_sessionsGroupCurrent()) n++;
     else if (!state.sessionTreeView && typeof _sessionsGroupAxis === 'function' && _sessionsGroupAxis()) n++;
-    const chip = state.sessionStateChip;
-    if (chip && chip !== 'all') n++;
-    const ft = String(state.sessionFilter || '').trim().toLowerCase();
-    if (ft && (state.sessions || []).some(s => s && s.backend_family && String(s.backend_family).toLowerCase() === ft)) n++;
+    // v9 — each filter group (Status, Backend, search text, Watch) counts
+    // once when non-empty.
+    if (_sessionStateSel().length) n++;
+    if (_sessionBackendSel().length) n++;
     const sel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session && _tagBrowse.session.sel) ? _tagBrowse.session.sel : [];
     if (sel.length) n++;
     if (state.sessionWatchFilter) n++;
@@ -6867,33 +7074,8 @@ function toggleGlobalScheduleDropdown() {
   if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
 }
 
-function setBackendFilter(backend) {
-  // Toggle: click same badge to clear, click different to set
-  if ((state.sessionFilter || '').toLowerCase() === backend.toLowerCase()) {
-    state.sessionFilter = '';
-  } else {
-    state.sessionFilter = backend;
-  }
-  state.selectedSessions.clear();
-  renderSessionsView();
-}
-
-// v7.0.0-alpha.22 — session-state filter chips. Persists in localStorage.
-function setSessionStateChip(chip) {
-  state.sessionStateChip = chip;
-  try { localStorage.setItem('cs_session_state_chip', chip); } catch (_) { /* storage blocked: choice lives in memory */ }
-  state.selectedSessions.clear();
-  // GATE finding (operator 2026-05-10): if filter selects a historical
-  // state (complete/failed/killed/cancelled/archived), auto-activate the
-  // History toggle so those sessions actually become visible. Without
-  // this, picking 'killed' shows zero results because historical
-  // sessions are filtered out unless History is on.
-  const historicalStates = new Set(['complete', 'failed', 'killed', 'cancelled', 'archived']);
-  if (historicalStates.has(chip) && !state.showHistory) {
-    state.showHistory = true;
-  }
-  renderSessionsView();
-}
+// v9 — setBackendFilter / setSessionStateChip now live by the sessions
+// chip helpers (multi-select sets), not here.
 
 function toggleHistory() {
   state.showHistory = !state.showHistory;
