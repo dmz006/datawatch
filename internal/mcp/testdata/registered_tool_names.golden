@@ -406,6 +406,14 @@ orchestrator_graph_list
 orchestrator_graph_plan
 orchestrator_graph_run
 orchestrator_verdicts
+packs_accept
+packs_inputs_get
+packs_inputs_set
+packs_install
+packs_list
+packs_remove
+packs_setting_get
+packs_setting_set
 per_automaton_guardrails_set
 per_automaton_retry_policy_set
 pipeline_cancel
