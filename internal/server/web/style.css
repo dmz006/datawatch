@@ -7779,6 +7779,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .sessions-tag-pick.active { background: var(--accent2, rgba(100,100,255,0.2)); color: var(--bg); }
 .sessions-tag-pick-id { font-size: 10px; color: var(--text2); font-family: var(--mono, monospace); }
 .sessions-tag-pick.active .sessions-tag-pick-id { color: inherit; opacity: 0.8; }
+/* Small secondary id text on a name-first chip: the id never leads. */
+.sessions-chip-id { font-size: 9px; color: var(--text2); font-family: var(--mono, monospace); margin-left: 4px; user-select: text; }
+.sessions-tag-chip.active .sessions-chip-id { color: inherit; opacity: 0.75; }
 .sessions-tag-actions { display: flex; gap: 4px; align-items: center; }
 .sessions-tag-selected { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 2px 12px 6px; }
 .sessions-tag-sel-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; padding: 1px 2px 1px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2, var(--bg)); max-width: 220px; }

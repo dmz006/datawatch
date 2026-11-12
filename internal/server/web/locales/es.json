@@ -5392,5 +5392,6 @@
   "lane_utilization_plan_points": "%1$s de %2$s puntos",
   "lane_utilization_plan_tokens": "%1$s tokens",
   "lane_utilization_plan_percent": "%1$s%% del plan",
-  "lane_utilization_gantt_heading": "Utilización de carriles"
+  "lane_utilization_gantt_heading": "Utilización de carriles",
+  "sessions_filters_unnamed": "sin nombre"
 }
