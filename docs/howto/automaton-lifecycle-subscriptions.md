@@ -196,6 +196,49 @@ The global default-events change applies at the next daemon start; the
 per-Automaton and profile tiers apply at once. A queue sink
 (`--sink mcp_queue`) works the same way for a supervisor that polls.
 
+## Find the kinds and preview a filter
+
+You do not need this page's tables to pick kinds: the daemon lists them, and
+for a filter you can ask how much it would have caught before you save it.
+
+**List every kind.** The list is the daemon's own registry, so it includes
+kinds a plugin registered. Each kind shows its group, its one-line
+description and whether it is in the default set that wakes the supervisor.
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch autonomous event-kinds`; add `--group task` to keep one group or `--json` for the raw body. |
+| Comm channel | `autonomous event-kinds`, or `autonomous event-kinds group=task`. |
+| MCP | the `autonomous_event_kinds` tool, no parameters. |
+| REST | `GET /api/autonomous/event-kinds`. |
+| Web UI | the kind checkboxes in **Add subscription** (see the PWA walkthrough below). |
+
+**Preview a filter against the Events log.** Over REST, post the filter to
+`POST /api/autonomous/subscriptions/preview`:
+
+```sh
+curl -s -X POST "$DATAWATCH/api/autonomous/subscriptions/preview" \
+  -H 'Content-Type: application/json' \
+  -d '{"kinds":["retry","error"],"owner":"<automaton-id>"}'
+# {"count":3,"window_hours":24,"sample":[ ...newest matches, at most 20... ]}
+```
+
+The preview stores nothing and changes no subscription. It counts the last 24
+hours of the stream the **Events** tab shows (see
+[Automata events](automata-events.md)), so `kinds` takes that stream's own kinds:
+`watch`, `decision`, `retry`, `check`, `cleanup`, `alert` and `error`. An
+empty list means every kind, and `project` and `owner` narrow to one project or
+one Automaton. It does not apply the notify set.
+
+**Review before relying on it.** The preview's kinds are not the lifecycle
+event kinds a subscription filters on. A lifecycle kind such as `task.failed`
+is refused with a `400` (`unknown kind`), and the web form's "Would have
+matched in the last day" line posts the lifecycle kinds you tick, so it reports
+`Preview unavailable` for them instead of a count. Treat the count as unavailable
+for lifecycle kinds until the preview and the picker use the same vocabulary;
+saving a subscription is not affected. There is no CLI, comm or MCP form of the
+preview.
+
 ## Test a subscription before you rely on it
 
 A subscription that never fires is hard to tell from one that has
@@ -229,11 +272,13 @@ Open an Automaton in the PWA (**Automata** → the Automaton) and choose the
    `GET /api/autonomous/event-kinds` and shows each with its one-line
    description, grouped Automaton, Task, Review, Capacity and Budget. If the
    list cannot be loaded, a note says so and the built-in list is shown. The
-   line under the picker reads "Would have matched in the last day: N" and
-   comes from `POST /api/autonomous/subscriptions/preview`, so you can judge
-   a rule before saving it; it refreshes shortly after each tick and is
-   skipped while nothing is ticked. The **?** beside "Event kinds" opens this
-   page.
+   line under the picker asks `POST /api/autonomous/subscriptions/preview` for
+   "Would have matched in the last day: N"; it refreshes shortly after each
+   tick and is skipped while nothing is ticked. A refused or failed preview
+   shows "Preview unavailable" and never blocks saving. Read
+   [Find the kinds and preview a filter](#find-the-kinds-and-preview-a-filter)
+   before trusting the count: the preview does not yet accept lifecycle kinds.
+   The **?** beside "Event kinds" opens this page.
    Choose the scope (this Automaton or all automata), an optional task id,
    the sink type and its target, and optionally send-input text (session
    sink only), one-shot, coalesce and an expiry in hours. The form checks
@@ -318,6 +363,36 @@ restarts:
   response carries the resolved set with its source tier.
 - `autonomous_events_pending(queue, since_cursor?, limit?)` — poll an
   `mcp_queue` queue (see above).
+- `autonomous_event_kinds()` — list every kind a subscription can match, with
+  its group, description and whether it wakes the supervisor by default
+  (see *Find the kinds and preview a filter* above).
+
+### MCP resource subscriptions: a push path that stores nothing
+
+A client that can receive MCP notifications has a second way in. With
+`mcp.resource_subscriptions: true` (default `false`; restart to apply) it calls
+`resources/subscribe` on the lifecycle events resource and gets a
+`notifications/resources/updated` message each time a matching event fires:
+
+```
+datawatch://events/lifecycle?kinds=task.failed,automaton.stuck_running&level=task
+```
+
+It is additive. The subscription is one more consumer of the same dispatcher
+your stored subscriptions use, so the filter rules, the kind list and the
+notify-set gate are identical, and nothing is written to the subscription
+store, a sink or a queue. It belongs to the MCP session: it ends on
+`resources/unsubscribe` or when the session closes, and a session can hold at
+most 32. Existing delivery (comm, session, topic, alert and queue sinks, and
+the supervisor wake) behaves the same with the setting on or off.
+
+The notification carries the subscribed `uri` and the event's `event_id`,
+`kind`, `prd_id` and `task_id`; read the resource for the recent events. With the setting off the server
+advertises nothing new and refuses `resources/subscribe`. The full parameter
+list and the places to set it are in the [MCP reference](../mcp.md#resource-subscriptions).
+Because nothing is stored, a client that is offline when an event fires does
+not get it later; use an `mcp_queue` subscription (above) when it must not
+miss one.
 
 ## Comm channel (owner-scoped)
 
