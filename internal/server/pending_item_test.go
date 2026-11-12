@@ -855,6 +855,9 @@ func (i *insertSpy) RemoveMember(string, string, string, int64) (any, error)    
 func (i *insertSpy) ReorderEdges(string, string, string, string, string, string, int64) (any, error) {
 	return nil, nil
 }
+func (i *insertSpy) RenameAutomationStage(string, string, string, int64) (any, error) {
+	return nil, nil
+}
 func (i *insertSpy) ApproveInsertedMember(string, string, string, int64) (any, error) {
 	return nil, nil
 }
