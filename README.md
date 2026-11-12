@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.145.1 (2026-11-12).** A daemon restart now re-attaches to a live planner or verifier and picks up finished plans, verdicts and verification scripts instead of redoing them, and a restart that would interrupt that work needs force. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.146.0 (2026-11-12).** Every session kind now carries the full set of placement (system) tag axes that apply to it, including restarted and operator-started sessions. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
