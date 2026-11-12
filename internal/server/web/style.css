@@ -4506,6 +4506,57 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   flex-shrink: 0;
 }
 
+/* Shared horizontally scrolling tab strip (.tab-strip-scroll).
+   Strips audited at 320 and 360 px:
+   - Settings (.settings-tabs-bar): already scrolled; gains fade and reveal.
+   - Session detail (.output-tabs, Tmux/Channel/Status plus controls): was cut
+     off with no scroll; now scrolls.
+   - Automata templates sub-tabs (.automata-templates-subtabs): wrapped; now
+     scrolls.
+   - Automaton detail (.prd-detail-tabs.output-tabs): already scrolled; gains
+     fade and reveal.
+   - Automata, Automation and Projects strips: already use the same pattern
+     above (.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar).
+   - Observer and Dashboard views have no tab strip.
+   The strip never wraps, hides its scrollbar, fades the side that still hides
+   tabs (classes set by _tabStripFade) and keeps 40 px tap targets. */
+.tab-strip-scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+.tab-strip-scroll::-webkit-scrollbar { display: none; }
+.tab-strip-scroll > .output-tab,
+.tab-strip-scroll > .settings-tab-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.tab-strip-scroll.tabs-more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+.tab-strip-scroll.tabs-more-left {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+.tab-strip-scroll.tabs-more-left.tabs-more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .tab-strip-scroll > .output-tab,
+  .tab-strip-scroll > .settings-tab-btn {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+}
+
 /* Settings sub-tab nav bar — sticky at top, scrolls horizontally on narrow viewports */
 .settings-tabs-bar {
   display: flex;
@@ -7530,8 +7581,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 /* Templates tab sub-tab bar (Automaton templates | Standard tasks). It wraps
    inside its own container, so a long sub-tab list never widens the page. */
 .automata-templates-subtabs {
-  flex-wrap: wrap;
-  row-gap: 4px;
   max-width: 100%;
   box-sizing: border-box;
 }
