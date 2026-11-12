@@ -28545,16 +28545,30 @@ window._dashRenderTimeline = _dashRenderTimeline;
 // event attribute, no user data in inline JS). Changes apply immediately.
 window._timelineCardFilter = function(which, value) {
   const st = window._timelineCardState;
-  if (!st.filters[which]) return;
+  // Filters start as '' (falsy), so test key presence, not truthiness.
+  if (!Object.prototype.hasOwnProperty.call(st.filters, which)) return;
   st.filters[which] = String(value || '');
+  // A fetch already in flight used the old filters: refetch once it settles.
+  if (st.inflight) { st.inflight.then(() => window.loadTimelineCard(true)); return; }
   window.loadTimelineCard(true);
 };
 
+// Literal keys (not built by concatenation) so the key-coverage check sees them.
+const TL_FILTER_LABEL_KEYS = {
+  project: 'timeline_card_filter_project',
+  automation: 'timeline_card_filter_automation',
+  stage: 'timeline_card_filter_stage',
+  kind: 'timeline_card_filter_kind',
+  tag: 'timeline_card_filter_tag',
+};
 function _tlSelect(which, value, options) {
-  const opts = ['<option value="">' + escHtml(t('timeline_card_kind_all')) + '</option>'].concat(
+  // Each select is named by its timeline_card_filter_<which> label (aria-label,
+  // tooltip, and the first option) so five "All" boxes are tellable apart.
+  const label = t(TL_FILTER_LABEL_KEYS[which] || 'timeline_card_filter_project');
+  const opts = ['<option value="">' + escHtml(label + ': ' + t('timeline_card_kind_all')) + '</option>'].concat(
     (options || []).map(o => `<option value="${escHtml(o)}"${o === value ? ' selected' : ''}>${escHtml(o)}</option>`)
   ).join('');
-  return `<select class="timeline-card-filter" data-tl-filter="${which}" onchange="window._timelineCardFilter(this.dataset.tlFilter, this.value)" style="font-size:11px;padding:1px 4px;border:1px solid var(--border,#3a3a44);border-radius:6px;background:var(--bg1,#16161c);color:var(--text,#e5e5ea);">${opts}</select>`;
+  return `<select class="timeline-card-filter" data-tl-filter="${which}" aria-label="${escHtml(label)}" title="${escHtml(label)}" onchange="window._timelineCardFilter(this.dataset.tlFilter, this.value)" style="font-size:11px;padding:1px 4px;border:1px solid var(--border,#3a3a44);border-radius:6px;background:var(--bg1,#16161c);color:var(--text,#e5e5ea);">${opts}</select>`;
 }
 
 // timelineCardHtml — pure: (state, filters) → HTML. State: status

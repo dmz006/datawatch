@@ -93,14 +93,15 @@ function okState(over) {
     filters: { project: '', automation: '', stage: '', kind: '', tag: '' } }, over || {});
 }
 
-function sandboxWith(localeFile) {
-  const sandbox = buildSandbox();
+function sandboxWith(localeFile, sandboxOpts) {
+  const sandbox = buildSandbox(sandboxOpts);
   vm.createContext(sandbox);
-  // Real locale bundle → t() resolves the timeline keys instead of
-  // falling back to the raw key (which would hide a missing-key bug).
-  const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, localeFile), 'utf8'));
-  sandbox.window._i18n = { bundle, fallback: {} };
   loadScript(APP_JS, sandbox);
+  // app.js re-initialises _i18n on load, so the real locale bundle is set
+  // AFTER loading. t() then resolves the timeline keys instead of falling
+  // back to the raw key (which would hide a missing-key bug).
+  const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, localeFile), 'utf8'));
+  sandbox._i18n.bundle = bundle;
   return sandbox;
 }
 
@@ -122,6 +123,10 @@ test('card renders the stacked automata, filter bar, and status', () => {
   assert.equal(selects.length, 5, 'five filters');
   for (const which of ['project', 'automation', 'stage', 'kind', 'tag']) {
     assert.ok(html.includes('data-tl-filter="' + which + '"'), which + ' filter');
+  }
+  // Each select is named (not five bare "All" boxes).
+  for (const label of ['Project', 'Automation', 'Stage', 'Kind', 'Tag']) {
+    assert.ok(html.includes('aria-label="' + label + '"'), label + ' filter is labelled');
   }
   // Gantt SVG per automaton that has stages.
   assert.ok(html.includes('class="timeline-gantt"'), 'gantt svg');
@@ -234,7 +239,9 @@ test('loadTimelineCard failure → failed state with the message', async () => {
 
 function ganttFor(localeFile, automaton) {
   const sandbox = sandboxWith(localeFile);
-  return vm.runInContext('window.timelineGanttSvg(a, { uid: "x" })', Object.assign(sandbox, { a: automaton }));
+  // `today` is injected (the server's clock in the response), never Date.now().
+  return vm.runInContext('window.timelineGanttSvg(a, { uid: "x", today: T })',
+    Object.assign(sandbox, { a: automaton, T: FIXTURE.today }));
 }
 
 test('Gantt has today + projected markers, hatched blocked, and labels', () => {
@@ -286,11 +293,14 @@ test('user data is escaped in labels, intervals, and tooltips', () => {
 // ── detail tab ──────────────────────────────────────────────────────────────
 
 test('detail Timeline tab renders into #timelineTabBody via the shared renderers', async () => {
-  const sandbox = sandboxWith('en.json');
+  // Pre-register the body element: the stub otherwise hands out a fresh
+  // throwaway element per getElementById call, so nothing could be read back.
+  const bodyEl = { innerHTML: '', textContent: '' };
+  const sandbox = sandboxWith('en.json', { byId: { timelineTabBody: bodyEl } });
   sandbox.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(FIXTURE) });
   vm.runInContext('window._loadPRDTimelineTab({ id: "prd-a" })', sandbox);
   await flushAsync();
-  const body = sandbox.document.getElementById('timelineTabBody').innerHTML;
+  const body = bodyEl.innerHTML;
   assert.ok(body.includes('class="timeline-gantt"'), 'gantt rendered');
   assert.ok(body.includes('Ship the Gantt'), 'automaton title');
   // The tab HTML itself carries the tab marker + body anchor.
