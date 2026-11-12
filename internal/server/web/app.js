@@ -16712,8 +16712,11 @@ window.judgeOutcomeCardHtml = function(prd) {
 window.reviewRejudge = async function(id, backend) {
   const body = { actor: 'operator' };
   if (backend) body.backend = backend;
+  let reply = null;
   try {
-    await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/rejudge', {
+    // The compact write view is the reply shape that carries `message`; the
+    // full view is the bare PRD with no message text.
+    reply = await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/rejudge?view=compact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -16722,7 +16725,14 @@ window.reviewRejudge = async function(id, backend) {
     showToast('Re-judgment failed: ' + String(err), 'error', 8000);
     throw err;
   }
-  showToast(t('review_timed_out_retry') || 'Re-judgment complete', 'success', 2500);
+  // The server words the reply (new review ran, or stored verdict reused and
+  // why), so show it long enough to read; no message keeps the short toast.
+  const replyMessage = reply && typeof reply.message === 'string' ? reply.message.trim() : '';
+  if (replyMessage) {
+    showToast(replyMessage, 'success', 6000);
+  } else {
+    showToast(t('review_timed_out_retry') || 'Re-judgment complete', 'success', 2500);
+  }
   if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
 };
 window.reviewRetry = function(id) { return window.reviewRejudge(id, ''); };

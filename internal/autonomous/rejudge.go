@@ -27,13 +27,15 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 )
 
 // judgeCompletionRulesReview runs the PRD-level "rules-review" judgment
-// for prd and returns its raw verdict, without recording anything on the
-// PRD (no Verdicts append, no Decision, no status change). It is the
+// for prd and returns its raw verdict and whether that verdict is a stored
+// one that was reused (no new review ran), without recording anything on
+// the PRD (no Verdicts append, no Decision, no status change). It is the
 // shared judge step of RejudgeCompletionGuardrail: building the
 // invocation, the infra-retry wrapper and the guardrail wiring are
 // exactly what runPRDCompletionRulesReview uses, differing only in that
@@ -48,12 +50,12 @@ import (
 // pinned, so the guardrail runner does not fall back behind it, and it
 // also makes the run possible when no tier resolves (a reroute names the
 // backend directly). Empty re-runs the resolved tier.
-func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD, backend string) (GuardrailVerdict, error) {
+func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD, backend string) (GuardrailVerdict, bool, error) {
 	m.mu.Lock()
 	fn := m.guardrail
 	m.mu.Unlock()
 	if fn == nil {
-		return GuardrailVerdict{}, fmt.Errorf("no guardrail function is wired for prd %s (SetGuardrail); the rules-review judgment cannot run", prd.ID)
+		return GuardrailVerdict{}, false, fmt.Errorf("no guardrail function is wired for prd %s (SetGuardrail); the rules-review judgment cannot run", prd.ID)
 	}
 	inv, resErr := m.prdRulesReviewInvocation(ctx, prd)
 	inv.Rejudge = true // re-judgment of the same rules-review decision (not a first judgment) — launch-tag only, see GuardrailInvocation.Rejudge
@@ -62,7 +64,7 @@ func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD, back
 		// v9.10.18 — no judge model resolvable at any level: loud,
 		// non-retried infra block, recorded by RejudgeCompletionGuardrail
 		// exactly like any other block verdict.
-		return NoGuardrailModelVerdict("rules-review", resErr), nil
+		return NoGuardrailModelVerdict("rules-review", resErr), false, nil
 	}
 	if backend != "" {
 		// Reroute: the operator's explicit choice of judge backend wins
@@ -72,7 +74,7 @@ func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD, back
 		inv.GuardrailModel = ""
 		inv.GuardrailPinned = true
 	}
-	return m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+	return m.runGuardrailReusing(ctx, prd, inv, fn)
 }
 
 // firstNonCompletedTask returns the (in story, then task order) first
@@ -89,6 +91,44 @@ func firstNonCompletedTask(prd *PRD) (storyID, taskID string, status TaskStatus)
 		}
 	}
 	return "", "", ""
+}
+
+// reusedVerdictNote is the audit note for a rejudge that returned the
+// stored verdict instead of running a new review: it names the head commit
+// and the time of the verdict being reused, and says no review ran.
+func reusedVerdictNote(sha string, at time.Time) string {
+	return fmt.Sprintf("stored verdict reused: the head commit %s and the rules text are unchanged since that verdict was made at %s; no new review ran", sha, at.Format(time.RFC3339))
+}
+
+// verdictAlreadyRecorded reports whether prd.Verdicts already holds a
+// verdict identical to v, meaning the same VerdictAt, JudgedCommitSHA and
+// JudgeSessionID. A reused verdict is appended only when this is false, so
+// the list keeps one entry per review run.
+func verdictAlreadyRecorded(prd *PRD, v GuardrailVerdict) bool {
+	for i := range prd.Verdicts {
+		r := &prd.Verdicts[i]
+		if r.VerdictAt.Equal(v.VerdictAt) && r.JudgedCommitSHA == v.JudgedCommitSHA && r.JudgeSessionID == v.JudgeSessionID {
+			return true
+		}
+	}
+	return false
+}
+
+// recordedVerdictMatching returns the verdict already on prd that a reused
+// cache copy stands for: a rules-review verdict judged on sha under the
+// same rules fingerprint with the same outcome and judge session. The
+// cache copy can lack the timestamp, commit and fingerprint that the
+// recorded one carries, so the recorded one is preferred to keep those
+// fields as they were. ok is false when the PRD holds no such verdict.
+func recordedVerdictMatching(prd *PRD, v GuardrailVerdict, sha, fingerprint string) (GuardrailVerdict, bool) {
+	for i := len(prd.Verdicts) - 1; i >= 0; i-- {
+		r := prd.Verdicts[i]
+		if r.Guardrail == "rules-review" && r.Outcome == v.Outcome && r.JudgeSessionID == v.JudgeSessionID &&
+			sha != "" && r.JudgedCommitSHA == sha && r.RulesFingerprint == fingerprint {
+			return r, true
+		}
+	}
+	return GuardrailVerdict{}, false
 }
 
 // RejudgeCompletionGuardrail re-runs the PRD-completion "rules-review"
@@ -148,14 +188,31 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// produced, keep the PRD blocked with its previous BlockedReason
 	// untouched, and return an error so the operator sees the re-judge
 	// did not yield a judgment.
+	var headSHA, fingerprint string
+	// resolveHead fills headSHA and fingerprint from the stamped review
+	// invocation when they are not known yet, so every outcome names the
+	// head the review judged.
+	resolveHead := func() {
+		if headSHA != "" {
+			return
+		}
+		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
+		m.stampReviewIdentity(ctx, prd, &inv)
+		headSHA = judgeVerdictCommitSHA(prd, inv)
+		fingerprint = inv.RulesFingerprint
+	}
 	recordNoVerdict := func(detail string) error {
 		detail = "no verdict was produced: " + detail
+		resolveHead()
+		log.Printf("[autonomous] rejudge %s: commit %s: no verdict", prd.ID, headSHA)
 		m.store.WithLock(func() {
 			prd.Decisions = append(prd.Decisions, Decision{
-				At:    time.Now(),
-				Kind:  "guardrail_rejudge",
-				Actor: actor,
-				Note:  fmt.Sprintf("rejudge of the rules-review completion guardrail for prd %s: %s", prd.ID, detail),
+				At:              time.Now(),
+				Kind:            "guardrail_rejudge",
+				Actor:           actor,
+				Note:            fmt.Sprintf("rejudge of the rules-review completion guardrail for prd %s: %s", prd.ID, detail),
+				JudgedCommitSHA: headSHA,
+				VerdictReused:   false,
 			})
 		})
 		if serr := m.store.SavePRD(prd); serr != nil {
@@ -169,6 +226,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// same answer. Refuse before touching anything.
 	if heldReview {
 		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
+		m.stampReviewIdentity(ctx, prd, &inv)
 		head := judgeVerdictCommitSHA(prd, inv)
 		heldSHA := ""
 		if stored := lastBlockVerdict(prd.Verdicts); stored != nil {
@@ -188,49 +246,94 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// new key. A stored verdict with no recorded commit cannot be shown to
 	// match the head, so it is treated as stale too.
 	cacheOn := m.judgeVerdictCacheEnabled()
-	var headSHA string
 	if cacheOn {
-		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
-		headSHA = judgeVerdictCommitSHA(prd, inv)
-		if stored := lastBlockVerdict(prd.Verdicts); stored != nil && headSHA != "" && stored.JudgedCommitSHA != headSHA {
+		resolveHead()
+		if stored := lastBlockVerdict(prd.Verdicts); stored != nil &&
+			((headSHA != "" && stored.JudgedCommitSHA != headSHA) ||
+				stored.RulesFingerprint == "" || stored.RulesFingerprint != fingerprint) {
+			// Judged on another head, or under other rules text, or recorded
+			// before the rules fingerprint existed: judge again.
 			ctx = withJudgeVerdictCacheLookupBypassed(ctx)
 		}
 	}
 
-	v, err := m.judgeCompletionRulesReview(ctx, prd, backend)
+	v, reused, err := m.judgeCompletionRulesReview(ctx, prd, backend)
 	if err != nil {
 		return nil, recordNoVerdict(fmt.Sprintf("the guardrail judgment failed: %v", err))
 	}
 	if v.Outcome == "" {
 		return nil, recordNoVerdict("the guardrail judgment returned an empty outcome")
 	}
-	if v.VerdictAt.IsZero() {
-		v.VerdictAt = time.Now()
-	}
-	v.Guardrail = "rules-review"
-	if headSHA == "" {
-		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
-		headSHA = judgeVerdictCommitSHA(prd, inv)
-	}
-	v.JudgedCommitSHA = headSHA
+	resolveHead()
 
-	// Record the verdict durably BEFORE anything else changes — the same
-	// guardrail_verdict Decision + save + judge-output cleanup
-	// runPRDCompletionRulesReview uses.
-	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
-		return nil, fmt.Errorf("rejudge completion guardrail: prd %s: record verdict: %w", prd.ID, err)
-	}
+	var rej Decision
+	if reused {
+		// A stored verdict came back: keep it exactly as it was made, with
+		// its own time, commit and rules fingerprint. The copy already on
+		// the PRD wins over a cache copy; fields the stored verdict never
+		// had are filled only so it can be told apart from a new review.
+		if rec, found := recordedVerdictMatching(prd, v, headSHA, fingerprint); found {
+			v = rec
+		}
+		v.Guardrail = "rules-review"
+		if v.VerdictAt.IsZero() {
+			v.VerdictAt = time.Now()
+		}
+		if v.JudgedCommitSHA == "" {
+			v.JudgedCommitSHA = headSHA
+		}
+		if v.RulesFingerprint == "" {
+			v.RulesFingerprint = fingerprint
+		}
+		// Nothing new was judged, so no guardrail_verdict Decision is
+		// recorded and prd.Verdicts is not appended to here.
+		rej = Decision{
+			At:              time.Now(),
+			Kind:            "guardrail_rejudge",
+			Actor:           actor,
+			VerdictOutcome:  v.Outcome,
+			FailureCategory: v.Category,
+			Note:            reusedVerdictNote(v.JudgedCommitSHA, v.VerdictAt),
+			JudgeSessionID:  v.JudgeSessionID,
+			JudgedCommitSHA: v.JudgedCommitSHA,
+			VerdictReused:   true,
+		}
+	} else {
+		if v.VerdictAt.IsZero() {
+			v.VerdictAt = time.Now()
+		}
+		v.Guardrail = "rules-review"
+		v.JudgedCommitSHA = headSHA
+		v.RulesFingerprint = fingerprint
 
-	// The "guardrail_rejudge" Decision naming the re-judge outcome,
-	// attributed to the acting operator.
-	rej := Decision{
-		At:              time.Now(),
-		Kind:            "guardrail_rejudge",
-		Actor:           actor,
-		VerdictOutcome:  v.Outcome,
-		FailureCategory: v.Category,
-		Note:            fmt.Sprintf("rejudge of the rules-review completion guardrail: %s", v.Outcome),
-		JudgeSessionID:  v.JudgeSessionID,
+		// Record the verdict durably BEFORE anything else changes — the same
+		// guardrail_verdict Decision + save + judge-output cleanup
+		// runPRDCompletionRulesReview uses.
+		if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
+			return nil, fmt.Errorf("rejudge completion guardrail: prd %s: record verdict: %w", prd.ID, err)
+		}
+
+		// The "guardrail_rejudge" Decision naming the re-judge outcome,
+		// attributed to the acting operator.
+		rej = Decision{
+			At:              time.Now(),
+			Kind:            "guardrail_rejudge",
+			Actor:           actor,
+			VerdictOutcome:  v.Outcome,
+			FailureCategory: v.Category,
+			Note:            fmt.Sprintf("new review ran on commit %s: rejudge of the rules-review completion guardrail: %s", v.JudgedCommitSHA, v.Outcome),
+			JudgeSessionID:  v.JudgeSessionID,
+			JudgedCommitSHA: v.JudgedCommitSHA,
+			VerdictReused:   false,
+		}
+		if v.Summary != "" {
+			rej.Note += " - " + v.Summary
+		}
+	}
+	if reused {
+		log.Printf("[autonomous] rejudge %s: commit %s: reused", prd.ID, rej.JudgedCommitSHA)
+	} else {
+		log.Printf("[autonomous] rejudge %s: commit %s: new review", prd.ID, rej.JudgedCommitSHA)
 	}
 	if v.JudgeSessionID == "" {
 		rej.Backend = v.Backend
@@ -238,13 +341,12 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	if backend = strings.TrimSpace(backend); backend != "" {
 		// Name the reroute in the audit trail: which backend the operator
 		// asked the re-judgment to run on.
-		rej.Note += " (rerouted to " + backend + ")"
+		if !reused {
+			rej.Note += " (rerouted to " + backend + ")"
+		}
 		if rej.Backend == "" {
 			rej.Backend = backend
 		}
-	}
-	if v.Summary != "" {
-		rej.Note += " - " + v.Summary
 	}
 
 	if v.Outcome != "block" {
@@ -261,7 +363,9 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 			if p.Status != origStatus || !prdAllTasksTerminal(p) {
 				return false
 			}
-			p.Verdicts = append(p.Verdicts, v)
+			if !reused || !verdictAlreadyRecorded(p, v) {
+				p.Verdicts = append(p.Verdicts, v)
+			}
 			p.Decisions = append(p.Decisions, rej)
 			p.Status = PRDCompleted
 			p.BlockedReason = ""
@@ -271,7 +375,9 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 		}
 		old := origStatus
 		m.store.WithLock(func() {
-			prd.Verdicts = append(prd.Verdicts, v)
+			if !reused || !verdictAlreadyRecorded(prd, v) {
+				prd.Verdicts = append(prd.Verdicts, v)
+			}
 			prd.Decisions = append(prd.Decisions, rej)
 			prd.Status = PRDCompleted
 			prd.BlockedReason = ""
@@ -288,7 +394,9 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	var old PRDStatus
 	m.store.WithLock(func() {
 		old = prd.Status
-		prd.Verdicts = append(prd.Verdicts, v)
+		if !reused || !verdictAlreadyRecorded(prd, v) {
+			prd.Verdicts = append(prd.Verdicts, v)
+		}
 		prd.Decisions = append(prd.Decisions, rej)
 		prd.Status = PRDBlocked
 		prd.BlockedReason = blockedReasonFor(v)

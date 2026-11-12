@@ -1244,6 +1244,16 @@ type GuardrailInvocation struct {
 	// GuardrailBackend is the global default fallback
 	// (cfg.VerificationBackend) or nothing resolved.
 	GuardrailPinned bool
+	// ReviewHead, when non-empty, is the commit the judgment is anchored to.
+	// It wins over the attempt commits recorded on the Automaton's tasks.
+	// Only the whole-Automaton rules review sets it; per-task and per-story
+	// invocations leave it empty.
+	ReviewHead string
+	// RulesFingerprint, when non-empty, is a hash of the exact rules text the
+	// judge reads. It is mixed into the verdict identity so an edit to the
+	// rules text is a cache miss. Per-task and per-story invocations leave it
+	// empty.
+	RulesFingerprint string
 	// Rejudge marks this invocation as a re-judgment of the same decision —
 	// autonomous.RejudgeCompletionGuardrail re-running the completion
 	// rules review after the operator asks for the call to be judged

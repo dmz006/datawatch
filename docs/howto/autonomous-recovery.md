@@ -139,6 +139,89 @@ any task:
   once the genuine work is done.
 - It never resets anything: no task goes back to pending, no story reopens.
 
+A rejudge is a fresh completion review, not a lookup of the old answer. When
+a review runs, the daemon looks at the current head commit of the Automaton,
+starts a judge session on the configured judge backends, and records the new
+verdict with its own time and the commit it judged. That verdict replaces the
+blocked state: a pass completes the Automaton and a block updates its blocked
+reason, as set out under the outcomes below.
+
+A rejudge is a fresh completion review whenever anything it judged has
+changed. The review is anchored to the real head of the Automaton's own
+working tree (the commit the judge actually reads), not only to the last
+commit a task attempt recorded, so a fix you committed by hand counts as new
+work. It is also tied to the rules text the judge reads. The stored blocking
+verdict is replayed only when **all** of these hold: the judge verdict cache is
+on, the head is the commit the stored verdict was judged on, the rules text is
+unchanged, and the stored verdict recorded a rules fingerprint. Otherwise the
+judge runs again and its verdict is stored under the new head and rules. In
+practice:
+
+- **You committed a fix** — the head moved, so the judge reads the new tree.
+- **You edited the rules or context file** — the rules text changed, so the
+  judge reads it again. With the default `base_commit` source that is the
+  rules as they were at the Automaton's base commit, so an edit made only in
+  the working tree does not change what the judge reads; see
+  [Rules-review source](../datawatch-definitions.md#rules-review-source).
+- **Nothing changed** — the stored verdict comes back, on purpose, without a
+  new judge run, and it is not added to the verdict list a second time. To
+  force a fresh judgment, change the judge chain or turn the cache off
+  ([The per-commit verdict
+  cache](judge-policy.md#the-per-commit-verdict-cache)).
+- **The stored verdict is from before the rules fingerprint existed**, or the
+  project has no rules or context file to fingerprint — the first rejudge
+  always judges again.
+
+Every rejudge says which of the two it was. The `guardrail_rejudge` entry in
+the decision log carries the commit it judged (`judged_commit_sha`) and
+`verdict_reused`:
+
+- **A new review ran** — `verdict_reused` is false (it is left out of the
+  JSON) and the note starts `new review ran on commit <sha>`. The new verdict
+  is added to the Automaton's verdicts, with its own `guardrail_verdict`
+  entry, under that commit and the rules fingerprint.
+- **The stored verdict was reused** — `verdict_reused` is `true`,
+  `judged_commit_sha` is the commit the stored verdict was judged on, and the
+  note reads `stored verdict reused: the head commit <sha> and the rules text
+  are unchanged since that verdict was made at <time>; no new review ran`. The
+  verdict keeps the time, commit and fingerprint it was made with, no
+  `guardrail_verdict` entry is added and the verdict list is not appended to, so
+  asking again and again leaves one verdict per review that actually ran.
+- **No verdict was produced** — the entry still names the head commit that
+  was to be judged, with `verdict_reused` false.
+
+The completion review the daemon runs on its own when the last task finishes
+behaves the same way: if the stored verdict still applies it records a
+`guardrail_reuse` entry (`verdict_reused` true, same note) instead of a second
+copy of the verdict, and does not classify it a second time. To read it, open
+the Automaton's decision log (`autonomous_prd_get`, or the Automaton's
+detail page) and look for the two kinds.
+
+That review follows the same head and rules test, so a fix that lands while the
+Automaton is held does not need a rejudge to be seen. When the Automaton goes
+back to `running` with every task finished and the completion rollup runs
+again, the judge reads the new head, not the stored block. A `pass` or a
+`warn` completes the Automaton (a warning never holds it), adds exactly one
+new verdict on the new commit and clears the stale blocking review record.
+With the head and the rules text unchanged the stored block is reused as
+above: the Automaton stays held, the judge is not asked and a single
+`guardrail_reuse` entry is recorded.
+
+**Telling a fixed Automaton from a still-broken one.** Read the latest
+verdict in the Automaton's verdict list (`autonomous_prd_get`, or the
+Automaton's detail page) and compare two things on it: the commit it judged
+and the time it was made.
+
+- If the judged commit is the current head of the Automaton's branch and the
+  time is after your fix, the verdict is about the fixed work. A `pass` or
+  `warn` there means the Automaton is fixed; a `block` there means it is still
+  broken, and its issues say what to change.
+- If the judged commit is older than your fix, or the time is before it, you
+  are reading a stored verdict, not a judgment of the fix. Look for
+  `verdict_reused` true on the latest `guardrail_rejudge` entry, then commit
+  the fix on the Automaton branch (or change the rules text the judge reads)
+  and rejudge again.
+
 Outcome, in every case written to the Automaton's decision log (attributed
 to the acting operator) **before** any status change:
 
@@ -171,15 +254,29 @@ Reading the judge's verdict:
 ### REST
 
 ```bash
-curl -sk -X POST https://HOST:PORT/api/autonomous/prds/<prd_id>/rejudge \
+curl -sk -X POST 'https://HOST:PORT/api/autonomous/prds/<prd_id>/rejudge?view=compact' \
   -H 'Content-Type: application/json' -d '{"actor":"operator"}'
 ```
+
+The compact reply carries a plain-language `message` that says which of the
+two happened. When a new review ran it reads `rejudge complete; a new review
+ran on commit <sha>; the verdict and outcome are in the decision log`. When
+the stored verdict was reused it reads `rejudge complete; the stored verdict
+was reused because the head commit <sha> and the rules text are unchanged
+since it was made; no new review ran`. Without `?view=compact` the reply is
+the whole Automaton and has no `message`; the decision log says the same
+thing either way. The **Retry** and **Reroute** buttons in the web app ask
+for the compact reply and show this message in the notice for six seconds, so
+you can tell a fresh review from a reused verdict without opening the
+decision log.
 
 ### MCP
 
 ```
 autonomous_prd_rejudge(id="<prd_id>")
 ```
+
+The MCP tool returns the same compact reply, with the same `message`.
 
 ## What happens to Automata when the daemon restarts
 
@@ -330,14 +427,22 @@ a restart.
    starts the clock. After one full bound the watchdog records a
    `stuck_running_refire` note in the Automaton's decision history and re-runs
    the completion rollup once, the same way boot resume does. The clock
-   restarts.
+   restarts. The re-fire is an ordinary completion review: if the branch head
+   moved since the stored verdict was made (for example a fix was committed
+   while the Automaton was held), the judge runs again on the new head, and a
+   `pass` or `warn` completes the Automaton instead of leaving it for the
+   second step. If the head and the rules text are unchanged, the stored
+   verdict is reused and recorded as a `guardrail_reuse` entry.
 2. **Block.** If the Automaton is still in that state after a second full
    bound, the watchdog moves it to `blocked`. It records a
    `stuck_running_blocked` decision with the reason, writes an audit entry
    (`autonomous_stuck_running_blocked`, with the time stuck and the bound) and
    fires the usual status event, so the Automaton shows as blocked in the PWA
    and in notifications. If something else changed the Automaton at the same
-   moment, that change wins and the watchdog leaves it alone.
+   moment, that change wins and the watchdog leaves it alone. An Automaton the
+   re-fire completed is never blocked by the watchdog: no
+   `stuck_running_blocked` decision or audit entry is written for it, and the
+   re-fire happens once.
 
 The clock starts over whenever the state stops holding: a session starts, a
 task is reset to pending, or the Automaton leaves `running`. To clear a blocked

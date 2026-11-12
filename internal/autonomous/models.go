@@ -78,7 +78,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -92,6 +92,13 @@ type Decision struct {
 	// a deterministic check, so the audit entry links back to the judge
 	// run only when one existed.
 	JudgeSessionID string `json:"judge_session_id,omitempty"`
+	// JudgedCommitSHA is the commit a review judged, or the commit a stored
+	// verdict was judged on when that verdict was reused. Empty when the
+	// entry did not involve a commit-bound review.
+	JudgedCommitSHA string `json:"judged_commit_sha,omitempty"`
+	// VerdictReused is true when a stored verdict was reused and no new
+	// review ran. False (and omitted) when a review actually ran.
+	VerdictReused bool `json:"verdict_reused,omitempty"`
 	// FailureCategory (BL410 Phase 1) mirrors FailureReason.Category —
 	// visible inline in this append-only log without opening a nested
 	// Verdict/Verification struct.
@@ -1717,6 +1724,10 @@ type GuardrailVerdict struct {
 	// describes the current head. Empty on verdicts recorded before this
 	// field existed and whenever the cache is disabled.
 	JudgedCommitSHA string `json:"judged_commit_sha,omitempty"`
+	// RulesFingerprint is the hash of the rules text the judge read when this
+	// verdict was made. A verdict recorded without one is treated as stale by
+	// a rejudge and judged again once.
+	RulesFingerprint string `json:"rules_fingerprint,omitempty"`
 	// JudgeOutputPath is the full path of the judge output file that
 	// backed this verdict. Empty when there was no file.
 	JudgeOutputPath string `json:"judge_output_path,omitempty"`

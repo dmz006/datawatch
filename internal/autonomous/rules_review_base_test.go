@@ -168,8 +168,13 @@ func TestRulesReviewBaseWorktreeSourceKeepsOldPointer(t *testing.T) {
 	if strings.Contains(spec, rrBaseText) || strings.Contains(spec, rrWorkerTxt) {
 		t.Errorf("worktree source must not embed any rules text:\n%s", spec)
 	}
-	if len(g.calls) != 0 {
-		t.Errorf("worktree source must not run git, saw %v", g.calls)
+	// The only git call allowed is the head read that anchors the verdict;
+	// the rules text itself is never read through git.
+	for _, call := range g.calls {
+		if strings.Join(call, " ") != "rev-parse HEAD" {
+			t.Errorf("worktree source must not read rules through git, saw %v", g.calls)
+			break
+		}
 	}
 	if got := rrDecisions(prd, "rules_review_source_fallback"); len(got) != 0 {
 		t.Errorf("unexpected fallback Decision: %+v", got)
