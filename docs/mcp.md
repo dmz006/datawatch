@@ -1362,6 +1362,20 @@ self_config_audit(limit=5)
 
 ---
 
+### Sensitive write tools
+
+Every MCP tool belongs to one of three classes: configuration writes, **sensitive writes** and everything else. The sensitive class holds `secret_set`, `secret_delete`, `secret_get` (it only reads, but it returns the secret value), `set_identity`, `update_identity`, `configure_identity`, `restore_identity`, `reset_identity`, `restart_daemon`, `reload`, `plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`, `tailscale_acl_push`, `tailscale_auth_key` and `acme_renew`. `secret_list`, `secret_exists` and `secrets_vault_status` are not in it.
+
+The class has its own switch, `mcp.allow_sensitive_writes`, which is on when the key is absent. While it is `false`, a call to one of these tools from a model session or a federation peer is refused with a message that names the setting, and the refusal is audited (see `self_config_audit` above). Operator calls from the Web UI, REST, the CLI and an admin MCP caller are never refused. The switch is independent of `mcp.allow_self_config`.
+
+- **Read it:** `get_config` with `section=mcp` returns `allow_sensitive_writes` next to `allow_self_config`, each as its effective on/off state, so a config that never set the key reads `true`. Reading is never gated.
+- **Change it:** the operator uses the Settings page, `datawatch config set mcp.allow_sensitive_writes false`, `PUT /api/config` or the comm `configure` verb; each is applied live and saved. A session can reach it through `config_set`, because the key is not bootstrap-protected.
+- **Value text:** send a real boolean. The daemon reads `true`, `yes` and `1` as on and any other text, such as `on`, as off.
+
+Walk-through: [howto/self-config-capability.md](howto/self-config-capability.md#sensitive-writes-a-separate-switch). Definition: [datawatch-definitions.md](datawatch-definitions.md#sensitive-writes).
+
+---
+
 ### `vision_describe`
 
 Describe an image file using the configured vision model. Returns a natural-language description. Requires `vision.enabled: true` in config.
