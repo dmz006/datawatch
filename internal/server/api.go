@@ -6329,6 +6329,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// Effective, not raw: an unset key reads hold and task_files.
 				"uncommitted_work_policy": s.cfg.Autonomous.Automation.EffectiveUncommittedWorkPolicy(),
 				"uncommitted_work_scope":  s.cfg.Autonomous.Automation.EffectiveUncommittedWorkScope(),
+				// Effective, not raw: an unset policy reads hold, an unset
+				// auto-resume reads true, and the file registry block shows
+				// every default in effect (no path means no file registry).
+				"pending_item_policy":      s.cfg.Autonomous.Automation.EffectivePendingItemPolicy(),
+				"pending_item_auto_resume": s.cfg.Autonomous.Automation.EffectivePendingItemAutoResume(),
+				"pending_item_source":      pendingItemSourceSurface(s.cfg.Autonomous.Automation.PendingItemSource),
 			},
 			"lane_fill":   laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"infra_retry": infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
@@ -6714,6 +6720,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Pending item keys (autonomous.automation.pending_item_policy,
+	// pending_item_auto_resume and pending_item_source.*): strict. A bad value
+	// rejects the whole PUT with a message naming the allowed words.
+	if verr := validatePendingItemPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	// Security failure (autonomous.automation.security_failure.*): the only
 	// key is mode, which must be off, shadow or on (empty = unset =
 	// shadow). Any other value rejects the whole PUT rather than being
@@ -7055,6 +7068,9 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 				}
 				if raw, ok := partial["automation"]; ok && patchTouchesSupervisorWatch(patch) {
 					partial["automation"] = withSupervisorWatchClears(raw, s.cfg.Autonomous.Automation.SupervisorWatch)
+				}
+				if raw, ok := partial["automation"]; ok && patchTouchesPendingItem(patch) {
+					partial["automation"] = withPendingItemClears(raw, s.cfg.Autonomous.Automation)
 				}
 				if b, err := json.Marshal(partial); err == nil {
 					_ = s.autonomousMgr.SetConfig(json.RawMessage(b))
@@ -8330,6 +8346,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if validateUncommittedWorkValue(k, v) == nil {
 				cfg.Autonomous.Automation.UncommittedWorkScope = toString(v)
 			}
+		case config.PendingItemKeyPolicy, config.PendingItemKeyAutoResume, config.PendingItemKeyPath,
+			config.PendingItemKeyIDPattern, config.PendingItemKeyIDColumn, config.PendingItemKeyTitleColumn,
+			config.PendingItemKeyStateColumn, config.PendingItemKeyDoneValues, config.PendingItemKeyOnMissingRow:
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged. The change reaches the live
+			// manager through the autonomous.* forward after the apply.
+			applyPendingItemValue(&cfg.Autonomous.Automation, k, v)
 		case "autonomous.automation.repo_ci_watch.mode",
 			"autonomous.automation.repo_ci_watch.repos",
 			"autonomous.automation.repo_ci_watch.poll_seconds",

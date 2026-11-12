@@ -240,6 +240,11 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 						return
 					}
 				}
+				// Pending item keys: the same strict checks as PUT /api/config.
+				if verr := validatePendingItemAutomationBlock(rawAuto); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 			// lane_fill: every field is checked, so one bad value rejects the PUT.
 			if rawLane, ok := top["lane_fill"]; ok {
@@ -3640,11 +3645,14 @@ type automationControlReq struct {
 	OnBlocked       string `json:"on_blocked"`
 	OnFailed        string `json:"on_failed"`
 	Member          struct {
-		PRDID string `json:"prd_id"`
-		Name  string `json:"name"`
+		PRDID         string `json:"prd_id"`
+		PendingItemID string `json:"pending_item_id"`
+		Name          string `json:"name"`
 	} `json:"member"`
-	Urgent bool   `json:"urgent"`
-	After  string `json:"after"`
+	// PendingItemID is the top-level form of member.pending_item_id (insert_member).
+	PendingItemID string `json:"pending_item_id"`
+	Urgent        bool   `json:"urgent"`
+	After         string `json:"after"`
 	// set_llm / set_verification_llm: presence-aware, absent = leave the
 	// field unchanged, "" = clear it.
 	Backend         *string `json:"backend"`
@@ -3812,10 +3820,15 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 			http.Error(w, "reason is required to insert a member", http.StatusBadRequest)
 			return
 		}
-		details["prd_id"], details["name"] = req.Member.PRDID, req.Member.Name
+		prdID, itemID := insertMemberTarget(req.Member.PRDID, req.Member.PendingItemID, req.PendingItemID)
+		if prdID != "" && itemID != "" {
+			http.Error(w, "400: an insert takes either prd_id or pending_item_id, not both", http.StatusBadRequest)
+			return
+		}
+		details["prd_id"], details["pending_item_id"], details["name"] = prdID, itemID, req.Member.Name
 		details["urgent"], details["after"] = req.Urgent, req.After
 		a, err = ctl.InsertMember(id, autonomous.InsertMemberInput{
-			PRDID: req.Member.PRDID, Name: req.Member.Name, AfterMemberID: req.After,
+			PRDID: prdID, PendingItemID: itemID, Name: req.Member.Name, AfterMemberID: req.After,
 			Urgent: req.Urgent, Actor: req.Actor, Reason: req.Reason, ExpectedVersion: req.ExpectedVersion,
 		})
 	case "approve_insert":
