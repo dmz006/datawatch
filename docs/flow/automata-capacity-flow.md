@@ -108,7 +108,7 @@ flowchart TD
     PL --> AL[idle lane with eligible work past threshold: one alert]
 ```
 
-The planner reads the GPU pool's evidence (running sessions on the GPU backend or on a pool host, and loaded models). An unreadable host blocks the idle call for GPU lanes, so a busy pool is never reported idle on a guess. A GPU lane costs no Claude usage, so Claude usage limits and budget pace are not planner inputs.
+The planner reads the GPU pool's evidence (running sessions on the GPU backend or on a pool host, and loaded models). An unreadable host blocks the idle call for GPU lanes, so a busy pool is never reported idle on a guess, unless the host holds no work, has no lane placed on it and has been unreachable for `autonomous.lane_fill.host_down_after_minutes`; it is then reported as a degraded host and the lanes are judged from the readable hosts. A GPU lane costs no Claude usage, so Claude usage limits and budget pace are not planner inputs.
 
 See [howto/automation-lane-fill.md](../howto/automation-lane-fill.md) for the operator procedure.
 
