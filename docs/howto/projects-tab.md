@@ -233,8 +233,8 @@ the Gantt as one expandable timeline with a focus view per Automation) is now in
 web app. Which rows are expanded is remembered per project in this browser's local
 storage (key `cs_projects_gantt_expanded_<project>`), like the section state below, and has
 no REST, MCP, CLI, chat or configuration form; a browser that blocks storage shows
-everything collapsed. The window selector (7, 30, 90 days) and the history Gantt rows in
-the page are gone; `GET /api/projects/{name}/history` still returns its `gantt` rows
+everything collapsed. The old fixed 7, 30 and 90 day window and the history Gantt rows in
+the page are gone (the range selector now defaults to **All time**); `GET /api/projects/{name}/history` still returns its `gantt` rows
 for other clients. The mobile apps are not covered by this change and need a parity
 check (see `docs/plans/parity-issues/`).
 
