@@ -4786,7 +4786,8 @@ packs:
   # Turn the pack feature on. Default false.
   # Turning it on should need at least one enabled skills registry source (the
   # community registry by default). That check is in the packs package and is
-  # not yet run when this key is set, so the daemon does not enforce it yet.
+  # (packs.CheckEnable) and is not yet run when this key is set, so the daemon
+  # does not enforce it yet. With this key false, only "builtin" applies.
   # Install, trust and auto-accept are not exposed on any surface yet; see
   # docs/howto/automata-standard-tasks.md#installable-packs-backend-only-not-yet-wired.
   enabled: false
@@ -4794,6 +4795,8 @@ packs:
   # Automaton templates compiled into the binary, always valid; the repository's
   # test fixture folder is not read) or the name of an installed pack. A name that is
   # neither, an empty name or a repeated name is rejected by validation.
+  # This is the global list: an Automaton's own list wins over it when set, and
+  # lists are never merged (packs.ActivePacks). There is no per-project list key.
   # Default: [builtin].
   active:
     - builtin

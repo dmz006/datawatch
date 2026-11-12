@@ -7081,7 +7081,16 @@ this section is the operator checklist for the state of the code today.
 **Config (`packs`).** `packs.enabled` (default `false`) and `packs.active` (default
 `["builtin"]`) are read from the config file. The daemon does not yet check the switch against a connected registry source, nor
 validate `packs.active` against the installed packs, so setting `enabled: true` changes
-nothing on its own.
+nothing on its own. The enable check exists as `packs.CheckEnable`: it refuses when no
+skills registry source is enabled ("packs need at least one connected skills registry
+source; connect one in the skills registry settings") and only reads the list it is given.
+
+**Which list applies (`packs.ActivePacks`).** With `packs.enabled: false` the answer is
+`["builtin"]`. With it on, the first non-empty list of Automaton, project, global
+(`packs.active`) is used, never merged; all empty gives `["builtin"]`. An Automaton's
+own list is the `packs` field, set through `SetPacks` (trimmed, unique, order kept). No
+surface sets it yet, and the project config entry has no `packs` key, so a per-project
+list is not available.
 
 **Install root and trust file.** The install root has no default path in the daemon.
 Trust records live in `trust.json` inside that root, beside one folder per pack name and
@@ -7101,8 +7110,9 @@ adds no tool, script or file scope; a widening version waits for an operator acc
 2. Nothing calls the install, trust-accept, first-party acceptance, version-diff or
    auto-accept functions from the daemon. A first-party source is never accepted in
    practice until a caller registers it.
-3. The enable check, the `packs.active` validation and the daemon's start-up read of the
-   pack block are not run.
+3. The enable check (`packs.CheckEnable`), the list order (`packs.ActivePacks`), the
+   `packs.active` validation and the daemon's start-up read of the pack block are not run.
+   The Automaton `packs` field is stored but nothing reads it when tasks are resolved.
 4. The datawatch app (Android and iPhone) does not show packs.
 5. The pack attribution read side is partly wired, and no writer is wired. Trace
    roll-ups group by `pack_name` and `pack_version`, and the audit query accepts a
@@ -7134,7 +7144,8 @@ embedded: `standard-tasks-pack/` (a copy of the standard tasks) and `fixture-one
 Nothing on a running daemon reads either folder, and the real standard-tasks pack comes
 from the community registry, not from this repository.
 
-**Review owed by the operator:** decide where the install and accept actions live and
+**Review owed by the operator:** decide whether the per-project pack list is wanted and
+where it lives (the config key was dropped); decide where the install and accept actions live and
 whether they need a parity issue, confirm the default install root, and confirm that a
 first-party source's acceptance is taken at enable time (the planned behaviour) before
 the surfaces are built. Also decide whether the code comment on `PacksBuiltinName`
