@@ -376,6 +376,8 @@
   "compute_tls_cert_fingerprint_ph": "AB:CD:… (64 caracteres hex)",
   "compute_tls_insecure_skip_verify": "Omitir la verificación del certificado (no recomendado)",
   "compute_tls_insecure_skip_verify_warn": "La verificación del certificado estará DESACTIVADA para este nodo. Cualquiera en la ruta de red puede suplantarlo y leer o alterar lo que se envía, incluidas las claves de API.",
+  "compute_verify_tls": "Verificar TLS en las descargas de modelos",
+  "compute_verify_tls_help": "Si está activado, las descargas de modelos hacia este nodo verifican su certificado con las raíces del sistema. Desactivado por defecto porque los nodos registrados suelen estar en una red privada con certificados autofirmados.",
   "compute_tls_off_badge": "Verificación TLS DESACTIVADA",
   "compute_tls_off_badge_tip": "La verificación del certificado está DESACTIVADA para este nodo. Cualquiera en la ruta de red puede suplantarlo y leer o alterar lo que se envía, incluidas las claves de API. Use en su lugar un archivo CA o una huella fijada.",
   "compute_tls_pinned_badge": "fijado",

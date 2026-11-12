@@ -376,6 +376,8 @@
   "compute_tls_cert_fingerprint_ph": "AB:CD:… (64 caractères hex)",
   "compute_tls_insecure_skip_verify": "Ignorer la vérification du certificat (déconseillé)",
   "compute_tls_insecure_skip_verify_warn": "La vérification du certificat sera DÉSACTIVÉE pour ce nœud. Toute personne sur le chemin réseau peut l'usurper et lire ou modifier ce qui est envoyé, y compris les clés d'API.",
+  "compute_verify_tls": "Vérifier le TLS lors des téléchargements de modèles",
+  "compute_verify_tls_help": "Si activé, les téléchargements de modèles vers ce nœud vérifient son certificat par rapport aux racines du système. Désactivé par défaut car les nœuds enregistrés sont généralement sur un réseau privé avec des certificats auto-signés.",
   "compute_tls_off_badge": "Vérification TLS DÉSACTIVÉE",
   "compute_tls_off_badge_tip": "La vérification du certificat est DÉSACTIVÉE pour ce nœud. Toute personne sur le chemin réseau peut l'usurper et lire ou modifier ce qui est envoyé, y compris les clés d'API. Utilisez plutôt un fichier CA ou une empreinte épinglée.",
   "compute_tls_pinned_badge": "épinglé",
