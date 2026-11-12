@@ -365,8 +365,8 @@ func (s *Server) ciReleaseState(context.Context) (int, string, *consoleReleaseDe
 		parts = append(parts, fmt.Sprintf("ship: push %s, tag %s, CI watch %s", ship.Policy.Push, ship.Policy.Tag, ship.Policy.CIWatch))
 	}
 
-	switch {
-	case s.latestVersion == nil:
+	switch s.latestVersion {
+	case nil:
 		detail.ReleaseState = consoleReleaseNotWired
 		parts = append(parts, "release: the latest-version check is not wired in")
 	default:

@@ -281,6 +281,36 @@ setting per card.
 - **Data:** `GET /api/dashboard/series/defects-per-day?days=<n>` (default `14`, `1` to `90`): defects found and fixed per UTC day from the defect intake log. A fix is a tiny fix applied without error.
 - **Off:** hidden until a defect was found or fixed in the window. Empty line: "No defects were found or fixed in this window — this card fills as defects are recorded." Opt-in.
 
+### Arc card
+
+- **For:** one arc (an Automation) as its stages in order, with the shared lanes and the plan usage.
+- **Data:** `GET /api/dashboard/arc`; plan usage in points and tokens, never dollars.
+- **Off:** opt-in; add it from Edit → Add Card. See [dashboard-arc-view.md](dashboard-arc-view.md).
+
+### Automaton Timeline card
+
+- **For:** every project's Automata as an interval chart: stages as bands, members as bars, blocked and waiting time hatched.
+- **Data:** `GET /api/autonomous/timeline`; see [automata-timeline.md](automata-timeline.md).
+- **Off:** a system card on the default board; with nothing to draw it shows a one-line empty message.
+
+### Weekly allowance card
+
+- **For:** how much of the weekly usage allowance is used.
+- **Data:** the usage readings and the usage calculator, in points.
+- **Off:** hidden until the calculator can read a level.
+
+### Pace line card
+
+- **For:** the weekly usage level against the pace line.
+- **Data:** the usage calculator's advice, in points.
+- **Off:** hidden until the calculator can read a level.
+
+### Burn per day card
+
+- **For:** the usage points burned on each day.
+- **Data:** the usage calculator's daily series.
+- **Off:** hidden until the calculator can read a level.
+
 ### Cost report card
 
 - **For:** token spend grouped by Automaton, Automation, backend or week.

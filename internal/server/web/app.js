@@ -50279,6 +50279,11 @@ const DASH_CARD_HELP_ANCHORS = {
   'review-backlog': 'review-backlog-card',
   'defects-per-day': 'defects-per-day-card',
   'cost-report': 'cost-report-card',
+  'arc-view': 'arc-card',
+  'timeline': 'automaton-timeline-card',
+  'usage-allowance': 'weekly-allowance-card',
+  'usage-pace': 'pace-line-card',
+  'usage-burn': 'burn-per-day-card',
 };
 
 function _dashCardKeyId(id) {

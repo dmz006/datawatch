@@ -5322,5 +5322,15 @@
   "dash_card_help_review_backlog": "Muestra los planes y las preguntas retenidas que esperan tu decisión, el más antiguo primero, con cuánto tiempo lleva esperando cada uno. Los datos vienen del endpoint de la serie de pendientes de revisión. La tarjeta se oculta cuando no hay nada esperando.",
   "dash_card_help_defects_per_day": "Muestra los defectos encontrados y corregidos cada día en los últimos 14 días, con totales. Los datos vienen del endpoint de la serie de defectos por día, a partir de los registros de entrada de defectos. La tarjeta se oculta cuando no se encontró ni corrigió ningún defecto en la ventana.",
   "dash_card_help_cost_report": "Muestra el gasto de tokens agrupado por autómata, Automation, backend o semana, con tokens de entrada, salida, caché y locales. Los datos vienen del endpoint del informe de costes. La tarjeta se oculta cuando no se registró ninguna sesión con uso de tokens en la ventana.",
+  "dash_card_purpose_arc_view": "Un arco con sus etapas en orden, con carriles y uso del plan.",
+  "dash_card_help_arc_view": "Muestra un arco (una Automation) con sus etapas en orden, errores, funciones y final, cada una con totales, hechas, en curso y bloqueadas, más el uso compartido de carriles y el uso del plan en puntos y tokens. Una etapa bloqueada indica su motivo. Los datos vienen de GET /api/dashboard/arc.",
+  "dash_card_purpose_timeline": "Los Automata de cada proyecto como bandas de etapas y barras de miembros.",
+  "dash_card_help_timeline": "Muestra los Automata de todos los proyectos como un gráfico de intervalos: cada etapa una banda, cada miembro una barra con inicio y fin, el tiempo bloqueado y en espera rayado, y marcas de hoy y de fin previsto. Los datos vienen de GET /api/autonomous/timeline.",
+  "dash_card_purpose_usage_allowance": "La asignación semanal de uso consumida hasta ahora.",
+  "dash_card_help_usage_allowance": "Muestra cuánto de la asignación semanal de uso se ha consumido, en puntos, a partir de las lecturas de uso y la calculadora de uso.",
+  "dash_card_purpose_usage_pace": "El uso frente a la línea de ritmo de la semana.",
+  "dash_card_help_usage_pace": "Muestra el uso semanal frente a la línea de ritmo, los puntos que un ritmo constante habría usado hasta ahora, según la calculadora de uso.",
+  "dash_card_purpose_usage_burn": "Puntos de uso consumidos cada día.",
+  "dash_card_help_usage_burn": "Muestra los puntos de uso consumidos cada día de la semana, según la serie diaria de la calculadora de uso.",
   "dash_card_help_label": "Ayuda de esta tarjeta"
 }

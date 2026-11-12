@@ -5322,5 +5322,15 @@
   "dash_card_help_review_backlog": "Shows the plans and held questions waiting for a decision from you, oldest first, with how long each has waited. The data is the review backlog series endpoint. The card is hidden when nothing is waiting.",
   "dash_card_help_defects_per_day": "Shows defects found and fixed each day over the last 14 days, with totals. The data is the defects per day series endpoint, from defect intake records. The card is hidden when no defect was found or fixed in the window.",
   "dash_card_help_cost_report": "Shows token spend grouped by Automaton, Automation, backend or week, with input, output, cache and local tokens. The data is the cost report endpoint. The card is hidden when no session with token usage was recorded in the window.",
+  "dash_card_purpose_arc_view": "One arc as its stages in order, with lanes and plan usage.",
+  "dash_card_help_arc_view": "Shows one arc (an Automation) as its stages in order, bugs, features and final, each with total, done, running and blocked counts, plus the shared lane usage and the plan usage in points and tokens. A blocked stage names its reason. The data is GET /api/dashboard/arc.",
+  "dash_card_purpose_timeline": "Every project's Automata as stage bands and member bars.",
+  "dash_card_help_timeline": "Shows the Automata of every project as an interval chart: each stage a band, each member a bar with its start and end, blocked and waiting time hatched, and today and projected-finish markers. The data is GET /api/autonomous/timeline.",
+  "dash_card_purpose_usage_allowance": "The weekly usage allowance used so far.",
+  "dash_card_help_usage_allowance": "Shows how much of the weekly usage allowance has been used, in points, from the usage readings and the usage calculator.",
+  "dash_card_purpose_usage_pace": "Usage against the pace line for the week.",
+  "dash_card_help_usage_pace": "Shows the weekly usage level against the pace line, the points a steady pace would have used by now, from the usage calculator.",
+  "dash_card_purpose_usage_burn": "Usage points burned each day.",
+  "dash_card_help_usage_burn": "Shows the usage points burned on each day of the week, from the usage calculator's daily series.",
   "dash_card_help_label": "Help for this card"
 }

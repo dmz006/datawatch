@@ -67,7 +67,7 @@ var seriesDefectRecords = func(s *Server) []autonomous.IntakeRecord {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var out []autonomous.IntakeRecord
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
