@@ -1,4 +1,4 @@
-Issue: not filed yet (record the issue URL here once it is filed)
+Issue: https://github.com/dmz006/datawatch-app/issues/467
 
 # [sync] Dashboard cards fixed and new: work map, lane pulse, six series endpoints, console release detail, search callers, cost report reconciliation, card purposes and locale keys
 
@@ -57,12 +57,12 @@ The six series cards are: Lane utilization, Throughput forecast, Verifier health
 
 | Where | Field | Notes |
 |---|---|---|
-| `totals` | `cache_read_tokens`, `cache_write_tokens`, `local_tokens` | new, alongside `sessions`, `tokens_in`, `tokens_out` |
-| `rows[]` | `cache_read_tokens`, `cache_write_tokens`, `local_tokens` | new, same meaning per row |
+| `totals` | `cache_read`, `cache_creation`, `local_tokens` (`cache_read` and `cache_creation` already exist on each row) | new, alongside `sessions`, `tokens_in`, `tokens_out` |
+| `rows[]` | `local_tokens` | new: tokens of local-model sessions in the row |
 | `rows[]` | `api_equivalent_usd` | optional, the bundled-plan spend priced at API rates; `usd_estimate`, `billing_mode`, `billing_label` unchanged |
 | top level | `reconciliation` | new, omitted when no usage reading exists: `points`, `pace_line`, `ahead_of_pace`, `api_equivalent_usd`, `implied_usd_per_point` (omitted when either side is zero), `days[]` (`date`, `points`, `api_equivalent_usd`) |
 
-Sessions that report only cache tokens now count, so a row can have zero `tokens_in` and `tokens_out`. The USD columns are labelled API-equivalent, not a bill (two existing locale values changed, listed below).
+Cache tokens are priced apart from input (a read at a tenth of the input rate, a creation at 1.25 times it). The USD columns are labelled API-equivalent, not a bill (two existing locale values changed, listed below).
 
 ### MCP
 
@@ -198,10 +198,9 @@ Every key below exists in en, de, es, fr and ja in the PWA bundles (`internal/se
 | `dash_card_off_cost_report_reason` | No recorded sessions with token usage in this window — the card fills as sessions report usage. | same English text as a placeholder for now |
 | `dash_card_off_cost_report_link` | Dashboard card reference | same English text as a placeholder for now |
 | `cost_report_usd_api_value` | $%1$s API-equivalent | same English text as a placeholder for now |
-| `cost_report_column_cache` | Cache read / write | same English text as a placeholder for now |
 | `cost_report_cache_io` | %1$d read · %2$d write | same English text as a placeholder for now |
 | `cost_report_column_local` | Local-model tokens | same English text as a placeholder for now |
-| `cost_report_totals` | Totals: %1$d in · %2$d out · %3$d cache read · %4$d cache write · %5$d local-model | same English text as a placeholder for now |
+| `cost_report_totals` | Totals: %1$d in · %2$d out · %3$d cache read · %4$d cache created · %5$d local-model | same English text as a placeholder for now |
 | `cost_report_reconcile_title` | Against the usage readings | same English text as a placeholder for now |
 | `cost_report_reconcile_points` | %1$s points used against a pace line of %2$s — %3$s | same English text as a placeholder for now |
 | `cost_report_reconcile_ahead` | ahead of the pace line | same English text as a placeholder for now |
@@ -280,3 +279,7 @@ Please send translations of the new keys into DE, ES, FR and JA (use the app's o
 ## Filing record
 
 Not filed. The draft is ready to file against the mobile app repository once checked for an open issue about the dashboard cards (search first, comment on an existing issue rather than filing a second). Record the issue URL and date here when filed.
+
+### Card help keys for the cards already on main
+
+The purpose and help line, and the dashboard how-to anchor, now exist for the Arc, Automaton Timeline, Weekly allowance, Pace line and Burn per day cards: `dash_card_purpose_<id>` and `dash_card_help_<id>` with the id's hyphens as underscores (`arc_view`, `timeline`, `usage_allowance`, `usage_pace`, `usage_burn`), anchors `arc-card`, `automaton-timeline-card`, `weekly-allowance-card`, `pace-line-card`, `burn-per-day-card`. All five locales carry them.
