@@ -7120,8 +7120,19 @@ adds no tool, script or file scope; a widening version waits for an operator acc
    the REST routes. The per-pack usage summary (`packs.UsageByPack`) and the cost
    report's pack breakdown are not called by any surface.
 
+**Pack inputs.** `packs.ResolveInputs` resolves each declared input in the order
+Automaton, project, global, then the declared default; a required input with no value is
+an error. A secret input accepts only a `${secret:NAME}` vault reference
+(`packs.CheckSecretInput`), and `packs.RedactInputs` masks any other secret value as
+`***`. A daemon-run standard task stores its redacted inputs as `pack_inputs` when it is
+created and keeps them for life. Nothing can set an input at any level yet, the built-in
+pack declares none, and the daemon does not call the secret check, so `pack_inputs` is
+empty today. No secret value is ever stored on a task. Flag before relying on it. See
+[howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#pack-inputs-how-values-resolve-secrets-and-what-a-task-records).
+
 **Pack attribution on a running daemon.** Nothing writes the pack name yet. The
-`builtin` stamp helper (`autonomous.StampBuiltinPack`) has no production caller, and no
+`builtin` stamp helpers (`autonomous.StampBuiltinPack` and
+`autonomous.BuiltinStandardTaskTraceEvent`) have no production caller, and no
 production code writes a `pack_name` detail on an audit entry. So the audit `pack_name`
 filter returns nothing, and trace roll-ups by `pack_name` show only unattributed events,
 until a writer ships. Do not expect filtered audit results from it. Every existing event

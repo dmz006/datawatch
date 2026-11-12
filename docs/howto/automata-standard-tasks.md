@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [standard tasks, standard task, automaton templates, automaton template, formerly task templates, decomposer, story tasks, per-project override, templates tab, standard-task packs, pack, pack trust, auto-accept, first-party pack source]
+  topics: [standard tasks, standard task, automaton templates, automaton template, formerly task templates, decomposer, story tasks, per-project override, templates tab, standard-task packs, pack, pack inputs, secret input, pack_inputs, pack trust, auto-accept, first-party pack source]
 exec_params:
   - {name: project, required: false, description: "Project directory or alias: shows the standard-task list as that project sees it (its override applied)"}
 exec_steps:
@@ -305,6 +305,44 @@ A pack summary lists the task titles in manifest order, the names of the verific
 script files (never their full paths), and the tools and file scopes the pack's tasks
 ask for. Use it to read what a pack would allow before you accept it.
 
+### Pack inputs: how values resolve, secrets, and what a task records
+
+A pack can declare **inputs** in `pack.yaml` (`name`, `type`, `default`, `required`,
+`secret`). The resolver (`packs.ResolveInputs`, `internal/packs/inputs.go`) gives each
+declared input one value:
+
+- **Override order.** The first level that defines the input wins: the Automaton, then
+  the project, then the global level. A level defines an input when its map holds the
+  input's name, so an empty string set at a level still wins over a lower level.
+- **Default.** When no level defines it, the declared `default` is used. An input that is
+  not required and has no default resolves to an empty string.
+- **Required.** A required input with no value at any level and no default is an error:
+  `pack input <name> is required and has no value; set it at the automaton, project or global level`.
+
+**Secret inputs** (`secret: true`) never hold a literal value. `packs.CheckSecretInput`
+refuses any value that is not a vault reference of the form `${secret:NAME}` (`NAME` is
+letters, digits, `_`, `.` and `-`). Non-secret inputs accept any value. `packs.RedactInputs`
+returns the copy that is safe to show: a secret input keeps its `${secret:NAME}` reference,
+and a secret input whose value is not a reference is masked as `***`.
+
+**What a created task records.** When the daemon creates a daemon-run standard task it
+resolves the built-in pack's inputs, redacts them, and stores the result on the task as
+`pack_inputs` (JSON, omitted when empty). The map is a private copy: a later change to an
+input does not alter a task that already exists, because a task keeps the values it was
+created with. If resolving fails, the error is logged and the task is created without
+`pack_inputs`.
+
+Limits today, flagged for review:
+
+- **No input source is wired.** The daemon passes no Automaton, project or global input
+  values, so only declared defaults apply. There is no config key, REST, MCP, CLI or web
+  action to set a pack input at any level.
+- **The built-in pack declares no inputs**, so `pack_inputs` is empty on every task the
+  daemon creates today.
+- **`CheckSecretInput` is not called by the daemon.** Nothing refuses a literal value for
+  a secret input at write time because no input can be written yet.
+- **Only daemon-run tasks record inputs.** Tasks that run as a model session do not.
+
 ### Pack attribution: traces, audit and cost
 
 Pack attribution is the read side of a pack's name and version on trace events and
@@ -315,8 +353,10 @@ roll-ups below return no pack-attributed rows yet. The pieces are:
   group by them: `dimension=pack_name` or `dimension=pack_version` (REST
   `GET /api/trace/rollup`, and the `trace_rollup` MCP tool). See
   [agent tracing](agent-tracing.md). The helper that stamps the `builtin` pack onto a
-  trace event (`autonomous.StampBuiltinPack`) exists, but no production code calls it, so
-  the standard tasks' events are not stamped yet.
+  trace event (`autonomous.StampBuiltinPack`) exists, and
+  `autonomous.BuiltinStandardTaskTraceEvent` builds an event for one built-in standard task
+  (its `task_id` and name come from the task, `pack_name` is `builtin`). No production
+  code calls either, so the standard tasks' events are not stamped yet.
 - **Audit entries are read-only for `pack_name`.** The audit query accepts a `pack_name`
   filter, an exact match, on REST, MCP, CLI and the comm channel, and it reads the
   `pack_name` detail. No production code writes a `pack_name` detail on an audit entry,
@@ -371,6 +411,11 @@ yet:
 - **The trace `pack` filter is not honoured over REST.** The MCP `trace_session` and
   `trace_rollup` tools send `?pack=`, and the REST trace routes ignore it. Operator review
   needed: wire the parameter on the REST routes, or drop it from the MCP tools.
+- **Pack inputs have no source.** Resolution, the secret reference check and redaction
+  exist and daemon-run tasks record `pack_inputs`, but nothing can set an input yet, and
+  the built-in pack declares none. Operator review needed: decide where inputs are set at
+  the Automaton, project and global levels, and whether `pack_inputs` should be shown on
+  the task in the web UI and the REST task read.
 - **The per-pack usage summary and the pack cost breakdown have no surface.**
   `packs.UsageByPack` and the cost report's pack breakdown are library functions only.
   The Packs sub-tab named in the change does not call them yet. Decide where they show
