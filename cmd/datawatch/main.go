@@ -7191,6 +7191,38 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						_ = alertStore.AddSystem(lv, title, body)
 					},
 				})
+				// Peer event subscriber: reads a registered peer's lifecycle events into
+				// this daemon's local dispatch. The start, stop and read routes
+				// (REST, MCP, CLI, comm) drive it; autonomous.notify.forwarding.peer_events
+				// is read live, so start is refused while it is off, and every read
+				// ends with the daemon.
+				{
+					peerEventsCtx, cancelPeerEvents := context.WithCancel(context.Background())
+					peerSub := amgr.NewPeerEventSubscriber(autonomouspkg.PeerEventSubscriberConfig{
+						LookupPeer: lifecycleLookupPeer,
+						LocalHost:  lifecycleLocalHost,
+						Settings:   lifecycleForwardSettings,
+						NewClient:  multiserver.HTTPClient,
+						Audit:      lifecycleAuditFn,
+						RaiseAlert: func(level, title, body string) {
+							lv := alertspkg.LevelInfo
+							switch level {
+							case "warn":
+								lv = alertspkg.LevelWarn
+							case "error":
+								lv = alertspkg.LevelError
+							}
+							_ = alertStore.AddSystem(lv, title, body)
+						},
+					})
+					httpServer.SetPeerEvents(server.NewPeerEventControl(peerEventsCtx, peerSub, func() bool {
+						return cfg.Autonomous.Notify.Forwarding.PeerEvents
+					}))
+					defer func() {
+						cancelPeerEvents()
+						peerSub.StopAll()
+					}()
+				}
 				// BL427 (phase 5) — receiving side of peer forwarding. It reads the
 				// same live settings as the forwarder, so one enabled flag governs both
 				// directions. Disabled by default.
@@ -7822,7 +7854,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			})
 			// Supervisor loop: the eight mechanical steps run once per idle
 			// tick, and an escalation raises a question in the queue.
-			wireSupervisorLoop(autoCoord, amgr, cfg, autonomousInferenceReg, httpServer)
+			if stopWake := wireSupervisorLoop(autoCoord, amgr, cfg, autonomousInferenceReg, httpServer, mgr); stopWake != nil {
+				defer stopWake()
+			}
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning

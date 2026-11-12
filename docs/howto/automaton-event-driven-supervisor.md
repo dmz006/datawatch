@@ -6,7 +6,7 @@ exec_params:
   - {name: kinds, required: false, default: "task.failed,automaton.stuck_running,judge.verdict_block", description: "Comma-separated event kinds that wake the supervisor (run the event-kinds step first to see every valid kind)"}
   - {name: coalesce_seconds, required: false, default: "30", description: "Quiet window in seconds, 0 to 3600; 0 wakes on every event"}
   - {name: fallback_interval_minutes, required: false, default: "20", description: "Minutes between scheduled passes when no event wakes the supervisor, 1 to 1440"}
-  - {name: enabled, required: false, default: "false", description: "Set true to turn the event wake on; false leaves the supervisor on its schedule alone"}
+  - {name: enabled, required: false, default: "true", description: "true turns the event wake on; false leaves the supervisor on its schedule alone"}
 exec_steps:
   - tool: autonomous_event_kinds
     description: List every event kind a subscription or the wake can name, grouped, with the ones in the default wake set marked
@@ -56,18 +56,14 @@ not go away. It stays as the **fallback check**, so an event that never
 arrives, or arrives while no supervisor session is running, is still caught on
 the next scheduled pass.
 
-> **Read this first: what is switched on in this release.** The four wake
-> settings exist on every surface, are validated, stored and read back, and the
-> wake code (the subscription set, the coalescer and the runner) is implemented
-> and tested. But nothing at daemon start-up calls that code, and nothing reads
-> `supervisor_loop.wake.fallback_interval_minutes` to schedule a check. So in this
-> release turning `supervisor_loop.wake.enabled` on records your choice and shows
-> it in the status, and the status times stay empty; it does not by itself start
-> a supervisor pass. The same result works today with a stored subscription that
-> types a line into the supervisor session (see
-> [What works today](#what-works-today-a-stored-subscription-for-the-supervisor)).
-> The sections below describe the wake as built, so you can set it up now and have
-> it ready when the start-up call lands.
+> **What happens when you turn it on.** Setting `supervisor_loop.wake.enabled`
+> to true registers the wake within a few seconds, with no restart. From then on
+> each matching event runs one supervisor loop pass at once and, when a
+> supervisor session is running, types a `supervisor wake:` line into it. The
+> scheduled check keeps running as the fallback, at
+> `supervisor_loop.wake.fallback_interval_minutes`, and the wake status shows the
+> time and count of both. Turning the setting off removes the wake again; a
+> daemon with it off behaves exactly as before.
 
 This page walks through the whole path, in the order you would set it up:
 
@@ -97,12 +93,13 @@ settings.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `supervisor_loop.wake.enabled` | `false` | Turns the event wake on. Off, the supervisor runs on its schedule alone and nothing is registered. See the note at the top for what is wired in this release. |
+| `supervisor_loop.wake.enabled` | `false` | Turns the event wake on. Off, the supervisor runs on its schedule alone and nothing is registered. A change applies within a few seconds, with no restart. |
 | `supervisor_loop.wake.kinds` | the default list | The event kinds that wake the supervisor. At most 64, no duplicates, none empty while the wake is on, each a kind a subscription can filter on. |
 | `supervisor_loop.wake.coalesce_seconds` | `30` | The quiet window, `0` to `3600`. Events inside it fold into one pass. `0` wakes on every event. |
-| `supervisor_loop.wake.fallback_interval_minutes` | `20` | Minutes between scheduled fallback checks, `1` to `1440`. The default equals the scheduled check, so turning the wake on changes nothing about the schedule. Stored and reported today; no scheduler reads it yet. |
+| `supervisor_loop.wake.fallback_interval_minutes` | `20` | Minutes between scheduled fallback checks, `1` to `1440`. While the wake is on, the scheduled check runs a pass only when this many minutes have passed since its last pass; events run passes in between. While the wake is off the scheduled check runs on every tick of the idle loop, as before. Read live on every tick. |
 | `mcp.resource_subscriptions` | `false` | Lets an MCP client subscribe to the lifecycle events resource and be notified of matching events. Needs a daemon restart to change. |
 | `autonomous.notify.forwarding.enabled` | `false` | The one switch for federation event exchange, in both directions. Needed for a peer sink and for receiving forwarded events. |
+| `autonomous.notify.forwarding.peer_events` | `false` | Lets this daemon read a registered federation peer's lifecycle events and feed them into its own local dispatch (step 3). Start, stop and read it with the peer-events command. Needs `autonomous.notify.forwarding.enabled` too. |
 | `autonomous.notify.forwarding.max_hops` | `3` | The hop cap on a forwarded event. A receiver refuses an event that has reached it. |
 | `autonomous.notify.default_events` | the five-kind baseline | The global notify set, the lowest tier. Stored subscriptions and MCP resource subscriptions only deliver kinds the resolved notify set allows. |
 
@@ -116,12 +113,13 @@ web fields carry a **?** help link that opens the
 
 ## 1. Subscribe the supervisor
 
-The wake is switched on with one setting. As built, when
+The wake is switched on with one setting. When
 `supervisor_loop.wake.enabled` is true the built-in `supervisor-wake`
 subscription set is registered, one subscription per kind in
 `supervisor_loop.wake.kinds`. Nothing is registered while the wake is off, and
-none of your own stored subscriptions are touched. See the note at the top of this
-page for what the daemon does with it in this release.
+none of your own stored subscriptions are touched. The daemon re-reads the
+settings every few seconds, so a change to the setting, the kinds or the quiet
+window takes effect without a restart.
 
 ```sh
 # Read where it stands first.
@@ -133,40 +131,41 @@ datawatch supervisor-loop wake \
   --coalesce-seconds 30 --fallback-interval-minutes 20 --enabled=true
 ```
 
-How a pass starts, as built:
+How a pass starts:
 
 - Each matching event is offered to a **coalescer**. Events that arrive within
   `supervisor_loop.wake.coalesce_seconds` of each other fold into one pass, so a
   burst of failures does not start a pass per failure.
 - Only one pass runs at a time. Events that arrive during a pass are queued and
   handled by the next one.
-- A pass starts by typing a line such as
-  `supervisor wake: task.failed automaton=<id> task=<id>` into the supervisor
-  session. The line lists every folded event, separated by `; `.
-- The fallback check runs every `supervisor_loop.wake.fallback_interval_minutes`
-  whether or not an event arrived.
+- A pass runs the supervisor loop's mechanical steps at once (the same steps the
+  scheduled check runs). If a supervisor session is running (a session with the
+  `role:supervisor` tag that is running or waiting for input), the pass also types
+  a line such as `supervisor wake: task.failed automaton=<id> task=<id>` into it,
+  listing every folded event separated by `; `. With no session running the pass
+  still runs; only the line is skipped.
+- The scheduled check keeps running as the fallback. While the wake is on it runs
+  a pass every `supervisor_loop.wake.fallback_interval_minutes`, whether or not an
+  event arrived.
 
 The wake status shows the settings in effect, and when the supervisor last woke
-for an event and when it last ran a scheduled check, with a count of each. The
-settings part is live. The times and counts come from a record that the daemon
-does not wire at start-up in this release, so they stay empty (`not yet`) until it
-does. If the event path has been silent for more than an hour the status says so.
-Once the wake is wired, that usually means the kinds list is too narrow, or that no
-supervisor session is running to receive the line.
+for an event and when it last ran a scheduled check, with a count of each. A
+count goes up once per event wake and once per scheduled pass. If the event path
+has been silent for more than an hour the status says so. That usually means
+the kinds list is too narrow or nothing has happened that you subscribed to.
 
 **Review before relying on it.** The wake is off by default and nothing turns it
-on for you. As built, the wake set listens on the daemon's event dispatcher by
-kind, and it does not apply the notify set that stored subscriptions and MCP
-resource subscriptions apply. After you switch it on, cause a real event and
-confirm that the status line shows an event wake and that a `supervisor wake:`
-line reaches the supervisor session. If the status stays at `not yet`, the start-up
-call is still missing in your release; use the stored subscription below.
+on for you. The wake set listens on the daemon's event dispatcher by kind, and it
+does not apply the notify set that stored subscriptions and MCP resource
+subscriptions apply. After you switch it on, cause a real event and confirm that
+the status shows an event wake and, if a supervisor session is running, that a
+`supervisor wake:` line reaches it.
 
-### What works today: a stored subscription for the supervisor
+### A stored subscription for the supervisor
 
-A stored subscription with a `session` sink types a line into the supervisor
-session each time a listed event fires. It is on the same dispatcher, the same
-kind list and the same surfaces, and it does not depend on the wake settings.
+A stored subscription with a `session` sink types a line into a session you name
+each time a listed event fires. It is an alternative to the wake when you only
+want the line typed, and it does not depend on the wake settings or run a pass.
 
 ```sh
 # Allow the kinds for every Automaton: the five-kind baseline plus the three you
@@ -277,9 +276,8 @@ headers and the refusal codes are in
 On the receiving daemon a forwarded event is re-emitted to its local
 subscriptions with `peer` set to the sender's registered name. That includes the
 `supervisor-wake` set: it filters by kind only, so a forwarded event of a listed
-kind starts a supervisor pass on the receiver like a local one (as built; see the note
-at the top about the wake in this release). A stored subscription with a session sink
-does the same today.
+kind starts a supervisor pass on the receiver like a local one. A stored subscription
+with a session sink types its line the same way.
 
 To react to one peer only, add `"peer": "hub-east"` to a stored subscription's
 filter. Only events that peer forwarded match it, and a local event never does.
@@ -293,16 +291,45 @@ The name is 1 to 64 letters, digits, `.`, `_` or `-`.
 | Messaging channel | `autonomous subscribe task.failed sink=peer target=hub-east` | no field yet |
 | Web UI | choose **Federation peer** as the sink and pick the peer | no field yet |
 
-### Reading a peer's events: the pull direction (not switched on yet)
+### Reading a peer's events: the pull direction
 
-The daemon code also holds the opposite direction. A **peer event subscription**
-reads a registered peer's pending-events queue with that peer's stored bearer
-token and feeds each event into local dispatch with `peer` set. Nothing starts it
-in this release. There is no setting, command, REST route, MCP tool or web
-control for it, so you cannot turn it on yet and it reads no peer's events on a
-running daemon. Until it is wired, get a peer's events here by having that peer
-forward them (the section above). When it is wired it will follow the rules in
+A **peer event subscription** is the opposite direction: this daemon reads a
+registered peer's pending-events queue with that peer's stored bearer token and
+feeds each event into local dispatch with `peer` set, so a local subscription
+(including a `peer` filter) sees the peer's events like any other. Use it when the
+peer cannot push to you. It follows the rules in
 [What is and is not forwarded across a peer](#what-is-and-is-not-forwarded-across-a-peer).
+
+You need three things before it starts:
+
+1. `autonomous.notify.forwarding.enabled` true (the one switch for federation event
+   exchange) and `autonomous.notify.forwarding.peer_events` true.
+2. The peer registered as a federation peer (`datawatch federation peer list`), enabled,
+   with a bearer token and the `autonomous:read` capability.
+3. A named pending-events queue on the peer, filled by an `mcp_queue` subscription there
+   (the queue name is that subscription's target).
+
+```sh
+datawatch config set autonomous.notify.forwarding.enabled true
+datawatch config set autonomous.notify.forwarding.peer_events true
+datawatch autonomous peer-events start hub-east ops     # peer name, queue name
+datawatch autonomous peer-events status
+# peer event reading: on
+# reading: hub-east
+datawatch autonomous peer-events stop hub-east
+```
+
+A read lasts until you stop it or the daemon restarts, so run the start command again
+after a restart. A start that is refused (setting off, unknown peer, peer without the
+read capability, no token, a peer already being read) says why and starts nothing.
+
+| Surface | Start | Stop | Read |
+|---|---|---|---|
+| CLI | `datawatch autonomous peer-events start <peer> <queue> [--since N]` | `datawatch autonomous peer-events stop <peer>` | `datawatch autonomous peer-events status` |
+| Messaging channel | `autonomous peer-events start <peer> <queue> [since=N]` | `autonomous peer-events stop <peer>` | `autonomous peer-events status` |
+| REST | `POST /api/autonomous/peer-events/start` with `{"peer","queue","since"}` | `POST /api/autonomous/peer-events/stop` with `{"peer"}` | `GET /api/autonomous/peer-events` |
+| MCP | `autonomous_peer_events_control` with `action` start | `autonomous_peer_events_control` with `action` stop | `autonomous_peer_events` |
+| Config file / web settings | `autonomous.notify.forwarding.peer_events` (the switch) in the `forwarding` block; web: Settings → Comms → Notifications, **Read a peer's lifecycle events** | | |
 
 ## 4. Add an event kind or a sink through the extension registration
 
@@ -437,6 +464,7 @@ Each row names one setting. In the config file the wake keys sit in the
 | `supervisor_loop.wake.coalesce_seconds` | `"supervisor_loop.wake.coalesce_seconds": 30` | `PUT /api/config` with `autonomous.supervisor_loop.wake.coalesce_seconds` | `config_set` key `supervisor_loop.wake.coalesce_seconds` | `datawatch supervisor-loop wake --coalesce-seconds 30` | `autonomous supervisor wake set coalesce_seconds=30` | **Wake quiet window** |
 | `supervisor_loop.wake.fallback_interval_minutes` | `"supervisor_loop.wake.fallback_interval_minutes": 20` | `PUT /api/config` with `autonomous.supervisor_loop.wake.fallback_interval_minutes` | `config_set` key `supervisor_loop.wake.fallback_interval_minutes` | `datawatch supervisor-loop wake --fallback-interval-minutes 20` | `autonomous supervisor wake set fallback_interval_minutes=20` | **Wake fallback interval** |
 | `mcp.resource_subscriptions` | `resource_subscriptions: true` in the `mcp:` block | `PUT /api/config` with `{"mcp.resource_subscriptions": true}` | `config_set` key `mcp.resource_subscriptions`, value `true` | `datawatch config set mcp.resource_subscriptions true` | `configure mcp.resource_subscriptions=true` | Settings → General → MCP Server → **Resource subscriptions** |
+| `autonomous.notify.forwarding.peer_events` | `peer_events: true` in `autonomous.notify.forwarding` | `PUT /api/config` with `{"autonomous.notify.forwarding.peer_events": true}` | `config_set` key `autonomous.notify.forwarding.peer_events` | `datawatch config set autonomous.notify.forwarding.peer_events true` | `configure autonomous.notify.forwarding.peer_events=true` | Settings → Comms → Notifications, **Read a peer's lifecycle events** |
 | `autonomous.notify.forwarding.enabled` | `enabled: true` in `autonomous.notify.forwarding` | `PUT /api/config` with `{"autonomous.notify.forwarding.enabled": true}` | `config_set` key `autonomous.notify.forwarding.enabled` | `datawatch config set autonomous.notify.forwarding.enabled true` | `configure autonomous.notify.forwarding.enabled=true` | Settings → Comms → Notifications, the peer forwarding toggle |
 
 Read the settings back with `GET /api/config`, `get_config` (for example
@@ -459,22 +487,29 @@ Read the wake status on any surface:
 1. `datawatch autonomous event-kinds` lists the kinds you chose, and the wake status
    shows `wake: on` with them.
 2. Cause one of the events, or wait for one, and read the wake status again. The
-   last event time moves and the event count goes up. If both stay at `not yet`
-   after a real event, the daemon in your release does not start the wake at
-   start-up (see the note at the top); use the stored subscription instead.
+   last event time moves and the event count goes up. A scheduled check shows in
+   the same status at the fallback interval. If both stay at `not yet` after a real
+   event, check that the kind is in `wake.kinds`; a setting change can take a few
+   seconds to apply.
 3. In the supervisor session you see a `supervisor wake:` line (from the wake) or
    your own `--send` text (from a stored subscription).
-4. For a peer, run `datawatch autonomous subscription-test <id>` on the peer
+4. For a peer sink, run `datawatch autonomous subscription-test <id>` on the peer
    subscription. It reports `ok` with the sink type, or an error that names the
    failed condition.
+5. For reading a peer, run `datawatch autonomous peer-events status`; it lists the
+   peer. An event the peer forwards to the queue then reaches a local subscription
+   with `peer` set.
 
 ## Troubleshooting
 
-- **The status never shows an event wake.** Check `wake.enabled` is true, the kind you
-  expect is in `wake.kinds`, and a supervisor session is running. With none running
-  the wake is dropped and the fallback check covers it. If all of that is right and
-  the times stay at `not yet`, the start-up call that registers the wake is not in
-  your release; use a stored subscription with a session sink.
+- **The status never shows an event wake.** Check `wake.enabled` is true and the kind you
+  expect is in `wake.kinds`. The wake runs a pass even with no supervisor session
+  running; only the typed line needs one. The registration follows a setting change
+  within a few seconds.
+- **`peer-events start` is refused.** Read the reason it prints. The usual causes are
+  `autonomous.notify.forwarding.enabled` or `autonomous.notify.forwarding.peer_events`
+  off, a peer that is not a federation peer or lacks `autonomous:read`, and a missing
+  queue name.
 - **`unknown event kind` when setting `wake.kinds`.** The kind is not in the registry.
   Compare it with `datawatch autonomous event-kinds`, and check an extension kind was
   registered before the settings were read.
@@ -496,25 +531,16 @@ Read the wake status on any surface:
 These are the points this release leaves for you to review or decide. Each one is
 described where it applies above; this list gathers them in one place.
 
-1. **The wake is not started by the daemon.** The settings, the status and the
-   subscription set exist, but the start-up call that registers the wake is not in
-   this release. Switching `supervisor_loop.wake.enabled` on does not yet wake the
-   supervisor. Until it ships, use a stored subscription with a `session` sink.
-2. **The fallback interval is not read.** `supervisor_loop.wake.fallback_interval_minutes`
-   is stored, validated and reported, but no scheduler uses it. The scheduled check
-   keeps its own interval.
-3. **The wake ignores the notify set.** A stored subscription and an MCP resource
+1. **The wake ignores the notify set.** A stored subscription and an MCP resource
    subscription are both limited by the notify set; the wake set is not. Decide
    whether that is what you want before you turn it on.
-4. **Pulling a peer's events has no switch.** The peer event subscription is in the
-   code but no setting, command, route or tool starts it. Only forwarding, where the
-   sending peer pushes, works today.
-5. **The `peer` filter is partial.** It is set through REST and the MCP resource URI
+2. **A peer read does not survive a restart.** `peer-events start` is not stored; start it again after the daemon restarts.
+3. **The `peer` filter is partial.** It is set through REST and the MCP resource URI
    only. The CLI, the messaging channel, the `autonomous_subscribe` tool and the web
    form do not have it yet.
-6. **A registered sink type is not delivered to.** An extension that registers one
+4. **A registered sink type is not delivered to.** An extension that registers one
    must deliver the events itself.
-7. **Mobile parity.** Android and iPhone are tracked in the mobile app project and
+5. **Mobile parity.** Android and iPhone are tracked in the mobile app project and
    are not changed here.
 
 ## Parity surface
@@ -531,7 +557,7 @@ not.
 | Web settings | Yes. Settings → Automata → Supervisor wake and Settings → General → MCP Server, each with a **?** help entry. The Add subscription picker lists the kinds. No `peer` filter field yet. |
 | YAML | Yes. The `autonomous.supervisor_loop` block, the `mcp:` block and `autonomous.notify.forwarding`. |
 | Extension registration | Go only, by design. It is a start-up call with no setting, REST route, MCP tool, CLI command or messaging verb. |
-| Peer event subscription (pull) | Not switched on by any setting yet, so no surface reaches it. |
+| Peer event subscription (pull) | Yes, on every operator surface. Setting `autonomous.notify.forwarding.peer_events` (config file, `PUT /api/config`, `config_set`, `datawatch config set`, `configure`, and the web toggle in Settings → Comms → Notifications). Start, stop and read: `autonomous peer-events` on the CLI and the messaging channel, `/api/autonomous/peer-events` on REST, and the `autonomous_peer_events` and `autonomous_peer_events_control` tools on MCP. |
 | Android and iPhone | Tracked separately in the mobile app project. |
 
 ## See also

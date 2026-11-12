@@ -404,6 +404,8 @@ func (m *Manager) lifecycleBus() *lifecycleDispatcher {
 		if m.lifecycleHost == "" {
 			m.lifecycleHost, _ = os.Hostname()
 		}
+		m.lifeHistory.start(time.Now())
+		m.lifecycle.Subscribe(LifecycleFilter{}, m.lifeHistory.add)
 	})
 	return m.lifecycle
 }

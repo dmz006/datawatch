@@ -607,6 +607,8 @@ type Server struct {
 	autonomousEvents PendingEventsAPI
 	// supervisorLoop serves the supervisor-loop run history and manual runs.
 	supervisorLoop SupervisorLoopControl
+	// peerEvents backs /api/autonomous/peer-events (nil: 503).
+	peerEvents PeerEventControl
 	// supervisorWake is the record behind GET /api/supervisor-loop/wake.
 	supervisorWake *supervisorloop.WakeRecord
 	// BL427 phase 5 — receiving side of peer forwarding for
@@ -10047,7 +10049,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			"autonomous.notify.webhook.max_attempts", "autonomous.notify.webhook.backoff_seconds",
 			"autonomous.notify.webhook.jitter_percent", "autonomous.notify.webhook.attempt_timeout_seconds",
 			"autonomous.notify.webhook.max_body_bytes", "autonomous.notify.webhook.signature_tolerance_seconds",
-			"autonomous.notify.forwarding.enabled", "autonomous.notify.forwarding.max_hops",
+			"autonomous.notify.forwarding.enabled", "autonomous.notify.forwarding.peer_events", "autonomous.notify.forwarding.max_hops",
 			"autonomous.notify.forwarding.max_attempts", "autonomous.notify.forwarding.backoff_seconds",
 			"autonomous.notify.forwarding.jitter_percent", "autonomous.notify.forwarding.attempt_timeout_seconds":
 			// Validated in handlePutConfig (validateLifecycleNotifyPatch). The

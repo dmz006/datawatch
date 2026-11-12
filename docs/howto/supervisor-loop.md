@@ -80,7 +80,7 @@ the [definitions](../datawatch-definitions.md#supervisor-loop).
 | `wake.enabled` | `false` | Turns the event wake on: a listed event starts a pass at once instead of waiting for the scheduled check, which stays as the fallback. Off by default, so nothing changes until you turn it on. |
 | `wake.kinds` | the default list | The event kinds that wake the supervisor: a blocked Automaton, a task needing review, a failed task or final gate, every judge verdict, all tasks done or cancelled, an Automaton stuck running, a long capacity wait and a burn guard rung change. Each must be a kind a subscription can filter on; written comma-separated over the CLI and the comm channel. `datawatch autonomous event-kinds` lists every valid kind and marks the ones in the default list. |
 | `wake.coalesce_seconds` | `30` | The quiet window after a wake: events arriving within it fold into the same pass. `0` to `3600`; `0` wakes on every event. |
-| `wake.fallback_interval_minutes` | `20` | Minutes between scheduled passes when no event wakes the supervisor, `1` to `1440`. The default equals the scheduled check. |
+| `wake.fallback_interval_minutes` | `20` | Minutes between scheduled passes while the wake is on, `1` to `1440`. Events run passes in between; with the wake off the scheduled check runs on every idle tick. Read live. |
 
 ## Event wake
 
@@ -97,22 +97,28 @@ How it behaves:
 - Events arriving within `wake.coalesce_seconds` of each other are folded into
   one pass. Only one pass runs at a time; events that arrive during a pass are
   queued and handled by the next one.
-- Each pass is started by typing a line such as
-  `supervisor wake: task.failed automaton=<id> task=<id>` into the supervisor
-  session. If no supervisor session is running, the wake is dropped and the
-  scheduled check covers it.
+- Each wake runs the loop's mechanical steps at once and, if a supervisor session
+  is running (tagged `role:supervisor`, running or waiting for input), types a line
+  such as `supervisor wake: task.failed automaton=<id> task=<id>` into it. With no
+  session running the pass still runs and only the line is skipped.
+- The registration follows the setting live: switching `wake.enabled` or changing
+  the kinds or quiet window takes effect within a few seconds, with no restart.
+- The scheduled check is the fallback: while the wake is on it runs a pass every
+  `wake.fallback_interval_minutes`, and each scheduled pass is counted in the
+  status.
 - The wake status shows when the supervisor last woke for an event and when it
   last ran a scheduled check, with a count of each. If the event path has been
   silent for more than an hour, the status says so, which usually means the
-  kinds list is too narrow or the wake is not reaching a session.
+  kinds list is too narrow or nothing you subscribed to has happened.
 
 For the whole path (choosing events, subscribing to a peer, extension
 registration, MCP resource subscriptions and what a peer forwards), see
 [The event-driven supervisor](automaton-event-driven-supervisor.md).
 
 Review before relying on it: the wake is off by default and nothing turns it on
-for you. Check that the kinds list matches the states you want a pass for,
-and that a supervisor session is running.
+for you. Check that the kinds list matches the states you want a pass for.
+After switching it on, cause one of those events and confirm the status shows an
+event wake.
 
 Change the settings and read the status on any surface:
 

@@ -34,6 +34,11 @@ type SupervisorWakeConfig struct {
 	SendInput func(sessionID, text string) error
 	Clock     supervisorloop.WakeClock
 	Record    *supervisorloop.WakeRecord
+	// Run, when set, is called first for each delivered batch: it is the
+	// supervisor loop pass the daemon runs at once instead of waiting for the
+	// scheduled check. A wake that ran it counts as delivered even when no
+	// supervisor session is running to type into.
+	Run func(supervisorloop.WakeBatch)
 }
 
 // SupervisorWakeSet is a registered wake subscription set.
@@ -54,11 +59,17 @@ func RegisterSupervisorWake(c SupervisorWakeConfig) *SupervisorWakeSet {
 	}
 	set := &SupervisorWakeSet{Name: SupervisorWakeSetName, Kinds: append([]string(nil), c.Settings.Kinds...)}
 	set.runner = supervisorloop.NewRunner(func(b supervisorloop.WakeBatch) {
-		sid := c.Session()
-		if sid == "" {
-			return
+		delivered := false
+		if c.Run != nil {
+			c.Run(b)
+			delivered = true
 		}
-		if err := c.SendInput(sid, wakeBatchText(b)); err == nil && c.Record != nil {
+		if sid := c.Session(); sid != "" {
+			if err := c.SendInput(sid, wakeBatchText(b)); err == nil {
+				delivered = true
+			}
+		}
+		if delivered && c.Record != nil {
 			c.Record.MarkEvent()
 		}
 	})

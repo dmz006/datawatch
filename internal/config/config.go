@@ -6526,6 +6526,13 @@ type AutonomousNotifyWebhookConfig struct {
 // independent of the webhook sink's, with the same default values.
 type AutonomousNotifyForwardingConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
+	// PeerEvents turns on the peer event subscriber: this daemon reading the
+	// lifecycle events of a registered federation peer and feeding them into
+	// its own local dispatch. While false no subscriber runs and the start
+	// command is refused. It needs Enabled as well: Enabled is the one switch
+	// for federation event exchange, and a running read stays armed and reads
+	// nothing while it is off.
+	PeerEvents bool `yaml:"peer_events" json:"peer_events"`
 	// MaxHops is the hop cap of a forwarded event. Values below 1 mean the default.
 	MaxHops int `yaml:"max_hops" json:"max_hops"`
 	// MaxAttempts is the total attempts per forwarded event. Values below 1 mean the default.

@@ -2593,6 +2593,11 @@ autonomous:
       # autonomous.notify.forwarding.enabled — false refuses peer subscriptions at
       # creation and makes this daemon refuse to receive forwarded events.
       enabled: false
+      # autonomous.notify.forwarding.peer_events — true lets this daemon read a
+      # registered federation peer's lifecycle events and feed them into its own
+      # local dispatch (start, stop and read it with `datawatch autonomous
+      # peer-events`). Needs enabled above. Ships false.
+      peer_events: false
       # autonomous.notify.forwarding.max_hops — hop cap of a forwarded event,
       # counting the sender. A receiver refuses an event past it. Default 3.
       max_hops: 3
@@ -4338,9 +4343,10 @@ autonomous:
     # Quiet window in seconds: events arriving within it after a wake fold
     # into the same pass (0 to 3600; 0 wakes on every event).
     "supervisor_loop.wake.coalesce_seconds": 30
-    # Minutes between scheduled passes when no event wakes the supervisor
-    # (1 to 1440). The default equals the scheduled check, so turning the
-    # wake on leaves the schedule as it was.
+    # Minutes between scheduled passes while the wake is on (1 to 1440).
+    # Events run passes in between; the scheduled check runs a pass only when
+    # this many minutes have passed since its last one. With the wake off the
+    # scheduled check runs on every idle tick, as before. Read live.
     "supervisor_loop.wake.fallback_interval_minutes": 20
   # ── Automation requirements (requirements report + capability minimums ──
   # The requirements report answers "can this daemon run the automations it is

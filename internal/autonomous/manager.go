@@ -1454,6 +1454,9 @@ type Manager struct {
 	lifecycle     *lifecycleDispatcher
 	lifecycleHost string
 	lifecycleOnce sync.Once
+	// lifeHistory records recent lifecycle events for the subscription
+	// preview (lifecycle_history.go).
+	lifeHistory lifecycleHistory
 	// BL427 (phase 5) — receiving side of peer forwarding; nil until
 	// SetForwardReceive. Read on every forwarded envelope (lifecycle_forward_receive.go).
 	forwardRecv atomic.Pointer[ForwardReceiveConfig]
