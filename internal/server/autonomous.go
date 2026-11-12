@@ -4243,7 +4243,7 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		writeJSONOK(w, a)
+		writeJSONOK(w, s.withAutomationProject(a))
 	case http.MethodPut:
 		var req automationReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -4543,9 +4543,17 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	tagSel, projectWanted := splitProjectFilter(r, tagSel)
 	shipWanted, shipSet, err := shippedSelectionFromQuery(r, ship.EffectiveFilterDefault())
 	if err != nil {
 		return nil, err
+	}
+	aliasRes := autonomous.NewProjectAliasResolver(s.projectAliasMap())
+	withProject := func(x any) any {
+		if a := rawAutomationOf(x); a != nil {
+			return withProjectField(x, aliasRes.Resolve("", a.ProjectDir))
+		}
+		return x
 	}
 	// With no tag selection the shipped rule is the existing behavior:
 	// the shipped filter is active only when shipSet and the shipped surface
@@ -4553,8 +4561,12 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 	// When a tag selection is present it is always active — it filters the
 	// whole list on top of whatever the shipped rule says.
 	shipActive := shipSet && ship.EffectiveEnabled()
-	if len(tagSel.Tags) == 0 && !shipActive {
-		return list, nil
+	if len(tagSel.Tags) == 0 && projectWanted == "" && !shipActive {
+		out := make([]any, len(list))
+		for i, x := range list {
+			out[i] = withProject(x)
+		}
+		return out, nil
 	}
 	kept := make([]any, 0, len(list))
 	for _, x := range list {
@@ -4562,10 +4574,13 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 		if len(tagSel.Tags) > 0 && !tagSel.MatchesObjectTags(a.SystemTags, nil) {
 			continue
 		}
+		if projectWanted != "" && !projectFilterMatches(projectWanted, aliasRes.Resolve("", a.ProjectDir), a.SystemTags) {
+			continue
+		}
 		if shipActive && !autonomous.AutomationShippedMatch(a, true, shipWanted) {
 			continue
 		}
-		kept = append(kept, x)
+		kept = append(kept, withProject(x))
 	}
 	return kept, nil
 }

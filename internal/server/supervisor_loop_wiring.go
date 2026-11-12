@@ -16,13 +16,14 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
+	"github.com/dmz006/datawatch/internal/planrecords"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
 // NewSupervisorLoopHooks builds the hooks the loop steps need from the
 // Manager and the operator's config. settings reads the supervisor_loop block
 // live. A nil mgr or cfg yields hooks that all record "not configured".
-func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, settings func() supervisorloop.Settings) autonomous.SupervisorLoopHooks {
+func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, settings func() supervisorloop.Settings, planStore ...func() *planrecords.Store) autonomous.SupervisorLoopHooks {
 	h := autonomous.SupervisorLoopHooks{Settings: settings}
 	if mgr == nil || cfg == nil {
 		return h
@@ -31,9 +32,18 @@ func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, setting
 	// No Server is in scope here, so the data directory comes from the
 	// same single source (dataDirPath), with the configured data_dir first.
 	dataDir := dataDirPath(cfg.DataDir)
+	// The daemon's own merge runs gate the registry_row hook the same way
+	// the request path does: write-through records the row, off edits the
+	// registry file as before.
+	var popt mergeRunnerOption
+	if len(planStore) > 0 && planStore[0] != nil {
+		popt = func(r *mergepipeline.Runner) {
+			withPlanRecords(planStore[0](), cfg.Autonomous.PlanRecords.EffectiveWriteThrough())(r)
+		}
+	}
 	h.Deploy = func(ctx context.Context) (string, error) { return supervisorLoopDeploy(ctx, mgr, dataDir, mergeCfg()) }
 	h.MergeUntilConflict = func(ctx context.Context) (autonomous.SupervisorMergeResult, error) {
-		return supervisorLoopMerge(ctx, mgr, dataDir, mergeCfg())
+		return supervisorLoopMerge(ctx, mgr, dataDir, mergeCfg(), popt)
 	}
 	h.Lanes = supervisorLaneControl{mgr: mgr}
 	return h
@@ -87,7 +97,7 @@ var (
 // the completed Automaton branches waiting to merge, the same set GET
 // /api/autonomous/merge lists as pending. The pipeline stops at the first
 // branch its conflict policy could not settle; that branch is the conflict.
-func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, dataDir string, cfg config.MergePipelineConfig) (autonomous.SupervisorMergeResult, error) {
+func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, dataDir string, cfg config.MergePipelineConfig, opts ...mergeRunnerOption) (autonomous.SupervisorMergeResult, error) {
 	var out autonomous.SupervisorMergeResult
 	repo := mgr.MergeBaseRepo()
 	if repo == "" {
@@ -111,7 +121,7 @@ func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, dataDir s
 
 	runCtx, cancel := context.WithTimeout(ctx, mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), dataDir, mergepipeline.ExecShipRunner{}).Run(runCtx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), dataDir, mergepipeline.ExecShipRunner{}, opts...).Run(runCtx, mergepipeline.RunRequest{
 		Title: "supervisor loop merge", Branches: branches,
 	})
 	if err == nil {

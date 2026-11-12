@@ -7882,3 +7882,22 @@ web usage cards do not read it yet. See
 ## Skills coverage check
 
 Run `bash scripts/skills-coverage-check.sh` before a release and after any change that adds or removes an MCP tool, how-to, route, command or setting. It prints `ok: skills coverage` or one `FAIL:` line per drift and exits non-zero. Fix a drift by updating `docs/skills/inventory.yaml` and `docs/skills/coverage-matrix.yaml`. `docs/skills/registry-skills.txt` is refreshed by hand from the connected registry's skill list. Its failure-mode tests run with `bash tests/ci/test-skills-coverage-check.sh`. Operator guide: [howto/skills-sync.md](howto/skills-sync.md).
+
+
+## Plan records: store and import
+
+The plans-and-backlog records that used to live as numbered rows in `docs/plans/README.md` and as findings files are held by a file-backed store, with an importer that reads the old files. The day-to-day guide is [howto/plan-records.md](howto/plan-records.md); terms are in [datawatch-definitions.md](datawatch-definitions.md#plan-records).
+
+**Current reach.** Records are available on REST (`/api/plan-records/...`), MCP (`plan_record_list`, `_get`, `_create`, `_update`, `_search`, `_import`), the CLI (`datawatch plan-record`), the chat verbs (`autonomous plan-records`, `autonomous plan-record ...`) and the Plan records section of the Projects page in the web app. Configuration is `autonomous.plan_records.enabled` (default on), `write_through` (default off) and `import_conflict_policy` (default `suffix`). `docs/plans/README.md` and the findings files stay the archive; the import never writes to them. Android and iPhone do not have the view yet; track it in datawatch-app.
+
+**Storage.** One JSON file per record under `<data dir>/plan-records/<kind>/<uid>.json`, written through a temporary file and an atomic rename. The files are the source of truth; the index is rebuilt from them when the store opens. With secure mode on, every record is sealed with the same file sealing the other per-record data files use. Only `kind`, `project`, `state`, `id`, `uid`, `legacy_number`, `created_at`, `updated_at` and `closed_at` stay readable without the key; the title, body and every other field exist only in the sealed payload.
+
+**Import rules.** The project must be a registered project alias (an unknown alias is refused with a message to register it first), and its directory must sit under an allowed project root (`server.allowed_project_roots` plus the built-in roots). The default project is `datawatch`. Rows and findings are imported read-only and idempotently; the conflict policy (`suffix`, `rename`, `skip`) applies to every conflict in one pass, and the setting `import_conflict_policy` is used when the call names none. A dry run (CLI default; REST `?dry_run=true`) writes nothing. A real run writes one summary audit event, `plan_record_imported`.
+
+**Audit.** Each create and each update writes `plan_record_created` or `plan_record_updated` with the actor; the registry hook writes as `merge-pipeline`.
+
+**Write-through at ship time.** With `autonomous.plan_records.write_through` on and the record store wired, the merge pipeline's `registry_row` post-ship hook marks the matching registry row `shipped` (found by row number, then by title or older title in the project) or creates one, and does not edit the registry README. A write failure fails the hook with a redacted message and does not fall back to the README. With the setting off, the hook edits the README as before. The setting does not mirror hand edits of a record into the plans files. Check the hook result in the merge run when a shipped row is missing.
+
+**Derived project field.** Automaton and Automation reads carry a read-only `project` field derived from the registered project aliases. It is computed per read and never stored; with no matching alias the field is omitted. Progress counting by project is unchanged: a record with no project still counts under the none key.
+
+**Rollback.** Set `autonomous.plan_records.enabled` to `false` to answer every route with 404 and hide the section; records stay on disk. Turn `write_through` off to send the registry hook back to the README. Removing the `plan-records` directory under the data dir discards every record; the original files are untouched and a new import rebuilds them. Rows shipped by write-through while it was on exist only as records, so import or copy them back by hand before discarding the directory.

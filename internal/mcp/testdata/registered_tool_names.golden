@@ -437,6 +437,12 @@ pipeline_cancel
 pipeline_list
 pipeline_start
 pipeline_status
+plan_record_create
+plan_record_get
+plan_record_import
+plan_record_list
+plan_record_search
+plan_record_update
 planning_routing_get
 planning_routing_set
 planning_routing_test

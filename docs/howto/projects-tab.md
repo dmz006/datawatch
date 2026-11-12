@@ -422,6 +422,26 @@ datawatch projects arcs core-api --set a1b2c3d4:1:done,e5f6a7b8:2:active,c9d0e1f
 Set the weekly share and retention only as a record of intent until the matching
 behaviour ships; the page will show the value you set.
 
+### The `project` field on Automata and Automations
+
+Automaton and Automation reads (REST list and detail) carry a read-only `project`
+field. It is the registered project alias the record belongs to: the explicit
+project profile when it names a registered alias, otherwise the longest registered
+alias directory that contains the record's project directory. It is worked out on
+every read from the aliases you register with `projects upsert`; nothing is stored,
+so registering or removing an alias changes the field on the next read. When no
+alias matches, the field is left out. See
+[Derived project alias](../datawatch-definitions.md#derived-project-alias).
+
+### Plan records on the project page
+
+Below the history, the project page lists the project's plan records: switch
+between **Registry rows** and **Findings**, filter by state, search titles and
+text, open one to change its title, state, notes or linked Automaton, create a
+record, or preview and apply an import of the old plans files. Records are never
+deleted; closing one is a state change. Full guide:
+[plan-records.md](plan-records.md).
+
 ### Arc states
 
 | State | Meaning on the page |
@@ -613,6 +633,12 @@ the lane defaults. Use REST, MCP or the CLI for those.
   and the Projects link open the sub-tab, so bookmarks and the Settings help
   links stay valid. This page keeps its file name (`projects-tab.md`) for the
   same reason; rename it only if you also redirect the links that point here.
+- **Plan records.** The project page has a Plan records section (registry rows
+  and findings, state filter, search, detail edit, New record, Import archive…).
+  It hides when `autonomous.plan_records.enabled` is false. Confirm that its
+  position below the history and above the links is where you want it, and that
+  the section label and the project label wording read well; see
+  [plan-records.md](plan-records.md). Mobile apps do not have it yet.
 - **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
   order shipped. Confirm it is the order you want before the next release.
 - **Page sub-tab order and grouping.** Inside a project the strip reads Overview,

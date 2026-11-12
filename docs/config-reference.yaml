@@ -3008,6 +3008,29 @@ autonomous:
     #   follow_ups:
     #     - {name: start the build, kind: start_template, target: my-template}
     # follow_ups: []
+
+  # Plan records: the plans registry rows and findings, kept by the daemon as
+  # records instead of table rows in a document. Every key is settable through
+  # the config file, PUT /api/config (for example
+  # "autonomous.plan_records.write_through"), the MCP config tools (config_set),
+  # `datawatch config set autonomous.plan_records.<key> <value>` and a comm
+  # channel `configure autonomous.plan_records.<key>=<value>`; a change takes
+  # effect at once. A bad value is refused (PUT /api/config answers 400 and
+  # changes nothing; the config file load names the key). The block is commented
+  # out: every key reads its default shown here until you uncomment it.
+  # plan_records:
+    # autonomous.plan_records.enabled — type bool, default true. Master switch;
+    # while false every /api/plan-records route answers 404.
+    # enabled: true
+    # autonomous.plan_records.write_through — type bool, default false. Whether
+    # a record change is also written back into the project's plan documents.
+    # Off by default.
+    # write_through: false
+    # autonomous.plan_records.import_conflict_policy — type text, one of suffix,
+    # rename or skip, default suffix. What an import does when a title or row
+    # number is already taken: suffix adds a short suffix and flags the record
+    # for review, rename asks for a new title, skip leaves the item out.
+    # import_conflict_policy: suffix
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited

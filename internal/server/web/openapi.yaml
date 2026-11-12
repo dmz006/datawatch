@@ -1706,6 +1706,287 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: "Autonomous is disabled, or the question store is not available"}
 
+  /api/plan-records/registry-rows:
+    get:
+      summary: List registry rows
+      description: |
+        Lists the plans registry rows kept by the daemon, newest change first, with
+        a page of results and the total. Filters: `project` (a registered project
+        alias), `state`, `q` (words to find in the title, old titles and text),
+        `legacy_number` (the old row number) and `automaton` (the Automaton that
+        shipped or raised it). Every record shows its title first and its id second.
+        Needs the autonomous read capability when called by a federated peer. While
+        plan records are turned off in the configuration this answers 404.
+      operationId: planRecordRegistryRowList
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string, enum: [open, planned, in_progress, blocked, shipped, done, deferred, cancelled]}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: legacy_number, in: query, schema: {type: integer, minimum: 1}}
+        - {name: automaton, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of records
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordList"}}}
+        "400": {description: A filter has a value that is not allowed}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Create a registry row
+      description: |
+        Creates a registry row in a registered project. The row gets its own short id;
+        a new row never takes an old row number as its id. The title is the handle and
+        must be unique inside the project (case and extra spaces are ignored); a taken
+        title answers 409 and names the row that holds it. Needs the autonomous write
+        capability when called by a federated peer. Every write is recorded in the
+        audit log.
+      operationId: planRecordRegistryRowCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PlanRecordCreate"}
+      responses:
+        "201":
+          description: The row that was created
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordResponse"}}}
+        "400": {description: Bad body, a project that is not registered, or a state that does not fit the kind}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "409": {description: The title or the old row number is already used in the project; the answer names the existing row}
+        "413": {description: Request body too large}
+        "503": {description: Plan records are not available}
+  /api/plan-records/registry-rows/{ref}:
+    get:
+      summary: Read one registry row
+      description: |
+        Reads one row. The reference is an id, a uid, `row-<number>` (the old row
+        number), an exact title, an older title of the row, or a title prefix that
+        matches only one row. A title that matches several rows answers 409 with the
+        list of candidates, so you can say which one. Add `project` to narrow the
+        match. Needs the autonomous read capability when called by a federated peer.
+      operationId: planRecordRegistryRowGet
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}}
+        - {name: project, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: The row
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordResponse"}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No row matches, or plan records are turned off}
+        "409": {description: The reference matches more than one row; the answer lists the candidates}
+        "503": {description: Plan records are not available}
+    put:
+      summary: Change a registry row
+      description: |
+        Changes the fields sent and leaves the rest alone. Setting a closing state
+        (shipped, done or cancelled) sets the closed time. A new title keeps the old
+        one as an alias that still resolves; a title that another row of the project
+        already uses answers 409. The project and the kind cannot change, and rows
+        cannot be deleted. Needs the autonomous write capability when called by a
+        federated peer. Every change is recorded in the audit log.
+      operationId: planRecordRegistryRowUpdate
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}}
+        - {name: project, in: query, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PlanRecordUpdate"}
+      responses:
+        "200":
+          description: The row after the change
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordResponse"}}}
+        "400": {description: Bad body or a state that does not fit the kind}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No row matches, or plan records are turned off}
+        "409": {description: The reference is ambiguous, or the new title is already used in the project}
+        "503": {description: Plan records are not available}
+  /api/plan-records/findings:
+    get:
+      summary: List findings
+      description: |
+        Lists the findings (problems raised by an Automaton or an operator), newest
+        change first, with a page of results and the total. The filters are the same
+        as for registry rows; `state` is one of open, triaged, fixed, wontfix or
+        duplicate. Needs the autonomous read capability when called by a federated
+        peer. While plan records are turned off in the configuration this answers 404.
+      operationId: planRecordFindingList
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string, enum: [open, triaged, fixed, wontfix, duplicate]}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: automaton, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of records
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordList"}}}
+        "400": {description: A filter has a value that is not allowed}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Create a finding
+      description: |
+        Creates a finding in a registered project, open unless a state is given. The
+        title must be unique inside the project; a taken title answers 409 and names
+        the finding that holds it. Needs the autonomous write capability when called by
+        a federated peer. Every write is recorded in the audit log.
+      operationId: planRecordFindingCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PlanRecordCreate"}
+      responses:
+        "201":
+          description: The finding that was created
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordResponse"}}}
+        "400": {description: Bad body, a project that is not registered, or a state that does not fit the kind}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "409": {description: The title is already used in the project; the answer names the existing finding}
+        "413": {description: Request body too large}
+        "503": {description: Plan records are not available}
+  /api/plan-records/findings/{ref}:
+    get:
+      summary: Read one finding
+      description: |
+        Reads one finding by id, uid, exact title, older title or a title prefix that
+        matches only one finding. A title that matches several answers 409 with the
+        candidates. Add `project` to narrow the match. Needs the autonomous read
+        capability when called by a federated peer.
+      operationId: planRecordFindingGet
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}}
+        - {name: project, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: The finding
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordResponse"}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No finding matches, or plan records are turned off}
+        "409": {description: The reference matches more than one finding; the answer lists the candidates}
+        "503": {description: Plan records are not available}
+    put:
+      summary: Change a finding
+      description: |
+        Changes the fields sent and leaves the rest alone. Setting fixed, wontfix or
+        duplicate sets the closed time. A new title keeps the old one as an alias. The
+        project and the kind cannot change, and findings cannot be deleted. Needs the
+        autonomous write capability when called by a federated peer. Every change is
+        recorded in the audit log.
+      operationId: planRecordFindingUpdate
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}}
+        - {name: project, in: query, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PlanRecordUpdate"}
+      responses:
+        "200":
+          description: The finding after the change
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordResponse"}}}
+        "400": {description: Bad body or a state that does not fit the kind}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No finding matches, or plan records are turned off}
+        "409": {description: The reference is ambiguous, or the new title is already used in the project}
+        "503": {description: Plan records are not available}
+  /api/plan-records/search:
+    get:
+      summary: Search registry rows and findings
+      description: |
+        Searches both kinds by words. A title match ranks above an older-title match,
+        which ranks above a match in the text. Takes the same filters and paging as the
+        lists, plus `kind` (registry_row or finding). Needs the autonomous read
+        capability when called by a federated peer.
+      operationId: planRecordSearch
+      tags: [Autonomous]
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+        - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
+        - {name: project, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: automaton, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: The matches, best first
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordSearchResult"}}}
+        "400": {description: The words to search for are missing, or a filter is not allowed}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plan-records/import:
+    post:
+      summary: Import the plans archive as records
+      description: |
+        Reads a registered project's plans registry and findings files and turns them
+        into records. The files are only read, never changed, and running it again
+        leaves records already imported alone. With `dry_run=true` it writes nothing
+        and previews every conflict and how the conflict policy would settle it:
+        suffix (the default) adds a short suffix and flags the record for review,
+        rename asks for a new title, skip leaves the item out. The body names the
+        `project` (default datawatch), the `source` (registry, findings or all),
+        the `conflict_policy` (default from the configuration) and an optional
+        `findings_glob`. Needs the autonomous write capability when called by a
+        federated peer. A real run is recorded in the audit log.
+      operationId: planRecordImport
+      tags: [Autonomous]
+      parameters:
+        - {name: dry_run, in: query, schema: {type: boolean, default: false}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PlanRecordImport"}
+      responses:
+        "200":
+          description: What the import did, or would do for a dry run
+          content: {"application/json": {schema: {$ref: "#/components/schemas/PlanRecordImportResult"}}}
+        "400": {description: Bad body, a project that is not registered, or a source or policy that is not allowed}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+
   /api/autonomous/decision-records:
     post:
       summary: Create a decision record
@@ -10904,6 +11185,126 @@ components:
             example: "unauthorized"
 
   schemas:
+    PlanRecord:
+      type: object
+      description: A registry row or a finding. The title comes first and the id second.
+      properties:
+        title: {type: string}
+        id: {type: string, description: Short readable id, unique in the installation}
+        uid: {type: string, description: Identifier that never changes}
+        kind: {type: string, enum: [registry_row, finding]}
+        project: {type: string, description: A registered project alias}
+        state: {type: string}
+        body: {type: string}
+        legacy_number: {type: integer, description: The old row number, kept so existing references resolve}
+        legacy_source: {type: string}
+        shipped_by: {type: string}
+        raised_by: {type: string}
+        shipped_version: {type: string}
+        links:
+          type: array
+          items: {type: object, properties: {kind: {type: string}, ref: {type: string}}}
+        aliases: {type: array, items: {type: string}}
+        needs_review: {type: boolean}
+        review_reason: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        closed_at: {type: string, format: date-time}
+    PlanRecordResponse:
+      type: object
+      properties:
+        record: {$ref: "#/components/schemas/PlanRecord"}
+    PlanRecordList:
+      type: object
+      properties:
+        records: {type: array, items: {$ref: "#/components/schemas/PlanRecord"}}
+        total: {type: integer}
+        limit: {type: integer}
+        offset: {type: integer}
+    PlanRecordSearchResult:
+      type: object
+      properties:
+        hits:
+          type: array
+          items:
+            type: object
+            properties:
+              record: {$ref: "#/components/schemas/PlanRecord"}
+              score: {type: integer}
+              matched: {type: string, enum: [title, alias, body, all]}
+        total: {type: integer}
+        limit: {type: integer}
+        offset: {type: integer}
+    PlanRecordCreate:
+      type: object
+      required: [project, title]
+      additionalProperties: false
+      properties:
+        project: {type: string, description: A registered project alias}
+        title: {type: string}
+        body: {type: string}
+        state: {type: string}
+        legacy_number: {type: integer}
+        legacy_source: {type: string}
+        shipped_by: {type: string}
+        raised_by: {type: string}
+        shipped_version: {type: string}
+        links:
+          type: array
+          items: {type: object, properties: {kind: {type: string}, ref: {type: string}}}
+        aliases: {type: array, items: {type: string}}
+        needs_review: {type: boolean}
+        review_reason: {type: string}
+    PlanRecordUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        title: {type: string}
+        body: {type: string}
+        state: {type: string}
+        legacy_source: {type: string}
+        shipped_by: {type: string}
+        raised_by: {type: string}
+        shipped_version: {type: string}
+        links:
+          type: array
+          items: {type: object, properties: {kind: {type: string}, ref: {type: string}}}
+        add_aliases: {type: array, items: {type: string}}
+        needs_review: {type: boolean}
+        review_reason: {type: string}
+    PlanRecordImport:
+      type: object
+      additionalProperties: false
+      properties:
+        project: {type: string}
+        source: {type: string, enum: [registry, findings, all]}
+        conflict_policy: {type: string, enum: [suffix, rename, skip]}
+        findings_glob: {type: string}
+    PlanRecordImportResult:
+      type: object
+      properties:
+        note: {type: string}
+        result:
+          type: object
+          description: Totals, conflicts with what was or would be done, rows that could not be read, changed and flagged records.
+          properties:
+            project: {type: string}
+            dry_run: {type: boolean}
+            policy: {type: string}
+            counts:
+              type: object
+              properties:
+                create: {type: integer}
+                unchanged: {type: integer}
+                changed: {type: integer}
+                conflicts: {type: integer}
+                skipped: {type: integer}
+            conflicts: {type: array, items: {type: object}}
+            unparseable: {type: array, items: {type: object}}
+            changed: {type: array, items: {type: object}}
+            flagged: {type: array, items: {type: object}}
+            failed: {type: array, items: {type: object}}
+            files: {type: array, items: {type: string}}
     TraceEvent:
       type: object
       properties:

@@ -125,6 +125,9 @@ type Runner struct {
 	// enabled hooks run after the pipeline's own steps, in list order, and
 	// never change the run's result.
 	PostShip PostShipSettings
+	// PlanRecords receives the registry_row built-in's shipped row when
+	// PostShip.WriteThrough is set; nil keeps the registry file path.
+	PlanRecords RecordWriter
 	// Notifier receives the notify built-in's message; nil makes that hook
 	// fail rather than drop the notification.
 	Notifier Notifier
@@ -509,6 +512,9 @@ func (s *runState) builtinPostShipHook(ctx context.Context, builtin, version str
 	project := s.r.Project
 	switch builtin {
 	case builtinRegistryRow:
+		if cfg.WriteThrough && s.r.PlanRecords != nil {
+			return RunRegistryRowWriteThrough(ctx, s.r.PlanRecords, project, s.req.AutomatonID, s.req.Title, version, cfg)
+		}
 		return RunRegistryRow(ctx, dir, project, version, cfg)
 	case builtinParityIssue:
 		return RunParityIssue(ctx, s.r.Ship, dir, project, version, cfg)

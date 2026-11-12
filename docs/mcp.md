@@ -1784,6 +1784,41 @@ verbs, the PWA automation queue, the answer log and the
 supersession rule — is walked through in
 [`howto/operator-questions-answering.md`](howto/operator-questions-answering.md).
 
+### Plan record tools
+
+A plan record is a registry row (one item of the plans registry) or a finding
+(a problem raised by an Automaton or an operator), kept by the daemon. The six
+tools proxy the `/api/plan-records` REST surface and answer with the title
+first and the id second. They need `autonomous:read` (`plan_record_list`,
+`plan_record_get`, `plan_record_search`) or `autonomous:write`
+(`plan_record_create`, `plan_record_update`, `plan_record_import`) when called
+by a federated peer. While `autonomous.plan_records.enabled` is `false` every
+call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
+
+| Tool | What it does | Rest call |
+|---|---|---|
+| `plan_record_create` | Create a registry row or finding in a registered project | `POST /api/plan-records/registry-rows` or `/findings` |
+| `plan_record_list` | List one kind, most recently updated first (read-only) | `GET /api/plan-records/registry-rows` or `/findings` |
+| `plan_record_get` | Read one record by reference (read-only) | `GET /api/plan-records/{kind}/{ref}` |
+| `plan_record_update` | Change a record; a field you leave out is left alone and a rename keeps the old title | `PUT /api/plan-records/{kind}/{ref}` |
+| `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
+| `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
+
+**Parameters.** `kind` is `registry-row` or `finding` (required on create, list,
+get and update). `ref` is an id, a uid, `row <n>`, an exact title, an older
+title or an unambiguous title prefix; an ambiguous title returns the list of
+matches. Create takes `project` (a registered project alias, required) and
+`title`, and optionally `body`, `state`, `legacy_number` (registry rows),
+`legacy_source`, `shipped_by`, `raised_by`, `shipped_version`, `links` (a JSON
+array of `{"kind","ref"}`), `aliases`, `needs_review` and `review_reason`.
+Update takes the same fields except `project`, `kind` and `legacy_number`, which
+cannot change, and `add_aliases` in place of `aliases`. List and search take
+`project`, `state`, `limit` and `offset`; list also takes `automaton`, `q` and
+`legacy_number`. The daemon returns 50 records by default and at most 500 per
+call. Import takes `project` (default `datawatch`), `source` (`registry`,
+`findings` or `all`), `conflict_policy` (`suffix`, `rename` or `skip`) and
+`dry_run` (default `true`).
+
 ### Placement tags: sweep and tags in use
 
 - **`autonomous_tag_sweep`** — re-derive the system tags of every existing Automata object (Automata, Automations, tasks, templates, decision records, held questions) and every Automata-owned session under the `tags.placement` settings in effect now, replacing each object's derived system tags with the newly derived set: turning a placement axis off removes its tag, turning it on adds the tag wherever the fact exists. The operator's own tags are a separate list that the sweep never touches, and a second run is a no-op (it changes zero objects and writes nothing). Returns the per-kind tally `{sessions, automata, automations, tasks, templates, decision_records, questions}`, each `{examined, changed, unchanged, failed}`.

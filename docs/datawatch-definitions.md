@@ -3112,3 +3112,43 @@ The **Trivy version pin** is `scripts/trivy-version.txt`, a file holding one `vX
 ### Helm version pin
 
 The **Helm version pin** is `scripts/helm-version.txt`, a file holding one `vX.Y.Z` tag. The kind smoke workflow reads it and passes it to `scripts/ci-install-helm.sh`, which downloads that exact Helm release with retries and installs it without piping into a shell. It is separate from the Trivy version pin, and no guard script checks it. See [howto/container-image-refresh.md](howto/container-image-refresh.md#helm-in-the-kind-smoke-workflow).
+
+## Plan records
+
+A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. Records are read and changed through REST (`/api/plan-records`), the MCP `plan_record_*` tools, `datawatch plan-record`, the `autonomous plan-record` chat verbs and the Plan records section of the Projects page. See [howto/plan-records.md](howto/plan-records.md) and [operations.md](operations.md#plan-records-store-and-import).
+
+### Registry row record
+
+A **registry row record** (kind `registry_row`) is one planned or shipped work item. Its state is `open`, `planned`, `in_progress`, `blocked`, `shipped`, `done`, `deferred` or `cancelled`.
+
+### Finding record
+
+A **finding record** (kind `finding`) is a problem raised by an Automaton or an operator. Its state is `open`, `triaged`, `fixed`, `wontfix` or `duplicate`.
+
+### Record identity
+
+Every plan record has a short readable **id**, unique in the installation, and a **uid** that never changes. A new record never reuses a legacy row number as its id; the old number is kept as `legacy_number`, so "row 12" still finds it. The **title** is the human handle. It is unique inside one project (case-insensitive, trimmed) and may repeat across projects. A rename keeps the old title as an alias that still resolves.
+
+### Record reference
+
+A **record reference** is how a caller names a plan record. It is tried in this order: id, uid, `row <number>`, exact title, an old title alias, an unambiguous title prefix. An ambiguous reference returns the list of candidates so the caller can ask which one was meant. Records are never deleted; closing one is a state change. A reference in a URL writes the row form as `row-<n>`.
+
+### Plan record import
+
+The **plan record import** reads the numbered rows of `docs/plans/README.md` and the findings files (`docs/plans/**/*findings*.md` by default) of a registered project and creates one record for each. It only reads: the files stay in place as the read-only archive. It is idempotent, keyed by project, kind and `legacy_number` (rows) or `legacy_source` (findings), so a second run creates nothing. A dry run returns the full preview and counts and writes nothing. When a source changed after import, the run reports the record as changed and updates it only if nobody edited the record since.
+
+### Import conflict policy
+
+The **import conflict policy** decides what happens to a title already taken in the project, a duplicate row number or a row that cannot be parsed. `suffix` (the default) appends ` (row <n>)` or ` (<file>)` and flags the record `needs_review`; `rename` takes a new title from the caller's map; `skip` leaves the record out. A real run applies the policy to every conflict and never stops half way.
+
+### Plan record write-through
+
+**Plan record write-through** is the setting `autonomous.plan_records.write_through` (default off). When on, the merge pipeline's `registry_row` post-ship hook records the shipped row as a plan record (marks the matching registry row `shipped` with the Automaton id and version, or creates one) instead of editing `docs/plans/README.md`. A failed write fails the hook and never falls back to the README. It does not mirror hand edits of a record back into the plans files. See [howto/plan-records.md](howto/plan-records.md#what-happens-when-an-automaton-ships).
+
+### Plan records switch
+
+The **plan records switch** is `autonomous.plan_records.enabled` (default on). While off, every `/api/plan-records` route answers 404 and the Plan records section of the Projects page hides. Records on disk are kept.
+
+### Derived project alias
+
+The **derived project alias** is the read-only `project` field on an Automaton or Automation as returned by the REST views. It is worked out on every read from the registered project aliases (the registry behind `GET /api/projects`, alias name to directory): the explicit project profile when it names a registered alias, otherwise the longest registered alias directory that contains the record's project directory, otherwise the field is left out. Nothing is stored or rewritten. See [howto/projects-tab.md](howto/projects-tab.md#reading-the-fields).
