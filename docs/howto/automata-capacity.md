@@ -500,7 +500,8 @@ An alert is raised when a task has waited 30 minutes.
 When a backend runs out of usage (a rate limit or a weekly cap), starting
 more autonomous work on it only burns retries. A usage back-off flag holds
 autonomous dispatch to that one backend until the limit lifts. The flag is
-in memory and per backend: it is lost on a daemon restart, and backing off
+per backend, and it survives a daemon restart (see
+[Across a daemon restart](#across-a-daemon-restart)); backing off
 `claude-code` never affects `pi` or `ollama`. The implementation lives in
 `internal/autonomous/backoff.go`; the design is in
 `docs/plans/2026-10-14-concurrency-and-budget-design.md`.
@@ -560,6 +561,34 @@ Status lists each active flag (backend, until, reason, and whether it was
 set by a rate limit or by an operator) together with the effective mode and
 maximum wait. The capacity status (`datawatch capacity`, the PWA Capacity
 card) shows the same flags as the wait reason on blocked tasks.
+
+### Across a daemon restart
+
+A flag is written to disk every time it is set, cleared or expires, in
+`backoff.json` under the `autonomous` folder of the data directory (mode 0600),
+and written once more when the daemon shuts down or restarts. When the daemon
+starts it reads the file back and reinstalls every flag whose time has not
+passed, before the first Automaton dispatch, so a restart no longer makes
+work run straight into a limit that is still in force. Flags that expired
+while the daemon was down are dropped. A missing file is normal; an
+unreadable one is logged and the registry starts empty.
+
+Each restored flag is recorded three ways so you can see why work is waiting:
+
+- a boot-resume entry with outcome `backoff_restored` (read it as described in
+  [Reading the recorded decision](restart-with-work-running.md#reading-the-recorded-decision));
+- an alert titled **Back-off restored after restart** naming the backend and
+  the time it lifts;
+- an `autonomous_usage_backoff_restored` audit event (see
+  [Audit trail](#audit-trail)).
+
+New Automaton work for a restored backend waits in the capacity queue with the
+usual `backoff: ...` wait reason and starts by itself when the flag clears.
+A boot-resume decision for an Automaton on that backend carries a sentence
+saying so. Sessions already running on the backend are adopted as always;
+restoring a flag never ends, restarts or signals one. Because the flag lives
+in the registry, clearing it by hand (any surface above) also removes it from
+the file, so a cleared flag does not come back on the next restart.
 
 ### Pattern staleness and manual recheck
 
@@ -1079,6 +1108,7 @@ the cause changes.
 | `autonomous_usage_backoff_set` | `autonomous` for a rate limit, `operator` (or the caller's own actor) for a flag set by hand | the backend | `backend`, `until` (RFC 3339), `source` (`rate_limit` or `operator`) |
 | `autonomous_usage_backoff_cleared` | `operator` (or the caller's own actor) | the backend, or `all` | `backend` |
 | `autonomous_usage_backoff_auto_cleared` | `autonomous` | the backend | `backend`, `until` (RFC 3339) |
+| `autonomous_usage_backoff_restored` | `autonomous` | the backend | `backend`, `until` (RFC 3339), `source` (`rate_limit` or `operator`); written at daemon start for each flag read back from disk |
 | `autonomous_budget_ceiling_wait` | `autonomous` | the LLM | `llm`, `spend_usd`, `ceiling_usd`, `rolls_over_at` (RFC 3339, only when known) |
 | `autonomous_budget_window_resumed` | `autonomous` | the LLM | `llm`, `spend_usd`, `ceiling_usd` |
 | `autonomous_budget_window_rollover` | `autonomous` | the LLM | `previous_spend_usd`, `ceiling_usd`, `new_window_start` (RFC 3339) |

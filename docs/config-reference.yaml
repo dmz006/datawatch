@@ -3243,6 +3243,8 @@ autonomous:
   # once per change and never per poll: autonomous_capacity_wait,
   # autonomous_capacity_admitted, autonomous_usage_backoff_set,
   # autonomous_usage_backoff_cleared, autonomous_usage_backoff_auto_cleared,
+  # autonomous_usage_backoff_restored (a flag read back from
+  # <data_dir>/autonomous/backoff.json at daemon start),
   # autonomous_usage_backoff_patterns_rechecked, autonomous_budget_ceiling_wait,
   # autonomous_budget_window_resumed and autonomous_budget_window_rollover.
   # Read them with GET /api/audit (action=autonomous_* lists the family;

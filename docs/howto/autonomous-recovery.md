@@ -331,6 +331,8 @@ What happens next:
 
 Each decision is an entry in `Status().BootResume` with an `outcome` of `resumed`, `parked` or `resumed_by_operator`, the age in seconds and a reason. A `parked` entry that also has `live_sessions` means the Automaton was parked (for example its project directory was missing, or auto-resume is off) while a worker session was still alive. Nothing was killed: resuming it re-adopts those sessions instead of starting new ones. A `resumed_by_operator` entry records your resume action and lists the sessions that were adopted.
 
+A `backoff_restored` entry (no Automaton id) records a usage back-off flag that was saved before the restart and is still in force. Work for that backend waits in the capacity queue until it clears; nothing running is touched. See [Across a daemon restart](automata-capacity.md#across-a-daemon-restart).
+
 Old failed Automata are therefore no longer re-launched at every restart.
 
 ## Restarting the daemon while a task is in progress
