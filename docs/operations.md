@@ -4730,6 +4730,8 @@ Only `off`, `warn` and `block` are accepted. `PUT /api/config` and
 `PUT /api/autonomous/config` reject anything else with HTTP 400; a bad value
 that is stored another way (hand-edited YAML) resolves to `warn`, never `off`.
 
+The drift checker runs git without any program a repository's own configuration names (no file-system monitor, hooks or external diff program), and it refuses to check a project folder that is empty, relative or starts with a dash.
+
 ### Reading and writing it
 
 | Surface | Read | Write |
