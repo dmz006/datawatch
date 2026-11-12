@@ -672,6 +672,17 @@ func RequiredCapForMCPTool(tool string) (string, bool) {
 //
 // The classification has three classes and is complete: every registered MCP
 // tool appears in exactly one of configWriteTools, sensitiveWriteTools or
+// nonConfigWriteTools, and TestIsConfigWriteTool_EveryRegisteredToolIsClassified
+// (in mcp_tool_caps_test.go) fails the build when a new registration in
+// internal/mcp/server.go lands in none of them. Adding a new MCP tool
+// requires adding it to exactly one map.
+//
+// configWriteTools — the daemon settings writers (config_set and the named
+// *_config_set tools, compute_pin_settings, the usage settings writers,
+// council_personas_set and the later settings writers) plus the component
+// registry writers: LLM, compute-node, observer-peer, upstream-server
+// (still gated by federation:write) and websearch provider registries.
+//
 // sensitiveWriteTools — high-impact tools the operator singled out
 // (decision 2026-11-11): secret_set, secret_delete and secret_get (it
 // returns the secret value, so it is gated although it only reads); the
@@ -679,7 +690,9 @@ func RequiredCapForMCPTool(tool string) (string, bool) {
 // restore_identity and reset_identity; daemon control (restart_daemon,
 // reload); and plugin_install, plugin_run_subcommand, send_input,
 // start_session, tailscale_acl_push, tailscale_auth_key and acme_renew.
-// Listing secret names or checking that one exists is not sensitive.
+// Listing secret names or checking that one exists is not sensitive. The
+// class is refused for session and peer callers while
+// mcp.allow_sensitive_writes is false.
 //
 // nonConfigWriteTools — everything else: the ordinary operational writes
 // and reads. That covers the secret listing and status tools (secret_list,

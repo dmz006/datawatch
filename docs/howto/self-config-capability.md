@@ -1,10 +1,10 @@
 ---
 docs:
   index: true
-  topics: [self-config, capability, group, allow_self_config, audit, hardening, bootstrap]
+  topics: [self-config, capability, group, allow_self_config, allow_sensitive_writes, sensitive-writes, audit, hardening, bootstrap]
 exec_steps:
   - tool: get_config
-    description: Read the current configuration first (the mcp section carries allow_self_config, self_config_audit_path and self_config_audit_denied). Reading is never gated by the alias
+    description: Read the current configuration first (the mcp section carries allow_self_config, allow_sensitive_writes, self_config_audit_path and self_config_audit_denied; allow_sensitive_writes is absent until an operator sets it, and absent means enabled). Reading is never gated by the alias
     args: {section: "mcp"}
     read_only: true
   - tool: self_config_audit
@@ -35,7 +35,9 @@ single operator-facing switch that turns the whole group on or off is
 - Every configuration write that goes through the self-config path (allowed
   or refused) is recorded in an **audit file**, viewable from every surface.
 - Nothing here is secret-related: the group deliberately excludes secrets,
-  federation control and daemon identity.
+  federation control and daemon identity. Those high-impact tools are a
+  separate class with their own switch, `mcp.allow_sensitive_writes` — see
+  [Sensitive writes](#sensitive-writes-a-separate-switch) below.
 
 Related: [datawatch-definitions.md — Self-config](../datawatch-definitions.md#self-config),
 [howto/federation-cbac.md](federation-cbac.md).
@@ -59,6 +61,12 @@ or deleted, and its membership is fixed in code:
 - anything under `federation:` — peers, groups, token mint;
 - daemon identity control (sessions kill, compute control, plugin install,
   tailscale admin, pipeline/admin surfaces).
+
+The secret, identity, daemon-control and plugin/tailscale tools that the group
+leaves out are not unguarded: the MCP tool classification puts the most
+sensitive of them in a **sensitive write** class that a session or peer can be
+refused with its own switch — see
+[Sensitive writes](#sensitive-writes-a-separate-switch).
 
 `mcp.allow_self_config` is an **alias for the group**, not a separate gate in
 itself. One field, three effects:
@@ -187,7 +195,8 @@ the surfaces a session or agent actually writes from (**mcp**, **rest**,
 | `time` | UTC timestamp of the attempt |
 | `surface` | `mcp` (an MCP config-write tool), `rest` (`PUT /api/config`), or `comm` (the chat-channel `configure` verb) |
 | `tool` | the MCP tool name, `PUT /api/config` for REST, `configure` for comm |
-| `keys` / `values` | what was attempted; values are redacted for secret-looking keys |
+| `class` | MCP records only: `config` for a configuration-write tool, `sensitive` for a sensitive write tool (see [Sensitive writes](#sensitive-writes-a-separate-switch)); absent on `rest` and `comm` records |
+| `keys` / `values` | what was attempted; values are redacted for secret-looking keys. A `sensitive` record carries the argument names in `keys` and **never any values** |
 | `caller` | the acting credential — a session (`session:<id>`) or a federation peer (`peer:<name>`); the operator's own admin writes are not recorded as session writes |
 | `allowed` | `true` / `false` |
 | `reason` | refusal reason when `allowed` is `false` |
@@ -242,6 +251,77 @@ datawatch config set mcp.allow_self_config true   # same as removing the false
 Nothing else changed: the key was an alias all along, so "removing the
 false" and "setting true" are the same state.
 
+## Sensitive writes (a separate switch)
+
+The MCP tool classification has three classes. Besides the configuration
+writers that the `self-config` group covers and the ordinary operational tools,
+there is a **sensitive write** class: tools the operator singled out as
+high-impact. A second setting, `mcp.allow_sensitive_writes`, decides whether a
+session or a federation peer may call them.
+
+**What is in the class.**
+
+| Group | Tools |
+|---|---|
+| Secrets | `secret_set`, `secret_delete`, and `secret_get` — it only reads, but it returns the secret value, so it is gated like a write |
+| Identity | `set_identity`, `update_identity`, `configure_identity`, `restore_identity`, `reset_identity` |
+| Daemon control | `restart_daemon`, `reload` |
+| Plugins and sessions | `plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session` |
+| Network and certificates | `tailscale_acl_push`, `tailscale_auth_key`, `acme_renew` |
+
+Listing secret names (`secret_list`), checking that one exists
+(`secret_exists`), the vault status (`secrets_vault_status`) and the secret
+scan statistics are **not** sensitive and are never refused by this switch.
+
+**How the setting behaves.**
+
+- `mcp.allow_sensitive_writes` is **enabled by default**. A missing key and an
+  explicit `true` both mean on, so an installation that has never set it
+  behaves exactly as before. No migration adds the key.
+- An explicit `false` turns the class off **for sessions and peers only**.
+  Each call to a sensitive tool from a session credential or a federation peer
+  is refused with: `tool <name> is refused: sensitive writes are disabled for
+  sessions and peers (mcp.allow_sensitive_writes is false). An operator can
+  re-enable them by setting mcp.allow_sensitive_writes to true (or removing the
+  key) in the datawatch config.`
+- Operator calls are unaffected: the Web UI, `PUT /api/config`, the CLI and an
+  admin MCP caller never pass through the gate, so for example you can still
+  restart the daemon or set a secret yourself while the class is off.
+- The two switches are independent. `allow_self_config: false` does not close
+  the sensitive class, and `allow_sensitive_writes: false` does not stop a
+  session changing non-secret settings.
+
+**Audit.** Sensitive calls are recorded in the same audit file as
+configuration writes, one record per call from a session or peer, allowed and
+refused, with `"class":"sensitive"`. The record lists the argument names but
+**never their values**, because a secret value or an identity text cannot be
+told apart from an ordinary argument by its name. A refusal carries the reason
+text above. Refused records follow `mcp.self_config_audit_denied` like every
+other record, so with the default on you can see exactly which sensitive tool a
+session tried while the class was off. Read it the same way as the rest of the
+trail: `self_config_audit`, `datawatch audit self-config`,
+`GET /api/audit/self-config`, or the JSONL file.
+
+```json
+{"time":"2026-11-11T09:02:17Z","surface":"mcp","tool":"secret_set","class":"sensitive","keys":["name","value"],"caller":"session:goose-b7c1","allowed":false,"reason":"tool secret_set is refused: sensitive writes are disabled for sessions and peers (mcp.allow_sensitive_writes is false). An operator can re-enable them by setting mcp.allow_sensitive_writes to true (or removing the key) in the datawatch config."}
+```
+
+**Turn it off.** Edit the YAML under `mcp:` and restart the daemon, as for the
+other `mcp:` switches:
+
+```yaml
+mcp:
+  allow_sensitive_writes: false
+```
+
+**Turn it back on.** Remove the key or set it to `true`, and restart.
+
+Where this setting can be changed today: the YAML file only. The Settings
+card, the `datawatch config set` CLI, `PUT /api/config` and the `config_set`
+MCP tool do not handle `mcp.allow_sensitive_writes` yet — the daemon's config
+patch path ignores it as an unknown key — so edit the YAML and restart. See the operator review notes in the
+[operations guide](../operations.md#sensitive-writes-what-sessions-and-peers-may-not-do).
+
 ## Migration notes (from the old single gate)
 
 Before the group model, `mcp.allow_self_config` was the only knob: a single
@@ -265,11 +345,13 @@ ability to scope and audit more precisely.
 | `mcp.allow_self_config` | bool | enabled | **No — bootstrap-protected.** YAML/CLI/Web UI/REST (operator) only |
 | `mcp.self_config_audit_path` | string | `<data dir>/audit/config-self-modify.jsonl` | Only while the alias is on (it is a config-write like any other) |
 | `mcp.self_config_audit_denied` | bool | on | Same as above |
+| `mcp.allow_sensitive_writes` | bool | enabled (absent) | No. It is read from the YAML only (see [Sensitive writes](#sensitive-writes-a-separate-switch)); no session surface writes it |
 
 ## See also
 
 - [datawatch-definitions.md — Self-config](../datawatch-definitions.md#self-config) — the glossary entry
 - [howto/federation-cbac.md](federation-cbac.md) — the capability model, builtin groups, per-peer capability sets
 - [howto/mcp-tools.md](mcp-tools.md) — `config_set` and the other config-write tools, `get_config`, `self_config_audit`
+- [datawatch-definitions.md — Sensitive writes](../datawatch-definitions.md#sensitive-writes) — the glossary entry for the class and its switch
 - [config-reference.yaml](../config-reference.yaml) — the `mcp:` block keys
 - `CHANGELOG.md` — the release record for the group, the alias, the single audit point and the multi-surface exposure

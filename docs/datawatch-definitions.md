@@ -1552,7 +1552,21 @@ Config: `mcp.elicitation.enabled`, `mcp.elicitation.timeout_seconds`.
 
 **How to set it** — in YAML under `mcp:` as `allow_self_config: false`; with `datawatch config set mcp.allow_self_config false` (operator CLI); in the PWA under Settings → General → **Self-config** (toggle **Allow self-config**, plus the audit path and the record-denied toggle); with `PUT /api/config` and the body `{"mcp.allow_self_config": false}`; or from inside a session — there the key is bootstrap-protected: `config_set` with it is always refused, whatever the alias's state. All writes need a restart to affect the default capability grant of newly spawned sessions. Scoping and hardening — narrowing the group with a custom one, removing it from the session default, or granting it to one selected daemon — is walked through step by step in [`howto/self-config-capability.md`](howto/self-config-capability.md).
 
-**See also:** [`howto/self-config-capability.md`](howto/self-config-capability.md) · [`howto/federation-cbac.md`](howto/federation-cbac.md) · capability groups
+**See also:** [`howto/self-config-capability.md`](howto/self-config-capability.md) · [`howto/federation-cbac.md`](howto/federation-cbac.md) · capability groups · [Sensitive writes](#sensitive-writes)
+
+### Sensitive writes
+
+**Sensitive writes** are a class of MCP tools the operator singled out as high-impact: setting, deleting and reading a secret value (`secret_set`, `secret_delete`, `secret_get`), the identity writers (`set_identity`, `update_identity`, `configure_identity`, `restore_identity`, `reset_identity`), daemon control (`restart_daemon`, `reload`), and `plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`, `tailscale_acl_push`, `tailscale_auth_key` and `acme_renew`. `secret_get` is in the class although it only reads, because it returns the secret value. Listing secret names, checking that one exists and the vault status are not sensitive.
+
+It is one of three classes every MCP tool belongs to: **configuration writes** (the daemon settings and component registries covered by [Self-config](#self-config)), **sensitive writes**, and everything else.
+
+**The switch.** `mcp.allow_sensitive_writes` decides whether a **session or a federation peer** may call the class. Default: **enabled** — an absent key and `true` both mean on, and nothing adds the key for you. An explicit `false` makes the daemon refuse each such call from a session or peer with a message that names the setting; the operator's own Web UI, REST, CLI and admin calls are never refused. It is independent of `mcp.allow_self_config`.
+
+**Audit.** Calls to the class are recorded in the same audit trail as configuration writes, allowed and refused, with `class: "sensitive"` (configuration writes carry `class: "config"`). A sensitive record keeps the argument names and never the values.
+
+**How to set it** — in YAML under `mcp:` as `allow_sensitive_writes: false`, then restart the daemon. It is YAML-only at present: the CLI, the Settings screen, `PUT /api/config` and the `config_set` tool do not handle it yet.
+
+**See also:** [Self-config](#self-config) · [`howto/self-config-capability.md`](howto/self-config-capability.md#sensitive-writes-a-separate-switch) · [`operations.md`](operations.md#sensitive-writes-what-sessions-and-peers-may-not-do)
 
 ### Settings — About
 

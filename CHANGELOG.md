@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A sensitive write class for MCP tools, with its own switch.** The MCP tool classification now has three classes: configuration writes, sensitive writes and everything else. The sensitive class holds `secret_set`, `secret_delete`, `secret_get` (it returns the secret value), the identity writers (`set_identity`, `update_identity`, `configure_identity`, `restore_identity`, `reset_identity`), `restart_daemon`, `reload`, `plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`, `tailscale_acl_push`, `tailscale_auth_key` and `acme_renew`; these tools were previously classed with the ordinary operational tools. The new setting `mcp.allow_sensitive_writes` is enabled by default (an absent key reads as on and no migration adds it); an explicit `false` makes the daemon refuse these tools for sessions and federation peers with a message naming the setting. Operator calls from the Web UI, REST, CLI and admin MCP are not affected. The setting is YAML-only for now: the CLI, the Settings screen, `PUT /api/config` and `config_set` do not handle it yet.
+- **Sensitive calls are audited.** Calls to the sensitive class from a session or peer are recorded in the existing self-config audit trail, allowed and refused, and every MCP audit record now carries a `class` field (`config` or `sensitive`; also in the CEF entry). Sensitive records keep the argument names and drop all values. Docs: the howto `howto/self-config-capability.md`, the operations guide, the glossary entry "Sensitive writes", the `self_config_audit` entry in `docs/mcp.md` and the `mcp:` block of `docs/config-reference.yaml`.
+
 ## v9.135.0 — Self-config is a built-in capability group
 
 ### Added

@@ -115,6 +115,7 @@ More: [channel routing](docs/howto/channel-routing.md) · [file sharing](docs/ho
 - Passwords and keys live in a vault
 - Logins, encrypted connections, and a log of who did what
 - Self-config gate: an agent may change the daemon's own non-secret settings only while it holds the **self-config** group — every attempt (allowed and denied) is recorded, and you can read the trail from the PWA Settings card, `datawatch audit self-config` or `GET /api/audit/self-config`
+- Sensitive writes: the high-impact tools (secrets, identity, daemon restart and reload, plugin install, starting sessions, and a few more) can be refused to sessions and peers with `mcp.allow_sensitive_writes: false` — on by default, your own UI, CLI and REST calls are never affected, and every call is recorded in the same audit trail.
 
 More: [encryption](docs/encryption.md) · [security review](docs/security-review.md)
 

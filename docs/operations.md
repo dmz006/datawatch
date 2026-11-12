@@ -3114,6 +3114,67 @@ in the same YAML, an explicit list always wins); define a narrower
 custom group (for example only `llms:write`); grant that to the one session
 (or the sessions of the one daemon) that needs it (`session.capabilities`). Definitions: [datawatch-definitions.md#self-config](datawatch-definitions.md#self-config).
 
+
+### Sensitive writes: what sessions and peers may not do
+
+Next to the `self-config` group sits a second, independent switch for a
+smaller set of high-impact MCP tools, the **sensitive write** class. The
+setting is `mcp.allow_sensitive_writes`. **Default: enabled** — the key is
+absent from a fresh config and absent reads as on, so nothing changes until an
+operator sets an explicit `false`.
+
+The class: `secret_set`, `secret_delete`, `secret_get` (it returns the secret
+value, so it is gated although it only reads), the identity writers
+(`set_identity`, `update_identity`, `configure_identity`, `restore_identity`,
+`reset_identity`), daemon control (`restart_daemon`, `reload`), and
+`plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`,
+`tailscale_acl_push`, `tailscale_auth_key` and `acme_renew`. Listing secret
+names, checking that one exists, the vault status and the secret scan
+statistics are not in it.
+
+While `mcp.allow_sensitive_writes: false`:
+
+- a session credential or a federation peer that calls one of those tools gets
+  `tool <name> is refused: sensitive writes are disabled for sessions and peers (mcp.allow_sensitive_writes is false). An operator can re-enable them by setting mcp.allow_sensitive_writes to true (or removing the key) in the datawatch config.`;
+- the operator is unaffected: the Web UI, `PUT /api/config`, the CLI and an
+  admin MCP caller never reach the gate;
+- the switch is independent of `mcp.allow_self_config`, in both directions.
+
+**Audit.** Every call to a sensitive tool from a session or peer is recorded in
+the same audit stream as configuration writes (file `mcp.self_config_audit_path`,
+the `self_config_audit` tool, `datawatch audit self-config`,
+`GET /api/audit/self-config`, and the CEF/syslog sink when one is configured)
+with `class: "sensitive"`; configuration-write records carry `class: "config"`.
+A sensitive record keeps the argument **names** and drops every value, because
+secret material in an argument cannot be recognised by its name. Refusals are
+recorded under `mcp.self_config_audit_denied` like all other refusals. The
+audit is written outside the gate: a refusal is visible in the trail.
+
+**Changing it.** Edit `mcp.allow_sensitive_writes` in the YAML and restart the
+daemon. Re-enabling is removing the key or setting `true`.
+
+**Operator review before relying on it.** These points follow from how the
+setting is wired today and need an operator decision or a follow-up:
+
+1. The setting is YAML-only. The CLI `datawatch config set`, `PUT /api/config`,
+   the Settings screen and the `config_set` tool do not handle
+   `mcp.allow_sensitive_writes`; the patch path logs an unknown-key no-op. A
+   session calling `config_set` for it would not change it, but unlike
+   `mcp.allow_self_config` it is not named in the bootstrap protection either.
+2. There is no PWA control, no locale string, no OpenAPI field and no mobile
+   parity issue in this repository yet, so the Settings → General card does not show the switch.
+3. The gate sits in the MCP tool-handler chain only. The REST and comm-channel
+   routes that do the same things (for example a secret write over REST or
+   `send_input` over a comm channel) do not pass through this switch; this
+   change did not examine them, so check them before treating `false` as a
+   complete lock-down.
+4. The refusal and audit wording above is the code's current text; confirm it
+   before it is quoted in operator runbooks.
+
+Walk-through and a sample audit record:
+[`howto/self-config-capability.md`](howto/self-config-capability.md#sensitive-writes-a-separate-switch).
+Definition: [datawatch-definitions.md#sensitive-writes](datawatch-definitions.md#sensitive-writes).
+
 ---
 
 ## Chat Mode and Output Modes
