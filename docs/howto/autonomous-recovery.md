@@ -186,6 +186,16 @@ copy of the verdict, and does not classify it a second time. To read it, open
 the Automaton's decision log (`autonomous_prd_get`, or the Automaton's
 detail page) and look for the two kinds.
 
+That review follows the same head and rules test, so a fix that lands while the
+Automaton is held does not need a rejudge to be seen. When the Automaton goes
+back to `running` with every task finished and the completion rollup runs
+again, the judge reads the new head, not the stored block. A `pass` or a
+`warn` completes the Automaton (a warning never holds it), adds exactly one
+new verdict on the new commit and clears the stale blocking review record.
+With the head and the rules text unchanged the stored block is reused as
+above: the Automaton stays held, the judge is not asked and a single
+`guardrail_reuse` entry is recorded.
+
 Outcome, in every case written to the Automaton's decision log (attributed
 to the acting operator) **before** any status change:
 
@@ -377,14 +387,22 @@ a restart.
    starts the clock. After one full bound the watchdog records a
    `stuck_running_refire` note in the Automaton's decision history and re-runs
    the completion rollup once, the same way boot resume does. The clock
-   restarts.
+   restarts. The re-fire is an ordinary completion review: if the branch head
+   moved since the stored verdict was made (for example a fix was committed
+   while the Automaton was held), the judge runs again on the new head, and a
+   `pass` or `warn` completes the Automaton instead of leaving it for the
+   second step. If the head and the rules text are unchanged, the stored
+   verdict is reused and recorded as a `guardrail_reuse` entry.
 2. **Block.** If the Automaton is still in that state after a second full
    bound, the watchdog moves it to `blocked`. It records a
    `stuck_running_blocked` decision with the reason, writes an audit entry
    (`autonomous_stuck_running_blocked`, with the time stuck and the bound) and
    fires the usual status event, so the Automaton shows as blocked in the PWA
    and in notifications. If something else changed the Automaton at the same
-   moment, that change wins and the watchdog leaves it alone.
+   moment, that change wins and the watchdog leaves it alone. An Automaton the
+   re-fire completed is never blocked by the watchdog: no
+   `stuck_running_blocked` decision or audit entry is written for it, and the
+   re-fire happens once.
 
 The clock starts over whenever the state stops holding: a session starts, a
 task is reset to pending, or the Automaton leaves `running`. To clear a blocked
