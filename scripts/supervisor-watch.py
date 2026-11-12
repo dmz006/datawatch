@@ -453,6 +453,12 @@ def main(argv=None):
                 findings.append("JUDGE BLOCKED %s all %d tasks done but the rules review blocked it, do not merge: %s" % (p["id"], len(tasks), (p.get("title") or "")[:40]))
             elif last is None:
                 findings.append("MERGE WAIT %s all %d tasks done, rules review not finished: %s" % (p["id"], len(tasks), (p.get("title") or "")[:40]))
+            elif subprocess.run(["git", "merge-base", "--is-ancestor", "automaton/" + p["id"], "main"],
+                                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                capture_output=True).returncode == 0:
+                # Branch already in main (a member of an Automation stays uncancelled after
+                # its ship): not merge ready, nothing to do.
+                pass
             else:
                 findings.append("MERGE READY %s all %d tasks done (review %s): %s" % (p["id"], len(tasks), last, (p.get("title") or "")[:40]))
         if st == "running":
