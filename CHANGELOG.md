@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.156.1 — Projects view layout fixes for wide browsers
+
+### Fixed
+
+- **The Gantt on the Projects view is capped at a readable width on wide browsers.** The chart keeps its text at the authored size and is left-aligned, instead of stretching across the whole window.
+- **The project Gantt now sits above the Unassigned Automata.** The chart comes first on the project page, then the Unassigned Automata.
+- **The cards on a project page collapse and expand.** Each section card (policy, merge pipeline, event stream and the rest) has a toggle in its header, with the toggle label in English, German, Spanish, French and Japanese.
+- Docs: the Projects how-to lists the collapse control.
+
 ## v9.156.0 — Dashboard cards: real data or removed
 
 ### Added
