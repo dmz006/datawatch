@@ -7075,15 +7075,19 @@ Note: `/api/push/<topic>` is not a discussion route. It does not apply this rule
 ## Standard-task packs: what is wired and what is not
 
 Packs are installable, versioned folders of standard tasks and Automaton templates. The
-rules are described in [howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#installable-packs-backend-only-not-yet-wired);
+rules are described in [howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#managing-packs-on-each-surface);
 this section is the operator checklist for the state of the code today.
 
 **Config (`packs`).** `packs.enabled` (default `false`) and `packs.active` (default
-`["builtin"]`) are read from the config file. The daemon does not yet check the switch against a connected registry source, nor
-validate `packs.active` against the installed packs, so setting `enabled: true` changes
-nothing on its own. The enable check exists as `packs.CheckEnable`: it refuses when no
-skills registry source is enabled ("packs need at least one connected skills registry
-source; connect one in the skills registry settings") and only reads the list it is given.
+`["builtin"]`) are read from the config file and are settable through
+`PUT /api/packs/config`, the `packs_setting_set` MCP tool, `datawatch packs enable|disable`,
+the `packs setting` chat command and the web Settings > General > Standard task packs
+card. Every write is validated: `packs.active` is refused (400) when it holds an empty
+name, a repeat or a name that is neither `builtin` nor installed, and switching `enabled`
+from off to on is refused (409) when no skills registry source is connected and enabled
+("packs need at least one connected skills registry source; connect one in the skills
+registry settings"). A hand edit of the config file skips both checks. Turning packs on
+changes no task by itself yet (see "Not wired yet").
 
 **Which list applies (`packs.ActivePacks`).** With `packs.enabled: false` the answer is
 `["builtin"]`. With it on, the first non-empty list of Automaton, project, global
@@ -7092,29 +7096,35 @@ own list is the `packs` field, set through `SetPacks` (trimmed, unique, order ke
 surface sets it yet, and the project config entry has no `packs` key, so a per-project
 list is not available.
 
-**Install root and trust file.** The install root has no default path in the daemon.
-Trust records live in `trust.json` inside that root, beside one folder per pack name and
-version. A missing file means no records. A corrupt file is an error, not an empty store,
-so it is never silently ignored. Include the install root in any backup you take of the
-data folder.
+**Install root and trust file.** The install root is `<data dir>/packs`. Packs install
+to `<name>/<version>/` inside it, and `trust.json` (acceptance records) and `inputs.json`
+(saved pack inputs) sit beside them. A missing trust file means no records. A corrupt file
+is an error, not an empty store, so it is never silently ignored. **Include the install
+root in any backup you take of the data folder.** Removing a pack deletes that version's
+folder and trust record only; it leaves `packs.active`, Automata, tasks and traces alone.
 
 **Registry flags.** Two flags on a skills registry source matter to packs, and both are
 in the registry store: `first_party` (set on the community registry by default) and
 `auto_accept_packs` (off by default). Auto-accept only ever records a version whose diff
 adds no tool, script or file scope; a widening version waits for an operator acceptance.
 
+**Working now:** list, install, accept and remove, the setting (with its checks) and
+inputs, on REST, MCP, CLI and chat; the web has the setting and inputs fields only. Every
+write needs the config-write permission (also over federation).
+
 **Not wired yet (flag before relying on packs):**
 
-1. No REST, MCP, CLI, comm-channel or PWA action installs, accepts, lists or activates a
-   pack. Add these before the feature is operator-usable.
-2. Nothing calls the install, trust-accept, first-party acceptance, version-diff or
-   auto-accept functions from the daemon. A first-party source is never accepted in
-   practice until a caller registers it.
-3. The enable check (`packs.CheckEnable`), the list order (`packs.ActivePacks`), the
-   `packs.active` validation and the daemon's start-up read of the pack block are not run.
-   The Automaton `packs` field is stored but nothing reads it when tasks are resolved.
-4. The datawatch app (Android and iPhone) does not show packs.
-5. The pack attribution read side is partly wired, and no writer is wired. Trace
+1. The resolver is not given `packs.ActivePacks`, so `packs.active` and installed packs do
+   not yet change the standard-task list, and the Automaton `packs` field is stored but
+   nothing reads it when tasks are resolved.
+2. The first-party acceptance, version-diff and auto-accept functions have no daemon
+   caller. A first-party source is never accepted in practice until a caller registers it.
+3. The web has no installed-pack list, install, accept or remove, and its inputs form has
+   no Automaton level.
+4. Remove does not drop the pack from `packs.active`; the next write of the list is
+   refused until the name is taken out.
+5. The datawatch app (Android and iPhone) does not show packs.
+6. The pack attribution read side is partly wired, and no writer is wired. Trace
    roll-ups group by `pack_name` and `pack_version`, and the audit query accepts a
    `pack_name` filter. The trace `pack` parameter that the MCP tools send is ignored by
    the REST routes. The per-pack usage summary (`packs.UsageByPack`) and the cost
@@ -7125,9 +7135,11 @@ Automaton, project, global, then the declared default; a required input with no 
 an error. A secret input accepts only a `${secret:NAME}` vault reference
 (`packs.CheckSecretInput`), and `packs.RedactInputs` masks any other secret value as
 `***`. A daemon-run standard task stores its redacted inputs as `pack_inputs` when it is
-created and keeps them for life. Nothing can set an input at any level yet, the built-in
-pack declares none, and the daemon does not call the secret check, so `pack_inputs` is
-empty today. No secret value is ever stored on a task. Flag before relying on it. See
+created and keeps them for life. Inputs can now be saved at the global, project and
+Automaton levels (replacing that scope; names must be declared by the pack; a secret input
+accepts only `${secret:NAME}`), but task creation passes no stored values, the built-in
+pack declares none, so `pack_inputs` is empty today and a saved value changes nothing yet.
+No secret value is ever stored on a task. Flag before relying on it. See
 [howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#pack-inputs-how-values-resolve-secrets-and-what-a-task-records).
 
 **Pack attribution on a running daemon.** Nothing writes the pack name yet. The
@@ -7156,10 +7168,11 @@ Nothing on a running daemon reads either folder, and the real standard-tasks pac
 from the community registry, not from this repository.
 
 **Review owed by the operator:** decide whether the per-project pack list is wanted and
-where it lives (the config key was dropped); decide where the install and accept actions live and
-whether they need a parity issue, confirm the default install root, and confirm that a
-first-party source's acceptance is taken at enable time (the planned behaviour) before
-the surfaces are built. Also decide whether the code comment on `PacksBuiltinName`
-(`internal/config/packs_config.go`), which says the builtin pack "ships inside the
-binary", should name the compiled-in task-template defaults explicitly; this docs set
-does not edit Go source.
+where it lives (the config key was dropped); decide where the installed-pack list and the
+install, accept and remove actions live in the web UI, and whether they need a parity
+issue for the app; decide whether removing an active pack should refuse or update
+`packs.active`; decide when task creation reads `inputs.json`; and confirm that a
+first-party source's acceptance is taken at enable time (the planned behaviour). Also
+decide whether the code comment on `PacksBuiltinName` (`internal/config/packs_config.go`),
+which says the builtin pack "ships inside the binary", should name the compiled-in
+task-template defaults explicitly; this docs set does not edit Go source.
