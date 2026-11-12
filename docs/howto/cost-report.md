@@ -8,7 +8,7 @@ exec_steps:
     args: {}
     read_only: true
   - tool: cost_report
-    description: Ask for another grouping and window in one call. group_by is one of automaton, automation, backend, release, week (release is REST/CLI-only; this MCP tool rejects it — it needs shipped-unit state it does not expose); since and until accept RFC3339 or YYYY-MM-DD and are optional. Rows carry the billing label from the owning provider's usage.billing profile (e.g. "bundled plan — API-equivalent, not billed") plus the point figures when it is a bundled plan
+    description: Ask for another grouping and window in one call. group_by is one of automaton, automation, backend, release, week (release is REST/CLI-only; this MCP tool rejects it — it needs shipped-unit state it does not expose); since and until accept RFC3339 or YYYY-MM-DD and are optional. Rows carry the billing label read from each backend's LLM entry billing_mode, then the provider's usage.billing profile (e.g. "bundled plan — API-equivalent, not billed"), plus the point figures when it is a bundled plan; a row that mixes billing units says mixed and carries unit_totals instead of one money figure
     args: {group_by: backend, since: "2026-10-26", until: "2026-11-02"}
     read_only: true
   - tool: config_set
@@ -64,8 +64,9 @@ the LLM entries** its backends run on (the `billing_mode` field of each
   (an equivalence, not a charge), the **usage points** it represents, and its
   **share of the monthly price**.
 
-No entry value and no profile? The row keeps its ordinary tokens and estimate
-and says so with the “(assumed)” label — nothing is invented, nothing is billed.
+No entry value and no profile, on an `api` row? It keeps its ordinary tokens and
+estimate and says so with the “(assumed)” label — nothing is invented, nothing is
+billed.
 An entry that carries its own `billing_mode` is never “assumed”, even with no
 `usage.billing` profile: the row reads “api_metered — billed per use” for an
 `api` entry.
@@ -161,8 +162,13 @@ For each backend in a row the daemon takes the first of these that has a value:
 3. **The kind default**: `claude-code` is `allowance`; `ollama`, `openwebui` and
    `shell` are `local`; every other kind is `api`.
 
-If none of the three has a value the row keeps the assumed default and says so
-with the “(assumed — no usage.billing entry)” label. The profile still supplies
+The kind default always gives a mode, so a backend always resolves. What the
+“(assumed — no usage.billing entry)” label marks is how it got there: a row
+whose backends all resolve to `api` with no entry value and no profile behind
+any of them keeps that label, because the mode is a default and not something
+you set. Giving the entry a `billing_mode` or the provider a profile removes it.
+Once the migration below has run, every registry entry has its own value, so the
+label is left for spend from a backend with no registry entry. The profile still supplies
 the plan, the monthly price and the reset the point figures use, so an
 `allowance` entry needs a profile with a `monthly_price` before the report can
 show points. Setting the value is covered in
@@ -197,12 +203,14 @@ for that provider, so the report can label the money instead of guessing it:
 | `api_metered` | Pay-per-use spend, no allowance. | The “api_metered — billed per use” label and the ordinary `usd_estimate` where rates cover the row. |
 | `free_local` | Local inference at no charge. | The “free local inference — not billed, token usage only” label and **no money figure at all** — tokens are the whole answer. |
 
-**The default assumption.** A provider with *no* entry value and *no* profile is read as
-`api_metered` with percent allowances — an assumption flagged on the row with
-the “(assumed — no usage.billing entry)” label, not a fact about the
-provider. The assumed default carries no price and no allowance: the row keeps
-its token and rate-based figures and nothing more is invented. Setting a
-profile removes the assumption.
+**The default assumption.** A provider with *no* entry value and *no* profile is read
+from the kind default (`claude-code` as a bundled plan, `ollama`, `openwebui` and
+`shell` as free local, every other kind as `api_metered`) with percent allowances.
+When that default is `api_metered` the row carries the “(assumed — no usage.billing
+entry)” label: an assumption, not a fact about the provider. The assumed default
+carries no price and no allowance: the row keeps its token and rate-based figures
+and nothing more is invented, so a bundled plan with no `monthly_price` shows no
+points. Setting an entry value or a profile removes the assumption.
 
 Setting one is a config write, one field at a time — the same fields the
 usage calculator reads for its point value — settable all six ways the
