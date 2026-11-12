@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.142.0 (2026-11-11).** The Sessions page can be drawn as a list, tiles or compact cards, grouped by tag, state, node, project or Automaton with sessions nested under their Automaton and story, and saved as per-device views; the same grouped read is on REST, MCP, the CLI and chat. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.142.1 (2026-11-12).** The release workflow's gosec and Trivy Code Scanning uploads retry and then warn instead of failing the job, so a GitHub rate-limit answer no longer stops a release. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

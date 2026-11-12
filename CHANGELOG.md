@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.142.1 — Code Scanning uploads no longer block a release
+
+### Fixed
+
+- The gosec and Trivy SARIF uploads to GitHub Code Scanning in the release workflow now retry up to four attempts with growing waits, and then print a warning instead of failing the job.
+- The release, security summary and container jobs no longer depend on an upload succeeding. The blocking gosec baseline-diff step and the blocking Trivy scan steps are unchanged, so a real finding still stops a release.
+- Why: a GitHub rate-limit answer on the upload cancelled the security summary and skipped goreleaser and the container jobs for two releases, so no assets were published.
+- New: a `make lint` check fails when a Code Scanning upload can block a job that publishes assets.
+- The one workflow that changed is `.github/workflows/release.yaml`. No other workflow uploads SARIF.
+
 ## v9.142.0 — Sessions list tile mode, grouping and nesting
 
 ### Added
