@@ -401,11 +401,26 @@ def main(argv=None):
     except Exception:
         findings.append("PRD list unreadable")
     held_now, running, queued_runnable = [], [], 0
+    # Backlog: work that is not finished and is not running. A failed Automaton used to be
+    # invisible here (only running and blocked ones were inspected, and a held task was
+    # reported once as NEW), so fifteen nearly finished Automata sat failed for a day
+    # (2026-11-12). These counts are reported on every run until the work is shipped.
+    backlog_failed, backlog_blocked, backlog_review = [], [], []
     for p in prds:
         st = p.get("status")
         tasks = [k for s in p.get("stories", []) for k in s.get("tasks", [])]
         if p["id"] in IGNORE:
             continue
+        _left = sum(1 for k in tasks if k.get("status") not in ("completed", "cancelled"))
+        _held = "HOLD" in (p.get("spec") or "")[:200]
+        if st == "failed" and tasks and _left:
+            backlog_failed.append("%s(%d left)" % (p["id"][:8], _left))
+        elif st == "blocked" and tasks and _left:
+            backlog_blocked.append("%s(%d left)" % (p["id"][:8], _left))
+        elif st in ("needs_review", "approved") and tasks:
+            backlog_review.append(p["id"][:8])
+        if st == "draft" and not tasks and not _held:
+            backlog_review.append(p["id"][:8] + "(draft)")
         if st in ("needs_review", "approved", "draft") and recent(p.get("updated_at")) and (tasks or st == "draft"):
             queued_runnable += 1
         if st not in ("running", "blocked"):
@@ -450,6 +465,13 @@ def main(argv=None):
                 age, measure = newest_activity_measure(p["id"])
                 if age is not None and age > SILENT_MIN * 60:
                     findings.append("SILENT %s: no activity for %d min while %s is running (newest measure: %s); %s" % (p["id"], age // 60, live[0]["id"], measure, liveness(p["id"])))
+
+    if backlog_failed:
+        findings.append("BACKLOG %d failed Automata with work left, repair and reset them: %s" % (len(backlog_failed), " ".join(backlog_failed[:16])))
+    if backlog_blocked:
+        findings.append("BACKLOG %d blocked Automata with work left: %s" % (len(backlog_blocked), " ".join(backlog_blocked[:16])))
+    if backlog_review:
+        findings.append("BACKLOG %d Automata waiting for review, approval or planning: %s" % (len(backlog_review), " ".join(backlog_review[:16])))
 
     # capacity and lanes
     cap = get_json("https://localhost:8443/api/capacity", insecure=True) or {}
