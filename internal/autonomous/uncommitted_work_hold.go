@@ -41,6 +41,7 @@ const (
 	UncommittedOptionCommit    = "commit"
 	UncommittedOptionDiscard   = "discard"
 	UncommittedOptionRetry     = "retry"
+	UncommittedOptionIgnore    = "ignore"
 	uncommittedQuestionDefault = "hold"
 )
 
