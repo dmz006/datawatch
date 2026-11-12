@@ -120,7 +120,9 @@ const (
 	// (fixed text: never the body, the token or the signature), event_id,
 	// event_kind, origin_host, sender_host, hops, peer (the registered peer name,
 	// empty for an admin caller) and the actor. The signature header is never
-	// recorded.
+	// recorded. The peer event subscription also writes it for each event it
+	// reads from a peer and for each refusal or stop, with direction "read"
+	// and the peer's queue name.
 	ActionLifecycleForwardReceive = "autonomous_lifecycle_forward_receive"
 
 	// Operator question channel — the lifecycle of one question, subjected

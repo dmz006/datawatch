@@ -168,6 +168,10 @@ type PeerRef struct {
 	// HasAutonomousWrite reports that the peer's resolved capabilities include
 	// autonomous:write, the grant that lets a peer deliver events into this daemon.
 	HasAutonomousWrite bool
+	// HasAutonomousRead reports that the peer's resolved capabilities include
+	// autonomous:read, the grant a peer event subscription needs before this
+	// daemon reads the peer's events (lifecycle_peer_subscription.go).
+	HasAutonomousRead bool
 }
 
 // ForwardChain records how an event has travelled between daemons. On an
@@ -327,6 +331,13 @@ func forwardVisited(visited []string, host string) bool {
 // information is refused so a credential can never ride in a URL. The errors
 // are fixed text: they never echo the URL.
 func forwardEndpoint(raw string) (*url.URL, error) {
+	return peerEndpoint(raw, ForwardedEventsPath)
+}
+
+// peerEndpoint returns the URL of path on a peer: its registered base URL plus
+// path, under the same rules as forwardEndpoint. The peer event subscription
+// uses it for the peer's events endpoint.
+func peerEndpoint(raw, path string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(raw), "/"))
 	if err != nil {
 		return nil, errors.New("the peer URL could not be parsed")
@@ -338,7 +349,7 @@ func forwardEndpoint(raw string) (*url.URL, error) {
 		return nil, errors.New("the peer URL must not contain user information")
 	}
 	out := *u
-	out.Path = strings.TrimRight(u.Path, "/") + ForwardedEventsPath
+	out.Path = strings.TrimRight(u.Path, "/") + path
 	out.RawQuery, out.Fragment = "", ""
 	return &out, nil
 }
