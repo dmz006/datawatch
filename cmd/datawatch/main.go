@@ -8120,6 +8120,11 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			if amgrCfg.Enabled {
 				amgr.Start(context.Background())
 			}
+			// Answer old uncommitted-work questions that list only the daemon's
+			// own marker files. One best-effort call; it logs and moves on.
+			if n := amgr.SweepMarkerOnlyUncommittedQuestions(); n > 0 {
+				log.Printf("[autonomous] answered %d marker-only uncommitted-work question(s)", n)
+			}
 			// Feed the pending item registry from the file registry once at
 			// start, when one is configured. A refresh never blocks start-up.
 			amgr.SetPendingItemSourceBaseDir(expandHome(cfg.Session.DefaultProjectDir))
