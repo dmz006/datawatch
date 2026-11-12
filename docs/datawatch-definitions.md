@@ -1552,7 +1552,23 @@ Config: `mcp.elicitation.enabled`, `mcp.elicitation.timeout_seconds`.
 
 **How to set it** — in YAML under `mcp:` as `allow_self_config: false`; with `datawatch config set mcp.allow_self_config false` (operator CLI); in the PWA under Settings → General → **Self-config** (toggle **Allow self-config**, plus the audit path and the record-denied toggle); with `PUT /api/config` and the body `{"mcp.allow_self_config": false}`; or from inside a session — there the key is bootstrap-protected: `config_set` with it is always refused, whatever the alias's state. All writes need a restart to affect the default capability grant of newly spawned sessions. Scoping and hardening — narrowing the group with a custom one, removing it from the session default, or granting it to one selected daemon — is walked through step by step in [`howto/self-config-capability.md`](howto/self-config-capability.md).
 
-**See also:** [`howto/self-config-capability.md`](howto/self-config-capability.md) · [`howto/federation-cbac.md`](howto/federation-cbac.md) · capability groups
+**See also:** [`howto/self-config-capability.md`](howto/self-config-capability.md) · [`howto/federation-cbac.md`](howto/federation-cbac.md) · capability groups · [Sensitive writes](#sensitive-writes)
+
+### Sensitive writes
+
+**Sensitive writes** are a class of MCP tools the operator singled out as high-impact: setting, deleting and reading a secret value (`secret_set`, `secret_delete`, `secret_get`), the identity writers (`set_identity`, `update_identity`, `configure_identity`, `restore_identity`, `reset_identity`), daemon control (`restart_daemon`, `reload`), and `plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`, `tailscale_acl_push`, `tailscale_auth_key` and `acme_renew`. `secret_get` is in the class although it only reads, because it returns the secret value. Listing secret names, checking that one exists and the vault status are not sensitive.
+
+It is one of three classes every MCP tool belongs to: **configuration writes** (the daemon settings and component registries covered by [Self-config](#self-config)), **sensitive writes**, and everything else.
+
+**The switch.** `mcp.allow_sensitive_writes` decides whether a **session or a federation peer** may call the class. Default: **enabled** — an absent key and `true` both mean on, and nothing adds the key for you. An explicit `false` makes the daemon refuse each such call from a session or peer with a message that names the setting; the operator's own Web UI, REST, CLI and admin calls are never refused. It is independent of `mcp.allow_self_config`.
+
+**Audit.** Calls to the class are recorded in the same audit trail as configuration writes, allowed and refused, with `class: "sensitive"` (configuration writes carry `class: "config"`). A sensitive record keeps the argument names and never the values.
+
+**How to set it** — on the Settings page, in the **Self-config** card, as the **Allow sensitive writes** toggle; with `datawatch config set mcp.allow_sensitive_writes false`; with `PUT /api/config`; or with the comm `configure` command (it appears in `configure list`; the reply's "Restart may be required." is generic wording, the change is already live). Each is applied to the running daemon and saved to the config file, with no restart. `GET /api/config`, `datawatch config get` and the MCP `get_config` tool with `section=mcp` report the effective value, so a config that never set the key reads `true`. In YAML it is `allow_sensitive_writes: false` under `mcp:`, followed by a restart. Write exactly `true` or `false`: any other text, such as `on`, is read as off.
+
+**A session can change it.** The `config_set` tool reaches the same setting and, unlike `mcp.allow_self_config`, the key is not bootstrap-protected, so while self-config is on a session may set it back to `true`. Close `mcp.allow_self_config` as well when the switch must be operator-only.
+
+**See also:** [Self-config](#self-config) · [`howto/self-config-capability.md`](howto/self-config-capability.md#sensitive-writes-a-separate-switch) · [`operations.md`](operations.md#sensitive-writes-what-sessions-and-peers-may-not-do)
 
 ### Settings — About
 

@@ -1347,6 +1347,8 @@ audit_access_query(action="auth_failure", since="2026-10-08T00:00:00Z")
 
 Query the **self-config audit log**. One record per attempt to change the daemon's own non-secret settings through an agent surface: a config-write MCP tool (`surface: "mcp"`, e.g. `config_set`, `autonomous_config_set`), a session- or peer-origin REST config PUT (`"rest"`), or a comm `configure` command (`"comm"`). Allowed attempts are logged; denied attempts too — with the refusal reason — unless `mcp.self_config_audit_denied` is explicitly `false`. Secret values are redacted (`"<redacted>"`); the changed key(s) with their new values, the tool/route, and the caller are kept (a denied attempt may have no `keys`). Newest-first. Read-only: it reads the JSONL file (`mcp.self_config_audit_path`, default `<data dir>/audit/config-self-modify.jsonl`) and never writes or changes anything. The group settings themselves — `mcp.allow_self_config`, `mcp.self_config_audit_path`, `mcp.self_config_audit_denied` — are read with `get_config` and changed with `config_set` (which stays bootstrap-protected for `mcp.allow_self_config` itself).
 
+MCP records also carry a `class` field: `config` for a configuration-write tool and `sensitive` for a sensitive write tool (`secret_set`, `secret_get`, `restart_daemon`, `start_session` and the rest of the class described in [operations.md](operations.md#sensitive-writes-what-sessions-and-peers-may-not-do)). A `sensitive` record lists the argument names in `keys` and never any values. While `mcp.allow_sensitive_writes` is `false`, a session or peer call to a sensitive tool is refused and the refusal appears here. The setting is read with `get_config` (the `mcp` section reports the effective value, `true` when the key was never set) and changed with `config_set`; unlike `mcp.allow_self_config` it is not bootstrap-protected, so a session with self-config on can write it back, and that write appears here as a `config` record.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -1360,6 +1362,20 @@ self_config_audit(limit=5)
 ```json
 {"count":2,"entries":[{"time":"2026-10-29T02:14:03Z","surface":"mcp","tool":"config_set","keys":["mcp.allow_self_config"],"values":{"mcp.allow_self_config":true},"caller":"session:opencode-a3f2","allowed":true},{"time":"2026-10-29T02:13:41Z","surface":"mcp","tool":"config_set","caller":"session:goose-b7c1","allowed":false,"reason":"bootstrap: mcp.allow_self_config cannot be changed via config_set"}]}
 ```
+
+---
+
+### Sensitive write tools
+
+Every MCP tool belongs to one of three classes: configuration writes, **sensitive writes** and everything else. The sensitive class holds `secret_set`, `secret_delete`, `secret_get` (it only reads, but it returns the secret value), `set_identity`, `update_identity`, `configure_identity`, `restore_identity`, `reset_identity`, `restart_daemon`, `reload`, `plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`, `tailscale_acl_push`, `tailscale_auth_key` and `acme_renew`. `secret_list`, `secret_exists` and `secrets_vault_status` are not in it.
+
+The class has its own switch, `mcp.allow_sensitive_writes`, which is on when the key is absent. While it is `false`, a call to one of these tools from a model session or a federation peer is refused with a message that names the setting, and the refusal is audited (see `self_config_audit` above). Operator calls from the Web UI, REST, the CLI and an admin MCP caller are never refused. The switch is independent of `mcp.allow_self_config`.
+
+- **Read it:** `get_config` with `section=mcp` returns `allow_sensitive_writes` next to `allow_self_config`, each as its effective on/off state, so a config that never set the key reads `true`. Reading is never gated.
+- **Change it:** the operator uses the Settings page, `datawatch config set mcp.allow_sensitive_writes false`, `PUT /api/config` or the comm `configure` verb; each is applied live and saved. A session can reach it through `config_set`, because the key is not bootstrap-protected.
+- **Value text:** send a real boolean. The daemon reads `true`, `yes` and `1` as on and any other text, such as `on`, as off.
+
+Walk-through: [howto/self-config-capability.md](howto/self-config-capability.md#sensitive-writes-a-separate-switch). Definition: [datawatch-definitions.md](datawatch-definitions.md#sensitive-writes).
 
 ---
 

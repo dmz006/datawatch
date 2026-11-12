@@ -6396,7 +6396,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// effective value so a read-modify-write round trip preserves the
 			// enabled/disabled state. Audit path and denied-recording flag are
 			// read-only here (mutable via PUT, same as every other mcp.* key).
-			"allow_self_config":        s.cfg.MCP.SelfConfigEnabled(),
+			"allow_self_config": s.cfg.MCP.SelfConfigEnabled(),
+			// allow_sensitive_writes gates the sensitive write tool class for
+			// model sessions; same tri-state (absent = enabled), so GET
+			// reports the effective value.
+			"allow_sensitive_writes":   s.cfg.MCP.SensitiveWritesEnabled(),
 			"self_config_audit_path":   s.cfg.MCP.SelfConfigAuditPath,
 			"self_config_audit_denied": s.cfg.MCP.SelfConfigAuditDeniedOn(),
 		},
@@ -8983,6 +8987,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "mcp.allow_self_config":
 			b := toBool(v)
 			cfg.MCP.AllowSelfConfig = &b
+		// allow_sensitive_writes is stored as an explicit bool, like
+		// allow_self_config, so the operator's choice sticks.
+		case "mcp.allow_sensitive_writes":
+			b := toBool(v)
+			cfg.MCP.AllowSensitiveWrites = &b
 		case "mcp.self_config_audit_path":
 			if s := toString(v); s != "" {
 				cfg.MCP.SelfConfigAuditPath = s

@@ -1199,6 +1199,17 @@ paths:
         allowed writes logged — an attempt is still an attempt, so denied ones are logged by
         default, with their reason of refusal, as a record with no key set). All three changes
         take effect immediately and are written to the config file.
+
+        Sensitive write class, operator- or session-token write, never masked:
+        `mcp.allow_sensitive_writes` (boolean default true; an explicit false makes the
+        daemon refuse the sensitive MCP tools — secret_set, secret_delete, secret_get, the
+        identity writers, restart_daemon, reload, plugin_install, plugin_run_subcommand,
+        send_input, start_session, tailscale_acl_push, tailscale_auth_key and acme_renew —
+        for session and federation-peer callers; operator calls are not affected). The PUT
+        stores an explicit boolean, takes effect immediately and is written to the config
+        file. GET returns the effective value, so a config that never set the key reads
+        true. Unlike `mcp.allow_self_config` it is not bootstrap-protected: a session that
+        holds self-config can write it through `config_set`.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -11024,6 +11035,9 @@ components:
             allow_self_config:
               type: boolean
               description: The self-config builtin group (alias). Default true; when an agent holds it, config-write MCP tools may change the non-secret settings of its own configuration scope
+            allow_sensitive_writes:
+              type: boolean
+              description: The sensitive write tool class switch. Default true (GET reports the effective value, true when the key was never set); explicit false makes the daemon refuse the sensitive MCP tools for session and federation-peer callers, while operator calls are not affected. Takes effect immediately and is written to the config file
             self_config_audit_path:
               type: string
               description: Where the daemon writes the self-config audit trail (default `<data>/audit/config-self-modify.jsonl`)

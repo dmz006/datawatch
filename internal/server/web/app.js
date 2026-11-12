@@ -19777,6 +19777,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'mcp.allow_self_config', label: 'Allow self-config', labelKey: 'settings.self_config.allow', helpKey: 'settings.self_config.allow_help', type: 'toggle' },
     { key: 'mcp.self_config_audit_path', label: 'Audit path', labelKey: 'settings.self_config.audit_path', type: 'text', placeholder: '<data dir>/audit/config-self-modify.jsonl' },
     { key: 'mcp.self_config_audit_denied', label: 'Record denied attempts', labelKey: 'settings.self_config.audit_denied', helpKey: 'settings.self_config.audit_denied_help', type: 'toggle' },
+    { key: 'mcp.allow_sensitive_writes', label: 'Allow sensitive writes', labelKey: 'settings.sensitive_writes.allow', helpKey: 'settings.sensitive_writes.allow_help', type: 'toggle' },
   ]},
   { id: 'autoupdate', section: 'Auto-Update', docs: 'howto/daemon-operations.md', fields: [
     { key: 'update.enabled', label: 'Enabled', type: 'toggle' },

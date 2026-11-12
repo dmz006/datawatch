@@ -1339,3 +1339,23 @@ func TestValidateReleaseSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestSensitiveWritesEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		val  *bool
+		want bool
+	}{
+		{"absent", nil, true},
+		{"true", BoolPtr(true), true},
+		{"false", BoolPtr(false), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := MCPConfig{AllowSensitiveWrites: tc.val}
+			if got := m.SensitiveWritesEnabled(); got != tc.want {
+				t.Errorf("SensitiveWritesEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

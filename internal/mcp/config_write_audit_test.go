@@ -240,3 +240,51 @@ func TestConfigWriteAudit_RecordDeniedDisabled_Drop(t *testing.T) {
 		t.Errorf("allowed record must still land, got %+v", recs)
 	}
 }
+
+func TestConfigWriteAudit_SensitiveTool_RecordedWithClass(t *testing.T) {
+	s, path := cfgAuditServer(t)
+	allow := func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		return okRes(), nil
+	}
+	deny := func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		return errRes("refused"), nil
+	}
+	ctx := federation.WithCallerSessionID(context.Background(), "sess-sens-1")
+	args := map[string]any{"name": "db", "value": "hunter2-plain"}
+	if _, err := configWriteAuditMW(s)(allow)(ctx, cfgCallReq("secret_set", args)); err != nil {
+		t.Fatalf("allowed call: %v", err)
+	}
+	if _, err := configWriteAuditMW(s)(deny)(ctx, cfgCallReq("secret_set", args)); err != nil {
+		t.Fatalf("denied call: %v", err)
+	}
+	recs := readAuditFile(t, path)
+	if len(recs) != 2 {
+		t.Fatalf("expected 2 records, got %d: %+v", len(recs), recs)
+	}
+	for i, rec := range recs {
+		if rec.Surface != "mcp" || rec.Tool != "secret_set" || rec.Class != "sensitive" || rec.Caller != "sess-sens-1" {
+			t.Errorf("record %d fields: %+v", i, rec)
+		}
+		if len(rec.Values) != 0 {
+			t.Errorf("record %d carries argument values: %+v", i, rec.Values)
+		}
+	}
+	if !recs[0].Allowed || recs[1].Allowed || recs[1].Reason == "" {
+		t.Errorf("allowed/denied mismatch: %+v", recs)
+	}
+}
+
+func TestConfigWriteAudit_ConfigToolClass_AndUnclassifiedSkipped(t *testing.T) {
+	s, path := cfgAuditServer(t)
+	next := func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		return okRes(), nil
+	}
+	ctx := federation.WithCallerSessionID(context.Background(), "sess-c")
+	h := configWriteAuditMW(s)(next)
+	_, _ = h(ctx, cfgCallReq("config_set", map[string]any{"a.b": "c"}))
+	_, _ = h(ctx, cfgCallReq("list_sessions", nil))
+	recs := readAuditFile(t, path)
+	if len(recs) != 1 || recs[0].Class != "config" {
+		t.Fatalf("want one config-class record, got %+v", recs)
+	}
+}
