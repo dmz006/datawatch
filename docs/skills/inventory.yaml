@@ -1432,6 +1432,7 @@ entries:
   - /remote/
   - GET /api/projects/{name}/history
   - GET /api/projects/{name}/rollup
+  - GET /api/projects/{name}/timeline
   settings:
   - acme
   - dashboard
