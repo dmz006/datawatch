@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.147.0 — Projects as the first Automata sub-tab
+
+### Changed
+
+- **Projects is now the first sub-tab of Automata.** The Projects page moved from its own top-level button into the Automata view, to the left of Automation; the sub-tab order is Projects, Automation, Automata, Events, Templates. The top-level Projects navigation button is gone.
+- **Old Projects links and saved views still work.** A `#projects` link, a stored Projects view and any opener that used to go to the Projects page now land on the Projects sub-tab, with the selected project kept in the link.
+- **Leaving the Projects sub-tab stops its polling.** Switching to another sub-tab or leaving the Automata view ends every loader and timer the Projects page started, so nothing refreshes while it is hidden.
+- Docs: the Projects how-to, the Automation how-to, the definitions entry and the MCP reference now say where Projects lives.
+
 ## v9.146.4 — One Trivy version, pinned helm install, retire the installer-drift watch
 
 ### Changed

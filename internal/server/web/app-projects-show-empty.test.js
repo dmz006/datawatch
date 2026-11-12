@@ -10,7 +10,7 @@ const { vm, buildSandbox, loadScript, makeStubElement } = require('./testutil_br
 function load() {
   const view = makeStubElement(() => {});
   view.insertAdjacentHTML = () => {};
-  const sandbox = buildSandbox({ byId: { view } });
+  const sandbox = buildSandbox({ byId: { automataPanel: view, view } });
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
   sandbox._i18n.bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
@@ -43,7 +43,7 @@ test('toggleProjectsShowEmpty remembers the choice and repaints', () => {
 function loadWith(storage, showEmpty) {
   const view = makeStubElement(() => {});
   view.insertAdjacentHTML = () => {};
-  const sandbox = buildSandbox({ byId: { view } });
+  const sandbox = buildSandbox({ byId: { automataPanel: view, view } });
   if (storage) sandbox.localStorage = storage;
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
