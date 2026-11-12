@@ -205,7 +205,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.136.0"
+var Version = "9.147.0"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -430,6 +430,11 @@ type Server struct {
 
 	// restartFn is wired from main.go; it restarts the daemon in-place.
 	restartFn func()
+	// restartForceFn is the force-aware restart wired by SetRestartFuncForce
+	// (the restart guard). When set, POST /api/restart and the update restart
+	// call it with the operator's force flag; restartFn stays for the callers
+	// that have no force concept (router, MCP, ACME).
+	restartForceFn func(force bool)
 
 	// acmeManager (BL397) is wired from main.go when acme.enabled is
 	// true. nil when ACME is disabled — every acmeManager consumer must
@@ -875,8 +880,10 @@ type AutonomousAPI interface {
 	// EditTask is EditTaskSpec plus the read_only flag (nil = unchanged,
 	// empty newSpec = spec unchanged).
 	EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (any, error)
-	// v8.23.0 — reset a failed/blocked task to pending for retry.
-	// BL382 — force=true also requeues completed/cancelled tasks.
+	// v8.23.0 — reset a failed, blocked or waiting-for-capacity task to
+	// pending for retry (a waiting task needs no force — it is re-admitted
+	// with a fresh wait budget). BL382 — force=true also requeues
+	// completed/cancelled tasks.
 	ResetTask(prdID, taskID, actor string, force bool) (any, error)
 	// clean_restart — as ResetTask, and cleanRestart=true makes the next
 	// attempt skip the restore of preserved attempt work.
@@ -1248,7 +1255,26 @@ func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 }
 
 // SetRestartFunc wires the daemon self-restart function.
-func (s *Server) SetRestartFunc(fn func())             { s.restartFn = fn }
+func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
+
+// SetRestartFuncForce wires the force-aware restart function (the restart
+// guard). It takes precedence over SetRestartFunc's function for /api/restart.
+func (s *Server) SetRestartFuncForce(fn func(force bool)) { s.restartForceFn = fn }
+
+// restartAvailable reports whether any restart function is wired.
+func (s *Server) restartAvailable() bool { return s.restartFn != nil || s.restartForceFn != nil }
+
+// doRestart runs the wired restart function. The force-aware one takes the
+// force flag; the plain one has no force concept and ignores it.
+func (s *Server) doRestart(force bool) {
+	if s.restartForceFn != nil {
+		s.restartForceFn(force)
+		return
+	}
+	if s.restartFn != nil {
+		s.restartFn()
+	}
+}
 func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
 
 // SetACMEManager wires the ACME subsystem (BL397) into the API server.
@@ -2059,10 +2085,24 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// — group_by / tag_prefix (grouping read, session_group.go): an unknown
+	// axis is refused before anything is served; without group_by the options
+	// are inactive and the responses below are unchanged.
+	groupOpts, err := parseSessionGroupOptions(q)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// History / search requests also cover the archive (store_archive.go).
 	sessions = append(sessions, s.archivedForList(q, filter, pageOpts)...)
 
 	w.Header().Set("Content-Type", "application/json")
+
+	if groupOpts.active {
+		s.writeSessionGrouped(w, r, sessions, groupOpts)
+		return
+	}
 
 	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
 	if q.Get("orphaned") == "1" {
@@ -6106,6 +6146,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// Pin keeper interval (seconds); 0 = keeper off. Per-node pin fields
 		// (node_pinned_model, allow_model_swap) live on /api/compute/nodes.
 		"pin_check_seconds": s.cfg.PinCheckSeconds,
+		// Effective, not raw: an unset compute_placement key reads its
+		// default (missing_model via EffectiveMissingModel; assume_model_size_gb
+		// reads 0 = size unknown when unset).
+		"compute_placement": computePlacementConfigSurface(s.cfg.ComputePlacement),
 		// cost_report — the cost report engine knobs (internal/costreport);
 		// each key reads its default while absent.
 		"cost_report": map[string]interface{}{
@@ -6376,7 +6420,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// effective value so a read-modify-write round trip preserves the
 			// enabled/disabled state. Audit path and denied-recording flag are
 			// read-only here (mutable via PUT, same as every other mcp.* key).
-			"allow_self_config":        s.cfg.MCP.SelfConfigEnabled(),
+			"allow_self_config": s.cfg.MCP.SelfConfigEnabled(),
+			// allow_sensitive_writes gates the sensitive write tool class for
+			// model sessions; same tri-state (absent = enabled), so GET
+			// reports the effective value.
+			"allow_sensitive_writes":   s.cfg.MCP.SensitiveWritesEnabled(),
 			"self_config_audit_path":   s.cfg.MCP.SelfConfigAuditPath,
 			"self_config_audit_denied": s.cfg.MCP.SelfConfigAuditDeniedOn(),
 		},
@@ -6571,6 +6619,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"first_attempt":                         firstAttemptDisplay(s.cfg.Autonomous.FirstAttempt),
 			"first_attempt_escalate_after_failures": s.cfg.Autonomous.FirstAttemptEscalateAfterFailures,
 			"retry_resume_max_context_tokens":       s.cfg.Autonomous.RetryResumeMaxContextTokens,
+			// Between-task branch refresh: off by default; the behind limit's
+			// 0 reads as 5 (config.AutonomousConfig.BranchRefreshLimit).
+			"branch_refresh_enabled":      s.cfg.Autonomous.BranchRefreshEnabled,
+			"branch_refresh_behind_limit": s.cfg.Autonomous.BranchRefreshBehindLimit,
 			// Snapshot-never-stage list (path patterns the autonomous
 			// snapshot must never `git add`): nil (unset) reads the built-in
 			// defaults (config.DefaultSnapshotNeverStage), so render the
@@ -6680,6 +6732,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
 			"duplicate_session_keep":               config.NormalizeDuplicateSessionKeep(s.cfg.Autonomous.DuplicateSessionKeep),
 			"restart_policy":                       config.NormalizeRestartPolicy(s.cfg.Autonomous.RestartPolicy),
+			"planning_restart_policy":              config.NormalizePlanningRestartPolicy(s.cfg.Autonomous.PlanningRestartPolicy),
 			"restart_quiet_timeout_seconds":        config.NormalizeRestartQuietTimeoutSeconds(s.cfg.Autonomous.RestartQuietTimeoutSeconds),
 			"restart_on_timeout":                   config.NormalizeRestartOnTimeout(s.cfg.Autonomous.RestartOnTimeout),
 			"stuck_running_seconds":                s.cfg.Autonomous.StuckRunningSeconds,
@@ -7662,6 +7715,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// The compute placement block is checked before any key is applied:
+	// a known missing_model, a memory headroom in 0-100 and the
+	// rest non-negative whole numbers. One bad key rejects the
+	// whole PUT; the error names the key.
+	if err := validateComputePlacementPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	// judge_size_threshold_lines is a whole number of 0 or more; the whole PUT
 	// is refused before anything is applied.
 	if err := validateJudgeSizeThresholdPatch(patch); err != nil {
@@ -8061,6 +8122,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+	// Branch refresh settings: a non-boolean enabled or a negative or
+	// non-numeric behind limit refuses the whole PUT (branch_refresh_api.go).
+	if err := validateBranchRefreshPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	// Release approval modes go through SetReleaseApprovalMode, which stores
 	// them with an audit event and a decision record, so they are taken out of
@@ -8955,6 +9022,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "mcp.allow_self_config":
 			b := toBool(v)
 			cfg.MCP.AllowSelfConfig = &b
+		// allow_sensitive_writes is stored as an explicit bool, like
+		// allow_self_config, so the operator's choice sticks.
+		case "mcp.allow_sensitive_writes":
+			b := toBool(v)
+			cfg.MCP.AllowSensitiveWrites = &b
 		case "mcp.self_config_audit_path":
 			if s := toString(v); s != "" {
 				cfg.MCP.SelfConfigAuditPath = s
@@ -10116,7 +10188,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case parallelKeyPrefix + "read_only_tasks",
 			parallelKeyPrefix + "worktree_per_task",
 			parallelKeyPrefix + "merge_conflict_policy",
-			parallelKeyPrefix + "merge_conflict_model":
+			parallelKeyPrefix + "merge_conflict_model",
+			parallelKeyPrefix + "merge_retry_seconds":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applyParallelValue(&cfg.Autonomous.Parallel,
@@ -10380,7 +10453,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.OrphanGraceSeconds = n
 			}
 		case "autonomous.restart_policy", "autonomous.restart_on_timeout",
-			"autonomous.restart_quiet_timeout_seconds":
+			"autonomous.restart_quiet_timeout_seconds", "autonomous.planning_restart_policy":
 			// Validated in handlePutConfig (validateRestartPolicyPatch).
 			applyRestartPolicyKey(cfg, k, v)
 		case "autonomous.duplicate_session_keep":
@@ -10536,6 +10609,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// to "awaiting_approval"; the runner skips those until the
 			// operator approves each via POST .../approve_story.
 			cfg.Autonomous.PerStoryApproval = toBool(v)
+		case branchRefreshEnabledKey, branchRefreshLimitKey:
+			// Between-task branch refresh (branch_refresh_api.go): handlePutConfig
+			// refuses a bad value first; one that reaches here is skipped.
+			if _, applied := applyBranchRefreshConfigKey(cfg, k, v); !applied {
+				skipped = append(skipped, k)
+			}
 		case "autonomous.continue_on_story_failure":
 			// Daemon-wide default: false (halt) so a story failure stops
 			// the PRD for operator re-edit/rerun instead of continuing
@@ -10960,6 +11039,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// .unknown_node_policy, .probe_timeout_seconds and .alert_on_refusal;
 			// the values were checked by validateModelRoutingPatch.
 			if applyModelRoutingPatch(cfg, k, v) {
+				continue
+			}
+
+			// compute_placement.* — already validated in
+			// validateComputePlacementPatch. Placement reads the live
+			// block on every decision, so the new value applies with
+			// no restart.
+			if applyComputePlacementPatch(cfg, k, v) {
 				continue
 			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>
@@ -14255,7 +14342,7 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.restartFn == nil {
+	if !s.restartAvailable() {
 		http.Error(w, "restart not available", http.StatusNotImplemented)
 		return
 	}
@@ -14268,9 +14355,17 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	force := restartForceRequested(r)
+	rep, hasRep := s.restartInterruptions()
+	if hasRep && rep.NeedsForce && !force {
+		// Running work would be interrupted and the operator did not pass
+		// force: refuse, and answer with the read-only report.
+		writeRestartRefused(w, rep)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]interface{}{"status": "restarting"}
-	if rep, ok := s.restartInterruptions(); ok {
+	if hasRep {
 		// What this restart interrupts, counted before the restart policy runs.
 		resp["interrupts"] = rep
 	}
@@ -14282,8 +14377,41 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		// records source=api-restart with via in the audit entry +
 		// last-shutdown.json (picked up by the daemon's Capture).
 		shutdowncause.MarkAPIInitiated("api-restart")
-		s.restartFn()
+		s.doRestart(force)
 	}()
+}
+
+// restartForceRequested reports whether a restart request carries the force
+// flag, as ?force=true or a JSON body {"force": true}.
+func restartForceRequested(r *http.Request) bool {
+	switch strings.ToLower(r.URL.Query().Get("force")) {
+	case "1", "true", "yes":
+		return true
+	}
+	if r.Body == nil || r.ContentLength == 0 {
+		return false
+	}
+	var body struct {
+		Force bool `json:"force"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return false
+	}
+	return body.Force
+}
+
+// writeRestartRefused answers 409 Conflict with the full read-only interruption
+// report, the policy, and how to pass force. Nothing is restarted.
+func writeRestartRefused(w http.ResponseWriter, rep autonomous.RestartInterruption) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"status":       "refused",
+		"error":        "restart refused: running work would be interrupted; pass force to restart anyway",
+		"needs_force":  true,
+		"how_to_force": `POST /api/restart?force=true, or POST /api/restart with {"force": true}`,
+		"interrupts":   rep,
+	})
 }
 
 // handleQuickCommands (BL209, v5.27.7 — datawatch#28) returns the
@@ -14572,11 +14700,20 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 			"phase":   "restarting",
 		})
 		time.Sleep(800 * time.Millisecond)
-		if s.restartFn != nil {
+		if s.restartAvailable() {
+			// The restart guard refuses a restart that would interrupt running
+			// work without force. The new binary is installed either way; leave
+			// the daemon up and say so instead of exiting below.
+			if rep, ok := s.restartInterruptions(); ok && rep.NeedsForce {
+				s.hub.Broadcast(MsgNotification, map[string]string{
+					"message": "[update] Installed v" + latest + ". Restart deferred: running work would be interrupted. Restart with force to apply.",
+				})
+				return
+			}
 			// Mark as update-initiated so the cause record shows
 			// source=api-restart via=update-restart.
 			shutdowncause.MarkAPIInitiated("update-restart")
-			s.restartFn() // calls os.Exit(0); never returns
+			s.doRestart(false) // calls os.Exit(0) when it proceeds
 		}
 		// Fallback if restartFn is nil.
 		fmt.Printf("[update] installed v%s — run `datawatch start` to bring the daemon back up\n", latest)
@@ -15189,6 +15326,7 @@ func parallelSurface(c config.AutonomousParallelConfig) map[string]interface{} {
 		"worktree_per_task":     autonomous.EffectiveWorktreePerTask(c),
 		"merge_conflict_policy": autonomous.EffectiveMergeConflictPolicy(c),
 		"merge_conflict_model":  autonomous.EffectiveMergeConflictModel(c),
+		"merge_retry_seconds":   autonomous.EffectiveMergeRetrySeconds(c),
 	}
 }
 
@@ -15286,6 +15424,16 @@ func validateParallelPatch(patch map[string]interface{}) error {
 			return fmt.Errorf("%smerge_conflict_model: must be a string", parallelKeyPrefix)
 		}
 	}
+	if v, ok := patch[parallelKeyPrefix+"merge_retry_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("%smerge_retry_seconds: must be a whole number of seconds >= 0 (0 = timer off, default %d)",
+				parallelKeyPrefix, config.DefaultMergeRetrySeconds)
+		}
+		if err := config.ValidateMergeRetrySeconds(&n); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -15310,6 +15458,10 @@ func applyParallelValue(pc *config.AutonomousParallelConfig, field string, v int
 	case "merge_conflict_model":
 		if str, ok := v.(string); ok {
 			pc.MergeConflictModel = str
+		}
+	case "merge_retry_seconds":
+		if n, ok := wholeNumber(v); ok && config.ValidateMergeRetrySeconds(&n) == nil {
+			pc.MergeRetrySeconds = &n
 		}
 	}
 }

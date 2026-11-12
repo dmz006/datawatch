@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -21,22 +22,34 @@ import (
 const sessionsOmittedHeader = "X-Datawatch-Sessions-Omitted"
 
 // listSessionsViewQuery builds the REST query for list_sessions when the
-// caller used view / states / since. ok is false when none was given (the
-// legacy path applies); errMsg is non-empty for invalid input.
+// caller used view / states / since / group_by / tag_prefix. ok is false
+// when none was given (the legacy path applies); errMsg is non-empty for
+// invalid input. The grouped read is served by the same REST handler that
+// does the grouping, so this only forwards the params and refuses an axis
+// the handler would 400.
 func listSessionsViewQuery(req mcpsdk.CallToolRequest) (q url.Values, ok bool, errMsg string) {
 	view := req.GetString("view", "")
 	states := req.GetString("states", "")
 	since := req.GetString("since", "")
+	groupBy := strings.TrimSpace(req.GetString("group_by", ""))
+	tagPrefix := strings.TrimSpace(req.GetString("tag_prefix", ""))
 	switch view {
 	case "", "full", "summary":
 	default:
 		return nil, false, fmt.Sprintf("Error: unknown view %q (supported: summary, full).", view)
 	}
-	if view != "summary" && states == "" && since == "" {
+	if groupBy != "" {
+		switch groupBy {
+		case "tag", "state", "node", "project", "automaton":
+		default:
+			return nil, false, fmt.Sprintf("Error: unknown group_by %q (supported: tag, state, node, project, automaton).", groupBy)
+		}
+	}
+	if view != "summary" && states == "" && since == "" && groupBy == "" {
 		return nil, false, ""
 	}
 	if req.GetBool("orphaned", false) {
-		return nil, false, "Error: orphaned cannot be combined with view=summary, states or since."
+		return nil, false, "Error: orphaned cannot be combined with view=summary, states, since or group_by."
 	}
 	q = url.Values{}
 	if view == "summary" {
@@ -47,6 +60,12 @@ func listSessionsViewQuery(req mcpsdk.CallToolRequest) (q url.Values, ok bool, e
 	}
 	if since != "" {
 		q.Set("since", since)
+	}
+	if groupBy != "" {
+		q.Set("group_by", groupBy)
+		if tagPrefix != "" {
+			q.Set("tag_prefix", tagPrefix)
+		}
 	}
 	for _, k := range []string{"name", "state", "backend", "alive"} {
 		if v := req.GetString(k, ""); v != "" {

@@ -118,9 +118,11 @@ type SpawnRequest struct {
 	// ComputeNode — the compute node this task's worker lease was granted on
 	// (capacity.Lease.Node, read after admit succeeds). The local-session
 	// SpawnFn forwards it as compute_node with the backend, so the session
-	// runs on the node the ledger placed the task on. Empty when capacity is
-	// off or the lease names no node; the session then resolves its node as
-	// it always has.
+	// runs on the node the ledger placed the task on. With a placement advisor
+	// the gate in admitPreferring chose this node and loaded the model before
+	// the lease, so the session always starts on a node that placement
+	// approved. Empty when capacity is off or the lease names no node; the
+	// session then resolves its node as it always has.
 	ComputeNode string
 }
 
@@ -422,6 +424,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					return err
 				}
 			}
+			// The walk is done but a task waits for an earlier merge to land.
+			if !nudged && i >= len(order) && m.mergeHoldPending(prd) {
+				if !m.awaitMergeLanding(ctx, prd, wake) {
+					return ctx.Err()
+				}
+				nudged = true
+			}
 			if nudged {
 				if latest, _ := m.store.GetPRD(prdID); latest != nil {
 					prd = latest
@@ -504,6 +513,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				// stays parked and its dependents wait behind it.
 				heldIDs[tid] = true
 				continue
+			} else if m.mergeHold(prd, t) {
+				// An earlier task's branch is not merged yet. The task stays
+				// pending and the walk looks again once the merge lands.
+				heldIDs[tid] = true
+				continue
 			} else {
 				// Mark the owning story in_progress when its first task begins.
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
@@ -522,6 +536,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 				}
 			}
+			// Gap between tasks: bring the branch up to date with its base
+			// when it has fallen behind (branch_refresh.go).
+			m.maybeRefreshBranch(ctx, prd)
 			// Re-read authoritative status: executeOne returns nil even after
 			// exhausting retries (it saves TaskFailed itself), so we must
 			// inspect the stored record rather than relying on the error return.
@@ -685,6 +702,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if m.decisionGateHold(prd, t) {
 					continue
 				}
+				// An earlier task's branch is not merged yet: skip, stay
+				// pending, and look again on the next pass.
+				if m.mergeHold(prd, t) {
+					continue
+				}
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
 					m.store.WithLock(func() { s.Status = StoryInProgress })
 					_ = m.store.SavePRD(prd)
@@ -834,9 +856,27 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						return err
 					}
 				}
+				// A task waits for an earlier task's merge. Wait for it to land,
+				// then launch again.
+				if m.mergeHoldPending(prd) {
+					if !m.awaitMergeLanding(ctx, prd, wake) {
+						return ctx.Err()
+					}
+					if st, ok := m.prdStatusOf(prdID); !ok || st != PRDRunning {
+						return nil
+					}
+					reviewDecisions()
+					continue
+				}
 				// No ready tasks and nothing in-flight — dependency deadlock
 				// should not happen with a valid topo sort.
 				break
+			}
+			// A held task needs a periodic look while others run: the merge
+			// can land from the retry timer with no task result to report it.
+			var holdTick <-chan time.Time
+			if m.mergeHoldPending(prd) {
+				holdTick = time.After(mergeHoldPoll)
 			}
 			select {
 			case <-ctx.Done():
@@ -846,6 +886,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					delete(inFlight, r.tid)
 				}
 				return ctx.Err()
+			case <-holdTick:
+				if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
+					log.Printf("[autonomous] %s merge hold pass: %v", prdID, merr)
+				}
+				reviewDecisions()
 			case <-wake:
 				// An operator review decision landed while tasks were running.
 				// Re-read the Automaton and launch what it made ready. Tasks
@@ -2013,7 +2058,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 
 		var vr VerificationResult
 		if verify != nil {
-			vr, err = verify(ctx, prd, t)
+			var idleHeld bool
+			vr, idleHeld, err = m.verifyRetryingIdle(ctx, prd, t, verify)
+			if idleHeld {
+				return err
+			}
 			if err != nil {
 				if errors.Is(err, errCancelledWhileWaiting) {
 					return nil
@@ -3300,9 +3349,17 @@ const (
 func recordAdmittedWorker(t *Task, source, backend, model string) {
 	if t.Backend == "" {
 		t.AdmittedBackend, t.AdmittedModel = "", ""
+		t.AdmittedTaskBackend, t.AdmittedTaskModel = "", ""
 		return
 	}
 	t.AdmittedBackend, t.AdmittedModel = backend, model
+	// Snapshot the task's own worker as it was chosen at admission, before
+	// the task-source branch below rewrites t.Model to the admitted one.
+	// admittedWorker treats the recorded pair as stale once the task's
+	// Backend/Model differ from this snapshot (an operator re-overrode the
+	// worker); a still-running attempt, whose fields are unchanged, keeps
+	// its recorded pair.
+	t.AdmittedTaskBackend, t.AdmittedTaskModel = t.Backend, t.Model
 	if source == ExecutorSourceTask {
 		t.Model = model
 	}
@@ -3314,10 +3371,24 @@ func recordAdmittedWorker(t *Task, source, backend, model string) {
 // adoption and reporting use it so they never re-derive a different worker
 // than the attempt started with.
 func admittedWorker(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model string) {
-	if t.Backend != "" && t.AdmittedBackend != "" {
+	if t.Backend != "" && t.AdmittedBackend != "" && admittedPairStillValid(t) {
 		return t.AdmittedBackend, t.AdmittedModel
 	}
 	return resolveTaskBackendModel(t, story, prd, auto, fallbackBackend)
+}
+
+// admittedPairStillValid reports whether a task's recorded admitted pair may
+// still stand for it. A record made before the snapshot fields existed
+// carries an empty snapshot and always stands: a running attempt keeps the
+// pair it was admitted with. Once the snapshot is set, the pair stands only
+// while the task's own Backend/Model are the ones it was admitted with — an
+// operator re-override of the task's worker (set_task_llm, a review requeue)
+// is newer than the record and admission must follow the override instead.
+func admittedPairStillValid(t *Task) bool {
+	if t.AdmittedTaskBackend == "" && t.AdmittedTaskModel == "" {
+		return true
+	}
+	return t.AdmittedTaskBackend == t.Backend && t.AdmittedTaskModel == t.Model
 }
 
 // resolveTaskBackendModel resolves a task's effective backend and model.
@@ -3472,23 +3543,46 @@ func prdAllTasksTerminal(p *PRD) bool {
 // nothing is set, a rollup_aborted_stale decision is recorded and ok=false
 // is returned: the concurrent writer (reset_task, cancel, another Run) is
 // authoritative.
+//
+// 2026-11-09 fix — a stale commit is retried a bounded number of times with
+// the expected Rev refreshed: the predicate (status still observed, every
+// task still terminal) is re-checked under the store lock on each attempt, so
+// a reset_task/cancel write still loses as before — but a writer that only
+// bumped the Rev (decision notes, audit, its own uncounted saves) no longer
+// strands the Automaton in "running" forever, which the 2026-11-09 restart
+// matrix hit live (rollup_aborted_stale became terminal: the entry PRD of
+// an Automation never reached completed and its fork never fired).
+const commitRollupMaxAttempts = 3
+
 func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev int, status PRDStatus, reason, blockedReason string) (old PRDStatus, ok bool) {
-	err := m.store.CommitPRDIfRev(prd.ID, expectedRev, func(p *PRD) bool {
-		if p.Status != observed || !prdAllTasksTerminal(p) {
-			return false
+	for attempt := 0; attempt < commitRollupMaxAttempts; attempt++ {
+		err := m.store.CommitPRDIfRev(prd.ID, expectedRev, func(p *PRD) bool {
+			if p.Status != observed || !prdAllTasksTerminal(p) {
+				return false
+			}
+			old = p.Status
+			p.Status = status
+			p.BlockedReason = blockedReason
+			return true
+		})
+		if err == nil {
+			return old, true
 		}
-		old = p.Status
-		p.Status = status
-		p.BlockedReason = blockedReason
-		return true
-	})
-	if err == nil {
-		return old, true
-	}
-	if errors.Is(err, ErrPRDStale) {
+		if !errors.Is(err, ErrPRDStale) {
+			log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
+			return "", false
+		}
+		if attempt+1 < commitRollupMaxAttempts {
+			// Re-read the current Rev and try again; the under-lock predicate
+			// decides whether the concurrent write invalidated the rollup.
+			if fresh, ok := m.store.PRDRev(prd.ID); ok {
+				expectedRev = fresh
+			}
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
 		m.recordRollupAborted(prd.ID, fmt.Sprintf("%s -> %s", reason, status))
-	} else {
-		log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
+		return "", false
 	}
 	return "", false
 }

@@ -123,7 +123,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.136.0"
+var Version = "9.147.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2717,6 +2717,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	liveRestartSettings := func() restartPolicySettings { return restartSettingsFrom(cfg.Autonomous) }
 
+	// Placement tags on every started session (scheduled and comm-channel
+	// starts included): the session manager is the tag sink, the live
+	// tags.placement block is the config source, and the Automation axis
+	// reads the autonomous manager, attached later in startup, at call time.
+	mgr.SetPlacementStartHook(placementStartFunc(mgr,
+		func() config.PlacementConfig { return cfg.Autonomous.Tags.Placement },
+		placementAutomationOf(func() *autonomouspkg.Manager { return autonomousMgrRef })))
+
 	// Batch output lines per session to prevent WebSocket flood.
 	// Accumulates lines for 100ms then sends as one message.
 	outputBatches := make(map[string][]string)
@@ -3167,7 +3175,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			v, _ := fetchLatestVersion()
 			return v
 		})
-		r.SetRestartFunc(guardRestart(func() {
+		r.SetRestartFuncForce(guardRestartForce(func(bool) {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
@@ -4577,6 +4585,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		amgrCfg := autonomouspkg.Config{
 			Enabled:                          acfgIn.Enabled,
 			PollIntervalSeconds:              acfgIn.PollIntervalSeconds,
+			BranchRefreshEnabled:             acfgIn.BranchRefreshEnabled,
+			BranchRefreshBehindLimit:         acfgIn.BranchRefreshBehindLimit,
 			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
 			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
 			GateDisagreement:                 acfgIn.GateDisagreement,
@@ -4607,6 +4617,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			JudgeStrongBackend:               acfgIn.JudgeStrongBackend,
 			JudgeVerdictCacheEnabled:         acfgIn.JudgeVerdictCacheEnabled,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
+			PlanningRestartPolicy:            acfgIn.PlanningRestartPolicy,
 			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
@@ -4895,9 +4906,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// nothing stopped two PRDs sharing a project_dir from
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
-			return runOneShotJSONSessionAttr(decomposeAttr(req.PRDID), cfg, req.PRDID, req.ProjectDir, backend, req.Model,
+			// onSpawned names the planner on the PRD as soon as the session
+			// exists (req.OnPlannerSpawned, wired by the Manager), with the
+			// output file computed above, before relocation.
+			onSpawned := func(sessionID string) {
+				if req.OnPlannerSpawned != nil {
+					req.OnPlannerSpawned(sessionID, outputFile)
+				}
+			}
+			// Same reader and empty effort/node as runOneShotJSONSession.
+			content, _, err := runOneShotJSONSessionWithSpawnHookAttr(decomposeAttr(req.PRDID), cfg, req.PRDID, req.ProjectDir, backend, req.Model, "",
 				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout,
-				launchTagsForDecompose(req.PRDID))
+				autonomouspkg.RelocateProjectFile, "", launchTagsForDecompose(req.PRDID), onSpawned)
+			return content, err
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			// One live-config snapshot for this invocation (see
@@ -7614,6 +7635,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}()
 			// Wire session killer so Cancel also terminates running task sessions.
 			amgr.SetSessionKillerFn(sessionEndFromAutonomous(mgr))
+			wirePlanningReattach(amgr, cfg)
 			amgr.SetDecomposeSessionsFn(func(prdID string) []string {
 				var ids []string
 				for _, s := range mgr.ListSessions() {
@@ -9196,6 +9218,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SafeDeleteLastMS = sd.LastDurationMs
 				s.SafeDeleteSlowReports = sd.SlowReports
 				s.SafeDeleteRefreshFailures = sd.RefreshFailures
+				// Branch refresh results (branch refresh stats).
+				br := amgrRef.BranchRefreshStats()
+				s.BranchRefreshClean = br.Clean
+				s.BranchRefreshConflict = br.Conflict
+				s.BranchRefreshError = br.Error
+				s.BranchRefreshStopped = br.Stopped
 				// Host load check status (off/alert/reap): mode, last load
 				// reading vs threshold, breach state, orphans reaped.
 				if hl := st.HostLoad; hl != nil {
@@ -9294,6 +9322,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			updateBurnGuardMetrics(s)
 			updateTraceMetrics(s)
 			updateSupervisorLoopMetrics(s)
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("clean").Set(float64(s.BranchRefreshClean))
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("conflict").Set(float64(s.BranchRefreshConflict))
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("error").Set(float64(s.BranchRefreshError))
+			metricsPkg.BranchRefreshStopped.Set(float64(s.BranchRefreshStopped))
 			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()
@@ -9358,8 +9390,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		}
 		// autonomous.restart_policy runs before the restart; the ACME renewal
 		// path keeps the plain function, because it restarts to reload a cert.
-		guardedRestartFn := guardRestart(daemonRestartFn, liveRestartManager, liveRestartSettings)
-		httpServer.SetRestartFunc(guardedRestartFn)
+		guardedRestartFn := guardRestartForce(func(bool) { daemonRestartFn() }, liveRestartManager, liveRestartSettings)
+		httpServer.SetRestartFuncForce(guardedRestartFn)
 
 		// BL397 — native ACME subsystem. Disabled by default (acme.enabled
 		// is false unless the operator opts in); failure to start it never
@@ -9624,7 +9656,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
 		ConfigAudit:         cfgAuditSink,     // BL110 — shared sink (same instance as REST + comm)
-		RestartFn: guardRestart(func() {
+		RestartForceFn: guardRestartForce(func(bool) {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
@@ -11390,12 +11422,23 @@ func runStop(cmd *cobra.Command, _ []string) error {
 // ---- restart command ------------------------------------------------------
 
 func newRestartCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	c := &cobra.Command{
 		Use:   "restart",
 		Short: "Restart the datawatch daemon",
-		Long:  "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.",
-		RunE:  runRestart,
+		Long: "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.\n\n" +
+			"While running Automata work would be interrupted, the restart is refused: the interruption report " +
+			"(planning Automata, verifying tasks, running judges, running tasks and live sessions) is printed and " +
+			"the command exits non-zero. Pass --force to restart anyway. See docs/howto/restart-with-work-running.md.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := restartCLIGuard(force, progressGet, cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			return runRestart(cmd, args)
+		},
 	}
+	c.Flags().BoolVar(&force, "force", false, "restart even when running Automata work would be interrupted")
+	return c
 }
 
 func runRestart(_ *cobra.Command, _ []string) error {
@@ -12179,7 +12222,8 @@ func newConfigSetCmd() *cobra.Command {
 			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.\n\n" +
 			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
 			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
-			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
+			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model), " +
+			"autonomous.parallel.merge_retry_seconds (whole seconds >= 0; default 60, 0 = timer off).\n\n" +
 			"Merge pipeline release keys: autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch|minor|major|none), " +
 			"autonomous.merge_pipeline.major_trigger (manual|milestone|never), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet) and " +
 			"autonomous.merge_pipeline.version_scheme (semver; other schemes are not available yet). Each also takes the form autonomous.merge_pipeline.projects.<project>.<key> for one project.\n\n" +
@@ -12218,7 +12262,10 @@ func newConfigSetCmd() *cobra.Command {
 			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
 			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
 			"starts with worker_profile is refused as unknown.\n\n" +
-			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).",
+			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).\n\n" +
+			"MCP permission keys: mcp.allow_self_config and mcp.allow_sensitive_writes (each true|false; default true). " +
+			"mcp.allow_sensitive_writes gates the sensitive write tool class for session and peer callers; " +
+			"set it to false to refuse those writes and back to true to allow them. Each is sent as a boolean.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -12617,6 +12664,11 @@ func newSessionCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List all sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if groupBy, _ := cmd.Flags().GetString("group-by"); groupBy != "" {
+				// Grouping read: GET /api/sessions?group_by=... — the grouping lives
+				// in the REST handler; the CLI only sends the query and renders it.
+				return daemonGetSessionGroups(cmd)
+			}
 			allServers, _ := cmd.Flags().GetBool("all-servers")
 			orphaned, _ := cmd.Flags().GetBool("orphaned")
 			if orphaned {
@@ -12660,13 +12712,16 @@ func newSessionCmd() *cobra.Command {
 	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role"} {
 		sessionListCmd.Flags().String(axis, "", "axis shortcut: filter by tag "+axis+":<value> (same as --tag "+axis+":<value>)")
 	}
+	sessionListCmd.Flags().String("group-by", "", "group the list by tag, state, node, project or automaton (a header with count and state mix, then the group's sessions indented underneath)")
+	sessionListCmd.Flags().String("tag-prefix", "", "with --group-by tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group")
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"
 	newCmd := &cobra.Command{
-		Use:   "new [task]",
-		Short: "Start a new AI coding session",
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "new [task]",
+		Aliases: []string{"start"},
+		Short:   "Start a new AI coding session",
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -12691,7 +12746,8 @@ func newSessionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
+			launchRole, _ := cmd.Flags().GetString("launch-role")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -12706,6 +12762,7 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
 	newCmd.Flags().Bool("git", false, "opt in to git init, snapshot and automatic commit")
 	newCmd.Flags().String("priority", "", "capacity-queue priority (integer; higher is admitted first when capacity is contended; default 0)")
+	newCmd.Flags().String("launch-role", "", "placement role: worker|verifier|planner|judge|supervisor (use supervisor for the operator's supervisor session; sent as launch_role)")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -13407,6 +13464,22 @@ func sessionPriorityFlag(cmd *cobra.Command) (*int, error) {
 	return &p, nil
 }
 
+// sessionNewStartBodyRole is sessionNewStartBodyPriority plus the optional
+// launch_role placement fact (worker|verifier|planner|judge|supervisor),
+// sent only when one was given; the server validates it.
+func sessionNewStartBodyRole(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) ([]byte, error) {
+	body, err := sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
+	if err != nil || strings.TrimSpace(launchRole) == "" {
+		return body, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	m["launch_role"] = strings.TrimSpace(launchRole)
+	return json.Marshal(m)
+}
+
 // sessionNewStartBodyPriority is sessionNewStartBody plus the optional
 // capacity-queue priority, sent only when one was given.
 func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int) ([]byte, error) {
@@ -13433,9 +13506,9 @@ func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, 
 	return json.Marshal(req)
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) error {
 	// Try the structured HTTP API first
-	body, err := sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
+	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
 	if err != nil {
 		return err
 	}

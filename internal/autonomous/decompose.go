@@ -244,6 +244,13 @@ type DecomposeRequest struct {
 	// timeout used by decomposeFn (5 min normal, 15 min high/max).
 	// Set from autonomous.planning_timeout_seconds config.
 	TimeoutSeconds int
+	// OnPlannerSpawned, when set, is called once the session-based planner
+	// has been created — after the start request succeeds and before the
+	// reader starts waiting on the output. It receives the spawned session id
+	// and the output file path the planner writes to. A spawn that fails
+	// never calls it. decomposeAdmitted wires it to RecordPlannerSession when
+	// the caller leaves it nil. Callers that do not spawn a planner ignore it.
+	OnPlannerSpawned func(sessionID, outputFile string)
 }
 
 // DecomposeFn is the indirection that lets tests inject a fake LLM

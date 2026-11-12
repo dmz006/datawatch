@@ -26,19 +26,27 @@ import (
 // two copies are equal after StripDaemonSections, and the raw contents differ
 // (an unchanged file is not a daemon-only change). Every other case — missing
 // or unreadable working copy, file absent from HEAD, cancelled context, or an
-// unsafe path (absolute, '..' prefix, NUL byte) — returns false.
+// unsafe path (empty, absolute, escaping upward, NUL byte) — returns false.
 func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
 	if run == nil {
 		return false
 	}
 	rel = normalizeDriftPath(rel)
-	if rel == "" || strings.HasPrefix(rel, "/") || rel == ".." || strings.HasPrefix(rel, "../") || strings.ContainsRune(rel, 0) {
+	if _, ok := localRelPath(rel); !ok {
 		return false
 	}
 	if ctx.Err() != nil {
 		return false
 	}
-	cur, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+	if strings.ContainsRune(rel, 0) {
+		return false
+	}
+	relOS := filepath.FromSlash(rel)
+	if !filepath.IsLocal(relOS) {
+		return false
+	}
+	checkedRel := relOS
+	cur, err := os.ReadFile(filepath.Join(dir, checkedRel))
 	if err != nil {
 		return false
 	}

@@ -1,7 +1,7 @@
 // The Automation view's second-row sub-tabs: Inbox, Automations, Resources,
 // Progress, Setup and Housekeeping.
 //
-// The first render of the Automation sub-tab is on Inbox with exactly six
+// The first render of the Automation sub-tab is on Inbox with exactly five
 // second-row buttons in that order, switching moves only the body, the choice
 // is kept while the page stays open (a fresh load starts on Inbox,
 // localStorage is never touched), a bare saved link lands on Inbox while a
@@ -32,7 +32,7 @@ function loadView() {
   return { sb: sandbox, out, els };
 }
 
-const SUBTABS = ['inbox', 'automations', 'resources', 'progress', 'setup', 'housekeeping'];
+const SUBTABS = ['inbox', 'automations', 'resources', 'progress', 'housekeeping'];
 const subtabOf = sb => vm.runInContext('_automationState.subtab', sb);
 
 // subtabButtons lists the second-row buttons in render order. The outer
@@ -43,12 +43,12 @@ function subtabButtons(html) {
     .map(m => ({ id: m[3], active: !!m[1], selected: m[2] === 'true' }));
 }
 
-test('default: a first render of the Automation sub-tab is Inbox, and the row is exactly the six sub-tabs in order', () => {
+test('default: a first render of the Automation sub-tab is Inbox, and the row is exactly the five sub-tabs in order', () => {
   const { sb, out } = loadView();
   assert.equal(subtabOf(sb), 'inbox', 'module state starts on Inbox');
   sb.renderAutonomousView();
   const row = subtabButtons(out.view);
-  assert.deepEqual(row.map(b => b.id), SUBTABS, 'the second row has exactly six buttons in order');
+  assert.deepEqual(row.map(b => b.id), SUBTABS, 'the second row has exactly five buttons in order');
   row.forEach((b, i) => {
     assert.equal(b.active, i === 0, b.id + (i === 0 ? ' is active' : ' is not active'));
     assert.equal(b.selected, i === 0, b.id + ' aria-selected matches');
@@ -61,7 +61,6 @@ const OWNED = {
   automations: ['automationFilterBar', 'automationPanel', 'automationReleaseArcCard', 'automationGanttCard'],
   resources: ['automationCapacityCard', 'automationLaneFillCard', 'automationUsageCard'],
   progress: ['progressCard'],
-  setup: ['automationOnboardingReportCard', 'automationMergePipelineCard', 'automationRequestWatchCard'],
   housekeeping: ['automationUncommittedWorkCard'],
 };
 
@@ -201,21 +200,21 @@ test('the filter and history buttons show on Automations only; the Automata-only
   }
 });
 
-test('the second-row bar is registry-driven: one button per entry, so a seventh sub-tab is one new entry', () => {
+test('the second-row bar is registry-driven: one button per entry, so a sixth sub-tab is one new entry', () => {
   const { sb } = loadView();
   const reg = vm.runInContext('_AUTOMATION_SUBTABS', sb);
-  assert.deepEqual(Array.from(reg, e => e.id), SUBTABS, 'the current registry holds the six sub-tabs in order');
-  const dummy = { id: 'seventh', labelKey: 'automation_subtab_seventh' };
+  assert.deepEqual(Array.from(reg, e => e.id), SUBTABS, 'the current registry holds the five sub-tabs in order');
+  const dummy = { id: 'sixth', labelKey: 'automation_subtab_sixth' };
   reg.push(dummy);
   try {
     const html = sb._automationSubtabsBarHTML();
-    assert.equal(html.match(/data-subtab="/g).length, 7, 'the row renders one button per registry entry');
-    assert.match(html, /data-subtab="seventh"/, 'the new entry gets its button');
-    assert.deepEqual(subtabButtons(html).map(b => b.id), [...SUBTABS, 'seventh'], 'the new button renders in registry order');
+    assert.equal(html.match(/data-subtab="/g).length, 6, 'the row renders one button per registry entry');
+    assert.match(html, /data-subtab="sixth"/, 'the new entry gets its button');
+    assert.deepEqual(subtabButtons(html).map(b => b.id), [...SUBTABS, 'sixth'], 'the new button renders in registry order');
     assert.equal(subtabButtons(html).find(b => b.id === 'inbox').active, true, 'the active button is unaffected by the appended entry');
   } finally {
     reg.pop();
-    assert.equal(reg.length, 6, 'the dummy entry is not left behind');
-    assert.equal(sb._automationSubtabsBarHTML().match(/data-subtab="/g).length, 6, 'the row is back to six buttons');
+    assert.equal(reg.length, 5, 'the dummy entry is not left behind');
+    assert.equal(sb._automationSubtabsBarHTML().match(/data-subtab="/g).length, 5, 'the row is back to five buttons');
   }
 });

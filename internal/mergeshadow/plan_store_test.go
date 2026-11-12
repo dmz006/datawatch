@@ -426,3 +426,67 @@ func TestStoreDirBlockedByFile(t *testing.T) {
 		t.Error("Prune over blocked store dir: want error")
 	}
 }
+
+// TestStoreRefusesUnsafeIDs: ids with path separators, dots, spaces, NUL
+// bytes or nothing at all are refused by every id-taking store function, and
+// nothing is created outside (or inside) the store directory.
+func TestStoreRefusesUnsafeIDs(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	bad := []string{
+		"", ".", "..", "../x", "a/b", "/abs", `a\b`, "a.b", "x.json",
+		".hidden", "a b", "a\x00b", "..%2f", "a/../../b",
+	}
+	for _, id := range bad {
+		if err := Save(dir, id, samplePlan(id, "p", now)); err == nil {
+			t.Errorf("Save accepted id %q", id)
+		}
+		if _, err := Load(dir, id); err == nil {
+			t.Errorf("Load accepted id %q", id)
+		}
+		if _, err := planPath(dir, id); err == nil {
+			t.Errorf("planPath accepted id %q", id)
+		}
+		if _, err := storePath(dir, compareStoreDir, id); err == nil {
+			t.Errorf("storePath accepted id %q", id)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("refused ids left files behind: %v", entries)
+	}
+	for _, id := range []string{"auto-1", "A_b-9", "0123abcd"} {
+		p, err := planPath(dir, id)
+		if err != nil {
+			t.Errorf("planPath refused valid id %q: %v", id, err)
+			continue
+		}
+		if want := filepath.Join(dir, storeDir, id+".json"); p != want {
+			t.Errorf("planPath(%q) = %q, want %q", id, p, want)
+		}
+	}
+}
+
+// TestContainedPathStaysInside: the shared containment check refuses any
+// name that is not a single plain file name.
+func TestContainedPathStaysInside(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"", ".", "..", "../x.json", "a/b.json", "/etc/passwd"} {
+		if _, err := containedPath(dir, name); err == nil {
+			t.Errorf("containedPath accepted %q", name)
+		}
+		if _, err := readPlan(dir, name); err == nil {
+			t.Errorf("readPlan accepted %q", name)
+		}
+		if err := writeAtomic(dir, name, []byte("x")); err == nil {
+			t.Errorf("writeAtomic accepted %q", name)
+		}
+	}
+	p, err := containedPath(dir, "ok.json")
+	if err != nil || p != filepath.Join(dir, "ok.json") {
+		t.Errorf("containedPath(ok.json) = %q, %v", p, err)
+	}
+}

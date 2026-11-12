@@ -15,6 +15,7 @@ var parallelKeys = []string{
 	"autonomous.parallel.worktree_per_task",
 	"autonomous.parallel.merge_conflict_policy",
 	"autonomous.parallel.merge_conflict_model",
+	"autonomous.parallel.merge_retry_seconds",
 }
 
 func TestParallelConfigSurface_ConfigureCarriesKeysAndRefusal(t *testing.T) {
@@ -41,6 +42,7 @@ func TestParallelConfigSurface_ConfigureCarriesKeysAndRefusal(t *testing.T) {
 		{parallelKeys[0], "false"},
 		{parallelKeys[1], "triage"},
 		{parallelKeys[2], "qwen3.8:27b"},
+		{parallelKeys[3], "120"},
 	} {
 		wg.Add(1)
 		r.handleConfigure(Command{Type: CmdConfigure, Text: c.key + "=" + c.val})
@@ -96,5 +98,20 @@ func TestTaskMergeStatusLines(t *testing.T) {
 	}
 	if taskMergeStatusLines(`{"stories":[{"tasks":[{"id":"x"}]}]}`) != nil || taskMergeStatusLines("junk") != nil {
 		t.Fatal("expected no lines")
+	}
+}
+
+func TestParallelConfigSurface_MergeRetrySecondsRefusal(t *testing.T) {
+	wg := sync.WaitGroup{}
+	var sent string
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: func(s string) { sent = s; wg.Done() }}}
+	r.SetConfigureFunc(func(string, string) error {
+		return errors.New("autonomous.parallel.merge_retry_seconds: -5 must be a whole number >= 0")
+	})
+	wg.Add(1)
+	r.handleConfigure(Command{Type: CmdConfigure, Text: parallelKeys[3] + "=-5"})
+	wg.Wait()
+	if !strings.Contains(sent, ">= 0") || strings.Contains(sent, "Set "+parallelKeys[3]) {
+		t.Fatalf("refusal not shown cleanly: %q", sent)
 	}
 }

@@ -508,6 +508,26 @@ mcp:
   # CLI `datawatch config set`, Web UI Settings → General → Self-config,
   # REST PUT /api/config) set it in either direction.
   allow_self_config: true
+  # Gate for the sensitive write tool class of the MCP tool classification
+  # (tools that write secrets, credentials or other sensitive state).
+  # Absent = ENABLED (the default keeps today's behaviour: sensitive tools
+  # allowed; the key is never added by a migration). An explicit `false`
+  # refuses the class for SESSION and PEER callers only; the operator's own
+  # Web UI / REST / CLI / admin calls are unaffected. The class: secret_set,
+  # secret_delete, secret_get, the identity writers (set_identity,
+  # update_identity, configure_identity, restore_identity, reset_identity),
+  # restart_daemon, reload, plugin_install, plugin_run_subcommand,
+  # send_input, start_session, tailscale_acl_push, tailscale_auth_key and
+  # acme_renew. Independent of allow_self_config. Calls are audited in the
+  # self-config audit trail with class "sensitive" (argument names only,
+  # never values). Operator surfaces (CLI `datawatch config set`, Web UI
+  # Settings → General → Self-config, REST PUT /api/config, comm
+  # `configure`) apply a change to the running daemon and save it, no
+  # restart; a hand edit of this file needs a restart. Not bootstrap-
+  # protected: while allow_self_config is on, a session can write it with
+  # config_set. Write exactly true/false (other text reads as false).
+  # See docs/howto/self-config-capability.md.
+  allow_sensitive_writes: true
   # Where the self-config audit file (JSONL) is written: one record per
   # configuration-write attempt from every session-facing surface
   # (mcp / rest / comm), allowed or refused — time, surface, tool, keys,
@@ -1252,6 +1272,12 @@ autonomous:
   enabled: false
   # Background loop tick in seconds.
   poll_interval_seconds: 30
+  # Refresh an Automaton branch that has fallen behind its base. Off by default.
+  # Walkthrough: docs/howto/automaton-branch-refresh.md.
+  branch_refresh_enabled: false
+  # Commits behind the base a branch may be before it is refreshed.
+  # 0 or unset reads as 5.
+  branch_refresh_behind_limit: 5
   # ── Shadow merge plan (autonomous.merge_shadow) ──
   # What these keys enable, and every way they are set and read, is in
   # docs/howto/merge-shadow.md.
@@ -2970,6 +2996,10 @@ autonomous:
     # merge_conflict_model: the model that resolves a conflict. Default empty,
     # which uses the strongest configured planning model.
     merge_conflict_model: ""
+    # merge_retry_seconds: whole seconds between timed merge retry passes over
+    # blocked merges. Default 60. 0 turns the timer off. A negative value is
+    # refused.
+    merge_retry_seconds: 60
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node session_slots (0 = derive from observer GPU
@@ -3376,6 +3406,12 @@ autonomous:
   # reply carries, the count of running tasks and live sessions it interrupts
   # (GET /api/autonomous/restart-interruptions reads the same count).
   restart_policy: immediate
+  # What a daemon restart does to an Automaton still in planning (decompose
+  # running). "reattach" (default) keeps planning running across the restart.
+  # "restart" restarts planning once and records a decision saying so. "draft"
+  # resets the Automaton to draft, as the daemon did before this setting.
+  # Unset or unrecognised reads as reattach.
+  planning_restart_policy: reattach
   restart_quiet_timeout_seconds: 600   # wait_quiet only; 0 or unset => 600
   restart_on_timeout: proceed          # wait_quiet only: "proceed" or "abort"
   loop_detect_turns: 3   # pi worker observability (docs/operations.md): how many of the worker's most recent assistant turns the live loop detector compares (announce-without-acting or identical-call repeats => loop rescue); 0 = loop detection off; negative rejected
@@ -4504,6 +4540,32 @@ orchestrator:
 # pins still refuse requests for other models.
 # Default 300.
 pin_check_seconds: 300
+
+# ─── Model placement: what happens when the routed node does not have the model ───
+# All five keys are read at decision time, so a change made from any surface
+# (YAML, CLI, PWA, REST, comm channel, MCP) applies at the next placement
+# decision — no restart needed.
+compute_placement:
+  # What to do when the requested model is not resident on the routed node.
+  # ask = record a one-shot placement ask and wait for the operator to approve
+  # (the model is then pulled, if the node does not have it, and loaded) or
+  # deny; an unanswered ask expires after ask_timeout_minutes, which is a
+  # refusal, not an approval. auto_load = pull + load without asking.
+  # refuse = never load; the refusal is audited (placement_refused). Def: ask.
+  missing_model: ask
+  # Whole percent (0–100) of free memory kept out of reach when a node is
+  # considered: the model must fit, and this much free memory must be left
+  # over. Def: 10.
+  mem_headroom_pct: 10
+  # Whole GB of free disk kept out of reach when a node is considered: the
+  # model must fit, and this much free disk must be left over. Def: 5.
+  disk_headroom_gb: 5
+  # Minutes a placement ask may wait unanswered before it expires (a refusal).
+  # 0 means the ask never times out. Def: 30.
+  ask_timeout_minutes: 30
+  # Whole GB to assume for a model the node carries but the daemon is not told
+  # the size of; 0 = unknown. Affects the free-space estimate only. Def: 0.
+  assume_model_size_gb: 0
 
 # ── Observer (BL171 — v4.1.0) ──
 # Unified stats + process-tree + sub-process monitoring subsystem.

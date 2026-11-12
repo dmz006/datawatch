@@ -27,16 +27,20 @@ exec_steps:
     args: {name: core-api, arcs: [{automation_id: a1b2c3d4, priority: 1, state: active}, {automation_id: e5f6a7b8, priority: 2, state: planned}]}
 ---
 
-# How-to: the Projects tab
+# How-to: the Projects sub-tab
 
-The **Projects** tab is where you look at one project as a whole. It gathers the
+The **Projects** sub-tab is where you look at one project as a whole. It gathers the
 project's arcs (the ordered Automations the project works through), the Automata
 and sessions under each arc, progress in points, a Gantt of recent work, the
 finished history, the policy and merge pipeline that apply to it, and the events
 that belong to it. Use it to answer "where does this project stand, what is next,
 and what did it cost" without opening each Automation.
 
-The tab is read-only. It shows what the daemon holds and links to the Settings
+Projects is the first sub-tab of the **Automata** view, to the left of
+**Automation**. The sub-tab order is **Projects**, **Automation**, **Automata**,
+**Events**, **Templates**. It is not a tab of its own in the bottom navigation.
+
+The sub-tab is read-only. It shows what the daemon holds and links to the Settings
 entries where you change things. The project record itself (owner, target, arcs,
 lane defaults, weekly share, branch retention, major trigger) is changed from the
 CLI, REST, MCP and the comm channel, as shown below.
@@ -57,7 +61,7 @@ Project  "core-api"
 ## Base requirements
 
 - A running daemon you can reach from the web app, the CLI, MCP or a comm channel.
-- The Automata features enabled. The Projects tab reads the autonomous store, so
+- The Automata features enabled. The Projects sub-tab reads the autonomous store, so
   with Automata off the roll-up and history report "Automations are not
   available" (HTTP 503 on the API).
 - At least one project registered as a **project alias**: a name, an absolute
@@ -82,8 +86,10 @@ Project  "core-api"
    > the policy verbs in [project-automation-policy](project-automation-policy.md)
    > after you upsert.
 
-2. **Open the tab.** In the web app choose **Projects** in the bottom navigation.
-   The **Project** picker at the top lists **Overview** and every registered
+2. **Open the sub-tab.** In the web app choose **Automata** in the bottom
+   navigation, then **Projects**, the first sub-tab on the left. The old
+   Projects link and the `#projects` address open the same sub-tab. The
+   **Project** picker at the top lists **Overview** and every registered
    project. Pick `core-api`.
 
 3. **Fill in the record.** Set the owner, the target and the lane defaults, then
@@ -166,7 +172,7 @@ project starts with.
 
 ### 6. Open the page in the web app
 
-Choose **Projects**, then `core-api`. From the top:
+Choose **Automata**, then the **Projects** sub-tab, then `core-api`. From the top:
 
 | Block | What it shows |
 |---|---|
@@ -178,11 +184,27 @@ Choose **Projects**, then `core-api`. From the top:
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Effective policy | Read-only summary of the project's policy, with a link to the policy panel in Settings |
 | Merge pipeline | Read-only, with a link to the merge pipeline settings |
-| Events | The event stream filtered to this project, and a note for each section that is empty or off |
+| Events | The event stream filtered to this project. It is hidden while it has nothing to show, and it lists notes for empty sections (no arcs, no unassigned Automata) and a missing weekly share, but only when the project has an arc or an unassigned Automaton that needs one |
 
 A row links to its Automaton view, and a session link opens the session. The
 **Overview** choice in the picker is the cross-project in-flight view, not a
 project.
+
+#### The show-empty checkbox
+
+**Show empty lines and sections**, the checkbox next to the project picker, is
+off by default. While it is off the page draws only what has content: empty
+header fields (an unset owner, repository, target or lane default), the
+"none recorded" lines under an arc (plan documents, design documents, issues),
+an empty Arcs or Unassigned Automata section, an empty merge pipeline and an
+empty event stream are left out. Tick it to see every line and section, with
+"none recorded" or "no arcs" shown where there is nothing yet. The choice is
+remembered per viewer in the browser, not by the daemon, so it has no REST,
+MCP, CLI, chat or configuration form, and a browser that blocks storage starts
+hidden each time. Nothing is lost while it is off: a section that needs
+attention still appears, and a missing weekly share is reported in the page's
+Events list whenever the project has an arc or an unassigned Automaton that
+needs one.
 
 ### 7. Read the history and the Gantt
 
@@ -248,7 +270,7 @@ are stored; see the note above.
 
 ## Precedence of the project policy
 
-The Projects tab shows the **effective policy** of the project. Each setting
+The Projects sub-tab shows the **effective policy** of the project. Each setting
 resolves from the top down: the Automaton's own setting, then the project's
 policy, then the daemon default. Read it for one Automaton with the
 `automaton` argument, which adds that Automaton as the top tier. The full
@@ -260,8 +282,8 @@ reference is [project-automation-policy](project-automation-policy.md).
 
 | Action | Where |
 |---|---|
-| Open the tab | Bottom navigation, **Projects** |
-| Pick a project | **Project** picker at the top; **Overview** is the cross-project view |
+| Open the sub-tab | Bottom navigation **Automata**, then the **Projects** sub-tab (first, left of **Automation**); the old Projects link and `#projects` land here |
+| Pick a project | **Project** picker at the top (the same Overview picker as before); **Overview** is the cross-project view |
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
 | Change the window of the Gantt | Gantt header: 7, 30 or 90 days |
 | Page through history | **Load more** at the foot of History |
@@ -365,7 +387,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 
 | Symptom | Cause and fix |
 |---|---|
-| The Projects tab says "No projects yet" | No alias is registered. Run `datawatch projects upsert` (step 1) |
+| The Projects sub-tab says "No projects yet" | No alias is registered. Run `datawatch projects upsert` (step 1) |
 | Roll-up shows "Could not load the roll-up" | The autonomous store is off or the alias is unknown. Check the daemon with `datawatch projects get <name>` |
 | An arc shows no Automata | Its Automation has no member Automata yet, or the Automata are of another project |
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each arc needs a unique id; an arc whose state is not `planned`, `active` or `done` is refused |
@@ -384,6 +406,18 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - The page is read-only. Changes go through REST, MCP, the CLI or the comm
   channel.
 
+## For the operator to review
+
+- **Mobile apps.** The Android and iPhone apps still show Projects as their own
+  screen. Moving it under Automata there is tracked in datawatch-app and is not
+  part of this change.
+- **Old links keep working.** The `#projects` and `#projects/<name>` addresses
+  and the Projects link open the sub-tab, so bookmarks and the Settings help
+  links stay valid. This page keeps its file name (`projects-tab.md`) for the
+  same reason; rename it only if you also redirect the links that point here.
+- **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
+  order shipped. Confirm it is the order you want before the next release.
+
 ## Related
 
 - [automation-tab.md](automation-tab.md): the Automation view, where the
@@ -396,5 +430,5 @@ the lane defaults. Use REST, MCP or the CLI for those.
   branch cleanup
 - [automata-progress.md](automata-progress.md): progress across all projects
 - [cost-report.md](cost-report.md): spend per Automaton, Automation and backend
-- [../datawatch-definitions.md](../datawatch-definitions.md#projects-tab): the
+- [../datawatch-definitions.md](../datawatch-definitions.md#projects-sub-tab): the
   glossary entries for the terms on this page

@@ -31,10 +31,10 @@ func TestMergePreflightDaemonSectionRealEditStillFails(t *testing.T) {
 	f := tmdsFixture(t)
 	writeMergeFile(t, f.prd.ProjectDir, "AGENT.md", tmdsBase+"Real operator edit.\n"+tmdsBlock)
 	out, err := f.m.MergeTaskBranch(context.Background(), f.prd, f.task("t1"))
-	if err == nil || out != MergeOutcomeDeferred {
+	if err != nil || out != MergeOutcomeDeferred {
 		t.Fatalf("outcome %s err %v", out, err)
 	}
-	if !strings.Contains(err.Error(), "has uncommitted changes; not merging over them") {
-		t.Fatalf("unexpected error text: %v", err)
+	if b := f.task("t1").MergeBlock; b == nil || b.Kind != MergeBlockKindDirtyWorktree || !strings.Contains(b.Reason, "AGENT.md") {
+		t.Fatalf("merge block = %+v; want a dirty_worktree block naming AGENT.md", b)
 	}
 }

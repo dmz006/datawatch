@@ -33,6 +33,9 @@ type UncommittedWorkEntry struct {
 	Reason       string    `json:"reason,omitempty"`
 	QuestionID   string    `json:"question_id,omitempty"`
 	HeldAt       time.Time `json:"held_at"`
+	// Worktree is the folder the files are in, so the card can show the
+	// diff and commit them. Empty when the folder is not recorded.
+	Worktree string `json:"worktree,omitempty"`
 }
 
 // UncommittedWorkStatus reads the uncommitted-work holds of the stored
@@ -63,7 +66,7 @@ func (m *Manager) UncommittedWorkStatus(automatonID string) UncommittedWorkStatu
 			name = prd.ID
 		}
 		if h := prd.UncommittedWork; h != nil {
-			st.Held = append(st.Held, uncommittedWorkEntry(prd.ID, name, "", "", h))
+			st.Held = append(st.Held, withWorktree(uncommittedWorkEntry(prd.ID, name, "", "", h), prd.ProjectDir))
 		}
 		for i := range prd.Story {
 			for j := range prd.Story[i].Tasks {
@@ -71,7 +74,7 @@ func (m *Manager) UncommittedWorkStatus(automatonID string) UncommittedWorkStatu
 				if t.UncommittedWork == nil {
 					continue
 				}
-				st.Held = append(st.Held, uncommittedWorkEntry(prd.ID, name, t.ID, t.Title, t.UncommittedWork))
+				st.Held = append(st.Held, withWorktree(uncommittedWorkEntry(prd.ID, name, t.ID, t.Title, t.UncommittedWork), firstNonEmptyStr(t.WorktreePath, prd.ProjectDir)))
 			}
 		}
 	}
@@ -99,4 +102,17 @@ func uncommittedWorkEntry(automatonID, name, taskID, taskTitle string, h *Uncomm
 		QuestionID:   h.QuestionID,
 		HeldAt:       h.HeldAt,
 	}
+}
+
+// withWorktree sets the worktree folder on a status entry.
+func withWorktree(e UncommittedWorkEntry, dir string) UncommittedWorkEntry {
+	e.Worktree = dir
+	return e
+}
+
+func firstNonEmptyStr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

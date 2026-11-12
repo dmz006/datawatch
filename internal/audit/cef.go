@@ -270,6 +270,16 @@ func cefSignature(action string) (int, string, int) {
 		return 86, "AutonomousVerifierRunCap", 4
 	case ActionConfigWrite:
 		return 87, "ConfigWrite", 5
+	case ActionPlacementAsked:
+		return 88, "PlacementAsked", 3
+	case ActionPlacementApproved:
+		return 89, "PlacementApproved", 2
+	case ActionPlacementDenied:
+		return 90, "PlacementDenied", 4
+	case ActionPlacementLoaded:
+		return 91, "PlacementLoaded", 2
+	case ActionPlacementRefused:
+		return 92, "PlacementRefused", 5
 	default:
 		return 0, "AuditEvent", 3
 	}

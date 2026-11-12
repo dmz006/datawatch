@@ -236,7 +236,7 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     assert.ok(iTriage !== -1 && iQ !== -1 && iHeld !== -1 && iSecurity !== -1, 'all anchors present');
     assert.ok(iQ < iHeld && iHeld < iTriage && iTriage < iSecurity, 'order is open questions, held questions, triage, then security failure');
     assert.ok(!body.includes('id="automationPanel"'), 'the list panel is not on Inbox');
-    for (const other of ['automations', 'resources', 'progress', 'setup', 'housekeeping']) {
+    for (const other of ['automations', 'resources', 'progress', 'housekeeping']) {
       vmmod.runInContext(`_automationState.subtab = '${other}'`, s9);
       assert.ok(!vmmod.runInContext('_automationBodyHTML()', s9).includes('id="automationQuestionsCard"'), 'no question card on ' + other);
     }

@@ -398,6 +398,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/compute/served-models", api.handleServedModels)                    // models each compute node serves, with an optional model check
 	apiMux.HandleFunc("/api/compute/nodes", api.handleComputeNodes)                            // v7.0.0 S1 — ComputeNode registry CRUD
 	apiMux.HandleFunc("/api/compute/nodes/", api.handleComputeNodes)                           // v7.0.0 S1 — /name + /name/health + /name/detail
+	apiMux.HandleFunc("/api/compute/placements", api.handleComputePlacements)                  // missing-model placement asks — pending list
+	apiMux.HandleFunc("/api/compute/placements/", api.handleComputePlacementAskDecision)       // missing-model placement asks — /<id>/approve|deny
 	apiMux.HandleFunc("/api/llms", api.handleLLMs)                                             // v7.0.0 S2 — LLM registry CRUD
 	apiMux.HandleFunc("/api/llms/", api.handleLLMs)                                            // v7.0.0 S2 — /name + /name/test
 	apiMux.HandleFunc("/api/llm-roles", api.handleLLMRoles)                                    // workload role table + contention warnings
@@ -499,6 +501,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Automata event log read: merged watch, retry, check, maintenance and error
 	// events, newest first, with kind/project/q filters and cursor paging.
 	apiMux.HandleFunc("/api/autonomous/event-log", api.handleAutomataEventLog)
+	// Branch refresh numbers: setting, results by Automaton, stopped count.
+	apiMux.HandleFunc("/api/autonomous/branch-refresh/stats", api.handleBranchRefreshStats)
 	// BL427 phase 5 — receiving endpoint for peer-forwarded lifecycle events.
 	apiMux.HandleFunc(autonomous.ForwardedEventsPath, api.handleAutonomousForwardedEvents)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)
@@ -589,6 +593,13 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)                // safe-to-delete report of finished Automaton branches and worktrees
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                // cleanup status: both passes, disk readings, rate-limited disk-alert flag
 	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                     // uncommitted-work holds: policy, scope, held tasks and Automata
+	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                           // Housekeeping: unlanded branch list
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/keep", api.handleUnlandedAction("keep"))            // keep a branch
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/archive-branch", api.handleUnlandedAction("archive")) // archive a branch
+	apiMux.HandleFunc("/api/autonomous/unlanded-work/delete-worktree", api.handleUnlandedAction("delete")) // back up and delete
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work/diff", api.handleUncommittedDiff)                // diff a worktree's uncommitted files
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work/commit", api.handleUncommittedCommit)            // commit a worktree's uncommitted files
+	apiMux.HandleFunc("/api/autonomous/cleanup/fix-permissions", api.handleFixPermissions)               // restore owner write permission
 	apiMux.HandleFunc("/api/autonomous/request-watch", api.handleRequestWatch)                           // request watch: state of the in-flight model request of watched worker and verifier sessions
 	apiMux.HandleFunc("/api/autonomous/overlap", api.handleAutonomousOverlap)                            // search before create: overlaps for a title and spec
 	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)                   // stored security failure reports with their run identity, newest first
@@ -1232,6 +1243,11 @@ func (s *HTTPServer) SetAlertStore(store *alerts.Store) {
 // SetRestartFunc wires the restart function into the server for /api/restart.
 func (s *HTTPServer) SetRestartFunc(fn func()) {
 	s.api.SetRestartFunc(fn)
+}
+
+// SetRestartFuncForce wires the force-aware restart guard for /api/restart.
+func (s *HTTPServer) SetRestartFuncForce(fn func(force bool)) {
+	s.api.SetRestartFuncForce(fn)
 }
 
 // SetACMEManager wires the ACME subsystem (BL397) into the server.

@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 )
@@ -34,6 +35,9 @@ type rejudgeAPI struct {
 	calls []struct{ id, actor, backend string }
 	err   error
 	prd   any // the fake PRD (a *autonomous.PRD) returned on a pass
+	// decisions are attached to the returned PRD, standing in for the
+	// Decisions the real manager records.
+	decisions []autonomous.Decision
 }
 
 func (a *rejudgeAPI) RejudgeCompletionGuardrail(prdID, actor, backend string) (any, error) {
@@ -43,7 +47,7 @@ func (a *rejudgeAPI) RejudgeCompletionGuardrail(prdID, actor, backend string) (a
 	}
 	// A real *autonomous.PRD (not a map) so the handler's
 	// updated.(*autonomous.PRD) assertion keeps it for the reply.
-	a.prd = &autonomous.PRD{ID: prdID, Status: autonomous.PRDCompleted}
+	a.prd = &autonomous.PRD{ID: prdID, Status: autonomous.PRDCompleted, Decisions: a.decisions}
 	return a.prd, nil
 }
 
@@ -144,6 +148,63 @@ func TestRejudgeHandler_PassCompactViewNamesDecisionLog(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(body), "decision log") {
 		t.Errorf("compact pass body %q does not point at the decision log", body)
+	}
+}
+
+// rejudgeMessageFor posts a rejudge against a fake manager that returns
+// the given Decisions and gives back the reply's message.
+func rejudgeMessageFor(t *testing.T, id string, decisions []autonomous.Decision) string {
+	t.Helper()
+	api := &rejudgeAPI{decisions: decisions}
+	s := &Server{autonomousMgr: api}
+	code, body := doRejudge(t, s, http.MethodPost, "/api/autonomous/prds/"+id+"/rejudge?view=compact", "")
+	if code != http.StatusOK {
+		t.Fatalf("status=%d, want 200 (body=%s)", code, body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, body)
+	}
+	msg, _ := got["message"].(string)
+	if msg == "" {
+		t.Fatalf("reply has no message (body=%s)", body)
+	}
+	return msg
+}
+
+func TestAutonomousRejudgeReusedVerdictMessageNamesCommit(t *testing.T) {
+	msg := rejudgeMessageFor(t, "prd-rej-6", []autonomous.Decision{
+		{At: time.Now(), Kind: "guardrail_rejudge", JudgedCommitSHA: "abc1234", VerdictReused: true},
+	})
+	want := "rejudge complete; the stored verdict was reused because the head commit abc1234 and the rules text are unchanged since it was made; no new review ran"
+	if msg != want {
+		t.Errorf("message = %q, want %q", msg, want)
+	}
+}
+
+func TestAutonomousRejudgeNewReviewMessageNamesCommit(t *testing.T) {
+	msg := rejudgeMessageFor(t, "prd-rej-7", []autonomous.Decision{
+		{At: time.Now(), Kind: "guardrail_rejudge", JudgedCommitSHA: "def5678", VerdictReused: true},
+		{At: time.Now(), Kind: "guardrail_rejudge", JudgedCommitSHA: "fed8765", VerdictReused: false},
+	})
+	want := "rejudge complete; a new review ran on commit fed8765; the verdict and outcome are in the decision log"
+	if msg != want {
+		t.Errorf("message = %q, want %q", msg, want)
+	}
+}
+
+func TestAutonomousRejudgeNoDecisionKeepsOldMessage(t *testing.T) {
+	want := "rejudge complete; the guardrail verdict and outcome are in the PRD's decision log"
+	// No Decision at all, and a Decision of another kind, both give the old text.
+	if msg := rejudgeMessageFor(t, "prd-rej-8", nil); msg != want {
+		t.Errorf("no decision: message = %q, want %q", msg, want)
+	}
+	other := []autonomous.Decision{{At: time.Now(), Kind: "guardrail_verdict", JudgedCommitSHA: "abc1234"}}
+	if msg := rejudgeMessageFor(t, "prd-rej-9", other); msg != want {
+		t.Errorf("other decision: message = %q, want %q", msg, want)
+	}
+	if msg := rejudgeResultMessage(nil); msg != want {
+		t.Errorf("nil PRD: message = %q, want %q", msg, want)
 	}
 }
 

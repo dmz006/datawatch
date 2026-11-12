@@ -246,7 +246,7 @@ func (m *Manager) writeGeneratedArtefacts(prd *PRD) {
 			prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: generatedArtefactDecisionKind, Actor: "autonomous", Note: l})
 		}
 	})
-	if err := m.store.SavePRD(prd); err != nil {
+	if err := m.savePRDOwn(prd); err != nil { // executor-owned: the rollup's expectedRev must see this Rev bump
 		log.Printf("[autonomous] %s save generated artefact results: %v", prd.ID, err)
 	}
 }

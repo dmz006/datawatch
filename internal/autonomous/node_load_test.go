@@ -138,6 +138,7 @@ type nodeLoadRig struct {
 	prd  *PRD
 	task Task
 	sink *recordingNodeAlerts
+	keys CapacityKeysFn
 }
 
 // newNodeLoadRig builds the rig. order lists the nodes highest priority first.
@@ -167,7 +168,7 @@ func newNodeLoadRig(t *testing.T, order []string, nodes map[string]*fakeOllamaNo
 	if task.ID == "" {
 		t.Fatal("fixture task has no id")
 	}
-	return &nodeLoadRig{m: m, led: led, prd: prd, task: task, sink: sink}
+	return &nodeLoadRig{m: m, led: led, prd: prd, task: task, sink: sink, keys: keys}
 }
 
 // admit takes the worker lease, as the executor does before the load step.
@@ -177,6 +178,14 @@ func (r *nodeLoadRig) admit(t *testing.T) {
 	if err := r.m.admit(context.Background(), r.prd, &task, "pi", nodeLoadModel, capacity.RoleWorker); err != nil {
 		t.Fatalf("admit: %v", err)
 	}
+}
+
+// admitErr runs the admission and returns the error (nil on success).
+// With a placement advisor the gate, load and lease all happen here.
+func (r *nodeLoadRig) admitErr(t *testing.T) error {
+	t.Helper()
+	task := r.task
+	return r.m.admit(context.Background(), r.prd, &task, "pi", nodeLoadModel, capacity.RoleWorker)
 }
 
 // load runs the load step the executor runs after admit.

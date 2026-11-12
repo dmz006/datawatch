@@ -444,13 +444,29 @@ How you act on it:
   `reroute`, pin that re-judgment on a named judge backend with
   `{"actor":"operator","backend":"<backend>"}`, typically the Automaton's own
   guardrail backend. Re-judging an Automaton that is not blocked, or one that
-  still has incomplete tasks, is refused (naming the first such task).
-- **A held review (`timed_out`, `needs_review`) is not a re-judge target** —
-  the re-judge endpoint applies only to blocked Automata. Resolve it through
+  still has incomplete tasks, is refused (naming the first such task). The
+  re-judgment is a fresh completion review when the branch head or the rules
+  text has changed since the stored verdict; it replays the stored verdict only
+  when both are unchanged and the verdict cache is on. The compact reply
+  (`?view=compact`, which the MCP tool and the web app use) carries a
+  `message` that says which it was: `a new review ran on commit <sha>`, or
+  `the stored verdict was reused` with the reason. The web app shows it in the
+  notice after Retry or Reroute.
+- **A rules-review hold is a re-judge target once new commits land.** An
+  Automaton in `needs_review` because the completion review's retries were
+  spent, or because auto-fix was turned off, accepts a rejudge as long as
+  all its tasks are completed and the branch head has moved since the held
+  verdict. The review then runs fresh on the new head (a held review never
+  replays the stored verdict). With the head unchanged the rejudge is refused
+  before any judge runs, with the error that new commits are needed; commit
+  the fix on the Automaton's branch and try again.
+- **Any other held review (`timed_out`, or `needs_review` for another
+  reason) is not a re-judge target** — the re-judge endpoint refuses it,
+  naming the status. Resolve it through
   [How to resolve a hold](#how-to-resolve-a-hold): fix the capacity or the
   settings, cancel, reset the held task, and run the Automaton again. The
   PWA badge's Retry / Reroute buttons submit to the re-judge endpoint, so on
-  a held review they are refused; the cancel → reset → run path is what works.
+  such a hold they are refused; the cancel → reset → run path is what works.
 
 ## The per-commit verdict cache
 
@@ -460,9 +476,13 @@ daemon replays it from a per-commit cache instead of paying for another judge
 run. A cached verdict is keyed on the triple **(commit, judge policy,
 rules)**:
 
-- **Commit** — the commit under review. A judged unit with no recorded commit
-  sha has no anchor for its judgment, so the cache is bypassed for both
-  lookup and storage.
+- **Commit** — the commit under review. For the whole-Automaton completion
+  review this is the real head of the Automaton's own working tree, so a fix
+  committed by hand moves it; when that head cannot be read, the latest commit
+  recorded by a task attempt stands in. Per-task and per-story judgments keep
+  using the commit recorded on their own tasks. A judged unit with no commit at
+  all has no anchor for its judgment, so the cache is bypassed for both lookup
+  and storage.
 - **Judge policy** — the backends that produced the verdict: a pinned
   backend is one key, the configured judge chain (`judge:a|b`) another, and
   an empty chain (the judges follow the verifier routing policy) a third.
@@ -470,7 +490,23 @@ rules)**:
 - **Rules** — a SHA-256 over the guardrail name and the exact inputs the
   judge saw for that unit (its prompt, the unit's title and spec, and the
   judge model). Changing the rules, the prompt, or the judge model is a cache
-  miss.
+  miss. The whole-Automaton completion review adds a **rules fingerprint** to
+  this hash: a SHA-256 over the exact rules and context text the judge reads
+  (the base-commit text, or with the `worktree` source the file names and
+  contents). Editing that text is a cache miss. The fingerprint is stored on
+  the verdict as `rules_fingerprint`; per-task and per-story keys carry none
+  and are unchanged.
+
+A hit hands back the stored verdict as it was made — with its own time,
+commit and rules fingerprint — and nothing is judged. It is not added to the
+Automaton's verdict list a second time, and no second `guardrail_verdict`
+entry or classification is recorded. What is recorded is the reuse itself: a
+rejudge writes a `guardrail_rejudge` decision, and the completion review the
+daemon runs on its own writes a `guardrail_reuse` decision, each with
+`verdict_reused` true, the commit in `judged_commit_sha` and a note that says
+no new review ran. When a review did run the decision has `verdict_reused`
+false and a note that starts `new review ran on commit`. This is how to tell
+a replay from a fresh judgment in the Automaton's decision log.
 
 Only completed verdicts are stored — a pass, or a block whose category is a
 real finding (content, or the empty pre-category value). A judge that timed
@@ -547,9 +583,18 @@ autonomous_config_set(judge_policy=["ollama-a","ollama-b","claude-code"], judge_
   resolve it as in [How to resolve a hold](#how-to-resolve-a-hold).
 - **A re-judged commit comes back with the same verdict in an instant.** The
   per-commit verdict cache replays a completed pass or block on an unchanged
-  (commit, judge policy, rules) triple — that is the point, not a bug. If you
-  want a fresh judgment, change the judge chain or the rules, or turn the
-  cache off with `autonomous.judge_verdict_cache_enabled=false`.
+  (commit, judge policy, rules) triple — that is the point, not a bug. For a
+  rejudge of a blocked Automaton the commit is the real branch head and the
+  rules include the rules text, so commit the fix or edit the rules text the
+  judge reads and the next rejudge judges again. If you want a fresh judgment
+  without either, change the judge chain, or turn the cache off with
+  `autonomous.judge_verdict_cache_enabled=false`. The decision log shows which
+  it was: `verdict_reused` true on the `guardrail_rejudge` entry means the
+  stored verdict came back, and a replay adds no new verdict to the list.
+- **A rejudge judged again although nothing changed.** The stored verdict has
+  no rules fingerprint (it was recorded before the fingerprint existed), or
+  the project has no rules or context file, so there is no fingerprint to
+  match. The new verdict records one when there is a rules text.
 
 ## See also
 

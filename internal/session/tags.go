@@ -125,6 +125,32 @@ func (m *Manager) SetSystemTagsAny(id string, tags []string) error {
 	return m.store.UpdateArchived(sess)
 }
 
+// SetLaunchFacts records the launch role, kind and stage of a session,
+// whether it is still active or already archived, and persists it. The
+// manager lock is held across the lookup and the write so the three fields
+// are set together. Start and Restart do not read these fields yet.
+func (m *Manager) SetLaunchFacts(id string, role, kind, stage string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sess, ok := m.GetSession(id)
+	if ok {
+		sess.LaunchRole = role
+		sess.LaunchKind = kind
+		sess.LaunchStage = stage
+		sess.UpdatedAt = time.Now()
+		return m.store.Save(sess)
+	}
+	sess, ok = m.store.GetArchived(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrSessionNotFound, id)
+	}
+	sess.LaunchRole = role
+	sess.LaunchKind = kind
+	sess.LaunchStage = stage
+	sess.UpdatedAt = time.Now()
+	return m.store.UpdateArchived(sess)
+}
+
 // InheritedTags returns the tag IDs a session inherits from the Automaton
 // that spawned it (sess.PRDID). The set is computed on every call and is
 // never stored. A session outside any Automaton gets an empty, non-nil slice.

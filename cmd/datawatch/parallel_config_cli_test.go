@@ -67,3 +67,27 @@ func TestConfigSetHelpNamesParallelKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigParallelMergeRetrySeconds(t *testing.T) {
+	// help names the key
+	if !strings.Contains(newConfigSetCmd().Long, "autonomous.parallel.merge_retry_seconds") {
+		t.Error("config set help lacks autonomous.parallel.merge_retry_seconds")
+	}
+	// default: read back from GET /api/config
+	full := map[string]interface{}{"autonomous": map[string]interface{}{"parallel": map[string]interface{}{
+		"merge_retry_seconds": float64(60),
+	}}}
+	if got := lookupConfigKey(full, "autonomous.parallel.merge_retry_seconds"); got != float64(60) {
+		t.Fatalf("merge_retry_seconds = %v", got)
+	}
+	// set and invalid: whole numbers, including 0 and a negative, go out as JSON numbers
+	for val, want := range map[string]float64{"0": 0, "90": 90, "-5": -5} {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(configureRequestBody("autonomous.parallel.merge_retry_seconds", val)), &m); err != nil {
+			t.Fatal(err)
+		}
+		if m["autonomous.parallel.merge_retry_seconds"] != want {
+			t.Fatalf("body for %s = %v", val, m)
+		}
+	}
+}

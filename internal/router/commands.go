@@ -17,6 +17,7 @@ type CommandType string
 const (
 	CmdNew               CommandType = "new"
 	CmdList              CommandType = "list"
+	CmdSessionGroups     CommandType = "session-groups" // "sessions groups [axis] [tag-prefix]"
 	CmdStatus            CommandType = "status"
 	CmdSend              CommandType = "send"
 	CmdKill              CommandType = "kill"
@@ -439,13 +440,16 @@ const (
 
 // Command is a parsed Signal message.
 type Command struct {
-	Type       CommandType
-	SessionID  string // short or full ID
-	Text       string // for new: and send:
-	TailN      int    // for tail command
-	ProjectDir string // for new: with explicit project directory
-	Profile    string // named profile for "new <profile>: <task>"
-	Server     string // target remote server for "new @server: <task>"
+	Type      CommandType
+	SessionID string // short or full ID
+	Text      string // for new: and send:
+	// RestartForce is set on a restart command whose message carries the word
+	// force, so the restart proceeds even when running work would be interrupted.
+	RestartForce bool
+	TailN        int    // for tail command
+	ProjectDir   string // for new: with explicit project directory
+	Profile      string // named profile for "new <profile>: <task>"
+	Server       string // target remote server for "new @server: <task>"
 
 	// v7.0.0-alpha.21 (#259) — operator's session-creation pick from
 	// the v7 unified registries. Parsed from "new: llm=<name>
@@ -815,6 +819,13 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdNew, Text: rest}
 
+	case lower == "sessions groups" || strings.HasPrefix(lower, "sessions groups "):
+		// Count summary per group over the session-list grouping read
+		// (GET /api/sessions?group_by=...&tag_prefix=...). Axis defaults to
+		// tag; the second token is the tag prefix (tag axis).
+		rest := strings.TrimSpace(text[len("sessions groups"):])
+		return Command{Type: CmdSessionGroups, Text: rest}
+
 	case lower == "list" || strings.HasPrefix(lower, "list ") ||
 		lower == "sessions" || strings.HasPrefix(lower, "sessions "):
 		cmd := Command{Type: CmdList}
@@ -933,8 +944,10 @@ func Parse(text string) Command {
 	case lower == "version" || lower == "about":
 		return Command{Type: CmdVersion}
 
-	case lower == "restart":
-		return Command{Type: CmdRestart}
+	// restart [force] — the word force lets the restart proceed past a
+	// running-work refusal. See docs/howto/restart-with-work-running.md.
+	case lower == "restart" || strings.HasPrefix(lower, "restart "):
+		return Command{Type: CmdRestart, RestartForce: restartMessageHasForce(lower)}
 
 	case lower == "update check" || lower == "update":
 		return Command{Type: CmdUpdateCheck}
@@ -1891,6 +1904,7 @@ func HelpText(hostname string) string {
 new: <task>                     start session in default project dir
 new: /path/to/project: <task>   start session in specific directory
 list [--active|--inactive|--all] [tag=<axis:value>] [tag_match=any|all] list sessions (default: all)
+sessions groups [axis] [tag-prefix]  per-group count summary (axis: tag, state, node, project, automaton; prefix narrows the tag axis)
 status <id>                     recent output from session
 send <id>: <msg>                send input to waiting session
 kill <id>                       terminate session
@@ -1917,7 +1931,7 @@ configure platform_context enabled on|off   turn the platform context on or off
 configure platform_context note <text>      set the platform context note
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
 version / about                 show datawatch version and info
-restart                         restart the datawatch daemon
+restart [force]                 restart the datawatch daemon; refused with the Automata interruption report while work runs unless force is given (docs/howto/restart-with-work-running.md)
 update check                    check for available updates
 copy [id]                       get last LLM response (default: most recent session)
 prompt [id]                     get last user prompt sent to a session

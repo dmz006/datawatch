@@ -1057,7 +1057,16 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 
 	resolve := capacityResolver(httpServer.InferenceRegistry, httpServer.ComputeRegistry)
 	keys, choices := capacityManagerKeys(resolve)
-	amgr.SetCapacity(led, keys)
+	// The admission placement gate: before the load step happens, the load
+	// asks the planner where a missing model may go and applies the live
+	// missing_model policy — refuse, auto-load, or ask the operator (nil
+	// advisor = gate skipped, status quo). Wired through SetCapacity, the
+	// existing admission wiring, not a separate setter.
+	var advisor autonomous.PlacementAdvisor
+	if amgr != nil {
+		advisor = newPlacementAdvisor(cfg, httpServer)
+	}
+	amgr.SetCapacity(led, keys, advisor)
 	// An LLM entry edit (API, MCP, CLI or config reload) re-plans the waiters
 	// at once; the pool sync ticker covers compute registry changes.
 	replan := replanOnPlacementChange(led, httpServer.InferenceRegistry, httpServer.ComputeRegistry)
@@ -1068,6 +1077,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetEntryNodes(entryNodeCount(httpServer.InferenceRegistry))
 	amgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }, httpServer.ComputeRegistry))
 	amgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
+	amgr.SetSessionBackend(sessionBackend(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
 	// placement-tags: the session manager is the sink for a placed task's
 	// system tags, and the tags.placement block (autonomous.tags.placement)
 	// is the source. Both are wired here so an operator config edit takes
@@ -1213,6 +1223,13 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// also backs the startup guardrail-judge reconcile host.
 	if amgr != nil {
 		amgr.SetJudgeHost(&judgeReconcileHost{mgr: mgr, led: led, reg: judges})
+		// Judge resume at boot: a guardrail-judge session that is still
+		// live after a daemon restart gets a waiter attached (no second
+		// judge spawns); when it ends and writes its verdict, the daemon
+		// hands it to the manager for recording. A surviving unrecorded
+		// result file is read as the verdict instead. See
+		// judge_resume_wire.go.
+		wireJudgeResume(amgr, mgr, cfg)
 	}
 
 	verifiers := newVerifierRegistry()
@@ -1244,6 +1261,27 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	}
 
 	amgr.SetVerifierHost(&verifierReconcileHost{mgr: mgr, led: led, reg: verifiers})
+
+	// Adopt, never double-spawn (daemon restart): a verifying task's
+	// verifier session may still be live while the in-memory waiter the
+	// pre-restart flow attached to it is gone. The one-shot runner
+	// consults this listing and reuses the already-running verifier named
+	// exactly "autonomous:verify:<task id>" instead of spawning a second
+	// one — the verifier twin of the judgeLiveSession guard above (it is
+	// consulted only for verifier session names).
+	verifierLiveSession = func(sessionName string) string {
+		var bestID string
+		var bestAt time.Time
+		for _, s := range mgr.ListSessions() {
+			if s.Name != sessionName || !sessionRunning(mgr, s.FullID) {
+				continue
+			}
+			if bestID == "" || s.CreatedAt.After(bestAt) {
+				bestID, bestAt = s.FullID, s.CreatedAt
+			}
+		}
+		return bestID
+	}
 
 	wireVerifierAdmission(amgr, func(id string) int { return sessionPriority(mgr, id) }, verifiers)
 
@@ -1666,6 +1704,22 @@ func sessionEndpoint(lookup func(id string) (*session.Session, bool)) autonomous
 	}
 }
 
+// sessionBackend builds the reader of the backend and model a session really
+// runs: its BackendFamily and recorded Model. Both are empty when lookup is
+// nil, the session is missing, or it records no BackendFamily.
+func sessionBackend(lookup func(id string) (*session.Session, bool)) autonomous.SessionBackendFn {
+	return func(sessionID string) (string, string) {
+		if lookup == nil {
+			return "", ""
+		}
+		s, ok := lookup(sessionID)
+		if !ok || s == nil || s.BackendFamily == "" {
+			return "", ""
+		}
+		return s.BackendFamily, s.Model
+	}
+}
+
 // addressHost reduces an address (with or without scheme and path) to its
 // lowercase host:port so a session's recorded endpoint and a node's address
 // compare equal however each was written.
@@ -1679,4 +1733,189 @@ func addressHost(addr string) string {
 	}
 	host, _, _ := strings.Cut(addr, "/")
 	return host
+}
+
+// placementAdvisor is the daemon implementation of
+// autonomous.PlacementAdvisor: it reads the live config, the LLM entry's
+// node list, the compute registry (node capacity, RBAC, pins) and the
+// observer's latest payload per node, and hands them to the pure
+// compute.PlaceMissingModel planner — which itself never touches the
+// registries, the network, or the clock.
+type placementAdvisor struct {
+	cfg   *config.Config
+	entry func(backend, model string) inference.LLM
+	nodes func() *compute.Registry
+	peers func() server.PeerRegistryAPI
+	now   func() time.Time
+}
+
+// placementConsumer is the consumer name admission presents to the nodes'
+// RBAC matrix when planning where a missing model may be loaded.
+const placementConsumer = "autonomous"
+
+// newPlacementAdvisor wires the planner supplier over the daemon's live
+// registries. The config is read on every Plan call, so a missing_model
+// change takes effect at the next load gate without a restart.
+func newPlacementAdvisor(cfg *config.Config, httpServer *server.HTTPServer) *placementAdvisor {
+	return &placementAdvisor{
+		cfg: cfg,
+		entry: func(backend, model string) inference.LLM {
+			e, _, gated := hostingEntry(httpServer.InferenceRegistry(), backend, model)
+			if !gated {
+				return inference.LLM{}
+			}
+			return e
+		},
+		nodes: httpServer.ComputeRegistry,
+		peers: httpServer.PeerRegistry,
+		now:   time.Now,
+	}
+}
+
+// Plan implements autonomous.PlacementAdvisor. It hands the live config, the
+// inference and compute registries and the observer's latest payloads to the
+// pure compute planner and returns its verdict. pinnedTo is the task's node
+// pin; the planner restricts the candidates to it. A single-node entry is not
+// skipped: even with one candidate the planner applies the pin and headroom
+// checks and returns a refusal when the node lacks the model or the headroom.
+// Serving is set when the chosen node already serves the model, so the
+// missing_model policy leaves that case alone.
+func (a *placementAdvisor) Plan(backend, model, pinnedTo string) autonomous.PlacementPlan {
+	entry := a.entry(backend, model)
+	if len(entry.ComputeNodes) == 0 {
+		return autonomous.PlacementPlan{}
+	}
+	cands, ok := a.candidates(entry.ComputeNodes, model)
+	if !ok {
+		return autonomous.PlacementPlan{}
+	}
+	cp := a.cfg.ComputePlacement
+	memPct := cp.MemHeadroomPct
+	if memPct == 0 {
+		memPct = config.ComputePlacementDefaultMemHeadroomPct
+	}
+	diskGB := cp.DiskHeadroomGB
+	if diskGB == 0 {
+		diskGB = config.ComputePlacementDefaultDiskHeadroomGB
+	}
+	plan := compute.PlaceMissingModel(compute.PlacementRequest{
+		Model:          nodeModelName(model),
+		Consumer:       placementConsumer,
+		PinnedTo:       pinnedTo,
+		MemHeadroomPct: memPct,
+		DiskHeadroomGB: diskGB,
+		ModelSizeGB:    cp.AssumeModelSizeGB,
+		Now:            a.now(),
+		Candidates:     cands,
+	})
+	serving := false
+	for _, c := range cands {
+		if c.Node != nil && c.Node.Name == plan.Node && c.ServesModel {
+			serving = true
+		}
+	}
+	return autonomous.PlacementPlan{
+		Relevant: true,
+		Serving:  serving,
+		Chosen:   plan.Node,
+		Policy:   cp.EffectiveMissingModel(),
+		Refused:  plan.Refusal,
+	}
+}
+
+// AskTimeout implements autonomous.PlacementAdvisor.
+func (a *placementAdvisor) AskTimeout() time.Duration {
+	mins := a.cfg.ComputePlacement.AskTimeoutMinutes
+	if mins == 0 {
+		mins = config.ComputePlacementDefaultAskTimeoutMinutes
+	}
+	return time.Duration(mins) * time.Minute
+}
+
+// candidates builds the planner input per node: the registry's node (capacity,
+// RBAC, pin — a node whose pinned model is the one being loaded is the node
+// that serves it) plus the observer's latest payload (live memory and disk in
+// use). A node that left the registry is dropped: it can't be assigned anyway.
+func (a *placementAdvisor) candidates(names []string, model string) ([]compute.PlacementCandidate, bool) {
+	reg := a.nodes()
+	if reg == nil {
+		return nil, false
+	}
+	var pr server.PeerRegistryAPI
+	if a.peers != nil {
+		pr = a.peers()
+	}
+	bare := nodeModelName(model)
+	out := make([]compute.PlacementCandidate, 0, len(names))
+	for _, name := range names {
+		n, err := reg.Get(name)
+		if err != nil || n == nil {
+			continue
+		}
+		c := compute.PlacementCandidate{Node: n}
+		// A pin is never replaced. Asked as an implicit request (no swap),
+		// a node pinned to another model answers with its pin. Such a node
+		// reaches the planner with allow_model_swap withheld, so it is
+		// refused with the pin named, whatever the node's own setting. The
+		// registry's node is not touched: the planner gets a copy.
+		if pm, _ := inference.PlacementModel(n, bare); !strings.EqualFold(pm, bare) && n.AllowModelSwap {
+			noSwap := *n
+			noSwap.AllowModelSwap = false
+			c.Node = &noSwap
+		}
+		if n.NodePinnedModel != "" && strings.EqualFold(n.NodePinnedModel, bare) {
+			c.ServesModel = true
+		}
+		// The node's served models come from the source the compute API's
+		// node-models endpoint reads (/api/tags, via server.ProbeNodeModels).
+		if !c.ServesModel && nodeServesModel(n, bare) {
+			c.ServesModel = true
+		}
+		if pr != nil {
+			peerName := n.Name
+			if n.ObserverPeer != "" {
+				peerName = n.ObserverPeer
+			}
+			if snap := pr.LastPayload(peerName); snap != nil {
+				c.MemTotalBytes = snap.Mem.TotalBytes
+				if snap.Mem.TotalBytes > snap.Mem.UsedBytes {
+					c.MemFreeBytes = snap.Mem.TotalBytes - snap.Mem.UsedBytes
+				}
+				for _, d := range snap.Disk {
+					if f := d.TotalBytes - d.UsedBytes; f > c.DiskFreeBytes {
+						c.DiskFreeBytes = f
+					}
+				}
+			}
+		}
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
+}
+
+// nodeServesModel reports whether the node's served-model list includes the
+// model. The list is the one the compute API's node-models endpoint returns
+// (server.ProbeNodeModels, /api/tags). The probe is bounded to 5s; any error
+// (unreachable, timeout, bad reply) reports false: the planner treats the model
+// as missing and the load step makes it resident. A bare name also matches its
+// ":latest" tag, as ollama lists it.
+func nodeServesModel(n *compute.Node, model string) bool {
+	if n == nil || model == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	models, _, err := server.ProbeNodeModels(ctx, n, "ollama")
+	if err != nil {
+		return false
+	}
+	for _, m := range models {
+		if strings.EqualFold(m, model) || strings.EqualFold(m, model+":latest") {
+			return true
+		}
+	}
+	return false
 }

@@ -20,7 +20,7 @@ function loadView({ projects = [], rollup = null, rollupFail = false, hash = '' 
   const out = { view: '', rollupCalls: [] };
   const view = makeStubElement(h => { out.view = h; });
   view.insertAdjacentHTML = (pos, h) => { out.view = h + out.view; };
-  const sandbox = buildSandbox({ byId: { view }, initialHash: hash });
+  const sandbox = buildSandbox({ byId: { automataPanel: view, view }, initialHash: hash });
   sandbox.fetch = (url) => {
     const u = String(url);
     const ok = body => Promise.resolve({ ok: true, status: 200, statusText: '', json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body)) });
@@ -35,7 +35,7 @@ function loadView({ projects = [], rollup = null, rollupFail = false, hash = '' 
   vm.createContext(sandbox);
   loadScript(APP, sandbox);
   sandbox._i18n.bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
-  vm.runInContext("state.activeView = 'projects'", sandbox);
+  vm.runInContext("state.activeView = 'autonomous'; _automataState.tab = 'projects'", sandbox);
   return { sb: sandbox, out, view };
 }
 
@@ -77,16 +77,22 @@ test('the header shows every set field; the description is escaped', () => {
   assert.doesNotMatch(html, /is not set\./, 'a complete header has no unset-field Events entries');
 });
 
-test('an unset header field is left out and becomes an Events entry', () => {
+test('only a missing weekly share becomes an Events entry; other unset fields are just hidden', () => {
   const { sb } = loadView();
   const html = sb._projectPageHTML({ name: 'bare', dir: '/w/bare' }, ROLLUP, '');
   assert.doesNotMatch(html, /Owner:<\/span>/);
   assert.doesNotMatch(html, /Weekly share:<\/span>/);
   assert.match(html, /id="projectEvents"/);
-  assert.match(html, /Owner is not set\./);
-  assert.match(html, /Repository is not set\./);
+  assert.doesNotMatch(html, /Owner is not set\./);
+  assert.doesNotMatch(html, /Repository is not set\./);
+  assert.doesNotMatch(html, /Description is not set\./);
   assert.match(html, /Weekly share is not set\./);
-  assert.match(html, /Description is not set\./);
+});
+
+test('a missing weekly share is silent when there is no arc or unassigned Automaton', () => {
+  const { sb } = loadView();
+  const html = sb._projectPageHTML({ name: 'bare', dir: '/w/bare' }, { arcs: [], unassigned: { automata: [] }, total: {} }, '');
+  assert.doesNotMatch(html, /Weekly share is not set\./);
 });
 
 test('a weekly share of zero is a set value, not an unset one', () => {

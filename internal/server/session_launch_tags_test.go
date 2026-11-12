@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
@@ -29,6 +31,32 @@ func TestSessionLaunchTags(t *testing.T) {
 		}
 	})
 
+	t.Run("SupervisorRoleHasRoleComputeAndNoAutomaton", func(t *testing.T) {
+		s, _, _ := fedCapFixture(t)
+		dir := t.TempDir()
+		fullID := startTagsSession(t, s, `{"task":"plain","project_dir":"`+dir+`","launch_role":"supervisor"}`)
+
+		sess, ok := s.manager.GetSession(fullID)
+		if !ok {
+			t.Fatalf("session %s not found", fullID)
+		}
+		for _, want := range []string{"role:supervisor", "compute:" + launchLocalNode, "project:" + filepath.Base(dir)} {
+			if !launchTagPresent(sess.SystemTags, want) {
+				t.Errorf("system tags %v missing %q", sess.SystemTags, want)
+			}
+		}
+		for _, prefix := range []string{"backend:", "lane:"} {
+			if !launchTagHasPrefix(sess.SystemTags, prefix) {
+				t.Errorf("system tags %v missing a %s tag", sess.SystemTags, prefix)
+			}
+		}
+		for _, tag := range sess.SystemTags {
+			if strings.HasPrefix(tag, "automaton:") || strings.HasPrefix(tag, "automation:") {
+				t.Errorf("supervisor session carries %q, want no automaton tag", tag)
+			}
+		}
+	})
+
 	t.Run("UnknownRoleAndKindAreRefusedWith400", func(t *testing.T) {
 		s, _, _ := fedCapFixture(t)
 		for _, body := range []string{
@@ -43,17 +71,32 @@ func TestSessionLaunchTags(t *testing.T) {
 		}
 	})
 
-	t.Run("AbsentLaunchFieldsAddNothing", func(t *testing.T) {
+	t.Run("PlainStartGetsPlacementTagsOnly", func(t *testing.T) {
 		s, _, _ := fedCapFixture(t)
-		body := `{"task":"plain","project_dir":"` + t.TempDir() + `"}`
+		dir := t.TempDir()
+		body := `{"task":"plain","project_dir":"` + dir + `"}`
 		fullID := startTagsSession(t, s, body) // 200 already asserted.
 
 		sess, ok := s.manager.GetSession(fullID)
 		if !ok {
 			t.Fatalf("session %s not found", fullID)
 		}
-		if len(sess.SystemTags) != 0 {
-			t.Errorf("session system tags = %v, want empty (launch fields absent)", sess.SystemTags)
+		for _, want := range []string{"compute:" + launchLocalNode, "project:" + filepath.Base(dir)} {
+			if !launchTagPresent(sess.SystemTags, want) {
+				t.Errorf("system tags %v missing %q", sess.SystemTags, want)
+			}
+		}
+		for _, prefix := range []string{"backend:", "lane:"} {
+			if !launchTagHasPrefix(sess.SystemTags, prefix) {
+				t.Errorf("system tags %v missing a %s tag", sess.SystemTags, prefix)
+			}
+		}
+		for _, banned := range []string{"role:", "kind:", "automaton:", "automation:", "stage:"} {
+			for _, tag := range sess.SystemTags {
+				if strings.HasPrefix(tag, banned) {
+					t.Errorf("plain start carries %q, want no %s tag", tag, banned)
+				}
+			}
 		}
 	})
 }
@@ -93,6 +136,16 @@ type launchTestAutonomous struct {
 func (f *launchTestAutonomous) GetPRD(id string) (any, bool) {
 	prd, ok := f.prds[id]
 	return prd, ok
+}
+
+// launchTagHasPrefix reports whether any tag in xs starts with prefix.
+func launchTagHasPrefix(xs []string, prefix string) bool {
+	for _, x := range xs {
+		if strings.HasPrefix(x, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // launchTagPresent reports whether tag is in xs.

@@ -24,6 +24,12 @@ pipeline. This guide shows how to define it each way, which one wins, how to see
 what is in effect, how merge conflicts are handled and who approves a release
 before it ships.
 
+In the web app the merge pipeline settings are in **Settings → General →
+Automata**; they are no longer on the Automata pages. Only the place moved: the
+same keys are available on all six surfaces (YAML, web app, CLI, REST, MCP and
+the comm channel), and the old API keys (`autonomous.merge_pipeline.*`) still work
+unchanged.
+
 This how-to belongs to the tutorial and onboarding material. The
 [onboarding report](onboarding-report.md) points at it when a project still uses
 the built-in pipeline.
@@ -88,7 +94,7 @@ pipeline kept by the daemon.
   (use `-` to read standard input)
 - MCP: `autonomous_merge_pipeline_set_record` with `yaml` or `definition`
 - Chat: `autonomous merge-pipeline set-record <pipeline as YAML or JSON>`
-- PWA: Settings > Automation > Merge pipeline > Edit the daemon record
+- PWA: Settings → General → Automata → Merge pipeline > Edit the daemon record
 
 To remove it: `datawatch autonomous merge-pipeline clear-record`, the same tool
 with `clear` set to `true`, or Remove record in the PWA.
@@ -101,7 +107,7 @@ neither a registered project nor a merge base repository is set, the read
 answers HTTP 400 with the code `project_required` (a JSON body with
 `code: "project_required"`).
 
-In the PWA you never see a raw error: in Settings > Automation, the Merge
+In the PWA you never see a raw error: in Settings → General → Automata, the Merge
 pipeline card shows an empty state instead. To fix it, choose a project in
 the card's project field (or pass the project argument of the API call or
 the MCP tool, or `--project` on the CLI), or set the merge base repository
@@ -141,7 +147,7 @@ To see the result:
 - CLI: `datawatch autonomous merge-pipeline show [--project P]`
 - MCP: `autonomous_merge_pipeline_get`
 - Chat: `autonomous merge-pipeline`
-- PWA: Settings > Automation > Merge pipeline
+- PWA: Settings → General → Automata → Merge pipeline
 
 The answer names the source in effect (project file, daemon record or built-in
 default), the reason in plain language, any problem found with the file even if
@@ -246,7 +252,7 @@ read. The same block is shown in four places:
   `conflict_confirmation` object (see the [autonomous API](../api/autonomous.md)).
 - **MCP**: `autonomous_merge_pipeline_get` returns the same line as its text
   answer, and the same object as its JSON body.
-- **Card**: Settings > Automation > Merge pipeline shows
+- **Card**: Settings → General → Automata → Merge pipeline shows
   `Conflict confirmations: <count> conflicts confirmed · <remaining>
   confirmations remaining`.
 
@@ -320,7 +326,7 @@ Each surface sets the same keys. A mode is only `auto`, `ask` or `manual`.
         major: ask
   ```
 
-- **Web UI** — Settings > Automation, in the Merge pipeline group, has one field per size. Set the Major field to `ask` to change the global default. For one project, the Merge pipeline card has a Release approval select per size, and choosing a mode there saves that project's override.
+- **Web UI** — Settings → General → Automata, in the Merge pipeline group, has one field per size. Set the Major field to `ask` to change the global default. For one project, the Merge pipeline card has a Release approval select per size, and choosing a mode there saves that project's override.
 - **REST API** — `PUT /api/config` with the dotted key:
 
   ```
@@ -354,7 +360,7 @@ and nothing is stored. The same goes for a size that is not `patch`, `minor` or
 
 Read the modes that apply to a project, with the inheritance already resolved:
 
-- **Merge pipeline view** — the Merge pipeline card in Settings > Automation shows the mode in effect for each size.
+- **Merge pipeline view** — the Merge pipeline card in Settings → General → Automata shows the mode in effect for each size.
 - **Command line and chat** — `datawatch autonomous merge-pipeline show [--project P]`, or the chat verb `autonomous merge-pipeline`. The text answer carries a `Release approval: patch …, minor …, major …` line.
 - **MCP** — `autonomous_merge_pipeline_get`. Its answer carries `release_approval_in_effect`, the resolved mode for each size.
 - **REST API** — `GET /api/autonomous/merge-pipeline?project=NAME` carries the same `release_approval_in_effect`. `GET /api/config` returns the effective `release_approval` block for the global settings.
@@ -754,7 +760,7 @@ size's mode. Add a project to keep one project's comparisons only.
 | REST | `GET /api/autonomous/release-readiness?size=patch\|minor\|major` with an optional `project` parameter |
 | MCP | the `autonomous_release_readiness` tool, with `size` (required) and an optional `project` |
 | Comm verb | `autonomous merge-pipeline release-readiness <patch\|minor\|major> [project]` |
-| PWA | the Release readiness card on the Automation Setup sub-tab. It draws a size only once that size has at least one comparison record |
+| PWA | the Release readiness card on the Events tab (the Setup sub-tab was removed). It draws a size only once that size has at least one comparison record |
 
 ### Mode changes are recorded
 
@@ -874,7 +880,7 @@ When the merge has landed and the shipped record has been written for the Automa
 
 ### What is still yours to do
 
-The plan, the comparison and the defect candidates are read from the same daemon endpoint on five read-only operator surfaces: REST `GET /api/autonomous/merge/shadow`, the `autonomous_merge_shadow_status` MCP tool, `datawatch autonomous merge-shadow status` and `compare <automaton-id>`, the comm verb `autonomous merge-shadow`, and the Merge shadow card on the Automation Setup and policy sub-tab (walkthrough: [merge-shadow.md](merge-shadow.md#where-the-shadow-state-is-read)). The stored plan is on all of them today; the **comparison** reads stay empty until the store wiring above lands (the card stays hidden, the CLI answers “no merge shadow comparison exists”), and the defect candidates are not yet filed into the defect queue and still have no read surface at all — they are the JSON under the data directory. The rest of the phase — the release approval modes per size of release (each `automatic`, `ask` or `manual`), the daemon's own push and tag under a release path, conflict resolution by file class with the confirmation counter — lands in the same phase and is documented as it does. What you still review: every difference the comparison grades (each one names its field, both values and its severity), the parity-issue and gate lines that have no landed side yet (above), the plan's findings — the `load_sensitive` gate (a test that failed under load and passed when rerun alone is still a test to watch), the failing tests named in a failed `test` gate's detail, and the blocking `unmerged_task_branch`, `stray_root_file`, `lint_version_mismatch` and `review_stale` findings (a `review_stale` verdict is on an older commit — the current head is not reviewed yet) — the fact that the comparison record is not stored beyond the candidates, and whether the evidence bar below has been met before the supervisor steps out of the loop. Until the shadow comparison meets the evidence bar (ten merges where the daemon's plan equals the manual one or is better, including at least two with conflicts and two with PWA changes, no blocking comparison defect), the merge stays with the supervisor. The phase's modes, defaults and exit criteria are in [the autonomy handover plan](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4.
+The plan, the comparison and the defect candidates are read from the same daemon endpoint on five read-only operator surfaces: REST `GET /api/autonomous/merge/shadow`, the `autonomous_merge_shadow_status` MCP tool, `datawatch autonomous merge-shadow status` and `compare <automaton-id>`, the comm verb `autonomous merge-shadow`, and the Merge shadow card on the Events tab (walkthrough: [merge-shadow.md](merge-shadow.md#where-the-shadow-state-is-read)). The stored plan is on all of them today; the **comparison** reads stay empty until the store wiring above lands (the card stays hidden, the CLI answers “no merge shadow comparison exists”), and the defect candidates are not yet filed into the defect queue and still have no read surface at all — they are the JSON under the data directory. The rest of the phase — the release approval modes per size of release (each `automatic`, `ask` or `manual`), the daemon's own push and tag under a release path, conflict resolution by file class with the confirmation counter — lands in the same phase and is documented as it does. What you still review: every difference the comparison grades (each one names its field, both values and its severity), the parity-issue and gate lines that have no landed side yet (above), the plan's findings — the `load_sensitive` gate (a test that failed under load and passed when rerun alone is still a test to watch), the failing tests named in a failed `test` gate's detail, and the blocking `unmerged_task_branch`, `stray_root_file`, `lint_version_mismatch` and `review_stale` findings (a `review_stale` verdict is on an older commit — the current head is not reviewed yet) — the fact that the comparison record is not stored beyond the candidates, and whether the evidence bar below has been met before the supervisor steps out of the loop. Until the shadow comparison meets the evidence bar (ten merges where the daemon's plan equals the manual one or is better, including at least two with conflicts and two with PWA changes, no blocking comparison defect), the merge stays with the supervisor. The phase's modes, defaults and exit criteria are in [the autonomy handover plan](../plans/2026-11-03-autonomy-handover-plan.md), Phase 4.
 
 ## Settings
 
@@ -903,8 +909,8 @@ outside `patch`, `minor`, `major`, `none` is refused on every write surface
 with the key named, and nothing is written.
 
 Set them with `datawatch config set`, the `autonomous_config_set` MCP tool (its
-`merge_pipeline_*` arguments, and `merge_pipeline_release_approval_patch|minor|major` for a mode, with `merge_pipeline_project` for one project), the `configure` chat verb (a mode outside the three is refused with the key named before it is stored), or Settings >
-Automation > Merge pipeline in the PWA — the card's one-select-per-size section writes that project's override, and the settings page's one-per-size fields write the global value. The four release size keys each have a `?`
+`merge_pipeline_*` arguments, and `merge_pipeline_release_approval_patch|minor|major` for a mode, with `merge_pipeline_project` for one project), the `configure` chat verb (a mode outside the three is refused with the key named before it is stored), or Settings →
+General → Automata → Merge pipeline in the PWA — the card's one-select-per-size section writes that project's override, and the settings page's one-per-size fields write the global value. The four release size keys each have a `?`
 link there that opens the [Release size](../datawatch-definitions.md#release-size)
 entry in the definitions. The other keys open their own entries for the pipeline
 in the same file.

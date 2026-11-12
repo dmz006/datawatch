@@ -228,19 +228,44 @@ func TestBL451RollupRaceResetDuringRulesReviewBlock(t *testing.T) {
 
 // PRDFailed and project-rules PRDBlocked have no slow step of their
 // own; cover them by moving Rev between capture and commit.
+//
+// 2026-11-09 — a concurrent write that only bumps the Rev no longer
+// strands the rollup: commitRollupStatus retries with a refreshed Rev as
+// long as the under-lock predicate (status unchanged, every task still
+// terminal) holds, so a harmless writer loses and the Automaton is not
+// left "running" forever (the restart matrix hit this live: the rollup
+// aborted as stale and an Automation's entry PRD never reached completed,
+// so its fork never fired). A concurrent write that invalidates the
+// predicate (reset_task, cancel, another Run) still wins: the commit
+// never lands on any attempt and the abort is recorded.
 func TestBL451RollupCommitStaleRev(t *testing.T) {
-	for _, status := range []PRDStatus{PRDFailed, PRDBlocked, PRDCompleted} {
-		m, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
-		prd, _ := bl451RunningPRD(t, m, nil, TaskFailed)
-		rev, _ := m.Store().PRDRev(prd.ID)
-		_ = m.Store().SavePRD(prd) // concurrent writer
-		if _, ok := m.commitRollupStatus(prd, PRDRunning, rev, status, "test", ""); ok {
-			t.Fatalf("%s: commit succeeded on stale rev", status)
-		}
-		p, _ := m.Store().GetPRD(prd.ID)
-		if p.Status != PRDRunning || !bl451HasDecision(p, "rollup_aborted_stale") {
-			t.Fatalf("%s: status=%s decision=%v", status, p.Status, bl451HasDecision(p, "rollup_aborted_stale"))
-		}
+	// Harmless writer: bumps the Rev without touching status or tasks.
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	prd, _ := bl451RunningPRD(t, m, nil, TaskFailed)
+	_ = m.Store().SavePRD(prd) // concurrent writer
+	old, ok := m.commitRollupStatus(prd, PRDRunning, 0, PRDFailed, "test", "")
+	if !ok {
+		t.Fatal("commit lost to a harmless Rev bump; the Automaton would be stranded running")
+	}
+	if old != PRDRunning {
+		t.Fatalf("old=%s", old)
+	}
+	p, _ := m.Store().GetPRD(prd.ID)
+	if p.Status != PRDFailed || bl451HasDecision(p, "rollup_aborted_stale") {
+		t.Fatalf("status=%s decision=%v", p.Status, bl451HasDecision(p, "rollup_aborted_stale"))
+	}
+	// Meaningful writer: a reset put the task back to pending; the
+	// predicate fails under the store lock on every attempt.
+	m2, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	prd2, _ := bl451RunningPRD(t, m2, nil, TaskFailed)
+	prd2.Story[0].Tasks[0].Status = TaskPending
+	_ = m2.Store().SavePRD(prd2) // concurrent reset_task
+	if _, ok := m2.commitRollupStatus(prd2, PRDRunning, 0, PRDFailed, "test", ""); ok {
+		t.Fatal("commit succeeded with a non-terminal task")
+	}
+	p2, _ := m2.Store().GetPRD(prd2.ID)
+	if p2.Status != PRDRunning || !bl451HasDecision(p2, "rollup_aborted_stale") {
+		t.Fatalf("status=%s decision=%v", p2.Status, bl451HasDecision(p2, "rollup_aborted_stale"))
 	}
 }
 

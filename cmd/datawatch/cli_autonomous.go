@@ -91,6 +91,13 @@ Subcommands:
                                    Uncommitted-work status: the policy and scope in effect and the tasks and
                                    Automata held because work was left uncommitted (read only, nothing is
                                    committed or discarded)
+  unlanded-work [--json]           Archived Automaton branches with work not on the default branch and the
+                                   recommendation for each (read only)
+  unlanded-work keep <branch> [--note TEXT]
+  unlanded-work archive-branch <branch>
+  unlanded-work delete-worktree <branch> --confirm
+                                   Act on one listed branch: leave it, move it under the archive refs, or
+                                   back it up as a bundle and delete its worktree and branch
   request-watch [--session ID] [--automaton ID] [--json]
                                    The in-flight model request of each worker or verifier session whose model
                                    runs on a compute node: generating, idle or unreachable, and for how long
@@ -284,6 +291,8 @@ Subcommands:
 		newAutonomousPRDSetGuidedModeCmd(),
 		newAutonomousPRDSetNotifyEventsCmd(),
 		newAutonomousPRDSetGitCmd(),
+		newAutonomousBranchRefreshCmd(),
+		newAutonomousBranchRefreshStatsCmd(),
 		newAutonomousPRDSetSkillsCmd(),
 		newAutonomousTypesListCmd(),
 		newAutonomousTypeRegisterCmd(),
@@ -324,6 +333,7 @@ Subcommands:
 		// Decompose lint surface (config, dry-run, stored findings).
 		newAutonomousLintCmd(),
 		newAutonomousUncommittedWorkCmd(),
+		newAutonomousUnlandedWorkCmd(),
 		newAutonomousPlanningRoutingCmd(),
 		newAutonomousRequestWatchCmd(),
 		newAutonomousProtectedPathsCmd(),
@@ -782,6 +792,16 @@ scope_lint takes one of three values: off (skip the lint), warn (spawn the
 task and record a scope_lint_warn decision) or enforce (block the task before
 its session starts; the default). Any other value is rejected.
 
+planning_restart_policy (autonomous.planning_restart_policy) says what a daemon
+restart does to an Automaton that is still in planning (its decompose running):
+reattach (the default) keeps planning running and re-attaches it to the restarted
+daemon; restart restarts planning once after the restart and records a decision
+saying so; draft resets the Automaton to draft, as before this setting existed.
+Any other value is refused before anything is sent. The value is written to the
+daemon config, so the CLI sends it on its own request. See
+docs/howto/restart-with-work-running.md for when to pick each one.
+  datawatch autonomous config-set '{"planning_restart_policy":"restart"}'
+
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -811,8 +831,24 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 			if err := applyHostLoadAlertFlags(cmd, body); err != nil {
 				return err
 			}
-			if len(body) == 0 {
+			// planning_restart_policy is a daemon-config key (PUT /api/config),
+			// not part of the autonomous config body. It is refused here when
+			// invalid, before anything is sent, then written on its own.
+			planningPatch, err := takePlanningRestartPolicy(body)
+			if err != nil {
+				return err
+			}
+			if len(body) == 0 && planningPatch == nil {
 				return fmt.Errorf("give a JSON body or at least one flag")
+			}
+			if planningPatch != nil {
+				if _, err := daemonJSONBody(http.MethodPut, "/api/config", planningPatch); err != nil {
+					return err
+				}
+				fmt.Printf("autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
+				if len(body) == 0 {
+					return nil
+				}
 			}
 			resp, err := daemonJSONBody(http.MethodPut, "/api/autonomous/config", body)
 			if err != nil {
@@ -2030,6 +2066,48 @@ func newAutonomousPRDSetGitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "PR base branch override (empty = repo's own default branch)")
 	cmd.Flags().StringVar(&pushOnComplete, "push-on-complete", "", "per-PRD push-on-complete override: never | branch | default_branch | inherit (inherit = clear the override, use the daemon's git.push_on_complete); omit to leave unchanged")
 	return cmd
+}
+
+func newAutonomousBranchRefreshCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "branch-refresh <id> <enabled|disabled|inherit>",
+		Short: "Set the per-Automaton branch refresh override (enabled, disabled, or inherit the daemon setting)",
+		Long: "Set the branch refresh override of one Automaton. enabled refreshes it even when the daemon\n" +
+			"setting is off, disabled never refreshes it, inherit clears the override so\n" +
+			"autonomous.branch_refresh_enabled applies. The daemon settings are set with\n" +
+			"datawatch config set autonomous.branch_refresh_enabled / autonomous.branch_refresh_behind_limit.\n" +
+			"Setting the override also resets a refresh that a merge conflict stopped, so the next gap tries\n" +
+			"the merge again.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			var v string
+			switch strings.ToLower(args[1]) {
+			case "enabled", "enable", "on", "true":
+				v = "true"
+			case "disabled", "disable", "off", "false":
+				v = "false"
+			case "inherit", "clear", "default":
+				v = "null"
+			default:
+				return fmt.Errorf("mode must be enabled, disabled or inherit, got %q", args[1])
+			}
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/branch-refresh", []byte(`{"enabled":`+v+`}`))
+		},
+	}
+}
+
+func newAutonomousBranchRefreshStatsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "branch-refresh-stats",
+		Short: "Show the branch refresh numbers (setting, Automata by result, stopped count)",
+		Long: "Show the daemon's branch refresh setting and limit, how many Automata have a recorded refresh\n" +
+			"by result (clean, conflict, skipped, error), how many have refreshing stopped by a conflict and how\n" +
+			"many carry a per-Automaton override. Reads GET /api/autonomous/branch-refresh/stats.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return daemonGet("/api/autonomous/branch-refresh/stats")
+		},
+	}
 }
 
 func newAutonomousPRDSetSkillsCmd() *cobra.Command {

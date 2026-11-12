@@ -40,52 +40,6 @@ function frame(sandbox, body, opts) {
   return vm.runInContext('window.usageCalcFrameHtml(_body, _opts)', sandbox);
 }
 
-test('the switcher shows all three variants for variant all and is absent for a single variant', () => {
-  const s = loadApp();
-  const all = frame(s, workedExampleBody({ variant: 'all' }), {});
-  assert.ok(all.includes('usage-calc-switcher'), 'switcher missing for variant all');
-  assert.ok(all.includes('Pace gauge') && all.includes('Lane planner') && all.includes('Burn ledger'));
-
-  const single = frame(s, workedExampleBody({ variant: 'pace-gauge' }), {});
-  assert.ok(!single.includes('usage-calc-switcher'), 'switcher must be absent for a single variant');
-  assert.ok(!single.includes("usageCalcSetVariant('"), 'no switch button for a single variant');
-});
-
-test('a single variant with no renderer on this page says it is not available yet', () => {
-  const s = loadApp();
-  vm.runInContext("delete window.usageCalcRenderers['burn-ledger']", s);
-  const html = frame(s, workedExampleBody({ variant: 'burn-ledger' }), {});
-  assert.ok(html.includes('This view is not available yet.'), 'unavailable message missing');
-});
-
-test('the view counter is off by default and recording it never calls fetch', () => {
-  const s = loadApp();
-  assert.equal(vm.runInContext('usageCalcCounterOn()', s), false);
-  const html = frame(s, workedExampleBody(), {});
-  assert.ok(html.includes('Off'), 'counter state should read Off');
-
-  vm.runInContext("window.usageCalcSetVariant('lane-planner')", s);
-  assert.equal(s.localStorage.getItem('datawatch.usageCalc.counts'), null, 'nothing is counted while off');
-  assert.equal(s.fetchCalls.length, 0, 'opening a variant must not call the daemon');
-
-  vm.runInContext('window.usageCalcToggleCounter()', s);
-  vm.runInContext("window.usageCalcSetVariant('burn-ledger')", s);
-  assert.equal(s.fetchCalls.length, 0, 'counting must never call the daemon');
-  const counts = JSON.parse(s.localStorage.getItem('datawatch.usageCalc.counts'));
-  assert.equal(counts['burn-ledger'].opened, 1, 'the opened variant is counted once it is on');
-});
-
-test('the counts show back only on request and the browser copy is cleared on demand', () => {
-  const s = loadApp();
-  vm.runInContext('window.usageCalcToggleCounter()', s);
-  vm.runInContext("window.usageCalcSetVariant('burn-ledger')", s);
-  assert.ok(!frame(s, workedExampleBody(), {}).includes('advice used'), 'counts must stay hidden until asked');
-  vm.runInContext('window.usageCalcShowCounts()', s);
-  assert.ok(frame(s, workedExampleBody(), {}).includes('Burn ledger: opened 1 times, advice used 0 times'));
-  vm.runInContext('window.usageCalcClearCounts()', s);
-  assert.equal(s.localStorage.getItem('datawatch.usageCalc.counts'), null);
-});
-
 test('a stale series shows the last-copy marker with the keeper and the copy time', () => {
   const s = loadApp();
   const stale = frame(s, workedExampleBody({ stale: true, copied_at: '2026-10-23T20:00:00-04:00', keeper: 'peer-b' }), {});
@@ -102,61 +56,6 @@ test('the week-average notice shows only when recent_fallback is true', () => {
   assert.ok(fallback.includes(notice), 'fallback notice missing');
   const normal = frame(s, workedExampleBody(), {});
   assert.ok(!normal.includes('smoother than the recent burn'), 'notice must not show without a fallback');
-});
-
-test('remaining work names the figure in use and shows the queue count beside it', () => {
-  const s = loadApp();
-  const estimate = frame(s, workedExampleBody(), {});
-  assert.ok(estimate.includes('20.0 points (estimate) · queued tasks: 6'), 'estimate label or queue count missing');
-
-  const typed = frame(s, workedExampleBody({
-    advice: { remaining_work: { in_use: 'typed', points: 15.5, estimate_points: 20, typed_points: 15.5, queue_tasks: 6, cost_per_task: 3.33 } },
-  }), {});
-  assert.ok(typed.includes('15.5 points (typed) · queued tasks: 6'), 'typed label or queue count missing');
-  assert.ok(typed.includes('Clear typed figure'), 'clear control missing');
-  assert.ok(typed.includes('usageCalcSaveRemainingWork()'), 'override field needs its save control');
-});
-
-test('the extra-credit line shows the ceiling as 100 plus the extra points', () => {
-  const s = loadApp();
-  const html = frame(s, workedExampleBody({ advice: { extra_credit_points: 15, ceiling: 115 } }), {});
-  assert.ok(html.includes('Ceiling 115% (100 plus 15 extra-credit points)'), 'extra-credit ceiling line missing');
-});
-
-test('zero lanes is labelled as the operator choice and never advised', () => {
-  const s = loadApp();
-  const html = frame(s, workedExampleBody({ advice: { lanes: 0 } }), {});
-  assert.ok(html.includes('never advised.'), 'zero-lane wording missing');
-  assert.ok(html.includes('usageCalcStepLanes(-1)') && html.includes('disabled'), 'minus must be disabled at zero');
-});
-
-test('the empty state shows when no reading is saved, and the form is still there', () => {
-  const s = loadApp();
-  const html = frame(s, emptyBody(), {});
-  assert.ok(html.includes('No readings yet'), 'empty title missing');
-  assert.ok(!html.includes('usage-calc-verdict'), 'no verdict without a reading');
-  assert.ok(!html.includes('usage-calc-pace-gauge'), 'no variant body without a reading');
-  assert.ok(html.includes('usageCalcSubmitReading()'), 'reading form must stay available');
-});
-
-test('the policy radios carry the data-policy ids and labels, with the chosen policy checked', () => {
-  const s = loadApp();
-  const html = frame(s, workedExampleBody({ policy: 'pace' }), {});
-  for (const [id, label] of [['use-all', 'Run until used up'], ['pace', 'Pace to the week'], ['finish-early', 'Run flat out']]) {
-    assert.ok(html.includes(`data-policy="${id}"`), 'missing data-policy ' + id);
-    assert.ok(html.includes(label), 'missing label ' + label);
-  }
-  assert.equal((html.match(/name="usageCalcPolicy"/g) || []).length, 3, 'the three radios share one group');
-  assert.match(html, /data-policy="pace" value="pace" checked/);
-  assert.match(html, /data-policy="use-all" value="use-all" onchange/);
-  assert.ok(!/data-policy="use-all" value="use-all" checked/.test(html), 'only the chosen policy is checked');
-});
-
-test('a daemon error is shown plainly, and the frame still draws the form', () => {
-  const s = loadApp();
-  const html = frame(s, null, { error: 'usage calculator: not wired on this daemon' });
-  assert.ok(html.includes('Could not load usage advice: usage calculator: not wired on this daemon'));
-  assert.ok(html.includes('usageCalcSubmitReading()'));
 });
 
 test('refresh is one GET of the advice endpoint, and a policy change refetches with the policy query and saves nothing', async () => {
@@ -239,28 +138,3 @@ test('a points figure must be a number of 0 or more', () => {
   assert.equal(vm.runInContext("usageCalcPointsBody('').error", s), 'Enter a number of points, 0 or more.');
 });
 
-test('the reading time defaults to now and the what-if stepper goes up to the maximum', () => {
-  const s = loadApp();
-  const html = frame(s, workedExampleBody(), { now: Date.UTC(2026, 9, 23, 22, 8) });
-  assert.match(html, /id="usageCalcReadAt" type="datetime-local" value="\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"/);
-  assert.match(html, /id="usageCalcLanesPlus"[^>]*disabled/, 'plus is disabled at the maximum of 3 lanes');
-});
-
-test('the suggested-lanes button shows the advised count, and using it counts once when the counter is on', () => {
-  const s = loadApp();
-  const html = frame(s, workedExampleBody(), {});
-  assert.ok(html.includes('Use suggested lanes (1)'), 'suggested count missing from the button');
-  assert.ok(html.includes('usageCalcUseSuggested()'));
-
-  s._b = workedExampleBody();
-  vm.runInContext('window._usageCalc.body = _b', s);
-  vm.runInContext('window.usageCalcUseSuggested()', s);
-  assert.equal(s.localStorage.getItem('datawatch.usageCalc.counts'), null, 'nothing is counted while off');
-
-  vm.runInContext('window.usageCalcToggleCounter()', s);
-  vm.runInContext('window.usageCalcUseSuggested()', s);
-  const counts = JSON.parse(s.localStorage.getItem('datawatch.usageCalc.counts'));
-  assert.equal(counts['pace-gauge'].used, 1, 'the active variant records one use');
-  assert.equal(s.fetchCalls.length, 2, 'each use of the suggestion refetches the advice once');
-  for (const call of s.fetchCalls) assert.match(call.url, /\/api\/usage\/advice\?lanes=1$/, 'the what-if is the suggested count');
-});

@@ -8,9 +8,13 @@ func TestBootResume_PlanningPRDKillsItsOrphanDecomposeSession(t *testing.T) {
 	m, api, _, _ := apiFixture(t)
 	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
 	other, _ := m.CreatePRD("s2", "/w/proj", "opencode", "", EffortNormal)
+	// No planner record is set, so without the restart flag boot-resume would
+	// restart planning once. The flag is set here so the case under test is
+	// the orphan kill followed by the reset to draft.
 	for _, id := range []string{prd.ID, other.ID} {
 		p, _ := m.Store().GetPRD(id)
 		p.Status = PRDPlanning
+		p.PlanningRestartedOnce = true
 		_ = m.Store().SavePRD(p)
 	}
 	live := map[string][]string{prd.ID: {"dec-1"}, other.ID: {"dec-2", "dec-3"}}
@@ -106,6 +110,7 @@ func TestBootResume_PlanningPRDContrastStillResetsToDraft(t *testing.T) {
 	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDPlanning
+	p.PlanningRestartedOnce = true // restart already used: reset to draft, no new planner
 	_ = m.Store().SavePRD(p)
 
 	decomposeCalls := 0

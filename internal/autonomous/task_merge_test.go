@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -359,13 +360,59 @@ func TestMergeRefusesDirtyPRDWorktree(t *testing.T) {
 	f := newMergeFixture(t, "", map[string]string{"shared.txt": mergeBase})
 	f.addTask("t1", nil, "a.txt", "a\n")
 	f.seal()
+	var alerts []string
+	f.m.SetAlertSink(func(level, title, body string) string {
+		alerts = append(alerts, title+"|"+body)
+		return ""
+	})
 	writeMergeFile(t, f.prd.ProjectDir, "shared.txt", "uncommitted edit\n")
-	out, err := f.m.MergeTaskBranch(context.Background(), f.prd, f.task("t1"))
-	if err == nil || out == MergeOutcomeMerged {
-		t.Fatalf("merged over uncommitted work: %s %v", out, err)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		out, err := f.m.MergeTaskBranch(ctx, f.prd, f.task("t1"))
+		if err != nil || out != MergeOutcomeDeferred {
+			t.Fatalf("try %d: out %s err %v", i, out, err)
+		}
+	}
+	tk := f.task("t1")
+	if tk.MergeState != MergeStatePending || tk.MergeBlock == nil ||
+		tk.MergeBlock.Kind != MergeBlockKindDirtyWorktree ||
+		!strings.Contains(tk.MergeBlock.Reason, "shared.txt") || tk.MergeBlock.Attempts != 2 {
+		t.Fatalf("task = state %q block %+v", tk.MergeState, tk.MergeBlock)
+	}
+	if len(alerts) != 1 || !strings.Contains(alerts[0], "Automaton merge blocked") ||
+		strings.Contains(strings.ReplaceAll(alerts[0], f.prd.ProjectDir, ""), "PRD") {
+		t.Fatalf("alerts = %v", alerts)
 	}
 	if f.readPRDFile("shared.txt") != "uncommitted edit\n" {
 		t.Fatal("uncommitted work was touched")
+	}
+	// Operator discards the edit; the next call clears the block and merges.
+	if _, err := runGitInCtx(ctx, f.prd.ProjectDir, "checkout", "--", "shared.txt"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.m.MergeTaskBranch(ctx, f.prd, f.task("t1"))
+	if err != nil || out != MergeOutcomeMerged || f.task("t1").MergeBlock != nil {
+		t.Fatalf("after clean: %s %v block %+v", out, err, f.task("t1").MergeBlock)
+	}
+}
+
+func TestDirtyWorktreeBlockCapsFiles(t *testing.T) {
+	files := map[string]string{}
+	for i := 0; i < 25; i++ {
+		files[fmt.Sprintf("f%02d.txt", i)] = "x\n"
+	}
+	f := newMergeFixture(t, "", files)
+	ctx := context.Background()
+	if b := dirtyWorktreeBlock(ctx, f.prd.ProjectDir); b != nil {
+		t.Fatalf("clean tree gave %+v", b)
+	}
+	for name := range files {
+		writeMergeFile(t, f.prd.ProjectDir, name, "y\n")
+	}
+	b := dirtyWorktreeBlock(ctx, f.prd.ProjectDir)
+	if b == nil || len(b.Files) != 20 || !strings.Contains(b.Reason, "and 5 more") ||
+		!strings.Contains(b.Action, "Commit or discard") {
+		t.Fatalf("block = %+v", b)
 	}
 }
 

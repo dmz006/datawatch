@@ -83,6 +83,46 @@ list
 
 ---
 
+### `sessions groups [axis] [tag-prefix]`
+
+Per-group count summary of the host's sessions over the same grouped read
+the PWA Group-by picker, the MCP `list_sessions` params and the CLI
+`--group-by` flag all share.
+
+| Argument | Meaning |
+|---|---|
+| `axis` | Optional; defaults to `tag`. One of `tag`, `state`, `node`, `project`, `automaton`. Unknown axes are refused with `unknown axis "…" (supported: tag, state, node, project, automaton)`; more than two arguments is refused too. |
+| `tag-prefix` | Optional, second argument. With the tag axis only: only tags with this prefix (e.g. `automation:`) form groups; the rest collect in the ungrouped group. Ignored on every other axis. |
+
+**Examples and reply** (a `by <axis> — N session(s)` line, one line per
+group, then a `totals:` line — under a `Sessions by <axis>` reply header):
+```
+sessions groups tag automation:
+datawatch (Sessions by tag):
+by tag, tag prefix "automation:" — 6 session(s)
+  automation:lane-gpu  2 (complete×1, running×1)
+  automation:lane-cpu  1 (complete×1)
+  ungrouped  3 (failed×1, killed×1, running×1)
+  totals: complete×2, failed×1, killed×1, running×1
+```
+
+On the `automaton` axis each Automaton line also carries its block
+progress:
+
+```
+sessions groups automaton
+datawatch (Sessions by automaton):
+by automaton — 6 session(s)
+  a12f0001  4 (complete×3, running×1)  [done 3/4]
+  ungrouped  2 (failed×1, killed×1)  [done 2/2]
+  totals: complete×3, failed×1, killed×1, running×1
+```
+
+See [`docs/howto/sessions-tiles-and-grouping.md`](howto/sessions-tiles-and-grouping.md)
+for the full feature walk-through on every channel.
+
+---
+
 ### `status <id>`
 
 Show recent output from a session (last 20 lines by default).
@@ -916,10 +956,19 @@ Stop the running daemon and start a fresh one. Active AI sessions in their tmux 
 
 Equivalent to `datawatch stop && datawatch start` but in a single command. The new daemon re-reads the config file.
 
+While running Automata work would be interrupted (a planning Automaton, a verifying task, a running judge, a running task or a live session), the restart is refused. The command prints the interruption report and exits non-zero. Pass `--force` to restart anyway:
+
+```bash
+datawatch restart            # refused with the report while work runs
+datawatch restart --force    # restart anyway
+```
+
 The `restart` command is also available via:
-- **All messaging backends**: send `restart` to your Signal/Telegram/Discord/Slack/Matrix group
+- **All messaging backends**: send `restart` to your Signal/Telegram/Discord/Slack/Matrix group; send `restart force` to restart past a refusal
 - **Web UI**: Settings → About → Restart button (calls `POST /api/restart`)
-- **MCP**: `restart` tool
+- **MCP**: `restart_daemon` tool, with `force=true` to restart past a refusal
+
+See [howto/restart-with-work-running.md](howto/restart-with-work-running.md#forcing-a-restart-past-running-work).
 
 ### `datawatch setup <service>`
 
@@ -995,6 +1044,44 @@ datawatch test --pr
 - Requires `gh` CLI for `--pr` (GitHub CLI)
 - Phone numbers are partially masked (last 4 digits only)
 - Tokens and secrets are never included in output or PRs
+
+### `datawatch session list [flags]`
+
+List all sessions, or the same list grouped. Without grouping flags this is
+the flat list (see the `list` comm command above for the ungrouped view);
+with `--group-by` the read goes through the daemon's grouped REST endpoint
+and the CLI renders the full grouped view: group headers with count and
+state mix, the group's sessions indented underneath, story blocks and
+done/total progress on the automaton axis, and per-state totals at the end.
+
+| Flag | Description |
+|---|---|
+| `--group-by` | Group the list by `tag`, `state`, `node`, `project` or `automaton`. Activates the grouped read. |
+| `--tag-prefix` | With `--group-by tag`: only tags with this prefix (e.g. `automation:`) form groups; the rest collect in the ungrouped group. Ignored on every other axis. |
+| `--all-servers` | Include sessions from all federation peers (`/api/sessions/aggregated`). |
+| `--orphaned` | List only sessions whose parent id no longer exists. |
+| `--name` | Filter by name glob (e.g. `worker-*, agent-?`). |
+| `--state` | Filter by state: `running`, `waiting_input`, `rate_limited`, `complete`, `failed`, `killed`. |
+| `--backend` | Filter by backend family (e.g. `opencode`, `claudecode`). |
+| `--alive` | Filter by `claude_alive`: `true` or `false`. |
+| `--json` | Output structured JSON. |
+| `--summary` | Compact JSON list: long text fields truncated, only the newest finished sessions kept. |
+| `--states` | Comma list of states to include (e.g. `running,waiting_input`); `active` = every non-finished state. |
+| `--since` | Only sessions updated after this time (RFC3339 or unix seconds). |
+
+**Examples:**
+```bash
+# All sessions, grouped by Automaton: block, story, done/total per block
+datawatch session list --group-by automaton
+
+# The tag axis narrowed to the automation: prefix
+datawatch session list --group-by tag --tag-prefix automation:
+
+# Per-node cut of the fleet
+datawatch session list --group-by node
+```
+
+The grouped read is one REST endpoint (`GET /api/sessions?group_by=...&tag_prefix=...`) shared by the PWA Group-by picker, the MCP `list_sessions` params and the comm verb `sessions groups` — same groups, counts and state mixes everywhere.
 
 ### `datawatch session new [flags] <task>`
 
@@ -1294,6 +1381,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts). An Automaton whose completion review blocked it carries `rules_review_outcome`; `get <id>` (CLI `prd-get`) prints the same action line and finding bullets, and a parked Automaton accepts add-task and a re-run |
 | `config get/set` | Get / set autonomous engine config (max_recursion_depth, auto_approve_children, per_task_guardrails, per_story_guardrails) |
 | `learnings` | List engine learnings (BL202) |
+| `unlanded-work [--json]`, `unlanded-work keep <branch> [--note <text>]`, `unlanded-work archive-branch <branch>`, `unlanded-work delete-worktree <branch> --confirm` | List the archived Automaton branches whose commits are not on the default branch, each with a recommendation (landed, superseded or needs a decision), and act on one: keep it, move it under the archive refs, or write a bundle backup and then delete its worktree and branch. Same as `GET /api/autonomous/unlanded-work` and the three `POST` actions; the list is also the `autonomous_unlanded_work` MCP tool (read-only) and the chat verb `autonomous unlanded-work [keep\|archive-branch\|delete-worktree <branch> [confirm]]`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) |
 | `standard-tasks [--project <dir-or-alias>] [--json]` | List the standard tasks the decomposer adds to each story — the built-in pack (changelog entry, parity-issue draft, docs set, bounded load-step rule, final gate, version note) with any operator overrides resolved for the `--project`: a table of `ID TITLE KIND ENABLED MODE RUNNER` (`mode` is `llm`, `daemon` or `off`; `runner` is `session`, `script gate`, `daemon` or `none`); `--json` prints the `GET /api/autonomous/standard-tasks[?project=…]` body `{enabled, tasks[]}` untouched. A read: nothing is written. Chat word: `standard tasks` (or `autonomous standard-tasks`) |
 | `progress [--json] [--automation <id>] [--tag <id>]... [--tag-match any\|all] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--tag` is repeatable and `--tag-match all` counts only Automata carrying every selected tag (any one by default). `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id> ...] [tag_match=<any\|all>] [since=<date>] [until=<date>]` |
 | `progress-trend [--days <n>] [--tag <id>]... [--tag-match any\|all] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `--tag` is repeatable and scopes the tags the reply reports. `GET /api/autonomous/progress/trend`; chat: `progress trend [days] [tag=<id> ...] [tag_match=<any\|all>]` |
@@ -1363,6 +1451,8 @@ Comm channel for triage records: `autonomous triage [automation-id]` (one option
 Comm channel for operator decisions: `autonomous decisions [automaton-id]` (one optional positional argument, the Automaton id) replies with the newest ten decisions, one line each, in the same text as the CLI; extra arguments get a usage reply. The decisions are read: nothing is answered or changed from this verb.
 
 Comm channel for the overlap read: `autonomous overlap <text>` takes the spec of the plan you are about to create (everything after the verb) and replies with one line per warning, best match first, or `No overlaps found.`. It is a read and writes nothing; a bare `autonomous overlap` is refused with the usage line. The create-search mode and threshold are configuration keys, not commands: `datawatch config set autonomous.automation.create_search_mode=on` (or `shadow`, or `off`), and `autonomous.automation.create_search_threshold` (above 0, at most 1). In chat, `configure autonomous.automation.create_search_mode=on`.
+
+Branch refresh: `datawatch autonomous branch-refresh <id> enabled|disabled|inherit` sets the per-Automaton override. `enabled` refreshes that Automaton's branch from main between tasks even when the daemon setting is off, `disabled` never refreshes it, `inherit` clears the override so the daemon setting applies; setting it also resets a refresh a merge conflict stopped. Chat: `autonomous branch-refresh <id> enabled|disabled|inherit`. The numbers across Automata: `datawatch autonomous branch-refresh-stats` (chat: `autonomous branch-refresh-stats`). The daemon settings are configuration keys, not commands: `datawatch config set autonomous.branch_refresh_enabled true` and `autonomous.branch_refresh_behind_limit 5`. In chat, `configure autonomous.branch_refresh_enabled=true`. See `docs/howto/automaton-branch-refresh.md`.
 
 Lane fill settings are configuration keys, not commands: `datawatch config set autonomous.lane_fill.mode shadow` (or `on`, or `off`), and the other `autonomous.lane_fill.*` keys. In chat, `configure autonomous.lane_fill.mode=on`. The keys and the surfaces are listed in the Lane fill section of `docs/operations.md`.
 
@@ -1670,7 +1760,7 @@ The MCP server exposes the full feature set as tools for AI clients (Cursor, Cla
 
 | Tool | Description |
 |---|---|
-| `list_sessions` | List all sessions on this host |
+| `list_sessions` | List all sessions on this host; optional `group_by` (`tag`/`state`/`node`/`project`/`automaton`) + `tag_prefix` return the grouped response (groups with count, state mix, members; automaton blocks with stories and done/total progress) |
 | `start_session` | Start a new AI session (`task`, optional `project_dir`) |
 | `session_output` | Last N lines of output (`session_id`, optional `lines`) |
 | `session_timeline` | Structured event timeline (`session_id`) |

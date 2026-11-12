@@ -194,7 +194,18 @@ func ignoreFileLines(text string) map[string]bool {
 // compared with an empty one. Any other change, including one the worker made,
 // is not the daemon's.
 func isDaemonIgnoreChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
-	cur, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel))) // #nosec G304 -- rel is a fixed ignore file name and dir is the Automaton's own project directory
+	cleaned, ok := localRelPath(rel)
+	if !ok {
+		return false
+	}
+	if strings.ContainsRune(cleaned, 0) {
+		return false
+	}
+	checked := filepath.FromSlash(cleaned)
+	if !filepath.IsLocal(checked) {
+		return false
+	}
+	cur, err := os.ReadFile(filepath.Join(dir, checked)) // #nosec G304 -- checked is a lexically local path and dir is the Automaton's own project directory
 	if err != nil {
 		return false
 	}
@@ -329,7 +340,7 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 // (add), what the commit pathspec receives (pathspec) and what is dropped
 // (skipped). Per path:
 //  1. A path that lexically escapes the repository (absolute, or starting
-//     with "..") is never skipped: it goes to add and pathspec so git fails
+//     with ".." once cleaned) or contains a NUL byte is never skipped: it goes to add and pathspec so git fails
 //     with its own error.
 //  2. A path that exists in the worktree (Lstat succeeds) goes to add and
 //     pathspec.
@@ -345,13 +356,24 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 // git error surfaces.
 func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (add, pathspec, skipped []string) {
 	for _, p := range files {
-		clean := filepath.Clean(p)
-		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		if strings.ContainsRune(p, 0) {
 			add = append(add, p)
 			pathspec = append(pathspec, p)
 			continue
 		}
-		if _, err := os.Lstat(filepath.Join(dir, p)); err == nil {
+		clean := filepath.Clean(p)
+		if filepath.IsAbs(clean) {
+			add = append(add, p)
+			pathspec = append(pathspec, p)
+			continue
+		}
+		rel := clean
+		if !filepath.IsLocal(rel) {
+			add = append(add, p)
+			pathspec = append(pathspec, p)
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(dir, rel)); err == nil {
 			add = append(add, p)
 			pathspec = append(pathspec, p)
 			continue

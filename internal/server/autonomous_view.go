@@ -254,7 +254,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 		writeJSONOK(w, s.withAutomatonCost(view, id))
 	default:
 		if textCap <= 0 {
-			writeJSONOK(w, s.withAutomatonCost(s.withInheritedTags(s.prdWithObservations(prd, id), id), id))
+			writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.prdWithObservations(prd, id), id), id)))
 			return
 		}
 		p, err := toPRD(prd)
@@ -263,7 +263,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		capped := autonomous.CapPRDText(p, textCap)
-		writeJSONOK(w, s.withAutomatonCost(s.withInheritedTags(s.prdWithObservations(capped, capped.ID), capped.ID), capped.ID))
+		writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.prdWithObservations(capped, capped.ID), capped.ID), capped.ID)))
 	}
 }
 

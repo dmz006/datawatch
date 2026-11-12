@@ -245,12 +245,15 @@ func (m *Manager) judgeVerdictCacheEnabled() bool {
 }
 
 // judgeVerdictCommitSHA picks the commit sha the judgment is anchored to:
-// the latest attempt commit recorded on the unit's own task (task-level
+// the invocation's ReviewHead when it carries one, else the latest attempt commit recorded on the unit's own task (task-level
 // judgments), else the latest across the unit story's tasks (story-level),
 // else the latest recorded anywhere in the PRD (PRD-level). A PRD with no
 // recorded attempt commit at all has no anchor, so the cache is bypassed
 // both for lookup and store.
 func judgeVerdictCommitSHA(prd *PRD, inv GuardrailInvocation) string {
+	if inv.ReviewHead != "" {
+		return inv.ReviewHead
+	}
 	if prd == nil {
 		return ""
 	}
@@ -363,7 +366,14 @@ func judgeVerdictCacheLookupBypassed(ctx context.Context) bool {
 }
 
 // judgeVerdictRulesHash is the "rules" part of the key: a hash over the
-// guardrail name and the exact inputs the judge saw for this unit.
+// guardrail name and the exact inputs the judge saw for this unit, plus the
+// rules fingerprint when the invocation carries one. An empty fingerprint adds
+// no part, so per-task and per-story keys are the same as they were before the
+// fingerprint existed.
 func judgeVerdictRulesHash(inv GuardrailInvocation) string {
-	return JudgeVerdictRulesHash(inv.Guardrail, inv.Prompt, inv.UnitTitle, inv.UnitSpec, inv.GuardrailModel)
+	parts := []string{inv.Guardrail, inv.Prompt, inv.UnitTitle, inv.UnitSpec, inv.GuardrailModel}
+	if inv.RulesFingerprint != "" {
+		parts = append(parts, inv.RulesFingerprint)
+	}
+	return JudgeVerdictRulesHash(parts...)
 }

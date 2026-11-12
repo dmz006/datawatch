@@ -6,14 +6,16 @@ docs:
 # How-to: the Automation view
 
 The **Automation** view is the place in the web app where you build, watch and
-steer chains of Automata. It is the first sub-tab of the **Automata** tab: open
+steer chains of Automata. It is a sub-tab of the **Automata** tab, second after **Projects**: open
 Automata in the bottom navigation and Automation is selected on the sub-tab bar,
-left of **Automata** and **Templates**. It shows every Automation as a card, draws the chain
+left of **Automata**, **Events** and **Templates**. It shows every Automation as a card, draws the chain
 of the one you open as a strip, and puts the controls (pause, resume, cancel,
 skip, insert, remove, edit edges) next to the members they act on. Inside the
-Automation sub-tab, a second row of six sub-tabs splits the view, in this
-order: **Inbox**, **Automations**, **Resources**, **Progress and cost**,
-**Setup and policy** and **Housekeeping**. Inbox is the one open by default.
+Automation sub-tab, a second row of five sub-tabs splits the view, in this
+order: **Inbox**, **Automations**, **Resources**, **Progress and cost**
+and **Housekeeping**. The former **Setup and policy** sub-tab is gone: a
+stored or bookmarked link to it opens Inbox, its status cards moved to the
+Events tab and its configuration moved to Settings. Inbox is the one open by default.
 
 The first sub-tab row also holds an **Events** sub-tab (between **Automata**
 and **Templates**): the one stream of what the daemon watches and does for
@@ -32,10 +34,10 @@ to its tab without changing the other tabs.
 |---|---|
 | **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting. |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
-| **Resources** | Capacity, lane fill, usage against the plan, and the Automata ship status card. Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
-| **Progress and cost** | The Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
-| **Setup and policy** | The onboarding and requirements report, the merge pipeline and the model request watch. Project policy, decompose lint, priority by kind and the supervisor loop appear here when they ship. The automatic grouping tags (the placement axes and the tag sweep) ship today, but they live on the Settings page under **Settings → General → Automata → Placement tags**, not as a card of this tab; see [automata-tags](automata-tags.md). |
-| **Housekeeping** | The uncommitted work card. The safe-to-delete report and the cleanup card now live in the Events tab. Stale worktrees appears here when it ships. |
+| **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier slots appear here when they ship. |
+| **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
+| *(Setup and policy, removed)* | The sub-tab no longer exists. The onboarding and requirements report, the supervisor loop runs and counts, the release readiness bar, the model request watch and the merge shadow now show on the Events tab, and only while they have something to show. The merge pipeline, decision records folder, usage reading and extra credit settings are in **Settings → General → Automata**. The placement axes and the tag sweep are under **Settings → General → Automata → Placement tags**; see [automata-tags](automata-tags.md). |
+| **Housekeeping** | An action list: the **Unlanded work** card (archived Automaton branches whose work is not on the default branch, each with a recommendation and Keep, Archive branch and Delete worktree buttons; Delete worktree writes a backup bundle first), the uncommitted work card with a **Commit** button that shows the diff and takes a message. The safe-to-delete report, the cleanup history, the skipped-by-reason counts and the **Fix permissions** button (for removals the file system refused) moved to the Cleanup card on the Events tab. |
 
 ## What an Automation is
 
@@ -47,7 +49,7 @@ datawatch starts the next Automaton by itself. See
 works behind the scenes.
 
 The bottom navigation has no Automation button of its own. Inside the Automata
-tab, the sub-tab bar reads **Automation**, **Automata**, **Templates**. The
+tab, the sub-tab bar reads **Projects**, **Automation**, **Automata**, **Events**, **Templates**. The
 Automata sub-tab lists single Automata; the Automation sub-tab lists the chains
 that connect them.
 
@@ -146,6 +148,8 @@ question states**.
 
 Clicking a Triage card opens its detail panel.
 
+**A blocked merge on the card.** A finished task's work does not always merge into the Automaton branch at once. If the Automaton worktree holds a stale uncommitted edit, the merge cannot go ahead and the work waits, still safe on the task's own branch. The needs-attention card then lists that Automaton as having a merge blocked, with the task, the reason (for example that the worktree has uncommitted changes, and which files) and the action to take (commit or discard that edit). The same reason and action show on the Automaton's own card. The card clears by itself once the merge goes through.
+
 ### The cards on the other sub-tabs
 
 Each card loads with its own loading skeleton and, if the request fails, its own
@@ -156,17 +160,31 @@ never blanks the cards.
   [Questions](#questions-rest-only-for-now)), the held-question card and the
   security failure card. The supervisor watch card is in the Events tab. The badge on the tab
   counts what is waiting on you.
-- **Resources:** the capacity and queue card (the pools and their usage, any
+- **Resources:** the three usage cards in a row (weekly allowance, pace line,
+  burn per day), the capacity and queue card (the pools and their usage, any
   usage back-off, budgets, and the Automata waiting for capacity), the lane fill
-  card, the usage card (usage against the plan) and the Automata ship status
+  card (one row per lane, with its node) and the Automata ship status
   card (the push, tag and release steps). The infrastructure retries and the
   Automata checks cards (the four report-only checks) are in the Events tab.
 - **Progress and cost:** the Progress card, with the kind table, work left and
   completion range.
-- **Setup and policy:** the onboarding and requirements report, the merge
-  pipeline card and the model request watch card.
-- **Housekeeping:** the uncommitted work card. The safe-to-delete report and
-  the cleanup card are in the Events tab.
+- **Setup and policy (removed):** its cards are on the Events tab (see
+  [automata-events.md](automata-events.md#status-cards-on-the-events-tab)) and
+  its configuration is in Settings under Automata.
+- **Housekeeping:** the action list. The **Unlanded work** card lists archived
+  Automaton branches with work not on the default branch, with a
+  recommendation (landed, superseded or needs a decision) and Keep, Archive
+  branch and Delete worktree buttons; Delete worktree first writes a git
+  bundle backup and removes nothing if the backup fails. The uncommitted work
+  card has a **Commit** button that shows the diff and asks for a message.
+  The safe-to-delete report, the cleanup history, the skipped-by-reason
+  counts and the permission problem with its **Fix permissions** button are on
+  the Events tab. Details and every surface:
+  [automaton-worktree-cleanup.md](automaton-worktree-cleanup.md).
+
+### When a task's merge is waiting
+
+When a task finishes, its work is merged into the Automaton branch before the next task starts. If that merge is blocked, the Automaton and the Triage show it with the reason and the action, as described under the needs-attention card. You do not have to retry it by hand: the daemon tries the merge again on a timer. Set the wait between tries with **Task merge retry interval** in Settings (`autonomous.parallel.merge_retry_seconds`, 60 seconds unless you changed it). `0` turns the timed retry off, and the merge then waits until you clear the cause and act. While an earlier task's merge is pending, the next task waits; nothing later runs on top of work that has not landed.
 
 ### Reading the merge state and the safe-to-delete report
 
@@ -183,7 +201,7 @@ No badge means the Automaton is merged, has nothing ahead of `main`, or has not 
 
 **Trying it first with shadow mode.** Set the check to `shadow` and it records what it would have done (state, commits ahead, whether it would have alerted) without raising any alert or writing any merge-pending record. Read that history with `datawatch autonomous merge` or `GET /api/autonomous/merge` (`shadow_decisions`, newest first) and switch to `on` once the states match what you expect. The badge also appears in shadow mode, so you can see the states on your own branches before anything alerts.
 
-**The safe-to-delete report.** On the Housekeeping sub-tab, the **Automaton safe-to-delete report** card lists two things. **Automaton branches safe to delete** are branches whose commits are all on `main` (or that have none) and whose worktree has nothing uncommitted. **Automaton branches held** must stay: still merge pending, needing a look, not comparable, or merged but with a worktree that has uncommitted changes (the card shows "The Automaton worktree has uncommitted changes."). Each row shows the branch, its worktree path, and why. The card refreshes every 60 seconds, wraps long branch names and paths on a phone, and shows **Could not load the Automaton safe-to-delete report** if the read fails (for example when no worktree base repository is configured). Where the report carries it, the card also shows when the report was computed, and a stale badge when the daemon told the reader the result was past its 60-second lifetime.
+**The safe-to-delete report.** Under the stream on the Events tab, the **Automaton safe-to-delete report** card lists two things. **Automaton branches safe to delete** are branches whose commits are all on `main` (or that have none) and whose worktree has nothing uncommitted. **Automaton branches held** must stay: still merge pending, needing a look, not comparable, or merged but with a worktree that has uncommitted changes (the card shows "The Automaton worktree has uncommitted changes."). Each row shows the branch, its worktree path, and why. The card refreshes every 60 seconds, wraps long branch names and paths on a phone, and shows **Could not load the Automaton safe-to-delete report** if the read fails (for example when no worktree base repository is configured). Where the report carries it, the card also shows when the report was computed, and a stale badge when the daemon told the reader the result was past its 60-second lifetime.
 
 **The report never deletes anything.** The card has no delete, merge or push button, and no command acts on the report. It tells you what is safe; removing a branch or a worktree is a step you take yourself after checking it. The read is not slow each time: the daemon keeps the report in memory for 60 seconds per base repository, so the first read within a lifetime does the git work and the rest get the stored result at once. A read that misses the lifetime still returns at once (marked stale) and starts at most one background refresh, bounded at 60 seconds — further reads in the same window start none, and while that refresh is still running they keep serving the last successful result, so a slow or failing refresh never leaves the card blank or blocked; a failed refresh is counted in the daemon stats. The same two reads are available as `datawatch autonomous merge` and `datawatch autonomous safe-to-delete`, as the chat verbs `autonomous merge` and `autonomous safe-to-delete`, and over MCP as `autonomous_merge` and `autonomous_safe_to_delete`. The states, the alert and the config keys are described in the *Merge-pending check* section of [operations.md](../operations.md), and the response shapes in [the API reference](../api/autonomous.md#merge-state-and-safe-to-delete-report-get-apiautonomousmerge-get-apiautonomoussafe-to-delete).
 
@@ -546,7 +564,7 @@ log as `autonomous_judge_outcome`.
 
 ### Tune both settings
 
-- **Settings page:** Settings > General > Automata, the two fields above.
+- **Settings page:** Settings → General → Automata, the two fields above.
 - **CLI:** `datawatch config set autonomous.judge_prompt_file_threshold_lines 300`
   and `datawatch config set autonomous.judge_delivery_wait_per_thousand_lines_seconds 60`.
 - **Comm channel:** `configure autonomous.judge_prompt_file_threshold_lines=300`,
@@ -567,8 +585,8 @@ for it:
 | Recent decisions (lane fill) | `decision` rows in [Events](automata-events.md) |
 | Infrastructure retries | `retry` rows in [Events](automata-events.md) |
 | Automata checks | `check` rows in [Events](automata-events.md) |
-| Safe-to-delete report | `cleanup` rows in [Events](automata-events.md) |
-| Cleanup status | the `cleanup` status row in [Events](automata-events.md) |
+| Safe-to-delete report | `cleanup` rows in [Events](automata-events.md), and the card under the stream there |
+| Cleanup status | the `cleanup` status row in [Events](automata-events.md), and the card under the stream there (skipped worktrees by reason) |
 
 Their reads over REST, MCP, CLI and chat are unchanged; the Events tab reads
 the same state as one stream. The repo CI watch's CI line is a `watch` row
@@ -576,8 +594,8 @@ there too.
 
 ## Related
 
-- [projects-tab.md](projects-tab.md): the Projects tab, a separate top-level
-  tab that groups an Automation under its project as an arc, with the project's
+- [projects-tab.md](projects-tab.md): the Projects sub-tab, the first sub-tab of
+  the Automata view (left of Automation), which groups an Automation under its project as an arc, with the project's
   Automata, sessions, progress, history and policy on one page
 - [Triage records](../api/autonomous.md#triage-records-get-api-autonomoustriage): the record of every failed or blocked
   Automaton in your Automations — how the pass fills, refreshes and clears

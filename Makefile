@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs check-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -264,8 +264,15 @@ check-service-scope:
 check-go-pins:
 	bash scripts/check-go-toolchain-pins.sh
 
+check-trivy-version:
+	bash scripts/check-trivy-version-single.sh
+	bash scripts/tests/check-trivy-version-single_test.sh
+
 check-internal-refs:
 	bash scripts/check-no-internal-refs.sh
+
+check-sarif-upload:
+	python3 scripts/check-sarif-upload-nonblocking.py
 
 # Whole-tree local-environment leak check: private/internal addresses,
 # absolute home-directory paths, non-allowed emails and the operator's own
@@ -299,7 +306,7 @@ check-no-identity-wipe:
 check-security-ignore-writes:
 	bash scripts/check-no-direct-ignore-writes.sh
 
-lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links
+lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs check-sarif-upload check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links
 	golangci-lint run ./...
 
 # Local, non-uploading CodeQL run compared with GitHub's alerts. Long running
@@ -320,6 +327,7 @@ test:
 	bash tests/test-scrub-peer-names.sh
 	bash tests/test-ci-package-listing.sh
 	bash tests/test-codeql-trigger-listing.sh
+	bash tests/test-sarif-upload-nonblocking.sh
 	bash tests/test-tidy-plans.sh
 	bash tests/test-plans-registry-archive.sh
 	bash tests/test-plans-tidy-daily.sh

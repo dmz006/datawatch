@@ -78,7 +78,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -92,6 +92,13 @@ type Decision struct {
 	// a deterministic check, so the audit entry links back to the judge
 	// run only when one existed.
 	JudgeSessionID string `json:"judge_session_id,omitempty"`
+	// JudgedCommitSHA is the commit a review judged, or the commit a stored
+	// verdict was judged on when that verdict was reused. Empty when the
+	// entry did not involve a commit-bound review.
+	JudgedCommitSHA string `json:"judged_commit_sha,omitempty"`
+	// VerdictReused is true when a stored verdict was reused and no new
+	// review ran. False (and omitted) when a review actually ran.
+	VerdictReused bool `json:"verdict_reused,omitempty"`
 	// FailureCategory (BL410 Phase 1) mirrors FailureReason.Category —
 	// visible inline in this append-only log without opening a nested
 	// Verdict/Verification struct.
@@ -273,6 +280,20 @@ type PRD struct {
 	// be set; ProjectDir is still honored when profiles are empty.
 	ProjectProfile string `json:"project_profile,omitempty"`
 	ClusterProfile string `json:"cluster_profile,omitempty"`
+	// PlannerSessionID names the live planner session that is producing
+	// this PRD's plan. Empty when no planner session is running. A restart
+	// reads it to re-attach to that session instead of losing the plan.
+	PlannerSessionID string `json:"planner_session_id,omitempty"`
+	// PlannerOutputFile is the file the planner session writes the plan to.
+	// It is relative to the Automaton's project directory when the file lives
+	// under it, and otherwise the path as recorded. A restart reads it to
+	// re-attach to the plan the session is producing.
+	PlannerOutputFile string `json:"planner_output_file,omitempty"`
+	// PlanningRestartedOnce is set when a boot-resume restarted planning for
+	// this Automaton (planning_restart_policy restart, or a planner that left
+	// no usable output). It is never cleared, so a second restart cannot loop:
+	// the next boot-resume that would restart falls back to draft instead.
+	PlanningRestartedOnce bool `json:"planning_restarted_once,omitempty"`
 	// Git (BL407 Phase 1) — branch-per-PRD + auto-PR workflow state.
 	// When ProjectDir/ProjectProfile/ClusterProfile are all empty and
 	// the daemon has autonomous.Config.WorktreeBaseRepo configured,
@@ -391,6 +412,12 @@ type PRD struct {
 
 	// BL191 Q3 — append-only per-PRD audit timeline.
 	Decisions []Decision `json:"decisions,omitempty"`
+
+	// BranchRefresh is the state of the last branch refresh against main.
+	BranchRefresh *BranchRefresh `json:"branch_refresh,omitempty"`
+	// BranchRefreshOverride overrides the global branch-refresh setting for
+	// this PRD; nil means follow the global setting.
+	BranchRefreshOverride *bool `json:"branch_refresh_override,omitempty"`
 
 	// PlanReview (2026-10-17 plan-review gate) — the latest pre-approval
 	// plan-review verdict for this PRD (see plan_review.go). Nil when the
@@ -1096,6 +1123,20 @@ type DeliveryFailureEvent struct {
 	Reason string    `json:"reason"`
 }
 
+// VerifierIncidentEvent records one idle-verifier incident on a task: the
+// verifier session went idle (no output, no pane activity, dead runner, no
+// capacity slot) past its no-progress limit while running on Backend/Model.
+// It is the verifier's own incident, not a worker failure. TaskID repeats
+// the task the event sits on so an entry read in isolation is
+// self-describing; Idle is how long the verifier was idle.
+type VerifierIncidentEvent struct {
+	At      time.Time     `json:"at"`
+	TaskID  string        `json:"task_id,omitempty"`
+	Backend string        `json:"backend,omitempty"`
+	Model   string        `json:"model,omitempty"`
+	Idle    time.Duration `json:"idle"`
+}
+
 // InfraRetryRecord is one scheduled retry of a task after an infrastructure
 // failure: which retry it was, the failure class and text, when it was
 // decided, the back-off delay and when the retry is due.
@@ -1201,6 +1242,11 @@ type Task struct {
 	// reached its main prompt, so the task was never given its work. Each
 	// event carries the reason logged at the time.
 	DeliveryFailureEvents []DeliveryFailureEvent `json:"delivery_failure_events,omitempty"`
+	// VerifierIncidentEvents records each time this task's verifier went idle
+	// and was reported as a verifier incident (its own incident, not a
+	// worker failure): the verifier backend/model and the idle duration.
+	// Written by RecordVerifierIncident.
+	VerifierIncidentEvents []VerifierIncidentEvent `json:"verifier_incident_events,omitempty"`
 	// History is a short audit trail of task-level events that have no field of
 	// their own, e.g. live sessions ended before a replacement launched.
 	History []TaskHistoryEntry `json:"history,omitempty"`
@@ -1344,6 +1390,15 @@ type Task struct {
 	// attempt was admitted. A requeue or reset clears them.
 	AdmittedBackend string `json:"admitted_backend,omitempty"`
 	AdmittedModel   string `json:"admitted_model,omitempty"`
+	// AdmittedTaskBackend and AdmittedTaskModel snapshot the task's own
+	// Backend/Model at the moment its current attempt was admitted. admittedWorker
+	// uses them to tell a still-running attempt (task fields unchanged, so the
+	// recorded pair stands) from a task whose worker the operator re-overrode
+	// after admission: once Backend/Model differ from the snapshot, the
+	// recorded pair is stale and admission follows the task's current worker.
+	// Cleared wherever the admitted pair is cleared.
+	AdmittedTaskBackend string `json:"admitted_task_backend,omitempty"`
+	AdmittedTaskModel   string `json:"admitted_task_model,omitempty"`
 	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
 	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for
@@ -1535,6 +1590,10 @@ type Task struct {
 	MergeState  string `json:"merge_state,omitempty"`
 	MergeCommit string `json:"merge_commit,omitempty"`
 
+	// MergeBlock records why the task's merge into the PRD branch cannot
+	// proceed right now (see merge_block.go). Nil when nothing blocks it.
+	MergeBlock *MergeBlock `json:"merge_block,omitempty"`
+
 	// BL416 Phase 1 (Decision 4) — relative path under PRD.ProjectDir
 	// to an executable verification script (planned location
 	// `.datawatch/verify/<task-id>.sh`) that a future decompose pass
@@ -1684,6 +1743,10 @@ type GuardrailVerdict struct {
 	// describes the current head. Empty on verdicts recorded before this
 	// field existed and whenever the cache is disabled.
 	JudgedCommitSHA string `json:"judged_commit_sha,omitempty"`
+	// RulesFingerprint is the hash of the rules text the judge read when this
+	// verdict was made. A verdict recorded without one is treated as stale by
+	// a rejudge and judged again once.
+	RulesFingerprint string `json:"rules_fingerprint,omitempty"`
 	// JudgeOutputPath is the full path of the judge output file that
 	// backed this verdict. Empty when there was no file.
 	JudgeOutputPath string `json:"judge_output_path,omitempty"`
@@ -2133,4 +2196,35 @@ type RulesReviewOutcome struct {
 	// empty when no judge ran.
 	JudgeOutcome string    `json:"judge_outcome,omitempty"`
 	At           time.Time `json:"at"`
+}
+
+// MergeBlock describes a condition that is stopping a verified task's branch
+// from being merged into the Automaton branch, so the operator and the retry
+// path can see it instead of finding it only in the daemon log.
+type MergeBlock struct {
+	Kind        string    `json:"kind,omitempty"`
+	Reason      string    `json:"reason,omitempty"`
+	Action      string    `json:"action,omitempty"`
+	Files       []string  `json:"files,omitempty"`
+	Since       time.Time `json:"since,omitempty"`
+	LastRetryAt time.Time `json:"last_retry_at,omitempty"`
+	Attempts    int       `json:"attempts,omitempty"`
+}
+
+// BranchRefresh results (BranchRefresh.LastResult).
+const (
+	BranchRefreshClean    = "clean"
+	BranchRefreshConflict = "conflict"
+	BranchRefreshSkipped  = "skipped"
+	BranchRefreshError    = "error"
+)
+
+// BranchRefresh records the outcome of the latest refresh of a PRD branch
+// from main.
+type BranchRefresh struct {
+	LastRefreshAt  time.Time `json:"last_refresh_at"`
+	CommitsBehind  int       `json:"commits_behind"`
+	LastResult     string    `json:"last_result"` // clean | conflict | skipped | error
+	LastMainCommit string    `json:"last_main_commit,omitempty"`
+	Stopped        bool      `json:"stopped,omitempty"`
 }

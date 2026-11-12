@@ -41,7 +41,7 @@ function lane(over) {
 
 function status(over) {
   return {
-    mode: 'shadow', last_poll_at: '2026-10-24T10:00:00Z', lanes: [], queued_eligible: { gpu: 0, claude: 0 },
+    mode: 'shadow', last_poll_at: '2026-10-24T10:00:00Z', lanes: [lane()], queued_eligible: { gpu: 0, claude: 0 },
     evidence: { checked_at: '2026-10-24T10:00:00Z', gpu_active_sessions: 0, loaded_models: [], error: '' },
     decisions: [], alerts: [], ...over,
   };
@@ -128,9 +128,7 @@ test('on and off modes show their badge without the shadow explanation', () => {
   const on = render(status({ mode: 'on' }));
   assert.ok(on.includes('Mode: on'), 'on badge missing');
   assert.ok(!on.includes('starts nothing'), 'shadow wording must not show in on mode');
-  const off = render(status({ mode: 'off' }));
-  assert.ok(off.includes('Mode: off'), 'off badge missing');
-  assert.ok(!off.includes('starts nothing'), 'shadow wording must not show in off mode');
+  assert.equal(render(status({ mode: 'off' })), '', 'an off lane fill draws no card');
 });
 
 test('queued eligible counts for gpu and claude are shown', () => {
@@ -168,16 +166,15 @@ test('recent alerts show the lane, the work and the message', () => {
 
 // ── empty and error states ─────────────────────────────────────────────────
 
-test('a missing status renders the placeholder card', () => {
-  const html = render(null);
-  assert.ok(html.includes('Lane fill'), 'card title missing');
-  assert.ok(html.includes('No lane status yet'), 'placeholder missing: ' + html);
+test('a missing, empty or off status draws no card', () => {
+  assert.equal(render(null), '');
+  assert.equal(render(status({ lanes: [] })), '');
+  assert.equal(render(status({ mode: 'off' })), '');
 });
 
-test('empty lists render their empty-state text', () => {
-  const html = render(status());
-  assert.ok(html.includes('No lanes configured'), 'no-lanes text missing');
-  assert.ok(html.includes('No idle lane alerts'), 'no-alerts text missing');
+test('the alerts block shows only when there are alerts', () => {
+  assert.ok(!render(status()).includes('Idle lane alerts'), 'alerts heading must not show with no alerts');
+  assert.ok(render(status({ alerts: [{ at: '2026-10-24T10:05:00Z', lane_id: 'gpu-1', work: 'W', message: 'm' }] })).includes('Idle lane alerts'));
 });
 
 // ── escaping ──────────────────────────────────────────────────────────────
@@ -474,5 +471,5 @@ test('every literal lane key the app asks for by name exists in en.json, includi
   for (const map of mapped) for (const v of Object.values(map)) used.add(v);
   const missing = [...used].filter(k => !(k in en)).sort();
   assert.deepEqual(missing, [], 'lane keys used by app.js missing from en.json: ' + missing.join(', '));
-  assert.ok(used.size >= 30, 'expected to find the lane keys in app.js, found ' + used.size);
+  assert.ok(used.size >= 25, 'expected to find the lane keys in app.js, found ' + used.size);
 });

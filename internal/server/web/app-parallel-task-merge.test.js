@@ -141,3 +141,20 @@ test('every locale key the badge and rows use is declared by a literal in app.js
   const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
   for (const k of LOCALE_KEYS) assert.ok(src.includes("'" + k + "'"), k + ' has no literal use in app.js');
 });
+
+test('the merge retry interval row and its help link entry exist', () => {
+  const row = autonomousRows().find((r) => r.key === 'autonomous.parallel.merge_retry_seconds');
+  assert.ok(row, 'merge_retry_seconds row missing');
+  assert.equal(row.type, 'number');
+  assert.equal(row.min, 0);
+  assert.equal(row.step, 1);
+  assert.equal(row.default, 60);
+  assert.equal(row.docsKey, row.key);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    assert.ok(b[row.labelKey], lang + ' missing ' + row.labelKey);
+    assert.ok(b[row.helpKey], lang + ' missing ' + row.helpKey);
+  }
+  const target = docsLink(row.key);
+  assert.ok(target && target.endsWith('#' + ANCHOR), String(target));
+});

@@ -178,7 +178,8 @@ The restart matrix (`scripts/restart-matrix.sh`, see [The restart matrix](#the-r
 | Task whose worker is running | Verified on a sandbox daemon. The worker session is re-attached, the task keeps its session and capacity lease, and the worker is not started again. | Restart matrix state `worker-running` |
 | Task waiting for capacity, or parked on an external condition | Verified on a sandbox daemon. The wait is rebuilt at boot from the live holder session; the task is admitted or released once and the worker runs once. The variant where a parked task gives up its host slot and waits for re-admission behind another task is not exercised. | Restart matrix states `waiting-capacity`, `waiting-external` |
 | Two workers placed on different compute nodes | Verified on a sandbox daemon. Each node pool still holds its one worker, every lease keeps the node it was placed on and none is flagged `node_unknown`, and the worker sessions and processes are the same and are not started again. | Restart matrix state `worker-node-placement` |
-| Task whose worker finished while it was verifying | Verified on a sandbox daemon. The task stays `verifying` with its worker session and result; no retry is counted and the worker is not run again. Only the verification runs again. | Restart matrix states `verify-script`, `verify-script-mid`, `final-gate`, `verify-session`; unit test `TestReconcileStuckKeepsFinishedWorkerVerifying` |
+| Task whose worker finished while it was verifying | Fixed in this tree. The task stays `verifying` with its worker session and result; no retry is counted and the worker is not run again, and the in-flight verifier session is adopted — its verdict is read, or the verdict it left on disk is consumed, and only where nothing usable survives does the verification run once. The matrix state below still records the pre-fix measurement (the verification running once more) until it is re-run on this tree. | Unit tests for the boot-resume verifier paths (`internal/autonomous`); matrix state `verify-session` pending re-run |
+| Task's verification or final-gate script running | Fixed in this tree. The script is no longer a daemon child: it runs detached with a durable run record (pid and start time, output, exit code, delivered flag). A restart does not re-run it — at boot the daemon waits on it if its process is alive, consumes its exit code once if it ended while the daemon was down, or runs it from the start once if no usable record is left. An undelivered run left by an earlier attempt is retired first, so no version of the script is run twice. The matrix states below still record the pre-fix measurement (the script re-run from the start) until they are re-run on this tree. | Unit tests for the script boot-pickup paths (`internal/autonomous`); matrix states `verify-script`, `verify-script-mid`, `final-gate` pending re-run |
 | Automation with active branches | Verified on a sandbox daemon. Both cursors come back, a branch with a live worker is kept, a branch that was verifying is verified once, and the join is released. | Restart matrix state `automation-branches` |
 | Scheduled job that came due while the daemon was down | Verified on a sandbox daemon. The job fires once after boot and is marked done. | Restart matrix state `scheduled-due` |
 | Open WebSocket clients | Verified on a sandbox daemon. Clients reconnect on their own and get a full session snapshot first. Events emitted while the daemon was down are not replayed, so clients must not assume gap-free delivery. | Restart matrix state `websocket-clients` |
@@ -189,7 +190,7 @@ The restart matrix (`scripts/restart-matrix.sh`, see [The restart matrix](#the-r
 
 **Start-confirm bound for launched and adopted sessions.** A claude-code worker has one start-confirm bound whether the daemon launched it or adopted it after a restart: `autonomous.session_start_confirm_seconds`, default 120 seconds, measured from the last evidence of life. For an adopted worker that is the latest update, channel event or log write the session left before the restart; when none is known, the clock starts at the task's launch time. A launched worker has no evidence of life until its first sign of work, so its clock starts at the first check that finds it silent. If the session is still in `waiting_input` with no assistant output past that limit, it is ended and the start counts as a failure against the start retry budget: two requeues, then the task fails. Once a first assistant turn appears, the bound no longer applies. Other backends are not held to it, because their start cannot be confirmed from the assistant marker.
 
-**Restart policy.** A restart requested through `POST /api/restart`, the `restart_daemon` tool or the chat `restart` command first applies `autonomous.restart_policy`. Whatever the policy, it logs, and the REST reply and the tool reply carry, how many running tasks (executing worker, running tests or verifying) and live sessions the restart interrupts, with their ids. `GET /api/autonomous/restart-interruptions`, the `restart_interruptions` tool, `datawatch autonomous restart-interruptions` and the chat verb `autonomous restart-interruptions` read the same count without restarting.
+**Restart guard, then policy.** Every restart request — `POST /api/restart`, the `restart_daemon` tool, `datawatch restart`, or the chat `restart` command — first runs the interruption guard: when a planning Automaton, a verifying task, a running judge, a running task or a live session would be interrupted and the request does not carry force, the restart is **refused on that surface** and nothing is restarted — REST answers 409 with the report and how to force, the CLI prints the report and exits non-zero, the MCP tool answers an error with the report, and the chat command answers the report inline. A request that carries force — or one that would interrupt nothing — then applies `autonomous.restart_policy`, and whatever the policy, the log, the REST reply and the tool reply all carry what the restart interrupted. `GET /api/autonomous/restart-interruptions`, the `restart_interruptions` tool, `datawatch autonomous restart-interruptions` and the chat verb `autonomous restart-interruptions` read the same report without restarting. The Web UI's Restart button (and the auto-restart after a config change) sends no force, so while work is in flight it lands on this refusal too; how to force on each surface is in [howto/restart-with-work-running.md](howto/restart-with-work-running.md#forcing-a-restart-past-running-work).
 
 | `autonomous.restart_policy` | What the restart does |
 |---|---|
@@ -220,20 +221,22 @@ This section is for the operator: what happens to an Automaton's running tasks w
 - **Duplicate-session rule.** If two live sessions match one task, the older one is kept and the newer one is ended. Set `autonomous.duplicate_session_keep` to `newer` to keep the newer one instead; any other value means `older`. A session is counted as ended only after a fresh listing shows it gone. The decision (which was kept, which ended, why) is recorded once on the task, in the Automaton's decisions and in the audit log.
 - **Attempt records.** Each attempt records the session it used (`session_id`, `tmux_session`) and why it ended (`end_reason`), so a restart can be told apart from a failure when you read the history.
 - **Restart policy values.** `autonomous.restart_policy` is `immediate` (default, restart at once), `wait_quiet` (wait up to `autonomous.restart_quiet_timeout_seconds` for no running tasks, then `autonomous.restart_on_timeout` decides `proceed` or `abort`) or `drain` (stop new tasks starting, let running ones finish, then restart; 6-hour safety cap).
-- **Interruption count.** Every policy reports how many running tasks and live sessions the restart interrupts, in the log and in the REST and tool reply. `GET /api/autonomous/restart-interruptions` reads the same count without restarting.
+- **Planning restart values.** `autonomous.planning_restart_policy` says what a restart does to an Automaton that is still in planning: `reattach` (default, keep planning running across the restart), `restart` (restart planning once and record a decision saying so) or `draft` (reset the Automaton to draft). Any other value is refused on every write path — YAML, the CLI `autonomous config-set`, the MCP config, REST, the comm channel `configure`, and the PWA Settings **Planning restart policy** select (Automata tab, *Autonomous Automata planning* card). The boot path reads the setting at restart and runs every value: `reattach` re-attaches a live planner, ingests a complete plan from an ended one, and otherwise restarts planning once; `restart` restarts planning once at boot; `draft` resets the Automaton to draft. The one automatic planning restart, once used, leaves a further restart to reset the Automaton to draft. What is still owed is in the *Still to review (operator)* notes. See [howto/restart-with-work-running.md](howto/restart-with-work-running.md) and its *Current status* section.
+- **Interruption report.** Every restart request reports what it would interrupt — planning Automata, verifying tasks, running judges, running tasks and live sessions, with their ids and counts — in the log and in the REST and tool reply, and the report carries `needs_force`, set while any of those are in flight. `GET /api/autonomous/restart-interruptions` reads the same report without restarting; the CLI, MCP and chat refusals reuse it verbatim.
 
-**What does not survive.** Two things, both listed as open choices in `docs/plans/restart-matrix-findings.md` and neither changed:
+**What planning used to be, and what it is now.** A PRD whose decompose was running used to be reset to `draft` and its decompose session ended, because the code that would read the plan was inside the stopped daemon. The operator decision (2026-11-08, recorded in `docs/plans/restart-matrix-findings.md`) changed that, and the boot path now — (1) re-attaches a reader to the live planner session (tmux) and its output file; (2) if the planner session ended while the daemon was down and left a complete plan, ingests that plan; (3) if neither yields a usable plan, restarts planning once, recording a decision; a further restart with nothing usable left resets the PRD to draft. The PRD is no longer left in `draft` waiting for a manual re-plan, and the plan proceeds to review (approve/revise) as usual.
 
-- **Planning.** A PRD whose decompose was running is reset to `draft` and its decompose session is ended, because the code that would read the plan was inside the stopped daemon. The PRD waits for the operator to plan again; nothing is planned automatically.
-- **Daemon-run verification scripts.** A verification script, and a final-gate script, run as a direct child of the daemon with no durable record. A restart ends it (or leaves it orphaned, see the KillMode note) and the verification runs the script again from the start. The worker is not run again beside it. A script that is slow or has effects that cannot be repeated should not be relied on to survive a restart.
+**What the audit left as an operator choice, and how this tree resolves it.** `docs/plans/restart-matrix-findings.md` recorded one open choice — daemon-run verification scripts — and one case where part of the work is redone (the in-flight verifier). Both are resolved in this tree; the matrix states and the release-smoke skips below still record the pre-fix measurement, so until they are re-run on this tree treat the rows as fixed in code, not yet matrix-verified:
 
-One more case runs part of the work again: a task verifying through a live verifier session keeps its worker, retry count and session count, but the verifier that was in flight is not adopted and a second verifier is started once.
+- **Verification scripts, including final-gate scripts.** They no longer run as a direct child of the daemon with no record. They run detached and keep a durable run record — pid and start time, output, exit code, and a delivered flag, stored under the data dir (`verify-runs`). A restart does not re-run them: at boot the daemon waits on the run while its process is alive, consumes its exit code once if it ended while the daemon was down, and runs the script from the start only where no usable record is left. An undelivered run left by an earlier attempt is retired first, so the script is never delivered twice. A script that is slow or has effects that cannot be repeated can now survive a restart. A recorded process is trusted only when its start time read from the process table matches the record; an unreadable or implausibly large start time makes it untrusted, so a recycled pid is never waited on as if it were the script.
+- **The in-flight verifier.** A task verifying through a live verifier session keeps its worker, retry count and session count — and the daemon now adopts the verifier: it attaches a fresh waiter to the live verdict session. If that session ended while the daemon was down and left a verdict, that verdict is the outcome (a pass completes the task, a fail goes to the normal retry path). A second verifier runs only where neither the live session nor a leftover verdict is usable.
+- **Guardrail judgment in flight.** Same shape: the daemon attaches to the live judgment and consumes a verdict file it left, and re-judges once only if neither is usable, without ending the already-verified work beside it.
 
 **Tasks that were mid-run.** A task whose worker session is alive is not interrupted: the daemon re-attaches to the session at boot and the executor waits on it. A task that had no session yet (for example one inside its start-of-task commit) is reset to pending at boot and starts once, since there is nothing to re-attach to.
 
-**Tasks that were verifying.** A task whose worker had finished and whose result was not yet recorded is kept at boot. Only its verification runs again. The worker session is not ended and no retry is counted. Reading the worker's recorded output for the completion marker depends on the shared output cleaner keeping every real line between two terminal escape sequences; it now does.
+**Tasks that were verifying.** A task whose worker had finished and whose result was not yet recorded is kept at boot. Where a live verifier session is alive, or a verdict file from an ended one is left, the daemon reads that result instead of re-running the verification — the order is above. The worker session is not ended and no retry is counted. Reading the worker's recorded output for the completion marker depends on the shared output cleaner keeping every real line between two terminal escape sequences; it now does.
 
-**KillMode.** The systemd unit uses the default `KillMode=control-group`: a stop or restart sends TERM to every process in the unit's control group, not only the daemon. Workers, verifiers and planners live in a multiplexer server outside the daemon's tree and are not affected. A process the daemon starts directly (the verification script, a git command) is ended, so its work starts again. With a restart that signals only the daemon process (`datawatch restart`, a `KillMode=process` unit), such a child is orphaned and can keep running beside its own re-run. The matrix simulates the control-group case by sending TERM to the daemon and to its direct children by pid (`RM_KILL_MODE`); it is a stand-in, not the service manager, and covers TERM only (not a crash, a kill signal, an out-of-memory kill or a reboot).
+**KillMode.** The systemd unit uses the default `KillMode=control-group`: a stop or restart sends TERM to every process in the unit's control group, not only the daemon. Workers, verifiers and planners live in a multiplexer server outside the daemon's tree and are not affected. A process the daemon starts directly (a git command, for example) is ended, so its work starts again. Verification scripts are no longer such children — they are picked up at boot from their durable records (see above). With a restart that signals only the daemon process (`datawatch restart`, a `KillMode=process` unit), a still-running direct child is orphaned; where that child is a recorded live verification script run (its record's pid and start time still match), the daemon waits on it rather than re-running, so the script still runs once. The matrix simulates the control-group case by sending TERM to the daemon and to its direct children by pid (`RM_KILL_MODE`); it is a stand-in, not the service manager, and covers TERM only (not a crash, a kill signal, an out-of-memory kill or a reboot).
 
 **Subprocess sessions** (`subprocess: true`, no tmux pane). A subprocess session records its process ID and exit status in its session directory. At boot, the daemon re-attaches to a subprocess that is still running and keeps the session `running` until the process exits, then records the exit status. If the process ended while the daemon was down, the recorded status is used. The session is marked `failed` only when the process is gone and no exit status was recorded. This restart behaviour is fixed but not yet confirmed by the live test. A systemd stop or restart kills the daemon's child processes too (the unit's default `KillMode=control-group`), so a subprocess survives only a restart that signals the daemon process alone.
 
@@ -254,9 +257,19 @@ RM_KILL_MODE=process scripts/restart-matrix.sh --only verify-script   # daemon p
 
 Set `DATAWATCH_BIN` to a daemon binary built from the tree under test. A full run takes about 25 minutes. The per-state result, the measured cells and the open choices are in `docs/plans/restart-matrix-findings.md`.
 
-`scripts/release-smoke.sh` runs the matrix as section 80, in its own sandboxes and never against production. It runs `--strict` for the states that must survive (`worker-running`, `waiting-capacity`, `waiting-external`, `git-operation`, `automation-branches`, `scheduled-due`, `websocket-clients`, `worker-node-placement`). It skips with a reason the states still left as an open choice (`planning`, `verify-script`, `verify-script-mid`, `final-gate`) and `verify-session`, whose in-flight verifier is not adopted. Skipping is not a pass: those rows stay in the table above as not surviving until a choice is made and the skip is removed. `SMOKE_RESTART_MATRIX=0` turns the section off; `SMOKE_RESTART_TIMEOUT` bounds each state (default 900 seconds).
+`scripts/release-smoke.sh` runs the matrix as section 80, in its own sandboxes and never against production. It runs `--strict` for the states that must survive (`worker-running`, `waiting-capacity`, `waiting-external`, `git-operation`, `automation-branches`, `scheduled-due`, `websocket-clients`, `worker-node-placement`). It skips with a reason the states still left as an open choice in the audit (`verify-script`, `verify-script-mid`, `final-gate`, `verify-session`): this tree fixes the behaviour they measure (detached scripts with durable records; the in-flight verifier adopted), but the skips still record the pre-fix reading and stay until the matrix states implement and re-run the fix. `planning` is no longer an open choice — the recorded decision is that planning survives the restart (live planner session re-attached, complete plan ingested, planning restarted once if nothing usable survives) — but the smoke keeps skipping it with a reason until the matrix state implements that decision; when it implements it, the skip drops and the state is enforced like the must-survive list. Skipping is not a pass: a row that still skips stays in the table above as not surviving while it skips. `SMOKE_RESTART_MATRIX=0` turns the section off; `SMOKE_RESTART_TIMEOUT` bounds each state (default 900 seconds).
 
 **Confirming on a live daemon.** `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go` restarts a daemon and checks that a live probe session survives it. It is skipped unless `DW_LIVE_RESTART_TEST=1` is set, so `go test ./...` does not run it. It needs `DW_BASE` set to the daemon under test, and it must run on the daemon's host with the same `TMUX_TMPDIR`. The default restart path is `systemctl --user restart datawatch`. Use `DW_LIVE_RESTART_CMD` only for a sandbox daemon that systemd does not manage. Run it against a sandbox, never against production.
+
+**Harness blocker on this tree.** The restart matrix states that do not set `RM_PI_NODES` build a sandbox config without `server.allowed_project_roots`, so Automaton creation is refused there (`project_dir refused: project directory is outside the allowed project roots`); `worker-node-placement` uses the compute-node config and is not affected. A 2026-11-10 run on v9.118.3 reported `worker-running` failing at `state_reached`; it was not re-run when this was written. Until the harness fix lands, treat every "Verified on a sandbox daemon" row above as stale rather than current. See [howto/restart-with-work-running.md](howto/restart-with-work-running.md).
+
+**Still to review (operator).** The following are decided, not yet verified fact:
+
+1. **The build in use carries the boot path.** The boot path is in this tree: under `reattach` (the default) it re-attaches a reader to a live planner session, ingests a complete plan from an ended one, and otherwise restarts planning once; `restart` restarts planning once at boot; `draft` resets the PRD to draft. The one automatic planning restart is recorded in the Automaton's decisions, and once it is used a further restart resets the PRD to draft. The decision and the boot path are recorded in `docs/plans/restart-matrix-findings.md`. What is still owed is the live check: confirm on a build in use that a restarted daemon does **not** reset a mid-decompose PRD to `draft`, that a complete plan from an ended planner session is ingested at boot, and that a mid-decompose PRD whose planner is gone with no plan still gets exactly one fresh planning run.
+2. **The `planning` matrix state.** `scripts/release-smoke.sh` skips it with a reason until the matrix state implements the recorded decision (tracked in BL590 phase 2, like the `planning-queued` and `planning-decompose` states); a live check of the boot path above is the practical confirmation in the meantime.
+3. **The matrix harness is blocked for most states.** See *Harness blocker on this tree* above; add `server.allowed_project_roots` to the default sandbox config and re-run before trusting any matrix row.
+4. **Verification scripts, final gates, and the in-flight verifier.** Fixed in this tree and no longer an open choice: scripts run detached with durable run records (boot waits on a live one, consumes an ended one, or runs once if nothing usable survives, and retires any undelivered run from an earlier attempt first), and a live in-flight verifier is adopted with its verdict read or its leftover verdict consumed. Still owed: re-run `scripts/restart-matrix.sh --only verify-script,verify-script-mid,final-gate,verify-session` on a build cut from this tree, update the `scripts/release-smoke.sh` skip reasons (or drop the skips) so the smoke records the new behaviour, and confirm the in-use build — a restart must not re-run a still-running verification script, and a task left at `verifying` with a live verifier must not start a second verifier.
+4. **The restart force guard.** The refusal of a non-forced restart while work would be interrupted, and the forced paths on each surface — `POST /api/restart?force=true` (or a `{"force": true}` body), `datawatch restart --force`, `restart_daemon` with `force=true`, and `restart force` on the messaging channel — are in the tree and unit-tested, but a live confirmation on the build in use that each surface refuses while work runs, that a forced restart then still applies `autonomous.restart_policy`, and that the Web UI's non-forcing Restart button reports the refusal, is still owed.
 
 #### Long prompts in the matrix sandbox
 
@@ -264,7 +277,7 @@ The matrix sandbox uses the fake shell backend with a script path. A long decomp
 
 ### Daemon restart and in-flight Automata
 
-Automata (PRDs) do **not** silently resume across a daemon restart. The daemon only auto-resumes a PRD that was in `running` state when it stopped, and only if that work still looks fresh: the PRD's newest recorded activity must be within `autonomous.resume_max_age_seconds` (default 3600 — one hour; set `0` to never auto-resume, `-1` for no age limit), and the PRD's project directory must still exist on disk (a removed temp workspace means the work cannot continue in place). A PRD that fails either check is **parked**: it is set to `blocked` with a plain-English reason, an operator alert is raised, and it does **not** run. A PRD still in `planning` state (decompose in flight when the daemon stopped) is reset to `draft` instead so you can re-run planning, and a `failed` PRD is recovered only when all of its failed tasks were killed by the daemon with no recorded result.
+Automata (PRDs) do **not** silently resume across a daemon restart. The daemon only auto-resumes a PRD that was in `running` state when it stopped, and only if that work still looks fresh: the PRD's newest recorded activity must be within `autonomous.resume_max_age_seconds` (default 3600 — one hour; set `0` to never auto-resume, `-1` for no age limit), and the PRD's project directory must still exist on disk (a removed temp workspace means the work cannot continue in place). A PRD that fails either check is **parked**: it is set to `blocked` with a plain-English reason, an operator alert is raised, and it does **not** run. A PRD still in `planning` state (decompose in flight when the daemon stopped) is no longer reset to `draft`: at boot the daemon re-attaches a reader to the live planner session and its output file, ingests the complete plan if the planner session ended, and restarts planning once if nothing usable survives — the operator decision (2026-11-08) is recorded in [plans/restart-matrix-findings.md](plans/restart-matrix-findings.md) and the plan then proceeds to review as usual. A `failed` PRD is recovered only when all of its failed tasks were killed by the daemon with no recorded result.
 
 **What the startup log says.** Each decision is printed as it happens and summarized at the end:
 
@@ -288,7 +301,7 @@ If you routinely see PRDs parked for age, either raise `autonomous.resume_max_ag
 
 **Orphan worker sessions.** The orphan sweep never ends a live task worker session that a non-terminal task is bound to, so a worker that is still working on its task keeps running through a restart and through the sweep. Sessions are matched by their short id on both sides, so the id form the session list reports does not matter. A live worker that no non-terminal task is bound to is reported the first time the sweep sees it and is ended only after it has stayed unbound longer than `autonomous.orphan_grace_seconds` (default `300`; unset or `0` uses the default). The grace period is measured from when the sweep first saw the session, so a worker that gets bound to a task again within the period is left alone. When the session list and the tasks store session ids in different forms, the sweep logs one line that starts `orphan-sweep: session id form check:` and names both forms with an example of each. The line is logged at most once per daemon run, so it can appear again after a restart. It is a self-check only: it does not change which sessions are ended, and on its own it is not a reason to stop the daemon.
 
-**Stuck Automaton.** An Automaton that stays `running` with every task finished, no live worker, verifier or guardrail session and no executor is caught by the stuck-running watchdog. After `autonomous.stuck_running_seconds` (default `900`; `0` or a negative value uses the default) it re-runs the completion rollup once; if the Automaton is still stuck after a second full bound it moves to `blocked`, with a `stuck_running_blocked` decision, an `autonomous_stuck_running_blocked` audit entry and the status event. The bound is read on every pass, so changing it needs no restart. See [autonomous recovery](howto/autonomous-recovery.md#stuck-running-watchdog).
+**Stuck Automaton.** An Automaton that stays `running` with every task finished, no live worker, verifier or guardrail session and no executor is caught by the stuck-running watchdog. After `autonomous.stuck_running_seconds` (default `900`; `0` or a negative value uses the default) it re-runs the completion rollup once, which is a normal completion review (a moved branch head or edited rules text means a new review, and a `pass` or `warn` completes the Automaton; an unchanged head reuses the stored verdict and records a `guardrail_reuse` entry); if the Automaton is still stuck after a second full bound it moves to `blocked`, with a `stuck_running_blocked` decision, an `autonomous_stuck_running_blocked` audit entry and the status event. The bound is read on every pass, so changing it needs no restart. See [autonomous recovery](howto/autonomous-recovery.md#stuck-running-watchdog).
 
 **Compute node of a surviving worker.** When the daemon restarts, a surviving pi-prompt worker is re-adopted on the compute node it was placed on. The node comes from the node recorded when the worker was placed. When none was recorded, it comes from the worker's own endpoint, matched against the compute node's address field - never from the worker's name and never from a DNS lookup. The node pools therefore show one worker per node before and after a restart. A worker whose node cannot be determined holds no node. It is shown as `node_unknown` on its lease in `GET /api/capacity` (also in `capacity_status` over MCP, and as `node unknown` in the status text) instead of being counted on a default node. If you see it, check the compute node's address field.
 
@@ -690,7 +703,7 @@ tasks in any status, stay locked.
 
 The usage calculator advises how many lanes the weekly provider allowance can
 carry. It never stops or slows a lane. Keys live under `usage.calculator.`;
-`usage.calculator.variant` (`all` by default, or `pace-gauge`, `lane-planner`, `burn-ledger`),
+`usage.calculator.variant` (kept for compatibility; the PWA now always draws the three usage cards),
 `policy`, `safety_points` (default 5), `cost_per_task_points`, `baseline_per_24h`,
 `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone` (a zone name, never a
 fixed offset) and `keeper` (the federation peer that keeps the shared
@@ -700,7 +713,7 @@ readings). Settings apply without a restart.
 |--------|-----|
 | **YAML config** | `usage.calculator.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.calculator.<key> <value>`; `datawatch usage advice` |
-| **Web UI** | The calculator screen and its Settings fields (not yet shipped; use another method) |
+| **Web UI** | The usage page (one verdict sentence and three fixed-size cards: weekly allowance, pace line, burn per day), the same cards on the Resources sub-tab and as dashboard cards; every setting is in Settings → General → Automata |
 | **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
 | **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
 
@@ -734,7 +747,7 @@ not through the config keys.
 |--------|-----|
 | **YAML config** | `usage.burn_guard.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.burn_guard.<key> <value>`; `datawatch usage burn-guard status|run|config`; `datawatch automation set-effort-ceiling <id> docs=low` |
-| **Web UI** | Settings > Usage burn guard; the burn guard card on the usage calculator and the Monitor tab |
+| **Web UI** | Settings > Usage burn guard; the burn guard card on the usage page and the Monitor tab |
 | **REST API** | `PUT /api/config` with `{"usage.burn_guard.<key>": value}`; `GET /api/usage/burn-guard`, `GET`/`PUT /api/usage/burn-guard/config`, `POST /api/usage/burn-guard/run` |
 | **MCP** | `burn_guard_*` tools; `automation_set_effort_ceiling` |
 | **Comm channel** | `configure usage.burn_guard.<key>=<value>`; `usage burn-guard`; `automation set-effort-ceiling` |
@@ -972,17 +985,17 @@ In outcomes 2 and 3 the Automaton is `needs_review`, not `blocked` and not runni
 When the completion review has blocked an Automaton, or holds it in `needs_review` after the retries were spent (or with auto-fix turned off), and the fix is already in the work, you do not need to cancel the Automaton, add a task and reset it. Re-run the review on the new work instead:
 
 1. **Commit the fix on the Automaton's branch.** The rejudge looks at the branch head, so the fix must be a new commit on the branch the Automaton works on. Uncommitted changes in the working tree are not seen.
-2. **Run the rejudge.** Use the MCP tool `autonomous_prd_rejudge(id="<automaton id>")`, or the REST call `POST /api/autonomous/prds/<id>/rejudge`. No body is needed; the actor is recorded as the operator.
+2. **Run the rejudge.** Use the MCP tool `autonomous_prd_rejudge(id="<automaton id>")`, or the REST call `POST /api/autonomous/prds/<id>/rejudge?view=compact`. No body is needed; the actor is recorded as the operator. A rejudge is a fresh completion review of the current head commit, not a lookup of the old answer. The compact reply's `message` says which happened: `a new review ran on commit <sha>`, or `the stored verdict was reused` because the head commit and the rules text are unchanged since it was made. The web app's Retry and Reroute buttons show that message in the notice.
 3. **Read the result.**
    - `pass` — the blocked reason is cleared and the Automaton completes.
    - `block` — the Automaton stays `blocked` (or held) with the reason set from the new verdict. Read the findings, fix what they name, commit, and rejudge again.
    - No verdict (the judge errored or returned nothing) — the call returns an error and the Automaton keeps its previous reason. Check the judge's backend and try again.
 
-**The decision log.** Each rejudge adds a `guardrail_rejudge` entry, attributed to the operator, that says whether a verdict was produced and what it was. The verdict itself is recorded as a `guardrail_verdict`. Read both with `autonomous_prd_get`, or with `GET /api/autonomous/prds/<id>` and look at the decision list. A rejudge on a branch head that has moved since the stored verdict shows a new verdict. A rejudge replays the stored verdict only when the branch head and the judge inputs (the judge policy and the guardrail's rules and prompt) are both unchanged, and the judge verdict cache is on (it is on by default); otherwise a fresh verdict is recorded. With the cache off, the judge runs again on every rejudge.
+**The decision log.** Each rejudge adds a `guardrail_rejudge` entry, attributed to the operator, that says whether a verdict was produced and what it was, names the commit it judged (`judged_commit_sha`) and says whether a stored verdict was reused (`verdict_reused`). When a new review ran, the verdict itself is recorded as a `guardrail_verdict`, and the entry's note starts `new review ran on commit <sha>`. When the stored verdict was reused, `verdict_reused` is `true`, the note says the head commit and the rules text are unchanged since the stored verdict was made and that no new review ran, and no `guardrail_verdict` is recorded: the stored verdict keeps its own time, commit and fingerprint and is not appended to the Automaton's verdict list again. The completion review the daemon runs on its own does the same, recording a `guardrail_reuse` entry in place of a duplicate verdict. When no verdict was produced, the entry still names the head commit and `verdict_reused` is false. Read them with `autonomous_prd_get`, or with `GET /api/autonomous/prds/<id>` and look at the decision list. A rejudge on a branch head that has moved since the stored verdict shows a new verdict. A rejudge replays the stored verdict only when the review head, the judge inputs (the judge policy and the guardrail's rules and prompt) and the rules text are all unchanged, and the judge verdict cache is on (it is on by default); otherwise a fresh verdict is recorded. The review head is the real head of the Automaton's own working tree, read from its project directory; the commit recorded by the latest task attempt is used only when that head cannot be read. The rules text is tracked as a fingerprint stored on the verdict (`rules_fingerprint`): with the default `base_commit` source it covers the rules and context files as committed at the base commit, and with the `worktree` source their names and contents in the project directory. A stored verdict with no fingerprint, recorded before the fingerprint existed, is judged again once. The same happens when the project has no rules or context file. With the cache off, the judge runs again on every rejudge.
 
 **When the head is unchanged.** If no new commit has landed on the branch since the held verdict was made, the rejudge is refused before any judge runs, and nothing is recorded. The error reads `branch head "<sha>" is unchanged since the held verdict was made; new commits are needed before a rejudge`. The fix is not on the branch yet. Commit it, check that the branch head has moved, and run the rejudge again. Do not reset tasks to force a rerun; a rejudge does not need one.
 
-This refusal applies to a held Automaton. A plain `blocked` Automaton is not refused on an unchanged head: with the judge verdict cache on, the stored verdict is replayed, and with it off, the judge runs fresh.
+The head compared here is the same real working-tree head the review uses, so a fix committed by hand, not only by a task attempt, lets the rejudge through. This refusal applies to a held Automaton. A plain `blocked` Automaton is not refused on an unchanged head: with the judge verdict cache on, the stored verdict is replayed when the rules text is also unchanged and the verdict recorded a fingerprint, and the judge runs fresh otherwise and whenever the cache is off.
 
 ### Read-only task without a verification script or report path
 
@@ -1142,6 +1155,10 @@ A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel
 The seven `autonomous.generated_artefacts` switches (`change_record`, `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`, `combined_docs_task`) decide which documents an Automaton drafts from its change record when it completes. Unset means on. Change one with `datawatch config set autonomous.generated_artefacts.gate_report false`, `PUT /api/config`, `config_set`, the comm channel or Settings > Automata > "Generated artefacts"; a change reaches a running daemon without a restart. Turning `change_record` off leaves the other artefacts with nothing to draw from. A file a person edited is never overwritten. See [howto/generated-artefacts.md](howto/generated-artefacts.md).
 
 ---
+
+### Automaton branch refresh
+
+An Automaton branch can fall far behind its base while it runs. With `autonomous.branch_refresh_enabled: true` the daemon merges the base branch into the Automaton's branch in the gap between tasks, when the branch is at least `autonomous.branch_refresh_behind_limit` commits behind (default 5; 0 reads as 5) and no task is running in that worktree. Both keys are in `docs/config-reference.yaml`; the feature is off by default. A clean merge adds a `branch_refresh` entry to the Automaton's Decisions. A conflict leaves the branch as it was, stops refreshing for that Automaton and raises one question asked by `branch-refresh`. The per-Automaton override (`branch_refresh_override`) is set with the Branch refresh card on the Automaton page, `datawatch autonomous branch-refresh <id> enabled|disabled|inherit`, chat `autonomous branch-refresh`, MCP `autonomous_prd_set_branch_refresh`, or `POST /api/autonomous/prds/{id}/branch-refresh` (`enabled` true, false or null), and the Automaton `GET` reply carries `branch_refresh`, `branch_refresh_override` and `branch_refresh_enabled`. Answering the conflict question applies your choice at once: *retry later* allows refreshing again, *resolve by hand* and *leave the branch alone* keep it stopped; setting the per-Automaton override again (any value) also resets the stop, and each is written to the Decisions list. `datawatch autonomous branch-refresh-stats` (chat `autonomous branch-refresh-stats`, MCP `autonomous_branch_refresh_stats`, `GET /api/autonomous/branch-refresh/stats`, the `datawatch_branch_refresh_automata{result}` and `datawatch_branch_refresh_stopped` gauges) shows how many Automata ended each way and how many are stopped. Walkthrough: [howto/automaton-branch-refresh.md](howto/automaton-branch-refresh.md).
 
 ### Merge pipeline
 
@@ -1482,6 +1499,14 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 - Use tmux server persistence plugins (e.g. `tmux-resurrect`) to restore tmux sessions across reboots
 - Only restart the daemon, not the whole machine, to preserve running sessions
 - For the daemon itself: `systemctl restart datawatch` preserves tmux sessions; only a machine reboot or `tmux kill-server` loses them. Which restart cases are covered, and which are not, is in [Restart safety](#restart-safety)
+
+### Planning not restored after daemon restart (PRD was mid-decompose)
+
+**Symptom:** The daemon restarted while a PRD was in `planning` state.
+
+**Expected (post-change behavior, operator decision 2026-11-08):** The PRD is **not** reset to `draft` and the planner session is not ended. At boot the daemon re-attaches a reader to the live planner session and its output file; if the planner session ended it ingests the complete plan; if neither yields a usable plan it restarts planning once. The plan then proceeds to review (approve/revise) as usual.
+
+**If the PRD was reset to `draft` instead:** either the effective policy is `draft` (the intended outcome under that value), or the build in use does not yet carry the restart-safe planning boot path. Check `autonomous.planning_restart_policy` (unset and unrecognised values read as `reattach`); if it is not `draft`, re-queue the plan with `datawatch autonomous prd-plan <id>` and confirm the build in use — see the "Still to review (operator)" block in the Restart safety section above.
 
 ### PWA can't connect (port, firewall, Tailscale)
 
@@ -2588,14 +2613,80 @@ The hardened installer is `scripts/ci-install-trivy.sh <tag> <install-dir>`:
 Coverage: `bash scripts/tests/ci-install-trivy_test.sh` (fake curl; success,
 persistent-failure and usage-error paths).
 
-**Migration status:** all eight "Install Trivy" steps in `release.yaml` (2),
-`containers.yaml` (2) and `image-refresh.yaml` (4) now run
-`bash scripts/ci-install-trivy.sh "<pinned tag>" /usr/local/bin`; none fetches
-the installer from `main` any more. The pins were left as they were:
-`containers.yaml` uses `v0.70.0`, while `release.yaml` and `image-refresh.yaml`
-use `v0.73.0`. Unifying them is an operator decision. Full write-up in
+**Single pin.** The Trivy version lives only in `scripts/trivy-version.txt`
+(one `vX.Y.Z` tag, currently `v0.73.0`). The eight "Install Trivy" steps in
+`release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) run
+`bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin`;
+no workflow holds a `TRIVY_VERSION:` value or a literal tag. To bump Trivy,
+edit that one file. The tag is `v0.73.0`, the newer of the two values the
+workflows used to carry (the container build had `v0.70.0`): the three
+workflows scan the same shipped images, so they now share one scanner version.
+The vulnerability database is refreshed on every run regardless of the pin;
+a new Trivy release can change scan results and turn a blocking release job
+red, which is why a bump is a deliberate edit.
+
+**Helm in the kind smoke workflow.** `kind-smoke.yaml` no longer pipes the
+moving `get-helm-3` script into `bash`. It runs
+`sudo bash scripts/ci-install-helm.sh "$(cat scripts/helm-version.txt)" /usr/local/bin`.
+The Helm tag is pinned in `scripts/helm-version.txt` (currently `v3.17.3`); the
+script downloads that release archive from `get.helm.sh` to a temp file (5
+retries, 10 s apart, 20 s connect and 120 s total timeouts), unpacks only
+`linux-amd64/helm`, and on a persistent failure exits non-zero naming curl's
+status and the URL. Coverage: `bash scripts/tests/ci-install-helm_test.sh`. The
+Helm pin is separate from the Trivy pin and `check-trivy-version-single.sh` does
+not cover it; the archive checksum is not verified.
+
+`bash scripts/check-trivy-version-single.sh` enforces this (bad or missing
+version file, a literal pin in a workflow, an installer caller that never reads
+the file); its coverage is
+`bash scripts/tests/check-trivy-version-single_test.sh`.
+
+The guard runs in `make lint` and `ci.yaml`. Full write-up in
 [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
+
+### Code scanning upload in the Release workflow
+
+In `.github/workflows/release.yaml` three jobs upload a SARIF report to GitHub
+Code Scanning: `gosec baseline-diff` (category `gosec`) and the `build-base`
+and `build-agents` image jobs (Trivy reports, one per image). Each upload is a
+courtesy copy of a result a scan step has already judged; none is a release
+gate.
+
+- **Up to four attempts.** Each upload is tried up to four times, waiting 60,
+  180 and 300 seconds between attempts, which covers GitHub's rate-limit
+  answer. The upload action does not report why it failed, so a retry happens
+  on any failure, not only on that answer.
+- **Never blocking.** Every attempt sets `continue-on-error`, so a failed
+  attempt never fails the job or holds up goreleaser or the image pushes. If
+  all four fail, a final step logs a warning ("upload failed on every
+  attempt") and the run goes on.
+- **Gates unchanged.** The gosec baseline check still fails the run on a
+  net-new finding, and the Trivy scan steps still fail the run on a net-new
+  HIGH/CRITICAL finding. The `actions/upload-artifact` copies of the SARIF
+  files (`gosec-results`, and `trivy-<image>-sarif` for each image; 90-day
+  retention) stay available when the upload fails.
+- **Missing results.** A release whose upload gave up has no new entry in Code
+  Scanning for that run. That is not a clean scan. Read the warning on the
+  upload step, download the SARIF artifact from the run, or re-run the workflow
+  once the limit has lifted.
+- **Guard.** `scripts/check-sarif-upload-nonblocking.py` reads the workflow
+  files (it never changes them) and fails if any `upload-sarif` step is
+  blocking (R1), if a job has fewer than three upload steps (R2), if a
+  publishing job (goreleaser, an image push, or `gh release upload`) depends
+  on a job with a blocking upload (R3), or if the gosec baseline gate stops
+  being blocking in `release.yaml` (R4). Run it with `make check-sarif-upload`;
+  it is part of `make lint`. Its fixture test,
+  `tests/test-sarif-upload-nonblocking.sh`, is part of `make test`. Workflows
+  other than `release.yaml` currently have no SARIF upload steps.
+- **Not configurable.** The wait lengths and attempt count are fixed in the
+  workflow file, not in a daemon setting.
+
+**Operator review:** (1) decide whether a SARIF upload that fails all four
+attempts should raise an alert; today it is only a warning on the step.
+(2) The guard's minimum is three upload steps per job while the workflow uses
+four; confirm that is the intended slack. (3) The guard needs Python 3 with
+PyYAML wherever `make lint` runs; it stops with an error if PyYAML is missing.
 
 ---
 
@@ -3115,6 +3206,108 @@ gate (`allow_self_config: false`) and restart; remove the group from the
 in the same YAML, an explicit list always wins); define a narrower
 custom group (for example only `llms:write`); grant that to the one session
 (or the sessions of the one daemon) that needs it (`session.capabilities`). Definitions: [datawatch-definitions.md#self-config](datawatch-definitions.md#self-config).
+
+
+### Sensitive writes: what sessions and peers may not do
+
+Next to the `self-config` group sits a second, independent switch for a
+smaller set of high-impact MCP tools, the **sensitive write** class. The
+setting is `mcp.allow_sensitive_writes`. **Default: enabled** — the key is
+absent from a fresh config and absent reads as on, so nothing changes until an
+operator sets an explicit `false`.
+
+The class: `secret_set`, `secret_delete`, `secret_get` (it returns the secret
+value, so it is gated although it only reads), the identity writers
+(`set_identity`, `update_identity`, `configure_identity`, `restore_identity`,
+`reset_identity`), daemon control (`restart_daemon`, `reload`), and
+`plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`,
+`tailscale_acl_push`, `tailscale_auth_key` and `acme_renew`. Listing secret
+names, checking that one exists, the vault status and the secret scan
+statistics are not in it.
+
+While `mcp.allow_sensitive_writes: false`:
+
+- a session credential or a federation peer that calls one of those tools gets
+  `tool <name> is refused: sensitive writes are disabled for sessions and peers (mcp.allow_sensitive_writes is false). An operator can re-enable them by setting mcp.allow_sensitive_writes to true (or removing the key) in the datawatch config.`;
+- the operator is unaffected: the Web UI, `PUT /api/config`, the CLI and an
+  admin MCP caller never reach the gate;
+- the switch is independent of `mcp.allow_self_config`, in both directions.
+
+**Audit.** Every call to a sensitive tool from a session or peer is recorded in
+the same audit stream as configuration writes (file `mcp.self_config_audit_path`,
+the `self_config_audit` tool, `datawatch audit self-config`,
+`GET /api/audit/self-config`, and the CEF/syslog sink when one is configured)
+with `class: "sensitive"`; configuration-write records carry `class: "config"`.
+A sensitive record keeps the argument **names** and drops every value, because
+secret material in an argument cannot be recognised by its name. Refusals are
+recorded under `mcp.self_config_audit_denied` like all other refusals. The
+audit is written outside the gate: a refusal is visible in the trail.
+
+**Changing it.** Any operator surface can set it:
+
+- Web UI: Settings → General → **Self-config** card → **Allow sensitive writes**
+  (the help text is translated in the five locales);
+- CLI: `datawatch config set mcp.allow_sensitive_writes false` (sent as a JSON
+  boolean, like `mcp.allow_self_config`; `datawatch config set --help` names
+  both keys), and `datawatch config get mcp.allow_sensitive_writes` to read it
+  back;
+- REST: `PUT /api/config` with `{"mcp.allow_sensitive_writes": false}`;
+  `GET /api/config` returns the effective boolean under `mcp`;
+- comm channel: `configure mcp.allow_sensitive_writes=false`; `configure list`
+  names the key. The reply ends "Restart may be required." — generic wording of
+  the verb; this key is applied live;
+- MCP read-back: `get_config` with `section=mcp` reports
+  `allow_sensitive_writes` next to `allow_self_config`, each as its effective
+  on/off state (an unset key reads on);
+- YAML: edit the `mcp:` block and restart.
+
+A change through the Web UI, CLI, REST or comm channel is applied to the
+running daemon and saved to the config file. The gate reads the setting on
+every call, so no restart is needed. Re-enabling is setting `true`, or removing
+the key from the YAML and restarting. Write exactly `true` or `false`: the
+daemon reads `true`, `yes` and `1` as on and any other text (`True`, `on`) as
+off.
+
+**Operator review before relying on it.** These points follow from how the
+setting is wired today and need an operator decision or a follow-up:
+
+1. A session can change the switch. `config_set` goes through
+   `PUT /api/config`, which now handles `mcp.allow_sensitive_writes`, and unlike
+   `mcp.allow_self_config` the key is not named in the bootstrap protection. While
+   `mcp.allow_self_config` is on (the default), a session holding `config:write`
+   can set the key back to `true`, so `false` alone does not keep a
+   self-configuring session out of the class. Decide whether the key should be
+   bootstrap-protected like `allow_self_config`; until then, pair
+   `allow_sensitive_writes: false` with `allow_self_config: false` when the
+   goal is operator-only control. The attempt is audited as a `config` record.
+2. The Web UI row sits in the Self-config card and is translated in the five
+   locales, and the OpenAPI spec now describes the field. No mobile parity
+   issue for the new toggle exists in this repository, so Android and iPhone
+   clients do not show it yet; file one with the datawatch-app project before
+   telling operators it is available on mobile.
+3. The gate sits in the MCP tool-handler chain only. The REST and comm-channel
+   routes that do the same things (for example a secret write over REST or
+   `send_input` over a comm channel) do not pass through this switch; this
+   change did not examine them, so check them before treating `false` as a
+   complete lock-down.
+4. The daemon's own MCP server reads the live setting. A separate stdio MCP
+   process started with `datawatch mcp` loads the config file when it starts, so
+   it picks up a saved change only after that process restarts. This was read
+   from the code, not exercised end to end.
+5. The refusal and audit wording above is the code's current text; confirm it
+   before it is quoted in operator runbooks.
+6. The comm `configure` confirmation for this key still ends "Restart may be
+   required.", although the change is applied to the running daemon. The text
+   is shared by every key the verb sets; decide whether it should say "applied"
+   for keys that need no restart, and verify with `get_config section=mcp` or
+   `datawatch config get mcp.allow_sensitive_writes` until then.
+7. The new help and read-back text (`configure list`, `datawatch config set
+   --help`, the `get_config` description) was checked against the code and its
+   tests, not against a running daemon with a real comm channel attached.
+
+Walk-through and a sample audit record:
+[`howto/self-config-capability.md`](howto/self-config-capability.md#sensitive-writes-a-separate-switch).
+Definition: [datawatch-definitions.md#sensitive-writes](datawatch-definitions.md#sensitive-writes).
 
 ---
 
@@ -4088,6 +4281,14 @@ autonomous:
 
 ## Tag browser settings (autonomous.tags)
 
+The **List / Tiles / Compact** toggle, the **Group by** select, the collapsed
+groups and the show-more paging on the Automata and Automation lists are
+browser-only: they are kept in local storage on each device and are not
+daemon settings. Nothing under `autonomous.tags` controls them, and they
+are not in `GET /api/config`. To reset them, clear the site data for the PWA
+(keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
+See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
+
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per
 tag. The `autonomous.tags` block sets which view opens first, which statuses
@@ -4147,6 +4348,57 @@ no `autonomous.tags` key, changes no tag, stored selection or filter result, and
 needs no migration or restart — a refreshed PWA shows the corrected menu. The
 tag filter rows elsewhere are unchanged. See
 [howto/automata-tags.md](howto/automata-tags.md) for the operator view.
+
+**Placement tags on every session start (operator check).** A session
+started through `POST /api/sessions/start` (REST, the MCP `start_session`
+tool or `datawatch session new`) now carries the full set of axes that
+apply to it: the node it ran on — for a session that ran locally and
+stored no node, the local node, so the tag reads `compute:local` — and
+the backend, lane and project it records. A start with launch facts
+(`launch_role`, `launch_kind`, `launch_stage`, `launch_automaton`) also
+carries the recorded launch role, kind and stage and the Automaton (and
+its Automation) it names; an unknown role or kind is refused with 400
+before the session starts. Tagging is best-effort: a failure is logged
+and the session stays usable without its tags. The daemon's start hook
+applies the same stamp on its own start paths — scheduled starts and
+comm-channel starts — so no start path is left with a partial set. A
+session that belongs to no Automaton carries no `automaton:` or
+`automation:` tag: the operator's supervisor session, started with
+`launch_role: supervisor`, keeps `role:supervisor` plus compute, backend,
+lane and project and nothing on the automaton axis. A restart re-runs
+the same stamp: `RestartSession` and the restart path that reuses a
+completed or failed session's ID now re-derive the tags from the
+session's record, so a restarted session keeps the role, kind, stage and
+automaton axes its record holds without a sweep; a restart that fails
+changes no tags. An **existing session
+with no recorded launch facts keeps exactly the tags it had before**:
+the sweep's session pass falls back to the derivation it always used
+(role and kind from the session name, no node fallback), so a pass over
+such sessions leaves them unchanged and the daemon never invents an axis
+the record does not carry. See
+[howto/automata-tags.md](howto/automata-tags.md#stamping-re-stamping-and-the-startup-backfill)
+for the axis list.
+
+**Still needs your review — confirm on a live daemon:**
+
+- **Old plain sessions stay as they are.** Sessions started before this
+  change that carry neither an Automaton nor any system tag are left
+  untouched by the tag sweep; the full set applies to sessions started
+  from now on, and to existing sessions the sweep covers, rebuilt from
+  their stored facts.
+- **The `compute:local` value.** A local session that stored no node is
+  tagged `compute:local` — on a new start and on a session that records
+  launch facts. Confirm that naming is what you expect to see in
+  filters, counts and the Sessions Tags menu.
+- **The restart re-stamp.** Covered by unit tests, not yet seen on a
+  live daemon: after restarting a session that records launch facts,
+  confirm its tags match the record (role, kind, stage, automaton) and
+  that a restart which fails leaves its tags untouched.
+- **Roll-forward, never hand-edited.** If a session later gains launch
+  facts, run `datawatch autonomous tags sweep --dry-run` first to see
+  exactly which sessions would change, then the sweep without `--dry-run`
+  to apply it — the tags are system tags and the registry refuses manual
+  rename or delete of them.
 
 ---
 
@@ -4512,6 +4764,8 @@ anything; it decides only what *happens* to the task:
 Only `off`, `warn` and `block` are accepted. `PUT /api/config` and
 `PUT /api/autonomous/config` reject anything else with HTTP 400; a bad value
 that is stored another way (hand-edited YAML) resolves to `warn`, never `off`.
+
+**How the checks run git.** The file drift check and this check run git read-only (`diff`, `log`) with `-c core.fsmonitor=false`, `-c core.hooksPath=` and `--no-optional-locks`, and `git diff` also gets `--no-ext-diff`, so a program that a project's own git configuration names (a file-system monitor, a hooks directory or an external diff program) is never started by the check. A project folder that is empty, relative or starts with a dash is refused (`invalid git directory`) and git is not run; that task gets no finding from the check. There is no setting for this and the modes above are unchanged. Operator review: a project that relied on a custom `core.fsmonitor` or diff program to change what the check sees now gets plain git state. See [howto/file-drift-guardrail.md](howto/file-drift-guardrail.md#how-the-checker-runs-git).
 
 ### Reading and writing it
 
@@ -5367,6 +5621,64 @@ Restart the daemon after changing it.
   alert means something on the node keeps loading other models. Pin the
   caller's model explicitly, or find the caller.
 
+## Model placement (when the routed node does not have the model)
+
+Pinning keeps the model you want on a node; placement decides what happens
+when the routed node does not have the model you *want routed to it*. The
+planner looks at the node's free memory and free disk (each reduced by the
+headroom keys below), the model's size in GB, and node-level conditions —
+a node that is disabled, in a maintenance window, or pinned to another
+model is never picked, and the planner never writes to the node, loads a
+model or sends a message. It only names the node.
+
+Keys live under `compute_placement.` (flat block at the top level of the
+config object, beside `compute_nodes`):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `missing_model` | `ask` | `ask` records a one-shot placement ask and waits for the operator to approve (pull + load) or deny; `auto_load` pulls and loads without asking; `refuse` never loads (the refusal is audited). |
+| `mem_headroom_pct` | `10` | Whole percent (0–100) of free memory kept out of reach: the model must fit, and this much free memory must be left over. |
+| `disk_headroom_gb` | `5` | Whole GB of free disk kept out of reach: the model must fit, and this much free disk must be left over. |
+| `ask_timeout_minutes` | `30` | How long an ask may wait for an answer before it expires (a refusal, not an approval). `0` = no timeout. |
+| `assume_model_size_gb` | `0` | GB assumed for a model the node carries but the daemon is not told the size of (`0` = unknown). Affects the estimate only. |
+
+All five are read at decision time: a change from any surface applies at
+the next placement decision, no restart needed.
+
+The ask itself is one-shot and pending-only everywhere it is listed:
+
+- The queue (`GET /api/compute/placements` → `{asks:[…], pending:N}`,
+  MCP `compute_placement_list`, `datawatch compute placements list`,
+  comm `compute placement list`, PWA Settings → General →
+  **Compute placements**) shows only asks that still need an answer.
+- An answer is approve or deny — `POST /api/compute/placements/{id}/approve`
+  or `/deny` (needs `compute:write`; the list needs `compute:list`), MCP
+  `compute_placement_answer` with `decision: approve|deny`,
+  `datawatch compute placements approve|deny <id>`, comm
+  `compute placement approve|deny <id>`, or the PWA Approve / Deny buttons.
+- An ask that gets an answer leaves the queue immediately (it stays
+  readable on the daemon for the history). Approve starts the pull and
+  load; deny refuses the placement. An ask that is never answered passes
+  `ask_timeout_minutes` and expires — a refusal with `decided_by: timeout`,
+  never an approval. A closed ask (approved, denied or expired) cannot be
+  re-decided: a second answer attempt is refused (HTTP 409).
+- Every step is audited: `placement_asked` (CEF 88), `placement_approved`
+  (89), `placement_denied` (90), `placement_loaded` (91) and
+  `placement_refused` (92). See [howto/audit-logging.md](howto/audit-logging.md).
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `compute_placement.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch compute placements list\|approve \<id\>\|deny \<id\>`; `datawatch compute placements config-get\|config-set --missing-model X --mem-headroom-pct N --disk-headroom-gb N --ask-timeout-minutes N --assume-model-size-gb N` |
+| **Web UI** | Settings → General → **Compute placements** card: the policy select, the four number fields, and the pending queue with Approve / Deny |
+| **REST API** | `GET /api/compute/placements`; `POST /api/compute/placements/{id}/approve` and `/deny`; `PUT /api/config` with `{"compute_placement.missing_model": "ask"}` etc.; the block reads back on `GET /api/config` |
+| **MCP** | `compute_placement_list`, `compute_placement_answer` (`id`, `decision`); `get_config` / `config_set` with key `compute_placement.<key>` |
+| **Comm channel** | `compute placement list\|approve \<id\>\|deny \<id\>`; `configure compute_placement.<key>=<value>`; the alert names the ask id so a reply like `compute placement approve ask-<id>` settles it |
+
+See [howto/compute-placement-ask.md](howto/compute-placement-ask.md) for the
+glossary entries (model placement, placement policy, pending placement ask,
+placement refusal) and the worked walkthrough.
+
 ## Per-LLM concurrency limits and plan tiers
 
 Each LLM registry entry carries a concurrency cap for its `llm:<name>`
@@ -6204,7 +6516,7 @@ Set them with `datawatch config set autonomous.automation.merge_pending_mode sha
 | MCP | `autonomous_merge` | `autonomous_safe_to_delete` |
 | CLI | `datawatch autonomous merge [--json]` | `datawatch autonomous safe-to-delete [--json]` |
 | Comm channel | `autonomous merge` | `autonomous safe-to-delete` |
-| PWA | Merge badge on a finished Automaton's detail view and on its Automation card (`pending` and `needs_look` only) | Safe-to-delete card on the Automation Housekeeping sub-tab, refreshed every 60 seconds; shows the computed-at time and a stale badge when the daemon marks the result stale |
+| PWA | Merge badge on a finished Automaton's detail view and on its Automation card (`pending` and `needs_look` only) | Safe-to-delete card under the event stream on the Automata Events sub-tab, refreshed every 60 seconds; shows the computed-at time and a stale badge when the daemon marks the result stale |
 | Mobile/wear | The same REST contract, documented in `docs/api/mobile-surface.md` | Same |
 
 Both reads are GET-only (any other method is 405), answer 503 while Automata are disabled, and need the autonomous read capability when called by a federated peer. The merge state is served from the daemon's last comparison, so a read never runs git and an Automaton not compared yet reads `unknown`. The full field documentation and JSON shapes are in `docs/api/autonomous.md` (section *Merge state and safe-to-delete report*), and the walk-through for reading them is in `docs/howto/automation-tab.md`.
@@ -6250,7 +6562,7 @@ Set them with `datawatch config set autonomous.automation.cleanup_mode on`, `PUT
 | MCP | `autonomous_cleanup_status` |
 | CLI | `datawatch autonomous cleanup [--json]` |
 | Comm channel | `autonomous cleanup` |
-| PWA | **Cleanup** card on the Automation Housekeeping sub-tab, refreshed every 30 seconds |
+| PWA | **Cleanup** card under the event stream on the Automata Events sub-tab, refreshed every 30 seconds |
 | Mobile/wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
 The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It serves the daemon's in-memory status, so a read never runs git or scans a disk; the status is also saved to `cleanup_status.json` beside the other autonomous stores so the last run survives a restart. Each pass reports its `mode`, `last_run`, `removed`, `would_remove`, `skipped`, `failed`, `bytes_freed`, `last_error` and the owner-versus-net split; the status adds the two disk readings, `disk_alert_percent`, `disk_alert` and `last_disk_alert_at`. The full field documentation is in `docs/api/openapi.yaml`.
@@ -6260,6 +6572,8 @@ The read is GET-only (any other method is 405), answers 503 while Automata are d
 **What the cleanup never does.** It never removes a branch with commits that are not on the base branch, a worktree with uncommitted changes, anything belonging to a running or unfinished Automaton, a branch outside `automaton/`, or a path outside the daemon's own scratch files. It never uses `--force` or `-D`, never follows a symbolic link, and never touches anything in `off` mode.
 
 ---
+
+**Skipped by reason, permission errors and unlanded branches.** The worktrees pass of the cleanup status adds `skipped_by_reason` (a count per reason, with `permission_denied` for removals the file system refused) and one `permission_issue` record for those refusals: `count`, `paths`, a plain `why` (a build or test left read-only files), `fixable` (an affected folder still exists) and `hidden` (every affected folder is already gone, so there is nothing to do). The safe fix restores owner write permission only, inside the worktree base, never following links; it removes nothing, and it checks containment on each requested path before any file-system call (an outside path is refused with the same text whether or not it exists). Separately, a read-only **unlanded work** review lists archived Automata whose `automaton/<id>` branch has commits not on the default branch (`landed`, `superseded` or `needs_decision`, compared by commit content), with the actions **Keep** (recorded in `unlanded-keep.json` in the state directory), **Archive branch** (moves it to `refs/archive/<branch>`) and **Delete worktree** (explicit confirm, git bundle backup under `<worktree base>/backups` written and verified before anything is removed). The uncommitted-work **diff** and **commit** work on one worktree inside the worktree base and stage exactly the listed files. Their surfaces: the **Unlanded work** card, the **Commit** button on the Housekeeping sub-tab and the **Fix permissions** button inside the Cleanup card on the Events sub-tab (REST `/api/autonomous/unlanded-work[/keep|/archive-branch|/delete-worktree]`, `/api/autonomous/uncommitted-work/diff` and `/commit`, `/api/autonomous/cleanup/fix-permissions`); the unlanded list also has the CLI `datawatch autonomous unlanded-work`, the comm verb `autonomous unlanded-work` and the read-only MCP tool `autonomous_unlanded_work`; `scripts/branch-audit.py` flags an archived branch with work not on main as `UNLANDED`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) and [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md).
 
 ## Automaton uncommitted-work check (a task is complete only when its work is committed)
 
@@ -6317,6 +6631,8 @@ The read is GET-only (any other method is 405), answers 503 while Automata are d
 | The held task could not be run again | — | `uncommitted_work_resolve_failed` |
 
 The audit details carry the Automaton id, the task id when there is one, the files, the files outside the declared files and the cause (the resolved event carries the chosen option, the actor and the question id instead). The held and warned moments also raise a warning alert (*Uncommitted work held* and *Uncommitted work warning*); a failed commit or discard raises *Uncommitted work not resolved*. A held task carries the failure source `uncommitted-work-hold`, and an Automaton blocked by the finished check carries the blocked reason `uncommitted_work`.
+
+**Path guard.** Paths read from `git status` pass one shared relative-path guard (non-empty, no NUL byte, relative, inside the directory after cleaning) before they are joined onto the worktree; absolute and `..`-escaping paths are skipped. It covers the daemon-only-change checks and the task-commit file list, and changes nothing for valid in-tree paths.
 
 **What the check never does.** It never commits a file outside a task's declared files by itself, never stages with `-A` or `.`, never skips commit hooks, never pushes or merges, and never discards anything but the exact files of a hold the operator chose to discard. The status read never runs git and never changes anything. In `off` it does not look at the worktree at all.
 
@@ -6418,7 +6734,7 @@ The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` ta
 | MCP | `autonomous_request_watch` (read-only; optional `session` and `automaton` arguments) |
 | CLI | `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` |
 | Comm channel | `autonomous request-watch [session <id> \| automaton <id>]` |
-| Web UI | **Automata model request progress** card on the Automation Setup and policy sub-tab, refreshed every 10 seconds; a chip on each watched session row, the session detail header and the task row |
+| Web UI | **Automata model request progress** card on the Automata Events tab (hidden while nothing is watched), refreshed every 10 seconds; a chip on each watched session row, the session detail header and the task row |
 
 The read is GET-only (any other method is 405), needs the autonomous read capability when called by a federated peer, and answers 503 until the watch is wired. It returns `enabled`, `poll_seconds`, `no_progress_minutes` and `observations`; each observation carries `session_id`, `automaton_id`, `task_id`, `role`, `node`, `model`, `state`, `last_change`, `no_progress_seconds`, `last_poll`, `over_threshold`, `error` (left out when empty) and `summary`. With the watch off the list is empty.
 

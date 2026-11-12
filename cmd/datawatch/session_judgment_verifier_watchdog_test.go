@@ -69,8 +69,8 @@ func verifierLoopConfig(modelServerHost string) *config.Config {
 // A silent verifier session (no output file, no pane change, no live
 // runner process) whose model server cannot be reached must end at the
 // no-progress limit: the unknown probe must not spare the session, must
-// not crash the loop, and the error must be the no-output family naming
-// the watchdog.
+// not crash the loop, and the error must be the VerifierIdleError the
+// executor's retry path recognizes.
 func TestVerifierWaitLoopSilentEndsAtLimitWhenProbeUnknown(t *testing.T) {
 	daemon := startFakeDaemonForOneShot(t, "running")
 	pointLoopbackAt(t, daemon.URL)
@@ -92,13 +92,13 @@ func TestVerifierWaitLoopSilentEndsAtLimitWhenProbeUnknown(t *testing.T) {
 	if err == nil {
 		t.Fatal("a silent verifier session must end at the no-progress limit, got success")
 	}
-	noOutput, ok := err.(*autonomous.OneShotNoOutputError)
+	idle, ok := err.(*autonomous.VerifierIdleError)
 	if !ok {
-		t.Fatalf("want *autonomous.OneShotNoOutputError, got %T (%v)", err, err)
+		t.Fatalf("want *autonomous.VerifierIdleError, got %T (%v)", err, err)
 	}
 	want := autonomous.VerifierWatchdogMessage(2 * time.Second)
-	if noOutput.Msg != want {
-		t.Fatalf("want the watchdog message %q, got %q", want, noOutput.Msg)
+	if idle.Msg != want {
+		t.Fatalf("want the watchdog message %q, got %q", want, idle.Msg)
 	}
 	if elapsed > 20*time.Second {
 		t.Fatalf("the watchdog should end the session at the limit (2s), not the session cap (30s): took %v", elapsed)

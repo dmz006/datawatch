@@ -61,6 +61,14 @@ type sessionSummaryRow struct {
 	// (compute:<node>, peer:<name>, backend:<llm>, lane:<lane>, role:<role>,
 	// project:<name>) that the Sessions tiles draw as chips.
 	SystemTags []string `json:"system_tags,omitempty"`
+
+	// Sub-task nesting link (grouping + saved views): the Automaton (prd) the
+	// session belongs to, the story inside it, and the task it runs. All
+	// omitempty like the rest of the row — a session outside an Automaton
+	// omits prd_id and sits in the ungrouped block instead.
+	PRDID   string `json:"prd_id,omitempty"`
+	StoryID string `json:"story_id,omitempty"`
+	TaskID  string `json:"task_id,omitempty"`
 }
 
 // sessionListPage is the paged envelope.
@@ -137,6 +145,34 @@ func parseSessionPageOptions(q url.Values) (sessionPageOptions, error) {
 	}
 	o.active = q.Get("active") == "1"
 	o.q = strings.ToLower(strings.TrimSpace(q.Get("q")))
+	return o, nil
+}
+
+// sessionGroupOptions holds the grouping-read parameters of the session list
+// (session_group.go). It is inactive without group_by, which keeps the
+// response unchanged.
+type sessionGroupOptions struct {
+	active    bool // group_by was given: serve the grouped response
+	axis      string
+	tagPrefix string
+}
+
+// parseSessionGroupOptions reads and validates group_by / tag_prefix, next to
+// the paging options. An unknown axis is an error (the handler answers 400);
+// no group_by leaves the options inactive.
+func parseSessionGroupOptions(q url.Values) (sessionGroupOptions, error) {
+	var o sessionGroupOptions
+	axis := strings.TrimSpace(q.Get("group_by"))
+	if axis == "" {
+		return o, nil
+	}
+	o.tagPrefix = strings.TrimSpace(q.Get("tag_prefix"))
+	switch axis {
+	case groupAxisTag, groupAxisState, groupAxisNode, groupAxisProject, groupAxisAutomaton:
+		o.axis, o.active = axis, true
+	default:
+		return o, fmt.Errorf("invalid group_by %q: want tag, state, node, project or automaton", axis)
+	}
 	return o, nil
 }
 
@@ -228,7 +264,8 @@ func (s *Server) sessionSummaryRow(sess *session.Session, textChars int) session
 		LastActivity: sess.UpdatedAt, ParentID: sess.ParentID,
 		EstCostUSD: sess.EstCostUSD, TokensIn: sess.TokensIn, TokensOut: sess.TokensOut,
 		StatusLine: sessionStatusLine(sess, textChars),
-		Tags:       sess.Tags, InheritedTags: s.manager.InheritedTags(sess),
+		PRDID:      sess.PRDID, StoryID: sess.StoryID, TaskID: sess.TaskID,
+		Tags: sess.Tags, InheritedTags: s.manager.InheritedTags(sess),
 		SystemTags: sess.SystemTags,
 	}
 	if sess.LastChannelEventAt.After(row.LastActivity) {

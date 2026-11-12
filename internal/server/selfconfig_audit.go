@@ -64,7 +64,8 @@ func (s *Server) handleSelfConfigAudit(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 	path := s.selfConfigAuditPath()
-	all := make([]federation.ConfigAuditRecord, 0, limit)
+	// Not sized from the request: the capacity must never depend on user input.
+	var all []federation.ConfigAuditRecord
 	if path != "" {
 		if f, err := os.Open(path); err == nil {
 			sc := bufio.NewScanner(f)

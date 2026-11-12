@@ -127,10 +127,11 @@ func TestCleanlinessDaemonSectionOnlyChangeRaisesNothing(t *testing.T) {
 
 	// 4. The merge preflight refuses over the real edit.
 	out, err = m.MergeTaskBranch(ctx, prd, t2)
-	if err == nil || out == MergeOutcomeMerged {
-		t.Fatalf("merge = %s, %v; the real edit must refuse the merge", out, err)
+	if err != nil || out != MergeOutcomeDeferred {
+		t.Fatalf("merge = %s, %v; the real edit must defer the merge", out, err)
 	}
-	if !strings.Contains(err.Error(), "has uncommitted changes; not merging over them") {
-		t.Fatalf("unexpected merge error: %v", err)
+	if t2.MergeBlock == nil || t2.MergeBlock.Kind != MergeBlockKindDirtyWorktree ||
+		!strings.Contains(t2.MergeBlock.Reason, "AGENT.md") {
+		t.Fatalf("merge block = %+v; want a dirty_worktree block naming AGENT.md", t2.MergeBlock)
 	}
 }

@@ -86,7 +86,8 @@ type Server struct {
 	resultSessionLookup func(string) (*session.Session, bool)
 	cmdLib              *session.CmdLibrary
 	restartFn           func()
-	acmeManager         *acme.Manager // BL397, nil when ACME is disabled
+	restartForceFn      func(force bool) // force-aware restart (the guard); preferred over restartFn
+	acmeManager         *acme.Manager    // BL397, nil when ACME is disabled
 	version             string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
 	latestVersion func() (string, error)
@@ -294,7 +295,8 @@ type Options struct {
 	ResultHistoryLimit  int                          // results.schedule_history_limit
 	CmdLib              *session.CmdLibrary
 	RestartFn           func()
-	AcmeManager         *acme.Manager // BL397, nil when ACME is disabled
+	RestartForceFn      func(force bool) // force-aware restart; preferred over RestartFn
+	AcmeManager         *acme.Manager    // BL397, nil when ACME is disabled
 	Version             string
 	LatestVersion       func() (string, error)
 	// FallbackToken is cfg.Server.Token (SEC-002) — when mcp.token is
@@ -333,6 +335,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		resultHistoryLimit:  opts.ResultHistoryLimit,
 		cmdLib:              opts.CmdLib,
 		restartFn:           opts.RestartFn,
+		restartForceFn:      opts.RestartForceFn,
 		acmeManager:         opts.AcmeManager,
 		version:             opts.Version,
 		latestVersion:       opts.LatestVersion,
@@ -380,6 +383,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL110 extension — single audit point for every MCP config-write
 	// tool (registered after panic recovery, wrapping every handler).
 	RegisterConfigWriteAudit(mcpSrv, s)
+	// Sensitive write gate — registered after the audit so it sits inside it
+	// (first registered runs outermost) and the audit records its denials.
+	RegisterSensitiveWriteGate(mcpSrv, s)
 
 	// tracked wraps an MCP handler with channel stats tracking
 	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -654,6 +660,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelTask(), tracked(s.handleAutonomousPRDCancelTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetFailureEscalation(), tracked(s.handleAutonomousPRDSetFailureEscalation))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskEffortCeiling(), tracked(s.handleAutonomousPRDSetTaskEffortCeiling))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetBranchRefresh(), tracked(s.handleAutonomousPRDSetBranchRefresh))
+	mcpSrv.AddTool(s.toolAutonomousBranchRefreshStats(), tracked(s.handleAutonomousBranchRefreshStats))
 	mcpSrv.AddTool(s.toolAutonomousPRDResolveTaskReview(), tracked(s.handleAutonomousPRDResolveTaskReview))
 	mcpSrv.AddTool(s.toolAutonomousPRDApproveTask(), tracked(s.handleAutonomousPRDApproveTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDInstantiate(), tracked(s.handleAutonomousPRDInstantiate))
@@ -775,6 +783,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousMergeShadowStatus(), tracked(s.handleAutonomousMergeShadowStatus))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
 	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
+	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))       // autonomous_unlanded_work: archived branches with work not on the default branch
 	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
 	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
 	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
@@ -983,6 +992,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodePullModel(), tracked(s.handleComputeNodePullModelMCP))
 	mcpSrv.AddTool(s.toolComputeNodeRemoveModel(), tracked(s.handleComputeNodeRemoveModelMCP))
 	mcpSrv.AddTool(s.toolMarketplacePullTask(), tracked(s.handleMarketplacePullTaskMCP))
+	// Missing-model placement asks (policy "ask"): list pending + approve/deny.
+	mcpSrv.AddTool(s.toolComputePlacementList(), tracked(s.handleComputePlacementListMCP))
+	mcpSrv.AddTool(s.toolComputePlacementAnswer(), tracked(s.handleComputePlacementAnswerMCP))
 	// v7.0.0 S2 — LLM-inference registry.
 	mcpSrv.AddTool(s.toolLLMList(), tracked(s.handleLLMListMCP))
 	mcpSrv.AddTool(s.toolLLMGet(), tracked(s.handleLLMGetMCP))
@@ -1830,6 +1842,12 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		mcpsdk.WithString("tag_match",
 			mcpsdk.Description("any (default): the session needs at least one of tags (or an expanded shortcut); all: every tag."),
 		),
+		mcpsdk.WithString("group_by",
+			mcpsdk.Description("Group the list by axis: tag, state, node, project or automaton. Returns the grouped response: one group per key with its count, per-state mix and its sessions, plus per-state totals. On automaton each Automaton also carries its story blocks and progress (done/total). Always JSON; tag_prefix narrows the tag axis."),
+		),
+		mcpsdk.WithString("tag_prefix",
+			mcpsdk.Description("With group_by=tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group. Ignored without group_by=tag."),
+		),
 	)
 }
 
@@ -1909,6 +1927,9 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		),
 		mcpsdk.WithBoolean("kill_children_recursive",
 			mcpsdk.Description("BL351 — when true, killing this session kills ALL descendants recursively, regardless of their own kill_children settings. Supersedes kill_children when both are set."),
+		),
+		mcpsdk.WithString("launch_role",
+			mcpsdk.Description("Optional placement role the session plays: worker | verifier | planner | judge | supervisor. Start the operator's supervisor session with launch_role=supervisor; it then carries the supervisor role tag plus compute, backend, lane and project tags and no automaton tag. Omit for an unchanged plain session."),
 		),
 		sessionPriorityOption(),
 		mcpsdk.WithArray("image_paths",
@@ -2100,7 +2121,10 @@ func (s *Server) toolMarkAlertRead() mcpsdk.Tool {
 
 func (s *Server) toolRestartDaemon() mcpsdk.Tool {
 	return mcpsdk.NewTool("restart_daemon",
-		mcpsdk.WithDescription("Restart the datawatch daemon. Active tmux sessions are preserved."),
+		mcpsdk.WithDescription("Restart the datawatch daemon. Active tmux sessions are preserved. While running Automata work would be interrupted, the restart is refused and the tool result carries the interruption report; pass force=true to restart anyway. See docs/howto/restart-with-work-running.md."),
+		mcpsdk.WithBoolean("force",
+			mcpsdk.Description("Restart even when running Automata work would be interrupted. Default false: a restart that would interrupt work is refused with the report."),
+		),
 	)
 }
 
@@ -2442,6 +2466,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	killChildren := req.GetBool("kill_children", false)
 	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
 	git := req.GetBool("git", false)
+	launchRole := strings.TrimSpace(req.GetString("launch_role", ""))
 	priority, hasPriority, perr := priorityFromReq(req)
 	if perr != nil {
 		return toolError("start_session", perr), nil
@@ -2463,7 +2488,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority) && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "") && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -2494,6 +2519,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if hasPriority {
 			body["priority"] = priority
+		}
+		if launchRole != "" {
+			body["launch_role"] = launchRole
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -3109,12 +3137,20 @@ func (s *Server) handleMarkAlertRead(_ context.Context, req mcpsdk.CallToolReque
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Alert %s marked as read.", id)), nil
 }
 
-func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleRestartDaemon(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
 		return deny, nil
 	}
-	if s.restartFn == nil {
+	if s.restartFn == nil && s.restartForceFn == nil {
 		return toolErrorf("restart_daemon", "Restart not available (not running as daemon)."), nil
+	}
+	force := req.GetBool("force", false)
+	if !force {
+		// Running work would be interrupted and force was not passed: refuse,
+		// and answer with the read-only report in the tool result.
+		if rep, ok := s.restartDaemonReport(); ok && rep.NeedsForce {
+			return mcpsdk.NewToolResultError(restartDaemonRefusal(rep)), nil
+		}
 	}
 	go func() {
 		time.Sleep(500 * time.Millisecond)
@@ -3122,6 +3158,10 @@ func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolReque
 		// source=api-restart via=mcp-restart (picked up by the daemon's
 		// Capture when it writes the audit entry + last-shutdown.json).
 		shutdowncause.MarkAPIInitiated("mcp-restart")
+		if s.restartForceFn != nil {
+			s.restartForceFn(force)
+			return
+		}
 		s.restartFn()
 	}()
 	msg := "Restarting daemon… active tmux sessions will be preserved."

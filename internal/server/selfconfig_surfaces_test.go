@@ -223,3 +223,32 @@ func TestSelfConfigAuditPath_SinkFirst(t *testing.T) {
 		t.Errorf("path = %q, want the sink's %q", got, sinkPath)
 	}
 }
+
+// A huge limit is clamped to the maximum: it never fails, never allocates
+// from the requested number, and never returns more than the maximum.
+func TestHandleSelfConfigAuditHugeLimitIsClamped(t *testing.T) {
+	var lines []string
+	for i := 0; i < selfConfigAuditMaxLimit+25; i++ {
+		b, _ := json.Marshal(federation.ConfigAuditRecord{Surface: "mcp", Tool: "config_set", Allowed: true}) //nolint:errcheck
+		lines = append(lines, string(b))
+	}
+	path := writeSelfConfigAudit(t, t.TempDir(), lines...)
+	s := &Server{cfg: &config.Config{}}
+	s.cfg.MCP.SelfConfigAuditPath = path
+	for _, lim := range []string{"2147483647", "9223372036854775807", "99999999"} {
+		rr := httptest.NewRecorder()
+		s.handleSelfConfigAudit(rr, httptest.NewRequest(http.MethodGet, "/api/audit/self-config?limit="+lim, nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("limit=%s: want 200, got %d", lim, rr.Code)
+		}
+		var got struct {
+			Count int `json:"count"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+			t.Fatalf("limit=%s decode: %v", lim, err)
+		}
+		if got.Count != selfConfigAuditMaxLimit {
+			t.Errorf("limit=%s: count = %d, want the maximum %d", lim, got.Count, selfConfigAuditMaxLimit)
+		}
+	}
+}

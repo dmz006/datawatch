@@ -93,7 +93,8 @@ test('a visible gap sits between the evidence line and the idle lane alerts', ()
   assert.ok(gap >= 0, 'gap element missing');
   assert.ok(gap > lane, 'gap must follow the current lanes part');
   assert.ok(gap < alerts, 'gap must sit before the alerts section');
-  assert.match(html, /class="lane-fill-gap"[^>]*height:14px/, 'gap must have a visible height');
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  assert.match(css, /\.lane-fill-gap\s*\{[^}]*height:\s*14px/, 'gap must have a visible height');
 });
 
 test('the gap holds with an error evidence line and no decisions, and hostile lane text stays escaped', () => {

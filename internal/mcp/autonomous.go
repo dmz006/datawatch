@@ -298,6 +298,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("undeclared_edit_mode", mcpsdk.Description("Daemon-wide default for undeclared edits (a task editing files outside its declared scope): off = skip the check, warn = record + alert (the default), block = hold the task.")),
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
+		mcpsdk.WithString("planning_restart_policy", mcpsdk.Enum("reattach", "restart", "draft"), mcpsdk.Description("autonomous.planning_restart_policy — what a daemon restart does to an Automaton that is still in planning (decompose running): reattach (the default) keeps planning running and re-attaches it to the restarted daemon; restart restarts planning once after the restart and records a decision saying so; draft resets the Automaton to draft, as the daemon did before this setting existed. Any other value is refused. It is sent on PUT /api/config. See docs/howto/restart-with-work-running.md.")),
 		mcpsdk.WithNumber("inherited_tags_cache_seconds", mcpsdk.Description("autonomous.inherited_tags_cache_seconds — lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (default 15); 0 = the default, negative = cache off. Not an autonomous-manager key: it is sent on PUT /api/config and takes effect on the next tag read.")),
 	}, append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...)...)...)
 }
@@ -307,6 +308,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	promptPatch, perr := judgePromptPatch(req)
 	if perr != nil {
 		return mcpsdk.NewToolResultError(perr.Error()), nil
+	}
+	// planning_restart_policy is a daemon-config key (PUT /api/config), so it
+	// joins the same validated patch. An invalid value is refused here, before
+	// anything is sent.
+	planningPatch, planningErr := planningRestartPolicyPatch(req)
+	if planningErr != nil {
+		return mcpsdk.NewToolResultError(planningErr.Error()), nil
+	}
+	for k, v := range planningPatch {
+		promptPatch[k] = v
 	}
 	// Attempt-cost keys go to the same /api/config PUT as the judge prompt keys,
 	// after the shared validator has accepted the whole candidate.
@@ -1522,10 +1533,10 @@ func (s *Server) handleAutonomousPRDRemoveTask(_ context.Context, req mcpsdk.Cal
 
 func (s *Server) toolAutonomousPRDResetTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_reset_task",
-		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked task to pending so the autonomous loop retries it. BL382: pass force=true to requeue a completed or cancelled task. BL451: force=true on an already-pending task in a terminal PRD reopens the PRD to running."),
+		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked/waiting-for-capacity task to pending so the autonomous loop retries it. A waiting-for-capacity task needs no force: the daemon re-admits it (same queue position, retargeted pool if the worker resolution changed, fresh wait budget). BL382: pass force=true to requeue a completed or cancelled task. BL451: force=true on an already-pending task in a terminal PRD reopens the PRD to running."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to reset")),
-		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to requeue completed or cancelled tasks (not just failed/blocked)")),
+		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to requeue completed or cancelled tasks (failed, blocked and waiting-for-capacity tasks never need force)")),
 		mcpsdk.WithBoolean("clean_restart", mcpsdk.Description("Set true to start the next attempt from the pre-task tree: the preserved work of earlier attempts is not restored for that one attempt. Default false (restore stays on)")),
 	)
 }

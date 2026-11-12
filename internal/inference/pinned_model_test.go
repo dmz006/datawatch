@@ -356,3 +356,159 @@ func TestPinResolver_GenerateUndecodableBody(t *testing.T) {
 		t.Fatalf("Generate err = %v, want decode error", err)
 	}
 }
+
+// PlacementModel asks pinnedModel for an implicit request: a pin is answered
+// with the pin whatever allow_model_swap says, an unpinned node with the model.
+func TestPlacementModelNeverReplacesAPin(t *testing.T) {
+	cases := []struct {
+		name string
+		node *compute.Node
+		want string
+	}{
+		{"nil node", nil, "qwen3:8b"},
+		{"no pin", &compute.Node{Name: "a"}, "qwen3:8b"},
+		{"pinned to another model", &compute.Node{Name: "a", NodePinnedModel: "other:1b"}, "other:1b"},
+		{"pinned to another model with swap allowed", &compute.Node{Name: "a", NodePinnedModel: "other:1b", AllowModelSwap: true}, "other:1b"},
+		{"pinned to this model", &compute.Node{Name: "a", NodePinnedModel: "qwen3:8b"}, "qwen3:8b"},
+	}
+	for _, c := range cases {
+		got, err := PlacementModel(c.node, "qwen3:8b")
+		if err != nil || got != c.want {
+			t.Errorf("%s: PlacementModel = %q, %v; want %q", c.name, got, err, c.want)
+		}
+	}
+}
+
+// tagsFake is an Ollama node standing behind an address: it answers GET
+// /api/tags with a fixed model listing and records every request it sees.
+// That lets a test hold the served-model read against the node's own
+// listing — the same /api/tags listing GET /api/compute/nodes/{name}/models
+// returns (internal/server/compute.go, ProbeNodeModels reads it for kind
+// "ollama").
+type tagsFake struct {
+	srv     *httptest.Server
+	listing []string
+	mu      sync.Mutex
+	paths   []string
+}
+
+func newTagsFake(t *testing.T, listing ...string) *tagsFake {
+	t.Helper()
+	f := &tagsFake{listing: listing}
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.paths = append(f.paths, r.Method+" "+r.URL.Path)
+		f.mu.Unlock()
+		if r.Method != http.MethodGet || r.URL.Path != "/api/tags" {
+			http.NotFound(w, r)
+			return
+		}
+		models := make([]map[string]string, 0, len(f.listing))
+		for _, n := range f.listing {
+			models = append(models, map[string]string{"name": n})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"models": models})
+	}))
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+func (f *tagsFake) seen() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.paths...)
+}
+
+// TestServedModelReadAgreesWithNodeTagsListing locks the invariant the
+// node-models endpoint and placement's served-model read share: a node serves
+// exactly the models its GET /api/tags listing reports. The compute API
+// returns that listing; the served check this package runs while placement
+// makes a model resident (ModelLoader.Ensure, via nodeHasModel) must read
+// every model the listing names as served, every model it does not name as
+// missing, and it must consult /api/tags itself — the same source — and no
+// other endpoint.
+func TestServedModelReadAgreesWithNodeTagsListing(t *testing.T) {
+	fake := newTagsFake(t, "qwen3.8-64k", "llama3:70b", "qwen3.8:27b")
+	ctx := context.Background()
+
+	// Every model the node's own listing reports must read as served.
+	for _, m := range []string{"qwen3.8-64k", "llama3:70b", "qwen3.8:27b"} {
+		if got, err := nodeHasModel(ctx, http.DefaultClient, fake.srv.URL, m); err != nil {
+			t.Fatalf("nodeHasModel(%q): %v", m, err)
+		} else if !got {
+			t.Errorf("nodeHasModel(%q) = false, want served: it is in the node's /api/tags listing", m)
+		}
+	}
+
+	// A model the listing does not name must read as missing — including the
+	// bare base of a non-latest tag: "qwen3.8" is not "qwen3.8:27b".
+	for _, m := range []string{"deepseek:16b", "qwen3.8", "qwen3.8-64k:999b"} {
+		if got, err := nodeHasModel(ctx, http.DefaultClient, fake.srv.URL, m); err != nil {
+			t.Fatalf("nodeHasModel(%q): %v", m, err)
+		} else if got {
+			t.Errorf("nodeHasModel(%q) = true, want missing: it is not in the node's /api/tags listing", m)
+		}
+	}
+
+	// Every read consulted the node's /api/tags listing (the source the
+	// node-models endpoint reads) and no other endpoint.
+	for _, p := range fake.seen() {
+		if p != "GET /api/tags" {
+			t.Errorf("served-model read requested %q, want GET /api/tags", p)
+		}
+	}
+}
+
+// TestServedModelReadMatchesLatestAlias locks the name matching the served
+// check and the node listing share: Ollama reports a latest-tag model under
+// its bare name, so a request for "name:latest" must match the listed
+// "name" — and a different tag is a different model.
+func TestServedModelReadMatchesLatestAlias(t *testing.T) {
+	fake := newTagsFake(t, "qwen3.8-64k")
+	ctx := context.Background()
+
+	if got, err := nodeHasModel(ctx, http.DefaultClient, fake.srv.URL, "qwen3.8-64k"); err != nil || !got {
+		t.Errorf("nodeHasModel(qwen3.8-64k) = %v, %v; want served", got, err)
+	}
+	if got, err := nodeHasModel(ctx, http.DefaultClient, fake.srv.URL, "qwen3.8-64k:latest"); err != nil || !got {
+		t.Errorf("nodeHasModel(qwen3.8-64k:latest) = %v, %v; want served: the node lists it as qwen3.8-64k", got, err)
+	}
+	if got, err := nodeHasModel(ctx, http.DefaultClient, fake.srv.URL, "qwen3.8-64k:15b"); err != nil || got {
+		t.Errorf("nodeHasModel(qwen3.8-64k:15b) = %v, %v; want missing: a different tag is a different model", got, err)
+	}
+}
+
+// TestExplicitOverrideRefusalIsPinRefusedError locks the refusal's type and
+// fields, not just its text: placement must surface a *PinRefusedError naming
+// the node, its current pin and the requested model — the operator-facing
+// "set allow_model_swap" guidance is built from this error alone.
+func TestExplicitOverrideRefusalIsPinRefusedError(t *testing.T) {
+	fake := newFakeOllama(t)
+	r := newPinTestResolver(t, pinnedNode("gpu1", fake.srv.URL, pinnedTag, false))
+
+	_, err := r.ResolveModel(context.Background(), "gpu1", backendDef, "deepseek:16b")
+	if err == nil {
+		t.Fatal("ResolveModel: want refusal, got nil")
+	}
+	var refused *PinRefusedError
+	if !errors.As(err, &refused) {
+		t.Fatalf("err type = %T (%v), want *PinRefusedError", err, err)
+	}
+	if refused.Node != "gpu1" || refused.Pinned != pinnedTag || refused.Requested != "deepseek:16b" {
+		t.Errorf("refusal fields = node %q / pinned %q / requested %q, want gpu1 / %s / deepseek:16b",
+			refused.Node, refused.Pinned, refused.Requested, pinnedTag)
+	}
+	msg, ok := PinRefusalMessage(err)
+	if !ok {
+		t.Fatal("PinRefusalMessage ok = false, want true")
+	}
+	if msg != refused.Error() {
+		t.Errorf("PinRefusalMessage = %q, want the PinRefusedError's own text %q", msg, refused.Error())
+	}
+	for _, want := range []string{"refused", "gpu1", pinnedTag, "deepseek:16b", "allow_model_swap"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("refusal text %q must name %q", msg, want)
+		}
+	}
+}

@@ -124,14 +124,10 @@ func (m *Manager) SetJudgeHost(h JudgeHost) {
 	m.judgeHost = h
 }
 
-// ReconcileJudges runs the plan against the host and the PRD store, once at
-// startup after sessions are loaded and before judging resumes. Each action
-// is written as a PRD decision and an audit event. It returns the actions it
-// carried out and is idempotent: a second run finds nothing to do.
-func (m *Manager) ReconcileJudges(host JudgeHost) []JudgeAction {
-	if host == nil {
-		return nil
-	}
+// judgeUnitLookup returns the read-only lookup the judge reconcile uses to find
+// a judged unit's state and its adopted judge. It only reads: store snapshots
+// and the adopted-judge map.
+func (m *Manager) judgeUnitLookup() func(unitID string) (JudgeUnitInfo, bool) {
 	// One point-in-time view per referenced PRD: SnapshotPRD is a deep copy
 	// taken under the store lock, safe to read after the executor writes.
 	prdSNAP := func(prdID string) (*PRD, bool) {
@@ -185,6 +181,18 @@ func (m *Manager) ReconcileJudges(host JudgeHost) []JudgeAction {
 		// Nothing found: the unit is gone (deleted PRD/reset task).
 		return JudgeUnitInfo{}, false
 	}
+	return lookup
+}
+
+// ReconcileJudges runs the plan against the host and the PRD store, once at
+// startup after sessions are loaded and before judging resumes. Each action
+// is written as a PRD decision and an audit event. It returns the actions it
+// carried out and is idempotent: a second run finds nothing to do.
+func (m *Manager) ReconcileJudges(host JudgeHost) []JudgeAction {
+	if host == nil {
+		return nil
+	}
+	lookup := m.judgeUnitLookup()
 	var done []JudgeAction
 	for _, a := range PlanJudgeReconcile(host.LiveJudges(), lookup) {
 		switch a.Kind {

@@ -14,10 +14,12 @@ import (
 )
 
 // RegisterConfigWriteAudit wires the single audit point for every MCP
-// config-write tool: a tool-handler middleware records exactly one
-// federation.ConfigAuditRecord per call, with surface "mcp", for the
-// config_set, detection-config-set, dns-channel-config-set and every
-// other tool named in federation.IsConfigWriteTool — allowed or denied.
+// config-write and sensitive-write tool: a tool-handler middleware records
+// exactly one federation.ConfigAuditRecord per call, with surface "mcp", for
+// the config_set, detection-config-set, dns-channel-config-set and every
+// other tool named in federation.IsConfigWriteTool or
+// federation.IsSensitiveWriteTool — allowed or denied. The record's Class
+// field says which class the tool belongs to.
 // Session and peer callers are audited (see configWriteCallerFrom);
 // admin callers are not audited as session writes.
 func RegisterConfigWriteAudit(mcpSrv *server.MCPServer, s *Server) {
@@ -32,7 +34,8 @@ func configWriteAuditMW(s *Server) server.ToolHandlerMiddleware {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, req mcpsdk.CallToolRequest) (res *mcpsdk.CallToolResult, err error) {
 			res, err = next(ctx, req)
-			if s.configAudit == nil || !federation.IsConfigWriteTool(req.Params.Name) {
+			class := auditToolClass(req.Params.Name)
+			if s.configAudit == nil || class == "" {
 				return res, err
 			}
 			caller, ok := configWriteCallerFrom(ctx)
@@ -43,12 +46,19 @@ func configWriteAuditMW(s *Server) server.ToolHandlerMiddleware {
 			rec := federation.ConfigAuditRecord{
 				Surface: "mcp",
 				Tool:    req.Params.Name,
+				Class:   class,
 				Caller:  caller,
 				Allowed: allowed,
 			}
 			if args, ok := req.Params.Arguments.(map[string]any); ok {
 				if raw, merr := json.Marshal(args); merr == nil {
 					rec.Keys, rec.Values = federation.ExtractConfigPatch(raw)
+					if class == auditClassSensitive {
+						// Sensitive tools carry secret material in arguments
+						// that key-name redaction cannot recognise; record
+						// the argument names only, never the values.
+						rec.Values = nil
+					}
 				}
 			}
 			if !allowed {
@@ -58,6 +68,24 @@ func configWriteAuditMW(s *Server) server.ToolHandlerMiddleware {
 			return res, err
 		}
 	}
+}
+
+// Audit tool classes carried in ConfigAuditRecord.Class.
+const (
+	auditClassConfig    = "config"
+	auditClassSensitive = "sensitive"
+)
+
+// auditToolClass returns the audit class of an MCP tool, or "" when the
+// tool is in neither audited class.
+func auditToolClass(tool string) string {
+	switch {
+	case federation.IsConfigWriteTool(tool):
+		return auditClassConfig
+	case federation.IsSensitiveWriteTool(tool):
+		return auditClassSensitive
+	}
+	return ""
 }
 
 // configWriteCallerFrom resolves the audit caller identity for an MCP

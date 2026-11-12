@@ -324,6 +324,16 @@ func judgeAskBody(question, kind, llm, model, node string) map[string]any {
 	return body
 }
 
+// verifierWatchdogTripError is the error a tripped verifier no-progress
+// watchdog raises. It is a *autonomous.VerifierIdleError — not just the
+// OneShotNoOutputError text spelling — so the executor's idle retry path
+// (autonomous.IsVerifierIdleError in verifyRetryingIdle) sees the typed
+// error and treats the trip as a verifier incident to retry on a fresh
+// verifier instead of counting a worker failure against Task.Attempts.
+func verifierWatchdogTripError(limit time.Duration) error {
+	return autonomouspkg.NewVerifierIdleError(limit)
+}
+
 // verifierSessionNamePrefix is the sessionName prefix of the PRD task
 // verifier one-shot session ("autonomous:verify:<task id>").
 const verifierSessionNamePrefix = "autonomous:verify"
@@ -373,6 +383,17 @@ func sessionPaneMarker(cfg *config.Config, id string) string {
 // Tests set a fake; nil means "no adopt, spawn as before".
 var judgeLiveSession func(sessionName string) string
 
+// verifierLiveSession, when set, returns the id of a task-verifier one-shot
+// session ("autonomous:verify:<task id>") that is still running under exactly
+// sessionName, or "" when none is live (wireCapacity sets it from the session
+// manager's live-session listing). runOneShotJSONSessionWithSpawnHook consults
+// it for verifier names before it would POST /api/sessions/start and reuses
+// (adopts) the live session instead of spawning a second one — the same
+// daemon-restart double-spawn guard as judgeLiveSession: the manager's
+// in-memory waiter for the verifier does not survive a restart, while the
+// tmux session does. Tests set a fake; nil means "no adopt, spawn as before".
+var verifierLiveSession func(sessionName string) string
+
 // runOneShotJSONSessionWithReader is the spawn / poll / kill body shared by
 // runOneShotJSONSessionCaptureID and runOneShotJudgeSessionCaptureID. readOutput
 // decides how the output file is read, and whether it is removed from the
@@ -384,13 +405,21 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 // runOneShotJSONSessionWithReaderAttr is runOneShotJSONSessionWithReader that
 // stamps attr (Automaton id, task id, spend role) onto the session at start.
 func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags) (content string, sessionID string, err error) {
-	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
-	if scratchErr != nil {
-		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
-	}
-	relocate := func() (string, bool) {
-		return readOutput(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
-	}
+	return runOneShotJSONSessionWithSpawnHookAttr(attr, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, readOutput, node, launchTags, nil)
+}
+
+// runOneShotJSONSessionWithSpawnHook is runOneShotJSONSessionWithReader plus
+// onSpawned, called with the session id as soon as the start request succeeds
+// and before the reader starts waiting on the output. A failed spawn never
+// calls it. A nil onSpawned makes this exactly runOneShotJSONSessionWithReader.
+func runOneShotJSONSessionWithSpawnHook(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags, onSpawned func(sessionID string)) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithSpawnHookAttr(sessionAttr{}, cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, readOutput, node, launchTags, onSpawned)
+}
+
+// runOneShotJSONSessionWithSpawnHookAttr is runOneShotJSONSessionWithSpawnHook
+// that also stamps attr onto the session at start.
+func runOneShotJSONSessionWithSpawnHookAttr(attr sessionAttr, cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string, launchTags launchTags, onSpawned func(sessionID string)) (content string, sessionID string, err error) {
+	relocate := oneShotOutputReader(cfg, prdID, sessionName, projectDir, outputFile, scratchRelocateName, readOutput)
 	// Restart-recovery: reuse output written by a previous attempt of
 	// the exact same call (same outputFile name, derived by the caller
 	// from its own content hash).
@@ -417,6 +446,22 @@ func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, p
 	if judgeLiveSession != nil {
 		if unitID, ok := judgeUnitFromSessionName(sessionName); ok && unitID != "" {
 			if id := judgeLiveSession(sessionName); id != "" {
+				startOut.ID = id
+				adopted = true
+			}
+		}
+	}
+	// The verifier's adopt guard: a task-verifier session named exactly
+	// sessionName may still be running after a daemon restart (its waiter
+	// died with the daemon, the tmux session did not). Reuse that live
+	// session instead of starting a second verifier for the same task — a
+	// second verifier would double-spend the session cap and race on the
+	// same content-addressed output file. Only verifier session names
+	// (parseable by verifierTaskFromSessionName) consult this hook; every
+	// other caller keeps its spawn behavior.
+	if !adopted && verifierLiveSession != nil {
+		if taskID, ok := verifierTaskFromSessionName(sessionName); ok && taskID != "" {
+			if id := verifierLiveSession(sessionName); id != "" {
 				startOut.ID = id
 				adopted = true
 			}
@@ -511,6 +556,9 @@ func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, p
 		}
 	}
 	sessionID = startOut.ID
+	if onSpawned != nil {
+		onSpawned(sessionID)
+	}
 	if verifierSessionStarted != nil {
 		verifierSessionStarted(sessionName, sessionID)
 	}
@@ -518,7 +566,7 @@ func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, p
 		judgeSessionStarted(sessionName, sessionID)
 	}
 	if adopted {
-		fmt.Printf("[%s] adopting live session %s (a guardrail judge with this name is already running — not spawning a second)\n", sessionName, startOut.ID)
+		fmt.Printf("[%s] adopting live session %s (a verifier or judge with this name is already running — not spawning a second)\n", sessionName, startOut.ID)
 	} else {
 		fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
 	}
@@ -529,6 +577,33 @@ func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, p
 	// (see decomposeWaitingInputTick).
 	spawnedAt := time.Now()
 
+	return waitOneShotJSONSession(ctx, cfg, prdID, sessionName, backend, model, projectDir, outputFile, timeout, sessionID, spawnedAt, relocate)
+}
+
+// oneShotOutputReader returns the reader that polls a one-shot session's
+// output: readOutput applied to the output file's base name under projectDir,
+// with the scratch copy named scratchRelocateName under the PRD's scratch dir.
+func oneShotOutputReader(cfg *config.Config, prdID, sessionName, projectDir, outputFile, scratchRelocateName string, readOutput judgeOutputReader) func() (string, bool) {
+	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
+	if scratchErr != nil {
+		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
+	}
+	return func() (string, bool) {
+		return readOutput(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
+	}
+}
+
+// waitOneShotJSONSession is the wait half of runOneShotJSONSessionWithSpawnHook,
+// shared with the planning reader that re-attaches to a planner session after a
+// daemon restart (cmd/datawatch/planning_reattach.go). It polls session
+// sessionID until its output file is ready (relocate reports it), the session
+// reaches a terminal state, or ctx ends, and it kills the session on return.
+// The completion rules are the same whichever caller waits. spawnedAt is when
+// the session was known to be running; it anchors the waiting_input grace.
+func waitOneShotJSONSession(ctx context.Context, cfg *config.Config, prdID, sessionName, backend, model, projectDir, outputFile string, timeout time.Duration, sessionID string, spawnedAt time.Time, relocate func() (string, bool)) (string, string, error) {
+	startOut := struct {
+		ID string `json:"id"`
+	}{ID: sessionID}
 	// Best-effort: kill the session when this function returns (handles
 	// TUI sessions that land in waiting_input after writing the output).
 	defer func() {
@@ -655,7 +730,7 @@ func runOneShotJSONSessionWithReaderAttr(attr sessionAttr, cfg *config.Config, p
 					}
 					fmt.Printf("[%s] %s no progress for %v — no-progress watchdog ending session (runner: %v; model-server request: %v; capacity slot: %v; no output file, no pane change)\n",
 						sessionName, startOut.ID, watchdogLimit, runner, request, slot)
-					return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: autonomouspkg.VerifierWatchdogMessage(watchdogLimit)}
+					return "", sessionID, verifierWatchdogTripError(watchdogLimit)
 				}
 				// Run cap: decided on every poll with the same slot state the
 				// watchdog saw, so waiting-for-slot time is excluded.

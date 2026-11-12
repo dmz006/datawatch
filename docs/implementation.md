@@ -609,6 +609,18 @@ text is never flagged in any mode. A failed Automaton accepts a spec edit
 `autonomous_config_set`, comm `configure`, CLI `autonomous config-set`, and the PWA
 Settings → Automate → Task scope lint select. See `docs/operations.md`.
 
+### Planning restart policy (`autonomous.planning_restart_policy`)
+
+What a daemon restart does to an Automaton still in planning. `reattach` (default, and
+what an unset or unrecognised value reads as) keeps planning running across the restart;
+`restart` restarts planning once and records a decision; `draft` resets the Automaton to
+draft, as before the setting existed. Parsing lives in `internal/config/planning_restart_policy.go`
+(`NormalizePlanningRestartPolicy`, `ValidPlanningRestartPolicy`). The empty string reads as
+reattach on load but is reported invalid, so write paths can refuse it. A `PUT /api/config`
+with an unknown value is refused with a 400 naming `reattach`, `restart` and `draft`; a
+config file holding an unknown value logs a `[warn]` line at startup and reads as `reattach`.
+The field sits beside `autonomous.restart_policy`; `docs/config-reference.yaml` documents it.
+
 ### Per-task project directory (Automata)
 
 `autonomous.Task.ProjectDir` (JSON `project_dir`) overrides the
@@ -1234,6 +1246,11 @@ All fields in `~/.datawatch/config.yaml`:
 | `pin_check_seconds` | int | `300` | How often the pin keeper re-verifies that each compute node with a `node_pinned_model` is still serving that model. `0` turns the check off. The value is written without `omitempty`, so an explicit `0` survives a save/load round trip. |
 | `compute_nodes[].node_pinned_model` | string | `""` | Keeps the node on one model. Requests with no explicit model run on the pin. An explicit request for the pinned model runs on it. An explicit request for a different model is refused unless `allow_model_swap` is true. Datawatch never swaps the pinned model implicitly. Resolved by `internal/inference/pinned_model.go`. |
 | `compute_nodes[].allow_model_swap` | bool | `false` | Lets an explicit request replace the node's pinned model. Ignored when the node has no `node_pinned_model`. |
+| `compute_placement.missing_model` | enum | `ask` | What to do when the routed node does not have the requested model: `ask` (default) records a one-shot placement ask and waits for the operator to approve (pull + load) or deny, expiring after `ask_timeout_minutes` (a refusal, not an approval); `auto_load` pulls and loads without asking; `refuse` never loads — the refusal is audited (`placement_refused`). Read at decision time; a change from any surface applies at the next placement decision. |
+| `compute_placement.mem_headroom_pct` | int (0–100) | `10` | Percent of free memory kept out of reach when a placement candidate is considered: the model must fit, and this much free memory must be left over. |
+| `compute_placement.disk_headroom_gb` | int ≥ 0 | `5` | GB of free disk kept out of reach when a placement candidate is considered: the model must fit, and this much free disk must be left over. |
+| `compute_placement.ask_timeout_minutes` | int ≥ 0 | `30` | How long a placement ask may wait for an answer before it expires (a refusal); `0` = no timeout. Unanswered, the ask is recorded as `decided_by: timeout`. |
+| `compute_placement.assume_model_size_gb` | int ≥ 0 | `0` | Size in GB assumed for a model the node carries but the daemon is not told the size of; `0` (default) = unknown. Affects the placement free-space estimate only. |
 | `compute_nodes[].tls_insecure_skip_verify` | bool | `false` | Turns off TLS certificate verification for this node: the daemon's node usage probes (loaded models via `/api/ps`, GPU stats from `monitoring_endpoint`) and the supervisor watch probe. Off by default, so certificates are verified. Last resort only; prefer `tls_ca_file` or `tls_cert_fingerprint`. When on, it is reported in the node record, the PWA and the audit log. Cannot be combined with `tls_ca_file` or `tls_cert_fingerprint`: node add and update reject the combination, and a seeded node that sets both has its TLS probes fail instead of falling back to skipping verification. |
 | `compute_nodes[].tls_ca_file` | string | `""` | Path to a PEM CA bundle trusted in addition to the system roots when verifying this node's certificate. Use it when the node serves a certificate from a private CA. May be combined with `tls_cert_fingerprint`; cannot be combined with `tls_insecure_skip_verify`. |
 | `compute_nodes[].tls_cert_fingerprint` | string | `""` | SHA-256 fingerprint of this node's leaf certificate, pinned instead of chain verification. Use it for a single self-signed certificate. Accepts 64 hex characters, case-insensitive, colons optional. May be combined with `tls_ca_file`; cannot be combined with `tls_insecure_skip_verify`. |
@@ -1290,6 +1307,7 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `mcp.public_url` | string | `""` | Public base URL the MCP SSE server advertises to clients in its `endpoint` event (for example `https://host.tailnet.example.net:8081` — an example value; the real URL lives in the operator config and is not committed). Set it when `mcp.sse_host` is bound to localhost behind a TLS-terminating reverse proxy. Trailing slash is ignored. Empty advertises `<scheme>://<first sse_host>:<sse_port>`. Restart required. |
 | `mcp.max_retries` | int | `3` | Number of automatic retries when a per-session MCP channel server fails to start or loses connection |
 | `mcp.allow_self_config` | bool | `true` (when unset) | The self-config alias. The operator-facing name for the builtin **self-config** federation capability group (`internal/federation/capabilities.go`): on, the default capability grant for a spawned session includes `config:write`, `autonomous:write`, `observers:write`, `llms:write`, `usage:write` (`SessionDefaultGrantCaps`, unless an explicit `session.capabilities` list overrides it); off, every config-write tool (`config_set`, `autonomous_config_set`, the `*_config_set` section tools) refuses with "self-modify is disabled" while config reads stay available. `mcp.allow_self_config` itself: `config_set` refuses it bootstrap-protected (`internal/mcp/memory_tools.go`); on other session surfaces only a credential holding `config:write` can reach it. Change it in YAML / CLI / PWA / `PUT /api/config` + restart. |
+| `mcp.allow_sensitive_writes` | bool | `true` (when unset) | Switch for the **sensitive write** MCP tool class (`federation.IsSensitiveWriteTool`, `internal/federation/mcp_tool_caps.go`): secret set/delete/get, the identity writers, `restart_daemon`, `reload`, `plugin_install`, `plugin_run_subcommand`, `send_input`, `start_session`, `tailscale_acl_push`, `tailscale_auth_key`, `acme_renew`. Absent or `true` = allowed. An explicit `false` makes the tool-handler gate (`internal/mcp/sensitive_write_gate.go`) refuse these tools for session and peer callers; operator calls are unaffected. Tri-state `*bool` read through `MCPConfig.SensitiveWritesEnabled()`; no migration adds the key. YAML-only today — `applyConfigPatch` does not handle it. Calls are audited with `class: "sensitive"` (argument names only, no values). |
 | `mcp.self_config_audit_path` | string | `""` → `<data dir>/audit/config-self-modify.jsonl` | JSONL self-config audit log. One record per config-write attempt by a session or peer credential on any surface — `mcp` (config-write tools, `internal/mcp/config_write_audit.go`), `rest` (`internal/server/config_audit.go`, `PUT /api/config`), `comm` (router `configure`, `internal/router/router.go`) — allowed and (unless `self_config_audit_denied` is `false`) denied, with surface, tool/route, keys, redacted values, caller (`session:<id>` / `peer:<name>`), allowed flag, refusal reason. Written by `federation.ConfigAuditor` (`internal/federation/config_audit.go`): non-blocking, also echoed to stderr. Read via `GET /api/audit/self-config` (limit 1–1000, default 100), CLI `datawatch audit self-config`, MCP `self_config_audit` (read-only, never capability-gated even when the group is off). |
 | `mcp.self_config_audit_denied` | bool | `true` (when unset) | Whether refused self-config attempts are recorded (in addition to allowed ones). `false` = allowed writes only. Pointer-typed so an explicit `false` survives a round trip (`internal/config/config.go`). |
 | `goose.enabled` | bool | `false` | Enable the goose/goose-prompt LLM backend |
@@ -2286,7 +2304,7 @@ The daemon observes the in-flight model request of a worker or verifier session 
   - MCP `autonomous_request_watch` and the `request_watch_*` arguments of `autonomous_config_set` (`internal/mcp/request_watch_tools.go`);
   - CLI `datawatch autonomous request-watch` (`cmd/datawatch/cli_request_watch.go`);
   - comm `autonomous request-watch` (`internal/router/request_watch_comm.go`);
-  - web app status card on the Automation Setup and policy sub-tab, session and task chips, and the Model request watch settings group (`internal/server/web/app.js`), with the `request_watch_*` and `settings_request_watch_*` strings in the five locale bundles (en, de, es, fr, ja).
+  - web app status card on the Automata Events tab, session and task chips, and the Model request watch settings group (`internal/server/web/app.js`), with the `request_watch_*` and `settings_request_watch_*` strings in the five locale bundles (en, de, es, fr, ja).
 - **How-to:** [howto/model-request-progress.md](howto/model-request-progress.md).
 ## Model routing (autonomous.model_routing)
 

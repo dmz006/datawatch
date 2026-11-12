@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -18,13 +19,35 @@ const compareStoreDir = "merge-comparisons"
 // inside the given subdirectory. The id must be a single plain name: no
 // empty ids, no "." / "..", no path separators.
 func storePath(dataDir, sub, id string) (string, error) {
-	if id == "" || id != filepath.Base(id) || id == "." || id == ".." {
+	if !validStoreID.MatchString(id) {
 		return "", fmt.Errorf("mergeshadow: invalid automaton id %q", id)
 	}
 	if dataDir == "" {
 		return "", errors.New("mergeshadow: empty data directory")
 	}
-	return filepath.Join(dataDir, sub, id+".json"), nil
+	dir := filepath.Join(dataDir, sub)
+	return containedPath(dir, filepath.Base(id)+".json")
+}
+
+// validStoreID is the strict allowlist for an automaton id used as a file
+// name: letters, digits, dash and underscore only. Path separators, dots and
+// the empty string never match.
+var validStoreID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// containedPath joins name to dir and verifies the cleaned result is still
+// directly inside dir. name must be a single plain file name. It is the one
+// check every store read, write and remove goes through.
+func containedPath(dir, name string) (string, error) {
+	if name == "" || name != filepath.Base(name) || name == "." || name == ".." {
+		return "", fmt.Errorf("mergeshadow: invalid store file name %q", name)
+	}
+	base := filepath.Clean(dir)
+	p := filepath.Join(base, name)
+	rel, err := filepath.Rel(base, p)
+	if err != nil || rel != name || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("mergeshadow: path %q escapes the store directory", p)
+	}
+	return p, nil
 }
 
 // SaveComparison writes the comparison to <dataDir>/merge-comparisons/<id>.json.

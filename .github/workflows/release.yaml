@@ -112,7 +112,7 @@ jobs:
     name: gosec baseline-diff
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
@@ -152,12 +152,54 @@ jobs:
           if live_n < base_n:
               print(f"::notice::gosec: live count {live_n} BELOW baseline {base_n}. Lower the baseline so regressions get caught at the new bar.")
           PY
-      - name: Upload gosec SARIF to Code Scanning
+      # Code Scanning SARIF upload with retries. Each attempt is non-blocking
+      # (continue-on-error) so a transient upload failure never fails the job;
+      # the blocking gate is the "Run gosec + baseline-diff" step above.
+      - name: Upload gosec SARIF to Code Scanning (attempt 1)
+        id: gosec_sarif_upload_1
         uses: github/codeql-action/upload-sarif@v4
         if: always()
+        continue-on-error: true
         with:
           sarif_file: /tmp/gosec.sarif
           category: gosec
+      - name: Wait before Code Scanning upload retry 2
+        if: always() && steps.gosec_sarif_upload_1.outcome == 'failure'
+        run: sleep 60
+      - name: Upload gosec SARIF to Code Scanning (attempt 2)
+        id: gosec_sarif_upload_2
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.gosec_sarif_upload_1.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/gosec.sarif
+          category: gosec
+      - name: Wait before Code Scanning upload retry 3
+        if: always() && steps.gosec_sarif_upload_2.outcome == 'failure'
+        run: sleep 180
+      - name: Upload gosec SARIF to Code Scanning (attempt 3)
+        id: gosec_sarif_upload_3
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.gosec_sarif_upload_2.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/gosec.sarif
+          category: gosec
+      - name: Wait before Code Scanning upload retry 4
+        if: always() && steps.gosec_sarif_upload_3.outcome == 'failure'
+        run: sleep 300
+      - name: Upload gosec SARIF to Code Scanning (attempt 4)
+        id: gosec_sarif_upload_4
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.gosec_sarif_upload_3.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/gosec.sarif
+          category: gosec
+      - name: Warn that Code Scanning upload failed on every attempt
+        if: always() && steps.gosec_sarif_upload_4.outcome == 'failure'
+        run: |
+          echo "::warning::gosec SARIF upload to Code Scanning failed on all four attempts; the findings remain in the gosec-results artifact, and the release continues because the gosec baseline-diff step is the blocking check."
       - name: Upload gosec results artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
@@ -276,7 +318,7 @@ jobs:
             ${{ matrix.name == 'agent-base' && 'ghcr.io/dmz006/datawatch/agent-base:latest' || '' }}
           push: true
       - name: Install Trivy
-        run: bash scripts/ci-install-trivy.sh v0.73.0 /usr/local/bin
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy table)
         # Print human-readable table to the job log (non-blocking pass).
         run: |
@@ -298,12 +340,50 @@ jobs:
             --format sarif \
             -o /tmp/trivy-${{ matrix.name }}.sarif \
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
-      - name: Upload ${{ matrix.name }} SARIF to Code Scanning
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (attempt 1)
+        id: trivy_sarif_upload_1
         uses: github/codeql-action/upload-sarif@v4
         if: always()
+        continue-on-error: true
         with:
           sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
           category: trivy-${{ matrix.name }}
+      - name: Wait 60s before Trivy SARIF upload attempt 2
+        if: always() && steps.trivy_sarif_upload_1.outcome == 'failure'
+        run: sleep 60
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (attempt 2)
+        id: trivy_sarif_upload_2
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.trivy_sarif_upload_1.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Wait 180s before Trivy SARIF upload attempt 3
+        if: always() && steps.trivy_sarif_upload_2.outcome == 'failure'
+        run: sleep 180
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (attempt 3)
+        id: trivy_sarif_upload_3
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.trivy_sarif_upload_2.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Wait 300s before Trivy SARIF upload attempt 4
+        if: always() && steps.trivy_sarif_upload_3.outcome == 'failure'
+        run: sleep 300
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (attempt 4)
+        id: trivy_sarif_upload_4
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.trivy_sarif_upload_3.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Warn that Trivy SARIF upload failed on every attempt
+        if: always() && steps.trivy_sarif_upload_4.outcome == 'failure'
+        run: echo "::warning::Trivy SARIF upload for the ${{ matrix.name }} image failed on all four attempts; the release continues because the blocking Trivy scan step gates the image."
       - name: Upload ${{ matrix.name }} Trivy SARIF artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
@@ -368,7 +448,7 @@ jobs:
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
           push: true
       - name: Install Trivy
-        run: bash scripts/ci-install-trivy.sh v0.73.0 /usr/local/bin
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy table)
         run: |
           trivy image \
@@ -386,12 +466,50 @@ jobs:
             --format sarif \
             -o /tmp/trivy-${{ matrix.name }}.sarif \
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
-      - name: Upload ${{ matrix.name }} SARIF to Code Scanning
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (attempt 1)
+        id: trivy_sarif_upload_1
         uses: github/codeql-action/upload-sarif@v4
         if: always()
+        continue-on-error: true
         with:
           sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
           category: trivy-${{ matrix.name }}
+      - name: Wait 60s before Trivy SARIF upload attempt 2
+        if: always() && steps.trivy_sarif_upload_1.outcome == 'failure'
+        run: sleep 60
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (attempt 2)
+        id: trivy_sarif_upload_2
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.trivy_sarif_upload_1.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Wait 180s before Trivy SARIF upload attempt 3
+        if: always() && steps.trivy_sarif_upload_2.outcome == 'failure'
+        run: sleep 180
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (attempt 3)
+        id: trivy_sarif_upload_3
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.trivy_sarif_upload_2.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Wait 300s before Trivy SARIF upload attempt 4
+        if: always() && steps.trivy_sarif_upload_3.outcome == 'failure'
+        run: sleep 300
+      - name: Upload ${{ matrix.name }} SARIF to Code Scanning (attempt 4)
+        id: trivy_sarif_upload_4
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.trivy_sarif_upload_3.outcome == 'failure'
+        continue-on-error: true
+        with:
+          sarif_file: /tmp/trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+      - name: Warn that Trivy SARIF upload failed on every attempt
+        if: always() && steps.trivy_sarif_upload_4.outcome == 'failure'
+        run: echo "::warning::Trivy SARIF upload for the ${{ matrix.name }} image failed on all four attempts; the release continues because the blocking Trivy scan step gates the image."
       - name: Upload ${{ matrix.name }} Trivy SARIF artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()

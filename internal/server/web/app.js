@@ -2829,6 +2829,13 @@ function navigate(view, sessionId, fromPopstate) {
     _automationState.subtab = _AUTOMATION_DEFAULT_SUBTAB;
     view = 'autonomous';
   }
+  // Projects is the first sub-tab of Automata, not a view of its own. The old
+  // name still arrives from stored history entries and saved links; the
+  // project name stays in the URL hash, which renderProjectsView reads.
+  if (view === 'projects') {
+    _automataState.tab = 'projects';
+    view = 'autonomous';
+  }
   // Close the new-session modal on any navigation (Escape or nav tap).
   if (document.getElementById('newSessionModal')) closeNewSessionModal();
 
@@ -2965,6 +2972,10 @@ function navigate(view, sessionId, fromPopstate) {
         _automataState.selectMode = false;
         _automataState.selected.clear();
       }
+      // Leaving the Automata view ends every loader and timer its sub-tabs
+      // (Projects included) started, so nothing polls while hidden.
+      if (typeof _automationStopLoaders === 'function') _automationStopLoaders();
+      if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
     }
     backBtn.style.display = 'none';
     nav.style.display = 'flex';
@@ -3010,9 +3021,6 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailPRD = null;
       _automationState.detailId = null;
       renderAutonomousView();
-    } else if (view === 'projects') {
-      headerTitle.textContent = t('nav_projects') || 'Projects';
-      renderProjectsView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
       headerTitle.textContent = t('nav_dashboard') || 'Dashboard';
@@ -3056,6 +3064,7 @@ function navigate(view, sessionId, fromPopstate) {
 // so a link reopens the same choice. Storage and history can be blocked
 // (private windows), so each touch is wrapped and the view still renders.
 const _PROJECTS_LAST_KEY = 'cs_projects_last';
+const _PROJECTS_SHOW_EMPTY_KEY = 'cs_projects_show_empty';
 const _PROJECTS_OVERVIEW = '';
 // rollup is the roll-up of the project named by rollupFor; rollupError is its
 // load failure. The page paints the roll-up only for the selected project.
@@ -3078,6 +3087,14 @@ function _projectsRememberLast(name) {
 function _projectsRecallLast() {
   try { return localStorage.getItem(_PROJECTS_LAST_KEY) || ''; } catch (_) { return ''; }
 }
+// _projectsShowEmpty is the viewer's remembered show-empty preference: true only
+// when the stored value is '1'. It is a viewer preference, not a daemon setting.
+function _projectsShowEmpty() {
+  try { return localStorage.getItem(_PROJECTS_SHOW_EMPTY_KEY) === '1'; } catch (_) { return false; }
+}
+function _projectsSetShowEmpty(on) {
+  try { localStorage.setItem(_PROJECTS_SHOW_EMPTY_KEY, on ? '1' : '0'); } catch (_) { /* not remembered */ }
+}
 // _projectsHashParse returns the project named by a #projects hash ('' for
 // Overview), or null when the hash is not a projects route.
 function _projectsHashParse(hash) {
@@ -3095,8 +3112,13 @@ function _projectsCurrentHash() {
 // Picker and body share one render. Loading: the Overview body shows at once.
 // Load failure: Overview with the error. No projects: a message pointing at
 // Settings, with no picker.
+function _projectsActive() {
+  return state.activeView === 'autonomous' && _automataState.tab === 'projects';
+}
+
 function _projectsPaint() {
-  const view = document.getElementById('view');
+  // The Projects page lives in the Automata panel area.
+  const view = document.getElementById('automataPanel');
   if (!view) return;
   const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
   const err = _projectsState.error;
@@ -3113,7 +3135,8 @@ function _projectsPaint() {
   if (selected === _PROJECTS_OVERVIEW) {
     // Overview is the cross-project in-flight view; it draws the whole
     // #view, so the picker goes back on top of it afterwards.
-    renderAutonomousView();
+    view.innerHTML = '<div id="projectsOverviewBody">' + _automationBodyHTML() + '</div>';
+    _automationMount();
     view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
   } else {
     const p = list.find(x => x.name === selected);
@@ -3131,7 +3154,17 @@ function _projectsPickerHTML(list, selected, err) {
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
       <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
       <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+      <label for="projectsShowEmpty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);white-space:nowrap;">
+        <input type="checkbox" id="projectsShowEmpty" ${_projectsShowEmpty() ? 'checked' : ''} title="${escHtml(t('projects_show_empty_help') || '')}" onchange="toggleProjectsShowEmpty(this.checked)">
+        ${escHtml(t('projects_show_empty') || 'Show empty')}
+      </label>
     </div>`;
+}
+
+// toggleProjectsShowEmpty remembers the viewer's show-empty choice and repaints.
+function toggleProjectsShowEmpty(checked) {
+  _projectsSetShowEmpty(!!checked);
+  _projectsPaint();
 }
 
 // The project page: the header fields, the ordered arcs with the Automata and
@@ -3144,9 +3177,20 @@ function _projectsPickerHTML(list, selected, err) {
 function _projectPageHTML(p, roll, rollErr, hist) {
   if (!p) return '</div>';
   const events = [];
-  const unset = key => { events.push(t('projects_event_unset', [t(key)])); return ''; };
+  // Only a missing weekly share matters, and only when the project has an arc
+  // or an unassigned Automaton that needs a share. Other empty fields are hidden
+  // and produce no Events entry.
+  const needsShare = !!roll && !rollErr && (
+    (Array.isArray(roll.arcs) && roll.arcs.length > 0) ||
+    (roll.unassigned && Array.isArray(roll.unassigned.automata) && roll.unassigned.automata.length > 0));
+  const unset = key => {
+    if (key === 'projects_page_weekly_share' && needsShare) events.push(t('projects_event_unset', [t(key)]));
+    return '';
+  };
   const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
-  const field = (key, val) => (val === undefined || val === null || val === '') ? unset(key) : row(key, val);
+  const showEmpty = _projectsShowEmpty();
+  const emptyRow = key => (showEmpty ? row(key, t('projects_links_none')) : '');
+  const field = (key, val) => (val === undefined || val === null || val === '') ? (unset(key), emptyRow(key)) : row(key, val);
   const pts = n => (Number(n) > 0 ? ` · ${Math.round(Number(n) * 10) / 10} ${escHtml(t('projects_page_points'))}` : '');
 
   const tgt = p.target || {};
@@ -3154,7 +3198,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const laneVal = [ld.lane, ld.backend, ld.model].filter(Boolean).join(' · ');
   const share = (p.weekly_share === undefined || p.weekly_share === null) ? '' : p.weekly_share + '%';
   const head = [
-    p.description ? `<div style="margin:4px 0 8px;font-size:14px;line-height:1.5;">${escHtml(p.description)}</div>` : unset('projects_field_description'),
+    p.description ? `<div style="margin:4px 0 8px;font-size:14px;line-height:1.5;">${escHtml(p.description)}</div>` : (unset('projects_field_description'), emptyRow('projects_field_description')),
     field('projects_field_dir', p.dir),
     field('projects_field_backend', p.default_backend),
     field('projects_page_owner', p.owner),
@@ -3206,11 +3250,16 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
     body += _projectRollupHTML(roll, arcs);
-    if (!arcs.length) events.push(t('projects_event_no_arcs'));
-    else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+    if (!arcs.length) {
+      events.push(t('projects_event_no_arcs'));
+      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
+    } else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
-    else events.push(t('projects_event_no_unassigned'));
+    else {
+      events.push(t('projects_event_no_unassigned'));
+      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
+    }
   }
   body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
@@ -3289,11 +3338,19 @@ function _projectPolicyEffectiveHTML(pl, err) {
   } else {
     const pol = pl.policy && typeof pl.policy === 'object' ? pl.policy : {};
     const keys = Object.keys(pol);
-    inner = keys.length ? keys.map(k => {
+    const showEmpty = _projectsShowEmpty();
+    const optional = ['weekly_share_percent', 'branch_retention_days', 'major_trigger'];
+    const shown = keys.filter(k => {
       const e = pol[k] || {};
-      const val = (e.value === undefined || e.value === null) ? '' : (typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value));
+      const none = e.value === undefined || e.value === null || e.value === '';
+      return showEmpty || !(none && optional.includes(k));
+    });
+    inner = shown.length ? shown.map(k => {
+      const e = pol[k] || {};
+      let val = (e.value === undefined || e.value === null) ? '' : (typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value));
+      if (val === '' && optional.includes(k)) val = t('projects_links_none');
       return `<div class="project-policy-row" style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(k)}:</span> ${escHtml(val)} <span style="color:var(--text2);font-size:12px;">(${escHtml(e.source || '')})</span></div>`;
-    }).join('') : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>`;
+    }).join('') : (showEmpty ? `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>` : '');
   }
   return `<div class="project-policy-effective" style="margin-top:10px;">${head}${link}${inner}</div>`;
 }
@@ -3315,6 +3372,7 @@ function _projectMergePipelineHTML(mp, err) {
     const polEntry = MERGE_PIPELINE_POLICIES.find(([v]) => v === mp.conflict_policy);
     const polLabel = polEntry ? t(polEntry[1]) : (mp.conflict_policy || '');
     const steps = mp.definition && Array.isArray(mp.definition.steps) ? mp.definition.steps : [];
+    if (!steps.length && !mp.source && !mp.reason && !mp.file_error && !mp.conflict_policy && !_projectsShowEmpty()) return '';
     inner = `<div style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t('merge_pipeline_source_label'))}:</span> ${escHtml(src)}</div>` +
       (mp.reason ? `<div style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_reason', [mp.reason]))}</div>` : '') +
       (mp.file_error ? `<div style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_file_error', [mp.file_error]))}</div>` : '') +
@@ -3339,6 +3397,7 @@ function _projectEventStreamHTML(ev, err) {
     inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
   } else {
     const items = Array.isArray(ev.events) ? ev.events : [];
+    if (!items.length && !ev.dropped && !_projectsShowEmpty()) return '';
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
@@ -3377,7 +3436,8 @@ function _projectArcDocsHTML(p, arc) {
     if (/^\d+$/.test(s)) return escHtml('datawatch-app #' + s);
     return link(s);
   };
-  const line = (key, items, fmt) => `<div style="font-size:12px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ` +
+  const showEmpty = _projectsShowEmpty();
+  const line = (key, items, fmt) => (!items.length && !showEmpty) ? '' : `<div style="font-size:12px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ` +
     (items.length ? items.map(fmt).join(', ') : `<span style="color:var(--text2);">${escHtml(t('projects_links_none'))}</span>`) + `</div>`;
   return `<div class="project-arc-docs" style="margin:4px 0 6px 12px;">` +
     line('projects_links_arc_plans', list(rec.plan_docs), link) +
@@ -3613,7 +3673,7 @@ function _projectGanttSVG(rows, now) {
 // choice on the page state and repaints while the Projects tab is active.
 function projectsGanttWindow(key) {
   _projectsState.ganttWindow = _PROJECTS_GANTT_WINDOWS.some(w => w[0] === key) ? key : _PROJECTS_GANTT_DEFAULT_WINDOW;
-  if (state.activeView === 'projects') _projectsPaint();
+  if (_projectsActive()) _projectsPaint();
 }
 
 // _projectsLoadHistory reads one page of GET /api/projects/{name}/history for
@@ -3649,7 +3709,7 @@ function projectsHistoryMore() {
   const h = _projectsState.hist;
   if (_projectsState.histBusy || !h || !h.next) return Promise.resolve();
   return _projectsLoadHistory(true).then(() => {
-    if (state.activeView === 'projects') _projectsPaint();
+    if (_projectsActive()) _projectsPaint();
   });
 }
 
@@ -3657,9 +3717,10 @@ function projectsHistoryMore() {
 // selected project, repainting after each so the arcs show before the history.
 function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
-    if (state.activeView === 'projects') _projectsPaint();
-    return _projectsLoadHistory(false);
-  }).then(() => _projectsLoadLinks());
+    if (!_projectsActive()) return null;
+    _projectsPaint();
+    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null));
+  });
 }
 
 function renderProjectsView() {
@@ -3668,17 +3729,19 @@ function renderProjectsView() {
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   _projectsPaint();
-  return _projectsLoad().then(() => _projectsLoadSelected()).then(() => {
+  return _projectsLoad().then(() => (_projectsActive() ? _projectsLoadSelected() : null)).then(() => {
     // Paint again only while the Projects tab is still the active view.
-    if (state.activeView === 'projects') _projectsPaint();
+    if (_projectsActive()) _projectsPaint();
   });
 }
 
 function _projectsLoad() {
   return apiFetch('/api/projects').then(list => {
+    if (!_projectsActive()) return;
     _projectsState.list = Array.isArray(list) ? list : [];
     _projectsState.error = '';
   }).catch(err => {
+    if (!_projectsActive()) return;
     _projectsState.list = _projectsState.list || [];
     _projectsState.error = (err && err.message) || String(err);
   });
@@ -3714,7 +3777,7 @@ function selectProjectsView(name) {
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
   return _projectsLoadSelected().then(() => {
-    if (state.activeView === 'projects') _projectsPaint();
+    if (_projectsActive()) _projectsPaint();
   });
 }
 
@@ -4150,6 +4213,19 @@ function renderSessionsView() {
   // and the select bar always operate on what the user can actually see.
   state._visibleDone = visible.filter(s => DONE_STATES.has(s.state));
 
+  // "show more" page paging (every mode): the first page is the first
+  // paint, and any filter change (state chip, text search, watch filter,
+  // tag selection, history) starts the paging back at page one.
+  let tagSel = '';
+  try { tagSel = (_tagBrowse && _tagBrowse.session ? (_tagBrowse.session.sel || []).join(',') : ''); } catch (_) { tagSel = ''; }
+  const pageKey = [chip, filterText, state.sessionWatchFilter ? 'w' : 'n', state.showHistory ? 'h' : 'n', tagSel].join('|');
+  if (state._sessionsPageKey !== pageKey) {
+    state._sessionsPageKey = pageKey;
+    state._sessionsPageLimit = _sessionsPageSize();
+  }
+  const paging = _sessionsPagingState(visible, state._sessionsPageLimit);
+  const viewMode = _sessionsViewMode();
+
   const filterVal = escHtml(state.sessionFilter || '');
   // Collect unique backend types from all sessions for compact filter badges
   const backendTypes = [...new Set(state.sessions.map(s => s.backend_family).filter(Boolean))].sort();
@@ -4341,17 +4417,40 @@ function renderSessionsView() {
     return;
   }
 
-  // BL348 — tree mode, placement-axis groups, or flat list
+  // BL348 — tree mode, group-by picker, placement-axis groups, or flat list.
+  // Grouping + Automaton nesting: with a group axis active the page renders
+  // as collapsible groups (or an Automaton → story tree) in the active mode,
+  // each group with its own Show-more step. Without one, the placement-axis
+  // dropdown groups (main's toolbar control) or the classic render apply.
+  const groupBy = _sessionsGroupValidate(state.sessionGroupBy);
+  if (groupBy) {
+    const gKey = groupBy.axis + '|' + (groupBy.tagPrefix || '');
+    if (state._sessionsGroupByKey !== gKey) {
+      state._sessionsGroupByKey = gKey;
+      state._sessionsGroupPage = {};
+    }
+  }
   const groupAxis = state.sessionTreeView ? '' : _sessionsGroupAxis();
-  const cards = state.sessionTreeView
-    ? renderSessionsAsTree(visible)
-    : (groupAxis
-      ? (visible.length ? _sessionsGroupCards(visible, groupAxis) : '')
-      : visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join(''));
+  const cards = groupBy
+    ? (groupBy.axis === 'automaton'
+        ? renderSessionsAutomaton(visible, now, viewMode)
+        : renderSessionsGrouped(visible, groupBy, now, viewMode))
+    : (state.sessionTreeView
+        ? renderSessionsAsTree(visible)
+        : (groupAxis
+            ? (visible.length ? _sessionsGroupCards(visible, groupAxis) : '')
+            : (viewMode === 'list'
+                ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
+                : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode))));
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
-    ${toggleBtn}<div class="session-list">${cards}</div>${_sessionsLoadMoreHtml()}</div>`;
+    ${renderSessionsModeToggle(viewMode)}
+    ${renderSessionsGroupPicker(groupBy)}
+    ${renderSessionsViewsBar()}
+    ${toggleBtn}
+    ${renderSessionsSummaryBar(visible)}<div class="session-list">${cards}</div>
+    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}</div>`;
 
   // Restore filter input focus and cursor position
   if (filterText) {
@@ -4384,6 +4483,778 @@ function renderSessionsView() {
   // BL312 S3 — prepend server picker bar if remote servers are registered
   _injectServerPickerBar(view, renderSessionsView);
   _sessionTagsEnsure(renderSessionsView, state.sessions);
+}
+
+// ── Sessions view modes: list / tiles / compact ─────────────────────────
+// The sessions view gets the same card vocabulary as the Automata/Automation
+// tiles (the shared renderWorkTile), plus a per-state summary bar and page
+// paging with a Show more button so a 300+ session fleet stays responsive.
+// The mode is per-device (localStorage, try/catch because storage can be
+// blocked) and defaults by viewport when the device has never chosen one:
+// phone widths open as the list, everything wider opens as tiles. `compact`
+// is the dense two-row grid; the normal tile grid still follows the width-based
+// mode on resizes via _tileSyncModes, while compact keeps its density there.
+// Tags, filter and search apply before rendering, so they work in every mode.
+// _stx: t() with an English fallback — t() returns the key itself on a miss, so
+// the fallback applies when the key is absent from every bundle.
+function _stx(key, fallback) {
+  const v = t(key);
+  return (v === undefined || v === null || v === key) ? fallback : v;
+}
+const SESSIONS_VIEW_MODES = ['list', 'tiles', 'compact'];
+const SESSIONS_VIEW_MODE_KEY = 'cs_sessions_view_mode';
+const SESSIONS_TILE_PAGE_SIZE = 60;        // first page / one Show-more step (configurable)
+const SESSIONS_MODE_PHONE_WIDTH = 600;     // matches the window.innerWidth < 600 convention elsewhere
+
+function _sessionsViewModeNormalize(mode) {
+  return SESSIONS_VIEW_MODES.indexOf(mode) >= 0 ? mode : null;
+}
+
+function _sessionsTileModeDefault(width) {
+  const w = Number(width);
+  if (!Number.isFinite(w) || w <= 0) return 'list'; // unknown width (no window metrics): keep the classic list
+  return w < SESSIONS_MODE_PHONE_WIDTH ? 'list' : 'tiles';
+}
+
+function _sessionsReadStoredMode(lse) {
+  let v = null;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_VIEW_MODE_KEY);
+  } catch (_) { v = null; }
+  return (typeof v === 'string' && v) ? v : null;
+}
+
+function _sessionsStoreMode(mode, lse) {
+  const m = _sessionsViewModeNormalize(mode);
+  if (!m) return;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(SESSIONS_VIEW_MODE_KEY, m);
+  } catch (_) { /* storage blocked: the choice lives in memory for this page */ }
+}
+
+function _sessionsPageSize() {
+  const n = Number(state && Number.isFinite(Number(state._sessionsPageOverride)) ? state._sessionsPageOverride : SESSIONS_TILE_PAGE_SIZE);
+  return (Number.isFinite(n) && n > 0) ? Math.floor(n) : SESSIONS_TILE_PAGE_SIZE;
+}
+
+function _sessionsViewMode() {
+  if (SESSIONS_VIEW_MODES.indexOf(state.sessionsViewMode) >= 0) return state.sessionsViewMode;
+  const stored = _sessionsViewModeNormalize(_sessionsReadStoredMode());
+  if (stored) { state.sessionsViewMode = stored; return stored; }
+  state.sessionsViewMode = _sessionsTileModeDefault(_tileViewportWidth());
+  return state.sessionsViewMode;
+}
+
+function _sessionsPagingState(sessions, limit) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const size = _sessionsPageSize();
+  let lim = Number(limit);
+  if (!Number.isFinite(lim) || lim <= 0) lim = size;
+  lim = Math.floor(lim);
+  return {
+    shown: list.slice(0, lim),
+    shownCount: Math.min(lim, list.length),
+    total: list.length,
+    hasMore: lim < list.length,
+  };
+}
+
+function _sessionsSummaryCounts(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const order = ['running', 'waiting_input', 'rate_limited', 'complete', 'failed', 'killed'];
+  const by = {};
+  list.forEach(s => {
+    const st = (s && typeof s.state === 'string' && s.state) || 'unknown';
+    by[st] = (by[st] || 0) + 1;
+  });
+  const rows = order.filter(st => by[st]).map(st => ({ state: st, count: by[st] }));
+  Object.keys(by).filter(st => order.indexOf(st) < 0).sort().forEach(st => rows.push({ state: st, count: by[st] }));
+  return rows;
+}
+
+window._sessionsViewModes = SESSIONS_VIEW_MODES;
+window._sessionsViewModeKey = SESSIONS_VIEW_MODE_KEY;
+window._sessionsViewModeNormalize = _sessionsViewModeNormalize;
+window._sessionsTileModeDefault = _sessionsTileModeDefault;
+window._sessionsReadStoredMode = _sessionsReadStoredMode;
+window._sessionsStoreMode = _sessionsStoreMode;
+window._sessionsPageSize = _sessionsPageSize;
+window._sessionsViewMode = _sessionsViewMode;
+window._sessionsPagingState = _sessionsPagingState;
+window._sessionsSummaryCounts = _sessionsSummaryCounts;
+
+function _sessionsSetViewMode(mode) {
+  const m = _sessionsViewModeNormalize(mode);
+  if (!m) return;
+  state.sessionsViewMode = m;
+  _sessionsStoreMode(m);
+  state._sessionsPageLimit = _sessionsPageSize();
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window._sessionsSetViewMode = _sessionsSetViewMode;
+window.setSessionsViewMode = _sessionsSetViewMode;
+
+function _sessionsShowMore() {
+  const base = (Number(state._sessionsPageLimit) > 0) ? state._sessionsPageLimit : _sessionsPageSize();
+  state._sessionsPageLimit = base + _sessionsPageSize();
+  renderSessionsView();
+}
+window._sessionsShowMore = _sessionsShowMore;
+window.sessionsShowMore = _sessionsShowMore;
+
+// ── Session grouping, Automaton → story nesting, saved views ────────────
+// The operator can group the sessions page along any axis (state, node,
+// project, a tag or a tag prefix, or the Automaton a session belongs to).
+// Groups are collapsible, show their count and state mix, and remember their
+// collapsed state on this device. Automaton mode nests sub-task sessions
+// under their Automaton and then their story. A saved view (device-local)
+// remembers mode + group axis + session filter together.
+const SESSIONS_GROUP_UNGROUPED = 'ungrouped';
+const SESSIONS_GROUP_AXES = ['state', 'node', 'project', 'tag', 'automaton'];
+const SESSIONS_COLLAPSED_KEY = 'cs_sessions_collapsed_groups';
+const SESSIONS_SAVED_VIEWS_KEY = 'cs_sessions_saved_views';
+const SESSIONS_VIEW_NAME_MAX = 80;
+
+// _sessionsGroupValidate normalizes the active group axis; null keeps the
+// plain (ungrouped) rendering. Unknown axes fall back to no grouping rather
+// than a broken view.
+function _sessionsGroupValidate(by) {
+  if (!by || typeof by.axis !== 'string') return null;
+  if (SESSIONS_GROUP_AXES.indexOf(by.axis) < 0) return null;
+  return {
+    axis: by.axis,
+    tagPrefix: (by.axis === 'tag' && typeof by.tagPrefix === 'string') ? by.tagPrefix : '',
+  };
+}
+
+// _sessionsTagPlacement follows the server's rule exactly: the session's own
+// tags plus inherited tags, sorted, first match wins. A session with several
+// tags lands under exactly one of them — the other tags still show as chips
+// on its card. No matching tag → ungrouped.
+function _sessionsTagPlacement(sess, tagPrefix) {
+  const src = sess || {};
+  const tags = [].concat(src.tags || [], src.inherited_tags || [])
+    .filter(t => typeof t === 'string' && t).sort();
+  if (tagPrefix) {
+    for (let i = 0; i < tags.length; i++) {
+      if (tags[i].indexOf(tagPrefix) === 0) return tags[i];
+    }
+    return SESSIONS_GROUP_UNGROUPED;
+  }
+  return tags.length ? tags[0] : SESSIONS_GROUP_UNGROUPED;
+}
+
+function _sessionsGroupKeyFor(sess, by) {
+  const s = sess || {};
+  switch (by.axis) {
+    case 'state':
+      return (typeof s.state === 'string' && s.state) ? s.state : 'unknown';
+    case 'node':
+      return (typeof s.hostname === 'string' && s.hostname) ? s.hostname
+        : ((typeof s.server === 'string' && s.server) ? s.server : SESSIONS_GROUP_UNGROUPED);
+    case 'project':
+      return (typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED;
+    case 'tag':
+      return _sessionsTagPlacement(s, by.tagPrefix);
+    case 'automaton':
+      return (typeof s.prd_id === 'string' && s.prd_id) ? s.prd_id : SESSIONS_GROUP_UNGROUPED;
+  }
+  return SESSIONS_GROUP_UNGROUPED;
+}
+
+// _sessionsGroupLabel is the operator-facing header text for a group key:
+// registry tag name when known, raw key otherwise; 'Ungrouped' for the
+// unmatched bucket.
+function _sessionsGroupLabel(key, by) {
+  if (key === SESSIONS_GROUP_UNGROUPED) return _stx('sessions_group_ungrouped', 'Ungrouped');
+  if (by && by.axis === 'tag') {
+    let name = '';
+    try {
+      if (typeof _tagsState !== 'undefined' && _tagsState && _tagsState.byId && _tagsState.byId[key] && _tagsState.byId[key].name) {
+        name = _tagsState.byId[key].name;
+      }
+    } catch (_) { /* registry unavailable: keep the raw key */ }
+    if (name) return name;
+  }
+  return String(key);
+}
+
+function _sessionsGroupStateMix(sessions) {
+  try { return _sessionsSummaryCounts(sessions); } catch (_) { return []; }
+}
+
+// _sessionsGroupSessions buckets the (already tag/filter narrowed) pool into
+// sorted, count-annotated groups. Each session appears exactly once.
+function _sessionsGroupSessions(pool, by) {
+  const list = Array.isArray(pool) ? pool : [];
+  const groups = [];
+  const index = {};
+  list.forEach(sess => {
+    const key = _sessionsGroupKeyFor(sess, by);
+    let g = index[key];
+    if (!g) {
+      g = { key, label: _sessionsGroupLabel(key, by), count: 0, sessions: [] };
+      index[key] = g;
+      groups.push(g);
+    }
+    g.count++;
+    g.sessions.push(sess);
+  });
+  groups.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+  groups.forEach(g => { g.mix = _sessionsGroupStateMix(g.sessions); });
+  return groups;
+}
+window._sessionsGroupValidate = _sessionsGroupValidate;
+window._sessionsTagPlacement = _sessionsTagPlacement;
+window._sessionsGroupKeyFor = _sessionsGroupKeyFor;
+window._sessionsGroupLabel = _sessionsGroupLabel;
+window._sessionsGroupStateMix = _sessionsGroupStateMix;
+window._sessionsGroupSessions = _sessionsGroupSessions;
+
+// ── Collapse persistence (per device) ───────────────────────────────────
+function _sessionsCollapseKey(by, key) {
+  const scope = by.axis + (by.axis === 'tag' ? '|' + (by.tagPrefix || 'all') : '');
+  return scope + '::' + key;
+}
+
+function _sessionsCollapsedRead(storage) {
+  try {
+    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!ls || typeof ls.getItem !== 'function') return [];
+    const raw = ls.getItem(SESSIONS_COLLAPSED_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return (Array.isArray(arr) ? arr : []).filter(k => typeof k === 'string' && k);
+  } catch (_) { return []; }
+}
+
+function _sessionsCollapseWrite(keys, storage) {
+  try {
+    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(SESSIONS_COLLAPSED_KEY, JSON.stringify(keys));
+  } catch (_) { /* storage blocked: collapse state lives in memory for the page */ }
+}
+
+function _sessionsCollapsedSet() {
+  if (!Array.isArray(state._sessionsCollapsed)) state._sessionsCollapsed = _sessionsCollapsedRead();
+  return state._sessionsCollapsed;
+}
+
+function _sessionsGroupToggleCollapse(ckEnc) {
+  let ck = '';
+  try { ck = decodeURIComponent(String(ckEnc || '')); } catch (_) { ck = String(ckEnc || ''); }
+  if (!ck) return false;
+  const keys = _sessionsCollapsedSet();
+  const i = keys.indexOf(ck);
+  if (i >= 0) keys.splice(i, 1); else keys.push(ck);
+  _sessionsCollapseWrite(keys);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window._sessionsGroupToggleCollapse = _sessionsGroupToggleCollapse;
+window.toggleSessionGroupCollapse = _sessionsGroupToggleCollapse;
+
+// ── Per-group Show-more paging ──────────────────────────────────────────
+function _sessionsGroupPageLimit(ck) {
+  try {
+    const m = state._sessionsGroupPage;
+    const n = m && m[ck];
+    return (Number.isFinite(Number(n)) && Number(n) > 0) ? Math.floor(Number(n)) : _sessionsPageSize();
+  } catch (_) { return _sessionsPageSize(); }
+}
+
+function _sessionsGroupShowMore(ckEnc) {
+  let ck = '';
+  try { ck = decodeURIComponent(String(ckEnc || '')); } catch (_) { ck = String(ckEnc || ''); }
+  if (!ck) return;
+  if (!state._sessionsGroupPage) state._sessionsGroupPage = {};
+  state._sessionsGroupPage[ck] = _sessionsGroupPageLimit(ck) + _sessionsPageSize();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window._sessionsGroupShowMore = _sessionsGroupShowMore;
+window.sessionsGroupShowMore = _sessionsGroupShowMore;
+
+// ── Group rendering (active mode: list / tiles / compact) ──────────────
+function _sessionsGroupBodyMode(viewMode) {
+  const m = (typeof viewMode === 'string') ? viewMode : _sessionsViewMode();
+  return (m === 'tiles' || m === 'compact') ? m : 'list';
+}
+
+function _sessionsGroupBody(mode, sessList, nowMs) {
+  const list = Array.isArray(sessList) ? sessList : [];
+  if (!list.length) {
+    return `<div class="sessions-group-empty">${escHtml(_stx('sessions_group_empty', 'No sessions'))}</div>`;
+  }
+  if (mode === 'list') return list.map((s, i) => sessionCard(s, i, list.length)).join('');
+  return renderSessionTileGrid(list.map(s => renderSessionTile(s, nowMs)).join(''), mode);
+}
+
+function _sessionsGroupMixHTML(mix) {
+  const rows = Array.isArray(mix) ? mix : [];
+  if (!rows.length) return '';
+  return rows.map(m => `
+    <span class="sgp-mix sgp-mix-${escHtml(String(m.state).replace(/[^a-z0-9]/g, ''))}">${escHtml(String(m.state).replace(/_/g, ' '))} ${escHtml(String(m.count))}</span>`).join(' ');
+}
+
+function _sessionsGroupShowMoreInGroupHTML(ck, paging) {
+  if (!paging || !paging.hasMore) return '';
+  return `<div class="sgp-paging">
+    <button type="button" class="btn-secondary sgp-more" onclick="_sessionsGroupShowMore('${escHtml(encodeURIComponent(ck))}')">${escHtml(_stx('sessions_group_show_more', 'Show more'))} ${escHtml(paging.shownCount)}/${escHtml(paging.total)}</button>
+  </div>`;
+}
+
+function _sessionsSgpHeaderHTML(ck, label, count, mix, collapsed, cssClass) {
+  const caret = collapsed ? '▸' : '▾';
+  return `<button type="button" class="${cssClass}" onclick="_sessionsGroupToggleCollapse('${escHtml(encodeURIComponent(ck))}')" aria-expanded="${collapsed ? 'false' : 'true'}">
+    <span class="sgp-caret">${caret}</span>
+    <span class="sgp-label">${escHtml(label)}</span>
+    <span class="sgp-count">${escHtml(String(count))}</span>
+    <span class="sgp-mix-row">${_sessionsGroupMixHTML(mix)}</span>
+  </button>`;
+}
+
+// renderSessionsGrouped: one collapsible section per group, each with its
+// own Show-more step, rendered in the active view mode.
+function renderSessionsGrouped(pool, by, nowMs, viewMode) {
+  const groups = _sessionsGroupSessions(pool, by);
+  if (!groups.length) {
+    return `<div class="sessions-groups"><div class="sessions-group-empty">${escHtml(_stx('sessions_group_none_view', 'No sessions in this view'))}</div></div>`;
+  }
+  const collapsed = {};
+  try {
+    _sessionsCollapsedSet().forEach(k => { collapsed[k] = true; });
+  } catch (_) { /* no persisted collapse state */ }
+  const mode = _sessionsGroupBodyMode(viewMode);
+  const sections = groups.map(g => {
+    const ck = _sessionsCollapseKey(by, g.key);
+    const isCollapsed = !!collapsed[ck];
+    const lim = _sessionsGroupPageLimit(ck);
+    const shown = g.sessions.slice(0, lim);
+    const paging = { shownCount: shown.length, total: g.sessions.length, hasMore: lim < g.sessions.length };
+    return `<section class="sessions-group${isCollapsed ? ' collapsed' : ''}" data-sessions-group="${escHtml(ck)}">
+      ${_sessionsSgpHeaderHTML(ck, g.label, g.count, g.mix, isCollapsed, 'sessions-group-header')}
+      ${isCollapsed ? '' : `<div class="sessions-group-body">
+        ${_sessionsGroupBody(mode, shown, nowMs)}
+        ${_sessionsGroupShowMoreInGroupHTML(ck, paging)}
+      </div>`}
+    </section>`;
+  }).join('');
+  return `<div class="sessions-groups">${sections}</div>`;
+}
+window.renderSessionsGrouped = renderSessionsGrouped;
+
+// ── Automaton mode: Automaton → story → sub-task sessions ──────────────
+function _automatonStoryKey(sess) {
+  if (sess && typeof sess.story_id === 'string' && sess.story_id) return sess.story_id;
+  return 'root';
+}
+
+// renderSessionsAutomaton nests every session that carries a prd under its
+// Automaton, then under its story; sub-task sessions carry task_id and sit
+// in their story's body. The Automaton header shows progress as the count
+// plus the state mix of the whole flock.
+function renderSessionsAutomaton(pool, nowMs, viewMode) {
+  const list = Array.isArray(pool) ? pool : [];
+  const blocks = [];
+  const bIndex = {};
+  list.forEach(sess => {
+    const key = (sess && typeof sess.prd_id === 'string' && sess.prd_id) ? sess.prd_id : SESSIONS_GROUP_UNGROUPED;
+    let b = bIndex[key];
+    if (!b) { b = { key, sessions: [] }; bIndex[key] = b; blocks.push(b); }
+    b.sessions.push(sess);
+  });
+  blocks.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+  const collapsed = {};
+  try {
+    _sessionsCollapsedSet().forEach(k => { collapsed[k] = true; });
+  } catch (_) { /* no persisted collapse state */ }
+  const mode = _sessionsGroupBodyMode(viewMode);
+  const parts = blocks.map(b => {
+    const stories = [];
+    const sIndex = {};
+    b.sessions.forEach(sess => {
+      const sk = _automatonStoryKey(sess);
+      let st = sIndex[sk];
+      if (!st) { st = { key: sk, sessions: [] }; sIndex[sk] = st; stories.push(st); }
+      st.sessions.push(sess);
+    });
+    stories.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+    if (!stories.length) stories.push({ key: 'root', sessions: [] });
+    const storyHtml = stories.map(st => {
+      const sCk = 'automaton|::' + b.key + '::' + st.key;
+      const sCol = !!collapsed[sCk];
+      const stLabel = (st.key === 'root') ? _stx('sessions_auto_story_root', 'Story') : st.key;
+      return `<section class="story-block${sCol ? ' collapsed' : ''}" data-story-block="${escHtml(sCk)}">
+        ${_sessionsSgpHeaderHTML(sCk, stLabel, st.sessions.length, _sessionsGroupStateMix(st.sessions), sCol, 'story-header')}
+        ${sCol ? '' : `<div class="story-body">${_sessionsGroupBody(mode, st.sessions, nowMs)}</div>`}
+      </section>`;
+    }).join('');
+    const bCk = 'automaton|::' + b.key;
+    const bCol = !!collapsed[bCk];
+    const autoLabel = (b.key === SESSIONS_GROUP_UNGROUPED)
+      ? _stx('sessions_auto_ungrouped', 'Not part of an Automaton') : b.key;
+    return `<section class="automaton-block${bCol ? ' collapsed' : ''}" data-automaton-block="${escHtml(bCk)}">
+      ${_sessionsSgpHeaderHTML(bCk, autoLabel, b.sessions.length, _sessionsGroupStateMix(b.sessions), bCol, 'automaton-header')}
+      ${bCol ? '' : `<div class="automaton-body">${storyHtml}</div>`}
+    </section>`;
+  }).join('');
+  return `<div class="automaton-tree">${parts}</div>`;
+}
+window.renderSessionsAutomaton = renderSessionsAutomaton;
+
+// ── Group axis picker ───────────────────────────────────────────────────
+function _sessionsGroupPrefixOptions() {
+  let names = [];
+  try {
+    if (typeof _tagsState !== 'undefined' && _tagsState && Array.isArray(_tagsState.list)) {
+      names = _tagsState.list.map(x => (x && x.name)).filter(n => typeof n === 'string' && n);
+    }
+  } catch (_) { names = []; }
+  const set = {};
+  names.forEach(n => {
+    const i = n.indexOf(':');
+    if (i > 0) set[n.slice(0, i + 1)] = true;
+  });
+  return Object.keys(set).sort();
+}
+
+function renderSessionsGroupPicker(by) {
+  const cur = (by && SESSIONS_GROUP_AXES.indexOf(by.axis) >= 0) ? by : null;
+  const curV = cur ? (cur.axis + '|' + (cur.tagPrefix || '')) : '';
+  const opt = (v, label) => `<option value="${escHtml(v)}"${v === curV ? ' selected' : ''}>${escHtml(label)}</option>`;
+  const axisLabel = (axis) => ({
+    state: _stx('sessions_group_state', 'State'),
+    node: _stx('sessions_group_node', 'Node'),
+    project: _stx('sessions_group_project', 'Project'),
+    tag: _stx('sessions_group_tag', 'Tag'),
+    automaton: _stx('sessions_group_automaton', 'Automaton'),
+  }[axis] || axis);
+  let prefixOpts = '';
+  const prefixes = _sessionsGroupPrefixOptions();
+  if (prefixes.length) {
+    prefixOpts = `<optgroup label="${escHtml(_stx('sessions_group_tag_prefixes', 'Tag prefix'))}">
+      ${prefixes.map(p => opt('tag|' + p, axisLabel('tag') + '(' + p + ')')).join('')}
+    </optgroup>`;
+  }
+  return `<div class="sessions-group-picker" role="group" aria-label="${escHtml(_stx('sessions_group_by', 'Group by'))}">
+    <label class="sgp-label-static" for="sessions-group-select">${escHtml(_stx('sessions_group_by', 'Group by'))}</label>
+    <select id="sessions-group-select" class="sgp-select" onchange="setSessionGroupBy(this.value)">
+      ${opt('', _stx('sessions_group_none', 'No grouping'))}
+      ${opt('state', axisLabel('state'))}
+      ${opt('node', axisLabel('node'))}
+      ${opt('project', axisLabel('project'))}
+      ${opt('tag', axisLabel('tag'))}
+      ${prefixOpts}
+      ${opt('automaton', axisLabel('automaton'))}
+    </select>
+  </div>`;
+}
+window.renderSessionsGroupPicker = renderSessionsGroupPicker;
+
+function setSessionGroupBy(value) {
+  const raw = String(value || '');
+  const axisRaw = (raw.split('|')[0] || '');
+  const prefixRaw = (raw.split('|').slice(1).join('|') || '');
+  let by = null;
+  if (SESSIONS_GROUP_AXES.indexOf(axisRaw) < 0) by = null;
+  else if (axisRaw === 'tag') by = { axis: 'tag', tagPrefix: prefixRaw };
+  else by = { axis: axisRaw, tagPrefix: '' };
+  state.sessionGroupBy = by;
+  state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
+  state._sessionsGroupPage = {};
+  state._sessionsPageKey = null;
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.setSessionGroupBy = setSessionGroupBy;
+
+// ── Saved views (per device) ────────────────────────────────────────────
+function _savedViewsRead(storage) {
+  try {
+    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!ls || typeof ls.getItem !== 'function') return [];
+    const raw = ls.getItem(SESSIONS_SAVED_VIEWS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(v => v && typeof v === 'object'
+      && typeof v.id === 'string' && v.id
+      && typeof v.name === 'string' && v.name.trim());
+  } catch (_) { return []; }
+}
+
+function _savedViewsWrite(views, storage) {
+  try {
+    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(SESSIONS_SAVED_VIEWS_KEY, JSON.stringify(views || []));
+  } catch (_) { /* storage blocked: views live in memory for the page */ }
+}
+
+function _savedViews() {
+  if (!Array.isArray(state._savedViews)) state._savedViews = _savedViewsRead();
+  return state._savedViews;
+}
+
+function _savedViewName(name) {
+  return String(name || '').trim().slice(0, SESSIONS_VIEW_NAME_MAX);
+}
+
+// saveSessionsView captures the current mode + group axis + session filter
+// under a name and persists it on this device; null on a bad name.
+function saveSessionsView(name) {
+  const n = _savedViewName(name);
+  if (!n) return null;
+  let mode = 'list';
+  try { mode = _sessionsViewMode() || 'list'; } catch (_) { mode = 'list'; }
+  let by = null;
+  try { by = JSON.parse(JSON.stringify(state.sessionGroupBy || null)); } catch (_) { by = null; }
+  let filter = state.sessionFilter || '';
+  if (typeof filter !== 'string') filter = '';
+  const views = _savedViews();
+  const v = {
+    id: 'sv-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36),
+    name: n,
+    mode,
+    groupBy: (by && SESSIONS_GROUP_AXES.indexOf(by.axis) >= 0) ? by : null,
+    filter,
+  };
+  views.push(v);
+  _savedViewsWrite(views);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return v;
+}
+window.saveSessionsView = saveSessionsView;
+window.sessionsSaveView = saveSessionsView;
+
+function applySavedView(id) {
+  const v = _savedViews().find(x => x.id === id);
+  if (!v) return false;
+  try {
+    const m = _sessionsViewModeNormalize(v.mode);
+    if (m) { state.sessionsViewMode = m; _sessionsStoreMode(m); }
+    state._sessionsPageLimit = _sessionsPageSize();
+  } catch (_) { /* keep the current mode */ }
+  if (v.groupBy) {
+    const g = _sessionsGroupValidate(v.groupBy);
+    state.sessionGroupBy = g;
+    state._sessionsGroupByKey = g ? (g.axis + '|' + (g.tagPrefix || '')) : '';
+    state._sessionsGroupPage = {};
+  } else {
+    state.sessionGroupBy = null;
+    state._sessionsGroupByKey = '';
+  }
+  state.sessionFilter = (typeof v.filter === 'string') ? v.filter : '';
+  state._sessionsPageKey = null;
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window.applySavedView = applySavedView;
+window.sessionsApplyView = applySavedView;
+
+function renameSavedView(id, name) {
+  const views = _savedViews();
+  const v = views.find(x => x.id === id);
+  if (!v) return false;
+  const n = _savedViewName(name);
+  if (!n) return false;
+  v.name = n;
+  _savedViewsWrite(views);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window.renameSavedView = renameSavedView;
+window.sessionsRenameView = renameSavedView;
+
+function deleteSavedView(id) {
+  const views = _savedViews();
+  const i = views.findIndex(x => x.id === id);
+  if (i < 0) return false;
+  views.splice(i, 1);
+  _savedViewsWrite(views);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window.deleteSavedView = deleteSavedView;
+window.sessionsDeleteView = deleteSavedView;
+
+function _savedViewReadName(inputAttr, attrValue) {
+  try {
+    if (typeof document === 'undefined' || !document.querySelector) return '';
+    const el = document.querySelector('[' + inputAttr + '="' + attrValue + '"]');
+    if (el && typeof el.value === 'string') return el.value;
+  } catch (_) { /* DOM stub: rename is driven by renameSavedView() directly */ }
+  return '';
+}
+
+function submitSavedViewRename(id) {
+  const val = _savedViewReadName('data-saved-view-id', String(id || ''));
+  return renameSavedView(id, val);
+}
+window.submitSavedViewRename = submitSavedViewRename;
+
+function submitSavedViewSave() {
+  const val = _savedViewReadName('data-saved-view-name', 'new');
+  return saveSessionsView(val);
+}
+window.submitSavedViewSave = submitSavedViewSave;
+
+function toggleSavedViewRename(id) {
+  try {
+    if (typeof document === 'undefined' || !document.querySelector) return;
+    const el = document.querySelector('[data-svs-rename-row="' + String(id || '') + '"]');
+    if (el) el.style.display = (el.style && el.style.display === 'none') ? '' : 'none';
+  } catch (_) { /* DOM stub: rename is driven by renameSavedView() directly */ }
+}
+window.toggleSavedViewRename = toggleSavedViewRename;
+
+function renderSessionsViewsBar(views) {
+  const list = Array.isArray(views) ? views : _savedViews();
+  const chips = list.map(v => {
+    const id = String(v.id);
+    return `<span class="svs-chip" data-saved-view="${escHtml(id)}">
+      <button type="button" class="svs-apply" title="${escHtml(_stx('sessions_view_apply', 'Apply'))}" onclick="applySavedView('${escHtml(id)}')">${escHtml(v.name)}</button>
+      <button type="button" class="svs-rename" title="${escHtml(_stx('sessions_view_rename', 'Rename'))}" onclick="toggleSavedViewRename('${escHtml(id)}')">✎</button>
+      <span class="svs-rename-row" data-svs-rename-row="${escHtml(id)}" style="display:none;">
+        <input type="text" class="svs-input" data-saved-view-id="${escHtml(id)}" value="${escHtml(v.name)}" maxlength="${SESSIONS_VIEW_NAME_MAX}">
+        <button type="button" class="svs-save" onclick="submitSavedViewRename('${escHtml(id)}')">${escHtml(_stx('sessions_view_ok', 'OK'))}</button>
+      </span>
+      <button type="button" class="svs-delete" title="${escHtml(_stx('sessions_view_delete', 'Delete'))}" onclick="deleteSavedView('${escHtml(id)}')">✕</button>
+    </span>`;
+  }).join('');
+  return `<div class="sessions-saved-views">
+    <span class="svs-title">${escHtml(_stx('sessions_view_title', 'Views'))}</span>
+    <span class="svs-save-row" data-svs-save-row>
+      <input type="text" class="svs-input" data-saved-view-name="new" maxlength="${SESSIONS_VIEW_NAME_MAX}" placeholder="${escHtml(_stx('sessions_view_name_ph', 'View name'))}">
+      <button type="button" class="svs-save" onclick="submitSavedViewSave()">+ ${escHtml(_stx('sessions_view_new', 'New view'))}</button>
+    </span>
+    ${chips}
+  </div>`;
+}
+window.renderSessionsViewsBar = renderSessionsViewsBar;
+window._savedViewsRead = _savedViewsRead;
+window._savedViewsWrite = _savedViewsWrite;
+window._savedViews = _savedViews;
+window._sessionsGroupPrefixOptions = _sessionsGroupPrefixOptions;
+window._savedViewName = _savedViewName;
+window._sessionsCollapseKey = _sessionsCollapseKey;
+window._sessionsCollapsedRead = _sessionsCollapsedRead;
+window._sessionsCollapseWrite = _sessionsCollapseWrite;
+window._sessionsGroupPageLimit = _sessionsGroupPageLimit;
+window._automatonStoryKey = _automatonStoryKey;
+window.SESSIONS_COLLAPSED_KEY = SESSIONS_COLLAPSED_KEY;
+window.SESSIONS_SAVED_VIEWS_KEY = SESSIONS_SAVED_VIEWS_KEY;
+window.SESSIONS_GROUP_AXES = SESSIONS_GROUP_AXES;
+window.SESSIONS_GROUP_UNGROUPED = SESSIONS_GROUP_UNGROUPED;
+
+function renderSessionsModeToggle(mode) {
+  const defs = [
+    { key: 'list', label: _stx('sessions_view_list', 'List'), icon: '☰' },
+    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles'), icon: '▦' },
+    { key: 'compact', label: _stx('sessions_view_compact', 'Compact'), icon: '▤' },
+  ];
+  const btns = defs.map(d =>
+    `<button type="button" class="sessions-mode-btn${mode === d.key ? ' active' : ''}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
+  ).join('');
+  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
+}
+
+function renderSessionsSummaryBar(sessions) {
+  const rows = _sessionsSummaryCounts(sessions);
+  if (!rows.length) return '';
+  const dot = {
+    running: 'var(--success,#10b981)',
+    waiting_input: 'var(--warning,#f59e0b)',
+    rate_limited: 'var(--warning,#f59e0b)',
+    complete: 'var(--success,#10b981)',
+    failed: 'var(--error,#ef4444)',
+    killed: 'var(--text2,#9ca3af)',
+  };
+  const items = rows.map(r => {
+    const cur = r.state === state.sessionStateChip;
+    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(r.state)}')" title="${escHtml(r.state)}: ${r.count}${cur ? '' : ' — filter to this state'}">
+      <span class="sessions-summary-dot" style="color:${dot[r.state] || 'var(--text2,#9ca3af)'}">●</span>${escHtml(r.state)}
+      <span class="sessions-summary-count">${r.count}</span></button>`;
+  }).join('');
+  return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(_stx('sessions_total_label', 'sessions'))} ${escHtml(String(sessions.length))}</span></div>`;
+}
+
+// Sessions carry no task counts, so progress is lifecycle based: a finished
+// session fills the bar, a failed or stopped one shows how far it got (empty),
+// and a live session shows a half bar so it reads as in flight.
+function _sessionTileProgress(sess) {
+  const st = sess && sess.state;
+  if (st === 'complete') return { done: 1, total: 1 };
+  if (st === 'running' || st === 'waiting_input' || st === 'rate_limited') return { done: 1, total: 2 };
+  return { done: 0, total: 1 };
+}
+window._stx = _stx;
+window._sessionTileProgress = _sessionTileProgress;
+
+// One session as a work tile: name, state chip, backend · model, node or peer,
+// tags (shared overflow chip), last activity and progress — the session's
+// actions move into the ⋯ overflow menu, which renderWorkTile keeps visible
+// in every grid mode exactly because the tile carries menu items.
+function renderSessionTile(sess, nowMs) {
+  const now = Number(nowMs) > 0 ? Number(nowMs) : Date.now();
+  const fullId = sess.full_id || sess.id || '';
+  const shortId = sess.id || (sess.full_id || '').split('-').pop() || '????';
+  const stKey = (sess.state || 'unknown').replace(/[^a-z0-9_-]/gi, '');
+  const isActive = !DONE_STATES.has(sess.state);
+  const title = sess.name || sess.task || shortId;
+  const backend = [sess.backend_family, sess.llm_ref].filter(Boolean).join(' · ');
+  let menu = '';
+  if (isActive) {
+    menu += _tileMenuItem('■', _stx('sessions_tile_stop', 'Stop'), `killSession('${escHtml(fullId)}')`);
+    if (sess.state === 'waiting_input') {
+      menu += _tileMenuItem('⌨', _stx('sessions_quick_commands', 'Commands'), `showCardCmds('${escHtml(fullId)}')`);
+    }
+  } else {
+    menu += _tileMenuItem('↻', _stx('sessions_tile_restart', 'Restart'), `restartSession('${escHtml(fullId)}')`);
+    menu += _tileMenuItem('✕', _stx('sessions_tile_delete', 'Delete'), `deleteSession('${escHtml(fullId)}')`);
+  }
+  if (state._summarizerEnabled) {
+    menu += _tileMenuItem('🧠', _stx('sessions_tile_summary', 'Summary'), `manualSummarize('${escHtml(fullId)}')`);
+  }
+  menu += _tileMenuItem('👁', _stx('session_action_watch', 'Watch for updates'), `toggleSessionWatch('${escHtml(fullId)}')`);
+  menu += _tileMenuItem('🔕', _stx('session_action_mute', 'Mute notifications'), `toggleSessionMute('${escHtml(fullId)}')`);
+  const node = sess.hostname || sess.server || sess.compute_node_ref || '';
+  return renderWorkTile({
+    id: shortId,
+    rootId: 'sess-tile-' + fullId,
+    rootAttrs: ` data-sess-id="${escHtml(fullId)}"`,
+    onOpen: `navigate('session-detail', '${escHtml(fullId)}')`,
+    statusClass: 'prd-card-status-' + stKey,
+    statusHtml: `<span class="state state-badge-${stKey}" style="border:1px solid currentColor;border-radius:10px;padding:0 7px;font-size:10px;font-weight:600;line-height:1.5;white-space:nowrap;">${escHtml(sess.state || 'unknown')}</span>`,
+    title,
+    backend,
+    tagIds: [...(sess.tags || []), ...(sess.inherited_tags || [])],
+    tagsById: _tagsState.byId,
+    progress: _sessionTileProgress(sess),
+    updatedAt: sess.updated_at || sess.last_activity,
+    nowMs: now,
+    bodyHtml: node ? `<div class="session-tile-node">${escHtml(node)}</div>` : '',
+    menuHtml: menu,
+  });
+}
+window.renderSessionTile = renderSessionTile;
+
+// Both density variants draw through the same grid; compact is a fixed dense
+// row mode while tiles follows the width-based mode (and keeps following it
+// on resizes, see _tileSyncModes).
+function renderSessionTileGrid(innerHTML, mode) {
+  const compact = (mode === 'compact');
+  const gridMode = compact ? 'compact' : _tileRowMode(_tileViewportWidth());
+  return `<div class="work-tile-grid session-tile-grid${compact ? ' session-tile-grid-compact' : ''}" data-tile-mode="${gridMode}">${innerHTML}</div>`;
+}
+window.renderSessionTileGrid = renderSessionTileGrid;
+
+function _sessionsShowMoreHTML(paging) {
+  if (!paging.hasMore) return '';
+  return `<div class="sessions-show-more"><button type="button" class="btn-secondary" onclick="_sessionsShowMore()">${escHtml(_stx('sessions_show_more', 'Show more'))} (${paging.shownCount}/${paging.total})</button></div>`;
 }
 
 function _sessionsLoadMoreHtml() {
@@ -10139,6 +11010,14 @@ const DOCS_LINKS_BY_KEY = {
   llms: DOCS_DEFINITIONS + '#llm-registry',
   llm_config: DOCS_DEFINITIONS + '#llm-configuration-legacy',
   compute_nodes: DOCS_DEFINITIONS + '#compute-nodes',
+  // Settings → General → Compute placements (placement-ask policy: the
+  // missing-model action, headroom thresholds, ask expiry, and the
+  // pending ask queue with the per-node refusal lines)
+  gc_compute_placement: 'howto/compute-placement-ask.md',
+  compute_placement: 'howto/compute-placement-ask.md',
+  settings_compute_placement_missing_model: 'howto/compute-placement-ask.md',
+  placement_btn_approve: 'howto/compute-placement-ask.md',
+  placement_btn_deny: 'howto/compute-placement-ask.md',
   costrates: DOCS_DEFINITIONS + '#cost-rates-usd-1k-tokens',
   gc_clusterprofiles: DOCS_DEFINITIONS + '#cluster-profiles',
   lc_memory: 'memory.md#configuration',
@@ -10196,11 +11075,17 @@ const DOCS_LINKS_BY_KEY = {
   automata_skills: 'howto/skills-sync.md',
   automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
   settings_identity_backups_to_keep: DOCS_DEFINITIONS + '#identity-backups-and-restore',
+  settings_usage_entry_title: 'howto/usage-calculator.md',
+  settings_usage_entry_help: 'howto/burn-guard.md',
   settings_automata_questions_quality_mode: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_min_text_chars: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
+  // Housekeeping tab cards and actions.
+  unlanded_work_card: 'howto/automaton-worktree-cleanup.md#unlanded-branches-finished-work-that-never-reached-the-default-branch',
+  uncommitted_work_commit: 'howto/automaton-uncommitted-work.md',
+  cleanup_permission_fix: 'howto/automaton-worktree-cleanup.md#skipped-by-reason-permission-errors-and-the-fix',
   // Checks and ship status cards (Automation Overview) and their Settings groups.
   checks_findings_card: DOCS_DEFINITIONS + '#checks',
   ship_status_card: DOCS_DEFINITIONS + '#ship-steps',
@@ -10219,8 +11104,10 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.parallel.read_only_tasks': DOCS_DEFINITIONS + '#read-only-tasks',
   'autonomous.parallel.worktree_per_task': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.merge_conflict_policy': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.merge_retry_seconds': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  merge_blocked_card_title: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
@@ -10235,7 +11122,7 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.request_watch.raise_question': DOCS_DEFINITIONS + '#autonomous-request-watch-raise-question',
   'autonomous.request_watch.remediation_options': DOCS_DEFINITIONS + '#autonomous-request-watch-remediation-options',
   settings_automata_decisions_enabled: DOCS_DEFINITIONS + '#decision-record-settings',
-  settings_automata_decisions_folder: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_folder: 'howto/automaton-decision-records.md',
   settings_automata_decisions_folder_glob: DOCS_DEFINITIONS + '#decision-record-settings',
   settings_automata_decisions_front_matter_delimiter: DOCS_DEFINITIONS + '#decision-record-settings',
   settings_automata_decisions_front_matter_separator: DOCS_DEFINITIONS + '#decision-record-settings',
@@ -10867,7 +11754,7 @@ function renderSettingsView() {
         ${GENERAL_CONFIG_FIELDS.map(sec => {
           // BL247 — route pipeline/autonomous/orchestrator sections to Automata tab;
           // plugins section to Plugins tab; everything else stays in General.
-          const _automataIds = ['pipeline', 'autonomous', 'orchestrator'];
+          const _automataIds = ['pipeline', 'autonomous', 'orchestrator', 'usage_calculator', 'usage_burn_guard'];
           const grp = _automataIds.includes(sec.id) ? 'automata' : sec.id === 'plugins' ? 'plugins' : 'general';
           return `
         <div class="settings-section" data-group="${grp}" style="${stab!==grp?'display:none':''}">
@@ -10877,6 +11764,14 @@ function renderSettingsView() {
           </div>
         </div>`;
         }).join('')}
+
+        <!-- Usage reading and extra credit entry: the same forms and endpoints as the usage page. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('usage_entry', t('settings_usage_entry_title'), DOCS_LINKS_SETTINGS_USAGE_ENTRY)}
+          <div id="settings-sec-usage_entry" style="${secContent('usage_entry')}">
+            <div id="settingsUsageEntry" style="padding:4px 0;min-width:0;overflow-wrap:anywhere;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
 
         <!-- Requirements report + model pull consent cards (web setup view):
              the requirements report card shows the minimum versions the
@@ -15880,8 +16775,11 @@ window.judgeOutcomeCardHtml = function(prd) {
 window.reviewRejudge = async function(id, backend) {
   const body = { actor: 'operator' };
   if (backend) body.backend = backend;
+  let reply = null;
   try {
-    await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/rejudge', {
+    // The compact write view is the reply shape that carries `message`; the
+    // full view is the bare PRD with no message text.
+    reply = await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/rejudge?view=compact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -15890,7 +16788,14 @@ window.reviewRejudge = async function(id, backend) {
     showToast('Re-judgment failed: ' + String(err), 'error', 8000);
     throw err;
   }
-  showToast(t('review_timed_out_retry') || 'Re-judgment complete', 'success', 2500);
+  // The server words the reply (new review ran, or stored verdict reused and
+  // why), so show it long enough to read; no message keeps the short toast.
+  const replyMessage = reply && typeof reply.message === 'string' ? reply.message.trim() : '';
+  if (replyMessage) {
+    showToast(replyMessage, 'success', 6000);
+  } else {
+    showToast(t('review_timed_out_retry') || 'Re-judgment complete', 'success', 2500);
+  }
   if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
 };
 window.reviewRetry = function(id) { return window.reviewRejudge(id, ''); };
@@ -16747,6 +17652,7 @@ function renderTask(prd, story, task, editable) {
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
+    ${taskMergeBlockedLineHtml(task)}
     ${expandedBody}
   </div>`;
 }
@@ -18944,6 +19850,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'mcp.allow_self_config', label: 'Allow self-config', labelKey: 'settings.self_config.allow', helpKey: 'settings.self_config.allow_help', type: 'toggle' },
     { key: 'mcp.self_config_audit_path', label: 'Audit path', labelKey: 'settings.self_config.audit_path', type: 'text', placeholder: '<data dir>/audit/config-self-modify.jsonl' },
     { key: 'mcp.self_config_audit_denied', label: 'Record denied attempts', labelKey: 'settings.self_config.audit_denied', helpKey: 'settings.self_config.audit_denied_help', type: 'toggle' },
+    { key: 'mcp.allow_sensitive_writes', label: 'Allow sensitive writes', labelKey: 'settings.sensitive_writes.allow', helpKey: 'settings.sensitive_writes.allow_help', type: 'toggle' },
   ]},
   { id: 'autoupdate', section: 'Auto-Update', docs: 'howto/daemon-operations.md', fields: [
     { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
@@ -19063,10 +19970,25 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'compute_pin', section: 'Compute pin keeper', fields: [
     { key: 'pin_check_seconds', label: 'Pin check interval (sec, 0 = keeper off)', labelKey: 'settings_pin_check_seconds', type: 'number', min: 0, placeholder: '300' },
   ]},
+  // Compute placements — placement-ask policy. When a request names a
+  // model no node hosts, missing_model decides the fate of the request:
+  // ask = each one lands in the queue below for operator approval,
+  // auto_load = load onto a node with room, refuse = deny it. The
+  // headroom thresholds are the free memory/disk a node must still keep
+  // before a model is loaded. Fields save through saveGeneralField into
+  // the compute_placement block of /api/config (daemon defaults: ask,
+  // 10%, 5 GB, 30 min). The live ask queue + per-node refusal reasons
+  // render from GET /api/compute/placements (loadComputePlacementAsks).
+  { id: 'compute_placement', section: 'Compute placements', sectionKey: 'settings_compute_placement_section', docs: 'howto/compute-placement-ask.md', fields: [
+    { key: 'compute_placement.missing_model', label: 'Model not hosted: policy', labelKey: 'settings_compute_placement_missing_model', hintKey: 'settings_compute_placement_missing_model_hint', docsKey: 'gc_compute_placement', type: 'select', options: ['ask', 'auto_load', 'refuse'], optionLabelKeys: { ask: 'options_compute_placement_ask', auto_load: 'options_compute_placement_auto_load', refuse: 'options_compute_placement_refuse' } },
+    { key: 'compute_placement.mem_headroom_pct', label: 'Memory headroom to keep free (%)', labelKey: 'settings_compute_placement_mem_headroom_pct', type: 'number', min: 0, placeholder: '10' },
+    { key: 'compute_placement.disk_headroom_gb', label: 'Disk headroom to keep free (GiB)', labelKey: 'settings_compute_placement_disk_headroom_gb', type: 'number', min: 0, placeholder: '5' },
+    { key: 'compute_placement.ask_timeout_minutes', label: 'Ask expires after (min)', labelKey: 'settings_compute_placement_ask_timeout_minutes', type: 'number', min: 1, placeholder: '30' },
+  ]},
   // Usage calculator — the weekly-allowance advice. Variant picks how the advice
   // is drawn, policy picks the target it aims at; the rest feed the model.
   // optionLabelKeys shows a locale label for an option whose id is not for people.
-  { id: 'usage_calculator', section: 'Usage calculator', fields: [
+  { id: 'usage_calculator', section: 'Usage calculator', docs: 'howto/usage-calculator.md', fields: [
     { key: 'usage.calculator.variant', label: 'Usage calculator layout (pace-gauge | lane-planner | burn-ledger | all)', labelKey: 'settings_usage_calculator_variant', type: 'select', options: ['pace-gauge', 'lane-planner', 'burn-ledger', 'all'], default: 'all' },
     { key: 'usage.calculator.policy', label: 'Usage calculator policy', labelKey: 'settings_usage_calculator_policy', type: 'select', options: ['use-all', 'pace', 'finish-early'], default: 'use-all',
       optionLabelKeys: { 'use-all': 'settings_usage_calculator_policy_use_all', 'pace': 'settings_usage_calculator_policy_pace', 'finish-early': 'settings_usage_calculator_policy_finish_early' } },
@@ -19203,6 +20125,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.session_idle_timeout_seconds', label: 'Session idle timeout (sec, 0=15m)', labelKey: 'settings_session_idle_timeout', type: 'number', placeholder: '900' },
     { key: 'autonomous.descendant_stall_seconds', label: 'Descendant stall timeout (sec, 0=45m)', labelKey: 'settings_descendant_stall_seconds', type: 'number', placeholder: '2700' },
     { key: 'autonomous.session_start_confirm_seconds', label: 'Session start confirm (seconds)', labelKey: 'settings_session_start_confirm', type: 'number', placeholder: '120' },
+    { key: 'autonomous.planning_restart_policy', label: 'Planning restart policy', labelKey: 'settings_planning_restart_policy', helpKey: 'settings_planning_restart_policy_help', type: 'select', options: ['reattach', 'restart', 'draft'] },
     { key: 'autonomous.worker_idle_nudge_seconds', label: 'Worker idle nudge (sec, 0=3m)', labelKey: 'settings_worker_idle_nudge', type: 'number', placeholder: '180' },
     { key: 'autonomous.worker_idle_nudge_stall_seconds', label: 'Worker stall after nudge (sec, 0=10m)', labelKey: 'settings_worker_idle_nudge_stall', type: 'number', placeholder: '600' },
     // Worker loop detection window: how many of the worker's most recent
@@ -19456,6 +20379,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.parallel.merge_conflict_policy', label: 'Task merge conflict policy (additive_then_model, block or triage; default additive_then_model)', labelKey: 'settings_parallel_merge_conflict_policy', docsKey: 'autonomous.parallel.merge_conflict_policy', type: 'select', options: ['additive_then_model', 'block', 'triage'], default: 'additive_then_model',
       optionLabelKeys: { additive_then_model: 'parallel_policy_additive_then_model', block: 'parallel_policy_block', triage: 'parallel_policy_triage' } },
     { key: 'autonomous.parallel.merge_conflict_model', label: 'Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)', labelKey: 'settings_parallel_merge_conflict_model', docsKey: 'autonomous.parallel.merge_conflict_model', type: 'text', placeholder: '' },
+    { key: 'autonomous.parallel.merge_retry_seconds', label: 'Task merge retry interval (seconds between retries of a pending task merge; 0 = off; default 60)', labelKey: 'settings_parallel_merge_retry_seconds', helpKey: 'settings_parallel_merge_retry_seconds_help', docsKey: 'autonomous.parallel.merge_retry_seconds', type: 'number', min: 0, step: 1, default: 60 },
     { key: 'autonomous.parallel.read_only_tasks', label: 'Read-only tasks in parallel (a task flagged read only skips the tree lock and runs beside other tasks; on by default)', labelKey: 'settings_parallel_read_only_tasks', docsKey: 'autonomous.parallel.read_only_tasks', type: 'toggle' },
     // Supervisor loop (autonomous.supervisor_loop.*) — the loop that keeps every Automaton moving;
     // the keys are the plan's supervisor_loop.* keys, and the Supervisor loop card in the Automaton view reads it.
@@ -19556,6 +20480,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.post_ship.companion_repository', label: 'Companion repository (repository the parity_issue hook opens the issue in)', labelKey: 'settings_post_ship_companion_repository', hintKey: 'settings_post_ship_companion_repository_hint', docsKey: 'settings_post_ship_companion_repository', type: 'text', placeholder: 'owner/parity-tracker' },
     { key: 'autonomous.merge_pipeline.post_ship.issue_title_template', label: 'Issue title template (the title the parity_issue hook files; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_issue_title_template', hintKey: 'settings_post_ship_issue_title_template_hint', docsKey: 'settings_post_ship_issue_title_template', type: 'text', placeholder: 'Parity: {project} {version}' },
     { key: 'autonomous.merge_pipeline.post_ship.notify_template', label: 'Notify template (the message the notify hook sends; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_notify_template', hintKey: 'settings_post_ship_notify_template_hint', docsKey: 'settings_post_ship_notify_template', type: 'textarea' },
+    // Branch refresh — merge main into an Automaton branch between tasks.
+    { label: 'Branch refresh', labelKey: 'branch_refresh_settings_title', type: 'group' },
+    ...(typeof branchRefreshSettingsFields === 'function' ? branchRefreshSettingsFields() : []),
     // Merge shadow — the finish-time shadow merge plan: what merging an
     // Automaton's branch would do, kept per project for comparison with the
     // real merge. On by default (enabled=false turns the plan off); each field
@@ -21063,6 +21990,17 @@ function loadGeneralConfig() {
             <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('settings.self_config_recent_loading') || 'Loading…')}</div>
           </div>`;
         }
+        // Compute placements: the policy fields above save through
+        // saveGeneralField; the ask queue that follows is live engine
+        // state, so it renders from /api/compute/placements below and
+        // re-loads after each approve/deny decision.
+        if (sec.id === 'compute_placement') {
+          const _paTitle = t('settings_compute_placement_asks_title');
+          html += `<div id="place_asks" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+            <div style="font-weight:700;font-size:12px;color:var(--text);margin-bottom:4px;">${escHtml(_paTitle !== 'settings_compute_placement_asks_title' ? _paTitle : 'Pending placement decisions')}${defsLink('placement_btn_approve')}</div>
+            <div id="place_asks_body" style="font-size:11px;color:var(--text2);">…</div>
+          </div>`;
+        }
         el.innerHTML = html;
         if (sec.id === 'selfconfig' && typeof el.querySelector === 'function') {
           try { window.renderSelfConfigAuditRecent(el); } catch (_) { /* decorative; never block later sections */ }
@@ -21073,10 +22011,14 @@ function loadGeneralConfig() {
       // it current while Settings is open — the loop moves caps hourly, so
       // poll once a minute on the shared window handle (never a second).
       if (window._usageAutoLanesStatusInterval) { clearInterval(window._usageAutoLanesStatusInterval); window._usageAutoLanesStatusInterval = null; }
+      if (document.getElementById('settingsUsageEntry') && window.settingsUsageEntryLoad) window.settingsUsageEntryLoad(false);
       if (document.getElementById('gcfg_uc_autolanes_status') && window.refreshUsageAutoLanesStatus) {
         window.refreshUsageAutoLanesStatus();
         window._usageAutoLanesStatusInterval = setInterval(window.refreshUsageAutoLanesStatus, 60 * 1000);
       }
+      // The ask queue changes as asks expire or get decided — load it
+      // now that the card is in the DOM (no-op elsewhere).
+      if (document.getElementById('place_asks_body')) loadComputePlacementAsks();
     })
     .catch(e => {
       const msg = _fedMsg(e, null);
@@ -21675,6 +22617,83 @@ function _taskReviewPanelHTML(prd, task) {
     : '';
   return actions + window.infraRetryHeldCauseHtml(task) + _taskAttemptsHTML(task) + _failureEscalationEditorHTML(prd.id, task.id, task.failure_escalation);
 }
+
+// ── Compute placements (placement-ask queue) ──────────────────────────────
+// The Settings → General → Compute placements card holds the policy fields
+// (GENERAL_CONFIG_FIELDS, saved via saveGeneralField) plus this live queue:
+// every ask the engine has opened for a model no node hosts, each with the
+// per-node refusal reasons the planner recorded when it rejected nodes.
+// Approve/deny POST to /api/compute/placements/<id>/approve|deny and the
+// queue re-loads, so a decision shows without a page refresh.
+// _tOr — t()'s last resort is the key itself, so (t(k) || fallback) never
+// fires on a missing bundle; compare against the key instead.
+function _tOr(key, fallback) {
+  const s = t(key);
+  return (s && s !== key) ? s : fallback;
+}
+
+// placementAskRow renders one ask: the candidate node, the model it would
+// load (with its assumed size), the engine's per-node refusal lines (the
+// reason text carries one line per checked node, node name first), when
+// the ask expires, and the Approve/Deny buttons (decidePlacement).
+function placementAskRow(ask) {
+  const size = (ask.model_size_gb > 0) ? ` · ${ask.model_size_gb} GiB` : '';
+  const expires = ask.expires_at ? ` · expires ${escHtml(String(ask.expires_at))}` : '';
+  const buttons = (ask.decision === 'pending')
+    ? `<button class="btn-primary" style="font-size:11px;padding:2px 10px;" onclick="decidePlacement('${escHtml(ask.id)}','approve')">${escHtml(_tOr('placement_btn_approve', 'Approve'))}</button>
+       <button class="btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="decidePlacement('${escHtml(ask.id)}','deny')">${escHtml(_tOr('placement_btn_deny', 'Deny'))}</button>`
+    : `<span style="font-size:10px;color:var(--text2);">${escHtml(ask.decision || '')}${(ask.decided_at || ask.decided_by) ? ' · ' + escHtml(ask.decided_by || '') + escHtml(ask.decided_at ? ' ' + String(ask.decided_at) : '') : ''}</span>`;
+  return `<div style="padding:6px 0;border-bottom:1px solid var(--border);">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div><b>${escHtml(ask.node || '?')}</b> ← ${escHtml(ask.model || '?')}${size}${expires}</div>
+      <div style="display:flex;gap:6px;align-items:center;">${buttons}</div>
+    </div>
+    ${ask.reason ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;white-space:pre-line;">${escHtml(ask.reason)}</div>` : ''}
+  </div>`;
+}
+
+// loadComputePlacementAsks — fetch the open asks and render them into
+// #place_asks_body (the queue slot appended to the Compute placements
+// card by loadGeneralConfig). The server lists only pending asks (stale
+// ones are expired first), oldest first, so the queue shrinks as each
+// is decided. Renders the empty state when nothing is pending so the
+// operator can tell the queue is polled and merely quiet, not broken.
+function loadComputePlacementAsks() {
+  return apiFetch('/api/compute/placements').then(d => {
+    const body = document.getElementById('place_asks_body');
+    if (!body) return;
+    const asks = (d && Array.isArray(d.asks)) ? d.asks : [];
+    let html = '';
+    if (asks.length === 0) {
+      html += `<div>${escHtml(_tOr('settings_compute_placement_no_pending', 'No placement asks pending.'))}</div>`;
+    } else {
+      asks.forEach(a => { html += placementAskRow(a); });
+    }
+    body.innerHTML = html;
+  }).catch(() => {
+    const body = document.getElementById('place_asks_body');
+    if (!body) return;
+    body.innerHTML = `<span style="color:var(--error);">${escHtml(_tOr('settings_compute_placement_load_failed', 'Could not load placement asks.'))}</span>`;
+  });
+}
+window.loadComputePlacementAsks = loadComputePlacementAsks;
+
+// decidePlacement(id, mode) — record an operator decision (mode 'approve'
+// or 'deny') on an open ask. The daemon returns the updated ask; a 409
+// means it was already decided or expired since we loaded it. On every
+// outcome the queue re-renders so state stays honest.
+function decidePlacement(id, mode) {
+  apiFetch('/api/compute/placements/' + encodeURIComponent(id) + '/' + mode, { method: 'POST' })
+    .then(() => {
+      showToast(_tOr('settings_compute_placement_decided', 'Decision recorded'), 'success', 2500);
+      loadComputePlacementAsks();
+    })
+    .catch(e => {
+      showToast(_tOr('settings_compute_placement_decision_failed', 'Deciding the placement ask failed') + ': ' + (e && e.message ? e.message : String(e)), 'error', 5000);
+      loadComputePlacementAsks();
+    });
+}
+window.decidePlacement = decidePlacement;
 
 function saveGeneralConfigPut(key, value) {
   // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
@@ -26211,9 +27230,9 @@ function updateAlertBadge() {
 // The sub-tab a first visit to the Automata tab opens on: Automation is the
 // high-level view, and the operator digs deeper from there.
 const _AUTOMATA_DEFAULT_TAB = 'automation';
-// Sub-tabs of the Automata view, in button order. 'events' sits between
-// 'automata' and 'templates'.
-const _AUTOMATA_TABS = ['automation', 'automata', 'events', 'templates'];
+// Sub-tabs of the Automata view, in button order. 'projects' is first;
+// 'events' sits between 'automata' and 'templates'.
+const _AUTOMATA_TABS = ['projects', 'automation', 'automata', 'events', 'templates'];
 // Remembering the last chosen sub-tab is an undecided operator design
 // question: this switch stays off, so every visit starts on the default.
 const _AUTOMATA_REMEMBER_TAB = false;
@@ -26227,7 +27246,7 @@ function _automataInitialTab() {
   return _AUTOMATA_DEFAULT_TAB;
 }
 const _automataState = {
-  tab: _automataInitialTab(),      // 'automation' | 'automata' | 'events' | 'templates'
+  tab: _automataInitialTab(),      // 'projects' | 'automation' | 'automata' | 'events' | 'templates'
   historyOn: false,     // false = active-only; true = includes completed/rejected/cancelled/archived
   filterOpen: (localStorage.getItem('cs_automata_filter') === '1'),
   selectMode: false,    // BL246 v6.6.0 — per-card checkboxes hidden until Select toggled
@@ -27477,6 +28496,7 @@ function _automataFallbackFromAutomation() {
 }
 
 function _automataHeaderTitle() {
+  if (_automataNormalizeTab() === 'projects') return t('nav_projects') || 'Projects';
   return _automataNormalizeTab() === 'automation'
     ? (t('nav_automation') || 'Automation')
     : (t('automata_tab_automata') || 'Automata');
@@ -27544,6 +28564,10 @@ function switchAutomataTab(tab) {
     try { localStorage.setItem(_AUTOMATA_TAB_STORE_KEY, tab); } catch (_) { /* storage blocked */ }
   }
   st.selected.clear();
+  if (prev === 'events' && tab !== 'events') automataEventsStatusStop();
+  if (prev === 'projects' && tab !== 'projects') _automationStopLoaders();
+  // Leaving the Events sub-tab ends the polling of its card slots.
+  if (prev === 'events' && tab !== 'events') _automationSlotsStop('events');
   document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
@@ -27571,7 +28595,8 @@ function switchAutomataTab(tab) {
   }
   // Entering the list sub-tabs drops any Automaton detail capacity timer.
   if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
-  if (tab === 'events') renderAutomataEventsPanel();
+  if (tab === 'projects') renderProjectsView();
+  else if (tab === 'events') renderAutomataEventsPanel();
   else if (tab === 'templates') { _templatesSubtabsSyncActive(); _automataMountTmplSubtab(); }
   else _automataShowList();
 }
@@ -27774,10 +28799,14 @@ function renderAutomataEventsPanel() {
   panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
     <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}${automataEventsHelpLink('automata_events_help_tip')}</h3>
     ${automataEventsFilterHtml()}
+    ${automataEventsStatusHtml()}
     <div id="automataEventsList" style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>
     <div id="automataEventsMoreWrap" style="margin-top:8px;">
       <button type="button" id="automataEventsMore" data-events-more class="btn-secondary" style="font-size:12px;padding:4px 12px;display:none;">${escHtml(_automataEventsText('automata_events_load_more', 'Load more'))}</button>
       <span id="automataEventsMoreError" style="color:var(--error,#ef4444);font-size:12px;margin-left:8px;"></span>
+    </div>
+    <div id="automataEventsCards" class="automata-events-cards" style="margin-top:12px;">
+      ${_automationSlotsHTML('events')}
     </div>
   </div>`;
   const root = document.getElementById('automataEventsPanel');
@@ -27802,6 +28831,41 @@ function renderAutomataEventsPanel() {
     });
   }
   automataEventsReload();
+  automataEventsStatusStart();
+  // The cards registered for the Events sub-tab (the safe-to-delete report and
+  // the cleanup status) start their loaders now and end them when the tab is
+  // left (switchAutomataTab).
+  _automationSlotsMount('events');
+}
+
+// The Events tab hosts the status the operator reads: supervisor loop runs and
+// counts, release readiness, request watch, the onboarding report and the
+// merge shadow. A card that is off, empty or 'never' stays hidden. The loop
+// card polls only while the Events tab is shown.
+const _AUTOMATA_EVENTS_STATUS_IDS = ['automationOnboardingReportCard', 'automationSupervisorLoopCard', 'automationMergeShadowCard', 'automationReleaseReadinessCard', 'automationRequestWatchCard'];
+function automataEventsStatusHtml() {
+  const slots = _AUTOMATA_EVENTS_STATUS_IDS.map(id => `<div id="${id}" class="prd-capacity-slot" style="display:none;margin:6px 0 0;"></div>`).join('');
+  const link = `<div style="font-size:11px;margin-top:6px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(_automataEventsText('automata_events_config_in_settings', 'Automata configuration is in Settings under Automata'))}</a></div>`;
+  return `<div id="automataEventsStatus" style="margin-bottom:8px;">${slots}${link}</div>`;
+}
+// Show a slot only once its card drew content; hide it while it is empty.
+function automataEventsStatusPrune() {
+  _AUTOMATA_EVENTS_STATUS_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = el.innerHTML.trim() ? '' : 'none';
+  });
+}
+function automataEventsStatusStart() {
+  if (typeof listLoaderAll === 'function') {
+    try { listLoaderAll([_automationOnboardingReportLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]); } catch (_) { /* cards stay hidden */ }
+  }
+  if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
+  supervisorLoopStartPolling();
+  setTimeout(automataEventsStatusPrune, 1500);
+}
+function automataEventsStatusStop() {
+  supervisorLoopStopPolling();
+  _automationStopLoaders(['automation_onboarding_report', 'automation_release_readiness', 'automation_request_watch']);
 }
 
 // automataEventsHelpLink renders the '?' help anchor used by the Events tab,
@@ -28858,7 +29922,7 @@ function _renderDetailContent(prd) {
   const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd) + automatonReleaseBadgesHtml(prd),tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
   const tabStrip = _renderDetailTabStrip(prd, tab);
   let tabBody = '';
-  if (tab === 'overview') tabBody = _renderDetailOverview(prd);
+  if (tab === 'overview') tabBody = _renderDetailOverview(prd) + (typeof branchRefreshPanelHtml === 'function' ? branchRefreshPanelHtml(prd) : '');
   else if (tab === 'stories') tabBody = _renderDetailStories(prd);
   else if (tab === 'decisions') tabBody = _renderDetailDecisionsTab(prd);
   else if (tab === 'memory') tabBody = _renderDetailMemoryTab(prd); // GH#192 D77a
@@ -29533,45 +30597,145 @@ function _usageCalcMessage(text) {
 function _usageCalcWrite(method, path, body) {
   const opts = { method };
   if (body !== undefined) opts.body = JSON.stringify(body);
+  const inSettings = typeof document !== 'undefined' && !!document.getElementById('settingsUsageEntry');
   return apiFetch(path, opts)
-    .then(() => usageCalcRefresh())
+    .then(() => (inSettings ? window.settingsUsageEntryLoad(true) : usageCalcRefresh()))
     .catch(err => {
+      if (inSettings) {
+        _usageCalcMessage(t('usage_calc_error', [err && err.message ? err.message : String(err)]));
+        return;
+      }
       _usageCalc.error = err && err.message ? err.message : String(err);
       usageCalcRerender();
     });
 }
 
-// The frame: verdict first, then the variant switcher and the chosen variant,
-// then the reading, policy, extra-credit, remaining-work and counter sections.
-// opts: variant (the chosen switcher id), policy, error, loading, now (ms).
+// The usage page body: one plain-language verdict sentence above up to three small
+// cards (weekly allowance, pace line, burn per day). The reading and extra credit
+// forms live in Settings; this page only reads the advice body and draws it. A card
+// whose data is off, empty or never set is not drawn.
+// opts: error, loading.
+const USAGE_CALC_DOCS_HREF = '/diagrams.html#docs/howto/usage-calculator.md';
+window.usageCalcHelpToggle = function (btn) {
+  const pop = btn && btn.nextElementSibling;
+  if (!pop) return;
+  const open = pop.hasAttribute('hidden');
+  if (open) pop.removeAttribute('hidden'); else pop.setAttribute('hidden', '');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+};
+function _usageCalcHelpHtml(textKey) {
+  return `<span class="usage-help-wrap"><button type="button" class="usage-help" aria-expanded="false" aria-label="${escHtml(t('usage_page_help_label'))}" onclick="usageCalcHelpToggle(this)">?</button>` +
+    `<span class="usage-help-pop" role="note" hidden>${escHtml(t(textKey))} ` +
+    `<a class="usage-help-docs" href="${USAGE_CALC_DOCS_HREF}" target="_blank" rel="noopener">${escHtml(t('usage_page_help_docs'))}</a></span></span>`;
+}
+function _usageCalcHasNum(v) {
+  return v !== null && v !== undefined && v !== '' && isFinite(Number(v));
+}
+// One sentence from the verdict fields: the recent-burn verdict (the same chip logic),
+// or the week-average verdict when the recent one is not given.
+function _usageCalcSentence(a) {
+  const verdict = a.verdict === 'over' || a.verdict === 'within' ? a.verdict : (a.verdict_avg === 'over' || a.verdict_avg === 'within' ? a.verdict_avg : '');
+  const end = verdict && verdict === a.verdict ? a.projected_end_recent : a.projected_end_avg;
+  if (!verdict) return (a.advice && a.advice.headline) || t('usage_page_verdict_unknown');
+  return t(verdict === 'over' ? 'usage_page_verdict_over' : 'usage_page_verdict_within', [_usageCalcNum(a.percent, 0), _usageCalcNum(end, 0)]);
+}
+function _usageCalcCardHtml(id, titleKey, helpKey, state, why, next, chart) {
+  return `<div class="usage-card usage-card-${id}" data-card="${id}">` +
+    `<div class="usage-card-head"><span class="usage-card-title">${escHtml(t(titleKey))}</span>${_usageCalcHelpHtml(helpKey)}</div>` +
+    `<div class="usage-card-state">${escHtml(state)}</div>${chart || ''}` +
+    `<div class="usage-card-why">${escHtml(why)}</div><div class="usage-card-next">${escHtml(next)}</div></div>`;
+}
+function _usageCalcAllowanceCard(a) {
+  if (!_usageCalcHasNum(a.percent) || !(a.ceiling > 0)) return '';
+  const frac = Math.min(Math.max(Number(a.percent) / a.ceiling, 0), 1);
+  const chart = `<svg class="usage-card-chart" viewBox="0 0 100 8" preserveAspectRatio="none" role="img" aria-label="${escHtml(t('usage_calc_gauge_title'))}">` +
+    `<rect x="0" y="0" width="100" height="8" rx="2" style="fill:var(--bg2,#1e1e1e);"/>` +
+    `<rect data-fill="percent" x="0" y="0" width="${(frac * 100).toFixed(1)}" height="8" rx="2" style="fill:var(--accent,#3b82f6);"/></svg>`;
+  const extra = a.extra_credit_points || 0;
+  const over = a.verdict === 'over';
+  return _usageCalcCardHtml('allowance', 'usage_page_allowance_title', 'usage_page_allowance_help',
+    t('usage_page_allowance_state', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.ceiling, 0)]),
+    t('usage_page_allowance_why', [_usageCalcNum(a.ceiling, 0), _usageCalcNum(extra, 0)]),
+    over ? t('usage_page_allowance_next_over') : t('usage_page_allowance_next_ok'), chart);
+}
+function _usageCalcPaceCard(a) {
+  if (!_usageCalcHasNum(a.pace_line)) return '';
+  let chart = '';
+  const series = Array.isArray(a.series) ? a.series : [];
+  const from = Date.parse(a.last_reset_at);
+  const to = Date.parse(a.next_reset_at);
+  if (series.length && to > from) {
+    const W = 100, H = 30, ceil = a.ceiling > 0 ? a.ceiling : 100;
+    const x = at => Math.min(Math.max((Date.parse(at) - from) / (to - from), 0), 1) * W;
+    const y = v => H - Math.min(Math.max(Number(v) / ceil, 0), 1) * H;
+    const pts = series.map(s => `${x(s.at).toFixed(1)},${y(s.percent).toFixed(1)}`).join(' ');
+    chart = `<svg class="usage-card-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escHtml(t('usage_calc_series_title'))}">` +
+      `<line data-series="pace" x1="0" y1="${H}" x2="${W}" y2="0" style="stroke:var(--text2,#999);stroke-width:1;" vector-effect="non-scaling-stroke"/>` +
+      `<polyline data-series="readings" points="${pts}" style="fill:none;stroke:var(--accent,#3b82f6);stroke-width:2;" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+  const state = a.ahead_of_pace ? t('usage_page_pace_state_ahead', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.pace_line)])
+    : t('usage_page_pace_state_behind', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.pace_line), _usageCalcNum(a.headroom)]);
+  return _usageCalcCardHtml('pace', 'usage_page_pace_title', 'usage_page_pace_help', state,
+    t('usage_page_pace_why', [_usageCalcNum(a.days_since_reset, 1), _usageCalcNum(a.days_left, 1)]),
+    a.ahead_of_pace ? t('usage_page_pace_next_ahead') : t('usage_page_pace_next_ok'), chart);
+}
+function _usageCalcBurnCard(a) {
+  const daily = Array.isArray(a.daily) ? a.daily.filter(d => _usageCalcHasNum(d.points)) : [];
+  if (!daily.length || !(Number(a.recent_burn_per_24h) > 0 || Number(a.week_avg_burn_per_24h) > 0)) return '';
+  const W = 100, H = 30, n = daily.length;
+  const max = Math.max.apply(null, daily.map(d => Number(d.points)).concat([1]));
+  const bw = W / n;
+  const bars = daily.map((d, i) => {
+    const h = Math.max((Number(d.points) / max) * H, 1);
+    return `<rect data-bar="${i}" x="${(i * bw + 1).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${Math.max(bw - 2, 1).toFixed(1)}" height="${h.toFixed(1)}" style="fill:var(--accent,#3b82f6);"/>`;
+  }).join('');
+  const chart = `<svg class="usage-card-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escHtml(t('usage_calc_ledger_chart_title'))}">${bars}</svg>`;
+  const next = a.verdict === 'over' && a.advice && a.advice.lanes_suggested >= 0
+    ? t('usage_page_burn_next_over', [String(a.advice.lanes_suggested)]) : t('usage_page_burn_next_ok');
+  return _usageCalcCardHtml('burn', 'usage_page_burn_title', 'usage_page_burn_help',
+    t('usage_page_burn_state', [_usageCalcNum(a.recent_burn_per_24h)]),
+    t('usage_page_burn_why', [_usageCalcNum(a.week_avg_burn_per_24h)]), next, chart);
+}
+
+// The three cards by dashboard card type: one table, shared by the Resources row
+// and the built-in dashboard cards so they render identically at the bounded size.
+const USAGE_CARD_RENDERERS = {
+  'usage-allowance': _usageCalcAllowanceCard,
+  'usage-pace': _usageCalcPaceCard,
+  'usage-burn': _usageCalcBurnCard,
+};
+function _usageCalcCardsRowHtml(a) {
+  const cards = _usageCalcAllowanceCard(a) + _usageCalcPaceCard(a) + _usageCalcBurnCard(a);
+  return cards ? `<div class="usage-cards">${cards}</div>` : '';
+}
+window.usageCalcCardForType = function (type, advice) {
+  const fn = USAGE_CARD_RENDERERS[type];
+  return fn && advice && !advice.needs ? fn(advice) : '';
+};
+
 window.usageCalcFrameHtml = function (body, opts) {
   opts = opts || {};
   const res = body || null;
-  const variants = _usageCalcVariantList(res);
-  const active = _usageCalcActive(variants, opts.variant);
   const parts = [];
   parts.push(`<div class="usage-calc-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
-    `<div class="usage-calc-title" style="font-weight:600;">${escHtml(t('usage_calc_title'))}</div>` +
+    `<div class="usage-calc-title" style="font-weight:600;">${escHtml(t('usage_calc_title'))} ${_usageCalcHelpHtml('usage_calc_intro')}</div>` +
     `<button type="button" class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="usageCalcRefresh()">${escHtml(t('usage_calc_refresh'))}</button></div>`);
-  parts.push(`<div class="usage-calc-intro" style="font-size:12px;color:var(--text2);margin:4px 0 8px;">${escHtml(t('usage_calc_intro'))}</div>`);
-  if (opts.error) parts.push(`<div class="usage-calc-error" role="alert" style="color:var(--error,#ef4444);font-size:12px;margin-bottom:8px;">${escHtml(t('usage_calc_error', [opts.error]))}</div>`);
+  if (opts.error) parts.push(`<div class="usage-calc-error" role="alert" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(t('usage_calc_error', [opts.error]))}</div>`);
   if (!res) {
     if (!opts.error) parts.push(`<div class="usage-calc-loading" style="color:var(--text2);font-size:12px;">${escHtml(t('usage_calc_loading'))}</div>`);
   } else if (res.advice && res.advice.needs) {
-    parts.push(`<div class="usage-calc-empty" style="padding:12px 0;"><div style="font-weight:600;">${escHtml(t('usage_calc_empty_title'))}</div>` +
-      `<div style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_empty_body'))}</div></div>`);
+    parts.push(`<div class="usage-calc-empty"><div style="font-weight:600;">${escHtml(t('usage_calc_empty_title'))}</div>` +
+      `<div style="font-size:12px;color:var(--text2);">${escHtml(t('usage_page_empty_body'))}</div></div>`);
   } else if (res.advice) {
-    parts.push(_usageCalcVerdictHtml(res, active));
-    if (variants.length > 1) parts.push(_usageCalcSwitcherHtml(variants, active));
-    parts.push(_usageCalcVariantBody(res, active, opts));
+    const a = res.advice;
+    parts.push(`<div class="usage-verdict-sentence" role="status">${escHtml(_usageCalcSentence(a))}</div>`);
+    if (a.recent_fallback) parts.push(`<div class="usage-calc-notice" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(a.fallback_notice || t('usage_calc_fallback_default'))}</div>`);
+    if (res.stale) parts.push(`<div class="usage-calc-stale" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(t('usage_calc_stale', [res.keeper || t('usage_calc_keeper_generic'), _usageCalcClock(res.copied_at)]))}</div>`);
+    const row = _usageCalcCardsRowHtml(a);
+    if (row) parts.push(row);
   }
-  parts.push(_usageCalcReadingForm(res, opts));
-  if (res && res.advice && !res.advice.needs) parts.push(_usageCalcVariantHook(window.usageCalcInputNotes, active, res));
-  parts.push(_usageCalcPolicyForm(res, opts));
-  parts.push(_usageCalcExtraForm(res));
-  parts.push(_usageCalcRemainingForm(res));
+  parts.push(`<div class="usage-settings-link" style="font-size:12px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(t('usage_page_settings_link'))}</a></div>`);
   parts.push(`<div id="burnGuardCard">${window.burnGuardCardHtml(window._burnGuard && window._burnGuard.status, window._burnGuard && window._burnGuard.config, { error: window._burnGuard && window._burnGuard.error, message: window._burnGuard && window._burnGuard.message })}</div>`);
-  parts.push(_usageCalcCounterHtml(res, active));
   return `<div class="usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
 };
 
@@ -29753,6 +30917,28 @@ window.usageCalcSaveExtraCredit = function () {
   const built = usageCalcPointsBody(el ? el.value : '');
   if (built.error) return _usageCalcMessage(built.error);
   return _usageCalcWrite('PUT', '/api/usage/extra-credit', built.body);
+};
+
+// Settings -> Automata -> Usage reading and extra credit. The panel reuses
+// _usageCalcReadingForm and _usageCalcExtraForm and the same save functions,
+// so it posts to /api/usage/readings and /api/usage/extra-credit exactly as
+// the usage page does.
+const DOCS_LINKS_SETTINGS_USAGE_ENTRY = 'howto/usage-calculator.md';
+window.settingsUsageEntryHtml = function (res, savedMsg) {
+  return `<div class="settings-usage-entry" style="display:flex;flex-direction:column;gap:12px;">` +
+    `<div style="font-size:12px;color:var(--text2);">${escHtml(t('settings_usage_entry_intro'))}</div>` +
+    _usageCalcReadingForm(res, {}) + _usageCalcExtraForm(res) +
+    `<div id="settingsUsageEntrySaved" role="status" style="font-size:12px;color:var(--text2);">${escHtml(savedMsg || '')}</div></div>`;
+};
+window.settingsUsageEntryLoad = function (saved) {
+  const el = document.getElementById('settingsUsageEntry');
+  if (!el) return Promise.resolve();
+  return apiFetch('/api/usage/advice')
+    .then(body => { el.innerHTML = window.settingsUsageEntryHtml(body, saved ? t('settings_usage_entry_saved') : ''); })
+    .catch(err => {
+      el.innerHTML = window.settingsUsageEntryHtml(null, '');
+      _usageCalcMessage(t('usage_calc_error', [err && err.message ? err.message : String(err)]));
+    });
 };
 
 // The remaining work is the estimate (queued tasks times the cost per task)
@@ -30866,56 +32052,142 @@ function _laneFillKindModesHtml(base, modes) {
     .filter(p => p[1]).map(p => t('lane_fill_kind_modes_part', [t(p[0]), label(p[1])]));
   return `<div class="lane-fill-kind-modes" style="margin-top:4px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_kind_modes', [parts.join('; ')]))}</div>`;
 }
+// One lane is one row: lane name, node, state and what it runs, then a small
+// bounded bar (full when working, half when waiting on a verifier, empty when
+// idle). The bar has a fixed maximum width so it never stretches.
+const LANE_BAR_LEVEL = { occupied: 100, waiting_verifier: 50, idle: 0 };
 function _laneFillLaneHtml(l) {
   const occupied = l.state === 'occupied';
   const waitingVerifier = l.state === 'waiting_verifier';
   const typeKey = _laneFillKey(LANE_FILL_TYPE_KEYS, l.type);
   const typeLabel = typeKey ? t(typeKey) : String(l.type || '');
-  const stateLabel = t(waitingVerifier ? 'lane_fill_state_waiting_verifier'
-    : (occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle'));
-  const waiting = Number(l.eligible_waiting) > 0
-    ? `<span class="lane-fill-waiting" style="color:var(--accent2,var(--text));font-weight:600;">&#9203; ${escHtml(t('lane_fill_waiting', [Number(l.eligible_waiting)]))}</span>` : '';
-  // A lane that works and a lane that waits must read differently: show why
-  // the verifier slot is taken, escaped. Absent or empty reason = label only.
-  const waitReason = waitingVerifier
-    ? String(l.wait_reason || (l.occupant && l.occupant.wait_reason) || '').trim() : '';
-  const waitReasonHtml = waitReason
-    ? `<span class="lane-fill-wait-reason" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_waiting_verifier_reason', [waitReason]))}</span>` : '';
-  const occupant = (occupied || waitingVerifier) && l.occupant
+  const stateKey = waitingVerifier ? 'lane_fill_state_waiting_verifier' : (occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle');
+  const level = waitingVerifier ? LANE_BAR_LEVEL.waiting_verifier : (occupied ? LANE_BAR_LEVEL.occupied : LANE_BAR_LEVEL.idle);
+  const node = String(l.node || (l.occupant && l.occupant.node) || '').trim();
+  const runs = (occupied || waitingVerifier) && l.occupant
     ? [l.occupant.title, l.occupant.backend].filter(Boolean).join(' · ') : '';
-  const blocker = l.blocker ? `<div style="color:var(--text2);">${escHtml(t('lane_fill_blocked', [l.blocker]))}</div>` : '';
-  return `<div class="lane-fill-lane" style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
-    `<span style="font-weight:600;overflow-wrap:anywhere;">${escHtml(l.id)} · ${escHtml(typeLabel)}</span>` +
-    `<span>${escHtml(stateLabel)}</span>${waiting}${waitReasonHtml}` +
-    `<div style="flex-basis:100%;min-width:0;overflow-wrap:anywhere;">${occupant ? `<div>${escHtml(occupant)}</div>` : ''}${blocker}</div></div>`;
+  const waitReason = waitingVerifier ? String(l.wait_reason || (l.occupant && l.occupant.wait_reason) || '').trim() : '';
+  const notes = [];
+  if (l.blocker) notes.push(['lane-fill-blocker', t('lane_fill_blocked', [l.blocker])]);
+  if (waitReason) notes.push(['lane-fill-wait-reason', t('lane_fill_waiting_verifier_reason', [waitReason])]);
+  if (Number(l.eligible_waiting) > 0) notes.push(['lane-fill-waiting', t('lane_fill_waiting', [Number(l.eligible_waiting)])]);
+  const notesHtml = notes.map(n => `<span class="${n[0]}">${escHtml(n[1])}</span>`).join(' — ');
+  const cell = (cls, txt) => `<span class="lane-row-${cls}">${escHtml(txt)}</span>`;
+  return `<div class="lane-fill-lane lane-row" data-lane-state="${escHtml(l.state || 'idle')}">` +
+    cell('name', `${l.id} · ${typeLabel}`) +
+    cell('node', node ? t('lane_fill_node', [node]) : t('lane_fill_node_none')) +
+    cell('state', t(stateKey)) +
+    `<span class="lane-bar" role="img" aria-label="${escHtml(t(stateKey))}"><span class="lane-bar-fill" style="width:${level}%;"></span></span>` +
+    `<span class="lane-row-runs">${escHtml(runs)}${notesHtml ? (runs ? ' — ' : '') + notesHtml : ''}</span></div>`;
 }
 function _laneFillAlertHtml(a) {
   const message = a.message ? ` — ${a.message}` : '';
   return `<div class="lane-fill-alert" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
     `<span style="color:var(--text2);">${escHtml(_laneFillClock(a.at))}</span> ${escHtml(a.lane_id)} · ${escHtml(a.work)}${escHtml(message)}</div>`;
 }
+// _resourceHelpHtml is the '?' entry of a Resources or Progress card: a small
+// button that opens a note with a link to the docs page.
+function _resourceHelpHtml(textKey, href) {
+  return `<span class="usage-help-wrap"><button type="button" class="usage-help" aria-expanded="false" aria-label="${escHtml(t('usage_page_help_label'))}" onclick="usageCalcHelpToggle(this)">?</button>` +
+    `<span class="usage-help-pop" role="note" hidden>${escHtml(t(textKey))} ` +
+    `<a class="usage-help-docs" href="${escHtml(href)}" target="_blank" rel="noopener">${escHtml(t('usage_page_help_docs'))}</a></span></span>`;
+}
+const LANE_FILL_DOCS_HREF = '/diagrams.html#docs/howto/automata-resources.md';
 window.laneFillCardHtml = function(status, cap) {
-  const head = `<div class="cap-title">${escHtml(t('lane_fill_card_title'))}</div>`;
-  if (!status || typeof status !== 'object') {
-    return `<div class="prd-capacity-card lane-fill-card">${head}<div style="color:var(--text2);">${escHtml(t('lane_fill_empty'))}</div></div>`;
-  }
+  // A card that is off, empty or never read is not drawn.
+  if (!status || typeof status !== 'object') return '';
   const lanes = Array.isArray(status.lanes) ? status.lanes : [];
-  const lanesHtml = lanes.length ? lanes.map(_laneFillLaneHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_lanes'))}</div>`;
+  if (!lanes.length || status.mode === 'off') return '';
+  const head = `<div class="cap-title card-head">${escHtml(t('lane_fill_card_title'))} ${_resourceHelpHtml('lane_fill_help_text', LANE_FILL_DOCS_HREF)}</div>`;
+  const lanesHtml = lanes.map(_laneFillLaneHtml).join('');
   const queued = status.queued_eligible || {};
-  const queuedLine = `<div style="margin-top:6px;">${escHtml(t('lane_fill_queued', [Number(queued.gpu) || 0, Number(queued.claude) || 0]))}</div>`;
+  const queuedLine = `<div class="lane-fill-queued">${escHtml(t('lane_fill_queued', [Number(queued.gpu) || 0, Number(queued.claude) || 0]))}</div>`;
   const ev = status.evidence || {};
   const models = (Array.isArray(ev.loaded_models) ? ev.loaded_models : []).map(m => `${m.host} ${m.model}`).join(', ');
   const evidenceLine = ev.error
     ? t('lane_fill_evidence_error', [ev.error])
     : t('lane_fill_evidence', [Number(ev.gpu_active_sessions) || 0, models || t('lane_fill_evidence_none')]);
-  const evidence = `<div style="margin-top:6px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(evidenceLine)}</div>`;
+  const evidence = `<div class="lane-fill-evidence">${escHtml(evidenceLine)}</div>`;
+  // The recent decisions log is not part of this card: its data is on the
+  // Events tab. The idle lane alerts stay, in their own block below the lanes.
   const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
-  const alertsHtml = alerts.length ? alerts.map(_laneFillAlertHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_alerts'))}</div>`;
-  return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
-    _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
-    `<div class="lane-fill-gap" aria-hidden="true" style="height:14px;"></div>` +
-    _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
+  const alertsHtml = alerts.length
+    ? `<div class="lane-fill-gap" aria-hidden="true"></div>` + _laneFillSection(t('lane_fill_alerts_heading'), alerts.map(_laneFillAlertHtml).join('')) : '';
+  return `<div class="prd-capacity-card lane-fill-card lane-card">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
+    `<div class="lane-rows">${lanesHtml}</div>` + queuedLine + evidence + alertsHtml + `</div>`;
 };
+
+// ── Headline cards (progress, cost, forecast) ───────────────────────────────
+// metricCardHtml(spec) draws one fixed-size card: the headline number large,
+// its unit labelled beneath, and the trend. spec: {id, titleKey, helpKey,
+// docs, value (number or text), unitKey, trend ('up'|'down'|'flat')}. A value
+// that is missing (off, empty or never measured) draws nothing at all.
+const METRIC_TREND_KEYS = { up: 'metric_trend_up', down: 'metric_trend_down', flat: 'metric_trend_flat' };
+const METRIC_TREND_MARK = { up: '\u25B2', down: '\u25BC', flat: '\u25B6' };
+window.metricCardHtml = function(spec) {
+  if (!spec || spec.value === null || spec.value === undefined || spec.value === '') return '';
+  if (typeof spec.value === 'number' && !isFinite(spec.value)) return '';
+  const dir = _laneFillKey(METRIC_TREND_KEYS, spec.trend);
+  const trend = dir
+    ? `<div class="metric-card-trend metric-trend-${escHtml(spec.trend)}">${METRIC_TREND_MARK[spec.trend]} ${escHtml(t(dir))}</div>` : '';
+  return `<div class="metric-card" id="${escHtml(spec.id)}Body" data-metric="${escHtml(spec.id)}">` +
+    `<div class="metric-card-head card-head"><span class="metric-card-title">${escHtml(t(spec.titleKey))}</span> ${_resourceHelpHtml(spec.helpKey, spec.docs)}</div>` +
+    `<div class="metric-card-value">${escHtml(String(spec.value))}</div>` +
+    `<div class="metric-card-unit">${escHtml(t(spec.unitKey))}</div>${trend}</div>`;
+};
+const METRIC_PROGRESS_DOCS = '/diagrams.html#docs/howto/automata-progress.md';
+const METRIC_COST_DOCS = '/diagrams.html#docs/howto/automata-cost.md';
+function _metricTrendOf(dir) {
+  return dir === 'converging' ? 'down' : (dir === 'widening' ? 'up' : (dir === 'flat' ? 'flat' : ''));
+}
+// metricCardSpecs turns the decoded progress body, the progress trend body and
+// the cost body into the three card specs. Missing parts give a spec with no value.
+window.metricCardSpecs = function(progress, trend, cost, prevCost) {
+  const tot = (progress && progress.totals) || {};
+  const comp = (progress && progress.completion) || {};
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
+  const done = num(tot.tasks_done);
+  const total = num(tot.tasks);
+  const trendDir = _metricTrendOf(trend && trend.direction);
+  const usd = num(cost && cost.total_usd);
+  let costTrend = '';
+  if (usd !== null && num(prevCost) !== null) costTrend = usd > prevCost ? 'up' : (usd < prevCost ? 'down' : 'flat');
+  const lo = num(comp.low_days), hi = num(comp.high_days);
+  return [
+    { id: 'automationProgressHeadline', titleKey: 'metric_progress_title', helpKey: 'metric_progress_help', docs: METRIC_PROGRESS_DOCS,
+      value: done !== null && total !== null && total > 0 ? `${done} / ${total}` : null, unitKey: 'metric_progress_unit', trend: trendDir },
+    { id: 'automationCostBillingCard', titleKey: 'metric_cost_title', helpKey: 'metric_cost_help', docs: METRIC_COST_DOCS,
+      value: usd !== null && usd > 0 ? '$' + usd.toFixed(2) : null, unitKey: 'metric_cost_unit', trend: costTrend },
+    { id: 'automationCompletionForecastCard', titleKey: 'metric_forecast_title', helpKey: 'metric_forecast_help', docs: METRIC_PROGRESS_DOCS,
+      value: lo !== null && hi !== null ? `${Number(lo.toFixed(1))}\u2013${Number(hi.toFixed(1))}` : null, unitKey: 'metric_forecast_unit', trend: trendDir },
+  ];
+};
+// _metricCardsPaint draws each spec into its slot and hides a slot whose card is empty.
+function _metricCardsPaint(specs) {
+  specs.forEach(sp => {
+    const el = document.getElementById(sp.id);
+    if (!el) return;
+    const html = window.metricCardHtml(sp);
+    el.innerHTML = html;
+    el.style.display = html ? '' : 'none';
+  });
+}
+function _metricCardsLoad() {
+  const get = (u) => Promise.resolve(apiFetch(u)).catch(() => null);
+  return Promise.all([get('/api/autonomous/progress'), get('/api/autonomous/progress/trend?days=14'), get('/api/cost')]).then(([pr, tr, co]) => {
+    const prev = window._metricPrevCost;
+    if (co && typeof co.total_usd === 'number') window._metricPrevCost = co.total_usd;
+    _metricCardsPaint(window.metricCardSpecs(pr, tr, co, prev));
+  });
+}
+function _metricCardsStart() {
+  _metricCardsStop();
+  _metricCardsLoad();
+  window._metricCardsInterval = setInterval(_metricCardsLoad, 30000);
+}
+function _metricCardsStop() {
+  if (window._metricCardsInterval) { clearInterval(window._metricCardsInterval); window._metricCardsInterval = null; }
+}
 
 // ── Infrastructure retries card ─────────────────────────────────────────────
 // infraRetryCardHtml(status) turns the decoded GET /api/autonomous/infra-retries
@@ -31531,6 +32803,7 @@ function _automationHelpLinkHtml(helpKey, anchor) {
   return `<a class="automation-card-help" href="/diagrams.html#docs/howto/automation-tab.md${anchor}" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
 }
 window.triageCardHtml = function(record) {
+  if (record && typeof record === 'object' && record.status === 'merge_blocked') return window.mergeBlockedTriageCardHtml(record);
   _triageBindClick();
   const head = `<div style="display:flex;align-items:center;gap:8px;min-width:0;"><div class="cap-title">${escHtml(t('triage_card_title'))}</div>${_automationHelpLinkHtml('automation_help_triage_card', '#the-needs-attention-card')}</div>`;
   if (!record || typeof record !== 'object') {
@@ -31942,12 +33215,8 @@ function _decisionRecordFolderLine(folder) {
     .filter(p => p && typeof p === 'object' && (p.file || p.message));
   const issueBits = issues.map(p =>
     `${t('decision_record_folder_issue') || 'issue'} ${p.file || ''}${p.message ? ': ' + p.message : ''}`);
-  if (!folder.enabled) {
-    const bits = [t('decision_record_folder_off') || 'Folder watch is off'];
-    if (folder.path) bits.push(String(folder.path));
-    bits.push(...issueBits);
-    return `<div class="decision-record-folder decision-record-folder-off" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(bits.join(' · '))}</div>`;
-  }
+  // Folder watch off is shown in Settings only, never on the card.
+  if (!folder.enabled) return '';
   const bits = [];
   if (folder.path) bits.push(String(folder.path));
   bits.push(`${folder.files_seen || 0} ${t('decision_record_folder_files') || 'files read'}`);
@@ -31965,12 +33234,9 @@ window.decisionRecordCardHtml = function(view) {
     return `<div class="prd-capacity-card decision-record-card" style="min-width:0;">${head}<div class="decision-record-loading" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_loading') || 'Loading…')}</div></div>`;
   }
   const recs = Array.isArray(view.decision_records) ? view.decision_records : [];
-  let body;
-  if (recs.length === 0) {
-    body = `<div class="decision-record-empty" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_empty') || 'No decision records yet.')}</div>`;
-  } else {
-    body = recs.map(_decisionRecordRow).join('');
-  }
+  // No decision records: the card renders nothing.
+  if (recs.length === 0) return '';
+  const body = recs.map(_decisionRecordRow).join('');
   return `<div class="prd-capacity-card decision-record-card" style="min-width:0;">${head}${body}${_decisionRecordFolderLine(view.folder)}</div>`;
 };
 
@@ -32097,6 +33363,71 @@ function taskMergeBadgeHtml(task) {
   return `<span class="prd-task-llm-badge prd-task-merge-badge prd-task-merge-${state}" title="${escHtml(tip)}" style="border:1px solid ${color};color:${color};">${escHtml(label)}</span>`;
 }
 window.taskMergeBadgeHtml = taskMergeBadgeHtml;
+
+// ── Merge-blocked line and triage item ──────────────────────────────────────
+// A task whose merge into the Automaton branch cannot proceed carries
+// merge_block { kind, reason, action, files, since, attempts }. The task card
+// shows one short line with the reason and the next action, and nothing when
+// the merge is not blocked. A Triage record with status merge_blocked lists
+// the blocked tasks in merge_blocks { task_id, task_title, reason, action,
+// since, attempts }; the item says what it is, why, how long and the action,
+// and is selectable. Every value is escaped; the help entry opens the glossary.
+function mergeBlockedHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('merge_blocked_help_link');
+  return ` <a href="/diagrams.html#docs/datawatch-definitions.md#parallel-task-worktrees" target="_blank" rel="noopener noreferrer" class="docs-link merge-blocked-help" onclick="event.stopPropagation()" title="${escHtml(label)}">?</a>`;
+}
+function _mergeBlockedAge(since) {
+  const ms = Date.parse(since);
+  if (isNaN(ms) || ms < 0) return '';
+  const mins = Math.max(0, Math.floor((Date.now() - ms) / 60000));
+  if (mins < 1) return t('merge_blocked_age_now');
+  if (mins < 60) return t('merge_blocked_age_minutes', [mins]);
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return t('merge_blocked_age_hours', [hrs]);
+  return t('merge_blocked_age_days', [Math.floor(hrs / 24)]);
+}
+function taskMergeBlockedLineHtml(task) {
+  const b = task && typeof task === 'object' ? task.merge_block : null;
+  if (!b || typeof b !== 'object') return '';
+  const reason = typeof b.reason === 'string' ? b.reason.trim() : '';
+  const action = typeof b.action === 'string' ? b.action.trim() : '';
+  if (!reason && !action) return '';
+  const text = t('merge_blocked_line', [reason || t('merge_blocked_reason_unknown'), action || t('merge_blocked_action_unknown')]);
+  return `<div class="prd-task-merge-blocked" style="font-size:12px;color:var(--warning,#a06b00);padding:2px 8px;min-width:0;overflow-wrap:anywhere;">${escHtml(text)}${mergeBlockedHelpLink()}</div>`;
+}
+window.taskMergeBlockedLineHtml = taskMergeBlockedLineHtml;
+window.mergeBlockedTriageCardHtml = function(record) {
+  const r = record && typeof record === 'object' ? record : {};
+  const blocks = Array.isArray(r.merge_blocks) ? r.merge_blocks.filter(b => b && typeof b === 'object') : [];
+  const id = String(r.prd_id || '');
+  const color = 'var(--warning,#a06b00)';
+  const line = (text) => `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+  const rows = blocks.map(b => {
+    const age = _mergeBlockedAge(b.since);
+    return `<div class="merge-blocked-row" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+      `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(String(b.task_title || b.task_id || ''))}</div>` +
+      line(t('merge_blocked_why', [String(b.reason || t('merge_blocked_reason_unknown'))])) +
+      (age ? line(t('merge_blocked_how_long', [age])) : '') +
+      line(t('merge_blocked_next_action', [String(b.action || t('merge_blocked_action_unknown'))])) + `</div>`;
+  }).join('');
+  const head = `<div class="cap-title">${escHtml(t('merge_blocked_card_title'))}${mergeBlockedHelpLink()}</div>`;
+  const name = `<div style="margin-top:4px;font-weight:600;overflow-wrap:anywhere;">${escHtml(r.prd_title || r.prd_id || '')} ` +
+    `<span class="triage-status-chip triage-status-merge-blocked" style="display:inline-block;padding:1px 8px;border:1px solid ${color};border-radius:10px;font-size:11px;font-weight:700;color:${color};">${escHtml(t('merge_blocked_status'))}</span></div>`;
+  const owner = r.automation_name ? line(t('automation_triage_owner', [r.automation_name])) : '';
+  const what = line(t('merge_blocked_what'));
+  return `<div class="prd-capacity-card triage-card triage-merge-blocked" data-triage-id="${escHtml(id)}" role="button" tabindex="0" aria-pressed="false" ` +
+    `onclick="window.triageToggleSelect(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.triageToggleSelect(this);}" style="min-width:0;cursor:pointer;">` +
+    `${head}${name}${owner}${what}${rows}</div>`;
+};
+window.triageToggleSelect = function(el) {
+  if (!el || !el.classList) return false;
+  const on = !el.classList.contains('triage-selected');
+  el.classList.toggle('triage-selected', on);
+  el.setAttribute('aria-pressed', on ? 'true' : 'false');
+  el.style.outline = on ? '2px solid var(--accent,#4a90d9)' : '';
+  return on;
+};
 
 // ── Parallel execution metrics card ─────────────────────────────────────────
 // An Automaton records, when it completes, how many tasks it had (total_tasks),
@@ -32238,7 +33569,8 @@ window.safeDeleteCardHtml = function(report) {
 // ── Automata cleanup status card ─────────────────────────────────────────────
 // cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
 // { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
-// bytes_freed, last_error, owner_removed, net_removed, ...}, disk_alert_percent,
+// skipped_by_reason: {reason: count}, bytes_freed, last_error, owner_removed,
+// net_removed, ...}, disk_alert_percent,
 // worktree_disk, temp_disk: {path, percent, alert}, disk_alert,
 // last_disk_alert_at }. It is read-only: the mode and limits are changed in the
 // Automata settings. A missing or malformed body reads as a status that has
@@ -32264,6 +33596,14 @@ function _cleanupPassHtml(title, pass) {
       _cleanupLine(t('cleanup_counts', [n('removed'), n('would_remove'), n('skipped'), n('failed')])),
       _cleanupLine(t('cleanup_bytes_freed', [_cleanupBytesT(p.bytes_freed)])),
     );
+    // The entries the pass left in place, grouped by skip reason (for example
+    // commits_not_on_base 3, held 2), most frequent first.
+    const byReason = (p.skipped_by_reason && typeof p.skipped_by_reason === 'object') ? p.skipped_by_reason : {};
+    const reasons = Object.keys(byReason).filter(k => Number(byReason[k]) > 0)
+      .sort((a, b) => (Number(byReason[b]) - Number(byReason[a])) || a.localeCompare(b));
+    if (reasons.length) {
+      lines.push(_cleanupLine(t('cleanup_skipped_by_reason', [reasons.map(k => _cleanupSkipReasonText(k) + ' ' + Number(byReason[k])).join(', ')])));
+    }
   }
   lines.push(_cleanupLine(t('cleanup_split', [n('owner_removed'), n('net_removed')])));
   lines.push(p.last_error
@@ -32296,7 +33636,8 @@ window.cleanupCardHtml = function(status) {
     _cleanupPassHtml(t('cleanup_pass_worktrees'), s.worktrees) +
     _cleanupPassHtml(t('cleanup_pass_temp'), s.temp) +
     `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;"><span style="font-weight:600;color:var(--text2);">${escHtml(t('cleanup_disk_heading'))}</span>${badge}</div>` +
-    `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div></div>`;
+    `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div>` +
+    window.cleanupPermissionHtml(s) + `</div>`;
 };
 
 // ── Automata protected-paths card ────────────────────────────────────────────
@@ -32556,12 +33897,14 @@ function _uncommittedWorkEntryHtml(e) {
   if (entry.reason) lines.push(_cleanupLine(t('uncommitted_work_reason', [String(entry.reason)])));
   if (held) lines.push(_cleanupLine(t('uncommitted_work_held_since', [held])));
   const open = _uncommittedWorkQuestionButton(entry.question_id);
+  const commit = entry.worktree
+    ? `<button type="button" class="btn-secondary uncommitted-work-commit" data-worktree="${escHtml(String(entry.worktree))}" style="font-size:11px;padding:3px 10px;" onclick="window.uncommittedWorkCommitOpen(this)">${escHtml(t('uncommitted_work_commit'))}</button>` : '';
   return `<div class="uncommitted-work-row" data-kind="${isTask ? 'task' : 'worktree'}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
     `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(heading)}</div>` +
     _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
     _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', outside, 'uncommitted-work-outside') +
     lines.join('') +
-    (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+    ((open || commit) ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${open}${commit}</div>` : '') + `</div>`;
 }
 
 window.uncommittedWorkCardHtml = function(status) {
@@ -32614,6 +33957,154 @@ window.uncommittedWorkBannerHtml = function(automaton) {
     _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
     _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', _uncommittedWorkStrings(h.outside_scope), 'uncommitted-work-outside') +
     reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+};
+
+// ── Housekeeping actions: commit, unlanded work, permission fix ─────────────
+// _housekeepingPost sends one action and reports a failure as one line.
+function _housekeepingPost(path, body) {
+  return apiFetch(path, { method: 'POST', body: JSON.stringify(body || {}) });
+}
+function _housekeepingRefresh(keys) {
+  keys.forEach(k => { const c = window._listLoaders && window._listLoaders[k]; if (c && c.load) c.load(); });
+}
+function _housekeepingErr(key, err) {
+  const msg = String((err && err.message) || err || '').trim();
+  if (typeof showToast === 'function') showToast(t(key, [msg]), 'error');
+}
+
+// uncommittedWorkCommitOpen shows what a commit would record and a message
+// field, and commits only when the operator confirms.
+window.uncommittedWorkCommitOpen = function(btn) {
+  const wt = btn && btn.getAttribute ? btn.getAttribute('data-worktree') : '';
+  if (!wt) return;
+  const existing = document.getElementById('uncommittedCommitModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'uncommittedCommitModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="confirm-modal" style="max-width:720px;width:92vw;min-width:0;">
+    <div style="font-weight:600;margin-bottom:6px;">${escHtml(t('uncommitted_work_commit_title'))}${_housekeepingHelpLink('uncommitted_work_commit', 'uncommitted_work_commit_help_link')}</div>
+    <div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;margin-bottom:6px;"><code>${escHtml(wt)}</code></div>
+    <pre id="uncommittedCommitDiff" style="max-height:40vh;overflow:auto;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 8px;">${escHtml(t('uncommitted_work_commit_diff_loading'))}</pre>
+    <label for="uncommittedCommitMsg" style="font-size:12px;">${escHtml(t('uncommitted_work_commit_message'))}</label>
+    <textarea id="uncommittedCommitMsg" rows="3" style="width:100%;box-sizing:border-box;margin:4px 0 8px;"></textarea>
+    <div id="uncommittedCommitErr" style="color:var(--error,#c00);font-size:12px;overflow-wrap:anywhere;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" id="uncommittedCommitCancel" style="font-size:12px;padding:4px 16px;">${escHtml(t('uncommitted_work_commit_cancel'))}</button>
+      <button type="button" class="btn-stop" id="uncommittedCommitGo" disabled style="font-size:12px;padding:4px 16px;">${escHtml(t('uncommitted_work_commit_submit'))}</button>
+    </div></div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  document.getElementById('uncommittedCommitCancel').onclick = close;
+  const go = document.getElementById('uncommittedCommitGo');
+  const err = document.getElementById('uncommittedCommitErr');
+  const pre = document.getElementById('uncommittedCommitDiff');
+  apiFetch('/api/autonomous/uncommitted-work/diff?worktree=' + encodeURIComponent(wt)).then(r => {
+    if (r && r.clean) { pre.textContent = t('uncommitted_work_commit_clean'); return; }
+    pre.textContent = String((r && r.diff) || '');
+    go.disabled = false;
+  }).catch(e => { pre.textContent = ''; err.textContent = t('uncommitted_work_commit_failed', [String((e && e.message) || e || '')]); });
+  go.onclick = () => {
+    go.disabled = true; err.textContent = '';
+    _housekeepingPost('/api/autonomous/uncommitted-work/commit', { worktree: wt, message: document.getElementById('uncommittedCommitMsg').value.trim() })
+      .then(() => { close(); _housekeepingRefresh(['automation_uncommitted_work', 'automation_unlanded_work']); })
+      .catch(e => { go.disabled = false; err.textContent = t('uncommitted_work_commit_failed', [String((e && e.message) || e || '')]); });
+  };
+};
+
+// _housekeepingHelpLink is the small '?' help link on a Housekeeping card or
+// action. It resolves through docsLinkForKey and follows the Settings
+// "show inline doc links" preference.
+function _housekeepingHelpLink(key, labelKey) {
+  const target = docsLinkForKey(key);
+  if (!target) return '';
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t(labelKey);
+  return ` <a href="/diagrams.html#docs/${target}" target="_blank" rel="noopener noreferrer" class="docs-link housekeeping-help" onclick="event.stopPropagation()" title="${escHtml(label)}">?</a>`;
+}
+
+// ── Unlanded work card ───────────────────────────────────────────────────────
+// unlandedWorkCardHtml(data) draws GET /api/autonomous/unlanded-work:
+// { branches: [{automaton_id, branch, title, commits, last_activity,
+// recommendation, reason}] }. An empty list reads as nothing to show.
+const UNLANDED_WORK_RECS = { needs_decision: 'unlanded_work_rec_decide', decide: 'unlanded_work_rec_decide', superseded: 'unlanded_work_rec_superseded', landed: 'unlanded_work_rec_landed' };
+function _unlandedWorkBranches(data) {
+  const b = data && typeof data === 'object' ? data.branches : null;
+  return (Array.isArray(b) ? b : []).filter(x => x && typeof x === 'object' && x.branch);
+}
+window.unlandedWorkCardHtml = function(data) {
+  const list = _unlandedWorkBranches(data);
+  if (!list.length) return '';
+  const btn = (act, key) => `<button type="button" class="btn-secondary unlanded-work-${act}" style="font-size:11px;padding:3px 10px;" onclick="window.unlandedWorkAct(this,'${act}')">${escHtml(t(key))}</button>`;
+  const rows = list.map(e => {
+    const recKey = UNLANDED_WORK_RECS[String(e.recommendation || '')];
+    const rec = recKey ? t(recKey) : String(e.recommendation || '');
+    const when = _triageTime(e.last_activity);
+    return `<div class="unlanded-work-row" data-branch="${escHtml(String(e.branch))}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+      `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(String(e.title || e.branch))}</div>` +
+      _cleanupLine(t('unlanded_work_purpose', [String(e.title || e.branch)])) +
+      _cleanupLine(t('unlanded_work_commits', [Number(e.commits) || 0])) +
+      (when ? _cleanupLine(t('unlanded_work_last_activity', [when])) : '') +
+      _cleanupLine(t('unlanded_work_recommendation', [rec]) + (e.reason ? ' — ' + String(e.reason) : '')) +
+      `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${btn('keep', 'unlanded_work_keep')}${btn('archive', 'unlanded_work_archive')}${btn('delete', 'unlanded_work_delete')}</div></div>`;
+  }).join('');
+  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${rows}</div>`;
+};
+
+window.unlandedWorkAct = function(btn, act) {
+  const row = btn && btn.closest ? btn.closest('.unlanded-work-row') : null;
+  const branch = row ? row.getAttribute('data-branch') : '';
+  if (!branch) return;
+  const paths = { keep: 'keep', archive: 'archive-branch', delete: 'delete-worktree' };
+  const run = () => {
+    btn.disabled = true;
+    _housekeepingPost('/api/autonomous/unlanded-work/' + paths[act], act === 'delete' ? { branch, confirm: true } : { branch })
+      .then(() => _housekeepingRefresh(['automation_unlanded_work']))
+      .catch(e => { btn.disabled = false; _housekeepingErr('unlanded_work_action_failed', e); });
+  };
+  if (act === 'delete') showConfirmModal(t('unlanded_work_delete_confirm', [branch]), run); else run();
+};
+
+function _automationUnlandedWorkLoader() {
+  return window._listLoaders.automation_unlanded_work || listLoader({
+    key: 'automation_unlanded_work', el: 'automationStaleWorktreesCard', url: '/api/autonomous/unlanded-work', pollMs: 30000,
+    failedText: msg => t('unlanded_work_failed', [msg]),
+    active: () => !!document.getElementById('automationStaleWorktreesCard'),
+    render: data => {
+      const h = window.unlandedWorkCardHtml(data);
+      const el = document.getElementById('automationStaleWorktreesCard');
+      if (el) el.style.display = h ? '' : 'none';
+      return h;
+    },
+  });
+}
+
+// _cleanupSkipReasonText names a skip reason in the operator's language and
+// falls back to the raw reason name when no label exists for it.
+function _cleanupSkipReasonText(reason) {
+  const key = 'cleanup_skip_reason_' + reason;
+  const text = t(key);
+  return (text && text !== key) ? text : String(reason);
+}
+// cleanupPermissionHtml shows one line of why and a Fix button for a
+// permission problem, and nothing for a harmless one.
+window.cleanupPermissionHtml = function(status) {
+  const s = (status && typeof status === 'object') ? status : {};
+  const w = (s.worktrees && typeof s.worktrees === 'object') ? s.worktrees : {};
+  const iss = s.permission_issue || w.permission_issue;
+  if (!iss || typeof iss !== 'object' || iss.hidden || !(Number(iss.count) > 0)) return '';
+  const fix = iss.fixable
+    ? ` <button type="button" class="btn-secondary cleanup-permission-fix" style="font-size:11px;padding:3px 10px;" data-paths="${escHtml(JSON.stringify(Array.isArray(iss.paths) ? iss.paths : []))}" onclick="window.cleanupPermissionFix(this)">${escHtml(t('cleanup_permission_fix'))}</button>` : '';
+  return `<div class="cleanup-permission" style="margin-top:8px;min-width:0;overflow-wrap:anywhere;">${escHtml(String(iss.why || ''))}${fix}${_housekeepingHelpLink('cleanup_permission_fix', 'cleanup_permission_help_link')}</div>`;
+};
+window.cleanupPermissionFix = function(btn) {
+  let paths = [];
+  try { paths = JSON.parse(btn.getAttribute('data-paths') || '[]'); } catch (e) { paths = []; }
+  btn.disabled = true;
+  _housekeepingPost('/api/autonomous/cleanup/fix-permissions', { paths })
+    .then(() => _housekeepingRefresh(['automation_cleanup']))
+    .catch(e => { btn.disabled = false; _housekeepingErr('cleanup_permission_fix_failed', e); });
 };
 
 // ── Platform context settings card ──────────────────────────────────────────
@@ -35901,6 +37392,7 @@ function renderAutonomousView() {
            All action buttons share the .automata-action-btn class for
            consistent sizing + padding (defined in style.css). -->
       <div class="output-tabs automata-tabs-bar">
+        <button class="output-tab ${st.tab==='projects'?'active':''}" data-tab="projects" onclick="switchAutomataTab('projects')">${escHtml(t('nav_projects'))}</button>
         ${state._autonomousEnabled === false ? '' : `<button class="output-tab ${st.tab==='automation'?'active':''}" data-tab="automation" onclick="switchAutomataTab('automation')">${escHtml(t('nav_automation'))}</button>`}
         <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
         <button class="output-tab ${st.tab==='events'?'active':''}" data-tab="events" onclick="switchAutomataTab('events')">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}</button>
@@ -35932,7 +37424,8 @@ function renderAutonomousView() {
   } else {
     const reuse = _automataReuseList;
     _automataReuseList = false;
-    if (st.tab === 'events') renderAutomataEventsPanel();
+    if (st.tab === 'projects') renderProjectsView();
+    else if (st.tab === 'events') renderAutomataEventsPanel();
     else if (st.tab === 'templates') _automataMountTmplSubtab();
     else if (reuse) _automataShowList();
     else loadAutomataPanel();
@@ -36035,6 +37528,9 @@ const _AUTOMATION_DEFAULT_SUBTAB = 'inbox';
 // the same tab again replaces the earlier slot.
 const _AUTOMATION_CARD_SLOTS = {
   inbox: [], automations: [], resources: [], progress: [], setup: [], housekeeping: [],
+  // 'events' is the Automata Events sub-tab, which renders its slots under the
+  // event stream (renderAutomataEventsPanel) and stops them when the tab is left.
+  events: [],
 };
 
 function registerAutomationCardSlot(tabId, slot) {
@@ -36079,26 +37575,38 @@ function _automationPlaceholderHTML(id) {
   ['resources', 'automationLaneUtilizationCard', 100],
   ['resources', 'automationVerifierSlotsCard', 110],
   ['progress', 'automationAllProjectsGanttCard', 100],
-  ['progress', 'automationCostBillingCard', 110],
-  ['progress', 'automationCompletionForecastCard', 120],
-  ['setup', 'automationProjectPolicyCard', 100],
-  ['setup', 'automationDecomposeLintCard', 110],
-  ['setup', 'automationPriorityByKindCard', 120],
-  ['setup', 'automationGroupingTagsCard', 130],
-  ['setup', 'automationSupervisorLoopCard', 140],
-  ['housekeeping', 'automationStaleWorktreesCard', 100],
 ].forEach(([tab, id, order]) => registerAutomationCardSlot(tab, { id, order, html: _automationPlaceholderHTML(id) }));
-// The Supervisor loop card fills the Setup placeholder reserved above: it keeps
-// the slot id, order and hidden placeholder markup (it un-hides on the first read), and polls only
-// while the Setup sub-tab is shown.
-registerAutomationCardSlot('setup', {
-  id: 'automationSupervisorLoopCard',
-  order: 140,
-  html: _automationPlaceholderHTML('automationSupervisorLoopCard'),
-  mount: () => supervisorLoopStartPolling(),
-  stop: () => supervisorLoopStopPolling(),
+// The three headline cards sit in one row on the Progress tab; the cost slot
+// starts and stops the shared loader. Each card hides itself when it has no value.
+registerAutomationCardSlot('progress', { id: 'automationProgressHeadline', order: 105, html: '<div id="metricCardRow" class="metric-cards"><div id="automationProgressHeadline" style="display:none;"></div><div id="automationCostBillingCard" style="display:none;"></div><div id="automationCompletionForecastCard" style="display:none;"></div></div>',
+  mount: _metricCardsStart, stop: _metricCardsStop });
+// The Unlanded work card fills the Housekeeping slot: hidden until the list
+// has a row, and polled only while the Housekeeping sub-tab is shown.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationStaleWorktreesCard',
+  order: 100,
+  html: _automationPlaceholderHTML('automationStaleWorktreesCard'),
+  mount: () => listLoaderAll([_automationUnlandedWorkLoader()]),
+  stop: () => _automationStopLoaders(['automation_unlanded_work']),
 });
-
+// The safe-to-delete report and the cleanup status render under the event
+// stream on the Automata Events sub-tab (the Housekeeping sub-tab keeps only
+// its action cards). Both keep their loaders and poll only while the Events
+// sub-tab is shown.
+registerAutomationCardSlot('events', {
+  id: 'automationSafeDeleteCard',
+  order: 100,
+  html: `<div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => listLoaderAll([_automationSafeDeleteLoader()]),
+  stop: () => _automationStopLoaders(['automation_safe_delete']),
+});
+registerAutomationCardSlot('events', {
+  id: 'automationCleanupCard',
+  order: 110,
+  html: `<div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => listLoaderAll([_automationCleanupLoader()]),
+  stop: () => _automationStopLoaders(['automation_cleanup']),
+});
 // The Inbox sub-tab counts everything waiting on the operator, from the data
 // its own loaders already fetch: triage items, open questions, held questions,
 // security failures and open supervisor-watch findings. The counts live here
@@ -36270,27 +37778,6 @@ const _AUTOMATION_SUBTABS = [
     stop() { _automationSlotsStop('progress'); },
   },
   {
-    id: 'setup',
-    labelKey: 'automation_subtab_setup',
-    bodyHTML: () => `<div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationMergeShadowCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationReleaseReadinessCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      ${_automationSlotsHTML('setup')}`,
-    mount() {
-      listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationReleaseReadinessLoader(), _automationRequestWatchLoader()]);
-      // The merge shadow card is a plain one-shot read (no list chrome), so it
-      // has no loader entry; it renders nothing when the shadow is off or empty.
-      if (typeof window.loadMergeShadowCard === 'function') window.loadMergeShadowCard();
-      _automationSlotsMount('setup');
-    },
-    stop() {
-      _automationStopLoaders(['automation_onboarding_report', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_request_watch']);
-      _automationSlotsStop('setup');
-    },
-  },
-  {
     id: 'housekeeping',
     labelKey: 'automation_subtab_housekeeping',
     bodyHTML: () => `<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
@@ -36306,6 +37793,13 @@ const _AUTOMATION_SUBTABS = [
     },
   },
 ];
+
+// _automationNormalizeSubtab makes an unknown stored or deep-linked sub-tab id
+// (such as the removed 'setup') fall back to the default sub-tab.
+function _automationNormalizeSubtab() {
+  if (!_AUTOMATION_SUBTABS.some(s => s.id === _automationState.subtab)) _automationState.subtab = _AUTOMATION_DEFAULT_SUBTAB;
+  return _automationState.subtab;
+}
 
 // The second-row sub-tab bar: the fixed automation-subtabs classes and the
 // data-subtab attribute are the contract for the styles, the node tests and
@@ -36331,6 +37825,7 @@ function _automationSubtabsBarHTML() {
 // The Automation sub-tab's body: the second-row sub-tab bar first, then the
 // body of the sub-tab that is selected.
 function _automationBodyHTML() {
+  _automationNormalizeSubtab();
   const st = _automationState;
   const def = _AUTOMATION_SUBTABS.find(s => s.id === st.subtab)
     || _AUTOMATION_SUBTABS.find(s => s.id === _AUTOMATION_DEFAULT_SUBTAB)
@@ -36346,6 +37841,7 @@ function _automationMount() {
   // A fresh render has not loaded anything yet: the empty state waits for a
   // load that succeeds after this point.
   _automationState.loaded = false;
+  _automationNormalizeSubtab();
   const def = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab) || _AUTOMATION_SUBTABS[0];
   def.mount();
   // The Inbox count badge stays current behind the other sub-tabs.
@@ -36357,7 +37853,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -36390,6 +37886,7 @@ function _automationSubtabsReveal() {
 window._automationSubtabsReveal = _automationSubtabsReveal;
 
 function switchAutomationSubtab(id) {
+  _automationNormalizeSubtab();
   const def = _AUTOMATION_SUBTABS.find(s => s.id === id);
   if (!def) return;
   if (_automataNormalizeTab() !== 'automation') return;
@@ -36469,7 +37966,12 @@ function _automationLaneFillLoader() {
     key: 'automation_lane_fill', el: 'automationLaneFillCard', url: '/api/autonomous/lane-fill?limit=20', pollMs: 5000,
     failedText: msg => t('lane_fill_failed', [msg]),
     active: () => !!document.getElementById('automationLaneFillCard'),
-    render: status => window.laneFillCardHtml(status, window._lastAutomationCapacity),
+    render: status => {
+      const html = window.laneFillCardHtml(status, window._lastAutomationCapacity);
+      const el = document.getElementById('automationLaneFillCard');
+      if (el) el.style.display = html ? '' : 'none';
+      return html;
+    },
   });
 }
 
@@ -37013,8 +38515,8 @@ function _automationMergePipelineLoader() {
   });
 }
 
-// _automationSafeDeleteLoader reads the safe-to-delete report on the Housekeeping
-// sub-tab. The read runs git, so it polls slowly; its failed state is the list
+// _automationSafeDeleteLoader reads the safe-to-delete report on the Automata
+// Events sub-tab (its card slot sits under the event stream). The read runs git, so it polls slowly; its failed state is the list
 // loader's banner. The card is a report only and offers no action.
 function _automationSafeDeleteLoader() {
   return window._listLoaders.automation_safe_delete || listLoader({
@@ -37028,8 +38530,8 @@ function _automationSafeDeleteLoader() {
   });
 }
 
-// _automationCleanupLoader reads the cleanup status on the Housekeeping sub-tab,
-// beside the safe-to-delete report. The status is in memory on the server, so
+// _automationCleanupLoader reads the cleanup status on the Automata Events
+// sub-tab, beside the safe-to-delete report. The status is in memory on the server, so
 // it polls at a modest rate; its failed state is the list loader's banner. The
 // card is read-only and offers no action.
 function _automationCleanupLoader() {
@@ -37042,7 +38544,7 @@ function _automationCleanupLoader() {
 }
 
 // _automationUncommittedWorkLoader reads the uncommitted-work holds on the
-// Housekeeping sub-tab, beside the cleanup card. The read is built from the stored
+// Housekeeping sub-tab. The read is built from the stored
 // Automata and makes no git call, so it polls at the cleanup rate; its failed
 // state is the list loader's banner. The card is read-only.
 function _automationUncommittedWorkLoader() {
@@ -37050,7 +38552,13 @@ function _automationUncommittedWorkLoader() {
     key: 'automation_uncommitted_work', el: 'automationUncommittedWorkCard', url: '/api/autonomous/uncommitted-work', pollMs: 30000,
     failedText: msg => t('uncommitted_work_failed', [msg]),
     active: () => !!document.getElementById('automationUncommittedWorkCard'),
-    render: status => window.uncommittedWorkCardHtml(status),
+    render: status => {
+      const held = status && Array.isArray(status.held) ? status.held.length : 0;
+      const off = status && status.policy === 'off';
+      const el = document.getElementById('automationUncommittedWorkCard');
+      if (el) el.style.display = (held && !off) ? '' : 'none';
+      return (held && !off) ? window.uncommittedWorkCardHtml(status) : '';
+    },
   });
 }
 
@@ -37308,7 +38816,9 @@ function supervisorLoopCardHtml(jobsBody, runsBody) {
 function supervisorLoopRenderCard(jobsBody, runsBody) {
   const el = document.getElementById(SUPERVISOR_LOOP_CARD_ELEMENT_ID);
   if (!el) return;
-  const html = supervisorLoopCardHtml(jobsBody, runsBody);
+  const runs = runsBody && Array.isArray(runsBody.runs) ? runsBody.runs : [];
+  // A loop that is off or has never run is not shown.
+  const html = (jobsBody && jobsBody.enabled === false && !runs.length) || !runs.length ? null : supervisorLoopCardHtml(jobsBody, runsBody);
   if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.innerHTML = html;
   el.style.display = '';
@@ -44040,6 +45550,11 @@ document.addEventListener('DOMContentLoaded', () => {
       _automataState.tab = 'automation';
       _initView = state._autonomousEnabled === false ? 'sessions' : 'autonomous';
     }
+    // A stored 'projects' view or a #projects hash restores into the Automata
+    // Projects sub-tab; navigate maps the old view name onto it.
+    // A projects hash wins over a stored 'autonomous' view (Projects visits
+    // persist 'autonomous') as well as over no stored view.
+    if ((!_initView || _initView === 'autonomous') && _projectsHashParse(_projectsCurrentHash()) !== null) _initView = 'projects';
     navigate(_initView || 'sessions', _initSession || undefined);
 
     // A saved link to the Automation list or one Automation lands on the
@@ -45348,6 +46863,14 @@ const DASH_CARD_DEFS = [
   { id: 'websearch-usage', label: 'Search Usage', icon: '🔎', defaultCs: 3,
     body: () => '<div id="dashWebSearchUsageCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 
+  // The three small usage cards (one shared renderer, bounded size).
+  { id: 'usage-allowance', label: 'Weekly allowance', labelKey: 'dash_card_usage_allowance', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-allowance" style="height:100%;overflow:auto;"></div>' },
+  { id: 'usage-pace', label: 'Pace line', labelKey: 'dash_card_usage_pace', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-pace" style="height:100%;overflow:auto;"></div>' },
+  { id: 'usage-burn', label: 'Burn per day', labelKey: 'dash_card_usage_burn', icon: '📈', defaultCs: 3,
+    body: () => '<div class="dash-usage-card" data-usage-card="usage-burn" style="height:100%;overflow:auto;"></div>' },
+
   // Cost report card — token (and, when the daemon reports it, USD) spend
   // grouped by automaton / automation / backend / week. Data:
   // GET /api/cost/report; controls in the card: group select, window
@@ -45632,6 +47155,7 @@ function _dashBuildGrid(layout) {
   _dashRenderWebSearchUsage();
   _dashFetchCostReport();
   _dashRenderCostReport();
+  _dashRenderUsageCards();
   _dashRenderConsole();
   // Operator console: prime/refresh the one shared summary payload whenever
   // the board carries at least one console card; per-tick refresh then
@@ -46261,6 +47785,17 @@ window._costReportSetDays = function(v) {
   c.userTouched = true;
   window._costReportRefresh();
 };
+
+// Usage cards: one GET of /api/usage/advice fills every usage card on the board.
+function _dashRenderUsageCards() {
+  const els = document.querySelectorAll ? document.querySelectorAll('[data-usage-card]') : [];
+  if (!els || !els.length) return;
+  const fill = advice => els.forEach(el => {
+    el.innerHTML = window.usageCalcCardForType(el.getAttribute('data-usage-card'), advice) ||
+      `<div style="font-size:11px;color:var(--text2);padding:6px 8px;">${escHtml(t('usage_calc_empty_title'))}</div>`;
+  });
+  Promise.resolve(apiFetch('/api/usage/advice')).then(b => fill(b && b.advice ? b.advice : {})).catch(() => fill({}));
+}
 
 function _dashRenderCostReport() {
   const el = document.getElementById('dashCostReportCard');
@@ -50210,38 +51745,36 @@ function _sessionPlacementSelActive(tag) {
   return sel.some(key => key === tag || ((_tagsState.byId || {})[key] && _tagsState.byId[key].name === tag));
 }
 
-// _sessionGroupHeaderHTML is one group's header: the tag, its session count
-// and a filter toggle.
-function _sessionGroupHeaderHTML(axis, tag, count, selActive) {
-  const countLabel = count === 1 ? (t('session_group_count_one') || '1 session') : (String(count) + ' ' + (t('session_group_count_other') || 'sessions'));
-  const countHtml = `<span style="font-size:11px;color:var(--text2);">${escHtml(countLabel)}</span>`;
+// _sessionGroupFilterButtonHTML is the tag-filter toggle at the right edge of a
+// session group header; the header itself is the shared _listGroupHeaderHTML.
+function _sessionGroupFilterButtonHTML(axis, tag, selActive) {
   const filterLabel = selActive ? (_tagT('session_group_filter_off', 'Show all sessions') || 'Show all sessions') : (_tagT('session_group_filter_on', 'Only this tag') || 'Only this tag');
-  return `<div class="sessions-group-header" style="display:flex;align-items:center;gap:8px;padding:5px 12px;margin:12px 8px 4px;background:color-mix(in srgb, var(--success,#10b981) 10%, transparent);border-left:3px solid var(--success,#10b981);border-radius:4px;"><span style="font-size:12px;font-weight:700;color:var(--text);">⚙️ ${escHtml(tag)}</span>${countHtml}<button type="button" class="${selActive ? 'btn-primary' : 'btn-secondary'}" style="margin-left:auto;font-size:11px;padding:2px 10px;border-radius:10px;" onclick="_sessionGroupTagClick('${escJsAttr(axis)}','${escJsAttr(tag)}')">${escHtml(filterLabel)}</button></div>`;
+  return `<button type="button" class="${selActive ? 'btn-primary' : 'btn-secondary'}" style="margin-left:auto;font-size:11px;padding:2px 10px;border-radius:10px;" onclick="_sessionGroupTagClick('${escJsAttr(axis)}','${escJsAttr(tag)}')">${escHtml(filterLabel)}</button>`;
 }
 
 // _sessionsGroupCards renders a flat session list grouped by the given
 // placement axis; sessions with no tag on that axis fall under an untagged
 // group (header only shown when the list also has tagged groups).
 function _sessionsGroupCards(sessions, axis) {
-  const groups = {};
-  const ungrouped = [];
-  for (const s of sessions) {
-    const tag = (_sessionPlacementTags(s) || []).find(n => _placementAxisOf(n) === axis);
-    if (tag) (groups[tag] = groups[tag] || []).push(s);
-    else ungrouped.push(s);
-  }
+  const ctx = Object.assign({}, _listCtx('session'), {
+    tags: (s) => { const tag = (_sessionPlacementTags(s) || []).find(n => _placementAxisOf(n) === axis); return tag ? [tag] : []; },
+  });
+  const grouped = _listGroupBy(sessions, 'tag', ctx);
+  const hasTagged = grouped.some(g => !g.ungrouped);
   let idx = 0;
   let html = '';
-  for (const tag of Object.keys(groups).sort((a, b) => a.localeCompare(b))) {
-    const g = groups[tag];
-    html += _sessionGroupHeaderHTML(axis, tag, g.length, _sessionPlacementSelActive(tag)) + g.map(s => sessionCard(s, idx++, sessions.length)).join('');
-  }
-  if (ungrouped.length) {
-    if (Object.keys(groups).length) {
-      html += `<div class="sessions-group-header" style="display:flex;align-items:center;gap:8px;padding:5px 12px;margin:12px 8px 4px;background:var(--bg3,rgba(120,120,140,0.12));border-left:3px solid var(--border);border-radius:4px;"><span style="font-size:12px;font-weight:600;color:var(--text2);">${escHtml(_tagT('sessions_group_untagged', 'No %1$s tag', [axis]))} <span style="font-size:11px;font-weight:400;">(${ungrouped.length})</span></div>`;
-    }
-    html += ungrouped.map(s => sessionCard(s, idx++, sessions.length)).join('');
-  }
+  grouped.forEach(g => {
+    if (g.ungrouped && !hasTagged) { html += g.items.map(s => sessionCard(s, idx++, sessions.length)).join(''); return; }
+    const filterBtn = g.ungrouped ? '' : _sessionGroupFilterButtonHTML(axis, g.key, _sessionPlacementSelActive(g.key));
+    html += _listGroupHeaderHTML('session', g, 'tag', {
+      icon: g.ungrouped ? '' : '⚙️',
+      label: g.ungrouped ? _tagT('sessions_group_untagged', 'No %1$s tag', [axis]) : g.key,
+      actionHtml: filterBtn,
+    });
+    if (_listIsCollapsed('session', g.key)) return;
+    const pg = _listPage(g.items, _listShownCount('session', g.key));
+    html += pg.items.map(s => sessionCard(s, idx++, sessions.length)).join('') + _listMoreHTML('session', g.key, pg);
+  });
   return html;
 }
 
@@ -51151,7 +52684,8 @@ function _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml) {
   const active = _tagBrowseActiveCount(scope);
   if (view === 'list' || active) {
     const note = active ? `<div class="tag-showing">${escHtml(t('tag_browse_showing', [items.length, base]))}</div>` : '';
-    return sw + note + _tileGridHTML(items.map(it => renderTile(it, '')).join(''));
+    const controls = (scope === 'automata' || scope === 'automation') ? _listControlsHTML(scope) : '';
+    return sw + controls + note + _listBodyHTML(scope, items, renderTile);
   }
   const tree = _tagBrowseTree(_tagsState.list);
   if (_tagBrowseLayout(_tileViewportWidth()) === 'drill') return sw + _tagDrillHTML(scope, items, tree, renderTile);
@@ -54809,19 +56343,279 @@ function _tileViewportWidth() {
 }
 
 // _tileGridHTML wraps tile markup in the grid for the current viewport.
-function _tileGridHTML(innerHTML) {
-  return `<div class="work-tile-grid" data-tile-mode="${_tileRowMode(_tileViewportWidth())}">${innerHTML}</div>`;
+// A scope with a remembered list mode on this device uses it; otherwise the
+// viewport decides, and a resize keeps following it.
+function _tileGridHTML(innerHTML, scope) {
+  const chosen = _listChosenTileMode(scope);
+  return `<div class="work-tile-grid" data-tile-mode="${chosen || _tileRowMode(_tileViewportWidth())}"${chosen ? ' data-tile-chosen="1"' : ''}>${innerHTML}</div>`;
 }
 
 // _tileSyncModes re-applies the row mode to every grid on screen after a
-// resize, so the layout follows the window without a re-render.
+// resize, so the layout follows the window without a re-render. A session
+// grid the operator pinned to `compact` keeps its density there.
 function _tileSyncModes() {
   const mode = _tileRowMode(_tileViewportWidth());
-  document.querySelectorAll('.work-tile-grid').forEach(el => { el.dataset.tileMode = mode; });
+  document.querySelectorAll('.work-tile-grid').forEach(el => {
+    if (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('session-tile-grid-compact')) return;
+    if (!el.dataset.tileChosen) el.dataset.tileMode = mode;
+  });
 }
 if (typeof window !== 'undefined' && !window._tileResizeBound) {
   window._tileResizeBound = true;
   window.addEventListener('resize', () => { _tileSyncModes(); _tagBrowseOnResize(); });
+}
+
+// ---- Shared list modes: toggle, group-by, collapse memory, paging ----------
+// One helper set for the Sessions, Automata and Automation lists. Pure functions
+// take their storage and accessors as arguments so they can be tested alone.
+const LIST_MODES = ['list', 'tiles', 'compact'];
+const LIST_GROUP_PREFIXES = ['automation', 'stage', 'kind', 'compute', 'peer', 'backend', 'lane', 'role', 'project'];
+const LIST_PAGE_SIZE = 50;
+
+function _listStore() {
+  try { return (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_e) { return null; }
+}
+function _listStoreGet(key) {
+  try { const st = _listStore(); return st ? st.getItem(key) : null; } catch (_e) { return null; }
+}
+function _listStoreSet(key, val) {
+  try { const st = _listStore(); if (st) st.setItem(key, val); } catch (_e) {}
+}
+
+// _listModeDefault picks the mode for a viewport width: tiles on a wide screen,
+// compact on a medium one, list on a narrow one. Unknown width reads as wide.
+function _listModeDefault(width) {
+  const w = Number(width);
+  if (!(w > 0)) return 'tiles';
+  if (w >= 720) return 'tiles';
+  if (w >= 420) return 'compact';
+  return 'list';
+}
+
+// _listModeGet returns the remembered mode for a list scope on this device, or
+// the viewport default when none was chosen.
+function _listModeGet(scope, width) {
+  const v = _listStoreGet('dw_list_mode_' + scope);
+  return LIST_MODES.indexOf(v) >= 0 ? v : _listModeDefault(width);
+}
+
+// _listModeSet remembers the chosen mode; an unknown mode is ignored.
+function _listModeSet(scope, mode) {
+  if (LIST_MODES.indexOf(mode) < 0) return false;
+  _listStoreSet('dw_list_mode_' + scope, mode);
+  return true;
+}
+
+// _listGroupKeys returns the group keys one item falls under for a group-by.
+// by is 'none', 'tag' (every tag), 'prefix:<p>' (tags starting "<p>:"),
+// 'state', 'node' or 'project'. ctx gives tags(item), state(item), node(item)
+// and project(item); a missing accessor yields no key.
+function _listGroupKeys(item, by, ctx) {
+  const c = ctx || {};
+  const one = (fn) => { const v = fn ? fn(item) : ''; return v ? [String(v)] : []; };
+  if (by === 'tag') return ((c.tags && c.tags(item)) || []).map(String).filter(Boolean);
+  if (typeof by === 'string' && by.indexOf('prefix:') === 0) {
+    const p = by.slice(7) + ':';
+    const hit = ((c.tags && c.tags(item)) || []).map(String).find(tg => tg.indexOf(p) === 0);
+    return hit ? [hit] : [];
+  }
+  if (by === 'state') return one(c.state);
+  if (by === 'node') return one(c.node);
+  if (by === 'project') return one(c.project);
+  return [];
+}
+
+// _listStateMix counts items per state, as an object.
+function _listStateMix(items, stateOf) {
+  const mix = {};
+  (items || []).forEach(it => {
+    const st = String((stateOf && stateOf(it)) || 'unknown');
+    mix[st] = (mix[st] || 0) + 1;
+  });
+  return mix;
+}
+
+// _listStateMixText renders a mix as "running 3 · done 1", biggest first.
+function _listStateMixText(mix) {
+  return Object.keys(mix || {}).sort((a, b) => (mix[b] - mix[a]) || a.localeCompare(b)).map(k => k + ' ' + mix[k]).join(' · ');
+}
+
+// _listGroupBy splits items into groups: [{key, items, count, mix}], keys sorted,
+// then one trailing group with key '' for items that have no key. A multi-tag
+// 'tag' grouping lists an item in each of its groups. by 'none' gives one group.
+function _listGroupBy(items, by, ctx) {
+  const list = Array.isArray(items) ? items : [];
+  if (!by || by === 'none') {
+    return [{ key: '', items: list.slice(), count: list.length, mix: _listStateMix(list, ctx && ctx.state), ungrouped: true }];
+  }
+  const map = new Map();
+  const rest = [];
+  list.forEach(it => {
+    const keys = _listGroupKeys(it, by, ctx);
+    if (!keys.length) { rest.push(it); return; }
+    keys.forEach(k => { if (!map.has(k)) map.set(k, []); map.get(k).push(it); });
+  });
+  const out = [...map.keys()].sort((a, b) => a.localeCompare(b)).map(k => {
+    const g = map.get(k);
+    return { key: k, items: g, count: g.length, mix: _listStateMix(g, ctx && ctx.state) };
+  });
+  if (rest.length) out.push({ key: '', items: rest, count: rest.length, mix: _listStateMix(rest, ctx && ctx.state), ungrouped: true });
+  return out;
+}
+
+// Collapse memory: a JSON array of collapsed group keys per list scope.
+function _listCollapsedSet(scope) {
+  try {
+    const a = JSON.parse(_listStoreGet('dw_list_collapsed_' + scope) || '[]');
+    return new Set(Array.isArray(a) ? a.map(String) : []);
+  } catch (_e) { return new Set(); }
+}
+function _listIsCollapsed(scope, key) { return _listCollapsedSet(scope).has(String(key)); }
+function _listToggleCollapsed(scope, key) {
+  const set = _listCollapsedSet(scope);
+  const k = String(key);
+  if (set.has(k)) set.delete(k); else set.add(k);
+  _listStoreSet('dw_list_collapsed_' + scope, JSON.stringify([...set]));
+  return set.has(k);
+}
+
+// Paging: show-more for long lists. shown counts live in memory, per scope+group.
+const _listShown = {};
+function _listShownCount(scope, key, pageSize) {
+  const n = _listShown[scope + '|' + key];
+  return n > 0 ? n : (pageSize || LIST_PAGE_SIZE);
+}
+function _listShowMore(scope, key, pageSize) {
+  const k = scope + '|' + key;
+  _listShown[k] = _listShownCount(scope, key, pageSize) + (pageSize || LIST_PAGE_SIZE);
+  return _listShown[k];
+}
+function _listResetPaging(scope) {
+  Object.keys(_listShown).forEach(k => { if (k.indexOf(scope + '|') === 0) delete _listShown[k]; });
+}
+// _listPage returns {items, shown, total, remaining, hasMore} for the visible slice.
+function _listPage(items, shown) {
+  const list = Array.isArray(items) ? items : [];
+  const n = Math.max(0, Math.min(list.length, Number(shown) || 0));
+  return { items: list.slice(0, n), shown: n, total: list.length, remaining: list.length - n, hasMore: list.length > n };
+}
+
+// ---- Shared list modes: UI over the helpers above --------------------------
+// Group-by axis memory, accessors per list scope, the toolbar, group headers,
+// the show-more button and the body that Automata and Automation draw through.
+// Sessions draws its placement-tag groups through the same header and paging.
+
+// _listGroupValid accepts 'none', 'tag', 'state', 'node', 'project' and
+// 'prefix:<p>' for a p in LIST_GROUP_PREFIXES.
+function _listGroupValid(by) {
+  if (['none', 'tag', 'state', 'node', 'project'].indexOf(by) >= 0) return true;
+  return typeof by === 'string' && by.indexOf('prefix:') === 0 && LIST_GROUP_PREFIXES.indexOf(by.slice(7)) >= 0;
+}
+function _listGroupGet(scope) {
+  const v = _listStoreGet('dw_list_group_' + scope);
+  return _listGroupValid(v) ? v : 'none';
+}
+function _listGroupSet(scope, by) {
+  if (!_listGroupValid(by)) return false;
+  _listStoreSet('dw_list_group_' + scope, by);
+  return true;
+}
+
+// _listModeTile maps a list mode to the data-tile-mode the tile grid styles by.
+function _listModeTile(mode) {
+  return mode === 'compact' ? 'compact' : (mode === 'list' ? 'line' : 'tile');
+}
+// _listChosenTileMode is the grid mode the viewer picked on this device, or ''
+// while the viewport decides.
+function _listChosenTileMode(scope) {
+  const v = scope ? _listStoreGet('dw_list_mode_' + scope) : null;
+  return LIST_MODES.indexOf(v) >= 0 ? _listModeTile(v) : '';
+}
+
+// _listCtx gives the group-by accessors for a list scope. Tag names come from the
+// registry; an ID the registry does not hold is skipped.
+function _listCtx(scope) {
+  const byId = (typeof _tagsState !== 'undefined' && _tagsState.byId) || {};
+  const names = (ids) => (Array.isArray(ids) ? ids : []).map(id => (byId[id] && byId[id].name) || '').filter(Boolean);
+  if (scope === 'session') {
+    return {
+      tags: (s) => names((s && s.tags) || []).concat(typeof _sessionPlacementTags === 'function' ? (_sessionPlacementTags(s) || []) : []),
+      state: (s) => s && s.state,
+      node: (s) => s && (s.node || s.hostname),
+      project: (s) => s && (s.project_dir || s.project),
+    };
+  }
+  return {
+    tags: (it) => names(_tileTagIds(it)),
+    state: (it) => it && it.status,
+    node: (it) => it && (it.node || it.compute_node),
+    project: (it) => it && (it.project_dir || it.project),
+  };
+}
+
+function _listGroupLabel(by, key) {
+  if (key) return key;
+  if (by === 'tag' || String(by).indexOf('prefix:') === 0) return _tagT('list_group_untagged', 'No tag');
+  return _tagT('list_group_none', 'None');
+}
+
+// _listGroupHeaderHTML is one group's header: collapse toggle, name, count and
+// state mix. o.actionHtml adds a caller's own control at the right edge.
+function _listGroupHeaderHTML(scope, g, by, o) {
+  const opts = o || {};
+  const collapsed = _listIsCollapsed(scope, g.key);
+  const label = opts.label != null ? opts.label : _listGroupLabel(by, g.key);
+  const mix = _listStateMixText(g.mix);
+  const k = escJsAttr(String(g.key));
+  return `<div class="list-group-header" data-list-group="${escHtml(String(g.key))}" style="display:flex;align-items:center;gap:8px;padding:5px 12px;margin:12px 8px 4px;background:var(--bg3,rgba(120,120,140,0.12));border-left:3px solid var(--border);border-radius:4px;">` +
+    `<button type="button" class="list-group-toggle" aria-expanded="${!collapsed}" onclick="listToggleGroup('${escJsAttr(scope)}','${k}')" style="background:none;border:none;color:var(--text);cursor:pointer;padding:0;font-size:12px;font-weight:700;">${collapsed ? '▸' : '▾'} ${opts.icon ? escHtml(opts.icon) + ' ' : ''}${escHtml(label)}</button>` +
+    `<span class="list-group-count" style="font-size:11px;color:var(--text2);">${g.count}</span>` +
+    (mix ? `<span class="list-group-mix" style="font-size:11px;color:var(--text2);">${escHtml(mix)}</span>` : '') +
+    (opts.actionHtml || '') + `</div>`;
+}
+
+// _listMoreHTML is the show-more button under a page that has items left.
+function _listMoreHTML(scope, key, pg) {
+  if (!pg.hasMore) return '';
+  const step = Math.min(LIST_PAGE_SIZE, pg.remaining);
+  return `<div class="list-show-more" style="text-align:center;margin:8px;"><button type="button" class="btn-secondary" onclick="listShowMore('${escJsAttr(scope)}','${escJsAttr(String(key))}')">${escHtml(_tagT('list_show_more', 'Show more'))} (${step} / ${pg.remaining})</button></div>`;
+}
+
+// _listControlsHTML is the toolbar: the list/tiles/compact toggle and the group-by select.
+function _listControlsHTML(scope, o) {
+  const opts = o || {};
+  const mode = _listModeGet(scope, _tileViewportWidth());
+  const labels = { list: _tagT('list_mode_list', 'List'), tiles: _tagT('list_mode_tiles', 'Tiles'), compact: _tagT('list_mode_compact', 'Compact') };
+  const toggle = LIST_MODES.map(m => `<button type="button" class="tag-view-btn${mode === m ? ' active' : ''}" aria-pressed="${mode === m}" onclick="listSetMode('${escJsAttr(scope)}','${m}')">${escHtml(labels[m])}</button>`).join('');
+  const cur = _listGroupGet(scope);
+  const axes = ['none', 'tag', 'state', 'node', 'project'].concat(LIST_GROUP_PREFIXES.map(p => 'prefix:' + p));
+  const axisLabel = (a) => a === 'none' ? _tagT('list_group_by_none', 'No grouping') : (a.indexOf('prefix:') === 0 ? a.slice(7) + ':' : a);
+  const sel = `<select class="list-group-select" aria-label="${escHtml(_tagT('list_group_by', 'Group by'))}" onchange="listSetGroup('${escJsAttr(scope)}',this.value)">${axes.map(a => `<option value="${escHtml(a)}"${a === cur ? ' selected' : ''}>${escHtml(axisLabel(a))}</option>`).join('')}</select>`;
+  return `<div class="list-controls" data-list-scope="${escHtml(scope)}" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0;"><div class="tag-view-switch" role="group">${opts.noMode ? '' : toggle}</div>${sel}</div>`;
+}
+
+// _listBodyHTML draws a list's items in the chosen group-by: one grid per group,
+// each under its header, collapsed groups as a header only, long groups paged.
+function _listBodyHTML(scope, items, renderTile) {
+  const by = _listGroupGet(scope);
+  const grouped = by !== 'none';
+  return _listGroupBy(items, by, _listCtx(scope)).map(g => {
+    const head = grouped ? _listGroupHeaderHTML(scope, g, by) : '';
+    if (grouped && _listIsCollapsed(scope, g.key)) return head;
+    const pg = _listPage(g.items, _listShownCount(scope, g.key));
+    return head + _tileGridHTML(pg.items.map(it => renderTile(it, '')).join(''), scope) + _listMoreHTML(scope, g.key, pg);
+  }).join('');
+}
+
+function _listRepaint(scope) {
+  if (scope === 'session') { if (typeof renderSessionsView === 'function') renderSessionsView(); return; }
+  if (typeof _tagBrowseRepaint === 'function') _tagBrowseRepaint(scope);
+}
+if (typeof window !== 'undefined') {
+  window.listSetMode = function(scope, mode) { if (_listModeSet(scope, mode)) _listRepaint(scope); };
+  window.listSetGroup = function(scope, by) { if (_listGroupSet(scope, by)) { _listResetPaging(scope); _listRepaint(scope); } };
+  window.listToggleGroup = function(scope, key) { _listToggleCollapsed(scope, key); _listRepaint(scope); };
+  window.listShowMore = function(scope, key) { _listShowMore(scope, key); _listRepaint(scope); };
 }
 
 // _tileMenuItem is one entry in a tile's overflow menu. onclick is markup the

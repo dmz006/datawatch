@@ -614,7 +614,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Session"
         "400":
-          description: Bad request (missing task, backend not found, etc.)
+          description: Bad request (missing task, backend not found, an unknown `launch_role` or `launch_kind`, etc.). A refused launch field returns 400 and the session is not started.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -1006,6 +1006,7 @@ paths:
         `autonomous.parallel.worktree_per_task` (true|false, default true; each parallel task runs in its own worktree and its branch is merged back into the PRD branch),
         `autonomous.parallel.merge_conflict_policy` (additive_then_model|block|triage, default additive_then_model; what happens when a task branch conflicts on merge),
         `autonomous.parallel.merge_conflict_model` (string, default empty = the strongest configured planning model; the model that resolves a merge conflict),
+        `autonomous.parallel.merge_retry_seconds` (whole seconds >= 0, default 60; seconds between timed merge retry passes, 0 turns the timer off),
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
         `autonomous.plan_coverage_suppress_created_files` (true|false, default true; hide findings for files the plan itself creates),
@@ -1198,6 +1199,17 @@ paths:
         allowed writes logged — an attempt is still an attempt, so denied ones are logged by
         default, with their reason of refusal, as a record with no key set). All three changes
         take effect immediately and are written to the config file.
+
+        Sensitive write class, operator- or session-token write, never masked:
+        `mcp.allow_sensitive_writes` (boolean default true; an explicit false makes the
+        daemon refuse the sensitive MCP tools — secret_set, secret_delete, secret_get, the
+        identity writers, restart_daemon, reload, plugin_install, plugin_run_subcommand,
+        send_input, start_session, tailscale_acl_push, tailscale_auth_key and acme_renew —
+        for session and federation-peer callers; operator calls are not affected). The PUT
+        stores an explicit boolean, takes effect immediately and is written to the config
+        file. GET returns the effective value, so a config that never set the key reads
+        true. Unlike `mcp.allow_self_config` it is not bootstrap-protected: a session that
+        holds self-config can write it through `config_set`.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -2167,9 +2179,11 @@ paths:
     get:
       summary: What a restart now would interrupt
       description: |
-        The running tasks (executing worker, running tests or verifying) and the
-        live sessions a daemon restart now would interrupt, with their ids and
-        counts, and the configured restart policy (`autonomous.restart_policy`:
+        The planning Automata, verifying tasks, running judges, running tasks
+        (executing worker, running tests or verifying) and live sessions a daemon
+        restart now would interrupt, each with its ids and count, plus
+        `needs_force` (set while any of them is in flight), and the configured
+        restart policy (`autonomous.restart_policy`:
         `immediate`, `wait_quiet` or `drain`, with `restart_quiet_timeout_seconds`
         and `restart_on_timeout`). `launch_draining` is true while a drain holds
         new tasks back. Read-only; needs the autonomous read capability when
@@ -2178,7 +2192,7 @@ paths:
       tags: [Autonomous]
       responses:
         "200":
-          description: The running tasks and live sessions a restart would interrupt
+          description: The work a restart would interrupt and the restart policy
           content:
             application/json:
               schema: {type: object}
@@ -2602,6 +2616,195 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/unlanded-work:
+    get:
+      summary: Unlanded Automaton branches
+      description: |
+        The Housekeeping action list: archived Automata whose branch carries
+        commits that are not on the default branch, each with a recommendation
+        (`landed`, `superseded` or `needs_decision`) and the reason. Branches
+        the operator chose to keep are left out. `branches` is an empty list,
+        never null, when nothing is unlanded or no base repository is
+        configured. Read-only; a federated peer needs the autonomous read
+        capability.
+      operationId: autonomousUnlandedWork
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The unlanded branches
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [branches]
+                properties:
+                  branches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        automaton_id: {type: string}
+                        branch: {type: string}
+                        title: {type: string}
+                        commits: {type: integer}
+                        last_activity: {type: string, format: date-time}
+                        recommendation: {type: string, enum: [landed, superseded, needs_decision]}
+                        reason: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/unlanded-work/keep:
+    post:
+      summary: Keep an unlanded branch
+      description: Records that the branch is to be left alone; it drops off the unlanded list. The branch must be on the list.
+      operationId: autonomousUnlandedKeep
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string}
+                note: {type: string}
+      responses:
+        "200": {description: "Kept: {branch, kept}"}
+        "400": {description: Branch missing, or no base repository configured}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: The branch is not on the unlanded list}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/unlanded-work/archive-branch:
+    post:
+      summary: Archive an unlanded branch
+      description: Moves the branch under the archive refs (`refs/archive/<branch>`) and removes the branch name. The commits stay reachable. The branch must be on the unlanded list.
+      operationId: autonomousUnlandedArchiveBranch
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string}
+      responses:
+        "200": {description: "Archived: {branch, archive_ref}"}
+        "400": {description: Branch missing, or no base repository configured}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: The branch is not on the unlanded list}
+        "405": {description: Method not allowed}
+        "409": {description: Git refused the archive}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/unlanded-work/delete-worktree:
+    post:
+      summary: Delete an unlanded worktree and branch
+      description: Writes and verifies a git bundle backup of the branch, then removes its worktree and branch. Nothing is removed if the backup fails. `confirm` must be true. The branch must be on the unlanded list.
+      operationId: autonomousUnlandedDeleteWorktree
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch, confirm]
+              properties:
+                branch: {type: string}
+                confirm: {type: boolean}
+      responses:
+        "200": {description: "Deleted: {branch, bundle_path, worktree_path}"}
+        "400": {description: Branch missing, confirm not true, or no base repository configured}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: The branch is not on the unlanded list}
+        "405": {description: Method not allowed}
+        "409": {description: The backup or removal failed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/uncommitted-work/diff:
+    get:
+      summary: Diff of a worktree's uncommitted files
+      description: What a commit would record for one Automaton worktree, as a diff. The worktree must be inside the Automaton worktree base. `clean` is true and `diff` empty when nothing is uncommitted.
+      operationId: autonomousUncommittedWorkDiff
+      tags: [Autonomous]
+      parameters:
+        - name: worktree
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200": {description: "{worktree, diff, clean}"}
+        "400": {description: Worktree missing or outside the worktree base}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "409": {description: Git failed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/uncommitted-work/commit:
+    post:
+      summary: Commit a worktree's uncommitted files
+      description: Stages and commits exactly the files the uncommitted-work check lists, with the given message, and returns the new commit. An empty message, a worktree outside the worktree base and a clean worktree are rejected before anything is staged.
+      operationId: autonomousUncommittedWorkCommit
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worktree, message]
+              properties:
+                worktree: {type: string}
+                message: {type: string}
+      responses:
+        "200": {description: "Committed: {worktree, commit}"}
+        "400": {description: Worktree or message missing, outside the worktree base, or nothing to commit}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: The commit failed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/cleanup/fix-permissions:
+    post:
+      summary: Fix cleanup permission errors
+      description: Restores owner write permission (and owner read and search on folders) on the given paths and everything under them. Without `paths` it covers each folder directly under the worktree base. Only paths inside the worktree base are touched; links are never followed.
+      operationId: autonomousCleanupFixPermissions
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paths: {type: array, items: {type: string}}
+      responses:
+        "200": {description: "{changed}: the number of entries changed"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: A path was outside the worktree base or could not be changed}
         "503": {description: Autonomous is disabled}
 
   /api/autonomous/uncommitted-work:
@@ -3176,6 +3379,76 @@ paths:
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
 
+  /api/autonomous/branch-refresh/stats:
+    get:
+      summary: Branch refresh numbers
+      description: |
+        Returns the daemon setting `autonomous.branch_refresh_enabled` and the
+        behind limit in effect (`behind_limit`, 0 reads as 5), how many Automata
+        have a recorded refresh (`tracked`) and how many of them ended in each
+        result (`clean`, `conflict`, `skipped`, `error`), how many have
+        refreshing stopped by a conflict (`stopped`) and how many carry a
+        per-Automaton override (`override_on`, `override_off`). Needs the
+        autonomous read capability when called by a federated peer.
+      operationId: autonomousBranchRefreshStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The branch refresh numbers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  behind_limit: {type: integer}
+                  tracked: {type: integer}
+                  clean: {type: integer}
+                  conflict: {type: integer}
+                  skipped: {type: integer}
+                  error: {type: integer}
+                  stopped: {type: integer}
+                  override_on: {type: integer}
+                  override_off: {type: integer}
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "501": {description: The autonomous manager does not support the numbers}
+        "503": {description: Autonomous is disabled}
+  /api/autonomous/prds/{id}/branch-refresh:
+    post:
+      summary: Set or clear the branch refresh override of an Automaton
+      description: |
+        Sets the per-Automaton branch refresh override. `true` refreshes the
+        Automaton's branch from its base between tasks even when the daemon
+        setting `autonomous.branch_refresh_enabled` is off, `false` never
+        refreshes it, and `null` clears the override so the daemon setting
+        applies again. The reply is the Automaton record with its refresh state:
+        `branch_refresh` (the last refresh, null when none has run),
+        `branch_refresh_override` (true, false or null) and
+        `branch_refresh_enabled` (the setting in effect for this Automaton).
+        Setting the override also resets a refresh that a merge conflict
+        stopped, so the next gap tries the merge again.
+        Needs the autonomous write capability when called by a federated peer.
+      operationId: autonomousPRDSetBranchRefreshOverride
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean, nullable: true, description: "true, false or null (clear the override)"}
+      responses:
+        "200": {description: Updated Automaton with branch_refresh, branch_refresh_override and branch_refresh_enabled}
+        "400": {description: enabled missing or not true, false or null}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+        "501": {description: The autonomous manager does not support the override}
   /api/autonomous/prds/{id}/set_lane_preference:
     post:
       summary: Set the lane preference of an Automaton
@@ -10697,6 +10970,28 @@ components:
             type: string
           description: Tag IDs the session carries from the start; an unknown ID refuses the start
           example: ["5e6f7a8b"]
+        launch_role:
+          type: string
+          enum: [worker, verifier, planner, judge, supervisor]
+          description: |
+            Role the session plays. Stamps the `role:` placement tag. An unknown role is
+            refused with 400 before the session starts. Omit for a plain session.
+          example: "supervisor"
+        launch_kind:
+          type: string
+          description: |
+            Kind of session: `task`, `decompose`, `review`, `rejudge` or `auto-fix`. Stamps
+            the `kind:` placement tag. An unknown kind is refused with 400 before the session
+            starts. Omit for a plain session.
+          example: "task"
+        launch_stage:
+          type: string
+          description: Stage of the Automaton the session serves. Stamps the `stage:` placement tag.
+          example: "build"
+        launch_automaton:
+          type: string
+          description: Automaton the session belongs to. Stamps the `automaton:` placement tag.
+          example: "3ab70001"
         task:
           type: string
           description: Task description passed to the LLM
@@ -10834,6 +11129,9 @@ components:
             allow_self_config:
               type: boolean
               description: The self-config builtin group (alias). Default true; when an agent holds it, config-write MCP tools may change the non-secret settings of its own configuration scope
+            allow_sensitive_writes:
+              type: boolean
+              description: The sensitive write tool class switch. Default true (GET reports the effective value, true when the key was never set); explicit false makes the daemon refuse the sensitive MCP tools for session and federation-peer callers, while operator calls are not affected. Takes effect immediately and is written to the config file
             self_config_audit_path:
               type: string
               description: Where the daemon writes the self-config audit trail (default `<data>/audit/config-self-modify.jsonl`)

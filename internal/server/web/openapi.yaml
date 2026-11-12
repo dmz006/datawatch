@@ -614,7 +614,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Session"
         "400":
-          description: Bad request (missing task, backend not found, etc.)
+          description: Bad request (missing task, backend not found, an unknown `launch_role` or `launch_kind`, etc.). A refused launch field returns 400 and the session is not started.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -1006,6 +1006,7 @@ paths:
         `autonomous.parallel.worktree_per_task` (true|false, default true; each parallel task runs in its own worktree and its branch is merged back into the PRD branch),
         `autonomous.parallel.merge_conflict_policy` (additive_then_model|block|triage, default additive_then_model; what happens when a task branch conflicts on merge),
         `autonomous.parallel.merge_conflict_model` (string, default empty = the strongest configured planning model; the model that resolves a merge conflict),
+        `autonomous.parallel.merge_retry_seconds` (whole seconds >= 0, default 60; seconds between timed merge retry passes, 0 turns the timer off),
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
         `autonomous.plan_coverage_suppress_created_files` (true|false, default true; hide findings for files the plan itself creates),
@@ -3633,6 +3634,76 @@ paths:
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
 
+  /api/autonomous/branch-refresh/stats:
+    get:
+      summary: Branch refresh numbers
+      description: |
+        Returns the daemon setting `autonomous.branch_refresh_enabled` and the
+        behind limit in effect (`behind_limit`, 0 reads as 5), how many Automata
+        have a recorded refresh (`tracked`) and how many of them ended in each
+        result (`clean`, `conflict`, `skipped`, `error`), how many have
+        refreshing stopped by a conflict (`stopped`) and how many carry a
+        per-Automaton override (`override_on`, `override_off`). Needs the
+        autonomous read capability when called by a federated peer.
+      operationId: autonomousBranchRefreshStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The branch refresh numbers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  behind_limit: {type: integer}
+                  tracked: {type: integer}
+                  clean: {type: integer}
+                  conflict: {type: integer}
+                  skipped: {type: integer}
+                  error: {type: integer}
+                  stopped: {type: integer}
+                  override_on: {type: integer}
+                  override_off: {type: integer}
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "501": {description: The autonomous manager does not support the numbers}
+        "503": {description: Autonomous is disabled}
+  /api/autonomous/prds/{id}/branch-refresh:
+    post:
+      summary: Set or clear the branch refresh override of an Automaton
+      description: |
+        Sets the per-Automaton branch refresh override. `true` refreshes the
+        Automaton's branch from its base between tasks even when the daemon
+        setting `autonomous.branch_refresh_enabled` is off, `false` never
+        refreshes it, and `null` clears the override so the daemon setting
+        applies again. The reply is the Automaton record with its refresh state:
+        `branch_refresh` (the last refresh, null when none has run),
+        `branch_refresh_override` (true, false or null) and
+        `branch_refresh_enabled` (the setting in effect for this Automaton).
+        Setting the override also resets a refresh that a merge conflict
+        stopped, so the next gap tries the merge again.
+        Needs the autonomous write capability when called by a federated peer.
+      operationId: autonomousPRDSetBranchRefreshOverride
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean, nullable: true, description: "true, false or null (clear the override)"}
+      responses:
+        "200": {description: Updated Automaton with branch_refresh, branch_refresh_override and branch_refresh_enabled}
+        "400": {description: enabled missing or not true, false or null}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+        "501": {description: The autonomous manager does not support the override}
   /api/autonomous/prds/{id}/set_lane_preference:
     post:
       summary: Set the lane preference of an Automaton
@@ -3758,15 +3829,26 @@ paths:
     post:
       summary: Re-run the rules-review completion guardrail for a blocked Automaton
       description: |
-        Re-runs the PRD-completion "rules-review" judgment for a PRDBlocked
-        Automaton whose work is fully done — every task in every story at
-        `task_completed` — without resetting or editing any task. The verdict
-        and a `guardrail_rejudge` decision (naming the acting `actor`)
-        are recorded on the Automaton's decision log; a pass unblocks the
-        Automaton (status `prd_completed`), a block keeps it `prd_blocked`
-        with its blocked reason set from the verdict. No tasks are retried
-        afterwards — a pass ends the Automaton and a block waits for operator
-        action again.
+        Runs a fresh completion review for a PRDBlocked Automaton whose work
+        is fully done — every task in every story at `task_completed` —
+        without resetting or editing any task. The review reads the current
+        head commit of the Automaton's working tree, starts a judge session on
+        the configured judge backends, and records a new verdict with its own
+        time and the commit it judged. That verdict replaces the blocked
+        state: a pass unblocks the Automaton (status `prd_completed`), a block
+        keeps it `prd_blocked` with its blocked reason set from the new
+        verdict. No tasks are retried afterwards — a pass ends the Automaton
+        and a block waits for operator action again.
+        The stored verdict is reused instead only when the head commit and the
+        rules text the judge reads are both unchanged since it was made (and
+        the judge verdict cache is on). The reply `message` (carried by the
+        compact reply, `?view=compact`; the default full reply is the bare
+        Automaton with no message) and the
+        `guardrail_rejudge` decision (naming the acting `actor`) then say
+        plainly that the stored verdict was reused and why, and no new verdict
+        is added; otherwise they say a new review ran on the named commit. The
+        decision carries `judged_commit_sha` and `verdict_reused` either way.
+        There is one verdict per review that ran, never a duplicate copy.
         `backend` is the reroute of the review state whose `action` is
         `reroute`: it names the judge backend the re-judgment runs on, beating
         the resolved tier (pinned, and even making the run possible when no
@@ -3788,7 +3870,7 @@ paths:
                 actor: {type: string, description: "Who asked; recorded on the guardrail_rejudge decision. Default the operator."}
                 backend: {type: string, description: "Optional judge backend reroute (the review state action `reroute`); empty = the resolved tier"}
       responses:
-        "200": {description: "Rejudge complete; the guardrail verdict and outcome are in the Automaton's decision log"}
+        "200": {description: "Rejudge complete. The reply message says whether a new review ran on the head commit (the new verdict and outcome are in the Automaton's decision log) or the stored verdict was reused because the head commit and the rules text are unchanged since it was made (no new review ran, no verdict added)"}
         "400": {description: "Refused: unknown Automaton, not PRDBlocked, a task not completed (the message names the first offending task and its status), or no verdict was produced — each refusal says why"}
         "403": {description: "Federated peer lacks the autonomous write capability"}
         "405": {description: "POST-only action"}
@@ -11396,6 +11478,28 @@ components:
             type: string
           description: Tag IDs the session carries from the start; an unknown ID refuses the start
           example: ["5e6f7a8b"]
+        launch_role:
+          type: string
+          enum: [worker, verifier, planner, judge, supervisor]
+          description: |
+            Role the session plays. Stamps the `role:` placement tag. An unknown role is
+            refused with 400 before the session starts. Omit for a plain session.
+          example: "supervisor"
+        launch_kind:
+          type: string
+          description: |
+            Kind of session: `task`, `decompose`, `review`, `rejudge` or `auto-fix`. Stamps
+            the `kind:` placement tag. An unknown kind is refused with 400 before the session
+            starts. Omit for a plain session.
+          example: "task"
+        launch_stage:
+          type: string
+          description: Stage of the Automaton the session serves. Stamps the `stage:` placement tag.
+          example: "build"
+        launch_automaton:
+          type: string
+          description: Automaton the session belongs to. Stamps the `automaton:` placement tag.
+          example: "3ab70001"
         task:
           type: string
           description: Task description passed to the LLM

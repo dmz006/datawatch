@@ -192,12 +192,20 @@ func (m *Manager) MergeTaskBranch(ctx context.Context, prd *PRD, t *Task) (Merge
 		m.setMergeState(t, MergeStateMerged, sha)
 		return MergeOutcomeMerged, nil
 	}
-	// Tracked files whose only change is the daemon's own marked sections are
-	// not real edits. Filter before trimming: porcelain entries start with a
-	// significant space.
-	rawDirty := gitText(ctx, dir, "status", "--porcelain", "--untracked-files=no")
-	if dirty := strings.TrimSpace(dropDaemonOnlyStatusEntries(ctx, dir, rawDirty, m.baseCommitRunner())); dirty != "" {
-		return MergeOutcomeDeferred, fmt.Errorf("task merge: PRD worktree %s has uncommitted changes; not merging over them", dir)
+	if blk := dirtyWorktreeBlockWith(ctx, dir, m.baseCommitRunner()); blk != nil {
+		first := t.MergeBlock == nil || t.MergeBlock.Kind != blk.Kind
+		blk.LastRetryAt = time.Now()
+		if err := m.setMergeBlock(t, *blk); err != nil {
+			return MergeOutcomeDeferred, err
+		}
+		m.setMergeState(t, MergeStatePending, "")
+		if first {
+			m.alertMergeBlocked(t, blk)
+		}
+		return MergeOutcomeDeferred, nil
+	}
+	if err := m.clearMergeBlock(t); err != nil {
+		return MergeOutcomeDeferred, err
 	}
 
 	if cerr := m.cleanTaskBranchDaemonSections(ctx, prd, t); cerr != nil {

@@ -231,7 +231,7 @@ func TestSave_RoundTrip(t *testing.T) {
 	cfg.Signal.GroupID = "testgroup"
 	cfg.Session.MaxSessions = 3
 	cfg.Server.Port = 9090
-	cfg.Server.PublicURL = "https://datawatch.example.com" // F10 S4.2
+	cfg.Server.PublicURL = "https://datawatch.example.com"      // F10 S4.2
 	cfg.MCP.PublicURL = "https://host.tailnet.example.net:8081" // GH#207
 
 	if err := Save(cfg, path); err != nil {
@@ -1337,5 +1337,39 @@ func TestValidateReleaseSettings(t *testing.T) {
 				t.Errorf("error %q must name the setting", err)
 			}
 		})
+	}
+}
+
+func TestSensitiveWritesEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		val  *bool
+		want bool
+	}{
+		{"absent", nil, true},
+		{"true", BoolPtr(true), true},
+		{"false", BoolPtr(false), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := MCPConfig{AllowSensitiveWrites: tc.val}
+			if got := m.SensitiveWritesEnabled(); got != tc.want {
+				t.Errorf("SensitiveWritesEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAutonomousBranchRefreshDefaults(t *testing.T) {
+	var a AutonomousConfig
+	if a.BranchRefreshEnabled {
+		t.Error("BranchRefreshEnabled should default off")
+	}
+	if got := a.BranchRefreshLimit(); got != 5 {
+		t.Errorf("default limit = %d, want 5", got)
+	}
+	a.BranchRefreshBehindLimit = 12
+	if got := a.BranchRefreshLimit(); got != 12 {
+		t.Errorf("explicit limit = %d, want 12", got)
 	}
 }
