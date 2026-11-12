@@ -856,6 +856,9 @@ type AutonomousAPI interface {
 	SetConfig(any) error
 	Status() any
 	CreatePRD(spec, projectDir, backend, model, effort string) (any, error)
+	// CreatePRDWithParent is CreatePRD for an Automaton with a parent id; the
+	// child inherits from the parent and explicit values win.
+	CreatePRDWithParent(spec, projectDir, backend, model, effort, parentPRDID string) (any, error)
 	GetPRD(id string) (any, bool)
 	ListPRDs() []any
 	Decompose(id string) (any, error)

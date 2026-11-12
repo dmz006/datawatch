@@ -140,7 +140,7 @@ const (
 	//   "autonomous run <prd-id>"
 	//   "autonomous cancel <prd-id>"
 	//   "autonomous learnings"
-	//   "autonomous create <spec…>"
+	//   "autonomous create <spec…> [--parent <automaton-id>]"
 	// "prd" is also accepted as a shorter alias.
 	CmdAutonomous CommandType = "autonomous"
 

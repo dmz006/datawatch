@@ -38,6 +38,17 @@ Inheritance runs once, when the child is created. The child gets one `child_inhe
 
 A defect filed with a parent is not offered to the `defect_intake_automation` Automation when it already joined its parent's Automation.
 
+## Creating a child from any surface
+
+Every creation surface takes an optional parent Automaton id and the same inheritance rule applies. An explicit project directory, backend, model or tags always win over the inherited values. A parent id stands in for the project directory, and an unknown parent is refused before anything is created.
+
+| Surface | How to give the parent |
+|---|---|
+| REST | `POST /api/autonomous/prds` with `parent_prd_id` in the body; an unknown parent is a 404 |
+| MCP | `autonomous_prd_create` with the optional `parent_prd_id` argument |
+| CLI | `datawatch autonomous prd-create --parent <id> "<spec>"` |
+| Comm channel | `autonomous create <spec> --parent <id>` |
+
 ## 4. The setting
 
 `autonomous.automation.child_inherit` is `true` or `false` and is **on by default**. An unset key reads `true`, so an existing config file gets the new behavior. `false` restores the earlier behavior: nothing is copied and nothing is recorded. Any other value is refused with 400.

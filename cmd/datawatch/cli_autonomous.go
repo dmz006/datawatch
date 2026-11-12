@@ -974,7 +974,7 @@ func prdListQuery(status, shipped string) (url.Values, error) {
 }
 
 func newAutonomousPRDCreateCmd() *cobra.Command {
-	var projectDir, backend, effort, typ, skillsCSV, kind, lanePref string
+	var projectDir, backend, effort, typ, skillsCSV, kind, lanePref, parent string
 	var guidedMode bool
 	cmd := &cobra.Command{
 		Use:   "prd-create <spec>",
@@ -987,6 +987,9 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 				"project_dir": projectDir,
 				"backend":     backend,
 				"effort":      effort,
+			}
+			if p := strings.TrimSpace(parent); p != "" {
+				body["parent_prd_id"] = p
 			}
 			if typ != "" {
 				body["type"] = typ
@@ -1023,6 +1026,7 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&projectDir, "project-dir", "", "Project directory; omit to let the daemon apply its default (worktree mode) instead of assuming the current directory")
 	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend override")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort hint (low/medium/high/max)")
+	cmd.Flags().StringVar(&parent, "parent", "", "Parent Automaton id; the new Automaton inherits the parent's project, Automation, backend, model, tags and priority (explicit flags win)")
 	cmd.Flags().StringVar(&typ, "type", "", "Automaton type (software|research|operational|personal or custom)")
 	cmd.Flags().StringVar(&kind, "kind", "", "Automaton kind (feature|bug|other); omit to derive it from the title and spec")
 	cmd.Flags().StringVar(&lanePref, "lane-preference", "", "Lane the Automaton may take (gpu|claude|any); omit for any")
