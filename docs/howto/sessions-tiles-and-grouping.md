@@ -147,7 +147,8 @@ so the Tags section does not draw one chip per tag. It is built like this:
   matching group is open and shows all of its matches.
 - **Groups** — chips sit under collapsible headers in a fixed order: **Kind**,
   **Role**, **Lane**, **Compute node**, **Project**, **Your tags**, **Other**.
-  Each header shows how many tags it holds; tap it to fold or unfold the
+  Each header shows how many tags it holds for the current list (the
+  per-axis count); tap it to fold or unfold the
   group. Each group shows its first six chips (the busiest first) and a
   **Show all (N)** control; **Show fewer** folds it back. A selected chip is
   always shown, even beyond the first six.
@@ -212,9 +213,14 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
   viewport width. In **list** mode the sessions stay a row list: the one
   card per row layout, one session per row.
 
+The mode changes how sessions are drawn **with or without a grouping**: with
+**Group by** set to none the whole list is drawn in the chosen mode, and with
+an axis selected each group body is drawn in it. Tiles and Compact are the
+same grid at two sizes; List is the row layout.
+
 Two details worth knowing:
 
-- The choice is **per device**. It is stored in this browser's local
+- The choice is **per device** (per browser). It is stored in this browser's local
   storage (`cs_sessions_view_mode`) and does not travel with federation
   peers or other devices. Each of your devices keeps its own mode.
 - In **tiles** mode the grid keeps following the viewport width on resizes,
