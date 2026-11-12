@@ -456,7 +456,7 @@ func TestRejudgeRerouteEnablesRunWhenNoTierResolves(t *testing.T) {
 		t.Fatalf("judge must not launch without a resolved tier or a rerouted backend")
 		return GuardrailVerdict{}, nil
 	})
-	v, err := m.judgeCompletionRulesReview(context.Background(), prd, "")
+	v, _, err := m.judgeCompletionRulesReview(context.Background(), prd, "")
 	if err != nil {
 		t.Fatalf("judgeCompletionRulesReview: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestRejudgeRerouteEnablesRunWhenNoTierResolves(t *testing.T) {
 	// and the judge runs.
 	rec := &modelJudgeRecorder{}
 	m.SetGuardrail(rec.fn)
-	v, err = m.judgeCompletionRulesReview(context.Background(), prd, "claude-code-strong")
+	v, _, err = m.judgeCompletionRulesReview(context.Background(), prd, "claude-code-strong")
 	if err != nil || v.Outcome != "pass" {
 		t.Fatalf("rerouted re-judge: verdict=%+v err=%v, want a clean pass on the named backend", v, err)
 	}
