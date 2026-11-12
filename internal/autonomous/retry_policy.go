@@ -411,16 +411,29 @@ func orContentCategory(category string) string {
 // (commit sha, judge policy, rules) triple is replayed instead; after the
 // judge completes, a successful verdict is stored under that triple. A
 // timed-out or otherwise unfinished judge is never cached, and with the
-// cache disabled the behavior is byte-for-byte the pre-cache loop.
+// cache disabled the behavior is byte-for-byte the pre-cache loop. It
+// discards the reuse flag; callers that need it call runGuardrailReusing.
 func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
+	v, _, err := m.runGuardrailReusing(ctx, prd, inv, fn)
+	return v, err
+}
+
+// runGuardrailReusing holds the body of runGuardrailWithInfraRetry and
+// additionally reports whether the returned verdict is a stored one that
+// was replayed (reused true, fn never called) or one the judge produced
+// just now (reused false, including every error and every bypassed or
+// disabled-cache run). Unless the context bypasses the lookup, a hit from
+// the verdict cache is returned as-is; otherwise the infra-retry loop runs
+// and its result is recorded in the cache.
+func (m *Manager) runGuardrailReusing(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (v GuardrailVerdict, reused bool, err error) {
 	if !judgeVerdictCacheLookupBypassed(ctx) {
-		if v, ok := m.judgeVerdictCacheHit(prd, inv); ok {
-			return v, nil
+		if hit, ok := m.judgeVerdictCacheHit(prd, inv); ok {
+			return hit, true, nil
 		}
 	}
-	v, err := m.runGuardrailInfraRetry(ctx, prd, inv, fn)
+	v, err = m.runGuardrailInfraRetry(ctx, prd, inv, fn)
 	m.judgeVerdictCacheRecord(prd, inv, v, err)
-	return v, err
+	return v, false, err
 }
 
 // runGuardrailInfraRetry is the retry loop itself; the public entry
