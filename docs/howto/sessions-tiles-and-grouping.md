@@ -249,10 +249,11 @@ e.g. `Tag(automation:)`, `Tag(compute:)`, `Tag(peer:)`.
 
 The PWA remembers the grouping you choose on this device. It restores it
 after a page reload and keeps it through list refreshes, so the picker never
-snaps back to its default. This dropdown is now the **one** Group by control
-on the Sessions page — the toolbar used to carry a second placement control
-(the ⚙️ dropdown that grouped by a `compute:`, `stage:` … tag), and that
-duplicate is gone: grouping by a placement axis is just one of the
+snaps back to its default. This dropdown is the **one** Group by control
+on the Sessions page: the Filters sheet has a single Group by dropdown —
+there is no second gear (⚙) dropdown, and the toolbar carries no second
+grouping control either (the former toolbar placement control is gone).
+Grouping by a placement axis is just one of the
 `Tag(<prefix>)` entries here. The choice is saved in this browser's local
 storage (not on the daemon). Applying a saved view replaces it, and an older
 placement choice saved before this change is picked up once and carried over.
