@@ -217,7 +217,7 @@ Choose **Automata**, then the **Projects** sub-tab, then `core-api`. From the to
 | Progress | Tasks and Automata done, cost in points, throughput over the last seven days |
 | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
 | Unassigned Automata | Automata of this project that no arc holds |
-| Automata without a project | The roll-up response also lists Automata with no project link and no directory match in a separate `without_project` group. It is the same for every project and is not counted in any total |
+| Automata without a project | Automata with no project link and no directory match, in no arc. They are listed once in a separate `without_project` group, which is the same whichever project you open and is not counted in any total (see [Which Automata belong to a project](#which-automata-belong-to-a-project)) |
 | Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now" |
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Effective policy | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section |
@@ -262,6 +262,34 @@ the list is the only way to change the state, so send the whole list:
 ```bash
 datawatch projects arcs core-api --set a1b2c3d4:1:done,e5f6a7b8:2:active,c9d0e1f2:3:planned
 ```
+
+### Which Automata belong to a project
+
+Every roll-up decides membership the same way: the project's page, its arcs, the
+Gantt rows, the History list, the daily progress snapshots, the cost and progress
+grouping and the project filter in **Events**. An Automaton is placed in the
+first project that matches, in this order:
+
+1. **Its own project link**: the name of a configured project, set on the Automaton.
+2. **The link of the Automation holding it.** A member without its own link
+   inherits the Automation's link.
+3. **Its parent Automaton's project**, found by the same two steps up the parent
+   chain (a spawned child follows its parent; the walk is capped and cannot loop).
+4. **Its directory.** The Automaton's project directory is matched to a project's
+   directory. A git worktree maps to its repository, so work done in a worktree
+   counts toward the project that owns the repository.
+
+A link always wins over a directory match, so an Automaton linked to `core-api`
+is never counted under another project because it ran in that project's folder.
+A link naming a project that is not configured is ignored and the next step
+applies. An Automaton an arc holds stays in that arc's project's roll-up as
+before. An Automaton that resolves to another project is never in this one.
+Template Automata are never counted.
+
+An Automaton no step places is in the **Automata without a project** group.
+Each appears there once with its own tasks, points and throughput. The group is
+not part of any project's `total`, so a project's totals never include work that
+belongs to nobody.
 
 ## Reading the fields
 
@@ -434,6 +462,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | A save or remove shows an error above the form | The daemon refused the change and nothing was saved; read the message, fix the field and try again |
 | Roll-up shows "Could not load the roll-up" | The autonomous store is off or the alias is unknown. Check the daemon with `datawatch projects get <name>` |
 | An arc shows no Automata | Its Automation has no member Automata yet, or the Automata are of another project |
+| An Automaton is missing from a project's page, or appears under a different one | Membership follows the order in [Which Automata belong to a project](#which-automata-belong-to-a-project). Its own link or its Automation's link beats its directory. Look for it under **Automata without a project** if nothing placed it |
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each arc needs a unique id; an arc whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
 | `set --branch-retention-days -1` is refused | Retention cannot be negative |
@@ -471,6 +500,23 @@ the lane defaults. Use REST, MCP or the CLI for those.
   documented in the change; confirm it on a project that has a policy and arcs.
 - **Mobile parity.** The Manage projects form is web-only; the Android and iPhone
   apps need the matching add, edit and remove controls (tracked in datawatch-app).
+
+- **No way to set the link yet.** The `project` field exists on Automata and
+  Automations and the roll-ups read it, but the change does not add a control to
+  set it from the web app, REST, MCP, the CLI or the comm channel. Until one
+  ships, placement of existing work rests on the directory match. Confirm where
+  the operator wants the link set before relying on it.
+- **Roll-up behavior is from tests.** The order above and the
+  `without_project` group follow the resolver and its tests, not a check on a
+  live daemon. Open a project that has worktree-based or spawned Automata and
+  confirm the page, History and Events agree.
+- **The group is in the response, not yet confirmed on the page.** The REST,
+  MCP and comm-channel roll-up carry `without_project`; confirm the web page
+  shows the group where you expect it, and that the mobile apps ignore the new
+  field without error (parity is tracked in datawatch-app).
+- **Totals changed for some projects.** A project that used to count an
+  Automaton by directory alone no longer does if that Automaton is linked to
+  another project. Expect a project's totals to shift once links are set.
 
 ## Related
 
