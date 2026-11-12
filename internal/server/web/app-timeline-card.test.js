@@ -11,7 +11,7 @@
 //   - the card section must be timing-free (the dashboard rAF loop is the
 //     only fetch driver); the detail tab is the one place a poll lives.
 // No jsdom/jest: loads the real app.js into a stubbed browser (see
-// testutil_browser_stub.js, BL394 §3h) and exercises the public surface.
+// testutil_browser_stub.js) and exercises the public surface.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -365,7 +365,7 @@ test('card implementation section owns no timers; the detail tab is the sole pol
   assert.ok(app.includes('_dashRenderTimeline()'), 'loop hook wired');
 });
 
-test('card filters are event-attribute driven, never inline user data (BL394)', () => {
+test('card filters are event-attribute driven, never inline user data', () => {
   const sandbox = sandboxWith('en.json');
   const html = vm.runInContext('window.timelineCardHtml(okState())', Object.assign(sandbox, { okState }));
   assert.ok(html.includes('onchange="window._timelineCardFilter(this.dataset.tlFilter, this.value)"'),
