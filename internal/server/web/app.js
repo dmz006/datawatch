@@ -3068,6 +3068,9 @@ function navigate(view, sessionId, fromPopstate) {
 const _PROJECTS_LAST_KEY = 'cs_projects_last';
 const _PROJECTS_SHOW_EMPTY_KEY = 'cs_projects_show_empty';
 const _PROJECTS_OVERVIEW = '';
+// Collapse state of each project page section: one key per section id, '1' =
+// collapsed, anything else expanded. Shared by every project in this browser.
+const _PROJECTS_SECTION_KEY_PREFIX = 'cs_projects_section_collapsed_';
 // rollup is the roll-up of the project named by rollupFor; rollupError is its
 // load failure. The page paints the roll-up only for the selected project.
 // hist is the paged history of the project named by hist.name: items so far,
@@ -3099,6 +3102,50 @@ function _projectsSetShowEmpty(on) {
 }
 // _projectsHashParse returns the project named by a #projects hash ('' for
 // Overview), or null when the hash is not a projects route.
+// _projectsSectionCollapsed reads the remembered collapse state of a section.
+// A blocked store reads as expanded.
+function _projectsSectionCollapsed(id) {
+  try { return localStorage.getItem(_PROJECTS_SECTION_KEY_PREFIX + id) === '1'; } catch (_) { return false; }
+}
+function _projectsSetSectionCollapsed(id, on) {
+  try { localStorage.setItem(_PROJECTS_SECTION_KEY_PREFIX + id, on ? '1' : '0'); } catch (_) { /* not remembered */ }
+}
+// _projectsSectionToggleState applies the collapsed state to a card in place:
+// the body's hidden flag, aria-expanded, the chevron and the toggle's label.
+function _projectsSectionToggleState(card, collapsed) {
+  const btn = card.querySelector('.project-section-toggle');
+  const body = card.querySelector('.project-section-body');
+  const title = card.getAttribute('data-title') || '';
+  if (body) body.hidden = collapsed;
+  card.classList.toggle('collapsed', collapsed);
+  if (btn) {
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    btn.setAttribute('aria-label', t(collapsed ? 'projects_section_expand' : 'projects_section_collapse', [title]));
+    const chev = btn.querySelector('.project-section-chevron');
+    if (chev) chev.textContent = collapsed ? '▸' : '▾';
+  }
+}
+// _projectsSectionCard wraps a section in a card with a title row, a collapse
+// toggle and a body. titleHtml is already escaped; titleText is its plain form.
+function _projectsSectionCard(id, titleHtml, innerHtml, titleText) {
+  const collapsed = _projectsSectionCollapsed(id);
+  const plain = titleText === undefined ? String(titleHtml).replace(/<[^>]*>/g, '') : titleText;
+  const label = t(collapsed ? 'projects_section_expand' : 'projects_section_collapse', [plain]);
+  return `<div class="project-section-card${collapsed ? ' collapsed' : ''}" id="projectSection-${id}" data-section="${id}" data-title="${escHtml(plain)}">` +
+    `<div class="project-section-header"><span class="project-section-title">${titleHtml}</span>` +
+    `<span role="button" tabindex="0" class="project-section-toggle" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="${escHtml(label)}" onclick="projectsToggleSection('${id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();projectsToggleSection('${id}');}"><span class="project-section-chevron" aria-hidden="true">${collapsed ? '▸' : '▾'}</span></span></div>` +
+    `<div class="project-section-body"${collapsed ? ' hidden' : ''}>${innerHtml}</div></div>`;
+}
+// projectsToggleSection flips a section's collapse state and updates the card
+// in place; nothing is refetched and the page is not repainted.
+function projectsToggleSection(id) {
+  const cards = document.querySelectorAll('.project-section-card[data-section="' + id + '"]');
+  if (!cards.length) return;
+  const collapsed = cards[0].getAttribute('data-title') !== null && !cards[0].classList.contains('collapsed');
+  _projectsSetSectionCollapsed(id, collapsed);
+  cards.forEach(c => _projectsSectionToggleState(c, collapsed));
+}
+
 function _projectsHashParse(hash) {
   const m = /^#projects(?:\/(.+))?$/.exec(String(hash || ''));
   if (!m) return null;
@@ -3400,6 +3447,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   };
 
   let body = '';
+  let ganttDone = false;
   if (rollErr) {
     events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
@@ -3409,21 +3457,23 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     body += _projectRollupHTML(roll, arcs);
     if (!arcs.length) {
       events.push(t('projects_event_no_arcs'));
-      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
-    } else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+      if (showEmpty) body += _projectsSectionCard('arcs', escHtml(t('projects_page_arcs')), `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div>`);
+    } else body += _projectsSectionCard('arcs', escHtml(t('projects_page_arcs')), arcs.map(arcHTML).join(''));
+    body += _projectGanttHTML(hist);
+    ganttDone = true;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
-    if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
+    if (un.length) body += _projectsSectionCard('unassigned', escHtml(t('projects_page_unassigned')), automataList(un));
     else {
       events.push(t('projects_event_no_unassigned'));
-      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
+      if (showEmpty) body += _projectsSectionCard('unassigned', escHtml(t('projects_page_unassigned')), `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`);
     }
   }
-  body += _projectGanttHTML(hist);
+  if (!ganttDone) body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
   body += _projectLinksHTML(p);
 
   const evs = events.length
-    ? `<div id="projectEvents" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escHtml(t('projects_page_events'))}</div>${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`
+    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
     : '';
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
     <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${head}${body}${evs}</div></div>`;
@@ -3510,7 +3560,6 @@ function _projectsSettingsLinkHTML(sectionKey, label) {
 // _projectPolicyEffectiveHTML lists each policy value the project resolves to
 // and where it came from (the source), with a link to the Settings policy card.
 function _projectPolicyEffectiveHTML(pl, err) {
-  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_policy_heading'))}</div>`;
   const link = `<div style="margin:2px 0 6px;">${_projectsSettingsLinkHTML('project_policy', t('projects_links_policy_settings'))}</div>`;
   let inner;
   if (err) {
@@ -3534,14 +3583,13 @@ function _projectPolicyEffectiveHTML(pl, err) {
       return `<div class="project-policy-row" style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(k)}:</span> ${escHtml(val)} <span style="color:var(--text2);font-size:12px;">(${escHtml(e.source || '')})</span></div>`;
     }).join('') : (showEmpty ? `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>` : '');
   }
-  return `<div class="project-policy-effective" style="margin-top:10px;">${head}${link}${inner}</div>`;
+  return _projectsSectionCard('policy', escHtml(t('projects_links_policy_heading')), `<div class="project-policy-effective">${link}${inner}</div>`);
 }
 
 // _projectMergePipelineHTML shows the merge pipeline in effect for the project:
 // where it comes from and why, its steps, and the conflict policy. The link
 // opens Settings, where the merge pipeline settings are.
 function _projectMergePipelineHTML(mp, err) {
-  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_merge_heading'))}</div>`;
   const link = `<div style="margin:2px 0 6px;">${_projectsSettingsLinkHTML(MERGE_PIPELINE_SETTINGS_SECTION, t('projects_links_merge_settings'))}</div>`;
   let inner;
   if (err) {
@@ -3563,14 +3611,13 @@ function _projectMergePipelineHTML(mp, err) {
         ? `<ol style="margin:4px 0 0;padding-left:20px;">${steps.map((st, i) => _mergePipelineStepHtml(st, i + 1)).join('')}</ol>`
         : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('merge_pipeline_empty'))}</div>`);
   }
-  return `<div class="project-merge-pipeline" style="margin-top:10px;">${head}${link}${inner}</div>`;
+  return _projectsSectionCard('merge', escHtml(t('projects_links_merge_heading')), `<div class="project-merge-pipeline">${link}${inner}</div>`);
 }
 
 // _projectEventStreamHTML lists the event stream for this project, newest last
 // as the daemon returns it. dropped says that events were lost before the page
 // read them.
 function _projectEventStreamHTML(ev, err) {
-  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_links_events_heading'))}</div>`;
   const note = `<div style="font-size:12px;color:var(--text2);margin:2px 0 4px;">${escHtml(t('projects_links_events_note', [_PROJECTS_EVENTS_QUEUE]))}</div>`;
   let inner;
   if (err) {
@@ -3589,7 +3636,7 @@ function _projectEventStreamHTML(ev, err) {
         }).join('')
         : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_events_empty'))}</div>`);
   }
-  return `<div class="project-event-stream" style="margin-top:10px;">${head}${note}${inner}</div>`;
+  return _projectsSectionCard('stream', escHtml(t('projects_links_events_heading')), `<div class="project-event-stream">${note}${inner}</div>`);
 }
 
 // _projectLinksHTML is the policy, merge pipeline and event stream sections of
@@ -3672,12 +3719,11 @@ function _projectRollupHTML(roll, arcs) {
     Number(th.tasks_finished) || 0, perDay(th.tasks_per_day),
   ]);
   const line = (label, val) => `<div style="margin:3px 0;font-size:13px;"><span style="color:var(--text2);">${escHtml(label)}:</span> ${escHtml(val)}</div>`;
-  return `<div class="project-rollup" style="margin-top:10px;">
-    <div style="font-weight:600;font-size:13px;">${escHtml(t('projects_rollup_heading'))}</div>
+  return _projectsSectionCard('progress', escHtml(t('projects_rollup_heading')), `<div class="project-rollup">
     ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
     ${line(t('projects_rollup_points_label'), pointsVal)}
     ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
-  </div>`;
+  </div>`);
 }
 
 function _projectDate(v) {
@@ -3709,7 +3755,6 @@ function _projectHistoryRowHTML(e) {
 // while the first page loads. Load more appears while the server reports a
 // next cursor.
 function _projectHistoryHTML(hist) {
-  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_history_heading'))}</div>`;
   let inner;
   if (!hist) {
     inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_history_loading'))}</div>`;
@@ -3724,7 +3769,7 @@ function _projectHistoryHTML(hist) {
     const busy = _projectsState.histBusy ? ' disabled' : '';
     inner += `<button class="btn-secondary" id="projectHistoryMore" style="margin-top:8px;"${busy} onclick="projectsHistoryMore()">${escHtml(t('projects_history_load_more'))}</button>`;
   }
-  return `<div id="projectHistory" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;">${head}${inner}</div>`;
+  return _projectsSectionCard('history', escHtml(t('projects_history_heading')), `<div id="projectHistory">${inner}</div>`);
 }
 
 // ── Project Gantt: Automaton and task bars from the history endpoint ─────────
@@ -3793,12 +3838,11 @@ function _projectGanttPalette() {
 // _projectGanttHTML is the Gantt block of the project page. hist is null while
 // the first history page loads; the window selector repaints on change.
 function _projectGanttHTML(hist) {
-  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('projects_gantt_heading'))}</div>`;
   const key = _projectsState.ganttWindow || _PROJECTS_GANTT_DEFAULT_WINDOW;
   const select = `<label style="font-size:12px;color:var(--text2);margin-left:auto;">${escHtml(t('projects_gantt_window_label'))}
     <select id="projectGanttWindow" onchange="projectsGanttWindow(this.value)" style="font-size:12px;">${_PROJECTS_GANTT_WINDOWS.map(([k, , labelKey]) =>
       `<option value="${k}"${k === key ? ' selected' : ''}>${escHtml(t(labelKey))}</option>`).join('')}</select></label>`;
-  const top = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${head}${select}</div>`;
+  const top = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${select}</div>`;
   let inner;
   if (!hist) {
     inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
@@ -3816,7 +3860,7 @@ function _projectGanttHTML(hist) {
       }
     }
   }
-  return `<div id="projectGantt" class="project-gantt" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;">${top}${inner}</div>`;
+  return _projectsSectionCard('gantt', escHtml(t('projects_gantt_heading')), `<div id="projectGantt" class="project-gantt">${top}${inner}</div>`);
 }
 
 // _projectGanttSVG draws the bounded rows on a shared time axis. The axis has

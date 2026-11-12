@@ -210,12 +210,23 @@ Choose **Automata**, then the **Projects** sub-tab, then `core-api`. From the to
 | Header | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share |
 | Progress | Tasks and Automata done, cost in points, throughput over the last seven days |
 | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
+| Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now". On a wide browser it is capped at 720 pixels wide, left-aligned, so its text keeps its authored size instead of growing with the window; on a phone it is unchanged |
 | Unassigned Automata | Automata of this project that no arc holds |
-| Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now" |
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Effective policy | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section |
 | Merge pipeline | Read-only, with an **Open settings** link that opens Settings on the Automata tab at the Merge pipeline group |
 | Events | The event stream filtered to this project. It is hidden while it has nothing to show, and it lists notes for empty sections (no arcs, no unassigned Automata) and a missing weekly share, but only when the project has an arc or an unassigned Automaton that needs one |
+
+Each section of the project page is a collapsible card with a toggle in its
+header. Whether a section is open or closed is remembered per section in this
+browser, not by the daemon, so it differs between browsers, and a browser that
+blocks storage starts with the defaults each time. Collapsing only changes what
+is shown. There are no sub-tabs on the page, and the cards cannot be hidden or
+reordered.
+
+**For the operator to review:** the remembered open or closed state uses the
+browser's local storage and has no REST, MCP, CLI, chat or configuration form.
+The mobile apps are not covered by this change and need a parity check.
 
 A row links to its Automaton view, and a session link opens the session. The
 **Overview** choice in the picker is the cross-project in-flight view, not a
@@ -318,6 +329,7 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
 | Change the window of the Gantt | Gantt header: 7, 30 or 90 days |
 | Page through history | **Load more** at the foot of History |
+| Collapse or expand a section | Toggle in the section header |
 | Change policy | **Settings → Automata → Project policy** (the **Open settings** link on the page opens the Automata tab, expands that section and scrolls to it) |
 | Change the merge pipeline | **Settings → Automata**, the **Merge pipeline** group of the Automata settings card (the **Open settings** link on the page opens the Automata tab, expands that card and scrolls to it) |
 | Add a project | **Manage projects** block under the picker: fill in the form, **Add project**. With no projects the form is already open |

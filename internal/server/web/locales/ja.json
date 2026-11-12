@@ -5332,5 +5332,7 @@
   "dash_card_help_usage_pace": "週次の使用量を、一定のペースならここまでに使うポイントであるペースラインと比べて、使用量計算機から表示します。",
   "dash_card_purpose_usage_burn": "1日ごとに使った使用ポイントを表示します。",
   "dash_card_help_usage_burn": "週の各日に使った使用ポイントを、使用量計算機の日次系列から表示します。",
-  "dash_card_help_label": "このカードのヘルプ"
+  "dash_card_help_label": "このカードのヘルプ",
+  "projects_section_collapse": "%1$sを折りたたむ",
+  "projects_section_expand": "%1$sを展開する"
 }

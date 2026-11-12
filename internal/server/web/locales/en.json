@@ -5332,5 +5332,7 @@
   "dash_card_help_usage_pace": "Shows the weekly usage level against the pace line, the points a steady pace would have used by now, from the usage calculator.",
   "dash_card_purpose_usage_burn": "Usage points burned each day.",
   "dash_card_help_usage_burn": "Shows the usage points burned on each day of the week, from the usage calculator's daily series.",
-  "dash_card_help_label": "Help for this card"
+  "dash_card_help_label": "Help for this card",
+  "projects_section_collapse": "Collapse %1$s",
+  "projects_section_expand": "Expand %1$s"
 }

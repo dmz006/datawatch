@@ -5332,5 +5332,7 @@
   "dash_card_help_usage_pace": "Zeigt die wöchentliche Nutzung gegenüber der Tempolinie, den Punkten, die ein gleichmäßiges Tempo bis jetzt verbraucht hätte, aus dem Nutzungsrechner.",
   "dash_card_purpose_usage_burn": "Pro Tag verbrauchte Nutzungspunkte.",
   "dash_card_help_usage_burn": "Zeigt die an jedem Tag der Woche verbrauchten Nutzungspunkte aus der Tagesreihe des Nutzungsrechners.",
-  "dash_card_help_label": "Hilfe zu dieser Karte"
+  "dash_card_help_label": "Hilfe zu dieser Karte",
+  "projects_section_collapse": "%1$s einklappen",
+  "projects_section_expand": "%1$s ausklappen"
 }

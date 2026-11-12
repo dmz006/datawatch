@@ -5332,5 +5332,7 @@
   "dash_card_help_usage_pace": "Muestra el uso semanal frente a la línea de ritmo, los puntos que un ritmo constante habría usado hasta ahora, según la calculadora de uso.",
   "dash_card_purpose_usage_burn": "Puntos de uso consumidos cada día.",
   "dash_card_help_usage_burn": "Muestra los puntos de uso consumidos cada día de la semana, según la serie diaria de la calculadora de uso.",
-  "dash_card_help_label": "Ayuda de esta tarjeta"
+  "dash_card_help_label": "Ayuda de esta tarjeta",
+  "projects_section_collapse": "Contraer %1$s",
+  "projects_section_expand": "Expandir %1$s"
 }

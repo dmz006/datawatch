@@ -7409,6 +7409,19 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .obs-kg-triple { overflow-wrap: anywhere; }
 .obs-sched-meta { flex-shrink: 0; }
 
+/* Project Gantt: the SVG viewBox is 640 wide, so capping at 720px keeps its
+   text at the authored size on wide screens; below the cap it fills the
+   container. Left-aligned (block, no auto margins). */
+.project-gantt-svg { width: 100%; max-width: 720px; }
+
+/* Project page: collapsible section cards */
+.project-section-card { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.project-section-header { display: flex; align-items: center; gap: 8px; }
+.project-section-title { flex: 1; font-weight: 600; font-size: 13px; }
+.project-section-toggle { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text2); cursor: pointer; font-size: 12px; line-height: 1; padding: 3px 7px; }
+.project-section-body { margin-top: 4px; }
+.project-section-body[hidden] { display: none; }
+
 @media (max-width: 768px), (max-height: 500px) {
   .obs-tap { min-height: 40px; min-width: 40px; box-sizing: border-box; }
   .obs-maint-grid { grid-template-columns: 1fr; }
