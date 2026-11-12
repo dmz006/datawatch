@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.161.0 (2026-11-12).** A child Automaton now starts from its parent's project, repository directory, Automation, models, tags and priority, controlled by autonomous.automation.child_inherit (on by default). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.162.0 (2026-11-12).** Registry rows and findings are now datawatch records, with REST, six MCP tools, a CLI, chat verbs, a Plan records section on the Projects page, an import of the plans README and findings files, and a project field on Automata. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

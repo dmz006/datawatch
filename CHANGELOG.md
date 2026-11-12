@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.162.0 — Registry rows and findings as datawatch records
+
+### Added
+
+- **Registry rows and findings are now datawatch records.** A plan record is one registry row or one finding, kept by the daemon (one file per record under the data directory) with a title that is unique inside its project, a short readable id, a permanent identifier, a state, a body, links and older titles that still find it, and the Automaton that shipped or raised it. Every create and update is written to the audit log with the actor. Records are read and changed on every surface: REST `/api/plan-records/...`, six MCP tools (`plan_record_list`, `plan_record_get`, `plan_record_search`, `plan_record_create`, `plan_record_update`, `plan_record_import`), the `datawatch plan-record` CLI, the chat verbs `autonomous plan-records` and `autonomous plan-record`, and a **Plan records** section on the Projects page in the web app (list, search, filter, open, create, change and import).
+- **Import of the plans README rows and the findings files.** One call (preview by default on the CLI) reads the registry table and the findings files into records for a registered project, with a conflict policy of `suffix`, `rename` or `skip`, and flags a record `needs_review` when a conflict was settled for you. A second run changes nothing.
+- **Settings `autonomous.plan_records.enabled`** (on by default; off answers every route with 404 and hides the section), **`autonomous.plan_records.write_through`** (off by default; when on, the post-ship step records the shipped row as a plan record) and **`autonomous.plan_records.import_conflict_policy`** (`suffix` by default), in `GET` and `PUT /api/config`, comm `configure`, and Settings, Automata.
+- **A `project` field on Automata and Automations**, derived from the project link and shown read-only in the detail view and in reads.
+- Strings for the new section and settings in English, German, Spanish, French and Japanese.
+- Docs: how-to `plan-records`, the operations manual section, the definitions entries and the docs indexes.
+
 ## v9.161.0 — Child Automata inherit their parent's context
 
 ### Added
