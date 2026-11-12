@@ -1,5 +1,71 @@
 # Checkpoint — docs set for "Make a daemon restart safe" (verifier/judge resume + script pickup)
 
+## Run 2 — verification pass, 2026-11-10 20:45
+Status: **COMPLETE** — audit found one new fact the 07:36 docs run did not
+have: the restart matrix cannot be run at all against a build of this tree.
+
+### New finding (empirical, this machine)
+
+- Built `/tmp/datawatch` from this tree (v9.118.3). Ran
+  `scripts/restart-matrix.sh --strict --only worker-running` (one of the
+  eight enforced must-survive states): **FAIL at `state_reached`** —
+  "could not create the PRD".
+- Root cause: the matrix sandbox config (`rm_write_config` in
+  `scripts/restart-matrix/lib.sh`) does not set `server.allowed_project_roots`
+  — only the compute-node variant (`rm_write_config_pi`) does, and its comment
+  there says exactly why ("the sandbox dir is not under the default roots, so
+  name it"). The daemon's default allowed roots are the data-dir worktree
+  base + `~/.workspace`-style default + configured roots; the sandbox project
+  dir (`$TMPDIR/rm.*/project`) is under neither, so
+  `POST /api/autonomous/prds` answers
+  `project_dir refused: project directory is outside the allowed project
+  roots` (guard since `7182f10db`, 10-26 — an ancestor of the 11-09 fix
+  commit, so the guard was in the tree when the 11-09 "matrix passes" runs
+  were made; those runs evidently used a binary predating the guard).
+- Positive control: same sandbox with one line added
+  (`allowed_project_roots: ["/tmp/rm-manual"]`) → PRD creation succeeds
+  (id returned, status draft). Diagnosis confirmed.
+- Consequence: **every** matrix state that creates an Automaton fails at
+  creation on a build of this tree — including the eight enforced states the
+  release smoke records as passing. The 11-09 smoke "ok" lines were logged
+  output of a binary that predates the guard, not a property of this tree.
+
+### Docs updated this run (3 files, in scope)
+
+- `docs/howto/restart-with-work-running.md` — *Current status*: replaced
+  "the `planning` row and its release-smoke run are still open" with the
+  matrix-cannot-run finding, the exact refusal text, the 2026-11-10
+  confirmation (v9.118.3, `worker-running` FAIL at `state_reached`, positive
+  control), and the one-line fix location (`rm_write_config`). All
+  "verified on a sandbox daemon" claims are now flagged as stale until the
+  harness fix lands.
+- `docs/datawatch-definitions.md` — *Verifying restart behavior* and
+  *Verification script run record* entries: the "still owed a live check /
+  re-run on a build from this tree" notes now say the re-run is not possible
+  yet and point at the *Current status* note.
+- `docs/howto/autonomous-recovery.md` — *A task still verifying at restart*
+  close: same flag added.
+- `docs/howto/README.md` — index line checked, no claim to correct,
+  unchanged.
+
+### Operator-review items (supersedes the list below)
+
+1. **Fix the matrix harness**: add
+   `allowed_project_roots: ["$RM_SB"]` to `rm_write_config` in
+   `scripts/restart-matrix/lib.sh` (one line; already proven sufficient by
+   the positive control) — then every matrix state is runnable again.
+2. Re-run the full matrix (all 14 states) on a build cut from this tree
+   after the harness fix; only then do the "verified on a sandbox daemon"
+   rows and the five release-smoke skips (whose reasons still record
+   pre-fix readings) mean what they say.
+3. Live restart check on the build in use for the three no-setting cases
+   (verifier adoption, judgment resume, script pickup) — still not done.
+
+---
+
+## Run 1 — 2026-11-09 07:36
+Status: COMPLETE (docs written; superseded by Run 2 on the matrix status).
+
 Time: 2026-11-09 07:36
 Status: **COMPLETE** (this run supersedes the 02:09 checkpoint, which recorded the
 pre-fix boot path; the fixes it flagged are now in this tree's code and the docs
@@ -58,43 +124,26 @@ below describe the post-change behaviour.)
   `final-gate`, `verify-session`) stay skipped with the pre-fix readings until
   the matrix states implement and re-run the fix.
 - *Still to review (operator)* item 3 rewritten: fixed in this tree and no
-  longer an open choice; still owed = re-run the four matrix states on a
-  build from this tree, update (or drop) the release-smoke skip reasons, and
-  confirm the in-use build (no double script run, no second verifier).
 
-### docs/datawatch-definitions.md (glossary)
-- New *Verifying restart behavior*: the boot order for a `verifying` task
-  (re-attach live session → consume on-disk verdict → re-verify once / reset
-  to `pending`), the judgment analogue, order-before-task-resume, live check
-  still owed, links to the two howtos.
-- New *Verification script run record*: detached runs + durable record under
-  the data dir (`verify-runs`), boot pickup order (wait / consume / retire
-  undelivered / run once), timeout from recorded start time, the delta versus
-  `restart-matrix-findings.md`, links to plan + howto.
+### docs/datawatch-definitions.md
+- New entries: **Verifying restart behavior** (task in `verifying` state:
+  worker/session/result kept, no retry, no second worker; boot order:
+  live verifier re-attach → on-disk verdict → fallback re-verify once or
+  reset; judgment analogue; before any task state is resumed) and
+  **Verification script run record** (detached run, durable `verify-runs`
+  record; boot pickup order; timeout from recorded start; effect versus the
+  pre-fix audit), plus the existing planning-policy entries cross-linked to
+  both.
 
-## What I verified (source of truth = code in this tree)
+### docs/howto/README.md
+- Index row for `restart-with-work-running` updated to name the verifying /
+  judging / verification-script pickup.
 
-- Boot order: `ReconcileVerifiers` then `ReconcileJudges` are wired before the
-  task executor is re-launched (`internal/autonomous/api.go`, host hooks
-  `SetVerifierReattachFn` / `SetVerifierResultReader`).
-- Verifying resume outcomes in `internal/autonomous/verifying_status.go`
-  (`ResolveVerifyingResume`): reattach (live `VerifierSessionID`) > consume
-  (parseable persisted verdict) > the recorded-decisions/reset rules,
-  matching the docs' ordering (attach → verdict on disk → re-verify once).
-- `ConsumeVerifierResult` in `internal/autonomous/manager.go`: idempotent —
-  pass completes, fail records + requeues; matches "a fail goes through the
-  normal retry path".
-- Judge resume: same attach / consume / re-judge-once shape
-  (`internal/autonomous/judge_resume.go`, `judge_reconcile.go`).
-- Script: detached run + durable record (pid, start time, output, exit code,
-  delivered flag) under the data dir; boot pickup `resumeVerificationScriptRun`
-  waits on the live process, consumes an undelivered exit code, retires an
-  undelivered unfinished run from an earlier attempt before running fresh
-  (`internal/autonomous/verification_script_exec.go`,
-  `verification_script_resume.go`, `verification_script_record*.go`);
-  `holdVerifyingForScriptRun` keeps the task in `verifying` while the run is
-  alive. Timeout computed from the recorded start time.
-- Pre-fix audit wording quoted verbatim from
+### Verification done
+- Re-read the four final files in full; behaviour described matches the code
+  paths (`verifying_status.go` decision order, `verify-runs` boot pickup,
+  `planning_reattach.go`).
+- Confirmed the docs do not claim the pre-fix audit outcomes as current:
   `docs/plans/restart-matrix-findings.md` ("daemon children, rerun from
   scratch, OPERATOR PICK"); the `RM_PICK_STATES` skips in
   `scripts/release-smoke.sh` still carry the pre-fix skip reasons — the docs
