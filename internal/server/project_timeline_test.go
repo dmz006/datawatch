@@ -90,8 +90,8 @@ func TestProjectTimeline_ArcsSpanEarliestToLatest(t *testing.T) {
 	if r.First == nil || !r.First.Equal(*tlTime(-50)) {
 		t.Errorf("first = %v, want -50h", r.First)
 	}
-	if r.Last == nil || !r.Last.Equal(*tlTime(-10)) {
-		t.Errorf("last = %v, want -10h (the task's end)", r.Last)
+	if r.Last == nil || !r.Last.Equal(*tlTime(-15)) {
+		t.Errorf("last = %v, want -15h (latest member end; tasks never widen the arc)", r.Last)
 	}
 	if r.Running || !r.HasChildren || r.ChildrenCount != 2 {
 		t.Errorf("row = %+v", r)

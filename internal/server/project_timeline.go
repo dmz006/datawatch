@@ -30,6 +30,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -66,7 +67,37 @@ type timelineRow struct {
 	Running       bool       `json:"running"`
 	HasChildren   bool       `json:"has_children"`
 	ChildrenCount int        `json:"children_count"`
+
+	// Start equals First; End is null while the work runs. Status is one of
+	// completed, running, waiting, blocked, failed, cancelled. Release names the
+	// release a shipped Automaton merged into. DependsOn lists task ids (task
+	// rows only).
+	Start     *time.Time `json:"start"`
+	End       *time.Time `json:"end"`
+	Status    string     `json:"status"`
+	Release   string     `json:"release,omitempty"`
+	DependsOn []string   `json:"depends_on,omitempty"`
 }
+
+// timelineEdge is one dependency between two Automata of an arc: From finishes
+// before To starts.
+type timelineEdge struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Kind string `json:"kind"`
+}
+
+const timelineEdgeChain = "chain"
+
+// Timeline row statuses.
+const (
+	tlStatusCompleted = "completed"
+	tlStatusRunning   = "running"
+	tlStatusWaiting   = "waiting"
+	tlStatusBlocked   = "blocked"
+	tlStatusFailed    = "failed"
+	tlStatusCancelled = "cancelled"
+)
 
 // projectTimeline is the GET /api/projects/{name}/timeline response.
 type projectTimeline struct {
@@ -79,6 +110,8 @@ type projectTimeline struct {
 	HasMore     bool          `json:"has_more"`
 	NextCursor  string        `json:"next_cursor,omitempty"`
 	Rows        []timelineRow `json:"rows"`
+	// Edges is set on level=automata and focus replies.
+	Edges []timelineEdge `json:"edges,omitempty"`
 }
 
 // timelineInput is everything buildProjectTimeline reads. It holds plain
@@ -195,7 +228,46 @@ func timelineTaskRunning(t *autonomous.Task) bool {
 	return t.Status == autonomous.TaskInProgress || t.Status == autonomous.TaskVerifying
 }
 
-// timelineTaskRow is the row of one task.
+// timelineTaskStatus maps a task status to a timeline status.
+func timelineTaskStatus(st autonomous.TaskStatus) string {
+	switch st {
+	case autonomous.TaskCompleted:
+		return tlStatusCompleted
+	case autonomous.TaskInProgress, autonomous.TaskRunningTests, autonomous.TaskVerifying:
+		return tlStatusRunning
+	case autonomous.TaskFailed:
+		return tlStatusFailed
+	case autonomous.TaskBlocked, autonomous.TaskReviewNeeded:
+		return tlStatusBlocked
+	case autonomous.TaskCancelled:
+		return tlStatusCancelled
+	}
+	return tlStatusWaiting
+}
+
+// timelineAutomatonStatus maps an Automaton to a timeline status. A shipped
+// Automaton that was not cancelled or failed reads as completed.
+func timelineAutomatonStatus(p *autonomous.PRD) string {
+	shipped := p.IsShipped() || p.MergedInRelease != ""
+	switch p.Status {
+	case autonomous.PRDRunning, autonomous.PRDActive:
+		return tlStatusRunning
+	case autonomous.PRDCompleted, autonomous.PRDArchived:
+		return tlStatusCompleted
+	case autonomous.PRDFailed:
+		return tlStatusFailed
+	case autonomous.PRDBlocked:
+		return tlStatusBlocked
+	case autonomous.PRDCancelled, autonomous.PRDRejected:
+		return tlStatusCancelled
+	}
+	if shipped {
+		return tlStatusCompleted
+	}
+	return tlStatusWaiting
+}
+
+// timelineTaskRow is the row of one task: it spans StartedAt to CompletedAt.
 func timelineTaskRow(t *autonomous.Task) timelineRow {
 	running := timelineTaskRunning(t)
 	last := t.CompletedAt
@@ -203,20 +275,22 @@ func timelineTaskRow(t *autonomous.Task) timelineRow {
 		last = nil
 	}
 	return timelineRow{Kind: timelineKindTask, ID: t.ID, Title: t.Title, State: string(t.Status),
-		First: t.StartedAt, Last: last, Running: running}
+		First: t.StartedAt, Last: last, Running: running,
+		Start: t.StartedAt, End: last, Status: timelineTaskStatus(t.Status),
+		DependsOn: append([]string(nil), t.DependsOn...)}
 }
 
-// timelineAutomatonSpan is the span of an Automaton and everything in it.
+// timelineAutomatonSpan is the span of an Automaton: its created time to its
+// completion time, or now (end null) while it runs.
 func timelineAutomatonSpan(p *autonomous.PRD) timelineSpan {
 	var s timelineSpan
-	start, finish := historyAutomatonTimes(p)
-	s.add(timePtr(start), timePtr(finish), timelineAutomatonRunning(p))
-	for _, st := range p.Story {
-		for i := range st.Tasks {
-			t := &st.Tasks[i]
-			s.add(t.StartedAt, t.CompletedAt, timelineTaskRunning(t))
-		}
+	running := timelineAutomatonRunning(p)
+	var end *time.Time
+	switch timelineAutomatonStatus(p) {
+	case tlStatusCompleted, tlStatusFailed, tlStatusCancelled:
+		end = timePtr(p.UpdatedAt)
 	}
+	s.add(timePtr(p.CreatedAt), end, running)
 	return s
 }
 
@@ -229,21 +303,233 @@ func timelineTaskCount(p *autonomous.PRD) int {
 }
 
 func timelineAutomatonRow(p *autonomous.PRD) timelineRow {
-	first, last := timelineAutomatonSpan(p).done()
+	sp := timelineAutomatonSpan(p)
+	first, last := sp.done()
 	n := timelineTaskCount(p)
 	return timelineRow{Kind: timelineKindAutomaton, ID: p.ID, Title: p.Title, State: string(p.Status),
-		First: first, Last: last, Running: timelineAutomatonSpan(p).running,
-		HasChildren: n > 0, ChildrenCount: n}
+		First: first, Last: last, Running: sp.running,
+		HasChildren: n > 0, ChildrenCount: n,
+		Start: first, End: last, Status: timelineAutomatonStatus(p), Release: p.MergedInRelease}
+}
+
+// timelineArcStatus derives an arc or group status from its members.
+func timelineArcStatus(state string, members []*autonomous.PRD) string {
+	if len(members) == 0 {
+		if state == config.ArcStateDone {
+			return tlStatusCompleted
+		}
+		return tlStatusWaiting
+	}
+	var run, fail, block, done, cancel int
+	for _, p := range members {
+		switch timelineAutomatonStatus(p) {
+		case tlStatusRunning:
+			run++
+		case tlStatusFailed:
+			fail++
+		case tlStatusBlocked:
+			block++
+		case tlStatusCompleted:
+			done++
+		case tlStatusCancelled:
+			cancel++
+		}
+	}
+	switch {
+	case run > 0:
+		return tlStatusRunning
+	case fail > 0:
+		return tlStatusFailed
+	case block > 0:
+		return tlStatusBlocked
+	case done+cancel == len(members) && done > 0, state == config.ArcStateDone:
+		return tlStatusCompleted
+	case cancel == len(members):
+		return tlStatusCancelled
+	}
+	return tlStatusWaiting
 }
 
 // timelineRowKey is the stable cursor key of a row.
 func timelineRowKey(r timelineRow) string { return r.Kind + ":" + r.ID }
 
-// sortAutomataByStart orders Automata by first time (unknown last), then id.
+// timelineBaseLess is the order inside an arc before dependencies apply:
+// finished rows first by end time, then the rest by start, then id.
+func timelineBaseLess(a, b timelineRow) bool {
+	af, bf := a.End != nil, b.End != nil
+	if af != bf {
+		return af
+	}
+	if af {
+		if !a.End.Equal(*b.End) {
+			return a.End.Before(*b.End)
+		}
+	} else if (a.Start == nil) != (b.Start == nil) {
+		return a.Start != nil
+	} else if a.Start != nil && !a.Start.Equal(*b.Start) {
+		return a.Start.Before(*b.Start)
+	}
+	return a.ID < b.ID
+}
+
+// orderTimelineRows orders rows of one kind: completion order (see
+// timelineBaseLess), then a topological pass so a dependency sits above its
+// dependent, ties broken by the completion order. Dependencies are the rows'
+// DependsOn plus the edges; ids not among the rows are ignored. On a cycle the
+// completion order is returned. The input is not changed.
+func orderTimelineRows(rows []timelineRow, edges []timelineEdge) []timelineRow {
+	base := append([]timelineRow(nil), rows...)
+	sort.SliceStable(base, func(i, j int) bool { return timelineBaseLess(base[i], base[j]) })
+	idx := make(map[string]int, len(base))
+	for i, r := range base {
+		idx[r.ID] = i
+	}
+	indeg := make([]int, len(base))
+	next := make([][]int, len(base))
+	seen := map[[2]int]bool{}
+	link := func(from, to string) {
+		f, ok1 := idx[from]
+		t, ok2 := idx[to]
+		if !ok1 || !ok2 || f == t || seen[[2]int{f, t}] {
+			return
+		}
+		seen[[2]int{f, t}] = true
+		next[f] = append(next[f], t)
+		indeg[t]++
+	}
+	for _, r := range base {
+		for _, d := range r.DependsOn {
+			link(d, r.ID)
+		}
+	}
+	for _, e := range edges {
+		link(e.From, e.To)
+	}
+	out := make([]timelineRow, 0, len(base))
+	done := make([]bool, len(base))
+	for len(out) < len(base) {
+		pick := -1
+		for i := range base {
+			if !done[i] && indeg[i] == 0 {
+				pick = i
+				break
+			}
+		}
+		if pick < 0 {
+			return base // cycle
+		}
+		done[pick] = true
+		out = append(out, base[pick])
+		for _, t := range next[pick] {
+			indeg[t]--
+		}
+	}
+	return out
+}
+
+// timelineAutomationEdges builds the chain edges between Automata of one
+// Automation: outcome edges, fork branches, a branch's paired join, and the
+// member order for a member with no other way on. Members that are not
+// Automata (fork, join, nested, pending) are passed through.
+func timelineAutomationEdges(a *autonomous.Automation) []timelineEdge {
+	if a == nil {
+		return nil
+	}
+	key := func(i int) string {
+		if a.Members[i].ID != "" {
+			return a.Members[i].ID
+		}
+		return fmt.Sprintf("#%d", i)
+	}
+	pairedJoin := map[string]string{}
+	for i, m := range a.Members {
+		if m.Kind == autonomous.MemberKindJoin {
+			for _, b := range m.JoinMembers {
+				pairedJoin[b] = key(i)
+			}
+		}
+	}
+	succ := map[string][]string{}
+	prd := map[string]string{}
+	var order []string
+	for i, m := range a.Members {
+		k := key(i)
+		order = append(order, k)
+		if (m.Kind == "" || m.Kind == autonomous.MemberKindPRD) && m.PRDID != "" {
+			prd[k] = m.PRDID
+		}
+		var n []string
+		for _, t := range []string{m.OnComplete, m.OnBlocked, m.OnFailed} {
+			if t != "" {
+				n = append(n, t)
+			}
+		}
+		if m.Kind == autonomous.MemberKindFork {
+			n = append(n, m.ForkMembers...)
+		}
+		if j, ok := pairedJoin[k]; ok {
+			n = append(n, j)
+		}
+		if len(n) == 0 && i+1 < len(a.Members) {
+			n = append(n, key(i+1))
+		}
+		succ[k] = n
+	}
+	var leaves func(k string, seen map[string]bool) []string
+	leaves = func(k string, seen map[string]bool) []string {
+		if id, ok := prd[k]; ok {
+			return []string{id}
+		}
+		if seen[k] {
+			return nil
+		}
+		seen[k] = true
+		var out []string
+		for _, n := range succ[k] {
+			out = append(out, leaves(n, seen)...)
+		}
+		return out
+	}
+	var edges []timelineEdge
+	dup := map[[2]string]bool{}
+	for _, k := range order {
+		from, ok := prd[k]
+		if !ok {
+			continue
+		}
+		for _, n := range succ[k] {
+			for _, to := range leaves(n, map[string]bool{}) {
+				if to == from || dup[[2]string{from, to}] {
+					continue
+				}
+				dup[[2]string{from, to}] = true
+				edges = append(edges, timelineEdge{From: from, To: to, Kind: timelineEdgeChain})
+			}
+		}
+	}
+	return edges
+}
+
+// timelineEdgesAmong keeps the edges of the given Automations whose two ends
+// are both in ids.
+func timelineEdgesAmong(autos []*autonomous.Automation, ids map[string]bool) []timelineEdge {
+	edges := []timelineEdge{}
+	dup := map[[2]string]bool{}
+	for _, a := range autos {
+		for _, e := range timelineAutomationEdges(a) {
+			if ids[e.From] && ids[e.To] && !dup[[2]string{e.From, e.To}] {
+				dup[[2]string{e.From, e.To}] = true
+				edges = append(edges, e)
+			}
+		}
+	}
+	return edges
+}
+
+// sortAutomataByStart orders Automata by created time (unknown last), then id.
 func sortAutomataByStart(ps []*autonomous.PRD) {
 	sort.SliceStable(ps, func(i, j int) bool {
-		si, _ := historyAutomatonTimes(ps[i])
-		sj, _ := historyAutomatonTimes(ps[j])
+		si, sj := ps[i].CreatedAt, ps[j].CreatedAt
 		if si.IsZero() != sj.IsZero() {
 			return !si.IsZero()
 		}
@@ -252,6 +538,45 @@ func sortAutomataByStart(ps []*autonomous.PRD) {
 		}
 		return ps[i].ID < ps[j].ID
 	})
+}
+
+// timelineOrderedTasks returns a PRD's task rows ordered by depends_on.
+func timelineOrderedTasks(p *autonomous.PRD) []timelineRow {
+	var rows []timelineRow
+	for _, st := range p.Story {
+		for i := range st.Tasks {
+			rows = append(rows, timelineTaskRow(&st.Tasks[i]))
+		}
+	}
+	return orderTimelineRows(rows, nil)
+}
+
+// timelineOrderedAutomata returns the rows of list ordered inside the arc, and
+// the chain edges among them drawn from the given Automations.
+func timelineOrderedAutomata(list []*autonomous.PRD, autos []*autonomous.Automation) ([]timelineRow, []timelineEdge) {
+	rows := make([]timelineRow, 0, len(list))
+	ids := map[string]bool{}
+	for _, p := range list {
+		rows = append(rows, timelineAutomatonRow(p))
+		ids[p.ID] = true
+	}
+	edges := timelineEdgesAmong(autos, ids)
+	return orderTimelineRows(rows, edges), edges
+}
+
+// timelineAutomationsFor picks the Automations whose edges apply to a parent:
+// one arc, none for the unassigned group, or every arc when parent is empty.
+func timelineAutomationsFor(parent string, arcs map[string]bool, autos []*autonomous.Automation) []*autonomous.Automation {
+	var out []*autonomous.Automation
+	for _, a := range autos {
+		if a == nil || !arcs[a.ID] {
+			continue
+		}
+		if parent == "" || parent == a.ID {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // buildProjectTimeline builds one level of the timeline.
@@ -301,13 +626,15 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		} else {
 			return out, &timelineError{http.StatusNotFound, "arc not found"}
 		}
+		byID := map[string]*autonomous.PRD{}
 		for _, p := range list {
-			rows = append(rows, timelineAutomatonRow(p))
-			for _, st := range p.Story {
-				for i := range st.Tasks {
-					rows = append(rows, timelineTaskRow(&st.Tasks[i]))
-				}
-			}
+			byID[p.ID] = p
+		}
+		autoRows, edges := timelineOrderedAutomata(list, timelineAutomationsFor(in.Focus, mem.arcs, in.Automations))
+		out.Edges = edges
+		for _, ar := range autoRows {
+			rows = append(rows, ar)
+			rows = append(rows, timelineOrderedTasks(byID[ar.ID])...)
 		}
 		paged = false
 	case level == timelineLevelArcs:
@@ -339,7 +666,8 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 			first, last := s.done()
 			n := len(byArc[arc.AutomationID])
 			rows = append(rows, timelineRow{Kind: timelineKindArc, ID: arc.AutomationID, Title: title, State: state,
-				First: first, Last: last, Running: s.running, HasChildren: n > 0 && first != nil, ChildrenCount: n})
+				First: first, Last: last, Running: s.running, HasChildren: n > 0 && first != nil, ChildrenCount: n,
+				Start: first, End: last, Status: timelineArcStatus(arc.State, byArc[arc.AutomationID])})
 		}
 		if len(unassigned) > 0 {
 			var s timelineSpan
@@ -350,7 +678,8 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 			first, last := s.done()
 			rows = append(rows, timelineRow{Kind: timelineKindUnassigned, ID: timelineNone, Title: "Unassigned",
 				State: config.ArcStatePlanned, First: first, Last: last, Running: s.running,
-				HasChildren: first != nil, ChildrenCount: len(unassigned)})
+				HasChildren: first != nil, ChildrenCount: len(unassigned),
+				Start: first, End: last, Status: timelineArcStatus("", unassigned)})
 		}
 	case level == timelineLevelAutomata:
 		out.Parent = in.Parent
@@ -364,9 +693,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		default:
 			return out, &timelineError{http.StatusNotFound, "arc not found"}
 		}
-		for _, p := range list {
-			rows = append(rows, timelineAutomatonRow(p))
-		}
+		rows, out.Edges = timelineOrderedAutomata(list, timelineAutomationsFor(in.Parent, mem.arcs, in.Automations))
 	case level == timelineLevelTasks:
 		out.Parent = in.Automaton
 		if in.Automaton == "" {
@@ -382,11 +709,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		if found == nil {
 			return out, &timelineError{http.StatusNotFound, "automaton not found"}
 		}
-		for _, st := range found.Story {
-			for i := range st.Tasks {
-				rows = append(rows, timelineTaskRow(&st.Tasks[i]))
-			}
-		}
+		rows = timelineOrderedTasks(found)
 	default:
 		return out, &timelineError{http.StatusBadRequest, "level must be arcs, automata or tasks"}
 	}

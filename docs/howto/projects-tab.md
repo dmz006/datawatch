@@ -350,6 +350,16 @@ datawatch projects timeline core-api --focus <arc-id>                 # one arc,
   `running` true, so a client draws it to now. An arc with no Automata or no
   recorded times has both empty. `has_children` and `children_count` say
   whether a row can be opened.
+- Each row also has `start` (the same as `first`), `end` (empty while running),
+  `status` (completed, running, waiting, blocked, failed or cancelled; a shipped
+  Automaton reads completed and its release is in `release`) and, on task rows,
+  `depends_on`. An Automaton spans its created time to its completion time; a
+  task spans its start to its completion; an arc spans the earliest Automaton
+  start to the latest Automaton end. Rows inside an arc are ordered by
+  completion, then so a dependency sits above its dependent. Automata-level and
+  focus replies also carry `edges`, a list of `{from, to, kind: "chain"}` taken
+  from the Automation's member order and its on-complete, on-blocked and
+  on-failed links, drawn through fork and join members.
 - Levels other than focus are paged: `--limit` (1 to 200, default 50) and
   `--cursor` with the `next_cursor` of the previous page.
 - Templates are left out. Reading needs the autonomous read capability, and the

@@ -9398,6 +9398,20 @@ paths:
                         running: {type: boolean}
                         has_children: {type: boolean}
                         children_count: {type: integer}
+                        start: {type: string, format: date-time, nullable: true, description: Same value as first}
+                        end: {type: string, format: date-time, nullable: true, description: Null while running}
+                        status: {type: string, enum: [completed, running, waiting, blocked, failed, cancelled]}
+                        release: {type: string, description: Release a shipped Automaton merged into}
+                        depends_on: {type: array, items: {type: string}, description: Task ids a task row waits for}
+                  edges:
+                    type: array
+                    description: Chain edges between Automata, on level=automata and focus replies
+                    items:
+                      type: object
+                      properties:
+                        from: {type: string}
+                        to: {type: string}
+                        kind: {type: string, enum: [chain]}
         "400": {description: Bad level, limit, cursor, or missing automaton}
         "404": {description: Unknown project, arc or Automaton}
         "503": {description: Automations not available}
