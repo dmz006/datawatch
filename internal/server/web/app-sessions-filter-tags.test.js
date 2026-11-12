@@ -176,7 +176,7 @@ test('selected-filter summary shows removable chips and removing one updates the
   assert.match(html, />code</);
   assert.match(html, />Nightly batch</);
   assert.match(html, /onclick="sessionTagChipToggle\('kind:code'\)"/);
-  assert.match(html, /onclick="tagBrowseClear\('session'\)">Clear all</);
+  assert.match(html, /onclick="sessionsSummaryClearAll\(\)">Clear all</);
   sb.sessionTagChipToggle('kind:code');
   assert.deepEqual(Array.from(run(sb, '_tagBrowse.session.sel')), ['automaton:a1', 'u1']);
   assert.equal(count(run(sb, '_sessionTagSelectedSummaryHTML()'), 'class="sessions-tag-sel-chip"'), 2);
