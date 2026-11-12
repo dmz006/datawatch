@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.159.0 (2026-11-12).** The supervisor can now wake on Automaton lifecycle events (off by default), a daemon can read a federated peer's events, and lifecycle events are subscribable over REST, MCP, the CLI, chat and the web form. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.159.1 (2026-11-12).** The Automata page fits a phone (tab strips scroll sideways), the Inbox counter and cards follow the selected project, and the Templates sub-tab has its own label. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
