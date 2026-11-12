@@ -1036,6 +1036,8 @@ type AutonomousAPI interface {
 	SetPRDLanePreference(prdID, pref string) (any, error)
 	// Lane fill status: mode, lanes, evidence, decisions and alerts.
 	LaneFillStatus(limit int) autonomous.LaneFillStatus
+	// Lane utilization: how the lanes were used over a window ending at now.
+	LaneUtilization(window time.Duration, buckets int, now time.Time) autonomous.LaneUtilization
 
 	// BL367 — per-PRD quality gate config.
 	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool, scope string, smokePackages []string) (any, error)

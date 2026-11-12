@@ -569,6 +569,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/capacity", api.handleCapacity) // admission ledger: pools, holders, wait queue
 	apiMux.HandleFunc("/api/autonomous/progress", api.handleAutonomousProgress)
 	apiMux.HandleFunc("/api/autonomous/progress/trend", api.handleAutonomousProgressTrend)
+	apiMux.HandleFunc("/api/autonomous/lane-utilization", api.handleAutonomousLaneUtilization) // lane utilization: busy time, queue wait, backend mix, plan usage
 	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill)                         // lane fill status: lanes, decisions, alerts
 	apiMux.HandleFunc("/api/autonomous/infra-retries", api.handleAutonomousInfraRetries)                 // infrastructure retry policy and the tasks retried or held, newest first
 	apiMux.HandleFunc("/api/automation/onboarding-report", api.handleOnboardingReport)                   // Automation onboarding report: what is configured, what is missing, what to try next (?format=text for plain text)

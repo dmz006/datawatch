@@ -1602,6 +1602,37 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/lane-utilization:
+    get:
+      summary: Lane utilization
+      description: |
+        How the lanes were used over a window ending now: per lane the busy and idle
+        seconds and shares, the task runs, the queue wait before work started, whether
+        the lane is idle while work it could take is queued, and the busy share of each
+        bucket; the backend mix across all busy time; the lane fill mode with the
+        newest decisions; and plan usage in points and tokens (no currency). `window`
+        is a duration such as 6h, 24h or 7d. Needs the autonomous read capability when
+        called by a federated peer. The MCP tool is `autonomous_lane_utilization`.
+      operationId: autonomousLaneUtilization
+      tags: [Autonomous]
+      parameters:
+        - {name: window, in: query, required: false, description: "Window length ending now: a Go duration (6h, 90m) or whole days (7d), from 1h to 720h; default 24h", schema: {type: string, default: 24h, example: 24h}}
+        - {name: bucket, in: query, required: false, description: "Buckets per lane across the window; a whole number from 1 to 288, default 24", schema: {type: integer, minimum: 1, maximum: 288, default: 24}}
+        - {name: decisions, in: query, required: false, description: "Lane fill decisions to carry, newest first; a whole number from 1 to 20, default 20", schema: {type: integer, minimum: 1, maximum: 20, default: 20}}
+      responses:
+        "200":
+          description: Lane utilization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LaneUtilization"
+        "400": {description: window is not a duration from 1h to 720h, or bucket or decisions is not a whole number in range}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/supervisor-loop/jobs:
     get:
       summary: Supervisor loop jobs
@@ -9987,6 +10018,82 @@ components:
           enum: [live, recorded, current, unavailable, typed]
           description: "Where the lane count came from: live (the ledger count at the clock), recorded (an earlier time the lane history covers), current (an earlier time the history does not cover, so the ledger count now), unavailable (no ledger wired; no count), typed (a reading stored before the stamp existed; kept as it was and never feeds the advice)"
         source: {type: string}
+    LaneUtilization:
+      type: object
+      description: How the lanes were used over a window, as GET /api/autonomous/lane-utilization returns it.
+      properties:
+        window_start: {type: string, format: date-time}
+        window_end: {type: string, format: date-time}
+        window_seconds: {type: number}
+        bucket_count: {type: integer}
+        lanes:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              type: {type: string, description: "gpu, claude or other"}
+              busy_seconds: {type: number}
+              idle_seconds: {type: number}
+              busy_share: {type: number, description: "0 to 1"}
+              idle_share: {type: number, description: "0 to 1"}
+              runs:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    prd_id: {type: string}
+                    title: {type: string}
+                    stage: {type: string}
+                    kind: {type: string}
+                    backend: {type: string}
+                    start: {type: string, format: date-time}
+                    end: {type: string, format: date-time}
+              queue_wait:
+                type: object
+                properties:
+                  count: {type: integer}
+                  mean_seconds: {type: number}
+                  max_seconds: {type: number}
+              idle_with_eligible_work: {type: boolean}
+              idle_with_eligible_seconds: {type: number}
+              first_eligible_item: {type: string}
+              buckets:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    start: {type: string, format: date-time}
+                    end: {type: string, format: date-time}
+                    busy_share: {type: number}
+        backend_mix:
+          type: array
+          items:
+            type: object
+            properties:
+              backend: {type: string}
+              busy_seconds: {type: number}
+              share: {type: number}
+        lane_fill:
+          type: object
+          properties:
+            mode: {type: string, enum: [off, shadow, on]}
+            modes:
+              type: object
+              properties:
+                gpu: {type: string, enum: [off, shadow, on]}
+                claude: {type: string, enum: [off, shadow, on]}
+            decisions:
+              type: array
+              items:
+                $ref: "#/components/schemas/LaneFillDecision"
+        plan_usage:
+          type: object
+          properties:
+            plan_points: {type: number}
+            points: {type: number}
+            tokens: {type: integer}
+            percent_of_plan: {type: number}
     LaneFillStatus:
       type: object
       description: The lane fill status, as GET /api/autonomous/lane-fill returns it.

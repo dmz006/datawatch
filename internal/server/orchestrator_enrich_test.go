@@ -301,6 +301,10 @@ func (f *fakeOrchAutonomous) LaneFillStatus(int) autonomous.LaneFillStatus {
 	return autonomous.LaneFillStatus{}
 }
 
+func (f *fakeOrchAutonomous) LaneUtilization(time.Duration, int, time.Time) autonomous.LaneUtilization {
+	return autonomous.LaneUtilization{}
+}
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {

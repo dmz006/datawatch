@@ -2173,6 +2173,11 @@ func (a *API) LaneFillStatus(limit int) LaneFillStatus {
 	return a.M.LaneFillStatus(limit)
 }
 
+// LaneUtilization returns how the lanes were used over the window ending at now.
+func (a *API) LaneUtilization(window time.Duration, buckets int, now time.Time) LaneUtilization {
+	return a.M.LaneUtilization(window, buckets, now)
+}
+
 // SetPRDDirs sets per-PRD read-only/writable directory scope.
 func (a *API) SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error) {
 	if err := a.M.SetPRDDirs(prdID, readDirs, writeDirs); err != nil {
