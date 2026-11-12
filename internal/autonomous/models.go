@@ -1500,6 +1500,10 @@ type Task struct {
 	// DaemonRun true means the daemon performs the task itself and no
 	// session is started for it.
 	DaemonRun bool `json:"daemon_run,omitempty"`
+	// PackInputs holds the redacted pack input values resolved when the task
+	// was created. Secret inputs show their vault reference or a mask. Never
+	// updated after creation.
+	PackInputs map[string]string `json:"pack_inputs,omitempty"`
 
 	// ReportPath is the one repo-relative path a read-only task may
 	// write (see validateReportPath); empty means it writes nothing. It

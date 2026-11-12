@@ -21,6 +21,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/changerecord"
 	"github.com/dmz006/datawatch/internal/genartifacts"
+	"github.com/dmz006/datawatch/internal/packs"
 )
 
 // daemonTemplateKinds maps the artefact-writing daemon templates to their
@@ -170,4 +171,19 @@ func (m *Manager) failDaemonTemplateTask(prd *PRD, t *Task, cause error) {
 		return
 	}
 	m.emitTaskStatus(prd, t, old, nil, nil)
+}
+
+// recordDaemonTaskInputs stores the built-in pack's resolved, redacted inputs
+// on a daemon-run task when it is created. No Automaton, project or global
+// input source is wired yet, so declared defaults apply. A resolve error is
+// logged and leaves the task without stored inputs.
+func recordDaemonTaskInputs(t *Task) {
+	pack, err := packs.LoadBuiltin()
+	if err != nil {
+		log.Printf("[autonomous] task %s: load pack for inputs: %v", t.ID, err)
+		return
+	}
+	if err := RecordPackTaskInputs(t, pack, nil, nil, nil); err != nil {
+		log.Printf("[autonomous] task %s: record pack inputs: %v", t.ID, err)
+	}
 }
