@@ -1234,6 +1234,7 @@ entries:
   - mcp-resources
   - mcp-sampling
   - mcp-tools
+  - skills-find-install-write
   - skills-sync
   sources:
   - scripts/skills-coverage-extract.sh mcp-tools
