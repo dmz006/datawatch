@@ -91,14 +91,23 @@ func (m *Manager) ForwardReceiveEnabled() bool {
 	return ok
 }
 
-// ReceiveForwardedEvent checks env and, when it is acceptable, publishes its
+// ReceiveForwardedEvent is ReceiveForwardedEventFrom for a caller that is not a
+// registered peer (an admin caller): the event carries an empty peer name.
+func (m *Manager) ReceiveForwardedEvent(env ForwardedEnvelope) error {
+	return m.ReceiveForwardedEventFrom("", env)
+}
+
+// ReceiveForwardedEventFrom checks env and, when it is acceptable, publishes its
 // event to the local dispatcher marked as forwarded. It returns nil on accept.
+// peer is the registered name of the authenticated peer that presented the
+// request; the event's Peer field is always set from it, so a peer value in the
+// payload is ignored.
 // The error wraps ErrForwardReceiveDisabled, ErrForwardReceiveInvalid or
 // ErrForwardReceiveLoop, and its text is fixed: it never echoes the envelope.
 //
 // The check order is: receiving enabled; envelope shape and size; the event
 // was not already a forward; then the loop rules (origin, visited list, hop cap).
-func (m *Manager) ReceiveForwardedEvent(env ForwardedEnvelope) error {
+func (m *Manager) ReceiveForwardedEventFrom(peer string, env ForwardedEnvelope) error {
 	set, local, ok := m.receiveConfig()
 	if !ok {
 		return ErrForwardReceiveDisabled
@@ -120,6 +129,9 @@ func (m *Manager) ReceiveForwardedEvent(env ForwardedEnvelope) error {
 	ev := env.Event
 	ev.Host = chain.OriginHost
 	ev.Forward = &chain
+	// The peer name comes from the authenticated request, never from the
+	// payload: overwrite whatever the envelope carried, even with an empty name.
+	ev.Peer = strings.TrimSpace(peer)
 	if ev.ID == "" {
 		ev.ID = newLifecycleEventID()
 	}

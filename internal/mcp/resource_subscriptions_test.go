@@ -316,3 +316,16 @@ func TestResourceSubscriptionReadReturnsFilterAndReportsLoopbackError(t *testing
 		t.Fatal("an invalid filter must be an error")
 	}
 }
+
+func TestPeerEventNameResourceURIFilter(t *testing.T) {
+	f, err := ParseLifecycleResourceURI("datawatch://events/lifecycle?level=prd&peer=peer-alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Peer != "peer-alpha" {
+		t.Fatalf("Peer = %q, want peer-alpha", f.Peer)
+	}
+	if _, err := ParseLifecycleResourceURI("datawatch://events/lifecycle?level=prd&peer=bad%20name"); err == nil {
+		t.Fatal("a peer name outside the registered-name charset was accepted")
+	}
+}
