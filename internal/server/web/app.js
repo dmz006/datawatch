@@ -4150,6 +4150,19 @@ function renderSessionsView() {
   // and the select bar always operate on what the user can actually see.
   state._visibleDone = visible.filter(s => DONE_STATES.has(s.state));
 
+  // "show more" page paging (every mode): the first page is the first
+  // paint, and any filter change (state chip, text search, watch filter,
+  // tag selection, history) starts the paging back at page one.
+  let tagSel = '';
+  try { tagSel = (_tagBrowse && _tagBrowse.session ? (_tagBrowse.session.sel || []).join(',') : ''); } catch (_) { tagSel = ''; }
+  const pageKey = [chip, filterText, state.sessionWatchFilter ? 'w' : 'n', state.showHistory ? 'h' : 'n', tagSel].join('|');
+  if (state._sessionsPageKey !== pageKey) {
+    state._sessionsPageKey = pageKey;
+    state._sessionsPageLimit = _sessionsPageSize();
+  }
+  const paging = _sessionsPagingState(visible, state._sessionsPageLimit);
+  const viewMode = _sessionsViewMode();
+
   const filterVal = escHtml(state.sessionFilter || '');
   // Collect unique backend types from all sessions for compact filter badges
   const backendTypes = [...new Set(state.sessions.map(s => s.backend_family).filter(Boolean))].sort();
@@ -4341,17 +4354,40 @@ function renderSessionsView() {
     return;
   }
 
-  // BL348 — tree mode, placement-axis groups, or flat list
+  // BL348 — tree mode, group-by picker, placement-axis groups, or flat list.
+  // Grouping + Automaton nesting: with a group axis active the page renders
+  // as collapsible groups (or an Automaton → story tree) in the active mode,
+  // each group with its own Show-more step. Without one, the placement-axis
+  // dropdown groups (main's toolbar control) or the classic render apply.
+  const groupBy = _sessionsGroupValidate(state.sessionGroupBy);
+  if (groupBy) {
+    const gKey = groupBy.axis + '|' + (groupBy.tagPrefix || '');
+    if (state._sessionsGroupByKey !== gKey) {
+      state._sessionsGroupByKey = gKey;
+      state._sessionsGroupPage = {};
+    }
+  }
   const groupAxis = state.sessionTreeView ? '' : _sessionsGroupAxis();
-  const cards = state.sessionTreeView
-    ? renderSessionsAsTree(visible)
-    : (groupAxis
-      ? (visible.length ? _sessionsGroupCards(visible, groupAxis) : '')
-      : visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join(''));
+  const cards = groupBy
+    ? (groupBy.axis === 'automaton'
+        ? renderSessionsAutomaton(visible, now, viewMode)
+        : renderSessionsGrouped(visible, groupBy, now, viewMode))
+    : (state.sessionTreeView
+        ? renderSessionsAsTree(visible)
+        : (groupAxis
+            ? (visible.length ? _sessionsGroupCards(visible, groupAxis) : '')
+            : (viewMode === 'list'
+                ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
+                : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode))));
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
-    ${toggleBtn}<div class="session-list">${cards}</div>${_sessionsLoadMoreHtml()}</div>`;
+    ${renderSessionsModeToggle(viewMode)}
+    ${renderSessionsGroupPicker(groupBy)}
+    ${renderSessionsViewsBar()}
+    ${toggleBtn}
+    ${renderSessionsSummaryBar(visible)}<div class="session-list">${cards}</div>
+    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}</div>`;
 
   // Restore filter input focus and cursor position
   if (filterText) {
@@ -4384,6 +4420,778 @@ function renderSessionsView() {
   // BL312 S3 — prepend server picker bar if remote servers are registered
   _injectServerPickerBar(view, renderSessionsView);
   _sessionTagsEnsure(renderSessionsView, state.sessions);
+}
+
+// ── Sessions view modes: list / tiles / compact ─────────────────────────
+// The sessions view gets the same card vocabulary as the Automata/Automation
+// tiles (the shared renderWorkTile), plus a per-state summary bar and page
+// paging with a Show more button so a 300+ session fleet stays responsive.
+// The mode is per-device (localStorage, try/catch because storage can be
+// blocked) and defaults by viewport when the device has never chosen one:
+// phone widths open as the list, everything wider opens as tiles. `compact`
+// is the dense two-row grid; the normal tile grid still follows the width-based
+// mode on resizes via _tileSyncModes, while compact keeps its density there.
+// Tags, filter and search apply before rendering, so they work in every mode.
+// _stx: t() with an English fallback — t() returns the key itself on a miss, so
+// the fallback applies when the key is absent from every bundle.
+function _stx(key, fallback) {
+  const v = t(key);
+  return (v === undefined || v === null || v === key) ? fallback : v;
+}
+const SESSIONS_VIEW_MODES = ['list', 'tiles', 'compact'];
+const SESSIONS_VIEW_MODE_KEY = 'cs_sessions_view_mode';
+const SESSIONS_TILE_PAGE_SIZE = 60;        // first page / one Show-more step (configurable)
+const SESSIONS_MODE_PHONE_WIDTH = 600;     // matches the window.innerWidth < 600 convention elsewhere
+
+function _sessionsViewModeNormalize(mode) {
+  return SESSIONS_VIEW_MODES.indexOf(mode) >= 0 ? mode : null;
+}
+
+function _sessionsTileModeDefault(width) {
+  const w = Number(width);
+  if (!Number.isFinite(w) || w <= 0) return 'list'; // unknown width (no window metrics): keep the classic list
+  return w < SESSIONS_MODE_PHONE_WIDTH ? 'list' : 'tiles';
+}
+
+function _sessionsReadStoredMode(lse) {
+  let v = null;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_VIEW_MODE_KEY);
+  } catch (_) { v = null; }
+  return (typeof v === 'string' && v) ? v : null;
+}
+
+function _sessionsStoreMode(mode, lse) {
+  const m = _sessionsViewModeNormalize(mode);
+  if (!m) return;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(SESSIONS_VIEW_MODE_KEY, m);
+  } catch (_) { /* storage blocked: the choice lives in memory for this page */ }
+}
+
+function _sessionsPageSize() {
+  const n = Number(state && Number.isFinite(Number(state._sessionsPageOverride)) ? state._sessionsPageOverride : SESSIONS_TILE_PAGE_SIZE);
+  return (Number.isFinite(n) && n > 0) ? Math.floor(n) : SESSIONS_TILE_PAGE_SIZE;
+}
+
+function _sessionsViewMode() {
+  if (SESSIONS_VIEW_MODES.indexOf(state.sessionsViewMode) >= 0) return state.sessionsViewMode;
+  const stored = _sessionsViewModeNormalize(_sessionsReadStoredMode());
+  if (stored) { state.sessionsViewMode = stored; return stored; }
+  state.sessionsViewMode = _sessionsTileModeDefault(_tileViewportWidth());
+  return state.sessionsViewMode;
+}
+
+function _sessionsPagingState(sessions, limit) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const size = _sessionsPageSize();
+  let lim = Number(limit);
+  if (!Number.isFinite(lim) || lim <= 0) lim = size;
+  lim = Math.floor(lim);
+  return {
+    shown: list.slice(0, lim),
+    shownCount: Math.min(lim, list.length),
+    total: list.length,
+    hasMore: lim < list.length,
+  };
+}
+
+function _sessionsSummaryCounts(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const order = ['running', 'waiting_input', 'rate_limited', 'complete', 'failed', 'killed'];
+  const by = {};
+  list.forEach(s => {
+    const st = (s && typeof s.state === 'string' && s.state) || 'unknown';
+    by[st] = (by[st] || 0) + 1;
+  });
+  const rows = order.filter(st => by[st]).map(st => ({ state: st, count: by[st] }));
+  Object.keys(by).filter(st => order.indexOf(st) < 0).sort().forEach(st => rows.push({ state: st, count: by[st] }));
+  return rows;
+}
+
+window._sessionsViewModes = SESSIONS_VIEW_MODES;
+window._sessionsViewModeKey = SESSIONS_VIEW_MODE_KEY;
+window._sessionsViewModeNormalize = _sessionsViewModeNormalize;
+window._sessionsTileModeDefault = _sessionsTileModeDefault;
+window._sessionsReadStoredMode = _sessionsReadStoredMode;
+window._sessionsStoreMode = _sessionsStoreMode;
+window._sessionsPageSize = _sessionsPageSize;
+window._sessionsViewMode = _sessionsViewMode;
+window._sessionsPagingState = _sessionsPagingState;
+window._sessionsSummaryCounts = _sessionsSummaryCounts;
+
+function _sessionsSetViewMode(mode) {
+  const m = _sessionsViewModeNormalize(mode);
+  if (!m) return;
+  state.sessionsViewMode = m;
+  _sessionsStoreMode(m);
+  state._sessionsPageLimit = _sessionsPageSize();
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window._sessionsSetViewMode = _sessionsSetViewMode;
+window.setSessionsViewMode = _sessionsSetViewMode;
+
+function _sessionsShowMore() {
+  const base = (Number(state._sessionsPageLimit) > 0) ? state._sessionsPageLimit : _sessionsPageSize();
+  state._sessionsPageLimit = base + _sessionsPageSize();
+  renderSessionsView();
+}
+window._sessionsShowMore = _sessionsShowMore;
+window.sessionsShowMore = _sessionsShowMore;
+
+// ── Session grouping, Automaton → story nesting, saved views ────────────
+// The operator can group the sessions page along any axis (state, node,
+// project, a tag or a tag prefix, or the Automaton a session belongs to).
+// Groups are collapsible, show their count and state mix, and remember their
+// collapsed state on this device. Automaton mode nests sub-task sessions
+// under their Automaton and then their story. A saved view (device-local)
+// remembers mode + group axis + session filter together.
+const SESSIONS_GROUP_UNGROUPED = 'ungrouped';
+const SESSIONS_GROUP_AXES = ['state', 'node', 'project', 'tag', 'automaton'];
+const SESSIONS_COLLAPSED_KEY = 'cs_sessions_collapsed_groups';
+const SESSIONS_SAVED_VIEWS_KEY = 'cs_sessions_saved_views';
+const SESSIONS_VIEW_NAME_MAX = 80;
+
+// _sessionsGroupValidate normalizes the active group axis; null keeps the
+// plain (ungrouped) rendering. Unknown axes fall back to no grouping rather
+// than a broken view.
+function _sessionsGroupValidate(by) {
+  if (!by || typeof by.axis !== 'string') return null;
+  if (SESSIONS_GROUP_AXES.indexOf(by.axis) < 0) return null;
+  return {
+    axis: by.axis,
+    tagPrefix: (by.axis === 'tag' && typeof by.tagPrefix === 'string') ? by.tagPrefix : '',
+  };
+}
+
+// _sessionsTagPlacement follows the server's rule exactly: the session's own
+// tags plus inherited tags, sorted, first match wins. A session with several
+// tags lands under exactly one of them — the other tags still show as chips
+// on its card. No matching tag → ungrouped.
+function _sessionsTagPlacement(sess, tagPrefix) {
+  const src = sess || {};
+  const tags = [].concat(src.tags || [], src.inherited_tags || [])
+    .filter(t => typeof t === 'string' && t).sort();
+  if (tagPrefix) {
+    for (let i = 0; i < tags.length; i++) {
+      if (tags[i].indexOf(tagPrefix) === 0) return tags[i];
+    }
+    return SESSIONS_GROUP_UNGROUPED;
+  }
+  return tags.length ? tags[0] : SESSIONS_GROUP_UNGROUPED;
+}
+
+function _sessionsGroupKeyFor(sess, by) {
+  const s = sess || {};
+  switch (by.axis) {
+    case 'state':
+      return (typeof s.state === 'string' && s.state) ? s.state : 'unknown';
+    case 'node':
+      return (typeof s.hostname === 'string' && s.hostname) ? s.hostname
+        : ((typeof s.server === 'string' && s.server) ? s.server : SESSIONS_GROUP_UNGROUPED);
+    case 'project':
+      return (typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED;
+    case 'tag':
+      return _sessionsTagPlacement(s, by.tagPrefix);
+    case 'automaton':
+      return (typeof s.prd_id === 'string' && s.prd_id) ? s.prd_id : SESSIONS_GROUP_UNGROUPED;
+  }
+  return SESSIONS_GROUP_UNGROUPED;
+}
+
+// _sessionsGroupLabel is the operator-facing header text for a group key:
+// registry tag name when known, raw key otherwise; 'Ungrouped' for the
+// unmatched bucket.
+function _sessionsGroupLabel(key, by) {
+  if (key === SESSIONS_GROUP_UNGROUPED) return _stx('sessions_group_ungrouped', 'Ungrouped');
+  if (by && by.axis === 'tag') {
+    let name = '';
+    try {
+      if (typeof _tagsState !== 'undefined' && _tagsState && _tagsState.byId && _tagsState.byId[key] && _tagsState.byId[key].name) {
+        name = _tagsState.byId[key].name;
+      }
+    } catch (_) { /* registry unavailable: keep the raw key */ }
+    if (name) return name;
+  }
+  return String(key);
+}
+
+function _sessionsGroupStateMix(sessions) {
+  try { return _sessionsSummaryCounts(sessions); } catch (_) { return []; }
+}
+
+// _sessionsGroupSessions buckets the (already tag/filter narrowed) pool into
+// sorted, count-annotated groups. Each session appears exactly once.
+function _sessionsGroupSessions(pool, by) {
+  const list = Array.isArray(pool) ? pool : [];
+  const groups = [];
+  const index = {};
+  list.forEach(sess => {
+    const key = _sessionsGroupKeyFor(sess, by);
+    let g = index[key];
+    if (!g) {
+      g = { key, label: _sessionsGroupLabel(key, by), count: 0, sessions: [] };
+      index[key] = g;
+      groups.push(g);
+    }
+    g.count++;
+    g.sessions.push(sess);
+  });
+  groups.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+  groups.forEach(g => { g.mix = _sessionsGroupStateMix(g.sessions); });
+  return groups;
+}
+window._sessionsGroupValidate = _sessionsGroupValidate;
+window._sessionsTagPlacement = _sessionsTagPlacement;
+window._sessionsGroupKeyFor = _sessionsGroupKeyFor;
+window._sessionsGroupLabel = _sessionsGroupLabel;
+window._sessionsGroupStateMix = _sessionsGroupStateMix;
+window._sessionsGroupSessions = _sessionsGroupSessions;
+
+// ── Collapse persistence (per device) ───────────────────────────────────
+function _sessionsCollapseKey(by, key) {
+  const scope = by.axis + (by.axis === 'tag' ? '|' + (by.tagPrefix || 'all') : '');
+  return scope + '::' + key;
+}
+
+function _sessionsCollapsedRead(storage) {
+  try {
+    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!ls || typeof ls.getItem !== 'function') return [];
+    const raw = ls.getItem(SESSIONS_COLLAPSED_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return (Array.isArray(arr) ? arr : []).filter(k => typeof k === 'string' && k);
+  } catch (_) { return []; }
+}
+
+function _sessionsCollapseWrite(keys, storage) {
+  try {
+    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(SESSIONS_COLLAPSED_KEY, JSON.stringify(keys));
+  } catch (_) { /* storage blocked: collapse state lives in memory for the page */ }
+}
+
+function _sessionsCollapsedSet() {
+  if (!Array.isArray(state._sessionsCollapsed)) state._sessionsCollapsed = _sessionsCollapsedRead();
+  return state._sessionsCollapsed;
+}
+
+function _sessionsGroupToggleCollapse(ckEnc) {
+  let ck = '';
+  try { ck = decodeURIComponent(String(ckEnc || '')); } catch (_) { ck = String(ckEnc || ''); }
+  if (!ck) return false;
+  const keys = _sessionsCollapsedSet();
+  const i = keys.indexOf(ck);
+  if (i >= 0) keys.splice(i, 1); else keys.push(ck);
+  _sessionsCollapseWrite(keys);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window._sessionsGroupToggleCollapse = _sessionsGroupToggleCollapse;
+window.toggleSessionGroupCollapse = _sessionsGroupToggleCollapse;
+
+// ── Per-group Show-more paging ──────────────────────────────────────────
+function _sessionsGroupPageLimit(ck) {
+  try {
+    const m = state._sessionsGroupPage;
+    const n = m && m[ck];
+    return (Number.isFinite(Number(n)) && Number(n) > 0) ? Math.floor(Number(n)) : _sessionsPageSize();
+  } catch (_) { return _sessionsPageSize(); }
+}
+
+function _sessionsGroupShowMore(ckEnc) {
+  let ck = '';
+  try { ck = decodeURIComponent(String(ckEnc || '')); } catch (_) { ck = String(ckEnc || ''); }
+  if (!ck) return;
+  if (!state._sessionsGroupPage) state._sessionsGroupPage = {};
+  state._sessionsGroupPage[ck] = _sessionsGroupPageLimit(ck) + _sessionsPageSize();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window._sessionsGroupShowMore = _sessionsGroupShowMore;
+window.sessionsGroupShowMore = _sessionsGroupShowMore;
+
+// ── Group rendering (active mode: list / tiles / compact) ──────────────
+function _sessionsGroupBodyMode(viewMode) {
+  const m = (typeof viewMode === 'string') ? viewMode : _sessionsViewMode();
+  return (m === 'tiles' || m === 'compact') ? m : 'list';
+}
+
+function _sessionsGroupBody(mode, sessList, nowMs) {
+  const list = Array.isArray(sessList) ? sessList : [];
+  if (!list.length) {
+    return `<div class="sessions-group-empty">${escHtml(_stx('sessions_group_empty', 'No sessions'))}</div>`;
+  }
+  if (mode === 'list') return list.map((s, i) => sessionCard(s, i, list.length)).join('');
+  return renderSessionTileGrid(list.map(s => renderSessionTile(s, nowMs)).join(''), mode);
+}
+
+function _sessionsGroupMixHTML(mix) {
+  const rows = Array.isArray(mix) ? mix : [];
+  if (!rows.length) return '';
+  return rows.map(m => `
+    <span class="sgp-mix sgp-mix-${escHtml(String(m.state).replace(/[^a-z0-9]/g, ''))}">${escHtml(String(m.state).replace(/_/g, ' '))} ${escHtml(String(m.count))}</span>`).join(' ');
+}
+
+function _sessionsGroupShowMoreInGroupHTML(ck, paging) {
+  if (!paging || !paging.hasMore) return '';
+  return `<div class="sgp-paging">
+    <button type="button" class="btn-secondary sgp-more" onclick="_sessionsGroupShowMore('${escHtml(encodeURIComponent(ck))}')">${escHtml(_stx('sessions_group_show_more', 'Show more'))} ${escHtml(paging.shownCount)}/${escHtml(paging.total)}</button>
+  </div>`;
+}
+
+function _sessionsSgpHeaderHTML(ck, label, count, mix, collapsed, cssClass) {
+  const caret = collapsed ? '▸' : '▾';
+  return `<button type="button" class="${cssClass}" onclick="_sessionsGroupToggleCollapse('${escHtml(encodeURIComponent(ck))}')" aria-expanded="${collapsed ? 'false' : 'true'}">
+    <span class="sgp-caret">${caret}</span>
+    <span class="sgp-label">${escHtml(label)}</span>
+    <span class="sgp-count">${escHtml(String(count))}</span>
+    <span class="sgp-mix-row">${_sessionsGroupMixHTML(mix)}</span>
+  </button>`;
+}
+
+// renderSessionsGrouped: one collapsible section per group, each with its
+// own Show-more step, rendered in the active view mode.
+function renderSessionsGrouped(pool, by, nowMs, viewMode) {
+  const groups = _sessionsGroupSessions(pool, by);
+  if (!groups.length) {
+    return `<div class="sessions-groups"><div class="sessions-group-empty">${escHtml(_stx('sessions_group_none_view', 'No sessions in this view'))}</div></div>`;
+  }
+  const collapsed = {};
+  try {
+    _sessionsCollapsedSet().forEach(k => { collapsed[k] = true; });
+  } catch (_) { /* no persisted collapse state */ }
+  const mode = _sessionsGroupBodyMode(viewMode);
+  const sections = groups.map(g => {
+    const ck = _sessionsCollapseKey(by, g.key);
+    const isCollapsed = !!collapsed[ck];
+    const lim = _sessionsGroupPageLimit(ck);
+    const shown = g.sessions.slice(0, lim);
+    const paging = { shownCount: shown.length, total: g.sessions.length, hasMore: lim < g.sessions.length };
+    return `<section class="sessions-group${isCollapsed ? ' collapsed' : ''}" data-sessions-group="${escHtml(ck)}">
+      ${_sessionsSgpHeaderHTML(ck, g.label, g.count, g.mix, isCollapsed, 'sessions-group-header')}
+      ${isCollapsed ? '' : `<div class="sessions-group-body">
+        ${_sessionsGroupBody(mode, shown, nowMs)}
+        ${_sessionsGroupShowMoreInGroupHTML(ck, paging)}
+      </div>`}
+    </section>`;
+  }).join('');
+  return `<div class="sessions-groups">${sections}</div>`;
+}
+window.renderSessionsGrouped = renderSessionsGrouped;
+
+// ── Automaton mode: Automaton → story → sub-task sessions ──────────────
+function _automatonStoryKey(sess) {
+  if (sess && typeof sess.story_id === 'string' && sess.story_id) return sess.story_id;
+  return 'root';
+}
+
+// renderSessionsAutomaton nests every session that carries a prd under its
+// Automaton, then under its story; sub-task sessions carry task_id and sit
+// in their story's body. The Automaton header shows progress as the count
+// plus the state mix of the whole flock.
+function renderSessionsAutomaton(pool, nowMs, viewMode) {
+  const list = Array.isArray(pool) ? pool : [];
+  const blocks = [];
+  const bIndex = {};
+  list.forEach(sess => {
+    const key = (sess && typeof sess.prd_id === 'string' && sess.prd_id) ? sess.prd_id : SESSIONS_GROUP_UNGROUPED;
+    let b = bIndex[key];
+    if (!b) { b = { key, sessions: [] }; bIndex[key] = b; blocks.push(b); }
+    b.sessions.push(sess);
+  });
+  blocks.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+  const collapsed = {};
+  try {
+    _sessionsCollapsedSet().forEach(k => { collapsed[k] = true; });
+  } catch (_) { /* no persisted collapse state */ }
+  const mode = _sessionsGroupBodyMode(viewMode);
+  const parts = blocks.map(b => {
+    const stories = [];
+    const sIndex = {};
+    b.sessions.forEach(sess => {
+      const sk = _automatonStoryKey(sess);
+      let st = sIndex[sk];
+      if (!st) { st = { key: sk, sessions: [] }; sIndex[sk] = st; stories.push(st); }
+      st.sessions.push(sess);
+    });
+    stories.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+    if (!stories.length) stories.push({ key: 'root', sessions: [] });
+    const storyHtml = stories.map(st => {
+      const sCk = 'automaton|::' + b.key + '::' + st.key;
+      const sCol = !!collapsed[sCk];
+      const stLabel = (st.key === 'root') ? _stx('sessions_auto_story_root', 'Story') : st.key;
+      return `<section class="story-block${sCol ? ' collapsed' : ''}" data-story-block="${escHtml(sCk)}">
+        ${_sessionsSgpHeaderHTML(sCk, stLabel, st.sessions.length, _sessionsGroupStateMix(st.sessions), sCol, 'story-header')}
+        ${sCol ? '' : `<div class="story-body">${_sessionsGroupBody(mode, st.sessions, nowMs)}</div>`}
+      </section>`;
+    }).join('');
+    const bCk = 'automaton|::' + b.key;
+    const bCol = !!collapsed[bCk];
+    const autoLabel = (b.key === SESSIONS_GROUP_UNGROUPED)
+      ? _stx('sessions_auto_ungrouped', 'Not part of an Automaton') : b.key;
+    return `<section class="automaton-block${bCol ? ' collapsed' : ''}" data-automaton-block="${escHtml(bCk)}">
+      ${_sessionsSgpHeaderHTML(bCk, autoLabel, b.sessions.length, _sessionsGroupStateMix(b.sessions), bCol, 'automaton-header')}
+      ${bCol ? '' : `<div class="automaton-body">${storyHtml}</div>`}
+    </section>`;
+  }).join('');
+  return `<div class="automaton-tree">${parts}</div>`;
+}
+window.renderSessionsAutomaton = renderSessionsAutomaton;
+
+// ── Group axis picker ───────────────────────────────────────────────────
+function _sessionsGroupPrefixOptions() {
+  let names = [];
+  try {
+    if (typeof _tagsState !== 'undefined' && _tagsState && Array.isArray(_tagsState.list)) {
+      names = _tagsState.list.map(x => (x && x.name)).filter(n => typeof n === 'string' && n);
+    }
+  } catch (_) { names = []; }
+  const set = {};
+  names.forEach(n => {
+    const i = n.indexOf(':');
+    if (i > 0) set[n.slice(0, i + 1)] = true;
+  });
+  return Object.keys(set).sort();
+}
+
+function renderSessionsGroupPicker(by) {
+  const cur = (by && SESSIONS_GROUP_AXES.indexOf(by.axis) >= 0) ? by : null;
+  const curV = cur ? (cur.axis + '|' + (cur.tagPrefix || '')) : '';
+  const opt = (v, label) => `<option value="${escHtml(v)}"${v === curV ? ' selected' : ''}>${escHtml(label)}</option>`;
+  const axisLabel = (axis) => ({
+    state: _stx('sessions_group_state', 'State'),
+    node: _stx('sessions_group_node', 'Node'),
+    project: _stx('sessions_group_project', 'Project'),
+    tag: _stx('sessions_group_tag', 'Tag'),
+    automaton: _stx('sessions_group_automaton', 'Automaton'),
+  }[axis] || axis);
+  let prefixOpts = '';
+  const prefixes = _sessionsGroupPrefixOptions();
+  if (prefixes.length) {
+    prefixOpts = `<optgroup label="${escHtml(_stx('sessions_group_tag_prefixes', 'Tag prefix'))}">
+      ${prefixes.map(p => opt('tag|' + p, axisLabel('tag') + '(' + p + ')')).join('')}
+    </optgroup>`;
+  }
+  return `<div class="sessions-group-picker" role="group" aria-label="${escHtml(_stx('sessions_group_by', 'Group by'))}">
+    <label class="sgp-label-static" for="sessions-group-select">${escHtml(_stx('sessions_group_by', 'Group by'))}</label>
+    <select id="sessions-group-select" class="sgp-select" onchange="setSessionGroupBy(this.value)">
+      ${opt('', _stx('sessions_group_none', 'No grouping'))}
+      ${opt('state', axisLabel('state'))}
+      ${opt('node', axisLabel('node'))}
+      ${opt('project', axisLabel('project'))}
+      ${opt('tag', axisLabel('tag'))}
+      ${prefixOpts}
+      ${opt('automaton', axisLabel('automaton'))}
+    </select>
+  </div>`;
+}
+window.renderSessionsGroupPicker = renderSessionsGroupPicker;
+
+function setSessionGroupBy(value) {
+  const raw = String(value || '');
+  const axisRaw = (raw.split('|')[0] || '');
+  const prefixRaw = (raw.split('|').slice(1).join('|') || '');
+  let by = null;
+  if (SESSIONS_GROUP_AXES.indexOf(axisRaw) < 0) by = null;
+  else if (axisRaw === 'tag') by = { axis: 'tag', tagPrefix: prefixRaw };
+  else by = { axis: axisRaw, tagPrefix: '' };
+  state.sessionGroupBy = by;
+  state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
+  state._sessionsGroupPage = {};
+  state._sessionsPageKey = null;
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.setSessionGroupBy = setSessionGroupBy;
+
+// ── Saved views (per device) ────────────────────────────────────────────
+function _savedViewsRead(storage) {
+  try {
+    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!ls || typeof ls.getItem !== 'function') return [];
+    const raw = ls.getItem(SESSIONS_SAVED_VIEWS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(v => v && typeof v === 'object'
+      && typeof v.id === 'string' && v.id
+      && typeof v.name === 'string' && v.name.trim());
+  } catch (_) { return []; }
+}
+
+function _savedViewsWrite(views, storage) {
+  try {
+    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(SESSIONS_SAVED_VIEWS_KEY, JSON.stringify(views || []));
+  } catch (_) { /* storage blocked: views live in memory for the page */ }
+}
+
+function _savedViews() {
+  if (!Array.isArray(state._savedViews)) state._savedViews = _savedViewsRead();
+  return state._savedViews;
+}
+
+function _savedViewName(name) {
+  return String(name || '').trim().slice(0, SESSIONS_VIEW_NAME_MAX);
+}
+
+// saveSessionsView captures the current mode + group axis + session filter
+// under a name and persists it on this device; null on a bad name.
+function saveSessionsView(name) {
+  const n = _savedViewName(name);
+  if (!n) return null;
+  let mode = 'list';
+  try { mode = _sessionsViewMode() || 'list'; } catch (_) { mode = 'list'; }
+  let by = null;
+  try { by = JSON.parse(JSON.stringify(state.sessionGroupBy || null)); } catch (_) { by = null; }
+  let filter = state.sessionFilter || '';
+  if (typeof filter !== 'string') filter = '';
+  const views = _savedViews();
+  const v = {
+    id: 'sv-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36),
+    name: n,
+    mode,
+    groupBy: (by && SESSIONS_GROUP_AXES.indexOf(by.axis) >= 0) ? by : null,
+    filter,
+  };
+  views.push(v);
+  _savedViewsWrite(views);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return v;
+}
+window.saveSessionsView = saveSessionsView;
+window.sessionsSaveView = saveSessionsView;
+
+function applySavedView(id) {
+  const v = _savedViews().find(x => x.id === id);
+  if (!v) return false;
+  try {
+    const m = _sessionsViewModeNormalize(v.mode);
+    if (m) { state.sessionsViewMode = m; _sessionsStoreMode(m); }
+    state._sessionsPageLimit = _sessionsPageSize();
+  } catch (_) { /* keep the current mode */ }
+  if (v.groupBy) {
+    const g = _sessionsGroupValidate(v.groupBy);
+    state.sessionGroupBy = g;
+    state._sessionsGroupByKey = g ? (g.axis + '|' + (g.tagPrefix || '')) : '';
+    state._sessionsGroupPage = {};
+  } else {
+    state.sessionGroupBy = null;
+    state._sessionsGroupByKey = '';
+  }
+  state.sessionFilter = (typeof v.filter === 'string') ? v.filter : '';
+  state._sessionsPageKey = null;
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window.applySavedView = applySavedView;
+window.sessionsApplyView = applySavedView;
+
+function renameSavedView(id, name) {
+  const views = _savedViews();
+  const v = views.find(x => x.id === id);
+  if (!v) return false;
+  const n = _savedViewName(name);
+  if (!n) return false;
+  v.name = n;
+  _savedViewsWrite(views);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window.renameSavedView = renameSavedView;
+window.sessionsRenameView = renameSavedView;
+
+function deleteSavedView(id) {
+  const views = _savedViews();
+  const i = views.findIndex(x => x.id === id);
+  if (i < 0) return false;
+  views.splice(i, 1);
+  _savedViewsWrite(views);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window.deleteSavedView = deleteSavedView;
+window.sessionsDeleteView = deleteSavedView;
+
+function _savedViewReadName(inputAttr, attrValue) {
+  try {
+    if (typeof document === 'undefined' || !document.querySelector) return '';
+    const el = document.querySelector('[' + inputAttr + '="' + attrValue + '"]');
+    if (el && typeof el.value === 'string') return el.value;
+  } catch (_) { /* DOM stub: rename is driven by renameSavedView() directly */ }
+  return '';
+}
+
+function submitSavedViewRename(id) {
+  const val = _savedViewReadName('data-saved-view-id', String(id || ''));
+  return renameSavedView(id, val);
+}
+window.submitSavedViewRename = submitSavedViewRename;
+
+function submitSavedViewSave() {
+  const val = _savedViewReadName('data-saved-view-name', 'new');
+  return saveSessionsView(val);
+}
+window.submitSavedViewSave = submitSavedViewSave;
+
+function toggleSavedViewRename(id) {
+  try {
+    if (typeof document === 'undefined' || !document.querySelector) return;
+    const el = document.querySelector('[data-svs-rename-row="' + String(id || '') + '"]');
+    if (el) el.style.display = (el.style && el.style.display === 'none') ? '' : 'none';
+  } catch (_) { /* DOM stub: rename is driven by renameSavedView() directly */ }
+}
+window.toggleSavedViewRename = toggleSavedViewRename;
+
+function renderSessionsViewsBar(views) {
+  const list = Array.isArray(views) ? views : _savedViews();
+  const chips = list.map(v => {
+    const id = String(v.id);
+    return `<span class="svs-chip" data-saved-view="${escHtml(id)}">
+      <button type="button" class="svs-apply" title="${escHtml(_stx('sessions_view_apply', 'Apply'))}" onclick="applySavedView('${escHtml(id)}')">${escHtml(v.name)}</button>
+      <button type="button" class="svs-rename" title="${escHtml(_stx('sessions_view_rename', 'Rename'))}" onclick="toggleSavedViewRename('${escHtml(id)}')">✎</button>
+      <span class="svs-rename-row" data-svs-rename-row="${escHtml(id)}" style="display:none;">
+        <input type="text" class="svs-input" data-saved-view-id="${escHtml(id)}" value="${escHtml(v.name)}" maxlength="${SESSIONS_VIEW_NAME_MAX}">
+        <button type="button" class="svs-save" onclick="submitSavedViewRename('${escHtml(id)}')">${escHtml(_stx('sessions_view_ok', 'OK'))}</button>
+      </span>
+      <button type="button" class="svs-delete" title="${escHtml(_stx('sessions_view_delete', 'Delete'))}" onclick="deleteSavedView('${escHtml(id)}')">✕</button>
+    </span>`;
+  }).join('');
+  return `<div class="sessions-saved-views">
+    <span class="svs-title">${escHtml(_stx('sessions_view_title', 'Views'))}</span>
+    <span class="svs-save-row" data-svs-save-row>
+      <input type="text" class="svs-input" data-saved-view-name="new" maxlength="${SESSIONS_VIEW_NAME_MAX}" placeholder="${escHtml(_stx('sessions_view_name_ph', 'View name'))}">
+      <button type="button" class="svs-save" onclick="submitSavedViewSave()">+ ${escHtml(_stx('sessions_view_new', 'New view'))}</button>
+    </span>
+    ${chips}
+  </div>`;
+}
+window.renderSessionsViewsBar = renderSessionsViewsBar;
+window._savedViewsRead = _savedViewsRead;
+window._savedViewsWrite = _savedViewsWrite;
+window._savedViews = _savedViews;
+window._sessionsGroupPrefixOptions = _sessionsGroupPrefixOptions;
+window._savedViewName = _savedViewName;
+window._sessionsCollapseKey = _sessionsCollapseKey;
+window._sessionsCollapsedRead = _sessionsCollapsedRead;
+window._sessionsCollapseWrite = _sessionsCollapseWrite;
+window._sessionsGroupPageLimit = _sessionsGroupPageLimit;
+window._automatonStoryKey = _automatonStoryKey;
+window.SESSIONS_COLLAPSED_KEY = SESSIONS_COLLAPSED_KEY;
+window.SESSIONS_SAVED_VIEWS_KEY = SESSIONS_SAVED_VIEWS_KEY;
+window.SESSIONS_GROUP_AXES = SESSIONS_GROUP_AXES;
+window.SESSIONS_GROUP_UNGROUPED = SESSIONS_GROUP_UNGROUPED;
+
+function renderSessionsModeToggle(mode) {
+  const defs = [
+    { key: 'list', label: _stx('sessions_view_list', 'List'), icon: '☰' },
+    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles'), icon: '▦' },
+    { key: 'compact', label: _stx('sessions_view_compact', 'Compact'), icon: '▤' },
+  ];
+  const btns = defs.map(d =>
+    `<button type="button" class="sessions-mode-btn${mode === d.key ? ' active' : ''}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
+  ).join('');
+  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
+}
+
+function renderSessionsSummaryBar(sessions) {
+  const rows = _sessionsSummaryCounts(sessions);
+  if (!rows.length) return '';
+  const dot = {
+    running: 'var(--success,#10b981)',
+    waiting_input: 'var(--warning,#f59e0b)',
+    rate_limited: 'var(--warning,#f59e0b)',
+    complete: 'var(--success,#10b981)',
+    failed: 'var(--error,#ef4444)',
+    killed: 'var(--text2,#9ca3af)',
+  };
+  const items = rows.map(r => {
+    const cur = r.state === state.sessionStateChip;
+    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(r.state)}')" title="${escHtml(r.state)}: ${r.count}${cur ? '' : ' — filter to this state'}">
+      <span class="sessions-summary-dot" style="color:${dot[r.state] || 'var(--text2,#9ca3af)'}">●</span>${escHtml(r.state)}
+      <span class="sessions-summary-count">${r.count}</span></button>`;
+  }).join('');
+  return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(_stx('sessions_total_label', 'sessions'))} ${escHtml(String(sessions.length))}</span></div>`;
+}
+
+// Sessions carry no task counts, so progress is lifecycle based: a finished
+// session fills the bar, a failed or stopped one shows how far it got (empty),
+// and a live session shows a half bar so it reads as in flight.
+function _sessionTileProgress(sess) {
+  const st = sess && sess.state;
+  if (st === 'complete') return { done: 1, total: 1 };
+  if (st === 'running' || st === 'waiting_input' || st === 'rate_limited') return { done: 1, total: 2 };
+  return { done: 0, total: 1 };
+}
+window._stx = _stx;
+window._sessionTileProgress = _sessionTileProgress;
+
+// One session as a work tile: name, state chip, backend · model, node or peer,
+// tags (shared overflow chip), last activity and progress — the session's
+// actions move into the ⋯ overflow menu, which renderWorkTile keeps visible
+// in every grid mode exactly because the tile carries menu items.
+function renderSessionTile(sess, nowMs) {
+  const now = Number(nowMs) > 0 ? Number(nowMs) : Date.now();
+  const fullId = sess.full_id || sess.id || '';
+  const shortId = sess.id || (sess.full_id || '').split('-').pop() || '????';
+  const stKey = (sess.state || 'unknown').replace(/[^a-z0-9_-]/gi, '');
+  const isActive = !DONE_STATES.has(sess.state);
+  const title = sess.name || sess.task || shortId;
+  const backend = [sess.backend_family, sess.llm_ref].filter(Boolean).join(' · ');
+  let menu = '';
+  if (isActive) {
+    menu += _tileMenuItem('■', _stx('sessions_tile_stop', 'Stop'), `killSession('${escHtml(fullId)}')`);
+    if (sess.state === 'waiting_input') {
+      menu += _tileMenuItem('⌨', _stx('sessions_quick_commands', 'Commands'), `showCardCmds('${escHtml(fullId)}')`);
+    }
+  } else {
+    menu += _tileMenuItem('↻', _stx('sessions_tile_restart', 'Restart'), `restartSession('${escHtml(fullId)}')`);
+    menu += _tileMenuItem('✕', _stx('sessions_tile_delete', 'Delete'), `deleteSession('${escHtml(fullId)}')`);
+  }
+  if (state._summarizerEnabled) {
+    menu += _tileMenuItem('🧠', _stx('sessions_tile_summary', 'Summary'), `manualSummarize('${escHtml(fullId)}')`);
+  }
+  menu += _tileMenuItem('👁', _stx('session_action_watch', 'Watch for updates'), `toggleSessionWatch('${escHtml(fullId)}')`);
+  menu += _tileMenuItem('🔕', _stx('session_action_mute', 'Mute notifications'), `toggleSessionMute('${escHtml(fullId)}')`);
+  const node = sess.hostname || sess.server || sess.compute_node_ref || '';
+  return renderWorkTile({
+    id: shortId,
+    rootId: 'sess-tile-' + fullId,
+    rootAttrs: ` data-sess-id="${escHtml(fullId)}"`,
+    onOpen: `navigate('session-detail', '${escHtml(fullId)}')`,
+    statusClass: 'prd-card-status-' + stKey,
+    statusHtml: `<span class="state state-badge-${stKey}" style="border:1px solid currentColor;border-radius:10px;padding:0 7px;font-size:10px;font-weight:600;line-height:1.5;white-space:nowrap;">${escHtml(sess.state || 'unknown')}</span>`,
+    title,
+    backend,
+    tagIds: [...(sess.tags || []), ...(sess.inherited_tags || [])],
+    tagsById: _tagsState.byId,
+    progress: _sessionTileProgress(sess),
+    updatedAt: sess.updated_at || sess.last_activity,
+    nowMs: now,
+    bodyHtml: node ? `<div class="session-tile-node">${escHtml(node)}</div>` : '',
+    menuHtml: menu,
+  });
+}
+window.renderSessionTile = renderSessionTile;
+
+// Both density variants draw through the same grid; compact is a fixed dense
+// row mode while tiles follows the width-based mode (and keeps following it
+// on resizes, see _tileSyncModes).
+function renderSessionTileGrid(innerHTML, mode) {
+  const compact = (mode === 'compact');
+  const gridMode = compact ? 'compact' : _tileRowMode(_tileViewportWidth());
+  return `<div class="work-tile-grid session-tile-grid${compact ? ' session-tile-grid-compact' : ''}" data-tile-mode="${gridMode}">${innerHTML}</div>`;
+}
+window.renderSessionTileGrid = renderSessionTileGrid;
+
+function _sessionsShowMoreHTML(paging) {
+  if (!paging.hasMore) return '';
+  return `<div class="sessions-show-more"><button type="button" class="btn-secondary" onclick="_sessionsShowMore()">${escHtml(_stx('sessions_show_more', 'Show more'))} (${paging.shownCount}/${paging.total})</button></div>`;
 }
 
 function _sessionsLoadMoreHtml() {
@@ -55455,10 +56263,14 @@ function _tileGridHTML(innerHTML, scope) {
 }
 
 // _tileSyncModes re-applies the row mode to every grid on screen after a
-// resize, so the layout follows the window without a re-render.
+// resize, so the layout follows the window without a re-render. A session
+// grid the operator pinned to `compact` keeps its density there.
 function _tileSyncModes() {
   const mode = _tileRowMode(_tileViewportWidth());
-  document.querySelectorAll('.work-tile-grid').forEach(el => { if (!el.dataset.tileChosen) el.dataset.tileMode = mode; });
+  document.querySelectorAll('.work-tile-grid').forEach(el => {
+    if (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('session-tile-grid-compact')) return;
+    if (!el.dataset.tileChosen) el.dataset.tileMode = mode;
+  });
 }
 if (typeof window !== 'undefined' && !window._tileResizeBound) {
   window._tileResizeBound = true;

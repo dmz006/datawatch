@@ -83,6 +83,46 @@ list
 
 ---
 
+### `sessions groups [axis] [tag-prefix]`
+
+Per-group count summary of the host's sessions over the same grouped read
+the PWA Group-by picker, the MCP `list_sessions` params and the CLI
+`--group-by` flag all share.
+
+| Argument | Meaning |
+|---|---|
+| `axis` | Optional; defaults to `tag`. One of `tag`, `state`, `node`, `project`, `automaton`. Unknown axes are refused with `unknown axis "…" (supported: tag, state, node, project, automaton)`; more than two arguments is refused too. |
+| `tag-prefix` | Optional, second argument. With the tag axis only: only tags with this prefix (e.g. `automation:`) form groups; the rest collect in the ungrouped group. Ignored on every other axis. |
+
+**Examples and reply** (a `by <axis> — N session(s)` line, one line per
+group, then a `totals:` line — under a `Sessions by <axis>` reply header):
+```
+sessions groups tag automation:
+datawatch (Sessions by tag):
+by tag, tag prefix "automation:" — 6 session(s)
+  automation:lane-gpu  2 (complete×1, running×1)
+  automation:lane-cpu  1 (complete×1)
+  ungrouped  3 (failed×1, killed×1, running×1)
+  totals: complete×2, failed×1, killed×1, running×1
+```
+
+On the `automaton` axis each Automaton line also carries its block
+progress:
+
+```
+sessions groups automaton
+datawatch (Sessions by automaton):
+by automaton — 6 session(s)
+  a12f0001  4 (complete×3, running×1)  [done 3/4]
+  ungrouped  2 (failed×1, killed×1)  [done 2/2]
+  totals: complete×3, failed×1, killed×1, running×1
+```
+
+See [`docs/howto/sessions-tiles-and-grouping.md`](howto/sessions-tiles-and-grouping.md)
+for the full feature walk-through on every channel.
+
+---
+
 ### `status <id>`
 
 Show recent output from a session (last 20 lines by default).
@@ -996,6 +1036,44 @@ datawatch test --pr
 - Phone numbers are partially masked (last 4 digits only)
 - Tokens and secrets are never included in output or PRs
 
+### `datawatch session list [flags]`
+
+List all sessions, or the same list grouped. Without grouping flags this is
+the flat list (see the `list` comm command above for the ungrouped view);
+with `--group-by` the read goes through the daemon's grouped REST endpoint
+and the CLI renders the full grouped view: group headers with count and
+state mix, the group's sessions indented underneath, story blocks and
+done/total progress on the automaton axis, and per-state totals at the end.
+
+| Flag | Description |
+|---|---|
+| `--group-by` | Group the list by `tag`, `state`, `node`, `project` or `automaton`. Activates the grouped read. |
+| `--tag-prefix` | With `--group-by tag`: only tags with this prefix (e.g. `automation:`) form groups; the rest collect in the ungrouped group. Ignored on every other axis. |
+| `--all-servers` | Include sessions from all federation peers (`/api/sessions/aggregated`). |
+| `--orphaned` | List only sessions whose parent id no longer exists. |
+| `--name` | Filter by name glob (e.g. `worker-*, agent-?`). |
+| `--state` | Filter by state: `running`, `waiting_input`, `rate_limited`, `complete`, `failed`, `killed`. |
+| `--backend` | Filter by backend family (e.g. `opencode`, `claudecode`). |
+| `--alive` | Filter by `claude_alive`: `true` or `false`. |
+| `--json` | Output structured JSON. |
+| `--summary` | Compact JSON list: long text fields truncated, only the newest finished sessions kept. |
+| `--states` | Comma list of states to include (e.g. `running,waiting_input`); `active` = every non-finished state. |
+| `--since` | Only sessions updated after this time (RFC3339 or unix seconds). |
+
+**Examples:**
+```bash
+# All sessions, grouped by Automaton: block, story, done/total per block
+datawatch session list --group-by automaton
+
+# The tag axis narrowed to the automation: prefix
+datawatch session list --group-by tag --tag-prefix automation:
+
+# Per-node cut of the fleet
+datawatch session list --group-by node
+```
+
+The grouped read is one REST endpoint (`GET /api/sessions?group_by=...&tag_prefix=...`) shared by the PWA Group-by picker, the MCP `list_sessions` params and the comm verb `sessions groups` — same groups, counts and state mixes everywhere.
+
 ### `datawatch session new [flags] <task>`
 
 Start a new AI coding session.
@@ -1671,7 +1749,7 @@ The MCP server exposes the full feature set as tools for AI clients (Cursor, Cla
 
 | Tool | Description |
 |---|---|
-| `list_sessions` | List all sessions on this host |
+| `list_sessions` | List all sessions on this host; optional `group_by` (`tag`/`state`/`node`/`project`/`automaton`) + `tag_prefix` return the grouped response (groups with count, state mix, members; automaton blocks with stories and done/total progress) |
 | `start_session` | Start a new AI session (`task`, optional `project_dir`) |
 | `session_output` | Last N lines of output (`session_id`, optional `lines`) |
 | `session_timeline` | Structured event timeline (`session_id`) |

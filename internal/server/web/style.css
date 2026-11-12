@@ -7539,3 +7539,164 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   }
 }
 
+/* ── Sessions view modes: list / tiles / compact ─────────────────────────
+   The tile + compact variants are the shared .work-tile-grid (drawn by the
+   same renderWorkTile as the Automata/Automation cards); these rules only
+   wrap the mode toggle, the per-state summary bar and the Show-more page
+   control that the sessions view adds around the grid. */
+.sessions-mode-toggle { display: flex; gap: 4px; padding: 6px 14px 2px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.sessions-mode-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.sessions-mode-btn:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.sessions-summary-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.sessions-summary-chip { display: inline-flex; gap: 5px; align-items: center; background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 11px; padding: 2px 9px; font-size: 11px; font-family: inherit; cursor: pointer; }
+.sessions-summary-chip:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-summary-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sessions-summary-dot { font-size: 9px; line-height: 1; }
+.sessions-summary-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+.sessions-summary-total { margin-left: auto; font-size: 11px; color: var(--text2); white-space: nowrap; }
+.sessions-show-more { text-align: center; padding: 10px 0 14px; }
+.session-tile-grid { margin: 4px 0; --session-tile-pad: 10px; }
+.session-tile-grid .work-tile { padding: var(--session-tile-pad); }
+.session-tile-grid-compact { --session-tile-pad: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .sessions-mode-btn, .sessions-summary-chip { transition: none; }
+}
+
+/* ── Sessions: group axes, Automaton → story nesting, saved views ──── */
+.sessions-groups, .automaton-tree { width: 100%; }
+.sessions-group, .automaton-block, .story-block {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.automaton-block { border-left: 3px solid var(--accent2); background: var(--bg2); }
+.automaton-body { padding: 2px 8px 8px; }
+.story-block { margin: 6px 4px; border: 1px dashed var(--border); background: var(--surface); }
+.story-body { padding: 2px 6px 6px; }
+.sessions-group-header, .automaton-header, .story-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.sessions-group-header:hover, .automaton-header:hover, .story-header:hover {
+  background: var(--bg3);
+}
+.automaton-header .sgp-label { font-weight: 700; font-size: 14px; color: var(--accent2); }
+.story-header { padding: 6px 10px; }
+.automaton-header .sgp-label, .story-header .sgp-label {
+  font-weight: 700;
+  font-size: 14px;
+}
+.story-header .sgp-label { color: var(--text); font-weight: 600; font-size: 13px; }
+.sgp-caret { width: 12px; flex: 0 0 auto; color: var(--text2); }
+.sgp-label { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+.sgp-count {
+  background: var(--bg3);
+  border-radius: 10px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text2);
+}
+.sgp-mix-row { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.sgp-mix { font-size: 11px; color: var(--text2); white-space: nowrap; }
+.sgp-mix-running { color: var(--success); font-weight: 600; }
+.sgp-mix-waiting_input, .sgp-mix-waiting { color: var(--waiting); font-weight: 600; }
+.sgp-mix-paused, .sgp-mix-idle { color: var(--warning); }
+.sgp-mix-error, .sgp-mix-stopped { color: var(--error); }
+.sessions-group-empty { padding: 8px 14px; color: var(--text2); font-size: 12px; }
+.sgp-paging { padding: 0 12px 10px; }
+.sgp-more { font-size: 12px; padding: 3px 10px; }
+.session-tile-grid, .session-tile-grid-compact { margin: 2px 0; }
+
+/* Group axis picker */
+.sessions-group-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 2px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.sgp-label-static { font-size: 12px; color: var(--text2); }
+.sgp-select {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Saved views bar */
+.sessions-saved-views {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 4px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.svs-title { font-size: 12px; color: var(--text2); font-weight: 600; }
+.svs-save-row, .svs-chip { display: inline-flex; align-items: center; gap: 4px; }
+.svs-chip {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2px 4px;
+  background: var(--bg2);
+}
+.svs-apply {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.svs-apply:hover { color: var(--accent2); }
+.svs-rename, .svs-delete {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  font-size: 12px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.svs-rename:hover { color: var(--text); }
+.svs-delete:hover { color: var(--error); }
+.svs-save-row .svs-save, .svs-rename-row .svs-save {
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.svs-input {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  width: 130px;
+}

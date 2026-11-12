@@ -2061,10 +2061,24 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// — group_by / tag_prefix (grouping read, session_group.go): an unknown
+	// axis is refused before anything is served; without group_by the options
+	// are inactive and the responses below are unchanged.
+	groupOpts, err := parseSessionGroupOptions(q)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// History / search requests also cover the archive (store_archive.go).
 	sessions = append(sessions, s.archivedForList(q, filter, pageOpts)...)
 
 	w.Header().Set("Content-Type", "application/json")
+
+	if groupOpts.active {
+		s.writeSessionGrouped(w, r, sessions, groupOpts)
+		return
+	}
 
 	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
 	if q.Get("orphaned") == "1" {

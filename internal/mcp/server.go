@@ -775,7 +775,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousMergeShadowStatus(), tracked(s.handleAutonomousMergeShadowStatus))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
 	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
-	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork)) // autonomous_unlanded_work: archived branches with work not on the default branch
+	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))       // autonomous_unlanded_work: archived branches with work not on the default branch
 	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
 	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
 	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
@@ -1833,6 +1833,12 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		),
 		mcpsdk.WithString("tag_match",
 			mcpsdk.Description("any (default): the session needs at least one of tags (or an expanded shortcut); all: every tag."),
+		),
+		mcpsdk.WithString("group_by",
+			mcpsdk.Description("Group the list by axis: tag, state, node, project or automaton. Returns the grouped response: one group per key with its count, per-state mix and its sessions, plus per-state totals. On automaton each Automaton also carries its story blocks and progress (done/total). Always JSON; tag_prefix narrows the tag axis."),
+		),
+		mcpsdk.WithString("tag_prefix",
+			mcpsdk.Description("With group_by=tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group. Ignored without group_by=tag."),
 		),
 	)
 }

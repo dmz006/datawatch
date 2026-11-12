@@ -98,6 +98,7 @@ you already have a daemon you can talk to.
 | [Testing against a running daemon](testing-against-a-running-daemon.md) | Point the functional-smoke and E2E test scripts at a daemon you already have running (CI-deployed, sandbox, dev) instead of a fresh throwaway one — `DW_BASE` / `TEST_BASE` reference |
 | [Navigation at phone widths](navigation-mobile-fit.md) | The phone-width check of the PWA bottom bar: what it measures, `make test-e2e-shared-nav`, where the report goes, how to read a finding, and what the bar shows now (ellipsis labels, full names on hover, 40 px minimum tap targets) |
 | [Sessions deep-dive](sessions-deep-dive.md) | Session anatomy, lifecycle, daemon-restart resume path, debugging when state goes wrong |
+| [Sessions tiles, grouping and saved views](sessions-tiles-and-grouping.md) | The three view modes (list / tiles / compact), the state summary bar, Show-more paging, group by state / node / project / tag / tag-prefix / automaton with sub-task nesting under the owning Automaton and done/total progress, per-device saved views, and the same shared grouped read on REST, MCP, CLI and the comm channel |
 | [Claude Code hooks](claude-hooks.md) | Auto-install, manual setup, structured hook payload schema, TodoWrite integration |
 | [Session Telemetry](session-telemetry.md) | Structured task telemetry from hook events: tasks[], guardrail verdicts, persist-on-stop |
 | [Dashboard](dashboard.md) | /dashboard Mission Control: session constellation, EKG waveform, sprint pipeline, expand mode |

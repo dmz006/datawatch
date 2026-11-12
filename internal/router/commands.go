@@ -17,6 +17,7 @@ type CommandType string
 const (
 	CmdNew               CommandType = "new"
 	CmdList              CommandType = "list"
+	CmdSessionGroups     CommandType = "session-groups" // "sessions groups [axis] [tag-prefix]"
 	CmdStatus            CommandType = "status"
 	CmdSend              CommandType = "send"
 	CmdKill              CommandType = "kill"
@@ -814,6 +815,13 @@ func Parse(text string) Command {
 			}
 		}
 		return Command{Type: CmdNew, Text: rest}
+
+	case lower == "sessions groups" || strings.HasPrefix(lower, "sessions groups "):
+		// Count summary per group over the session-list grouping read
+		// (GET /api/sessions?group_by=...&tag_prefix=...). Axis defaults to
+		// tag; the second token is the tag prefix (tag axis).
+		rest := strings.TrimSpace(text[len("sessions groups"):])
+		return Command{Type: CmdSessionGroups, Text: rest}
 
 	case lower == "list" || strings.HasPrefix(lower, "list ") ||
 		lower == "sessions" || strings.HasPrefix(lower, "sessions "):
@@ -1891,6 +1899,7 @@ func HelpText(hostname string) string {
 new: <task>                     start session in default project dir
 new: /path/to/project: <task>   start session in specific directory
 list [--active|--inactive|--all] [tag=<axis:value>] [tag_match=any|all] list sessions (default: all)
+sessions groups [axis] [tag-prefix]  per-group count summary (axis: tag, state, node, project, automaton; prefix narrows the tag axis)
 status <id>                     recent output from session
 send <id>: <msg>                send input to waiting session
 kill <id>                       terminate session

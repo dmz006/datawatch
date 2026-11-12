@@ -596,3 +596,14 @@ Decision: option 1. `a12f0001` is revised so the Sessions list, the Automata lis
 ### Follow-up, 2026-11-05 19:47: how the decision was carried out
 
 The revision of `a12f0001` after the answer "1 yes" produced a plan that covers the Sessions list only; the planner did not take the extension to the Automata and Automation lists from the revision note. Rather than hand-edit a 22-task plan, `a12f0001` runs as the Sessions part (it builds the shared tile and grouping component), and the extension is a second Automaton, `68b70001` (draft, held until `a12f0001` is merged so it is planned against the shipped component): the mode toggle, remembered choice and grouping for the Automata list, and the tile grid, toggle and grouping for the Automation list, one shared component, parity record for all three lists.
+
+**Built status (2026-11-06).** The full 2026-11-03 direction is built and operator-documented in [`docs/howto/sessions-tiles-and-grouping.md`](../howto/sessions-tiles-and-grouping.md):
+
+- **View modes** — list / tiles / compact; per-device choice with a viewport default (list below 600 px, tiles above); the tile grid reflows with the window width, compact is a fixed dense row mode.
+- **Show more** — 60-row pages on the flat list and on every group, with a shown/total counter.
+- **State summary bar** — per-state chips with counts and a page total; clicking a chip filters to that state (historical picks auto-enable History).
+- **Group by** — none / state / node / project / tag / tag-prefix / automaton; tag placement uses own + inherited tags, first match wins, no match → ungrouped; the tag axis lists registry prefixes (including the placement auto-tags) and narrows groups to the chosen one; collapse is remembered per device and per axis + prefix.
+- **Automaton axis** — sessions nest under the Automaton block and then under their story (root block labelled "Story"), with per-block count and state mix (the grouped read adds a done/total session tally per block); unowned sessions collect under "Not part of an Automaton".
+- **Saved views** — per-device named captures of mode + group axis (+ prefix) + session filter, with apply / rename / delete.
+- **Five locales** — every label in the feature (mode buttons, Group-by picker and prefix list, group headers, state mix, Show more, Saved Views, the automaton/story nests) ships in en, de, es, fr, ja.
+- **Parity surface** — one shared read: `GET /api/sessions?group_by=…&tag_prefix=…` backs the PWA Group-by picker, MCP `list_sessions` (`group_by`/`tag_prefix`), the CLI `session list --group-by/--tag-prefix` and the comm verb `sessions groups [axis] [tag-prefix]` — identical groups, counts and state mixes on every surface, with no per-surface re-implementation. Mapping and command references updated in `docs/api-mcp-mapping.md` and `docs/commands.md`.

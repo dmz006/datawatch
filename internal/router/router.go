@@ -1369,6 +1369,8 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleNew(cmd)
 	case CmdList:
 		r.handleList(cmd.Text)
+	case CmdSessionGroups:
+		r.handleSessionGroups(cmd.Text)
 	case CmdStatus:
 		r.handleStatus(cmd)
 	case CmdSend:
