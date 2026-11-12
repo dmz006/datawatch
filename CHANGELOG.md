@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.145.1 — A daemon restart no longer loses planning or verification
+
+### Fixed
+
+- **A daemon restart no longer loses planning or verification.** An Automaton that was still planning when the daemon restarted is no longer thrown back to draft by default. The restarted daemon re-attaches to the live planner session, or ingests the plan the planner finished while the daemon was down, and only when nothing usable survives does it restart planning once (a decision records it). A task that was verifying, the completion review of a finished Automaton, and a running verification or final-gate script are picked back up the same way instead of being redone, so no second verifier or judge is spawned and no retry is counted.
+- **A restart that would interrupt live planning, verifying or judging work is refused unless it is forced.** The restart guard now counts planning, verifying and judging work as work in flight; a restart is refused with that list until `force` is given, on the REST restart call, the CLI, the chat `restart` verb and the MCP `restart_daemon` tool. The restart interruption report names planning, verifier and judge items too.
+
+### Added
+
+- **`autonomous.planning_restart_policy` chooses what a restart does to an Automaton still planning.** `reattach` (default) re-attaches to or ingests the planner's work, `restart` restarts planning once after the restart, and `draft` returns the Automaton to draft as before. An invalid value is refused on write. It is settable from config.yaml, `GET`/`PUT /api/config`, the CLI, the chat `configure` verb, the `config_set` tool and the web Settings page (two new strings in five locales). See [howto/restart-with-work-running.md](docs/howto/restart-with-work-running.md).
+- **Migration:** none. The default `reattach` changes behavior only for an Automaton that is planning at the moment of a restart; set `draft` to keep the old behavior.
+
 ## v9.145.0 — Projects tab show-empty control
 
 ### Changed
