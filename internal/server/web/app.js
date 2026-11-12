@@ -3166,6 +3166,7 @@ function _projectsActive() {
 }
 
 function _projectsPaint() {
+  _projectsGanttStopDrag();
   // The Projects page lives in the Automata panel area.
   const view = document.getElementById('automataPanel');
   if (!view) return;
@@ -3459,7 +3460,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       events.push(t('projects_event_no_arcs'));
       if (showEmpty) body += _projectsSectionCard('arcs', escHtml(t('projects_page_arcs')), `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div>`);
     } else body += _projectsSectionCard('arcs', escHtml(t('projects_page_arcs')), arcs.map(arcHTML).join(''));
-    body += _projectGanttHTML(hist);
+    body += _projectGanttHTML();
     ganttDone = true;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     if (un.length) body += _projectsSectionCard('unassigned', escHtml(t('projects_page_unassigned')), automataList(un));
@@ -3468,7 +3469,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       if (showEmpty) body += _projectsSectionCard('unassigned', escHtml(t('projects_page_unassigned')), `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`);
     }
   }
-  if (!ganttDone) body += _projectGanttHTML(hist);
+  if (!ganttDone) body += _projectGanttHTML();
   body += _projectHistoryHTML(hist);
   body += _projectLinksHTML(p);
 
@@ -3772,58 +3773,155 @@ function _projectHistoryHTML(hist) {
   return _projectsSectionCard('history', escHtml(t('projects_history_heading')), `<div id="projectHistory">${inner}</div>`);
 }
 
-// ── Project Gantt: Automaton and task bars from the history endpoint ─────────
-// The Gantt draws the history reply's gantt rows (one per Automaton, one per
-// task) on a time axis. A window selector picks the last 7, 30 or 90 days; a
-// bar outside the window is left out, and a bar still running runs to now. The
-// row count is bounded: at most _PROJECTS_GANTT_MAX_ROWS rows are drawn, the
-// newest Automata first with their tasks under them, and a note says how many
-// rows were left out. Bars use the same state colours as the dashboard Timeline.
-// Each window: key, days, and the literal i18n key of its label.
-const _PROJECTS_GANTT_WINDOWS = [['7d', 7, 'projects_gantt_window_7d'], ['30d', 30, 'projects_gantt_window_30d'], ['90d', 90, 'projects_gantt_window_90d']];
-const _PROJECTS_GANTT_DEFAULT_WINDOW = '30d';
+// ── Project Gantt: one expandable timeline from GET /api/projects/{name}/timeline ──
+// The Gantt opens at the whole project over the range "All time": one row per
+// arc (first to last activity; an arc with no activity is planned and has no
+// bar) plus an "Automata with no arc" group. A row expands to its Automata and
+// an Automaton to its tasks; children are fetched on the first expand only
+// (level=automata&parent=<id>, level=tasks&automaton=<id>) and paged with
+// next_cursor. The expanded set is remembered per browser and project. Presets
+// (All, 90, 30, 7 days), wheel zoom and drag pan move the visible range, which
+// is also printed as text. Work still running draws to now. At most
+// _PROJECTS_GANTT_MAX_ROWS rows are drawn, with a note for the rest. The time
+// maths are pure helpers so node tests can call them. Bars use the dashboard
+// Timeline's state colours.
+// Each preset: key, days (0 = all time), and the literal i18n key of its label.
+const _PROJECTS_GANTT_PRESETS = [['all', 0, 'projects_gantt_preset_all'], ['90d', 90, 'projects_gantt_preset_90d'], ['30d', 30, 'projects_gantt_preset_30d'], ['7d', 7, 'projects_gantt_preset_7d']];
+const _PROJECTS_GANTT_DEFAULT_WINDOW = 'all';
 const _PROJECTS_GANTT_MAX_ROWS = 40;
 const _PROJECTS_GANTT_DAY_MS = 86400000;
+const _PROJECTS_GANTT_MIN_SPAN = 3600000;
+const _PROJECTS_GANTT_PAGE = 50;
+const _PROJECTS_GANTT_EXPANDED_KEY_PREFIX = 'cs_projects_gantt_expanded_';
+const _PROJECTS_GANTT_NONE_KEY = 'none';
 
-// _projectsGanttWindowDays is the day count of a window key; an unknown key
-// falls back to the default window.
-function _projectsGanttWindowDays(key) {
-  const w = _PROJECTS_GANTT_WINDOWS.find(x => x[0] === key);
-  return w ? w[1] : 30;
+// _projectsGanttExpandedLoad reads the remembered expanded keys of a project as
+// a { key: true } map. A blocked or damaged store reads as nothing expanded.
+function _projectsGanttExpandedLoad(name) {
+  try {
+    const v = JSON.parse(localStorage.getItem(_PROJECTS_GANTT_EXPANDED_KEY_PREFIX + name) || '[]');
+    const out = {};
+    (Array.isArray(v) ? v : []).forEach(k => { if (typeof k === 'string' && k) out[k] = true; });
+    return out;
+  } catch (_) { return {}; }
+}
+function _projectsGanttExpandedSave(name, map) {
+  try { localStorage.setItem(_PROJECTS_GANTT_EXPANDED_KEY_PREFIX + name, JSON.stringify(Object.keys(map || {}).filter(k => map[k]))); } catch (_) { /* not remembered */ }
 }
 
-// _projectsGanttSpan returns the [a, b] time span of a gantt row in ms. A row
-// with no start shows at its end; a row with no end is still running and runs
-// to now. A row with neither has no bar (null).
+// _projectsGanttKey is the row key used for expansion and child storage.
+function _projectsGanttKey(row) {
+  if (!row) return '';
+  if (row.kind === 'unassigned') return _PROJECTS_GANTT_NONE_KEY;
+  return (row.kind === 'arc' ? 'arc:' : row.kind === 'automaton' ? 'auto:' : 'task:') + row.id;
+}
+
+// _projectsGanttSpan returns { a, b, running } in ms for a timeline row, or null
+// when the row has nothing to draw (planned). Running work draws to now.
 function _projectsGanttSpan(r, now) {
-  const s = r.start ? Date.parse(r.start) : NaN;
-  const e = r.end ? Date.parse(r.end) : NaN;
-  if (isNaN(s) && isNaN(e)) return null;
-  const a = isNaN(s) ? e : s;
-  const b = isNaN(e) ? now : e;
-  return { a: Math.min(a, b), b: Math.max(a, b), running: isNaN(e) };
+  if (!r) return null;
+  const f = r.first ? Date.parse(r.first) : NaN;
+  const l = r.last ? Date.parse(r.last) : NaN;
+  const running = !!r.running;
+  if (isNaN(f) && isNaN(l) && !running) return null;
+  const a = isNaN(f) ? (isNaN(l) ? now : l) : f;
+  const b = running ? now : (isNaN(l) ? a : l);
+  return { a: Math.min(a, b), b: Math.max(a, b), running };
 }
 
-// _projectsGanttRows picks the rows that overlap the window and bounds them.
-// Automaton rows come newest first, each followed by its task rows in start
-// order. total counts every row in the window before the bound is applied.
-function _projectsGanttRows(gantt, windowKey, now) {
-  const winStart = now - _projectsGanttWindowDays(windowKey) * _PROJECTS_GANTT_DAY_MS;
-  const inWin = (Array.isArray(gantt) ? gantt : [])
-    .filter(r => r && typeof r === 'object')
-    .map(r => ({ row: r, sp: _projectsGanttSpan(r, now) }))
-    .filter(x => x.sp && x.sp.b >= winStart && x.sp.a <= now);
-  const autos = inWin.filter(x => x.row.kind !== 'task').sort((x, y) => y.sp.a - x.sp.a);
-  const items = [];
-  let total = 0;
-  autos.forEach(au => {
-    const tasks = inWin
-      .filter(x => x.row.kind === 'task' && x.row.automaton_id === au.row.automaton_id)
-      .sort((x, y) => x.sp.a - y.sp.a);
-    total += 1 + tasks.length;
-    [au].concat(tasks).forEach(x => { if (items.length < _PROJECTS_GANTT_MAX_ROWS) items.push(x); });
+// _projectsGanttBarState maps an arc's state (planned, active, done) onto the
+// state colours the Timeline uses; Automaton and task states pass through.
+function _projectsGanttBarState(r) {
+  if (r && (r.kind === 'arc' || r.kind === 'unassigned')) return ({ done: 'completed', active: 'running' }[r.state] || r.state);
+  return r ? r.state : '';
+}
+
+// _projectsGanttRangeFromRows is the whole-project range: the earliest first to
+// the latest last of the rows, running work counting to now. It is null when no
+// row has activity. A single instant is widened to one hour.
+function _projectsGanttRangeFromRows(rows, now) {
+  let lo = Infinity, hi = -Infinity;
+  (Array.isArray(rows) ? rows : []).forEach(r => {
+    const sp = _projectsGanttSpan(r, now);
+    if (!sp) return;
+    if (sp.a < lo) lo = sp.a;
+    if (sp.b > hi) hi = sp.b;
   });
-  return { items, total, winStart };
+  if (lo === Infinity) return null;
+  if (hi - lo < _PROJECTS_GANTT_MIN_SPAN) hi = lo + _PROJECTS_GANTT_MIN_SPAN;
+  return { start: lo, end: hi };
+}
+
+// _projectsGanttPresetRange is the range of a preset key: all time spans the rows
+// (the last 30 days when nothing has activity); N days ends at now.
+function _projectsGanttPresetRange(key, rows, now) {
+  const p = _PROJECTS_GANTT_PRESETS.find(x => x[0] === key) || _PROJECTS_GANTT_PRESETS[0];
+  if (p[1] > 0) return { start: now - p[1] * _PROJECTS_GANTT_DAY_MS, end: now };
+  return _projectsGanttRangeFromRows(rows, now) || { start: now - 30 * _PROJECTS_GANTT_DAY_MS, end: now };
+}
+
+// _projectsGanttBounds is the widest range zoom and pan may reach: all activity
+// and now, and at least the last 90 days.
+function _projectsGanttBounds(rows, now) {
+  const all = _projectsGanttRangeFromRows(rows, now);
+  const lo = Math.min(all ? all.start : now, now - 90 * _PROJECTS_GANTT_DAY_MS);
+  const hi = Math.max(all ? all.end : now, now);
+  return { start: lo, end: hi };
+}
+
+// _projectsGanttClamp keeps a range inside the bounds with a span between one
+// hour and the whole bounds.
+function _projectsGanttClamp(range, bounds) {
+  const full = bounds.end - bounds.start;
+  let span = Math.max(_PROJECTS_GANTT_MIN_SPAN, Math.min(full, range.end - range.start));
+  let start = Math.max(bounds.start, Math.min(bounds.end - span, range.start));
+  return { start, end: start + span };
+}
+
+// _projectsGanttZoom scales the span by factor (below 1 zooms in) keeping the
+// time under the anchor fraction (0 left .. 1 right) still.
+function _projectsGanttZoom(range, factor, frac, bounds) {
+  const f = Math.max(0, Math.min(1, isNaN(frac) ? 0.5 : frac));
+  const span = range.end - range.start;
+  const anchor = range.start + f * span;
+  const next = span * factor;
+  return _projectsGanttClamp({ start: anchor - f * next, end: anchor - f * next + next }, bounds);
+}
+
+// _projectsGanttPan shifts the range by dt ms and clamps it.
+function _projectsGanttPan(range, dt, bounds) {
+  return _projectsGanttClamp({ start: range.start + dt, end: range.end + dt }, bounds);
+}
+
+// _projectsGanttFlatten turns the root rows, the fetched children and the
+// expanded map into the ordered list of drawn items: rows with their depth, a
+// "more" item after a level that has a next cursor, and a loading item under an
+// expanded row whose children are still being fetched. A collapsed row hides its
+// children without dropping them.
+function _projectsGanttFlatten(g) {
+  const out = [];
+  const kids = g.kids || {};
+  const expanded = g.expanded || {};
+  const walk = (rows, depth, parentKey, next) => {
+    (rows || []).forEach(row => {
+      const key = _projectsGanttKey(row);
+      const expandable = row.kind !== 'task' && !!row.has_children;
+      const open = expandable && !!expanded[key];
+      out.push({ type: 'row', row, key, depth, expandable, expanded: open });
+      if (!open) return;
+      const k = kids[key];
+      if (!k || (k.loading && !(k.rows || []).length)) out.push({ type: 'loading', depth: depth + 1, key });
+      else walk(k.rows, depth + 1, key, k.next);
+    });
+    if (next) out.push({ type: 'more', depth, key: parentKey, busy: parentKey === '' ? !!g.loading : !!(kids[parentKey] && kids[parentKey].loading) });
+  };
+  walk(g.rows, 0, '', g.next);
+  return out;
+}
+
+// _projectsGanttCap bounds the drawn items. total counts every item.
+function _projectsGanttCap(flat) {
+  return { items: flat.slice(0, _PROJECTS_GANTT_MAX_ROWS), total: flat.length };
 }
 
 // _projectGanttPalette reads the theme colours the Gantt draws with, falling
@@ -3835,71 +3933,256 @@ function _projectGanttPalette() {
   return { acc: v('--accent', '#7c3aed'), txt: v('--text', '#e2e8f0'), txt2: v('--text2', '#64748b'), bdr: v('--border', '#2d3148') };
 }
 
-// _projectGanttHTML is the Gantt block of the project page. hist is null while
-// the first history page loads; the window selector repaints on change.
-function _projectGanttHTML(hist) {
-  const key = _projectsState.ganttWindow || _PROJECTS_GANTT_DEFAULT_WINDOW;
-  const select = `<label style="font-size:12px;color:var(--text2);margin-left:auto;">${escHtml(t('projects_gantt_window_label'))}
-    <select id="projectGanttWindow" onchange="projectsGanttWindow(this.value)" style="font-size:12px;">${_PROJECTS_GANTT_WINDOWS.map(([k, , labelKey]) =>
-      `<option value="${k}"${k === key ? ' selected' : ''}>${escHtml(t(labelKey))}</option>`).join('')}</select></label>`;
-  const top = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${select}</div>`;
-  let inner;
-  if (!hist) {
-    inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
-  } else if (hist.error) {
-    inner = '';
-  } else {
-    const now = Date.now();
-    const rows = _projectsGanttRows(hist.gantt, key, now);
-    if (!rows.items.length) {
-      inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_empty'))}</div>`;
-    } else {
-      inner = _projectGanttSVG(rows, now);
-      if (rows.total > rows.items.length) {
-        inner += `<div style="color:var(--text2);font-size:12px;margin-top:4px;">${escHtml(t('projects_gantt_bounded', [rows.items.length, rows.total]))}</div>`;
-      }
-    }
-  }
-  return _projectsSectionCard('gantt', escHtml(t('projects_gantt_heading')), `<div id="projectGantt" class="project-gantt">${top}${inner}</div>`);
+// _projectsGanttGet returns the Gantt state of the selected project, or null.
+function _projectsGanttGet() {
+  const g = _projectsState.gantt;
+  return g && g.name === _projectsState.selected ? g : null;
 }
 
-// _projectGanttSVG draws the bounded rows on a shared time axis. The axis has
-// five dated ticks across the window; each row has its label, then a bar
-// coloured by state, with the state and dates in its tooltip.
-function _projectGanttSVG(rows, now) {
-  const W = 640, LABEL_W = 170, ROW_H = 20, HEAD_H = 18;
-  const BAR_X = LABEL_W, BAR_W = W - LABEL_W - 8;
-  const winStart = rows.winStart, span = now - winStart;
+// _projectsGanttCurrent is the visible range of a Gantt state.
+function _projectsGanttCurrent(g, now) {
+  return g.view || _projectsGanttPresetRange(g.preset || _PROJECTS_GANTT_DEFAULT_WINDOW, g.rows, now);
+}
+
+// _projectGanttHTML is the Gantt section of the project page. The state is read
+// from the selected project; null means the first page is still loading.
+function _projectGanttHTML() {
+  return _projectsSectionCard('gantt', escHtml(t('projects_gantt_heading')), `<div id="projectGantt" class="project-gantt">${_projectGanttInnerHTML(_projectsGanttGet())}</div>`);
+}
+
+function _projectGanttInnerHTML(g) {
+  if (!g || (g.loading && !g.rows.length && !g.error)) {
+    return `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
+  }
+  if (g.error && !g.rows.length) {
+    return `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_history_failed') + ' ' + g.error)}</div>`;
+  }
+  const now = Date.now();
+  const range = _projectsGanttCurrent(g, now);
+  const preset = g.view ? '' : (g.preset || _PROJECTS_GANTT_DEFAULT_WINDOW);
+  const buttons = _PROJECTS_GANTT_PRESETS.map(([k, , labelKey]) =>
+    `<button type="button" class="project-gantt-preset${k === preset ? ' active' : ''}" data-preset="${k}" aria-pressed="${k === preset ? 'true' : 'false'}" onclick="projectsGanttPreset('${k}')">${escHtml(t(labelKey))}</button>`).join('');
+  const rangeText = t('projects_gantt_range_text', [new Date(range.start).toLocaleDateString(), new Date(range.end).toLocaleDateString()]);
+  const top = `<div class="project-gantt-toolbar"><span class="project-gantt-range-label">${escHtml(t('projects_gantt_range_label'))}</span>${buttons}<span class="project-gantt-range" id="projectGanttRange">${escHtml(rangeText)}</span></div>`;
+  if (!g.rows.length) {
+    return top + `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_empty'))}</div>`;
+  }
+  const capped = _projectsGanttCap(_projectsGanttFlatten(g));
   const pal = _projectGanttPalette();
-  const x = ts => BAR_X + Math.max(0, Math.min(1, (ts - winStart) / span)) * BAR_W;
-  const H = HEAD_H + rows.items.length * ROW_H + 4;
-  let svg = '';
+  const span = range.end - range.start;
+  const pct = ts => Math.max(0, Math.min(100, (ts - range.start) / span * 100));
+  let ticks = '';
   for (let i = 0; i <= 4; i++) {
-    const ts = winStart + span * i / 4;
-    const anchor = i === 0 ? 'start' : (i === 4 ? 'end' : 'middle');
-    const tx = i === 0 ? BAR_X : (i === 4 ? BAR_X + BAR_W : x(ts));
-    svg += `<line x1="${tx.toFixed(1)}" y1="${HEAD_H}" x2="${tx.toFixed(1)}" y2="${H}" stroke="${pal.bdr}" stroke-width="0.5" stroke-dasharray="2,6"/>`;
-    svg += `<text x="${tx.toFixed(1)}" y="11" text-anchor="${anchor}" font-size="9" fill="${pal.txt2}">${escHtml(new Date(ts).toLocaleDateString())}</text>`;
+    const left = i * 25;
+    const align = i === 0 ? 'left:0' : (i === 4 ? 'right:0' : 'left:' + left + '%;transform:translateX(-50%)');
+    ticks += `<span class="project-gantt-tick" style="${align}">${escHtml(new Date(range.start + span * i / 4).toLocaleDateString())}</span>`;
   }
-  rows.items.forEach((it, i) => {
-    const r = it.row, sp = it.sp;
-    const y = HEAD_H + i * ROW_H;
-    const isTask = r.kind === 'task';
-    const label = (r.title || r.automaton_id || r.task_id || '').slice(0, 24);
-    const x1 = x(sp.a), x2 = x(sp.b);
-    const dates = [r.start ? new Date(r.start).toLocaleDateString() : '', r.end ? new Date(r.end).toLocaleDateString() : t('projects_gantt_running')].filter(Boolean).join(' – ');
-    const tip = `${label} · ${r.state || ''}${dates ? ' · ' + dates : ''}`;
-    svg += `<text x="${isTask ? 14 : 4}" y="${y + 14}" font-size="11" fill="${isTask ? pal.txt2 : pal.txt}"${isTask ? '' : ' font-weight="600"'}>${escHtml(label)}</text>`;
-    svg += `<rect x="${x1.toFixed(1)}" y="${y + 4}" width="${Math.max(2, x2 - x1).toFixed(1)}" height="${ROW_H - 8}" rx="3" fill="${_ganttStateColour(r.state, pal.acc, pal.txt2)}" opacity="${sp.running ? 0.55 : 0.9}"><title>${escHtml(tip)}</title></rect>`;
+  let rows = '';
+  capped.items.forEach(it => {
+    const pad = 4 + it.depth * 14;
+    if (it.type === 'loading') {
+      rows += `<div class="project-gantt-row" data-kind="loading"><div class="project-gantt-label" style="padding-left:${pad + 18}px;color:var(--text2);">${escHtml(t('projects_gantt_loading'))}</div><div class="project-gantt-track"></div></div>`;
+      return;
+    }
+    if (it.type === 'more') {
+      rows += `<div class="project-gantt-row" data-kind="more"><div class="project-gantt-label" style="padding-left:${pad + 18}px;"><button type="button" class="btn-secondary project-gantt-more"${it.busy ? ' disabled' : ''} onclick="${escHtml(`projectsGanttMore(${JSON.stringify(it.key)})`)}">${escHtml(t('projects_gantt_load_more'))}</button></div><div class="project-gantt-track"></div></div>`;
+      return;
+    }
+    const r = it.row;
+    const label = r.kind === 'unassigned' ? t('projects_gantt_no_arc') : (r.title || r.id || '');
+    const sp = _projectsGanttSpan(r, now);
+    const toggle = it.expandable
+      ? `<button type="button" class="project-gantt-toggle" aria-expanded="${it.expanded ? 'true' : 'false'}" aria-label="${escHtml(t(it.expanded ? 'projects_gantt_collapse' : 'projects_gantt_expand', [label]))}" onclick="${escHtml(`projectsGanttToggle(${JSON.stringify(it.key)})`)}">${it.expanded ? '▾' : '▸'}</button>`
+      : '<span class="project-gantt-toggle-spacer"></span>';
+    let track;
+    if (!sp) {
+      track = `<span class="project-gantt-planned">${escHtml(t('projects_gantt_planned'))}</span>`;
+    } else if (sp.b < range.start || sp.a > range.end) {
+      track = '';
+    } else {
+      const x1 = pct(sp.a), x2 = pct(sp.b);
+      const dates = [new Date(sp.a).toLocaleDateString(), sp.running ? t('projects_gantt_running') : new Date(sp.b).toLocaleDateString()].join(' – ');
+      const tip = `${label} · ${r.state || ''} · ${dates}`;
+      track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
+        + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
+    }
+    rows += `<div class="project-gantt-row" data-kind="${escHtml(r.kind)}" data-key="${escHtml(it.key)}"><div class="project-gantt-label" style="padding-left:${pad}px;${r.kind === 'task' ? 'color:var(--text2);' : 'font-weight:600;'}">${toggle}<span class="project-gantt-label-text" title="${escHtml(label)}">${escHtml(label)}</span></div><div class="project-gantt-track">${track}</div></div>`;
   });
-  return `<svg class="project-gantt-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('projects_gantt_heading'))}" style="display:block;margin-top:4px;">${svg}</svg>`;
+  const note = capped.total > capped.items.length
+    ? `<div style="color:var(--text2);font-size:12px;margin-top:4px;">${escHtml(t('projects_gantt_bounded', [capped.items.length, capped.total]))}</div>` : '';
+  return top + `<div class="project-gantt-scroll"><div class="project-gantt-chart" id="projectGanttChart" role="group" aria-label="${escHtml(t('projects_gantt_heading'))}" onwheel="projectsGanttWheel(event)" onpointerdown="projectsGanttDown(event)">`
+    + `<div class="project-gantt-row project-gantt-axis"><div class="project-gantt-label"></div><div class="project-gantt-track" id="projectGanttAxis">${ticks}</div></div>${rows}</div></div>${note}`;
 }
 
-// projectsGanttWindow is the window selector's change handler. It keeps the
-// choice on the page state and repaints while the Projects tab is active.
-function projectsGanttWindow(key) {
-  _projectsState.ganttWindow = _PROJECTS_GANTT_WINDOWS.some(w => w[0] === key) ? key : _PROJECTS_GANTT_DEFAULT_WINDOW;
-  if (_projectsActive()) _projectsPaint();
+// _projectsGanttRepaint redraws only the Gantt body when it is on the page, so
+// a drag keeps the scroll position; otherwise the whole page repaints.
+function _projectsGanttRepaint() {
+  if (!_projectsActive()) return;
+  const el = typeof document !== 'undefined' ? document.getElementById('projectGantt') : null;
+  const g = _projectsGanttGet();
+  if (el && g) { el.innerHTML = _projectGanttInnerHTML(g); return; }
+  _projectsPaint();
+}
+
+// _projectsGanttBody reads a timeline reply's rows. A reply that is not
+// an object with a rows array reads as no rows.
+function _projectsGanttBody(r) {
+  const b = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+  return { rows: (Array.isArray(b.rows) ? b.rows : []).filter(x => x && typeof x === 'object'), next: b.next_cursor || '' };
+}
+
+function _projectsGanttUrl(name, key, row, cursor) {
+  let q = '?limit=' + _PROJECTS_GANTT_PAGE;
+  if (!key) q += '&level=arcs';
+  else if (key === _PROJECTS_GANTT_NONE_KEY) q += '&level=automata&parent=none';
+  else if (row && row.kind === 'arc') q += '&level=automata&parent=' + encodeURIComponent(row.id);
+  else if (row && row.kind === 'automaton') q += '&level=tasks&automaton=' + encodeURIComponent(row.id);
+  if (cursor) q += '&cursor=' + encodeURIComponent(cursor);
+  return '/api/projects/' + encodeURIComponent(name) + '/timeline' + q;
+}
+
+// _projectsGanttFindRow finds a root or fetched row by key.
+function _projectsGanttFindRow(g, key) {
+  const hit = rows => (rows || []).find(r => _projectsGanttKey(r) === key);
+  let r = hit(g.rows);
+  if (r) return r;
+  const ks = Object.keys(g.kids || {});
+  for (let i = 0; i < ks.length && !r; i++) r = hit(g.kids[ks[i]].rows);
+  return r || null;
+}
+
+// _projectsGanttFetch reads one level of the timeline: the arcs ('' key) or the
+// children of a row, appending the page after the stored cursor. A reply for a
+// project no longer selected, or for a replaced Gantt state, is dropped.
+function _projectsGanttFetch(g, key, append) {
+  const row = key ? _projectsGanttFindRow(g, key) : null;
+  if (key && !row) return Promise.resolve();
+  const slot = key ? (g.kids[key] = g.kids[key] || { rows: [], next: '', loading: false, loaded: false }) : g;
+  if (slot.loading) return Promise.resolve();
+  slot.loading = true;
+  const cursor = append ? slot.next : '';
+  const live = () => _projectsState.gantt === g && _projectsState.selected === g.name;
+  return apiFetch(_projectsGanttUrl(g.name, key, row, cursor)).then(r => {
+    if (!live()) return;
+    const b = _projectsGanttBody(r);
+    slot.rows = (append ? slot.rows : []).concat(b.rows);
+    slot.next = b.next;
+    slot.loaded = true;
+    if (!key) g.error = '';
+  }).catch(err => {
+    if (!live()) return;
+    if (!key) g.error = (err && err.message) || String(err);
+  }).then(() => {
+    slot.loading = false;
+    if (!live()) return;
+    _projectsGanttRepaint();
+    // Restore expanded rows that came back with this page.
+    const fresh = key ? slot.rows : g.rows;
+    return Promise.all(fresh.map(c => {
+      const ck = _projectsGanttKey(c);
+      return c.has_children && c.kind !== 'task' && g.expanded[ck] && !(g.kids[ck] && (g.kids[ck].loaded || g.kids[ck].loading))
+        ? _projectsGanttFetch(g, ck, false) : null;
+    }));
+  });
+}
+
+// _projectsLoadGantt starts the Gantt of the selected project: a fresh state at
+// All time with the remembered expanded set, then the arcs level. Overview and a
+// name not in the list read nothing.
+function _projectsLoadGantt() {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) { _projectsState.gantt = null; return Promise.resolve(); }
+  const g = { name, rows: [], next: '', error: '', loading: false, kids: {}, preset: _PROJECTS_GANTT_DEFAULT_WINDOW, view: null, expanded: _projectsGanttExpandedLoad(name) };
+  _projectsState.gantt = g;
+  return _projectsGanttFetch(g, '', false);
+}
+
+// projectsGanttToggle expands or collapses a row. The first expand fetches the
+// children; a collapse only hides them, and a later expand reuses them.
+function projectsGanttToggle(key) {
+  const g = _projectsGanttGet();
+  if (!g || !key) return Promise.resolve();
+  if (g.expanded[key]) delete g.expanded[key]; else g.expanded[key] = true;
+  _projectsGanttExpandedSave(g.name, g.expanded);
+  const need = g.expanded[key] && !(g.kids[key] && (g.kids[key].loaded || g.kids[key].loading));
+  if (!need) { _projectsGanttRepaint(); return Promise.resolve(); }
+  const p = _projectsGanttFetch(g, key, false);
+  _projectsGanttRepaint();
+  return p;
+}
+
+// projectsGanttMore pages the next rows of a level ('' is the arcs level).
+function projectsGanttMore(key) {
+  const g = _projectsGanttGet();
+  if (!g) return Promise.resolve();
+  const slot = key ? g.kids[key] : g;
+  if (!slot || !slot.next || slot.loading) return Promise.resolve();
+  const p = _projectsGanttFetch(g, key || '', true);
+  _projectsGanttRepaint();
+  return p;
+}
+
+// projectsGanttPreset picks a range preset and clears any dragged or zoomed range.
+function projectsGanttPreset(key) {
+  const g = _projectsGanttGet();
+  if (!g) return;
+  g.preset = _PROJECTS_GANTT_PRESETS.some(p => p[0] === key) ? key : _PROJECTS_GANTT_DEFAULT_WINDOW;
+  g.view = null;
+  _projectsGanttRepaint();
+}
+
+// _projectsGanttAxisBox is the on-screen box of the time axis, or null.
+function _projectsGanttAxisBox() {
+  const el = typeof document !== 'undefined' ? document.getElementById('projectGanttAxis') : null;
+  const b = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+  return b && b.width > 0 ? b : null;
+}
+
+// projectsGanttWheel zooms the time axis around the pointer.
+function projectsGanttWheel(ev) {
+  const g = _projectsGanttGet();
+  if (!g || !ev) return;
+  if (ev.preventDefault) ev.preventDefault();
+  const now = Date.now();
+  const box = _projectsGanttAxisBox();
+  const frac = box ? (ev.clientX - box.left) / box.width : 0.5;
+  g.view = _projectsGanttZoom(_projectsGanttCurrent(g, now), (ev.deltaY || 0) > 0 ? 1.25 : 0.8, frac, _projectsGanttBounds(g.rows, now));
+  _projectsGanttRepaint();
+}
+
+// Drag pan. The move and up listeners exist only while a drag is in progress and
+// are removed on release, on leaving the tab and before every page repaint.
+let _projectsGanttDrag = null;
+function _projectsGanttStopDrag() {
+  if (!_projectsGanttDrag) return;
+  document.removeEventListener('pointermove', _projectsGanttDrag.move);
+  document.removeEventListener('pointerup', _projectsGanttDrag.up);
+  document.removeEventListener('pointercancel', _projectsGanttDrag.up);
+  _projectsGanttDrag = null;
+}
+function projectsGanttDown(ev) {
+  const g = _projectsGanttGet();
+  if (!g || !ev || (ev.button || 0) !== 0) return;
+  if (ev.target && ev.target.closest && ev.target.closest('button')) return;
+  const box = _projectsGanttAxisBox();
+  if (!box) return;
+  _projectsGanttStopDrag();
+  const now = Date.now();
+  const startRange = _projectsGanttCurrent(g, now);
+  const bounds = _projectsGanttBounds(g.rows, now);
+  const x0 = ev.clientX;
+  const move = e => {
+    if (!_projectsActive() || _projectsGanttGet() !== g) { _projectsGanttStopDrag(); return; }
+    const dt = -(e.clientX - x0) / box.width * (startRange.end - startRange.start);
+    g.view = _projectsGanttPan(startRange, dt, bounds);
+    _projectsGanttRepaint();
+  };
+  const up = () => _projectsGanttStopDrag();
+  _projectsGanttDrag = { move, up };
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+  document.addEventListener('pointercancel', up);
 }
 
 // _projectsLoadHistory reads one page of GET /api/projects/{name}/history for
@@ -3919,13 +4202,10 @@ function _projectsLoadHistory(append) {
     if (_projectsState.selected !== name) return;
     const body = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
     const items = Array.isArray(body.items) ? body.items : [];
-    // Gantt rows are not paged: the first page carries them all, and later
-    // pages keep what the first one held.
-    const gantt = prev ? prev.gantt : (Array.isArray(body.gantt) ? body.gantt : []);
-    _projectsState.hist = { name, items: prevItems.concat(items), gantt, next: body.next_cursor || '', error: '' };
+    _projectsState.hist = { name, items: prevItems.concat(items), next: body.next_cursor || '', error: '' };
   }).catch(err => {
     if (_projectsState.selected !== name) return;
-    _projectsState.hist = { name, items: prevItems, gantt: prev ? prev.gantt : [], next: cursor, error: (err && err.message) || String(err) };
+    _projectsState.hist = { name, items: prevItems, next: cursor, error: (err && err.message) || String(err) };
   }).then(() => { _projectsState.histBusy = false; });
 }
 
@@ -3945,7 +4225,8 @@ function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
     if (!_projectsActive()) return null;
     _projectsPaint();
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null));
+    const gantt = _projectsLoadGantt();
+    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => gantt);
   });
 }
 
