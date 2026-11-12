@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -3522,6 +3523,11 @@ type AutonomousConfig struct {
 	RoleScanIntervalSeconds int `yaml:"role_scan_interval_seconds,omitempty" json:"role_scan_interval_seconds,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds one capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `yaml:"capacity_wait_timeout_seconds,omitempty" json:"capacity_wait_timeout_seconds,omitempty"`
+	// ArchiveGraceMinutes is how many whole minutes a cancelled Automaton
+	// stays before the supervisor loop archives it. A pointer, so an explicit
+	// 0 (archive at once) survives omitempty; unset reads as 60 through
+	// ArchiveGraceMinutesOrDefault.
+	ArchiveGraceMinutes *int `yaml:"archive_grace_minutes,omitempty" json:"archive_grace_minutes,omitempty"`
 	// CapacityFallthrough: when a task's requested pool is full while another
 	// allowed pool for the same task is idle, admit it on that other pool and
 	// audit the fall-through. Default false: a task waits for its own pool.
@@ -9039,4 +9045,43 @@ func (c SupervisorLoopConfig) Clone() SupervisorLoopConfig {
 		out[k] = v
 	}
 	return out
+}
+
+// DefaultArchiveGraceMinutes is the cancelled-Automaton archive grace when
+// autonomous.archive_grace_minutes is unset.
+const DefaultArchiveGraceMinutes = 60
+
+// ArchiveGraceMinutesOrDefault resolves autonomous.archive_grace_minutes:
+// unset is 60, an explicit 0 stays 0 (archive at once), and a negative stored
+// value reads as the default.
+func (a AutonomousConfig) ArchiveGraceMinutesOrDefault() int {
+	if a.ArchiveGraceMinutes == nil || *a.ArchiveGraceMinutes < 0 {
+		return DefaultArchiveGraceMinutes
+	}
+	return *a.ArchiveGraceMinutes
+}
+
+// ParseArchiveGraceMinutes validates a candidate autonomous.archive_grace_minutes
+// value from a JSON number, an int or text. It must be a whole number >= 0.
+func ParseArchiveGraceMinutes(v any) (int, error) {
+	const key = "autonomous.archive_grace_minutes"
+	switch x := v.(type) {
+	case int:
+		if x < 0 {
+			return 0, fmt.Errorf("%s: must be a whole number of minutes >= 0, got %d", key, x)
+		}
+		return x, nil
+	case float64:
+		if x != float64(int(x)) {
+			return 0, fmt.Errorf("%s: must be a whole number of minutes, got %v", key, x)
+		}
+		return ParseArchiveGraceMinutes(int(x))
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(x))
+		if err != nil {
+			return 0, fmt.Errorf("%s: must be a whole number of minutes >= 0, got %q", key, x)
+		}
+		return ParseArchiveGraceMinutes(n)
+	}
+	return 0, fmt.Errorf("%s: must be a whole number of minutes >= 0, got %v", key, v)
 }
