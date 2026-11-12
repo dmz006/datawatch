@@ -1621,6 +1621,14 @@ Three Settings → About cards exist only in the mobile apps, with no server-sid
 
 Key terms used across the docs, API, and hook payloads.
 
+**per-turn chunked output capture** — planned (design pass approved,
+not implemented): recording a session's output in one chunk per turn so
+session history does not depend on tmux scrollback. Today history comes
+from `output.log` (written by `tmux pipe-pane`) plus the tmux scrollback
+buffer. Do not rely on chunked capture existing yet. Design:
+[`plans/2026-10-14-turn-chunked-session-history.md`](plans/2026-10-14-turn-chunked-session-history.md);
+its open questions await operator review.
+
 **Code scanning upload (Release workflow)** — the Release workflow steps that send SARIF reports to GitHub Code Scanning: the gosec report (category `gosec`, `gosec baseline-diff` job) and the Trivy reports in the base and agent image jobs. Each is a copy of a result a scan step has already judged, so none blocks a release: a step tries up to four times with waits of 60, 180 and 300 seconds between attempts (this covers GitHub's rate limit, but a retry happens on any failure), a failed attempt never fails the job or holds up goreleaser or the image pushes, and if every attempt fails the step logs a warning and the run continues. The blocking gosec baseline check and Trivy scan steps are unchanged. Each SARIF file is also kept as a run artifact for 90 days (`gosec-results` and `trivy-<image>-sarif`). A run whose upload gave up has no new entry in Code Scanning, which is not the same as a clean scan. `make check-sarif-upload` (part of `make lint`) fails if any workflow upload becomes blocking or loses its retries. Not a daemon setting. See [operations.md](operations.md#code-scanning-upload-in-the-release-workflow), [howto/release-push-and-tag.md](howto/release-push-and-tag.md#when-the-code-scanning-upload-fails) and [security-review.md](security-review.md).
 
 **Tag selection** — the tags chosen in an Automata list filter, and how they are checked. An object's derived system tags (for example `project:datawatch`) and its assigned tag IDs are pooled; match ANY needs at least one selected tag in the pool, match ALL needs every one, and a selection with no tags matches every object. The check is unchanged by the code-scanning fix, which only removed a computed size hint on the internal lookup set. See [howto/automata-tags.md](howto/automata-tags.md).
