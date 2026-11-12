@@ -135,6 +135,31 @@ any task:
   once the genuine work is done.
 - It never resets anything: no task goes back to pending, no story reopens.
 
+A rejudge is a fresh completion review whenever anything it judged has
+changed. The review is anchored to the real head of the Automaton's own
+working tree (the commit the judge actually reads), not only to the last
+commit a task attempt recorded, so a fix you committed by hand counts as new
+work. It is also tied to the rules text the judge reads. The stored blocking
+verdict is replayed only when **all** of these hold: the judge verdict cache is
+on, the head is the commit the stored verdict was judged on, the rules text is
+unchanged, and the stored verdict recorded a rules fingerprint. Otherwise the
+judge runs again and its verdict is stored under the new head and rules. In
+practice:
+
+- **You committed a fix** — the head moved, so the judge reads the new tree.
+- **You edited the rules or context file** — the rules text changed, so the
+  judge reads it again. With the default `base_commit` source that is the
+  rules as they were at the Automaton's base commit, so an edit made only in
+  the working tree does not change what the judge reads; see
+  [Rules-review source](../datawatch-definitions.md#rules-review-source).
+- **Nothing changed** — the stored verdict comes back, on purpose, without a
+  new judge run. To force a fresh judgment, change the judge chain or turn the
+  cache off ([The per-commit verdict
+  cache](judge-policy.md#the-per-commit-verdict-cache)).
+- **The stored verdict is from before the rules fingerprint existed**, or the
+  project has no rules or context file to fingerprint — the first rejudge
+  always judges again.
+
 Outcome, in every case written to the Automaton's decision log (attributed
 to the acting operator) **before** any status change:
 

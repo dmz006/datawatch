@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **A rejudge of a blocked Automaton reviews the real branch head and the rules text.** The completion review is anchored to the head of the Automaton's own working tree, and a hash of the rules and context text it reads is stored on the verdict as `rules_fingerprint`. The stored verdict is replayed only when both are unchanged; a verdict recorded before the fingerprint existed is judged again once. The recovery and judge-policy howtos, the operations guide and the glossary describe it.
+
 ## v9.139.0 — The Housekeeping tab as an action list
 
 ### Added
