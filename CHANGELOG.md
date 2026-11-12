@@ -11,7 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A pi failure line in the output log fails the attempt at once.** The attempt no longer waits out the silence limit once the log already holds the failure.
 - **A pi request timeout is a model-unresponsive infrastructure failure.** It is counted per compute node, requeues the task without consuming an attempt, and raises an alert naming the node and model when the same node repeats it.
 - **A pi launch on a pooled compute node is preflighted.** A one-token request with a twenty-second limit runs first. A node that fails is marked unhealthy for placement and the launch is deferred without consuming an attempt; a later successful preflight clears the mark. A single-node entry makes no node call at launch.
-- Docs: the pi failure reasons, the preflight and the unhealthy-node mark are explained in the operator how-to and the definitions.
+- Docs: the pi failure reasons, the preflight (pooled entries only) and the unhealthy-node mark are explained in the operator how-to, the definitions and the how-to index. Operator review: the node mark and the per-node count are in memory and no control clears the mark by hand; confirm a daemon restart is acceptable for that.
 
 ## v9.147.2 — Lane fill tolerates an unreachable compute node that holds nothing
 
