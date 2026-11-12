@@ -3881,18 +3881,67 @@ function _projectsGanttKey(row) {
 // when the row has nothing to draw (planned). Running work draws to now.
 function _projectsGanttSpan(r, now) {
   if (!r) return null;
-  const f = r.first ? Date.parse(r.first) : NaN;
-  const l = r.last ? Date.parse(r.last) : NaN;
-  const running = !!r.running;
+  // span = start..end; first and last stand in on a reply without the new fields.
+  const sv = r.start != null ? r.start : r.first;
+  const ev = r.start != null ? r.end : r.last;
+  const f = sv ? Date.parse(sv) : NaN;
+  const l = ev ? Date.parse(ev) : NaN;
+  const running = !!r.running || r.status === 'running';
   if (isNaN(f) && isNaN(l) && !running) return null;
   const a = isNaN(f) ? (isNaN(l) ? now : l) : f;
   const b = running ? now : (isNaN(l) ? a : l);
   return { a: Math.min(a, b), b: Math.max(a, b), running };
 }
 
+// _PROJECTS_GANTT_MARGIN is the fixed margin kept at each end of a default
+// range, as a fraction of the visible range (2 percent).
+const _PROJECTS_GANTT_MARGIN = 0.02;
+
+// _projectsGanttStatusKey maps a row status to the literal i18n key of its word:
+// Completed, Running, Waiting, Blocked, Failed, Cancelled. Empty when unknown.
+function _projectsGanttStatusKey(status) {
+  return ({ completed: 'projects_gantt_status_completed', running: 'projects_gantt_status_running', waiting: 'projects_gantt_status_waiting', blocked: 'projects_gantt_status_blocked', failed: 'projects_gantt_status_failed', cancelled: 'projects_gantt_status_cancelled' })[status] || '';
+}
+
+// _projectsGanttSortChildren orders children fetched later: completed rows
+// first by completion time, then running and waiting rows by start, and rows
+// joined by depends_on or by edges ({from,to}) after what they depend on. Ties
+// break by completion. A cycle falls back to the plain order. Pure.
+function _projectsGanttSortChildren(rows, edges) {
+  const list = Array.isArray(rows) ? rows.slice() : [];
+  const ts = v => { const n = v ? Date.parse(v) : NaN; return isNaN(n) ? Infinity : n; };
+  const endOf = r => ts(r.start != null ? r.end : (r.end != null ? r.end : r.last));
+  const startOf = r => ts(r.start != null ? r.start : r.first);
+  const done = r => (r.status || r.state) === 'completed';
+  const cmp = (x, y) => {
+    const dx = done(x), dy = done(y);
+    if (dx !== dy) return dx ? -1 : 1;
+    if (dx) return (endOf(x) - endOf(y)) || (startOf(x) - startOf(y)) || 0;
+    return (startOf(x) - startOf(y)) || (endOf(x) - endOf(y)) || 0;
+  };
+  const base = list.map((r, i) => ({ r, i })).sort((x, y) => (cmp(x.r, y.r) || x.i - y.i)).map(o => o.r);
+  const byId = {}, deps = {}, pos = new Map();
+  base.forEach((r, i) => { byId[r.id] = r; deps[r.id] = []; pos.set(r, i); });
+  base.forEach(r => (Array.isArray(r.depends_on) ? r.depends_on : []).forEach(d => { if (byId[d] && d !== r.id) deps[r.id].push(d); }));
+  (Array.isArray(edges) ? edges : []).forEach(e => { if (e && byId[e.from] && byId[e.to] && e.from !== e.to) deps[e.to].push(e.from); });
+  const out = [], mark = {};
+  let cyclic = false;
+  const visit = r => {
+    if (mark[r.id] === 2) return;
+    if (mark[r.id] === 1) { cyclic = true; return; }
+    mark[r.id] = 1;
+    deps[r.id].map(d => byId[d]).sort((x, y) => pos.get(x) - pos.get(y)).forEach(visit);
+    mark[r.id] = 2;
+    out.push(r);
+  };
+  base.forEach(visit);
+  return cyclic ? base : out;
+}
+
 // _projectsGanttBarState maps an arc's state (planned, active, done) onto the
 // state colours the Timeline uses; Automaton and task states pass through.
 function _projectsGanttBarState(r) {
+  if (r && r.status) return r.status;
   if (r && (r.kind === 'arc' || r.kind === 'unassigned')) return ({ done: 'completed', active: 'running' }[r.state] || r.state);
   return r ? r.state : '';
 }
@@ -3901,6 +3950,14 @@ function _projectsGanttBarState(r) {
 // the latest last of the rows, running work counting to now. It is null when no
 // row has activity. A single instant is widened to one hour.
 function _projectsGanttRangeFromRows(rows, now) {
+  const tight = _projectsGanttTightRange(rows, now);
+  if (!tight) return null;
+  const m = (tight.end - tight.start) * _PROJECTS_GANTT_MARGIN;
+  return { start: tight.start - m, end: tight.end + m };
+}
+
+// _projectsGanttTightRange is the tightest span holding the rows, no margin.
+function _projectsGanttTightRange(rows, now) {
   let lo = Infinity, hi = -Infinity;
   (Array.isArray(rows) ? rows : []).forEach(r => {
     const sp = _projectsGanttSpan(r, now);
@@ -3989,7 +4046,9 @@ function _projectsGanttCap(flat, max) {
 // _projectsGanttRangeRows are the rows the range and the zoom bounds read: the
 // timeline rows, or for a focus page its task rows (set as g.rangeRows).
 function _projectsGanttRangeRows(g) {
-  return g.rangeRows && g.rangeRows.length ? g.rangeRows : g.rows;
+  if (g.rangeRows && g.rangeRows.length) return g.rangeRows;
+  // visible rows, expanded children included
+  return _projectsGanttFlatten(g).filter(it => it.type === 'row').map(it => it.row);
 }
 
 // The two surfaces that draw the Gantt: the project page and the focus page. The
@@ -4077,7 +4136,8 @@ function _projectGanttInnerHTML(g, ui) {
     } else {
       const x1 = pct(sp.a), x2 = pct(sp.b);
       const dates = [new Date(sp.a).toLocaleDateString(), sp.running ? t('projects_gantt_running') : new Date(sp.b).toLocaleDateString()].join(' – ');
-      const tip = `${label} · ${r.state || ''} · ${dates}`;
+      const stKey = _projectsGanttStatusKey(r.status);
+      const tip = `${label} · ${stKey ? t(stKey) : (r.state || '')} · ${dates}${r.release ? ' · ' + r.release : ''}`;
       track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
         + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
     }
