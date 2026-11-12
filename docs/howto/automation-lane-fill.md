@@ -202,6 +202,7 @@ Automaton's status or its plan.
 | `autonomous.lane_fill.claude_backend` | `claude-code` | The backend the Claude lanes run |
 | `autonomous.lane_fill.count_verifier_wait` | `true` | Whether a lane waiting on a verifier slot counts available; `false` keeps it busy |
 | `autonomous.lane_fill.stale_after_hours` | `72` | How many hours an Automaton may go without any change before lane fill calls it stale and will not start it; `0` turns the rule off |
+| `autonomous.lane_fill.host_down_after_minutes` | `10` | How many minutes a pool host may stay unreachable before lane fill treats it as down and judges the lanes from the readable hosts; `0` never treats an unreachable host as down |
 | `autonomous.lane_fill.require_confirmed_proposal` | `true` | Whether an implementation Automaton needs a proposal file with a `Confirmed: yes` line; `false` turns the rule off |
 | `autonomous.lane_fill.check_main_carries` | `true` | Whether lane fill skips an Automaton whose work the default branch already has; `false` turns the check off |
 | `autonomous.lane_fill.require_worktree` | `true` | Whether an Automaton that has a recorded worktree is taken only when that worktree is real and registered; `false` turns the check off |
@@ -209,11 +210,11 @@ Automaton's status or its plan.
 | `autonomous.lane_fill.gpu_mode` | empty | The mode for GPU lanes only: `off`, `shadow` or `on`; empty inherits `mode` |
 | `autonomous.lane_fill.claude_mode` | empty | The mode for Claude lanes only: `off`, `shadow` or `on`; empty inherits `mode` |
 
-The seven keys from `stale_after_hours` down are the eligibility and
+The eight keys from `stale_after_hours` down are the eligibility and
 per-lane-kind keys. The four switches (`require_confirmed_proposal`,
 `check_main_carries`, `require_worktree`, `lane_counts_from_caps`) are on when
 the key is absent, and an explicit `false` is kept. An explicit
-`stale_after_hours: 0` is kept as well.
+`stale_after_hours: 0` and an explicit `host_down_after_minutes: 0` are kept as well.
 
 Every key is settable at runtime with no restart:
 
@@ -223,7 +224,7 @@ Every key is settable at runtime with no restart:
 | CLI | `datawatch config set autonomous.lane_fill.mode shadow` |
 | Chat | `configure autonomous.lane_fill.mode=shadow` |
 | REST | `PUT /api/config` with the same key |
-| MCP | `autonomous_config_set` with `lane_fill_mode` (and `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`, `lane_fill_idle_alert_minutes`, `lane_fill_decompose_ahead_min`, `lane_fill_poll_seconds`, `lane_fill_gpu_backend`, `lane_fill_gpu_model`, `lane_fill_claude_backend`, `lane_fill_stale_after_hours`, `lane_fill_require_confirmed_proposal`, `lane_fill_check_main_carries`, `lane_fill_require_worktree`, `lane_fill_lane_counts_from_caps`, `lane_fill_gpu_mode`, `lane_fill_claude_mode`) |
+| MCP | `autonomous_config_set` with `lane_fill_mode` (and `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`, `lane_fill_idle_alert_minutes`, `lane_fill_decompose_ahead_min`, `lane_fill_poll_seconds`, `lane_fill_gpu_backend`, `lane_fill_gpu_model`, `lane_fill_claude_backend`, `lane_fill_stale_after_hours`, `lane_fill_host_down_after_minutes`, `lane_fill_require_confirmed_proposal`, `lane_fill_check_main_carries`, `lane_fill_require_worktree`, `lane_fill_lane_counts_from_caps`, `lane_fill_gpu_mode`, `lane_fill_claude_mode`) |
 | PWA | Settings → General → Autonomous, the Lane fill fields |
 
 A bad value is refused, and nothing is written. An explicit `0` is kept.
@@ -325,6 +326,52 @@ node (`PUT /api/compute/nodes/{name}`, the `compute_node_update` MCP tool or the
 compute node settings in the PWA; the how-to [Compute nodes](compute-nodes.md)
 has the certificate options in full), and the next poll reads the pool. A node on plain http, and
 the host's own local Ollama, are read as before.
+
+### A degraded host: an unreachable node that does not block the lanes
+
+Lane fill reads the loaded models of every pool host before it calls a GPU lane
+idle. One node that cannot be read used to put the blocker `pool evidence
+unavailable: ...` on every GPU lane and stop decompose-ahead, even when that
+node was switched off and held no work. Now an unreachable node is **degraded**
+instead, and the lanes are judged from the hosts that can be read.
+
+**When an unreachable node still blocks.** A failed read blocks every GPU lane,
+exactly as before, when any of these holds:
+
+- the node currently holds work: a session lease, an Automaton placement, or a
+  running session that names it as its node;
+- the node is one of the nodes a lane's work is placed on;
+- the node is not yet known to be down, meaning it has been unreachable for
+  less than `autonomous.lane_fill.host_down_after_minutes` (default 10). Lane
+  fill remembers, for each node, the time of its first failed read in a row, and
+  forgets it on the first successful read;
+- `host_down_after_minutes` is `0`, which means never treat an unreachable node
+  as down, so every failure blocks.
+
+A failed list of sessions, for this machine or for a pool node, always blocks.
+
+**When it is degraded.** Only when none of the above holds: the node holds no
+work, no lane is placed on it, and it has been unreachable for at least
+`host_down_after_minutes`. The failure is then left out of the pool evidence
+error and is reported as a warning that names the node, the error text and the
+time the node first failed.
+
+**Where it shows.** The warning is kept apart from the lane blockers on every
+surface, and is empty when nothing is degraded:
+
+| Surface | Where |
+|---|---|
+| REST | `evidence.degraded` in `GET /api/autonomous/lane-fill`, a list of `host`, `error` and `since`, next to `evidence.error` |
+| MCP | the same list in the `autonomous_lane_fill_status` result |
+| CLI | `datawatch autonomous lane-fill` prints a "Degraded hosts (not blocking the lanes)" block with each node, its error and how long it has been unreachable; `--json` prints the list unchanged |
+| Chat | `autonomous lane-fill` prints the same block |
+| Web | the **Lane fill** card shows a "Degraded hosts" block under the pool evidence, only while a node is degraded |
+
+**How it clears.** The next read that succeeds removes the node from the list
+and forgets when it first failed, so a node that recovers disappears on the
+next poll. If it fails again later, the clock starts over. To make an unreachable
+node block again right away, set `host_down_after_minutes` to `0`; to wait
+longer before ignoring it, raise it. The change applies on the next poll.
 
 ## The day-long shadow comparison
 
@@ -508,6 +555,13 @@ needs no restart.
   still allows the backend to change.
 - **It never acts in shadow mode.** Shadow mode starts nothing and approves
   nothing.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Every GPU lane is blocked with `pool evidence unavailable: ...` | A node could not be read and the failure is blocking. The error names the node. If the node holds work, a lane is placed on it, or it has been unreachable for less than `host_down_after_minutes`, it blocks; restore the node, or for a certificate error set the node's own TLS options (see the certificate section above). A node that is switched off and holds no work stops blocking after `host_down_after_minutes` and shows under Degraded hosts instead. If `host_down_after_minutes` is `0` every failure blocks. See the section on a degraded host. |
+| A "Degraded hosts" block shows on the card | A node is unreachable but holds no work. The lanes are judged from the other nodes. It clears on the first successful read. |
 
 ## See also
 
