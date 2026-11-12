@@ -471,6 +471,15 @@ type Session struct {
 	// DATAWATCH_PI_FAILED marker; the terminal state plus this code carry
 	// the exit status per the store's design (0 = complete, non-zero = failed).
 	FailureExitCode int `json:"failure_exit_code,omitempty"`
+
+	// EndedAt is the time a record was finalised because its process was
+	// gone. Nil for every session that has no such end time, so the field
+	// stays out of the JSON of those records.
+	EndedAt *time.Time `json:"ended_at,omitempty"`
+
+	// EndNote is the short note kept with EndedAt when a record is finalised
+	// because its process was gone. Empty when there is no note.
+	EndNote string `json:"end_note,omitempty"`
 }
 
 // UnmarshalJSON accepts both the v7.0.0-alpha.27 field name
