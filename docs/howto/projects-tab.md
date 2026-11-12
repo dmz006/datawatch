@@ -492,9 +492,10 @@ the lane defaults. Use REST, MCP or the CLI for those.
 
 ## For the operator to review
 
-- **Mobile apps.** The Android and iPhone apps still show Projects as their own
-  screen. Moving it under Automata there is tracked in datawatch-app and is not
-  part of this change.
+- **Mobile parity.** The Android and iPhone apps still show Projects as its own
+  screen and a project as one screen. Moving Projects under Automata, matching
+  page sub-tabs, and the Manage projects add, edit and remove controls are tracked
+  in datawatch-app and are not part of this change.
 - **Old links keep working.** The `#projects` and `#projects/<name>` addresses
   and the Projects link open the sub-tab, so bookmarks and the Settings help
   links stay valid. This page keeps its file name (`projects-tab.md`) for the
@@ -517,9 +518,6 @@ the lane defaults. Use REST, MCP or the CLI for those.
   page to replace. The seven labels and the "Project sections" label ship in the
   English, German, Spanish, French and Japanese locales; a native speaker has not
   reviewed the four translations.
-- **Mobile parity.** The Android and iPhone apps show a project as one screen.
-  Matching page sub-tabs there are tracked in datawatch-app and are not part of
-  this change.
 - **Empty-state link.** The empty Projects picker used to show an **Open Settings**
   button that went to Project policy. This page now describes the **Manage
   projects** form as the place to start, and the button is no longer listed.
@@ -527,8 +525,6 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - **Edit keeps the record.** The page says editing keeps the policy, arcs, owner,
   target and other record fields. That follows the shipped form's behavior as
   documented in the change; confirm it on a project that has a policy and arcs.
-- **Mobile parity.** The Manage projects form is web-only; the Android and iPhone
-  apps need the matching add, edit and remove controls (tracked in datawatch-app).
 
 ## Related
 
