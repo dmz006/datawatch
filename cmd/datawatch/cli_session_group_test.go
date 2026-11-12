@@ -31,8 +31,8 @@ func TestSessionGroupQuery_MapsFlags(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("group-by", "", "")
 	cmd.Flags().String("tag-prefix", "", "")
-	cmd.Flags().Set("group-by", "tag")
-	cmd.Flags().Set("tag-prefix", "automation:")
+	_ = cmd.Flags().Set("group-by", "tag")
+	_ = cmd.Flags().Set("tag-prefix", "automation:")
 	q := sessionGroupsQuery(cmd)
 	want := url.Values{"group_by": {"tag"}, "tag_prefix": {"automation:"}}
 	if q.Encode() != want.Encode() {
@@ -40,8 +40,8 @@ func TestSessionGroupQuery_MapsFlags(t *testing.T) {
 	}
 
 	// tag-alone axis without prefix
-	cmd.Flags().Set("group-by", "state")
-	cmd.Flags().Set("tag-prefix", "")
+	_ = cmd.Flags().Set("group-by", "state")
+	_ = cmd.Flags().Set("tag-prefix", "")
 	if got := sessionGroupsQuery(cmd); got.Encode() != "group_by=state" {
 		t.Errorf("query = %q", got.Encode())
 	}

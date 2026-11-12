@@ -148,27 +148,6 @@ func renderSessionGroups(body []byte) (string, error) {
 	return strings.TrimRight(sb.String(), "\n") + "\n", nil
 }
 
-// renderSessionGroupsPreview renders only the group headers (count + state
-// mix) of a grouped response — the comm channel's summary form.
-func renderSessionGroupsPreview(body []byte) (string, error) {
-	var g sessionGroupsBody
-	if err := json.Unmarshal(body, &g); err != nil {
-		return "", fmt.Errorf("decode grouped sessions: %w", err)
-	}
-	var sb strings.Builder
-	for _, grp := range g.Groups {
-		mix := stateMixText(grp.StateMix)
-		if grp.Progress != nil {
-			fmt.Fprintf(&sb, "  %s  %d (%s) — done %d/%d\n", grp.Key, grp.Count, mix, grp.Progress.Done, grp.Progress.Total)
-		} else {
-			fmt.Fprintf(&sb, "  %s  %d (%s)\n", grp.Key, grp.Count, mix)
-		}
-	}
-	sb.WriteString("  total: ")
-	sb.WriteString(stateMixText(g.StateTotals) + "\n")
-	return strings.TrimRight(sb.String(), "\n") + "\n", nil
-}
-
 // daemonGetSessionGroups runs the grouped read over the daemon API and
 // prints the grouped text view.
 func daemonGetSessionGroups(cmd *cobra.Command) error {
