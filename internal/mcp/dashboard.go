@@ -33,7 +33,7 @@ func (s *Server) toolDashboardCardsList() mcpsdk.Tool {
 func (s *Server) toolDashboardCardUpdate() mcpsdk.Tool {
 	return mcpsdk.NewTool("dashboard_card_update",
 		mcpsdk.WithDescription("#57 — set column span (cs) and optional row span (rs) for a dashboard card. Appends the card if it does not exist (upsert)."),
-		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("card type id (tree, orbital, events, sparklines, gantt, heatmap, guardrails, ekg, smoke)")),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("card type id (tree, orbital, events, sparklines, gantt, timeline, heatmap, guardrails, ekg, smoke)")),
 		mcpsdk.WithNumber("cs", mcpsdk.Required(), mcpsdk.Description("column span 1-12")),
 		mcpsdk.WithNumber("rs", mcpsdk.Description("row span (optional)")),
 	)

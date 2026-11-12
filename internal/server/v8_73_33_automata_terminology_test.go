@@ -35,7 +35,14 @@ var perLocaleWrongWord = map[string]*regexp.Regexp{
 // isAutomationObjectKey reports whether a locale key belongs to the
 // Automation object rather than the Automaton feature.
 func isAutomationObjectKey(key string) bool {
-	return key == "nav_automation" || strings.HasPrefix(key, "automation_")
+	switch key {
+	case "nav_automation",
+		// Timeline card: the Automation filter and its kind label name the
+		// Automation object, so the Automation word is correct there.
+		"timeline_card_filter_automation", "timeline_card_kind_automation":
+		return true
+	}
+	return strings.HasPrefix(key, "automation_")
 }
 
 // pendingTranslationKeys lists keys whose de/es/fr/ja value is, by the
@@ -193,6 +200,10 @@ func TestLocales_AutomationKeyExemptionIsNarrow(t *testing.T) {
 	}{
 		{"nav_automation", true},
 		{"automation_pause", true},
+		{"timeline_card_filter_automation", true},
+		{"timeline_card_kind_automation", true},
+		{"timeline_card_kind_automaton", false},
+		{"timeline_card_filter_project", false},
 		{"fab_launch_auto", false},
 		{"automata_status_draft", false},
 		{"nav_automata", false},
