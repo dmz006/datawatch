@@ -55,8 +55,8 @@ const PLACEHOLDERS = {
   housekeeping: ['automationStaleWorktreesCard'],
 };
 
-// The Progress tab's headline row holds two more cards, hidden until they have a value.
-const HEADLINE = { progress: ['automationCostBillingCard', 'automationCompletionForecastCard'] };
+// The Progress tab's headline row holds two more cards, and the cost chart cards follow them; all hidden until they have a value.
+const HEADLINE = { progress: ['automationCostBillingCard', 'automationCompletionForecastCard', 'automationCostChartsCard'] };
 
 // Every id="automation…Card"-style id and the filter bar/panel in a body, in
 // document order. Inner ids (history button, search field, bodies) are not cards.
@@ -133,7 +133,7 @@ test('card ownership: each tab body holds exactly its fixed cards then its place
       seen.set(c, id);
     });
   }
-  assert.equal(seen.size, 4 + 2 + 4 + 1 + 2 + 8, 'total distinct card ids (fixed 13 + placeholders 8)');
+  assert.equal(seen.size, 4 + 2 + 4 + 1 + 2 + 8 + 1, 'total distinct card ids (fixed 13 + placeholders 8 + cost charts 1)');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[0], 'automationQuestionsCard', 'open questions card is first on Inbox');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[2], 'automationTriageCard', 'triage card follows the question and held cards');
 });

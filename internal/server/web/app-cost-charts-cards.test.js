@@ -386,7 +386,7 @@ test('a code comment marks the existing helper that was extended', () => {
 });
 
 test('operator-facing text says Automaton, Automata and Automation, never PRD, and carries no tracker identifier', () => {
-  const block = APP_SRC.slice(APP_SRC.indexOf('// ── Cost report chart cards'), APP_SRC.indexOf('// The Supervisor loop card fills the Setup placeholder'));
+  const block = APP_SRC.slice(APP_SRC.indexOf('// ── Cost report chart cards'), APP_SRC.indexOf('registerAutomationCardSlot(COST_CHARTS_TAB'));
   assert.ok(block.length > 5000, 'found the cards block');
   assert.ok(!/\bPRDs?\b/.test(block), 'no PRD in the cards code');
   assert.ok(!/\b(BL|GH|SEC|HLLM)-?\d+\b/.test(block), 'no tracker id in the cards code');
