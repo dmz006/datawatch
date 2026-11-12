@@ -2054,6 +2054,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		sig := <-sigCh
 		fmt.Printf("\nShutting down... (signal=%v)\n", sig)
 		recordShutdownCause(sig)
+		flushBackoff(autonomousBackoff)
 		if cfg.Session.KillSessionsOnExit {
 			fmt.Println("Killing active sessions...")
 			if err := mgr.EndAllSessions(session.EndReason{Caller: endCallerShutdown, Reason: shutdownEndReason(sig)}); err != nil {
@@ -3179,6 +3180,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
+			flushBackoff(autonomousBackoff)
 			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -7886,6 +7888,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetAlertFn(func(title, body string) {
 				_ = alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
+			// Back-off flags restored at start: decision log, alert, audit.
+			recordRestoredBackoff(amgr)
 			// Undeclared-edit detection: raise the operator alert at the
 			// level the manager asks for (warn by default).
 			amgr.SetAlertSink(func(level, title, body string) string {
@@ -9378,6 +9382,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Record the shutdown cause (API-marked via is picked up by
 			// shutdowncause.Capture) before either exit path below.
 			recordShutdownCause(nil)
+			flushBackoff(autonomousBackoff)
 			_ = mgr.Close()
 			// Under systemd, let its own Restart= policy bring the service
 			// back up — exiting non-zero so Restart=on-failure fires —
@@ -9680,6 +9685,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
+			flushBackoff(autonomousBackoff)
 			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
