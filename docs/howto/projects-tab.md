@@ -406,6 +406,18 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - The page is read-only. Changes go through REST, MCP, the CLI or the comm
   channel.
 
+## For the operator to review
+
+- **Mobile apps.** The Android and iPhone apps still show Projects as their own
+  screen. Moving it under Automata there is tracked in datawatch-app and is not
+  part of this change.
+- **Old links keep working.** The `#projects` and `#projects/<name>` addresses
+  and the Projects link open the sub-tab, so bookmarks and the Settings help
+  links stay valid. This page keeps its file name (`projects-tab.md`) for the
+  same reason; rename it only if you also redirect the links that point here.
+- **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
+  order shipped. Confirm it is the order you want before the next release.
+
 ## Related
 
 - [automation-tab.md](automation-tab.md): the Automation view, where the
