@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // This file reads the lane fill status body and formats it as text. The CLI
@@ -37,6 +38,12 @@ func RenderLaneFillText(st LaneFillStatus, maxDecisions int) string {
 	fmt.Fprintf(&b, "Queued eligible: gpu %d, claude %d\n", st.QueuedEligible.GPU, st.QueuedEligible.Claude)
 	if st.Evidence.Error != "" {
 		fmt.Fprintf(&b, "Pool evidence error: %s\n", st.Evidence.Error)
+	}
+	if len(st.Evidence.Degraded) > 0 {
+		b.WriteString("Degraded hosts (not blocking the lanes):\n")
+		for _, d := range st.Evidence.Degraded {
+			fmt.Fprintf(&b, "  %s: %s (%s)\n", d.Host, d.Error, laneFillDegradedFor(d.Since))
+		}
 	}
 	decisions := st.Decisions
 	if maxDecisions > 0 && len(decisions) > maxDecisions {
@@ -136,4 +143,17 @@ func laneFillDecisionText(d LaneFillDecision) string {
 		s += fmt.Sprintf(" (seen %d times)", d.RepeatCount)
 	}
 	return s
+}
+
+// laneFillDegradedFor says how long a host has been unreachable, from the time
+// it first failed.
+func laneFillDegradedFor(since time.Time) string {
+	if since.IsZero() {
+		return "unreachable"
+	}
+	d := time.Since(since)
+	if d < 0 {
+		d = 0
+	}
+	return fmt.Sprintf("unreachable for %d min", int(d/time.Minute))
 }

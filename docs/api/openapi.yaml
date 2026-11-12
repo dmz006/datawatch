@@ -1061,6 +1061,9 @@ paths:
         claude-code), `autonomous.lane_fill.count_verifier_wait` (true|false, default
         true), `autonomous.lane_fill.stale_after_hours` (whole number >= 0; an unset
         key reads as 72 and an explicit `0` turns the stale rule off),
+        `autonomous.lane_fill.host_down_after_minutes` (whole number >= 0, default 10;
+        minutes a pool host may stay unreachable before it is treated as down; `0` =
+        never treat an unreachable host as down),
         `autonomous.lane_fill.require_confirmed_proposal` (true|false, default true),
         `autonomous.lane_fill.check_main_carries` (true|false, default true),
         `autonomous.lane_fill.require_worktree` (true|false, default true),
@@ -9662,6 +9665,15 @@ components:
                   host: {type: string}
                   model: {type: string}
             error: {type: string, description: "Why the last poll could not read the pool; empty when it could"}
+            degraded:
+              type: array
+              description: Pool hosts that could not be read but hold no work and have been unreachable past autonomous.lane_fill.host_down_after_minutes; they do not block the lanes. Empty when nothing is degraded.
+              items:
+                type: object
+                properties:
+                  host: {type: string}
+                  error: {type: string}
+                  since: {type: string, format: date-time, description: When the host first failed}
         decisions:
           type: array
           description: Planner decisions, newest first
