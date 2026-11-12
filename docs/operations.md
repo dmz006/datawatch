@@ -2790,7 +2790,7 @@ The round `?` help link on the PWA's Alerts tab no longer takes its own
 top-right row above the list — that separate row mis-rendered on narrow
 touch viewports (operator report with a screenshot from Chrome on
 Android). It now sits at the right edge of the list loader's meta row,
-beside the list's status text (`Cached` / `Last updated N s ago`), on
+beside the list's status text (`Cached` / `Data may be out of date`), on
 the same row. Destination, tooltip and accessible name are unchanged:
 it opens `docs/howto/alerts-and-notifications.md` in a new tab. On
 touch devices the link gets a 40 × 40 px minimum tap target. There is no
@@ -2798,7 +2798,7 @@ config and no migration: because the PWA is embedded in the daemon
 binary, rebuild and restart the daemon and hard-refresh the PWA tab to
 serve the new layout. The layout is pinned by the story
 `scripts/test-stories/alerts-header-row.sh` (one row, link right of the
-age text, no horizontal overflow at a 390 px viewport).
+state text, no horizontal overflow at a 390 px viewport).
 
 ### Suppress Toasts for Active Session
 

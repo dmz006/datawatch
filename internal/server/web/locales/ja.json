@@ -2849,7 +2849,6 @@
   "workload_roles_col_role": "ロール",
   "workload_roles_col_entry": "解決先",
   "workload_roles_warnings": "競合の警告",
-  "last_updated_ago": "%1$d 秒前に更新",
   "cached": "キャッシュ",
   "load_failed": "この一覧を読み込めませんでした",
   "retry": "再試行",

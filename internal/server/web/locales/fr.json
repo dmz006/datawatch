@@ -2849,7 +2849,6 @@
   "workload_roles_col_role": "Rôle",
   "workload_roles_col_entry": "Résolu vers",
   "workload_roles_warnings": "Avertissements de conflit",
-  "last_updated_ago": "Dernière mise à jour il y a %1$d s",
   "cached": "En cache",
   "load_failed": "Impossible de charger cette liste",
   "retry": "Réessayer",

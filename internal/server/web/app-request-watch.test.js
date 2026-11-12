@@ -252,7 +252,7 @@ test('mounting the loader twice leaves one loader, and stop ends its timers', ()
   assert.equal(first, second, 'a second mount must reuse the loader, not stack another');
   first.stop();
   assert.equal(first.state.pollTimer, null);
-  assert.equal(first.state.tickTimer, null);
+  assert.equal('tickTimer' in first.state, false, 'no tick timer exists on the loader state');
 });
 
 test('no interval is stored on a DOM element', () => {

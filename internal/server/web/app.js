@@ -1268,12 +1268,13 @@ function apiFetch(path, opts = {}) {
 // ── listLoader: shared load-state helper for list views ─────────────────────
 // listLoader({key, url, render, el, pollMs, timeoutMs, metaExtra}) owns the whole
 // loading lifecycle of one list: an immediate skeleton + localized "Loading"
-// label, the last good response for `key` from localStorage (badged "cached"
-// with its age) while the fresh request runs, a ticking "Last updated N s
-// ago" line, a distinct failed banner with Retry (cached data stays visible
-// beneath it) on error or timeout, and a stale warning only once the data is
-// older than pollMs and no first load is in flight. A superseded request is
-// aborted (AbortController) and a sequence number guards late responses.
+// label, the last good response for `key` from localStorage (badged "cached")
+// while the fresh request runs, a distinct failed banner with Retry (cached
+// data stays visible beneath it) on error or timeout, and a small stale
+// marker only while the last refresh failed or the data is older than five
+// minutes. There is no ticking "Last updated N s ago" line and no per-second
+// repaint. A superseded request is aborted (AbortController) and a sequence
+// number guards late responses.
 // render(data) must return an HTML string; el is an element or element id.
 // Optional metaExtra(data) returns an HTML string (e.g. a link) rendered on
 // the right of the meta row; when it is absent or returns empty HTML the
@@ -1282,6 +1283,9 @@ function apiFetch(path, opts = {}) {
 // parallel and one failure never blanks the others (load() never rejects).
 const LIST_CACHE_PREFIX = 'cs_list_';
 const LIST_CACHE_MAX = 512 * 1024;
+// A list is "out of date" once its data is this old; the stale marker is
+// also up while the last refresh failed. No per-second age counter.
+const LIST_STALE_MS = 5 * 60 * 1000;
 const _listLoaders = {};
 function _listCacheRead(key) {
   try {
@@ -1307,14 +1311,12 @@ function listLoader(opts) {
   const doFetch = opts.fetch || ((u, o) => apiFetch(u, o));
   const st = {
     key, opts, seq: 0, ctrl: null, loading: false, loadedOnce: false, data: null, hasData: false,
-    at: 0, fromCache: false, error: '', pollTimer: null, tickTimer: null, stopped: false,
+    at: 0, fromCache: false, error: '', pollTimer: null, stopped: false,
   };
   const cached = _listCacheRead(key);
   if (cached) { st.data = cached.data; st.hasData = true; st.at = cached.t; st.fromCache = true; }
   const target = () => (typeof opts.el === 'string') ? document.getElementById(opts.el) : opts.el;
-  const ageSec = () => Math.max(0, Math.floor((now() - st.at) / 1000));
-  const ageText = () => t('last_updated_ago', [ageSec()]);
-  const isStale = () => st.hasData && !st.fromCache && !st.loading && st.loadedOnce && pollMs > 0 && (now() - st.at) > pollMs;
+  const isStale = () => st.hasData && (st.error !== '' || (now() - st.at) > LIST_STALE_MS);
   function html() {
     let h = '';
     if (st.error) {
@@ -1329,23 +1331,26 @@ function listLoader(opts) {
     if (st.hasData) {
       let meta = '';
       if (st.fromCache) meta += `<span class="list-state-cached">${escHtml(t('cached'))}</span> `;
-      meta += `<span class="list-state-age" data-list-age="1">${escHtml(ageText())}</span>`;
-      if (st.loading) meta += ` <span class="list-state-refreshing">${escHtml(t('loading'))}</span>`;
-      if (isStale()) meta += ` <span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
+      if (st.loading) meta += `<span class="list-state-refreshing">${escHtml(t('loading'))}</span> `;
+      if (isStale()) meta += `<span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
+      meta = meta.trim();
       let extra = '';
       if (typeof opts.metaExtra === 'function') {
         // A throwing or non-string metaExtra must never break the paint;
         // it just falls back to the default meta row.
         try { extra = String(opts.metaExtra(st.data) || ''); } catch (e) { extra = ''; }
       }
+      const body = `<div class="list-state-body">${opts.render(st.data) || ''}</div>`;
       if (extra) {
         // metaExtra row: the meta spans wrapped in one main span (left), the
         // loader's extra HTML after it (right). .list-state-meta-row styles
-        // the split; without metaExtra the markup stays byte-identical to
-        // the default row below.
-        h += `<div class="list-state-meta list-state-meta-row"><span class="list-state-meta-main">${meta}</span>${extra}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+        // the split; without metaExtra the meta row is plain, and with
+        // neither meta spans nor extra the meta row is omitted entirely.
+        h += `<div class="list-state-meta list-state-meta-row"><span class="list-state-meta-main">${meta}</span>${extra}</div>` + body;
+      } else if (meta) {
+        h += `<div class="list-state-meta">${meta}</div>` + body;
       } else {
-        h += `<div class="list-state-meta">${meta}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+        h += body;
       }
     }
     return h;
@@ -1356,13 +1361,6 @@ function listLoader(opts) {
     const keep = opts.beforePaint ? opts.beforePaint(el) : null;
     el.innerHTML = html();
     if (opts.afterPaint) opts.afterPaint(el, keep, st.data);
-  }
-  function tick() {
-    if (!st.hasData || st.stopped) return;
-    const el = target();
-    const span = el && el.querySelector && el.querySelector('[data-list-age]');
-    if (span && !isStale() === !(el.querySelector('.list-state-stale'))) span.textContent = ageText();
-    else paint();
   }
   function schedule() {
     if (st.pollTimer) clearTimeout(st.pollTimer);
@@ -1377,7 +1375,6 @@ function listLoader(opts) {
     state: st,
     html,
     paint,
-    ageText,
     isStale,
     load() {
       if (st.stopped) { st.stopped = false; }
@@ -1388,7 +1385,6 @@ function listLoader(opts) {
       st.loading = true;
       st.error = '';
       paint();
-      if (!st.tickTimer) st.tickTimer = setInterval(tick, 1000);
       let timer = null;
       let timedOut = false;
       const timeout = new Promise((_, rej) => {
@@ -1430,8 +1426,7 @@ function listLoader(opts) {
       st.stopped = true; st.seq++;
       if (st.ctrl) { try { st.ctrl.abort(); } catch (e) { /* ignore */ } }
       if (st.pollTimer) clearTimeout(st.pollTimer);
-      if (st.tickTimer) clearInterval(st.tickTimer);
-      st.pollTimer = st.tickTimer = null; st.loading = false;
+      st.pollTimer = null; st.loading = false;
     },
   };
   if (_listLoaders[key] && _listLoaders[key] !== ctl) _listLoaders[key].stop();
@@ -36624,13 +36619,11 @@ window.progressCardHtml = function(state, opts) {
   // Stale: the last refresh failed, or the numbers were generated more than
   // five minutes ago. The age is that of the data, not of the page.
   const gen = Date.parse(data.generated_at);
-  const since = isFinite(gen) ? gen : (_pcIsNum(state.fetchedAt) ? state.fetchedAt : now);
   const old = isFinite(gen) && (now - gen) > PROGRESS_STALE_MS;
   const stale = state.status === 'stale' || state.status === 'failed' || old;
   let banner = '';
   if (stale) {
-    const ageSec = Math.max(0, Math.floor((now - since) / 1000));
-    banner = `<div class="progress-card-stale" role="status" style="color:var(--warning,#f59e0b);font-size:12px;">${escHtml(t('progress_card_stale'))} · ${escHtml(t('last_updated_ago', [ageSec]))}` +
+    banner = `<div class="progress-card-stale" role="status" style="color:var(--warning,#f59e0b);font-size:12px;">${escHtml(t('progress_card_stale'))}` +
       (state.error ? ` · ${escHtml(state.error)}` : '') + '</div>';
   }
   // No open work yet: no table, just the next action.

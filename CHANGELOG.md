@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **The ticking “Last updated N s ago” line on the list cards.** The PWA's list cards (Sessions, Alerts, the Automata and Automation tabs, and every other card that loads a list) no longer show a last-updated line that counts up every second, and the one-second refresh timer behind it is gone. The row above a list now appears only when it has something to say: the `Cached` badge, the small `Loading…` while a refresh runs, or the `Data may be out of date` marker. The stale marker now shows when the last refresh failed or the data is older than 5 minutes, and the Sessions progress card's stale banner lost its age text with it. The removed label (`last_updated_ago`) is out of the English, German, Spanish, French and Japanese bundles. The tabs' own polling intervals are unchanged.
+
 ## v9.157.0 — Projects view sub-tabs
 
 ### Added
