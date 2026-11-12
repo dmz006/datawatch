@@ -355,13 +355,38 @@ Changes apply without a restart. A bad value sent through a write surface is
 refused naming the key; a bad value written by hand into the YAML reads the
 default.
 
+## The chart cards on the Automata page
+
+The Automata page shows the combined usage report as four cards, in the cost
+report area of its **Progress and cost** tab. A row of controls above them
+sets the grouping (Project, Automation or Automaton), the window (7 days to 8
+weeks) and whether the first chart shows tokens or money. Every card has a
+one-line purpose, a state, a reason and a next action, and a **?** that opens
+this page.
+
+| Card | What it draws | Notes |
+|---|---|---|
+| **Cost over time** | A line per group: tokens, or money | Money is one chart per billing unit. Each axis is labelled with its unit and billing mode, for example dollars on an API-metered backend and points on a bundled plan, so units are never drawn together or added. When no rate or monthly price is set, or USD estimates are off, tokens are drawn and the card says so |
+| **Tool usage** | A line per group: tool calls | Counts only, never tool names |
+| **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group | Retries count each task once and restart when a task is reset |
+| **Combined usage report** | One table joining tokens, money, tool calls, failed attempts and retries per group | Money is listed per unit on its own line |
+
+Each chart draws at most six lines and sixty points per line, and each table
+at most eight rows; the card says when more groups exist. Cost over time and
+tool usage are not recorded per Automation, so under that grouping only the
+failures chart and the combined table are drawn.
+
+A card whose data is empty, or whose view the daemon cannot supply, is not
+drawn. Its reason and next action appear as an entry at the top of the **Events**
+tab instead, so a missing chart is always explained.
+
 ## All access methods
 
 | Method | How |
 |---|---|
 | **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml`; see `docs/config-reference.yaml` |
 | **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`, a table by default (with a `totals by unit` block under it), JSON the raw body |
-| **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); the **Overview** of an Automaton's detail view shows its cost; Settings → Cost Report for the five keys |
+| **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); the four chart cards on the Automata page (see above); the **Overview** of an Automaton's detail view shows its cost; Settings → Cost Report for the five keys |
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; settings via `PUT /api/config` with `cost_report.<key>` and read back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only), `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; settings with `configure cost_report.<key>=<value>` |
