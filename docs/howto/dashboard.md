@@ -376,6 +376,15 @@ confirm each before the wording is treated as final:
   one-line *off* state still opens the dashboard entry of
   [datawatch-definitions.md](../datawatch-definitions.md#dashboard). Confirm the
   section wording with the operator.
+- **Verifier health starts empty after a restart.** Its per-node results are
+  kept in memory, so the card is blank until verifiers run again after the
+  daemon starts. Confirm that is acceptable, or ask for the results to be kept
+  on disk.
+- **Six new cards are opt-in.** Lane utilization, Throughput forecast, Verifier
+  health, Release train, Review backlog and Defects per day appear only through
+  Edit → Add Card, and only once they have data. Confirm none should be on the
+  default board. The mobile app does not draw them yet; see
+  [the parity issue](../plans/parity-issues/dashboard-cards-data-fix.md).
 - **Locale text.** The work map and lane pulse strings now exist in the English,
   German, Spanish, French and Japanese bundles. The empty-state sentences above
   are the English strings. Confirm the translations of the new strings with a
