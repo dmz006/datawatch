@@ -47,6 +47,14 @@ response.md    ← (optional) last LLM response captured for /copy + alerts
 A `cs-<full_id>` tmux session attaches to `output.log` via `tmux
 pipe-pane`. The LLM runs inside that tmux session.
 
+> **Planned, not shipped:** session history today depends on this
+> `pipe-pane` capture and on tmux scrollback. A design pass is approved
+> to capture output per turn in chunks so history no longer relies on
+> scrollback. Nothing has changed yet: `output.log` stays the full
+> append-only record, and the troubleshooting steps below still apply.
+> See the backlog row for per-turn chunked output capture in
+> `docs/plans/README.md`.
+
 States: `Running` (LLM processing), `WaitingInput` (paused, awaiting
 your reply), `RateLimited` (auto-resumes), `Complete` / `Failed` /
 `Killed` (terminal — sticky). See `channel-state-engine.md` for the
