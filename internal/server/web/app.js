@@ -29165,7 +29165,7 @@ const _AUTOMATA_TEMPLATE_SUBTABS = [
   {
     key: 'automaton',
     titleKey: 'automata_templates_subtab_automaton',
-    // The existing Automaton templates loader/renderer wrap around this
+    // The existing Automaton-template loader/renderer wrap around this
     // registry unchanged.
     load: () => loadAutomataTemplatesPanel(),
     render: () => _automataRenderTemplates(),

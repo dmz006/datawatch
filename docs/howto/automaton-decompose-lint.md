@@ -249,7 +249,7 @@ session, like any other task, and `daemon` is performed by the daemon with no se
 
 > **Naming.** These are called **standard tasks** (previously "task templates").
 > The PWA's Automata page shows them under the Templates tab, whose first
-> sub-tabs are *Automaton templates* and *Standard tasks* (the 2026-11-08
+> sub-tabs are *Templates* and *Standard tasks* (the 2026-11-08
 > operator decision). The config keys keep the code-level name
 > `autonomous.task_templates.*`; operator-facing text says *standard
 > tasks*.
@@ -576,7 +576,7 @@ decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
 - **Settings → “Decompose lint”** — the mode, the retry budget, the
   standard-task gate, the guidance string and the rules (as JSON). Saves
   through `PUT /api/autonomous/decompose-lint/config`.
-- **Automata page → Templates tab (labelled "Automaton templates" in the current UI) →
+- **Automata page → Templates tab →
   Standard tasks sub-tab** — the built-in pack by its operator-facing name
   (previously "task templates"); the same list the reads below return. The sub-tab
   is read-only: a per-task table (title, kind, summary, when offered, on/off, mode)
