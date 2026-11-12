@@ -40,9 +40,31 @@ None. Every file that names work is covered: the 111 class `a` files by
 their registry row in `docs/plans/README.md`; the 3 class `b` files by
 the Automata that carried the work (probe Automata and their shipped
 releases v9.0.63, v9.0.73 and 9.17.1) — they owe only registry rows,
-which the "Class (b) proposed rows" section supplies. The 4 class `c`
-files are investigations, references or a passing gate's counts and
-commit to no work.
+which the "Class (b) proposed rows" section supplies. Note that two of
+the three are already summarised as shipped work in `HISTORY.md` (BL423,
+v9.0.63; BL430, v9.0.73), which the registry rules name as the summary
+for shipped work, so those two rows are optional. Only the autonomous-
+triage record feature (9.17.1) has no entry in either the registry or
+HISTORY.md. The 4 class `c` files are investigations, references or a
+passing gate's counts and commit to no work.
+
+## Open items for operator review
+
+- Deciding whether to add the three proposed class `b` rows to
+  `docs/plans/README.md`. Two of the three features (BL423, v9.0.63;
+  BL430, v9.0.73) are already summarised in `HISTORY.md`, which the
+  registry rules use for shipped work, so the rows are optional there;
+  the triage-record row (9.17.1) is the only one missing from both.
+- Confirming the datawatch-app issue number in the triage row before it
+  is added: registry row 193 cites "datawatch-app parity issue 284" for
+  the Step 1 CI-watch parity (merged 2026-10-27), and the triage parity
+  note files `dmz006/datawatch-app` #284 for the triage card (2026-10-27).
+  Two different parity debts sharing one number should be checked against
+  the datawatch-app repository so the row cites the right one.
+- Nothing else is outstanding: all 118 files in the coverage table exist
+  under `docs/plans/`, the coverage table and the
+  [full list](plan-registry-reconciliation-list.md) agree file-for-file,
+  and every path referenced by the batches and this summary resolves.
 
 ## Coverage table
 
