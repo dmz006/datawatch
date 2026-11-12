@@ -227,7 +227,7 @@ func buildProjectRollup(in rollupInput) projectRollup {
 			g = &out.Arcs[i]
 		} else if resolved == in.Project {
 			g = &out.Unassigned
-		} else if resolved == "" && !(auto != "" && in.ArcHeld[auto]) {
+		} else if resolved == "" && (auto == "" || !in.ArcHeld[auto]) {
 			g = &out.WithoutProject
 		} else {
 			continue
