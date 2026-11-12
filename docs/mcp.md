@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `onboarding_report`, `autonomous_triage`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_timeline`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `onboarding_report`, `autonomous_triage`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
@@ -339,6 +339,23 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   Without saved snapshots `points` is empty and `direction` is `unknown`. A `days` value outside 1 to 365 is refused.
+- **`autonomous_timeline`** — read the Automata interval chart: every project that moved, each with its Automata (kind, status), its stages (bands) and its members (bars) with start and end, their blocked and waiting intervals (each with a reason, an end while the stretch is still open), the `today` marker and the projected finish per Automaton with the reason behind it (or why there is none). Times are UTC; the text bars drawn from the same object promise day precision. An Automaton with `end` set is finished — its date is its end, not a projection. An unknown filter value answers an **empty chart, not an error**, so a typo shows up as "no projects". Read-only; returns the same object as `GET /api/autonomous/timeline`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `project` | no | Only the Automata of this project directory |
+  | `automaton` | no | Only this Automaton, by id or title (with it, only that Automaton's chart comes back) |
+  | `stage` | no | Only this stage (story), by id or title |
+  | `kind` | no | Only Automata of this kind: `feature`, `bug` or `other` |
+  | `tag` | no | Only the Automata carrying this tag |
+
+  ```
+  autonomous_timeline()
+  autonomous_timeline(kind="bug")
+  autonomous_timeline(automaton="a1b2c3d4")
+  ```
+
+  Needs the autonomous read capability when called by a federated peer; the route answers 503 while autonomous is disabled.
 - **`autonomous_lane_fill_status`** — read the lane fill status: each GPU and Claude lane with what it is running or waiting on, whether it is idle, the newest planner decisions (newest first) and any idle-lane alerts. A decision that refused an Automaton carries `eligibility_reason` (`stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`); the key is absent when the decision is not a refusal. `lane_counts` gives, for `gpu` and `claude`, the configured count, the effective count the last poll used and its source (`config` or `llm_caps`), and `modes` gives the mode in effect for each lane kind. Read-only; returns the same object as `GET /api/autonomous/lane-fill`.
 
   | Parameter | Required | Description |

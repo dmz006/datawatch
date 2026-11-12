@@ -99,12 +99,14 @@ span 2026-10-28 -> 2026-11-14   # work  X blocked  ~ waiting  T today  P project
 Each Automaton's line ends one of three ways:
 
 - `finished <date>` — it is done; the date is its end.
-- `projected <date>` — the finish is paced from its finished members: the
-  run has enough of them to measure a rate and extrapolate the rest.
+- `projected <date>` — the finish is paced from its finished members per
+  active hour: the run has enough of them to measure a rate and
+  extrapolate the rest.
 - `no projection — <reason>` — it has not finished and the run cannot be
-  paced yet (not enough finished members to measure a rate), which reads
-  `no projection — not measured yet` when no reason is recorded. A missing
-  projection is never shown as a date.
+  paced yet. The reason is shown, not hidden: fewer than two members have
+  finished, no active time recorded, or no throughput measured (and
+  `no projection — not measured yet` when no reason is recorded at all).
+  A missing projection is never shown as a date.
 
 Treat the projection as a pacing line, the way you treat the completion range
 on the [progress dashboard](automata-progress.md): a measure of the run so
@@ -143,6 +145,43 @@ datawatch autonomous timeline --stage "Rebuild the writer"
 Titles with spaces work on the CLI and the MCP tool; on the comm channel the
 value must be a single word, so use the id there.
 
+## In the web UI
+
+Two places draw the same chart object:
+
+- **The Automaton Timeline card.** A dashboard card (the *Automaton
+  Timeline* entry in the Add-Card panel) that stacks every project's
+  Automata as Gantt charts, grouped by project under a one-line summary of
+  what is showing. Above the charts is a filter bar with five dropdowns —
+  project, automation, stage, kind, tag — each with an *All* option and its
+  choices drawn from the data in front of you. A filter change re-reads the
+  chart at once, and the dashboard's own refresh repaints the card about
+  every thirty seconds. When a refresh fails the card keeps its last good
+  data and says it is stale; when it never loaded, it says so with the
+  error. A project with nothing left to draw after the filters is not
+  listed.
+- **The Timeline tab.** In an Automaton's detail view, the *Timeline* tab
+  draws that one Automaton's full chart — all of its stages — with its
+  today and projected-finish markers. While the tab is shown it refreshes
+  every five seconds; switching tabs or leaving the detail stops the
+  refresh.
+
+What a chart shows in the web UI:
+
+- Each **stage is a band** with its title (and status on the right); each
+  **member is a bar** inside its band, placed by its recorded start and end
+  across one shared time span per Automaton, with UTC labels on the axis.
+- A bar runs from its start to its end; a member still open runs to the
+  **today line** (solid) instead. Finished members are green, running
+  members take the accent colour.
+- **Blocked and waiting spans are hatched overlays** on the member's bar —
+  red hatch for blocked, blue for waiting — with the kind and reason in
+  the hover tooltip.
+- A **dashed line** marks the **projected finish** when there is one.
+
+The card's five dropdowns are the same five filters as the REST route and
+the MCP tool, so a filtered chart reads the same everywhere.
+
 ## Where to read it
 
 | Surface | What you get |
@@ -151,7 +190,7 @@ value must be a single word, so use the id there.
 | Comm channels | `timeline [project=…] [automaton=…] [stage=…] [kind=…] [tag=…]` — the short form: the counts once, then per Automaton the members, done and blocked figures and the projection (or why there is none) |
 | REST | `GET /api/autonomous/timeline` with the query parameters `project`, `automaton`, `stage`, `kind`, `tag` — the full chart object, for scripts and dashboards |
 | MCP | `autonomous_timeline` with the same arguments — the same object the REST route returns |
-| Web UI | Not yet; the web view of this chart is still to come |
+| Web UI | the *Automaton Timeline* dashboard card (all projects, with its five filters) and the *Timeline* tab of one Automaton's detail view — [In the web UI](#in-the-web-ui) |
 
 Every surface decodes the exact same body, so the CLI bars, the comm summary,
 the JSON and the MCP result can never disagree.
