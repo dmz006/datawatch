@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.148.1 (2026-11-12).** A failed Automaton can now be repaired in place with the same structural edits as one that needs review, and a cancelled Automaton is kept for a grace period (autonomous.archive_grace_minutes, default 60) before it is archived. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.149.0 (2026-11-12).** Measured headroom check for a verifier cap above 1: a node runs more than one verifier only while a fresh idle-time measurement supports it, with the measurement on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
