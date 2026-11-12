@@ -4409,6 +4409,7 @@ function renderSessionsView() {
     }
   }
   const groupAxis = state.sessionTreeView ? '' : _sessionsGroupAxis();
+  state._visibleForFold = groupBy ? visible : [];
   const cards = groupBy
     ? (groupBy.axis === 'automaton'
         ? renderSessionsAutomaton(visible, now, viewMode)
@@ -4426,7 +4427,7 @@ function renderSessionsView() {
     ${disconnectedBannerHtml}
     <div class="sessions-topbar"><div class="sessions-topbar-servers"></div>${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
     ${toggleBtn}
-    ${renderSessionsSummaryBar(visible)}<div class="session-list">${cards}</div>
+    ${renderSessionsSummaryBar(visible)}${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
     ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
 
   // Restore filter input focus and cursor position
@@ -4869,6 +4870,56 @@ function _sessionsGroupToggleCollapse(ckEnc) {
 }
 window._sessionsGroupToggleCollapse = _sessionsGroupToggleCollapse;
 window.toggleSessionGroupCollapse = _sessionsGroupToggleCollapse;
+
+// _sessionsFoldKeys lists every fold key the active grouping renders, nested
+// story headers included.
+function _sessionsFoldKeys(pool, by) {
+  const list = Array.isArray(pool) ? pool : [];
+  if (!by) return [];
+  if (by.axis !== 'automaton') {
+    return _sessionsGroupSessions(list, by).map(g => _sessionsCollapseKey(by, g.key));
+  }
+  const keys = [];
+  const seen = {};
+  list.forEach(sess => {
+    const a = (sess && typeof sess.prd_id === 'string' && sess.prd_id) ? sess.prd_id : SESSIONS_GROUP_UNGROUPED;
+    const bCk = 'automaton|::' + a;
+    const sCk = bCk + '::' + _automatonStoryKey(sess);
+    [bCk, sCk].forEach(k => { if (!seen[k]) { seen[k] = true; keys.push(k); } });
+  });
+  return keys;
+}
+
+function _sessionsAllFolded(keys) {
+  if (!keys.length) return false;
+  const set = _sessionsCollapsedSet();
+  return keys.every(k => set.indexOf(k) >= 0);
+}
+
+function _sessionsFoldControlHTML(pool, by) {
+  const keys = _sessionsFoldKeys(pool, by);
+  if (!keys.length) return '';
+  const folded = _sessionsAllFolded(keys);
+  const label = folded ? _stx('sessions_unfold_all', 'Unfold all') : _stx('sessions_fold_all', 'Fold all');
+  const tip = folded ? _stx('sessions_unfold_all_tip', 'Unfold every group') : _stx('sessions_fold_all_tip', 'Fold every group');
+  return `<div class="sessions-fold-row"><button type="button" class="btn-secondary sessions-fold-all" onclick="_sessionsFoldAllToggle()" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button></div>`;
+}
+
+function _sessionsFoldAllToggle() {
+  const by = _sessionsGroupValidate(state.sessionGroupBy);
+  if (!by) return false;
+  const keys = _sessionsFoldKeys(state._visibleForFold || [], by);
+  if (!keys.length) return false;
+  const cur = _sessionsCollapsedSet();
+  const next = _sessionsAllFolded(keys)
+    ? cur.filter(k => keys.indexOf(k) < 0)
+    : cur.concat(keys.filter(k => cur.indexOf(k) < 0));
+  state._sessionsCollapsed = next;
+  _sessionsCollapseWrite(next);
+  if (state.activeView === 'sessions') renderSessionsView();
+  return true;
+}
+window._sessionsFoldAllToggle = _sessionsFoldAllToggle;
 
 // ── Per-group Show-more paging ──────────────────────────────────────────
 function _sessionsGroupPageLimit(ck) {
@@ -5909,7 +5960,7 @@ function sessionCard(sess, idx, total) {
             ${sess.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
             ${prioBadge}
             ${window.requestWatchChipHtml(sess.model_request)}
-            ${_sessionTagChipsHTML(sess)}
+            ${_sessionCardTagChipsHTML(sess, fullId)}
             ${sess.parent_id ? `<span class="parent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text2);opacity:0.7;font-weight:500;" title="${t('session_child_of')||'Child of'} ${escHtml(sess.parent_id)}">↳ ${t('session_child_of')||'child of'} [${escHtml(sess.parent_id.split('-')[0])}]</span>` : ''}
             ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
             <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
@@ -51984,8 +52035,8 @@ function _sessionsGroupControl() {
   return `<span class="backend-filter-badge group-axis-control${cur ? ' active' : ''}" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(_tagT('sessions_group_tip', 'Group the session list by a placement (system) tag'))}"><span>⚙️</span><select style="border:none;background:transparent;color:inherit;font:inherit;font-size:11px;padding:0;max-width:96px;" onchange="setSessionsGroupAxis(this.value)" aria-label="${escHtml(t('sessions_group_by_label') || 'Group by placement')}">${opts}</select></span>`;
 }
 
-function _sessionTagChipsHTML(sess) {
-  if (!sess) return '';
+function _sessionTagChipList(sess) {
+  if (!sess) return [];
   const own = (sess.tags || []).map(id => _tagsState.byId[id]).filter(Boolean);
   const ownIds = new Set(own.map(tg => tg.id));
   const inherited = (sess.inherited_tags || []).filter(id => !ownIds.has(id)).map(id => _tagsState.byId[id]).filter(Boolean);
@@ -52003,9 +52054,53 @@ function _sessionTagChipsHTML(sess) {
   const systemChips = systemNames.map(n => {
     return `<span class="tag-chip tag-chip-placement" data-placement="1" title="${escHtml(sysTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;color:var(--success,#10b981);background:color-mix(in srgb, var(--success,#10b981) 12%, transparent);border:1px solid var(--success,#10b981);font-weight:700;">⚙️ ${escHtml(n)}</span>`;
   });
-  if (!own.length && !inheritedChips.length && !systemChips.length) return '';
-  return own.map(_tagChipHTML).concat(inheritedChips, systemChips).join('');
+  return own.map(_tagChipHTML).concat(inheritedChips, systemChips);
 }
+
+function _sessionTagChipsHTML(sess) {
+  return _sessionTagChipList(sess).join('');
+}
+
+// ── Phone-width tag collapse on session cards ───────────────────────────
+const SESSIONS_PHONE_QUERY = '(max-width: 640px)';
+const SESSIONS_CARD_TAGS_SHOWN = 2;
+
+function _sessionsPhoneWidth() {
+  try {
+    return typeof window.matchMedia === 'function' && window.matchMedia(SESSIONS_PHONE_QUERY).matches;
+  } catch (_) { return false; }
+}
+
+// _sessionCardTagChipsHTML: at phone width shows the first few chips and a +N
+// chip that expands the card's tags (and collapses them again); the expanded
+// state is per session in page state so re-renders keep it.
+function _sessionCardTagChipsHTML(sess, fullId) {
+  const chips = _sessionTagChipList(sess);
+  if (!chips.length) return '';
+  if (!_sessionsPhoneWidth() || chips.length <= SESSIONS_CARD_TAGS_SHOWN) return chips.join('');
+  const open = !!(state._sessionTagsOpen && state._sessionTagsOpen[fullId]);
+  const extra = chips.length - SESSIONS_CARD_TAGS_SHOWN;
+  const idArg = escHtml(encodeURIComponent(String(fullId || '')));
+  const label = open
+    ? _stx('sessions_tags_less', 'Less')
+    : '+' + extra;
+  const tip = open
+    ? _stx('sessions_tags_collapse_tip', 'Show fewer tags')
+    : _stx('sessions_tags_expand_tip', 'Show all tags');
+  const btn = `<button type="button" class="session-tags-more-chip" onclick="event.stopPropagation();_sessionTagsToggle('${idArg}')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>`;
+  const shown = open ? chips : chips.slice(0, SESSIONS_CARD_TAGS_SHOWN);
+  return `<span class="session-card-tags${open ? ' open' : ''}">${shown.join('')}${btn}</span>`;
+}
+
+function _sessionTagsToggle(idEnc) {
+  let id = '';
+  try { id = decodeURIComponent(String(idEnc || '')); } catch (_) { id = String(idEnc || ''); }
+  if (!id) return;
+  if (!state._sessionTagsOpen) state._sessionTagsOpen = {};
+  if (state._sessionTagsOpen[id]) delete state._sessionTagsOpen[id]; else state._sessionTagsOpen[id] = true;
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window._sessionTagsToggle = _sessionTagsToggle;
 
 // _sessionHasTags is true for a session with tag IDs to name (own or
 // inherited) or placement (system) tag names.
