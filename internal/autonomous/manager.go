@@ -1539,6 +1539,9 @@ type Manager struct {
 	lifecycle     *lifecycleDispatcher
 	lifecycleHost string
 	lifecycleOnce sync.Once
+	// lifeHistory records recent lifecycle events for the subscription
+	// preview (lifecycle_history.go).
+	lifeHistory lifecycleHistory
 	// BL427 (phase 5) — receiving side of peer forwarding; nil until
 	// SetForwardReceive. Read on every forwarded envelope (lifecycle_forward_receive.go).
 	forwardRecv atomic.Pointer[ForwardReceiveConfig]
@@ -1849,6 +1852,14 @@ type Manager struct {
 	stuckRefired    map[string]bool
 	stuckRefireFn   func(prdID string) (started bool, err error)
 	stuckExecLiveFn func(prdID string) bool
+
+	// condActive records which condition events (lifecycle_emit_condition.go)
+	// currently hold, keyed by kind and Automaton, so a condition that stays
+	// true emits once. Guarded by condMu.
+	condMu     sync.Mutex
+	condActive map[string]bool
+	// capWaits holds the current capacity-wait episodes (lifecycle_emit_capacity_burn.go), guarded by condMu.
+	capWaits map[string]*capacityWaitEpisode
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
@@ -7326,6 +7337,7 @@ func (m *Manager) run(ctx context.Context) {
 			m.mu.Unlock()
 			m.sweepOrphanSessions()
 			m.sweepStuckRunning()
+			m.sweepCapacityWaits()
 			m.sweepPlatformContextMigration()
 		}
 	}

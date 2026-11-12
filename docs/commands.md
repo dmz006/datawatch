@@ -634,6 +634,26 @@ never see other channels' subscriptions). One record per line:
 sub_a3f2  kinds=task.session_started,prd.blocked  prd=prd_a3f9  sink=comm -> telegram:-1001234  coalesce=yes
 ```
 
+### `autonomous event-kinds [group=<g>]`
+
+List every lifecycle event kind a subscription can name, so you know what to
+pass to `autonomous subscribe`. The reply is one heading per group
+(`automaton`, `task`, `review`, `capacity`, `budget`) followed by one line per
+kind: the kind, a `*` when it is in the default set that wakes the supervisor,
+and its one-line description. A footer line explains the `*` whenever a listed
+kind carries it.
+
+- `group=<g>` — keep one group; the name is matched without regard to case. An
+  unknown group is refused and the reply lists the groups the daemon has.
+
+```
+autonomous event-kinds group=capacity
+```
+
+The same listing is `datawatch autonomous event-kinds [--group G] [--json]` on
+the CLI (`--json` prints the REST body instead), `GET /api/autonomous/event-kinds`
+over REST and the `autonomous_event_kinds` MCP tool. It is read-only.
+
 ### `autonomous unsubscribe <id>`
 
 Delete one of **this channel's** subscriptions. The id is verified

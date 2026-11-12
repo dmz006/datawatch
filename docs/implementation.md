@@ -1836,6 +1836,14 @@ error is returned; retry iterations log at debug level and the final outcome is 
 ONCE at info level. The thread-safe reader `mcp.Server.SSEListenerState()` reports
 `disabled` (never attempted), `retrying`, `listening`, or `failed`.
 
+### MCP resource subscriptions (`mcp.resource_subscriptions`)
+
+`mcp.resource_subscriptions` (bool, default `false`; restart to apply) sets the `subscribe` flag of the resources capability in `internal/mcp/server.go` and, when on, installs the mcp-go subscribe hooks from `internal/mcp/resource_subscriptions.go`. A `resources/subscribe` on `datawatch://events/lifecycle?kinds=…&level=…&prd_id=…&task_id=…&automation_id=…&peer=…` parses the query into an `autonomous.LifecycleFilter`, validates it with `autonomous.ValidateSubscription` (the persisted-subscription rules) and registers it with `Manager.Subscribe`: one more consumer of the existing dispatcher. Each matching event passes `Manager.LifecycleEventDeliverable` (the notify-event set, then the Automation scope; the persisted-subscription engine calls the same method) and is sent as `notifications/resources/updated`. Nothing is stored; no sink type or subscription field is added. Subscriptions end on `resources/unsubscribe` or when the MCP session unregisters; at most 32 per session. Off: no hooks, `subscribe=false`, no events resource. Surfaces: YAML, `GET/PUT /api/config`, `datawatch config set`, comm `configure`, MCP `config_set`, the PWA MCP Server card (label and help in five locales).
+
+### Peer event subscription
+
+`internal/autonomous/lifecycle_peer_subscription.go` is the pull direction of federation. `PeerEventSubscriber.Start` checks a peer (registered, enabled, a federation peer, `autonomous:read` granted, a token, a usable URL) and starts one goroutine for it; a refused peer starts none, writes one `autonomous_lifecycle_forward_receive` audit record (`direction: read`) and raises one alert. The goroutine polls `GET <peer>/api/autonomous/events?queue=&since=&limit=` with the peer's bearer token, the forwarder's timestamped HMAC header and hop-chain header, under the forwarding timeout and the shared `webhookBackoff` curve (a 401 or 403 stops it). Accepted events are published to the Manager's dispatcher with `Peer` set from the registry name and `Forward` set, so they are never forwarded on or written to executor state. Forwarded: lifecycle events only. Not forwarded: session output, secrets, configuration. `ForwardSettings.Enabled` gates it; no setting or event kind is added.
+
 ### Data Files
 
 All persistent data is stored in `~/.datawatch/` (or `data_dir` if overridden):
@@ -2463,11 +2471,29 @@ steps (no model call) and three model jobs, each run recorded. See
   the three model jobs (`draft_spec`, `classify_ci_failure`, `pick_backend`),
   `validator_retries` (default 2), `escalate_after_failures` (default 2),
   `run_retention` (default 500), `archive_cancelled_after_minutes`
-  (default 60) and `lane_count.min` / `lane_count.max` (default
+  (default 60), `lane_count.min` / `lane_count.max` (default
   0; max 0 means no bounds, so the lane count step moves nothing; max must be at
-  least min). Over `PUT /api/config`, the CLI `config set` and the comm
+  least min), and the event wake block `wake.enabled` (default false),
+  `wake.kinds` (a list of lifecycle event kinds, default the eleven kinds in
+  `supervisorloop.DefaultWakeKinds`), `wake.coalesce_seconds` (0 to 3600,
+  default 30) and `wake.fallback_interval_minutes` (1 to 1440, default 20,
+  the scheduled check's interval). Over `PUT /api/config`, the CLI `config set` and the comm
   `configure` verb the key is `autonomous.supervisor_loop.<key>` without the
   second prefix.
+- **Wake settings:** `internal/supervisorloop/wake_settings.go` holds the
+  `WakeSettings` block (`Settings.Wake`), its keys, defaults, bounds and
+  `Wakes(kind)`. `wake.kinds` accepts a `[]string`, a JSON list, or a comma-,
+  newline- or space-separated string, so YAML, REST, the CLI, the comm channel
+  and the PWA textarea all reach the same list; blanks drop out, duplicates
+  and unknown kinds are refused, and the list may not be empty while the wake
+  is on. The kind check is injected: the package cannot import `autonomous`,
+  so `internal/autonomous/supervisor_loop_wake_kinds.go` installs
+  `IsKnownEventKind` through `supervisorloop.SetEventKindChecker` at start-up,
+  and with no checker only blanks are refused. `Settings.Get(key)` reads one
+  value as `Flat` lists it. Tests: `internal/supervisorloop/wake_settings_test.go`
+  (defaults, off by default, bounds, unknown-kind rejection, the accepted
+  list forms) and `internal/autonomous/supervisor_loop_wake_kinds_test.go`
+  (every default kind is a registered, subscribable kind).
 - **Engine:** `internal/supervisorloop` holds the engine, the validators, the
   model jobs (`jobs_model.go`), the eval harness (`eval.go`), the run store
   (`store.go`, `supervisor_loop_runs.jsonl` in the data directory, trimmed to

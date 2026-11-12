@@ -86,14 +86,14 @@ function _scheduleSplashDismiss(splash, remainingMs, { connected = false } = {})
 // and the default set an effective list falls back to when an Automaton
 // stores an empty (= inherit) list. Ground truth: the lifecycle
 // subscription known event kinds, minus the generic "persisted" kind.
-const NOTIFY_EVENT_KINDS = ['guardrail_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
 // Opt-in event kinds: off by default and only fire when explicitly listed in
 // the resolved notification events (Automaton tier, else guardrail profile,
 // then the global baseline). task.session_started / task.session_cleared ride
 // on other task activity; scope_warning / guardrail_warn fire *only* because
 // some Automaton opted in. Mirrors autonomous.OptInNotifyEvents().
-const NOTIFY_EVENT_OPT_IN = ['guardrail_warn', 'scope_warning', 'task.session_cleared', 'task.session_started'];
+const NOTIFY_EVENT_OPT_IN = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'scope_warning', 'task.capacity_wait_too_long', 'task.final_gate_failed', 'task.session_cleared', 'task.session_started'];
 
 // One checkbox row per kind, grouped Automaton (prd.*) / Task
 // (task.<status>) / Session (task.session_*) / Warnings (scope_warning,
@@ -21120,6 +21120,7 @@ const COMMS_CONFIG_FIELDS = [
     { key: 'mcp.sse_host', label: 'SSE bind interface', type: 'interface_select' },
     { key: 'mcp.sse_port', label: 'SSE port', type: 'number' },
     { key: 'mcp.public_url', label: 'SSE public URL (reverse proxy)', labelKey: 'settings_mcp_public_url', type: 'text', placeholder: 'https://proxy-host.example.net:8081' },
+    { key: 'mcp.resource_subscriptions', label: 'Resource subscriptions (lifecycle events)', labelKey: 'settings_mcp_resource_subscriptions', helpKey: 'settings_mcp_resource_subscriptions_help', helpDocs: 'mcp.md#resource-subscriptions', type: 'toggle' },
     { key: 'mcp.tls_enabled', label: 'TLS enabled', type: 'toggle' },
     { key: 'mcp.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
     { key: 'mcp.tls_cert', label: 'TLS cert path', type: 'text' },
@@ -21492,6 +21493,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.notify.webhook.max_body_bytes', label: 'Webhook payload cap (bytes, 0 = 65536)', labelKey: 'settings_notify_webhook_max_body_bytes', type: 'number', placeholder: '65536' },
     { key: 'autonomous.notify.webhook.signature_tolerance_seconds', label: 'Webhook replay window for receivers (sec, 0 = 300)', labelKey: 'settings_notify_webhook_signature_tolerance', type: 'number', placeholder: '300' },
     { key: 'autonomous.notify.forwarding.enabled', label: 'Peer forwarding of lifecycle events: enabled', labelKey: 'settings_notify_forwarding_enabled', helpKey: 'settings_notify_forwarding_enabled_help', type: 'toggle' },
+    { key: 'autonomous.notify.forwarding.peer_events', label: 'Read a peer\'s lifecycle events (peer event subscriber)', type: 'toggle' },
     { key: 'autonomous.notify.forwarding.max_hops', label: 'Forwarding hop cap (0 = 3)', labelKey: 'settings_notify_forwarding_max_hops', type: 'number', placeholder: '3' },
     { key: 'autonomous.notify.forwarding.max_attempts', label: 'Forwarding attempts per event (0 = 5)', labelKey: 'settings_notify_forwarding_max_attempts', type: 'number', placeholder: '5' },
     { key: 'autonomous.notify.forwarding.backoff_seconds', label: 'Forwarding retry delays (sec, comma-separated)', labelKey: 'settings_notify_forwarding_backoff_seconds', type: 'text', placeholder: '1, 4, 16, 64', csv: true },
@@ -21758,6 +21760,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.supervisor_loop.archive_cancelled_after_minutes', label: 'Archive a cancelled Automaton after (minutes since its most recent cancel, 0 = at once, default 60)', labelKey: 'supervisor_loop_archive_cancelled_after_minutes', hintKey: 'supervisor_loop_archive_cancelled_after_minutes_hint', docsKey: 'supervisor_loop.archive_cancelled_after_minutes', type: 'number', placeholder: '60', min: 0, step: 1, default: '60' },
     { key: 'autonomous.supervisor_loop.lane_count.min', label: 'Lane count minimum (lowest lane count the loop may set)', labelKey: 'supervisor_loop_lane_count_min', docsKey: 'supervisor_loop.lane_count.min', type: 'number', placeholder: '0', min: 0, step: 1 },
     { key: 'autonomous.supervisor_loop.lane_count.max', label: 'Lane count maximum (highest lane count the loop may set, 0 = no bounds so the step moves nothing)', labelKey: 'supervisor_loop_lane_count_max', docsKey: 'supervisor_loop.lane_count.max', type: 'number', placeholder: '0', min: 0, step: 1 },
+    // Supervisor wake: an event starts a supervisor pass at once; the schedule stays as the fallback. Off by default.
+    // The card holds the switch, the kind list, the quiet window, the fallback interval and the status line.
+    { label: 'Supervisor wake', labelKey: 'supervisor_wake_group', docsKey: 'supervisor_loop.wake.enabled', type: 'group', hintKey: 'supervisor_wake_group_hint' },
+    { key: 'autonomous.supervisor_loop.wake.enabled', label: 'Wake on events (an event starts a pass at once, off by default)', labelKey: 'supervisor_loop_wake_enabled', hintKey: 'supervisor_loop_wake_enabled_hint', docsKey: 'supervisor_loop.wake.enabled', card: 'supervisor_wake', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.wake.kinds', label: 'Wake event kinds (comma-separated event kinds that wake the supervisor)', labelKey: 'supervisor_loop_wake_kinds', hintKey: 'supervisor_loop_wake_kinds_hint', docsKey: 'supervisor_loop.wake.kinds', card: 'supervisor_wake', type: 'textarea' },
+    { key: 'autonomous.supervisor_loop.wake.coalesce_seconds', label: 'Wake quiet window (seconds during which further events fold into one pass, 0 = every event, default 30)', labelKey: 'supervisor_loop_wake_coalesce_seconds', hintKey: 'supervisor_loop_wake_coalesce_seconds_hint', docsKey: 'supervisor_loop.wake.coalesce_seconds', card: 'supervisor_wake', type: 'number', placeholder: '30', min: 0, max: 3600, step: 1, default: '30' },
+    { key: 'autonomous.supervisor_loop.wake.fallback_interval_minutes', label: 'Wake fallback interval (minutes between scheduled passes when no event wakes the supervisor, default 20)', labelKey: 'supervisor_loop_wake_fallback_interval_minutes', hintKey: 'supervisor_loop_wake_fallback_interval_minutes_hint', docsKey: 'supervisor_loop.wake.fallback_interval_minutes', card: 'supervisor_wake', type: 'number', placeholder: '20', min: 1, max: 1440, step: 1, default: '20' },
+    { type: 'supervisor_wake_card' },
     { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
@@ -22832,13 +22842,17 @@ function loadGeneralConfig() {
           // t() returning the key unchanged and fall back to f.label instead.
           const _tl = f.labelKey ? t(f.labelKey) : null;
           const fLabel = (_tl && _tl !== f.labelKey) ? _tl : f.label;
-          if (f.type === 'group') {
+          if (f.card === 'supervisor_wake') {
+            // Drawn by the supervisor wake card below its group heading.
+          } else if (f.type === 'group') {
             // Sub-heading row inside a card. Optional hintKey adds a one-line note.
             const _ghint = f.hintKey ? t(f.hintKey) : '';
             html += `<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);">
               <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               ${_ghint && _ghint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(_ghint)}</div>` : ''}
             </div>`;
+          } else if (f.type === 'supervisor_wake_card') {
+            html += supervisorWakeCardHtml(cfg);
           } else if (f.type === 'rules_context_card') {
             html += '<div id="rulesContextCard"></div>';
           } else if (f.type === 'release_section') {
@@ -23357,6 +23371,7 @@ function loadGeneralConfig() {
           try { window.renderSelfConfigAuditRecent(el); } catch (_) { /* decorative; never block later sections */ }
         }
         if (document.getElementById('rulesContextCard')) loadRulesContextCard();
+        if (document.getElementById('supervisorWakeStatus')) loadSupervisorWakeStatus();
       }
       // Usage calculator card: refresh the auto-lanes status line and keep
       // it current while Settings is open — the loop moves caps hourly, so
@@ -35673,6 +35688,130 @@ window.platformContextCardHtml = function (pc, version) {
   </div>`;
 };
 
+// ── Supervisor wake settings card ───────────────────────────────────────────
+// Settings > Automata > Supervisor wake. The switch, the kind list, the quiet
+// window and the fallback interval read the autonomous.supervisor_loop.wake
+// block of GET /api/config and save one key at a time through PUT /api/config.
+// The status line reads GET /api/supervisor-loop/wake: the last event, the last
+// scheduled check and their counts. The kind list is the lifecycle event kinds
+// a subscription may filter on (NOTIFY_EVENT_KINDS), plus any kind already
+// stored that the list does not know, so a stored kind is never hidden.
+const SUPERVISOR_WAKE_KEY = 'autonomous.supervisor_loop.wake.';
+const SUPERVISOR_WAKE_DOCS = 'howto/supervisor-loop.md#settings-and-defaults';
+const SUPERVISOR_WAKE_DEFAULTS = { enabled: false, kinds: [], coalesce_seconds: 30, fallback_interval_minutes: 20 };
+
+function _supervisorWakeHelp(name) {
+  const key = name === 'status' ? 'supervisor_wake_status_help' : 'supervisor_loop_wake_' + name + '_hint';
+  return settingsHelpLink({ helpDocs: SUPERVISOR_WAKE_DOCS, helpKey: key });
+}
+
+function _supervisorWakeKindList(selected) {
+  const out = NOTIFY_EVENT_KINDS.slice();
+  for (const k of selected) if (!out.includes(k)) out.push(k);
+  return out;
+}
+
+function _supervisorWakeNumberRow(name, label, value, min, max) {
+  return `<div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <div class="settings-label">${escHtml(label)}${_supervisorWakeHelp(name)}</div>
+      <input type="number" id="supervisorWake_${name}" class="form-input general-cfg-input" value="${escHtml(String(value))}" min="${min}" max="${max}" step="1"
+        onchange="saveSupervisorWakeNumber('${name}', this, ${min}, ${max})" />
+    </div>`;
+}
+
+window.supervisorWakeCardHtml = function (cfg) {
+  const blk = cfg && cfg.autonomous && cfg.autonomous.supervisor_loop && cfg.autonomous.supervisor_loop.wake;
+  const w = Object.assign({}, SUPERVISOR_WAKE_DEFAULTS, blk || {});
+  const selected = Array.isArray(w.kinds) ? w.kinds.map(String) : String(w.kinds || '').split(',').map(x => x.trim()).filter(Boolean);
+  const boxes = _supervisorWakeKindList(selected).map(k => `<label style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0;">
+        <input type="checkbox" class="supervisor-wake-kind" value="${escHtml(k)}"${selected.includes(k) ? ' checked' : ''} onchange="saveSupervisorWakeKinds()" />
+        <span style="overflow-wrap:anywhere;">${escHtml(k)}</span>
+      </label>`).join('');
+  return `<div class="supervisor-wake-card" data-supervisor-wake="card" data-source="${blk ? 'config' : 'default'}">
+    <div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <div class="settings-label">${escHtml(t('supervisor_loop_wake_enabled'))}${_supervisorWakeHelp('enabled')}</div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="supervisorWake_enabled"${w.enabled ? ' checked' : ''} onchange="saveGeneralField('${SUPERVISOR_WAKE_KEY}enabled', this.checked)" />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="settings-row" style="flex-direction:column;align-items:stretch;">
+      <div class="settings-label">${escHtml(t('supervisor_loop_wake_kinds'))}${_supervisorWakeHelp('kinds')}</div>
+      <div id="supervisorWake_kinds" style="max-height:180px;overflow:auto;margin-top:4px;">${boxes}</div>
+    </div>
+    ${_supervisorWakeNumberRow('coalesce_seconds', t('supervisor_loop_wake_coalesce_seconds'), w.coalesce_seconds, 0, 3600)}
+    ${_supervisorWakeNumberRow('fallback_interval_minutes', t('supervisor_loop_wake_fallback_interval_minutes'), w.fallback_interval_minutes, 1, 1440)}
+    <div id="supervisorWakeStatus" data-supervisor-wake="status" role="status" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_wake_status_loading'))}${_supervisorWakeHelp('status')}</div>
+  </div>`;
+};
+
+window.saveSupervisorWakeKinds = function () {
+  const boxes = document.querySelectorAll('.supervisor-wake-kind');
+  const kinds = [];
+  boxes.forEach(b => { if (b.checked) kinds.push(b.value); });
+  saveGeneralField(SUPERVISOR_WAKE_KEY + 'kinds', kinds);
+};
+
+// saveSupervisorWakeNumber saves a whole number inside its range. A bad value
+// shows a message, puts the saved text back and sends nothing.
+window.saveSupervisorWakeNumber = function (name, el, min, max) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isInteger(n) || n < min || n > max) {
+    showToast(t('supervisor_wake_number_invalid', [min, max]), 'error');
+    if (el) el.value = String(el.defaultValue != null ? el.defaultValue : '');
+    return;
+  }
+  if (el) el.defaultValue = String(n);
+  saveGeneralField(SUPERVISOR_WAKE_KEY + name, n);
+};
+
+// supervisorWakeTimeText turns a wake time into text. The zero time means the
+// event has not happened yet.
+function supervisorWakeTimeText(ts) {
+  const d = ts ? new Date(ts) : null;
+  if (!d || isNaN(d.getTime()) || d.getUTCFullYear() <= 1) return t('supervisor_wake_status_never');
+  return d.toLocaleString();
+}
+
+window.supervisorWakeStatusText = function (v) {
+  v = v || {};
+  let text = t('supervisor_wake_status_line', [
+    supervisorWakeTimeText(v.last_event), Number(v.event_count) || 0,
+    supervisorWakeTimeText(v.last_scheduled_check), Number(v.scheduled_count) || 0]);
+  if (v.events_silent_for) text += ' ' + t('supervisor_wake_status_silent', [String(v.events_silent_for)]);
+  return text;
+};
+
+// supervisorWakeApplyView fills the controls from the wake view when the config
+// object did not report the wake block, so they show the settings in effect.
+window.supervisorWakeApplyView = function (v) {
+  if (!v) return;
+  const en = document.getElementById('supervisorWake_enabled');
+  if (en) en.checked = !!v.enabled;
+  const kinds = Array.isArray(v.kinds) ? v.kinds : [];
+  document.querySelectorAll('.supervisor-wake-kind').forEach(b => { b.checked = kinds.includes(b.value); });
+  for (const name of ['coalesce_seconds', 'fallback_interval_minutes']) {
+    const inp = document.getElementById('supervisorWake_' + name);
+    if (inp && v[name] != null) { inp.value = String(v[name]); inp.defaultValue = String(v[name]); }
+  }
+};
+
+window.loadSupervisorWakeStatus = function () {
+  const el = document.getElementById('supervisorWakeStatus');
+  if (!el) return Promise.resolve();
+  return fetch(_apiPath('/api/supervisor-loop/wake'), { headers: tokenHeader() })
+    .then(r => { if (!r.ok) throw new Error('status ' + r.status); return r.json(); })
+    .then(v => {
+      el.innerHTML = escHtml(window.supervisorWakeStatusText(v)) + _supervisorWakeHelp('status');
+      const card = el.closest ? el.closest('.supervisor-wake-card') : null;
+      if (card && card.dataset && card.dataset.source === 'default') window.supervisorWakeApplyView(v);
+    })
+    .catch(() => {
+      el.innerHTML = escHtml(t('supervisor_wake_status_unavailable')) + _supervisorWakeHelp('status');
+    });
+};
+
 // ── Rules and context settings card ─────────────────────────────────────────
 // Settings > Automata: GET and PUT /api/autonomous/rules-context. The card
 // edits the global rules file name, the context file names (one per line), the
@@ -38814,9 +38953,16 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'task.session_started', 'task.session_cleared', 'prd.updated',
     'question.answered', 'question.withdrawn']],
   ['lifecycle_sub_form_group_warnings', 'Warnings (opt-in)', [
-    'scope_warning', 'guardrail_warn']],
+    'scope_warning', 'guardrail_warn', 'automaton.stuck_running', 'automaton.merge_ready',
+    'automaton.tasks_done_or_cancelled', 'task.capacity_wait_too_long',
+    'burn_guard.rung_changed', 'judge.verdict_block', 'judge.verdict_warn',
+    'judge.verdict_pass', 'task.final_gate_failed']],
 ];
 const _LIFECYCLE_SUB_KINDS = _LIFECYCLE_SUB_KIND_GROUPS.reduce((all, g) => all.concat(g[2]), []);
+// The kinds the checkboxes stand for, in render order. It starts as the
+// built-in list above and is replaced by the daemon's list once the picker has
+// loaded it (_lifecycleSubLoadKinds), so index i is always checkbox lcSubKind_i.
+let _lifecycleSubKindList = _LIFECYCLE_SUB_KINDS.slice();
 const _LIFECYCLE_SUB_SINKS = ['comm', 'session', 'topic', 'alert', 'mcp_queue', 'webhook', 'peer'];
 const _LIFECYCLE_SUB_SINK_LABELS = {
   comm: 'lifecycle_sub_form_sink_comm',
@@ -38858,7 +39004,7 @@ function _lifecycleSubExpiryHours(expiresAt, nowMs) {
 // Turns the form's values into the request body, or {error} mirroring
 // ValidateSubscription's checks. v.expiryHours is the raw field text.
 function _lifecycleSubBuild(v, nowMs) {
-  const kinds = (v.kinds || []).filter(k => _LIFECYCLE_SUB_KINDS.indexOf(k) >= 0);
+  const kinds = (v.kinds || []).filter(k => _lifecycleSubKindList.indexOf(k) >= 0);
   const level = v.level || '';
   if (!kinds.length && !level) {
     return { error: t('lifecycle_sub_form_err_filter') || 'Choose at least one event kind or a level.' };
@@ -38928,7 +39074,7 @@ function _lifecycleSubBuild(v, nowMs) {
 function _lifecycleSubReadForm() {
   const ctx = _lifecycleSubFormCtx || {};
   return {
-    kinds: _LIFECYCLE_SUB_KINDS.filter((k, i) => _lifecycleSubEl('lcSubKind_' + i).checked),
+    kinds: _lifecycleSubKindList.filter((k, i) => _lifecycleSubEl('lcSubKind_' + i).checked),
     level: _lifecycleSubEl('lcSubLevel').value || '',
     scope: _lifecycleSubEl('lcSubScope').value || 'this',
     prdId: ctx.prdId || '',
@@ -39090,17 +39236,129 @@ function _lifecycleSubTestDetails(res) {
   return out;
 }
 
-function _lifecycleSubKindsHTML(selected) {
-  let idx = 0;
-  return _LIFECYCLE_SUB_KIND_GROUPS.map(([key, fallback, kinds]) => {
-    const boxes = kinds.map(k => {
-      const i = idx++;
-      return `<label style="display:flex;align-items:center;gap:4px;font-size:11px;"><input type="checkbox" id="lcSubKind_${i}"${selected.indexOf(k) >= 0 ? ' checked' : ''}> ${escHtml(k)}</label>`;
-    }).join('');
-    return `<div style="font-size:10px;color:var(--text2);margin:4px 0 2px;">${escHtml(t(key) || fallback)}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:2px 8px;">${boxes}</div>`;
-  }).join('');
+// ── Event picker ────────────────────────────────────────────────────────────
+// The kind checkboxes come from GET /api/autonomous/event-kinds: every kind
+// with its one-line description, grouped Automaton, task, review, capacity and
+// budget. The built-in list renders first and is swapped for the daemon's list
+// when it arrives, keeping what the operator already ticked. Under the picker
+// a line asks POST /api/autonomous/subscriptions/preview how many events the
+// chosen kinds would have matched in the last day, so the rule can be judged
+// before it is saved.
+const _LIFECYCLE_SUB_PICKER_GROUPS = ['automaton', 'task', 'review', 'capacity', 'budget'];
+const _LIFECYCLE_SUB_PICKER_DOCS = 'howto/automaton-lifecycle-subscriptions.md#pwa-walkthrough';
+const _LIFECYCLE_SUB_PREVIEW_DELAY_MS = 300;
+let _lifecycleSubPickerGroups = null; // [[label, [{kind, description}]]] last loaded from the daemon
+let _lifecycleSubPreviewSeq = 0;      // a newer preview request makes older answers stale
+let _lifecycleSubPreviewTimer = null;
+
+// The built-in groups in the picker's shape (no descriptions).
+function _lifecycleSubBuiltinPickerGroups() {
+  return _LIFECYCLE_SUB_KIND_GROUPS.map(([key, fallback, kinds]) => [t(key) || fallback, kinds.map(k => ({ kind: k, description: '' }))]);
 }
+
+// Turns the event-kinds body into [[label, [{kind, description}]]]: the five
+// known groups first in their fixed order, then any other group by name.
+function _lifecycleSubPickerNormalize(body) {
+  const groups = body && Array.isArray(body.groups) ? body.groups : [];
+  const byName = {};
+  groups.forEach(g => {
+    if (!g || typeof g.group !== 'string') return;
+    const kinds = (Array.isArray(g.kinds) ? g.kinds : [])
+      .filter(k => k && typeof k.kind === 'string' && k.kind)
+      .map(k => ({ kind: k.kind, description: typeof k.description === 'string' ? k.description : '' }));
+    if (kinds.length) byName[g.group] = (byName[g.group] || []).concat(kinds);
+  });
+  const names = _LIFECYCLE_SUB_PICKER_GROUPS.filter(n => byName[n])
+    .concat(Object.keys(byName).filter(n => _LIFECYCLE_SUB_PICKER_GROUPS.indexOf(n) < 0));
+  return names.map(n => {
+    const key = 'lifecycle_sub_picker_group_' + n;
+    const label = t(key);
+    return [label && label !== key ? label : n, byName[n]]; // an unknown group shows its own name
+  });
+}
+
+// One checkbox row per kind, grouped. Sets _lifecycleSubKindList to the kinds
+// in render order. A selected kind the groups do not list is kept, in a last
+// group, so an existing rule never loses a kind when it is edited.
+function _lifecycleSubKindsHTML(selected, groups) {
+  const shown = (groups || _lifecycleSubBuiltinPickerGroups()).map(g => [g[0], g[1].slice()]);
+  const known = {};
+  shown.forEach(g => g[1].forEach(k => { known[k.kind] = true; }));
+  const extra = (selected || []).filter(k => !known[k]).map(k => ({ kind: k, description: '' }));
+  if (extra.length) shown.push([t('lifecycle_sub_form_group_other') || 'Other', extra]);
+  const list = [];
+  const html = shown.map(([label, kinds]) => {
+    const rows = kinds.map(k => {
+      const i = list.length;
+      list.push(k.kind);
+      const desc = k.description
+        ? `<span style="display:block;color:var(--text2);font-size:10px;">${escHtml(k.description)}</span>` : '';
+      return `<label style="display:flex;align-items:flex-start;gap:6px;font-size:11px;padding:1px 0;"><input type="checkbox" id="lcSubKind_${i}"${(selected || []).indexOf(k.kind) >= 0 ? ' checked' : ''} onchange="_lifecycleSubPreviewChanged()"><span><span style="overflow-wrap:anywhere;">${escHtml(k.kind)}</span>${desc}</span></label>`;
+    }).join('');
+    return `<div style="font-size:10px;color:var(--text2);margin:6px 0 2px;">${escHtml(label)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:2px 12px;">${rows}</div>`;
+  }).join('');
+  _lifecycleSubKindList = list;
+  return html;
+}
+
+// Loads the daemon's kinds into the open form. On failure the built-in list
+// stays and a note says so. The preview runs either way.
+function _lifecycleSubLoadKinds() {
+  return apiFetch('/api/autonomous/event-kinds').then(body => {
+    const groups = _lifecycleSubPickerNormalize(body);
+    if (!groups.length) throw new Error('empty');
+    _lifecycleSubPickerGroups = groups;
+    const host = document.getElementById('lcSubKindPicker');
+    if (!host) return;
+    host.innerHTML = _lifecycleSubKindsHTML(_lifecycleSubReadForm().kinds, groups);
+    const status = document.getElementById('lcSubKindStatus');
+    if (status) status.innerHTML = '';
+  }).catch(() => {
+    const status = document.getElementById('lcSubKindStatus');
+    if (status) status.innerHTML = escHtml(t('lifecycle_sub_picker_load_failed') || 'Could not load the event kinds from the daemon; showing the built-in list.');
+  }).then(() => _lifecycleSubPreview());
+}
+
+function _lifecycleSubPreviewSet(text, isError) {
+  const el = document.getElementById('lcSubPreview');
+  if (el) el.innerHTML = `<span style="${isError ? 'color:var(--error);' : ''}">${escHtml(text)}</span>`;
+}
+
+// Asks the preview route what the ticked kinds would have matched in the last
+// day. With nothing ticked there is nothing to ask. Only the newest request's
+// answer is shown.
+function _lifecycleSubPreview() {
+  if (!_lifecycleSubFormCtx) return Promise.resolve(); // the form was closed or saved
+  const v = _lifecycleSubReadForm();
+  const seq = ++_lifecycleSubPreviewSeq;
+  if (!v.kinds.length) {
+    _lifecycleSubPreviewSet(t('lifecycle_sub_preview_idle') || 'Pick an event kind to see what it would have matched in the last day.', false);
+    return Promise.resolve();
+  }
+  _lifecycleSubPreviewSet(t('lifecycle_sub_preview_loading') || 'Checking the last day...', false);
+  const body = { kinds: v.kinds };
+  if (v.automationId) body.owner = v.automationId;
+  return apiFetch('/api/autonomous/subscriptions/preview', { method: 'POST', body: JSON.stringify(body) })
+    .then(res => {
+      if (seq !== _lifecycleSubPreviewSeq) return;
+      const n = Number(res && res.count);
+      _lifecycleSubPreviewSet(t('lifecycle_sub_preview_count', [Number.isFinite(n) ? n : 0]) || ('Would have matched in the last day: ' + (Number.isFinite(n) ? n : 0)), false);
+    })
+    .catch(e => {
+      if (seq !== _lifecycleSubPreviewSeq) return;
+      const why = String((e && e.message) || '').trim();
+      _lifecycleSubPreviewSet(t('lifecycle_sub_preview_failed', [why]) || ('Preview unavailable: ' + why), true);
+    });
+}
+
+// Runs the preview shortly after the last tick, so ticking several kinds in a
+// row sends one request.
+function _lifecycleSubPreviewChanged() {
+  clearTimeout(_lifecycleSubPreviewTimer);
+  _lifecycleSubPreviewTimer = setTimeout(_lifecycleSubPreview, _LIFECYCLE_SUB_PREVIEW_DELAY_MS);
+}
+window._lifecycleSubPreviewChanged = _lifecycleSubPreviewChanged;
 
 function _lifecycleSubSelectHTML(id, options, current, onchange) {
   const opts = options.map(([val, label]) => `<option value="${escHtml(val)}"${val === current ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
@@ -39133,9 +39391,11 @@ function _openLifecycleSubscriptionForm(prd, subOrNull) {
       <button class="btn-icon" onclick="_prdCloseModal()" title="${escHtml(t('btn_close')||'Close')}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow-y:auto;">
-      <label style="${small}">${escHtml(t('lifecycle_sub_form_kinds') || 'Event kinds')}</label>
+      <label style="${small}">${escHtml(t('lifecycle_sub_form_kinds') || 'Event kinds')}${settingsHelpLink({ helpDocs: _LIFECYCLE_SUB_PICKER_DOCS, helpKey: 'lifecycle_sub_picker_help' })}</label>
       <div style="${small}">${escHtml(t('lifecycle_sub_form_kinds_hint') || 'Pick at least one kind, or choose a level below.')}</div>
-      <div>${_lifecycleSubKindsHTML(Array.isArray(f.kinds) ? f.kinds : [])}</div>
+      <div id="lcSubKindPicker">${_lifecycleSubKindsHTML(Array.isArray(f.kinds) ? f.kinds : [], _lifecycleSubPickerGroups)}</div>
+      <div id="lcSubKindStatus" style="${small}"></div>
+      <div id="lcSubPreview" style="font-size:12px;"></div>
       <div style="${small}">${escHtml(t('lifecycle_sub_form_opt_in_hint') || "An opt-in kind only fires when the Automaton's notification events include it.")}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
         <div><label style="${small}">${escHtml(t('lifecycle_sub_form_level') || 'Level')}</label>
@@ -39183,6 +39443,7 @@ function _openLifecycleSubscriptionForm(prd, subOrNull) {
   // Live delivery state and the federation peer list, both read on open.
   _lifecycleSubSettings = null;
   _lifecycleSubLoadSettings();
+  _lifecycleSubLoadKinds();
   _lifecycleSubLoadPeers(sinkType === 'peer' ? (sink.target || '') : '');
   _lifecycleSubRenderHelp();
 }

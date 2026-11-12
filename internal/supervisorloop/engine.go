@@ -62,6 +62,8 @@ type Engine struct {
 	Escalator Escalator
 	Clock     Clock
 	Store     Store
+	// Wakes, when set, is told about each scheduled check.
+	Wakes *WakeRecord
 }
 
 // ErrEscalated is returned when the job was handed to the Escalator.
@@ -74,6 +76,9 @@ var ErrValidatorFailed = errors.New("validator rejected every attempt")
 // up to ValidatorRetries times; after EscalateAfter failed attempts the
 // Escalator is called with an attempt summary and the output is not returned.
 func (e *Engine) Run(ctx context.Context, job Job, input string) (string, error) {
+	if e.Wakes != nil {
+		e.Wakes.MarkScheduledCheck()
+	}
 	rec := RunRecord{Job: job.Name, Style: job.Style, Backend: job.Backend, Model: job.Model, Started: e.Clock.Now()}
 	var attempts []Attempt
 	out, err := e.loop(ctx, job, input, &rec, &attempts)

@@ -76,19 +76,27 @@ Every subscription is **filter → sink → optional action**:
 
 | Part | What it is |
 |---|---|
-| **Filter** | `kinds` (event kinds; repeatable) and/or `level` (`prd` or `task`), plus optional scope to one Automaton (`prd_id`) or one task (`task_id`). At least one of `kinds` / `level` is required. |
+| **Filter** | `kinds` (event kinds; repeatable) and/or `level` (`prd` or `task`), plus optional scope to one Automaton (`prd_id`), one task (`task_id`) or one federation peer (`peer`, see [Events from a federation peer](#events-from-a-federation-peer)). At least one of `kinds` / `level` is required. |
 | **Sink** | One of: `comm` (router fan-out), `session` (a datawatch session), `topic` (SSE / mobile-push topic bus), `alert` (in-app alert store), `mcp_queue` (a named pending-events queue that a client polls). Each has a `target`; for `mcp_queue` it is the queue name. |
 | **Action** *(optional)* | `send_input` with text (max 4096 chars), only with a `session` sink — the text is typed into the target session on every match. |
 | **Flags** | `one_shot` (delete after first *successful* delivery), `expires_at` (TTL), `coalesce` (batch human-facing deliveries in quiet windows). |
 
-Event kinds are a closed set: every PRD status kind (`prd.draft`,
-`prd.planning`, `prd.needs_review`, `prd.completed`, `prd.blocked`,
-…), every task status kind (`task.pending`, `task.queued`,
-`task.in_progress`, `task.completed`, `task.failed`, `task.blocked`,
-…), plus the non-status kinds `task.session_started`,
-`task.session_cleared` and `prd.updated`. The daemon rejects unknown
-kinds at creation (`"filter kind %q is not a known event kind"`), so a
-typo fails fast instead of silently never firing.
+Event kinds are a closed set held in one in-daemon **event kind
+registry**: every Automaton status kind (`prd.draft`, `prd.planning`,
+`prd.needs_review`, `prd.completed`, `prd.blocked`, …), every task status
+kind (`task.pending`, `task.queued`, `task.in_progress`, `task.completed`,
+`task.failed`, `task.blocked`, …), the non-status kinds
+`task.session_started`, `task.session_cleared`, `prd.updated`,
+`question.answered` and `question.withdrawn`, the opt-in warning kinds
+`scope_warning` and `guardrail_warn`, and the opt-in supervisor kinds
+described under *Events for an event-driven supervisor* below. Each
+registry entry has a one-line description and a group (automaton, task,
+review, capacity, budget); the full table is in the
+[lifecycle reference](../api/autonomous.md#lifecycle-event-kinds). The
+daemon rejects unknown kinds at creation (`"filter kind %q is not a known
+event kind"`), so a typo fails fast instead of silently never firing. A
+plugin can register further kinds and sink types at start-up (see the
+reference); they validate like the built-in ones.
 
 Note: the CLI/comm shorthand `prd_updated` currently resolves to
 `task.prd_updated`, which is **not** in the known-kind set — use the
@@ -144,6 +152,92 @@ the whole configuration: anything you leave out is cleared, so pass
 everything you want to keep. Unlike `subscribe`, `--task` does not imply
 `--one-shot`.
 
+## Events for an event-driven supervisor
+
+A supervisor session or script used to poll for the states that need a
+decision: an Automaton that finished every task but never left `running`, a
+branch waiting to be merged, a task stuck waiting for a lane, a judge that
+blocked, a burn guard that stepped down. Each of those is now an event kind,
+so one subscription wakes the supervisor and the schedule becomes the
+fallback. All of them are **opt-in** (add them to the notify set, next
+section) and informational: none of them changes a status, a verdict or a
+gate outcome.
+
+| Kind | Fires when | Once per |
+|---|---|---|
+| `automaton.stuck_running` | the stuck-running watchdog sees an Automaton `running` with every task terminal, no live session and no executor | condition: once when it starts to hold, again only after it cleared |
+| `automaton.merge_ready` | a finished Automaton's work branch is waiting to be merged (the merge-pending pass) | condition, as above |
+| `automaton.tasks_done_or_cancelled` | a running Automaton has at least one task and every task is `completed` or `cancelled` | condition, as above |
+| `task.capacity_wait_too_long` | a task has waited for a worker lane longer than half of `autonomous.capacity_wait_timeout_seconds` (default wait 4 h, so after 2 h); `details` says how long | waiting episode: a later wait can fire again |
+| `burn_guard.rung_changed` | the burn guard's rung in force changed; `old_status` / `new_status` carry the rungs (empty = none applied) | change |
+| `judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass` | a guardrail judge verdict with that outcome was recorded; same payload as `guardrail_warn` (`guardrail`, `verdict`, `decision`) and the same level rule (task, story or Automaton) | verdict |
+| `task.final_gate_failed` | a final gate task finished without passing; `details` carries the reason | gate failure |
+
+`burn_guard.rung_changed` belongs to no Automaton, so only the global tier
+(`autonomous.notify.default_events`) can allow it.
+
+Worked example — wake a supervisor session on the states that need it:
+
+```sh
+# 1. allow the kinds globally (lowest tier; every Automaton inherits them)
+datawatch config set autonomous.notify.default_events \
+  "prd.needs_review,prd.blocked,prd.failed,prd.completed,prd.cancelled,automaton.stuck_running,automaton.merge_ready,judge.verdict_block,task.capacity_wait_too_long,burn_guard.rung_changed"
+
+# 2. one subscription types a wake-up line into the supervisor session
+datawatch autonomous subscribe \
+  --on automaton.stuck_running --on automaton.merge_ready \
+  --on judge.verdict_block --on task.capacity_wait_too_long \
+  --on burn_guard.rung_changed \
+  --send "A supervisor event arrived; read the Automata events and act." \
+  --sink session --target "$SUPERVISOR_SESSION" --one-shot=false --coalesce
+```
+
+The global default-events change applies at the next daemon start; the
+per-Automaton and profile tiers apply at once. A queue sink
+(`--sink mcp_queue`) works the same way for a supervisor that polls.
+
+## Find the kinds and preview a filter
+
+You do not need this page's tables to pick kinds: the daemon lists them, and
+for a filter you can ask how much it would have caught before you save it.
+
+**List every kind.** The list is the daemon's own registry, so it includes
+kinds a plugin registered. Each kind shows its group, its one-line
+description and whether it is in the default set that wakes the supervisor.
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch autonomous event-kinds`; add `--group task` to keep one group or `--json` for the raw body. |
+| Comm channel | `autonomous event-kinds`, or `autonomous event-kinds group=task`. |
+| MCP | the `autonomous_event_kinds` tool, no parameters. |
+| REST | `GET /api/autonomous/event-kinds`. |
+| Web UI | the kind checkboxes in **Add subscription** (see the PWA walkthrough below). |
+
+**Preview a filter.** Over REST, post the filter to
+`POST /api/autonomous/subscriptions/preview`:
+
+```sh
+curl -s -X POST "$DATAWATCH/api/autonomous/subscriptions/preview" \
+  -H 'Content-Type: application/json' \
+  -d '{"kinds":["task.failed","automaton.stuck_running"],"owner":"<automaton-id>"}'
+# {"count":3,"window_hours":24,"sample":[ ...newest matches, at most 20... ],"lifecycle_since":"2026-11-12T08:00:00Z"}
+```
+
+The preview stores nothing and changes no subscription. `kinds` takes the
+lifecycle kinds that `GET /api/autonomous/event-kinds` lists, which are the
+ones the picker shows, and also the kinds of the stream the **Events** tab shows
+(see [Automata events](automata-events.md)): `watch`, `decision`, `retry`,
+`check`, `cleanup`, `alert` and `error`. A kind that is neither is refused with
+a `400` (`unknown kind`). An empty list means every Events log kind, `owner`
+narrows to one Automation or Automaton, and `project` narrows the Events log
+kinds. It does not apply the notify set.
+
+**Review before relying on it.** A lifecycle kind is counted from the
+lifecycle events this daemon has recorded in memory since it started, and
+`lifecycle_since` in the answer says when that recording began. Right after a
+restart a low count may mean a short history rather than a quiet day. There is
+no CLI, comm or MCP form of the preview.
+
 ## Test a subscription before you rely on it
 
 A subscription that never fires is hard to tell from one that has
@@ -172,8 +266,18 @@ Open an Automaton in the PWA (**Automata** → the Automaton) and choose the
    Automaton: rules scoped to it, plus unscoped rules that fire for every
    Automaton ("all automata"). Each row shows the event kinds or level, the
    sink and target, and badges for one-shot, coalesce, expiry and owner.
-2. **Add.** Choose **Add subscription**. Tick at least one event kind (they
-   are grouped as Automaton status, Task status and Other) or pick a level.
+2. **Add.** Choose **Add subscription**. Tick at least one event kind or
+   pick a level. The picker loads every kind from
+   `GET /api/autonomous/event-kinds` and shows each with its one-line
+   description, grouped Automaton, Task, Review, Capacity and Budget. If the
+   list cannot be loaded, a note says so and the built-in list is shown. The
+   line under the picker asks `POST /api/autonomous/subscriptions/preview` for
+   "Would have matched in the last day: N"; it refreshes shortly after each
+   tick and is skipped while nothing is ticked. A refused or failed preview
+   shows "Preview unavailable" and never blocks saving. Read
+   [Find the kinds and preview a filter](#find-the-kinds-and-preview-a-filter)
+   before trusting the count: it covers the events since the daemon started.
+   The **?** beside "Event kinds" opens this page.
    Choose the scope (this Automaton or all automata), an optional task id,
    the sink type and its target, and optionally send-input text (session
    sink only), one-shot, coalesce and an expiry in hours. The form checks
@@ -258,6 +362,39 @@ restarts:
   response carries the resolved set with its source tier.
 - `autonomous_events_pending(queue, since_cursor?, limit?)` — poll an
   `mcp_queue` queue (see above).
+- `autonomous_event_kinds()` — list every kind a subscription can match, with
+  its group, description and whether it wakes the supervisor by default
+  (see *Find the kinds and preview a filter* above).
+
+### MCP resource subscriptions: a push path that stores nothing
+
+A client that can receive MCP notifications has a second way in. With
+`mcp.resource_subscriptions: true` (default `false`; restart to apply) it calls
+`resources/subscribe` on the lifecycle events resource and gets a
+`notifications/resources/updated` message each time a matching event fires:
+
+```
+datawatch://events/lifecycle?kinds=task.failed,automaton.stuck_running&level=task
+```
+
+It is additive. The subscription is one more consumer of the same dispatcher
+your stored subscriptions use, so the filter rules, the kind list and the
+notify-set gate are identical, and nothing is written to the subscription
+store, a sink or a queue. It belongs to the MCP session: it ends on
+`resources/unsubscribe` or when the session closes, and a session can hold at
+most 32. Existing delivery (comm, session, topic, alert and queue sinks, and
+the supervisor wake) behaves the same with the setting on or off.
+
+The notification carries the subscribed `uri` and the event's `event_id`,
+`kind`, `prd_id` and `task_id`; read the resource for the recent events. Add
+`&peer=<registered peer name>` to the URI to receive only the events that
+federation peer forwarded (see
+[Events from a federation peer](#events-from-a-federation-peer)). With the setting off the server
+advertises nothing new and refuses `resources/subscribe`. The full parameter
+list and the places to set it are in the [MCP reference](../mcp.md#resource-subscriptions).
+Because nothing is stored, a client that is offline when an event fires does
+not get it later; use an `mcp_queue` subscription (above) when it must not
+miss one.
 
 ## Comm channel (owner-scoped)
 
@@ -366,11 +503,15 @@ list means *inherit*, never *off*; only the global tier can resolve to
 names its **source**: `automaton`, `profile` or `global` — that is
 what the surfaces show as `notify_events_effective`.
 
-`task.session_started`, `task.session_cleared`, `scope_warning` and
-`guardrail_warn` are **opt-in** kinds and are not in the default set: a
-subscription on one of them fires only on Automata whose resolved set
+`task.session_started`, `task.session_cleared`, `scope_warning`,
+`guardrail_warn` and the supervisor kinds (`automaton.stuck_running`,
+`automaton.merge_ready`, `automaton.tasks_done_or_cancelled`,
+`task.capacity_wait_too_long`, `burn_guard.rung_changed`,
+`judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass`,
+`task.final_gate_failed`) are **opt-in** kinds and are not in the default
+set: a subscription on one of them fires only on Automata whose resolved set
 includes that kind (add it to the per-Automaton, profile or global
-default list). `scope_warning` (a task touched files outside its declared
+default list). The PWA marks each of them *(opt-in)* in the kind pickers. `scope_warning` (a task touched files outside its declared
 scope; the event lists the files) and `guardrail_warn` (a guardrail
 returned a warn outcome; the event names the guardrail and carries the
 level: task, story or Automaton) are bare kind names with no `prd.` or
@@ -504,6 +645,79 @@ Every set/clear is audit-logged (action `autonomous_notify_events_changed`)
 with the old and new lists; the Automaton entry also records which tier
 the resolved set came from after the change.
 
+## Events from a federation peer
+
+When another datawatch daemon forwards an event to this one (see
+[peer forwarding](automaton-lifecycle-webhooks.md#peer-forwarding)), the event
+carries `peer`: the **registered name** of the sending peer. This daemon sets it
+from the authenticated peer identity of the request, never from the body, so a
+`peer` value inside the payload is ignored. Events that started on this daemon,
+and forwards delivered by an admin caller (who is not a registered peer), have
+no `peer`.
+
+A subscription filter can select on it. Add `"peer": "hub-east"` to the filter
+and only the events that `hub-east` forwarded match; a local event never
+matches a non-empty `peer`. The rest of the filter works as before, and the
+notify-event gate still applies.
+
+```json
+{
+  "filter": {"kinds": ["task.failed", "prd.blocked"], "peer": "hub-east"},
+  "sink": {"type": "alert", "target": "hub-east-failures"}
+}
+```
+
+- The `peer` name must be 1–64 letters, digits, `.`, `_` or `-`, the same rule
+  as a peer sink target. Anything else is refused when the subscription is
+  created.
+- `peer` is accepted in the `filter` body of `POST` and `PUT
+  /api/autonomous/subscriptions` and as the `peer` query parameter of the MCP
+  [lifecycle events resource](../mcp.md#resource-subscriptions). The
+  `autonomous_subscribe` MCP tool, the CLI `autonomous subscribe` command, the
+  comm verb and the PWA form have no `peer` field yet, so a stored
+  subscription that filters on a peer is created with REST.
+- A peer filter matches nothing until a peer actually forwards events here:
+  `autonomous.notify.forwarding.enabled` must be on at this daemon (the switch
+  covers both directions) and the sender needs a peer subscription that names
+  this daemon.
+- The event JSON, the `mcp_queue` events and the webhook envelopes show the same
+  `peer` field, so your own code can tell where an event came from.
+
+### A peer being down never blocks local delivery
+
+Forwarding is best-effort and runs beside local delivery, never in front of it.
+If a peer hangs (accepts a connection and never answers) or refuses
+connections, every local sink (comm, session, topic, alert, `mcp_queue`,
+webhook, and the built-in alert, topic and comm sinks) still receives each
+local event in the normal time, once. The retries for the dead peer run on
+their own schedule, and when the peer comes back the exchange resumes with no
+daemon restart. Events dropped while it was away are not replayed: forwarding
+has no outbox.
+
+### Reading a peer's events
+
+A **peer event subscription** is the opposite direction: this daemon reads a
+registered peer's pending-events queue (`GET /api/autonomous/events`) with that
+peer's stored bearer token and feeds each event into local dispatch with `peer`
+set. Turn on `autonomous.notify.forwarding.enabled` and
+`autonomous.notify.forwarding.peer_events`, then start a read:
+
+```sh
+datawatch autonomous peer-events start hub-east ops   # peer name, queue name
+datawatch autonomous peer-events status
+datawatch autonomous peer-events stop hub-east
+```
+
+The peer needs `autonomous:read` for this daemon and a queue filled by an
+`mcp_queue` subscription there. The same controls exist as the `autonomous
+peer-events` comm verb, `/api/autonomous/peer-events` on REST and the
+`autonomous_peer_events` and `autonomous_peer_events_control` MCP tools. The
+rules it follows (lifecycle events only, no echo loops) are in
+[datawatch-definitions.md](../datawatch-definitions.md#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
+and [operations.md](../operations.md#outbound-webhook-sink-and-peer-forwarding-ships-disabled);
+the whole walkthrough is in
+[The event-driven supervisor](automaton-event-driven-supervisor.md#reading-a-peers-events-the-pull-direction).
+
 ## Storage, audit & restart behavior
 
 - Persisted at `<data_dir>/lifecycle_subscriptions.json`, encrypted at
@@ -525,6 +739,11 @@ the resolved set came from after the change.
   wired (unit-test or stripped-down context); use a normal daemon.
 - **`filter kind "…" is not a known event kind`** — use the full kind
   (`prd.updated`, `task.session_started`); check the closed set above.
+- **A supervisor kind never fires** — it is opt-in: check
+  `notify_events_effective` on the Automaton includes it; for
+  `burn_guard.rung_changed` only the global `default_events` list counts.
+  The condition kinds fire once per episode — a condition that already
+  held when you subscribed fires again only after it clears.
 - **Session sink never fires** — the event kind or task scope doesn't
   match what actually happens (e.g. subscribed to
   `task.session_cleared` instead of `session_started`), or the
@@ -534,8 +753,15 @@ the resolved set came from after the change.
 - **Text arrived but looks wrong** — verify the `lifecycle-sub`
   source tag in the session input history; `send_input` types verbatim,
   4096-char cap.
-- **`webhook` sink is refused** — by design in this release; outbound
-  webhooks arrive in a later phase.
+- **`webhook` or `peer` sink is refused** — both ship off. Turn on
+  `autonomous.notify.webhook.enabled` or `autonomous.notify.forwarding.enabled`
+  (see [lifecycle webhooks and peer forwarding](automaton-lifecycle-webhooks.md)).
+- **A `peer` filter never matches** — the filter selects only events a
+  registered peer forwarded to this daemon. Check that
+  `autonomous.notify.forwarding.enabled` is on here, that the sender has a peer
+  subscription naming this daemon, and that the name in the filter is the
+  peer's registered name (`datawatch federation peer list`). Events that started
+  on this daemon never match.
 - **Polling a queue returns nothing** — confirm a subscription with sink
   `mcp_queue` and the *same* queue name exists
   (`datawatch autonomous subscriptions`), that the events you expect match

@@ -125,11 +125,15 @@ type SupervisorLoopSteps struct {
 	// production runner; tests inject a fake.
 	mergeGit MergeGitRunner
 
-	mu           sync.Mutex
-	infraRetried map[string]bool      // held tasks already retried by the loop
-	cancelSeen   map[string]time.Time // first pass that saw a cancelled record with no cancel decision
-	lastDeployed string               // newest shipped release already deployed
-	lastConflict string               // newest merge conflict recorded
+	// wakes, when set, counts each real scheduled pass (RunScheduled).
+	wakes *supervisorloop.WakeRecord
+
+	mu            sync.Mutex
+	lastScheduled time.Time            // when the last scheduled pass ran
+	infraRetried  map[string]bool      // held tasks already retried by the loop
+	cancelSeen    map[string]time.Time // first pass that saw a cancelled record with no cancel decision
+	lastDeployed  string               // newest shipped release already deployed
+	lastConflict  string               // newest merge conflict recorded
 }
 
 // NewSupervisorLoopSteps registers the steps over the coordinator. engine
@@ -215,6 +219,51 @@ func (s *SupervisorLoopSteps) RunPass(ctx context.Context) []SupervisorLoopStepR
 	return out
 }
 
+// SetWakeRecord registers the record that counts scheduled passes. Nil
+// stops counting.
+func (s *SupervisorLoopSteps) SetWakeRecord(r *supervisorloop.WakeRecord) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.wakes = r
+	s.mu.Unlock()
+}
+
+// RunScheduled is the idle tick's entry: the scheduled check. While the event
+// wake is off it runs a pass on every tick, as before. While
+// supervisor_loop.wake.enabled is on, events run the pass at once and this
+// check is the fallback: it runs a pass only when
+// supervisor_loop.wake.fallback_interval_minutes have passed since the last
+// scheduled pass. Each scheduled pass that runs is recorded in the wake record.
+// It reports whether a pass ran.
+func (s *SupervisorLoopSteps) RunScheduled(ctx context.Context) bool {
+	if s == nil {
+		return false
+	}
+	set := s.settings()
+	if !set.Enabled {
+		return false
+	}
+	now := s.now()
+	s.mu.Lock()
+	if set.Wake.Enabled {
+		interval := time.Duration(set.Wake.FallbackIntervalMinutes) * time.Minute
+		if !s.lastScheduled.IsZero() && now.Sub(s.lastScheduled) < interval {
+			s.mu.Unlock()
+			return false
+		}
+	}
+	s.lastScheduled = now
+	rec := s.wakes
+	s.mu.Unlock()
+	s.RunPass(ctx)
+	if rec != nil {
+		rec.MarkScheduledCheck()
+	}
+	return true
+}
+
 // supervisorLoopPass is the idle tick's one pass over the registered steps.
 func (c *Coordinator) supervisorLoopPass(ctx context.Context) {
 	if c == nil {
@@ -223,7 +272,7 @@ func (c *Coordinator) supervisorLoopPass(ctx context.Context) {
 	c.mu.Lock()
 	steps := c.slSteps
 	c.mu.Unlock()
-	steps.RunPass(ctx)
+	steps.RunScheduled(ctx)
 }
 
 // SetSupervisorLoopSteps registers the steps the idle tick runs. Nil turns

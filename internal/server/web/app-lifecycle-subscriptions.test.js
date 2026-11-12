@@ -277,7 +277,7 @@ test('lifecycle subscriptions form: the sink picker offers webhook and peer afte
   assert.deepEqual([...run(s.sandbox, `_LIFECYCLE_SUB_SINKS`)], order);
   assert.match(html, /<option value="comm" selected>/);
   const kinds = run(s.sandbox, `_LIFECYCLE_SUB_KINDS`);
-  assert.equal(kinds.length, 33);
+  assert.equal(kinds.length, 42);
   for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.review_needed', 'task.session_started', 'task.session_cleared', 'scope_warning', 'guardrail_warn', 'prd.updated', 'question.answered', 'question.withdrawn']) {
     assert.ok(kinds.includes(k), k);
     assert.ok(html.includes(k), k);
@@ -518,7 +518,7 @@ test('lifecycle subscriptions form: edit is prefilled and saves with PUT', async
   assert.equal(put.url, '/api/autonomous/subscriptions/s-mine');
   assert.equal(put.body.sink.target, 'abcd2');
   assert.equal(put.body.filter.prd_id, 'p1');
-  assert.ok(!s.requests.some(r => r.method === 'POST'));
+  assert.ok(!s.requests.some(r => r.method === 'POST' && !/subscriptions\/preview$/.test(r.url)), 'the read-only preview is the only POST an edit may send before save');
 });
 
 test('lifecycle subscriptions form: client validation blocks bad input without a request', async () => {

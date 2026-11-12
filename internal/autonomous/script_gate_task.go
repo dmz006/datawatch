@@ -184,6 +184,9 @@ func (m *Manager) finishScriptGateTask(prd *PRD, t *Task, report, note, failReas
 		log.Printf("[autonomous] %s save gate decision: %v", prd.ID, err)
 	}
 	m.emitTaskStatus(prd, t, old, nil, nil)
+	if !passed {
+		m.emitFinalGateFailed(prd, t, failReason)
+	}
 }
 
 // writeGateReport writes report to rel under projectDir, creating folders.

@@ -481,6 +481,13 @@ mcp:
   # URL lives in your operator config and is not committed). Trailing slash is ignored.
   # Empty = advertise <scheme>://<first sse_host>:<sse_port>.
   public_url: ""
+  # Let an MCP client subscribe to the lifecycle events resource
+  # (datawatch://events/lifecycle) with resources/subscribe and receive
+  # notifications/resources/updated when a matching event fires. It uses
+  # the same event filter and event kinds as a persisted subscription and
+  # stores nothing. Default false: the server does not advertise subscribe
+  # and behaves as before. Needs a daemon restart to change.
+  resource_subscriptions: false
   # Bearer token for SSE connections. Empty falls back to server.token
   # (SEC-002) — MCP SSE is open only when BOTH this and server.token
   # are empty.
@@ -2654,10 +2661,16 @@ autonomous:
     # global tier off (no kinds from it). Custom replacement example:
     #   [prd.needs_review, prd.completed, prd.failed, task.session_started,
     #    task.completed, task.failed]
-    # Note: task.session_started, task.session_cleared, scope_warning and
-    # guardrail_warn are opt-in kinds (not in the five-kind baseline) —
-    # list them wherever that notification should fire. `prd.updated` is never a valid
-    # notify kind.
+    # Note: task.session_started, task.session_cleared, scope_warning,
+    # guardrail_warn and the supervisor kinds (automaton.stuck_running,
+    # automaton.merge_ready, automaton.tasks_done_or_cancelled,
+    # task.capacity_wait_too_long, burn_guard.rung_changed,
+    # judge.verdict_block, judge.verdict_warn, judge.verdict_pass,
+    # task.final_gate_failed) are opt-in kinds (not in the five-kind
+    # baseline) — list them wherever that notification should fire.
+    # burn_guard.rung_changed belongs to no Automaton, so only this global
+    # list can allow it. The capacity-wait event fires at half of
+    # capacity_wait_timeout_seconds. `prd.updated` is never a valid notify kind.
     default_events: [prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled]
     # Per-queue retention for the mcp_queue subscription sink: each named
     # pending-events queue keeps at most this many events in memory and
@@ -2715,6 +2728,11 @@ autonomous:
       # autonomous.notify.forwarding.enabled — false refuses peer subscriptions at
       # creation and makes this daemon refuse to receive forwarded events.
       enabled: false
+      # autonomous.notify.forwarding.peer_events — true lets this daemon read a
+      # registered federation peer's lifecycle events and feed them into its own
+      # local dispatch (start, stop and read it with `datawatch autonomous
+      # peer-events`). Needs enabled above. Ships false.
+      peer_events: false
       # autonomous.notify.forwarding.max_hops — hop cap of a forwarded event,
       # counting the sender. A receiver refuses an event past it. Default 3.
       max_hops: 3
@@ -4462,6 +4480,33 @@ autonomous:
     # step moves nothing. When set, max must be at least min.
     "supervisor_loop.lane_count.min": 0
     "supervisor_loop.lane_count.max": 0
+    # Event wake. When on, a listed lifecycle event starts a supervisor pass
+    # at once instead of waiting for the scheduled check; the schedule stays
+    # as the fallback. Off by default, so nothing changes until you turn it on.
+    "supervisor_loop.wake.enabled": false
+    # The event kinds that wake the supervisor. Each must be a kind a
+    # subscription can filter on (datawatch autonomous event-kinds lists
+    # them); an unknown kind resets the list to this default.
+    "supervisor_loop.wake.kinds":
+      - prd.blocked
+      - task.review_needed
+      - task.failed
+      - task.final_gate_failed
+      - judge.verdict_block
+      - judge.verdict_warn
+      - judge.verdict_pass
+      - automaton.tasks_done_or_cancelled
+      - automaton.stuck_running
+      - task.capacity_wait_too_long
+      - burn_guard.rung_changed
+    # Quiet window in seconds: events arriving within it after a wake fold
+    # into the same pass (0 to 3600; 0 wakes on every event).
+    "supervisor_loop.wake.coalesce_seconds": 30
+    # Minutes between scheduled passes while the wake is on (1 to 1440).
+    # Events run passes in between; the scheduled check runs a pass only when
+    # this many minutes have passed since its last one. With the wake off the
+    # scheduled check runs on every idle tick, as before. Read live.
+    "supervisor_loop.wake.fallback_interval_minutes": 20
   # ── Automation requirements (requirements report + capability minimums ──
   # The requirements report answers "can this daemon run the automations it is
   # configured to run": the built-in capability minimums (capability → minimum

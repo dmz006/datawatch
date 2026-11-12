@@ -3003,6 +3003,42 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
 
+  /api/supervisor-loop/wake:
+    get:
+      summary: Supervisor wake status
+      description: |
+        The supervisor wake settings in effect (`enabled`, `kinds`,
+        `coalesce_seconds`, `fallback_interval_minutes`) and when the supervisor
+        last woke for an event (`last_event`) and last ran a scheduled check
+        (`last_scheduled_check`), with the counts of each. `events_silent_for` is
+        set when the event path has been quiet longer than an hour. A time of
+        `0001-01-01T00:00:00Z` means it has not happened yet. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: supervisorLoopWake
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor wake status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, kinds, coalesce_seconds, fallback_interval_minutes, last_event, last_scheduled_check, event_count, scheduled_count]
+                properties:
+                  enabled: {type: boolean}
+                  kinds: {type: array, items: {type: string}}
+                  coalesce_seconds: {type: integer}
+                  fallback_interval_minutes: {type: integer}
+                  last_event: {type: string, format: date-time}
+                  last_scheduled_check: {type: string, format: date-time}
+                  event_count: {type: integer}
+                  scheduled_count: {type: integer}
+                  events_silent_for: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
   /api/supervisor-loop/jobs/{name}/run:
     post:
       summary: Run one supervisor loop job now
@@ -6414,6 +6450,78 @@ paths:
         "400": {description: "Missing queue, or non-numeric since/limit"}
         "403": {description: "Caller lacks the autonomous:read capability"}
         "503": {description: "Pending events queue not wired"}
+
+  /api/autonomous/peer-events:
+    get:
+      summary: Read the peer event subscriber
+      description: |
+        Whether this daemon reads federation peers' lifecycle events
+        (`autonomous.notify.forwarding.peer_events`) and the peers it is reading
+        right now. Requires the `autonomous:read` capability.
+      operationId: autonomousPeerEventsStatus
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Subscriber state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  running: {type: array, items: {type: string}}
+        "403": {description: "Caller lacks the autonomous:read capability"}
+        "503": {description: "Peer event subscriber not wired"}
+  /api/autonomous/peer-events/start:
+    post:
+      summary: Start reading a federation peer's lifecycle events
+      description: |
+        Starts one reading goroutine for `peer`, which reads the peer's pending-events
+        queue `queue` after the cursor `since` and feeds each lifecycle event into
+        this daemon's local dispatch. Needs `autonomous.notify.forwarding.enabled`
+        and `autonomous.notify.forwarding.peer_events` both true, and a federation
+        peer that grants `autonomous:read`. The read lasts until stopped or the
+        daemon restarts. Requires the `autonomous:write` capability.
+      operationId: autonomousPeerEventsStart
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [peer, queue]
+              properties:
+                peer: {type: string}
+                queue: {type: string}
+                since: {type: integer, minimum: 0, default: 0}
+      responses:
+        "200": {description: "Started: {peer, queue, started: true}"}
+        "400": {description: "Bad body or missing peer"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "409": {description: "Peer event reading is off, or the peer is already being read"}
+        "422": {description: "The peer was refused (unknown, not federated, no read capability, no token, bad URL)"}
+        "503": {description: "Peer event subscriber not wired"}
+  /api/autonomous/peer-events/stop:
+    post:
+      summary: Stop reading a federation peer's lifecycle events
+      description: Ends the reading goroutine of `peer`. `stopped` is false when none was running. Requires the `autonomous:write` capability.
+      operationId: autonomousPeerEventsStop
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [peer]
+              properties:
+                peer: {type: string}
+      responses:
+        "200": {description: "{peer, stopped}"}
+        "400": {description: "Bad body or missing peer"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "503": {description: "Peer event subscriber not wired"}
 
   # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
   /api/plugins:

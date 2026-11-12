@@ -2342,6 +2342,16 @@ type MCPConfig struct {
 	// Prompts controls the MCP prompts surface (BL302 S4).
 	Prompts MCPPromptsConfig `yaml:"prompts" json:"prompts"`
 
+	// ResourceSubscriptions lets an MCP client subscribe to the lifecycle
+	// events resource (datawatch://events/lifecycle) with resources/subscribe
+	// and receive notifications/resources/updated when a matching event
+	// fires. It uses the same event filter and event kinds as a persisted
+	// subscription. Default false: the server then does not advertise
+	// subscribe and refuses resources/subscribe, exactly as before.
+	// Changing it needs a daemon restart (the capability is advertised once,
+	// at startup).
+	ResourceSubscriptions bool `yaml:"resource_subscriptions" json:"resource_subscriptions"`
+
 	// SSEEnabled starts an HTTP/SSE MCP server for remote AI clients in addition
 	// to the stdio transport used by local IDE clients (Cursor, Claude Desktop).
 	SSEEnabled bool `yaml:"sse_enabled"`
@@ -6977,6 +6987,13 @@ type AutonomousNotifyWebhookConfig struct {
 // independent of the webhook sink's, with the same default values.
 type AutonomousNotifyForwardingConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
+	// PeerEvents turns on the peer event subscriber: this daemon reading the
+	// lifecycle events of a registered federation peer and feeding them into
+	// its own local dispatch. While false no subscriber runs and the start
+	// command is refused. It needs Enabled as well: Enabled is the one switch
+	// for federation event exchange, and a running read stays armed and reads
+	// nothing while it is off.
+	PeerEvents bool `yaml:"peer_events" json:"peer_events"`
 	// MaxHops is the hop cap of a forwarded event. Values below 1 mean the default.
 	MaxHops int `yaml:"max_hops" json:"max_hops"`
 	// MaxAttempts is the total attempts per forwarded event. Values below 1 mean the default.

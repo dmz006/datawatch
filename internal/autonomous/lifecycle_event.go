@@ -70,6 +70,31 @@ const (
 	// withdrawn before an answer. Non-status: QuestionID names the
 	// withdrawn question; AnswerID is empty.
 	KindQuestionWithdrawn = "question.withdrawn"
+	// KindAutomatonStuckRunning fires once when the stuck-running watchdog
+	// finds an Automaton running with every task finished and nothing live.
+	// It fires again only after the condition cleared. Opt-in.
+	KindAutomatonStuckRunning = "automaton.stuck_running"
+	// KindAutomatonMergeReady fires once when a finished Automaton's work
+	// branch is waiting to be merged. It fires again only after the
+	// condition cleared. Opt-in.
+	KindAutomatonMergeReady = "automaton.merge_ready"
+	// KindAutomatonTasksDone fires once when every task of a running
+	// Automaton is completed or cancelled. It fires again only after the
+	// condition cleared. Opt-in.
+	KindAutomatonTasksDone = "automaton.tasks_done_or_cancelled"
+	// KindCapacityWaitTooLong fires once per waiting episode when a task has
+	// waited for capacity longer than the threshold. Opt-in.
+	KindCapacityWaitTooLong = "task.capacity_wait_too_long"
+	// KindBurnGuardRungChanged fires when the burn guard's rung changes;
+	// OldStatus and NewStatus carry the old and new rung. Opt-in.
+	KindBurnGuardRungChanged = "burn_guard.rung_changed"
+	// KindJudgeVerdictBlock, KindJudgeVerdictWarn and KindJudgeVerdictPass fire
+	// once when a judge verdict with that outcome is recorded. Opt-in.
+	KindJudgeVerdictBlock = "judge.verdict_block"
+	KindJudgeVerdictWarn  = "judge.verdict_warn"
+	KindJudgeVerdictPass  = "judge.verdict_pass"
+	// KindFinalGateFailed fires once when a final gate task fails. Opt-in.
+	KindFinalGateFailed = "task.final_gate_failed"
 )
 
 // PRDStatusKind returns the event kind for a PRD entering status s,
@@ -150,6 +175,12 @@ type LifecycleEvent struct {
 	// Forward marks the event as forwarded: a daemon never forwards it on.
 	// Nil on every locally originated event.
 	Forward *ForwardChain `json:"forward,omitempty"`
+	// Peer is the registered name of the federation peer that delivered a
+	// forwarded event. The receiving side sets it from the authenticated peer
+	// identity of the request, never from the payload, so a subscriber can tell
+	// where the event came from. Empty on every locally originated event and on
+	// a forward delivered by an admin caller (which is not a registered peer).
+	Peer string `json:"peer,omitempty"`
 }
 
 // PRDUpdatePayload maps a KindPRDUpdated event to the legacy WS
@@ -180,6 +211,11 @@ type LifecycleFilter struct {
 	// wildcard; the resyncing engine resolves membership at dispatch
 	// time via AutomationStore.OwnerOf(prdID).
 	AutomationID string `json:"automation_id,omitempty"`
+	// Peer optionally scopes the subscription to events a federation peer
+	// forwarded to this daemon, by the peer's registered name
+	// (LifecycleEvent.Peer). An event that did not arrive from a peer carries
+	// an empty peer, so it never passes a non-empty Peer filter.
+	Peer string `json:"peer,omitempty"`
 }
 
 // Matches reports whether ev passes the filter.
@@ -191,6 +227,9 @@ func (f LifecycleFilter) Matches(ev LifecycleEvent) bool {
 		return false
 	}
 	if f.TaskID != "" && f.TaskID != ev.TaskID {
+		return false
+	}
+	if f.Peer != "" && f.Peer != ev.Peer {
 		return false
 	}
 	if len(f.Kinds) > 0 {
@@ -365,6 +404,8 @@ func (m *Manager) lifecycleBus() *lifecycleDispatcher {
 		if m.lifecycleHost == "" {
 			m.lifecycleHost, _ = os.Hostname()
 		}
+		m.lifeHistory.start(time.Now())
+		m.lifecycle.Subscribe(LifecycleFilter{}, m.lifeHistory.add)
 	})
 	return m.lifecycle
 }

@@ -218,6 +218,20 @@ See the operations guide for device-specific cert install instructions.
 
 ---
 
+## Resource subscriptions
+
+With `mcp.resource_subscriptions: true` (default `false`) the server advertises `resources.subscribe` and an MCP client can follow Automata lifecycle events. Call `resources/subscribe` on the lifecycle events resource with the filter in the URI's query, and the server sends `notifications/resources/updated` for that URI each time a matching event fires:
+
+```
+datawatch://events/lifecycle?kinds=task.failed,prd.completed&level=task
+```
+
+The query parameters are `kinds` (comma-separated event kinds), `level` (`prd`, `task` or `automation`), `prd_id`, `task_id`, `automation_id` and `peer` (the registered name of the federation peer that forwarded the event; events that originated on this daemon never match it). The filter is the same one a persisted subscription uses, with the same rules: at least one of `kinds` or `level` is required, and every kind must be one `autonomous_event_kinds` lists. An event is also held back when the Automaton's notify-event set excludes its kind, exactly as for a persisted subscription. The notification carries the subscribed `uri` and a `_meta` object with the event's `event_id`, `kind`, `prd_id` and `task_id`; read the resource (or call `autonomous_event_log`) for the recent events.
+
+A resource subscription belongs to its MCP session: nothing is stored, it ends on `resources/unsubscribe` or when the session closes, and a session may hold at most 32. A URI that is not the lifecycle events resource, names an unknown kind or level, or has no filter is refused with an invalid-params error; the daemon log says why. `resources/unsubscribe` of a URI that was never subscribed is not an error.
+
+With the setting off the server does not advertise `subscribe`, lists no lifecycle events resource and refuses `resources/subscribe`, as before. Changing the setting needs a daemon restart. Set it in the `mcp:` block of `config.yaml`, in Settings → General → MCP Server (**Resource subscriptions**), with `PUT /api/config` and `{"mcp.resource_subscriptions": true}`, `datawatch config set mcp.resource_subscriptions true`, the chat command `configure mcp.resource_subscriptions=true`, or the `config_set` MCP tool.
+
 ## Available Tools
 
 The MCP server exposes **150+ tools** across the surfaces below
@@ -255,7 +269,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set`, `usage_autolanes_status` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
-| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
+| Lifecycle subscriptions | `autonomous_peer_events`, `autonomous_peer_events_control`, `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending`, `autonomous_event_kinds` |
 | Search before create | `autonomous_overlap_search` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -693,7 +707,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`supervisor_loop_runs`** — read the supervisor loop's run records, newest first. Optional `job` (a job name), `outcome` (`ok`, `validator_failed`, `escalated` or `error`) and `limit` filters; any other argument is refused. Read-only. Returns the same body as `GET /api/supervisor-loop/runs`.
 - **`supervisor_loop_run_job`** — run one supervisor loop job now. Needs `job` (the job name); optional `input` (text) and `candidates` (a comma list, for the model jobs that choose among candidates). An unknown job name comes back as a tool error with the daemon's `unknown job` message. Proxies `POST /api/supervisor-loop/jobs/<job>/run`. The loop's settings are the `supervisor_loop.*` keys, set with `config_set`.
 - **`supervisor_loop_eval`** — compare models on a model job's eval cases. Needs `job` (`draft_spec`, `classify_ci_failure` or `pick_backend`) and `models` (a comma list); optional `cases_dir` (the name of a folder under the default cases folder). Returns per model: cases, passed, validator failures, retries, median and maximum duration, escalations. Fails naming each model when none is reachable. Proxies `POST /api/supervisor-loop/eval`.
-- **`supervisor_loop_stats`** — read the supervisor loop as numbers: `enabled`, `jobs`, `jobs_enabled`, `runs`, the split by outcome (`runs_ok`, `runs_validator_failed`, `runs_escalated`, `runs_error`), `retries` and `last_run_age_seconds` (-1 when no run is stored). Takes no arguments; any argument is refused. Read-only. Returns the same object as `GET /api/supervisor-loop/stats`.
+- **`supervisor_loop_stats`** — read the supervisor loop as numbers: `enabled`, `jobs`, `jobs_enabled`, `runs`, the split by outcome (`runs_ok`, `runs_validator_failed`, `runs_escalated`, `runs_error`), `retries` and `last_run_age_seconds` (-1 when no run is stored). Takes no arguments; any argument is refused. Read-only. Returns the object from `GET /api/supervisor-loop/stats` plus a `wake` object (the wake settings in effect, the last event, the last scheduled check and their counts) from `GET /api/supervisor-loop/wake`. The wake settings are written with `config_set` keys `supervisor_loop.wake.enabled`, `.kinds`, `.coalesce_seconds` and `.fallback_interval_minutes`.
 
   | Parameter | Required | Description |
   |---|---|---|
@@ -910,7 +924,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   autonomous_prd_set_notify_events(id="a1b2c3d4")   # clear the Automaton-level set (inherit)
   ```
 
-  Default set (when unset at this tier): `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled`. The opt-in kinds `task.session_started`, `task.session_cleared` (the session-end kind), `scope_warning` and `guardrail_warn` are off by default — add them to the list to be notified. Warnings never block or change any work. Precedence: **Automaton > guardrail profile > global default**. A subscription's own event filter can only **narrow** this resolved set, never widen it. Returns the write reply described above (a small summary, not the whole Automaton).
+  Default set (when unset at this tier): `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled`. The opt-in kinds `task.session_started`, `task.session_cleared` (the session-end kind), `scope_warning`, `guardrail_warn` and the supervisor kinds (`automaton.stuck_running`, `automaton.merge_ready`, `automaton.tasks_done_or_cancelled`, `task.capacity_wait_too_long`, `burn_guard.rung_changed`, `judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass`, `task.final_gate_failed`) are off by default — add them to the list to be notified. Warnings never block or change any work. Precedence: **Automaton > guardrail profile > global default**. A subscription's own event filter can only **narrow** this resolved set, never widen it. Returns the write reply described above (a small summary, not the whole Automaton).
 - **`autonomous_subscribe` / `autonomous_unsubscribe` / `autonomous_subscriptions`** (BL427) — persisted Automaton lifecycle-event subscriptions (design: [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md)). Register, list and remove subscriptions so matching lifecycle events (e.g. `task.session_started`, `task.completed`, `prd.blocked`) are delivered to a sink when they fire.
 
   `autonomous_subscribe` parameters:
@@ -973,6 +987,8 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   `subscription-update` takes the same flags as `subscribe` and replaces the configuration; unlike `subscribe`, `--task` does not imply `--one-shot`. From a comm channel: `autonomous subscription-update <id> key=value...` (keys `kinds`, `level`, `prd`, `task`, `coalesce`, `one_shot`, `expires`; unnamed fields keep their stored value) and `autonomous subscription-test <id>`. A channel can only update or test subscriptions it owns; any other id gets the same not-found answer.
 
 - **`autonomous_events_pending`** — poll the pending lifecycle events of a named queue, for a generic MCP client that cannot receive pushes. Create the queue by subscribing with `autonomous_subscribe` using `sink_type` `mcp_queue` and `sink_target` set to the queue name (letters, digits and `. _ : -`); matching events then accumulate there, bounded per queue (`autonomous.notify.pending_events_max`, default 500).
+- **`autonomous_peer_events`** — read the peer event subscriber: `{"enabled":bool,"running":[peer names]}`, where `enabled` is `autonomous.notify.forwarding.peer_events`. Takes no arguments; any argument is refused. Read-only. Returns the body of `GET /api/autonomous/peer-events`.
+- **`autonomous_peer_events_control`** — start or stop reading a federation peer's lifecycle events into this daemon's local dispatch. `action` (`start` or `stop`) and `peer` are required; `start` also needs `queue` (the peer's pending-events queue) and takes an optional `since` cursor. Start needs `autonomous.notify.forwarding.enabled` and `autonomous.notify.forwarding.peer_events` both true and a peer that grants `autonomous:read`; otherwise it is refused with the reason. The read lasts until stopped or the daemon restarts. Calls `POST /api/autonomous/peer-events/start` or `/stop`.
 
   | Parameter | Required | Description |
   |---|---|---|
@@ -981,6 +997,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   | `limit` | no | Maximum events (default 50, capped at 200) |
 
   Returns `{"events":[...],"next_cursor":<n>,"dropped":<bool>}`. Pass `next_cursor` back as `since_cursor` on the next call; `dropped` is true when events you had not yet seen were evicted because the queue overflowed. Proxies `GET /api/autonomous/events`. The CLI equivalent is `datawatch autonomous events --queue <name> [--since <cursor>] [--limit n] [--json]`; over a comm channel it is `autonomous events [queue=<name>] [since=<cursor>]` (the queue defaults to one derived from the calling channel, and a channel can only read queues of its own subscriptions).
+- **`autonomous_event_kinds`** — list every lifecycle event kind a subscription can match, grouped by group. Read-only; takes no parameters. Returns the same object as `GET /api/autonomous/event-kinds`: `{"groups":[{"group":"...","kinds":[{"kind":"task.failed","description":"...","wake_default":true}]}]}`. Built-in kinds and kinds registered by extensions both appear; `wake_default` is true when the kind is in the default set that wakes the supervisor. Use it to choose the `kinds` to pass to `autonomous_subscribe`. Example: `autonomous_event_kinds {}`.
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
 - **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.
 - **`session_import`** (v5.x) — import a foreign tmux session record into datawatch state without re-spawning.

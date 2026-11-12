@@ -131,6 +131,7 @@ type BurnGuard struct {
 	status        BurnGuardStatus
 	refitWake     chan struct{}
 	questionStore autonomous.BurnGuardQuestionStore
+	rungSink      func(oldRung, newRung string)
 }
 
 // NewBurnGuard builds the runner. store may be nil (no persistence across restarts).
@@ -169,6 +170,22 @@ func (g *BurnGuard) AttachQuestionStore(st autonomous.BurnGuardQuestionStore) {
 	g.mu.Lock()
 	g.questionStore = st
 	g.mu.Unlock()
+}
+
+// AttachRungSink wires the receiver of rung changes: it is called with the
+// rung in force before and after each changed tick (empty means none).
+func (g *BurnGuard) AttachRungSink(fn func(oldRung, newRung string)) {
+	g.mu.Lock()
+	g.rungSink = fn
+	g.mu.Unlock()
+}
+
+// currentRung is the rung in force for an applied list: the last one applied.
+func currentRung(applied []string) string {
+	if len(applied) == 0 {
+		return ""
+	}
+	return applied[len(applied)-1]
 }
 
 // LadderState is the persisted ladder state as it was loaded at start, which
@@ -261,6 +278,7 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 		Projection: proj, Settings: set, Now: now,
 		InflightCap: g.adm.InflightCap(burnguard.ClaudeBackend),
 	}
+	oldRung := currentRung(g.ladder.State().Applied)
 	d, saveErr := g.ladder.Tick(in)
 	if saveErr != nil {
 		g.fail("ladder state not saved: %v", saveErr)
@@ -281,6 +299,12 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 	}
 	if d.Changed {
 		g.announce(d)
+		g.mu.Lock()
+		sink := g.rungSink
+		g.mu.Unlock()
+		if sink != nil {
+			sink(oldRung, currentRung(d.Applied))
+		}
 	}
 
 	g.mu.Lock()
@@ -565,6 +589,9 @@ func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessi
 	}
 	if s.questionStore != nil {
 		g.AttachQuestionStore(s.questionStore)
+	}
+	if rn, ok := s.autonomousMgr.(interface{ NoteBurnGuardRung(oldRung, newRung string) }); ok {
+		g.AttachRungSink(rn.NoteBurnGuardRung)
 	}
 	s.burnGuard = g
 	return nil

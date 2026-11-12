@@ -46,6 +46,7 @@ import (
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
+	"github.com/dmz006/datawatch/internal/supervisorloop"
 	"github.com/dmz006/datawatch/internal/tagregistry"
 	"github.com/dmz006/datawatch/internal/tlsutil"
 	"github.com/dmz006/datawatch/internal/trace"
@@ -497,6 +498,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
+	apiMux.HandleFunc("/api/autonomous/subscriptions/preview", api.handleEventPreview)
 	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
 	// Operator question channel (raise, read, answer, withdraw): one
@@ -508,11 +510,14 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/questions/quality", api.handleQuestionQuality) // effective question quality policy (exact path wins over the /api/questions/ subtree)
 	apiMux.HandleFunc("/api/questions/", api.handleQuestions)
 	apiMux.HandleFunc("/api/autonomous/events", api.handleAutonomousEvents)
+	apiMux.HandleFunc("/api/autonomous/peer-events", api.handleAutonomousPeerEvents)  // peer event subscriber: read
+	apiMux.HandleFunc("/api/autonomous/peer-events/", api.handleAutonomousPeerEvents) // peer event subscriber: start, stop
 	// Automata event log read: merged watch, retry, check, maintenance and error
 	// events, newest first, with kind/project/q filters and cursor paging.
 	apiMux.HandleFunc("/api/autonomous/event-log", api.handleAutomataEventLog)
 	// Branch refresh numbers: setting, results by Automaton, stopped count.
 	apiMux.HandleFunc("/api/autonomous/branch-refresh/stats", api.handleBranchRefreshStats)
+	apiMux.HandleFunc("/api/autonomous/event-kinds", api.handleAutonomousEventKinds)
 	// BL427 phase 5 — receiving endpoint for peer-forwarded lifecycle events.
 	apiMux.HandleFunc(autonomous.ForwardedEventsPath, api.handleAutonomousForwardedEvents)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)
@@ -598,6 +603,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/supervisor-loop/jobs/", api.handleSupervisorLoopJobRun)                        // POST .../{name}/run runs one job now
 	apiMux.HandleFunc("/api/supervisor-loop/eval", api.handleSupervisorLoopEval)                           // POST runs a model job's eval cases against listed models
 	apiMux.HandleFunc("/api/supervisor-loop/runs", api.handleSupervisorLoopRuns)                           // supervisor loop run records, newest first
+	apiMux.HandleFunc("/api/supervisor-loop/wake", api.handleSupervisorLoopWake)                           // supervisor wake: settings in effect, last event, last scheduled check
 	apiMux.HandleFunc("/api/supervisor-loop/stats", api.handleSupervisorLoopStats)                         // supervisor loop numbers: jobs, run counts by outcome, retries, last run age
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                                  // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                     // shadow merge plans, comparisons and matched/different counts per release size
@@ -1359,6 +1365,13 @@ func (s *HTTPServer) SetQuestions(api QuestionsAPI) {
 func (s *HTTPServer) SetSupervisorLoop(c SupervisorLoopControl) {
 	s.api.SetSupervisorLoop(c)
 }
+
+// SetPeerEvents wires the peer event subscriber control behind
+// /api/autonomous/peer-events.
+func (s *HTTPServer) SetPeerEvents(c PeerEventControl) { s.api.SetPeerEvents(c) }
+
+// SetSupervisorWake wires the record behind GET /api/supervisor-loop/wake.
+func (s *HTTPServer) SetSupervisorWake(r *supervisorloop.WakeRecord) { s.api.SetSupervisorWake(r) }
 
 // SetAutonomousEvents wires the pending-events queue behind the mcp_queue
 // subscription sink for /api/autonomous/events. Nil disables the endpoint

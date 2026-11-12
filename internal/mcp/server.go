@@ -112,6 +112,9 @@ type Server struct {
 	elicitationDisp *ElicitationDispatcher
 	// BL302 S4 — prompt server (10 MCP prompts).
 	promptServer *MCPPromptServer
+	// resourceSubs tracks resources/subscribe state for lifecycle events;
+	// nil unless mcp.resource_subscriptions is on (resource_subscriptions.go).
+	resourceSubs *resourceSubscriptions
 	// ollamaHost is the Ollama API URL for stats
 	ollamaHost string
 	// webSearchEnabled and webSearchURL/Engine are used for the web_search_stats tool (BL372).
@@ -378,19 +381,28 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		log.Printf("[warn] [mcp] mcp.token and server.token are both empty — MCP SSE's full tool catalog is open to any caller that can reach it")
 	}
 
-	mcpSrv := server.NewMCPServer(
-		"datawatch",
-		"1.0.0",
+	// mcp.resource_subscriptions (default off) advertises resources subscribe
+	// and installs the hooks that serve it. Off: no hooks, subscribe=false,
+	// exactly the server before the setting existed.
+	serverOpts := []server.ServerOption{
 		server.WithToolCapabilities(true),
 		// BL302 S1 — enable resource + prompt capabilities.
-		// subscribe=false for resources (deferred to v7.2.0 per D1/D9).
+		// subscribe follows mcp.resource_subscriptions (default false).
 		// listChanged=false for prompts (added in S4 when prompts land).
-		server.WithResourceCapabilities(false, false),
+		server.WithResourceCapabilities(cfg.ResourceSubscriptions, false),
 		server.WithPromptCapabilities(false),
 		// mcp-go v1.x refuses RequestSampling/RequestElicitation for clients on
 		// protocol 2026-07-28+ unless this is set; the repo relies on both.
 		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
-	)
+	}
+	if cfg.ResourceSubscriptions {
+		s.resourceSubs = newResourceSubscriptions()
+		serverOpts = append(serverOpts, server.WithHooks(s.resourceSubs.hooks()))
+	}
+	mcpSrv := server.NewMCPServer("datawatch", "1.0.0", serverOpts...)
+	if s.resourceSubs != nil {
+		s.resourceSubs.notify = mcpSrv.SendNotificationToSpecificClient
+	}
 
 	// BL302 S3 — enable sampling so connected clients see the capability
 	// in the server's initialize response and can handle createMessage requests.
@@ -708,6 +720,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousSubscriptionTest(), tracked(s.handleAutonomousSubscriptionTest))
 	mcpSrv.AddTool(s.toolAutonomousEventsPending(), tracked(s.handleAutonomousEventsPending))
 	mcpSrv.AddTool(s.toolAutonomousEventLog(), tracked(s.handleAutonomousEventLog))
+	mcpSrv.AddTool(s.toolAutonomousEventKinds(), tracked(s.handleAutonomousEventKinds))
 	// Operator question channel (proxy /api/questions — internal/server/questions.go).
 	// The trailing comment is the MCP tool name each AddTool registers.
 	mcpSrv.AddTool(s.toolQuestionRaise(), tracked(s.handleQuestionRaise))       // "question_raise"
@@ -830,6 +843,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSupervisorLoopRunJob(), tracked(s.handleSupervisorLoopRunJob))
 	mcpSrv.AddTool(s.toolSupervisorLoopEval(), tracked(s.handleSupervisorLoopEval))
 	mcpSrv.AddTool(s.toolSupervisorLoopStats(), tracked(s.handleSupervisorLoopStats))
+	mcpSrv.AddTool(s.toolAutonomousPeerEvents(), tracked(s.handleAutonomousPeerEvents))
+	mcpSrv.AddTool(s.toolAutonomousPeerEventsControl(), tracked(s.handleAutonomousPeerEventsControl))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
 	mcpSrv.AddTool(s.toolAutonomousPRDSetContinueOnStoryFailure(), tracked(s.handleAutonomousPRDSetContinueOnStoryFailure))

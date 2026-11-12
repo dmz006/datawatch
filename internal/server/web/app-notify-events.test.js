@@ -19,7 +19,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const APP_JS = path.join(__dirname, 'app.js');
 const LOCALES_DIR = path.join(__dirname, 'locales');
-const EXPECTED_KINDS = ['guardrail_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const EXPECTED_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 // 15 keys the notify-events surfaces reference (PRD settings modal, detail
 // line, guardrail profile panel). Must exist in every locale bundle.
 const NOTIFY_KEYS = [
@@ -144,7 +144,7 @@ test('NOTIFY_EVENT_KINDS / NOTIFY_EVENT_DEFAULTS: closed set + defaults subset',
   const { sandbox, run } = setupApp();
   const kinds = run('NOTIFY_EVENT_KINDS');
   const defaults = run('NOTIFY_EVENT_DEFAULTS');
-  assert.ok(Array.isArray(kinds) && kinds.length === 30, `expected 30 kinds, got ${kinds && kinds.length}`);
+  assert.ok(Array.isArray(kinds) && kinds.length === 39, `expected 39 kinds, got ${kinds && kinds.length}`);
   assert.deepEqual(new Set(kinds), new Set(EXPECTED_KINDS), 'kind set drifted from the lifecycle event kinds');
   assert.equal(new Set(kinds).size, kinds.length, 'duplicate kinds in NOTIFY_EVENT_KINDS');
   assert.ok(Array.isArray(defaults) && defaults.length === 5, `expected 5 defaults, got ${defaults && defaults.length}`);
@@ -157,9 +157,9 @@ test('_renderNotifyKindOptions: grouped checkboxes, default markers, inherit dis
   const { run } = setupApp();
   const html = run(`_renderNotifyKindOptions(['prd.blocked'], false)`);
 
-  // All 30 kinds present as checkboxes, grouped into four sections.
+  // All 39 kinds present as checkboxes, grouped into four sections.
   const boxes = html.match(/data-notify-kind value="/g) || [];
-  assert.equal(boxes.length, 30);
+  assert.equal(boxes.length, 39);
   assert.match(html, />Automaton</);
   assert.match(html, />Task</);
   assert.match(html, />Session</);
@@ -182,7 +182,7 @@ test('_renderNotifyKindOptions: grouped checkboxes, default markers, inherit dis
   const markers = (html.match(/\(default\)/g) || []).length;
   assert.equal(markers, 5, 'one (default) marker per default kind');
   const optInMarkers = (html.match(/\(opt-in\)/g) || []).length;
-  assert.equal(optInMarkers, 4, 'one (opt-in) marker per opt-in kind (guardrail_warn, scope_warning, task.session_started, task.session_cleared)');
+  assert.equal(optInMarkers, 13, 'one (opt-in) marker per opt-in kind');
   assert.doesNotMatch(html, /default \/ opt-in|opt-in \/ default/, 'no kind may carry both markers');
   for (const k of ['scope_warning', 'guardrail_warn', 'task.session_started', 'task.session_cleared']) {
     const i = html.indexOf('value="' + k + '"');
@@ -193,7 +193,7 @@ test('_renderNotifyKindOptions: grouped checkboxes, default markers, inherit dis
   // Inherit on → every row disabled.
   const inh = run(`_renderNotifyKindOptions(['prd.blocked'], true)`);
   const disabled = (inh.match(/disabled>/g) || []).length;
-  assert.equal(disabled, 30, 'inherit mode disables every kind checkbox');
+  assert.equal(disabled, 39, 'inherit mode disables every kind checkbox');
   const free = run(`_renderNotifyKindOptions([], false)`);
   assert.equal((free.match(/disabled>/g) || []).length, 0, 'no inherited rows when inherit is off');
 });
@@ -280,7 +280,7 @@ test('settings modal: explicit list renders non-inherit with checked rows only',
   assert.match(html, /id="prdSettingsNotifyInherit"/, 'inherit checkbox present');
   assert.doesNotMatch(html, /id="prdSettingsNotifyInherit" checked/, 'inherit not selected for an explicit list');
   assert.match(html, /value="prd\.blocked" checked/);
-  assert.equal((html.match(/data-notify-kind value="[^"]+/g) || []).length, 30, 'all 30 kind checkboxes rendered');
+  assert.equal((html.match(/data-notify-kind value="[^"]+/g) || []).length, 39, 'all 39 kind checkboxes rendered');
   assert.equal((html.match(/data-notify-kind[^>]*disabled>/g) || []).length, 0, 'no rows disabled while explicit list is stored');
   const eff = html.indexOf('id="prdSettingsNotifyEffective"');
   assert.match(html.slice(eff, eff + 200), /display:none/, 'effective line hidden while explicit');
@@ -318,7 +318,7 @@ test('settings modal: stored [] renders inherit ON with all rows disabled', asyn
   ea(s, !!modalEl, 'modal element should be appended');
   const html = modalEl.innerHTML;
   assert.match(html, /id="prdSettingsNotifyInherit" checked/, 'inherit checkbox checked when the PRD stores an empty list');
-  assert.equal((html.match(/data-notify-kind[^>]*disabled>/g) || []).length, 30, 'every kind row disabled in inherit mode');
+  assert.equal((html.match(/data-notify-kind[^>]*disabled>/g) || []).length, 39, 'every kind row disabled in inherit mode');
   const eff = html.indexOf('id="prdSettingsNotifyEffective"');
   assert.match(html.slice(eff, eff + 200), /display:block/, 'effective line visible while inheriting');
   assert.match(html, /prd\.blocked, prd\.completed/);

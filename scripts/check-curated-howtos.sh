@@ -24,7 +24,7 @@ CURATED=(
     cross-agent-memory chat-and-llm-quickstart voice-input mcp-tools
     pipeline-chaining automata-orchestrator evals
     automaton-held-state-questions automaton-decompose-lint
-    automaton-daemon-task-modes
+    automaton-daemon-task-modes automaton-event-driven-supervisor
     imap-mcp-service
     compute-placement-ask
 )

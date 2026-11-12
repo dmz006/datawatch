@@ -73,6 +73,7 @@ autonomous_defect_batch_split
 autonomous_defect_batches
 autonomous_defect_intake
 autonomous_defect_tinyfix_check
+autonomous_event_kinds
 autonomous_event_log
 autonomous_events_pending
 autonomous_held_questions
@@ -86,6 +87,8 @@ autonomous_merge_pipeline_set_record
 autonomous_merge_pipeline_validate
 autonomous_merge_shadow_status
 autonomous_overlap_search
+autonomous_peer_events
+autonomous_peer_events_control
 autonomous_pending_item_add
 autonomous_pending_item_attach
 autonomous_pending_items

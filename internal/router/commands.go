@@ -2025,6 +2025,7 @@ dashboard work-map               work map of projects, Automata, tasks and sessi
 dashboard lane-pulse [window]    lane busy/waiting/idle traces and burn panel (window like 6h)
 dashboard series <name> [value]  lane-utilization, throughput-forecast, verifier-health, release-train, review-backlog, defects-per-day
 autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
+autonomous event-kinds [group=<g>]   every event kind a subscription can match, by group (* wakes the supervisor by default)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —

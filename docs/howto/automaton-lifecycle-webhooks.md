@@ -238,6 +238,9 @@ The envelope fields are:
   `verdict` were removed to keep the body under the size cap (64 KiB).
 - `forward` — present only on an event that arrived through peer forwarding
   (see [Peer forwarding](#peer-forwarding)).
+- `peer` — inside `event`, present only on an event that a federation peer
+  forwarded to this daemon: the registered name of that peer (see
+  [Peer forwarding](#peer-forwarding)).
 
 **Signature.** The signed string is the timestamp, a full stop, and the raw
 request body. The value is `hex(HMAC-SHA256(secret, "<t>" + "." + body))`.
@@ -414,6 +417,14 @@ answered with `202` and then:
 - shown in human-readable sinks with the words `(forwarded from <origin host>)`;
 - carried in `mcp_queue` events and in webhook envelopes with its `forward`
   block, so the origin is visible to your code;
+- stamped with `peer`, the registered name of the peer that sent it. The
+  receiver takes the name from the authenticated peer identity of the request,
+  never from the body, so a `peer` value inside the payload is ignored. A
+  forward delivered by an admin caller (not a registered peer) has no `peer`,
+  and neither does an event that started on the receiving daemon. A
+  subscription can select on it with the filter field `peer`, so one rule can
+  cover only `hub-east`'s events (see
+  [Events from a federation peer](automaton-lifecycle-subscriptions.md#events-from-a-federation-peer));
 - never written to the receiving daemon's Automaton state, and never used to
   drive an Automaton. It is a notification only.
 
@@ -436,6 +447,24 @@ are audited. There is no outbox: forwarding is best-effort. The sending
 daemon's own Automaton state is still the record, and the peer can read it
 through the API once it is back. A daemon restart forgets any retry that is in
 progress.
+
+A peer that is down never delays or drops local delivery. Whether it hangs or
+refuses connections, every local subscription (comm, session, topic, alert,
+`mcp_queue` and webhook) and the built-in alert, topic and comm sinks still get
+each local event in the normal time, exactly once. When the peer comes back,
+forwarding resumes without a restart; only the events dropped in between are
+lost.
+
+**Reading a peer's events.** The daemon code has a second, opposite direction:
+a peer event subscription that reads a registered peer's pending-events queue
+and feeds each event into local dispatch with `peer` set. **No release setting
+or surface starts it yet**, so it is not something you can turn on; to receive
+a peer's events here, set up forwarding on the peer as described above. When it
+is wired it needs the `autonomous:read` grant for that peer (not
+`autonomous:write`), reads lifecycle events only (never session output, secrets
+or configuration), drops an event the peer itself received as forwarded so two
+peers cannot echo events back and forth, and follows the same
+`autonomous.notify.forwarding.enabled` switch.
 
 **Audit records for forwarding.** The sending side writes
 `autonomous_lifecycle_forward_delivery` (CEF name
@@ -467,6 +496,7 @@ the body.
 | Peer answers `400` | The envelope is malformed, or it is over the size cap | Check that both daemons use the same `max_body_bytes`. |
 | Peer answers `503` | Forwarding is off on the receiver, or its lifecycle engine is not wired. The sender treats `503` as temporary and retries. | Turn forwarding on at the receiver. A permanent `503` ends in a dropped delivery and an alert. |
 | Alert: `payload … over the … byte cap` | The event is still too large after its `decision` and `verdict` are removed | Raise `autonomous.notify.webhook.max_body_bytes` (on both daemons when forwarding). |
+| A subscription with a `peer` filter never fires | The filter only matches events a registered peer forwarded here. Forwarding is off at this daemon, the sender has no peer subscription naming this daemon, or the name is not the peer's registered name | Turn on `autonomous.notify.forwarding.enabled` here, check the sender's subscription, and copy the name from `datawatch federation peer list`. A local event never matches. |
 | Peer offline, events missing on the peer | Forwarding has no outbox. A dropped event is not replayed. | Read the Automaton state through the API. Watch the forward alert and audit to see which events were dropped. |
 
 ## See also

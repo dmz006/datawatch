@@ -698,7 +698,11 @@ Two subscription sinks send Automaton lifecycle events out of the daemon. **Both
 - **Dropped delivery** — a webhook or peer delivery that failed its last attempt. It raises one error-level alert and writes a final audit record. The subscription itself stays armed.
 - **Peer forwarding** — sending a matching lifecycle event to another datawatch daemon that is registered as a federation peer with the `autonomous:write` capability. The subscription names the peer; no address or token is stored in the subscription.
 - **Peer sink** — the subscription sink type that uses peer forwarding. Its target is the registered peer name.
-- **Forwarded event** — a lifecycle event received from another daemon through peer forwarding. It is re-emitted locally with its origin host, is shown as "(forwarded from …)" in human sinks, and is never forwarded on or used to drive an Automaton.
+- **Forwarded event** — a lifecycle event received from another daemon through peer forwarding. It is re-emitted locally with its origin host, is shown as "(forwarded from …)" in human sinks, and is never forwarded on or used to drive an Automaton. It carries the sending peer's name as `peer`.
+- **Peer name on an event** (`peer`) — the registered name of the federation peer that delivered a forwarded event. The receiving daemon sets it from the authenticated identity of the request, never from the payload, so a `peer` value in the body is ignored. A locally originated event, and a forward delivered by an admin caller, has none.
+- **Peer filter** — the optional `peer` field of a subscription filter (and the `peer` parameter of the MCP lifecycle events resource). It matches only events that peer forwarded to this daemon; a local event never matches it. It must be 1–64 letters, digits, `.`, `_` or `-`. It is set through REST and the MCP resource URI; the CLI, comm verb, `autonomous_subscribe` tool and PWA form have no field for it yet. See [Events from a federation peer](howto/automaton-lifecycle-subscriptions.md#events-from-a-federation-peer).
+- **Peer event subscription** — the pull direction of federation: this daemon reads a registered peer's pending-events queue with the peer's stored bearer token and feeds each event into local dispatch with `peer` set. It needs the `autonomous:read` grant for the peer, reads lifecycle events only, and drops an event the peer had itself received as forwarded. It runs only while `autonomous.notify.forwarding.peer_events` and `autonomous.notify.forwarding.enabled` are both true, and you start, stop and read it with `datawatch autonomous peer-events` (also the `autonomous peer-events` comm verb, `/api/autonomous/peer-events` on REST and the `autonomous_peer_events` and `autonomous_peer_events_control` MCP tools).
+- **Peer down** — a federation peer that hangs or refuses connections. It never delays or drops local delivery: every local sink still receives each local event once, and forwarding resumes when the peer returns, with no outbox for what was dropped.
 - **Hop cap and visited list** — the loop guard for forwarding. A forwarded event records the origin host, the number of hops and the hosts it has passed through. A receiving daemon refuses an event that started on its own host, that already visited it, or that has reached the hop cap.
 
 ---
@@ -1897,10 +1901,68 @@ are CRUD-ed and persisted (`automations.jsonl`, managed via REST
 `/api/automations` and MCP `automation_*` tools) but no execution loop
 consumes the edges yet.
 
+<a id="event-kind-registry-entry"></a>
+**Event kind registry** — the one in-daemon list of every lifecycle event
+kind a subscription or notify set may name, each with a one-line
+description and a group (`automaton`, `task`, `review`, `capacity`,
+`budget`). The subscription validator and the notify-event validator derive
+from it, and the web subscription form loads its kind checkboxes from it. The
+Automaton notify-event pickers still carry a built-in copy of the list. A
+plugin may register further kinds and sink types at start-up; they validate
+like the built-in ones. Full table:
+[api/autonomous.md](api/autonomous.md#lifecycle-event-kinds).
+<a id="event-kind-listing"></a>
+**Event kind listing** — the read-only view of the event kind registry, so
+you can see what a subscription can name without reading a table. Each kind
+shows its group, its one-line description and whether it is in the default set
+that wakes the supervisor. REST `GET /api/autonomous/event-kinds`, the
+`autonomous_event_kinds` MCP tool, `datawatch autonomous event-kinds
+[--group G] [--json]`, `autonomous event-kinds [group=<g>]` on the comm channel
+and the kind checkboxes of the web subscription form all show the same list,
+including kinds a plugin registered. It changes nothing.
+<a id="subscription-preview"></a>
+**Subscription preview** — `POST /api/autonomous/subscriptions/preview`, a
+read-only count of what a filter (`kinds`, `project`, `owner`) matches in the
+last 24 hours, with the newest 20 matches. It stores nothing and does not apply
+the notify set. Its `kinds` are the Events log's own kinds (`watch`, `decision`,
+`retry`, `check`, `cleanup`, `alert`, `error`), counted from the Events log, or
+any lifecycle kind the picker lists (such as `task.failed`), counted from the
+lifecycle events this daemon recorded since it started; `lifecycle_since` in the
+answer says when that recording began.
+The web subscription form's "Would have matched in the last day" line is its
+only caller. See [howto/automaton-lifecycle-subscriptions.md](howto/automaton-lifecycle-subscriptions.md#find-the-kinds-and-preview-a-filter).
+<a id="mcp-resource-subscription"></a>
+**MCP resource subscription** — a push path for MCP clients that stores
+nothing. With `mcp.resource_subscriptions` on (off by default; restart to
+apply), a client calls `resources/subscribe` on
+`datawatch://events/lifecycle?kinds=…&level=…` and receives
+`notifications/resources/updated` for each matching lifecycle event. It uses
+the same filter rules, kind list and notify-set gate as a stored
+[lifecycle event subscription](#lifecycle-event-subscription), lives only as
+long as the MCP session (at most 32 per session) and never changes how stored
+subscriptions deliver. See [mcp.md](mcp.md#resource-subscriptions).
+
+**Supervisor event kinds** — the opt-in lifecycle event kinds that let an
+event-driven supervisor wake on a state instead of polling for it. The
+*condition* kinds `automaton.stuck_running`, `automaton.merge_ready` and
+`automaton.tasks_done_or_cancelled` are edge-triggered: sent once when the
+condition starts to hold and again only after it clears.
+`task.capacity_wait_too_long` is sent once per waiting episode when a task
+has waited for a lane longer than half of
+`autonomous.capacity_wait_timeout_seconds`. `burn_guard.rung_changed` is
+sent when the burn guard's rung changes and carries the old and new rung;
+it belongs to no Automaton, so only the global notify tier can allow it.
+`judge.verdict_block` / `judge.verdict_warn` / `judge.verdict_pass` are sent
+once when a judge verdict with that outcome is recorded, and
+`task.final_gate_failed` once when a final gate task fails. None of them
+changes a status, verdict or gate outcome.
+
+<a id="lifecycle-event-subscription"></a>
 **Lifecycle event subscription** — a persisted rule that maps an Automaton
 lifecycle event (PRD/task status changes, `task.session_started` /
-`task.session_cleared`, `prd.updated`, and the opt-in warning kinds
-`scope_warning` and `guardrail_warn`) to a delivery sink: a comm router,
+`task.session_cleared`, `prd.updated`, the question kinds, the opt-in
+warning kinds `scope_warning` and `guardrail_warn`, and the opt-in
+*supervisor event kinds* above) to a delivery sink: a comm router,
 a datawatch session (bridge `POST /send` preferred, `SendInput` fallback
 tagged `lifecycle-sub`), a push topic, the in-app alert store, or a named
 **pending events queue** (`mcp_queue` sink) that a client polls. Options:
@@ -2326,6 +2388,33 @@ What happens to an item that came from the file when its row has disappeared fro
 - **`supervisor_loop.lane_count.min`** — The lowest lane count the loop may set.
 <a id="supervisor-loop-lane-count-max"></a>
 - **`supervisor_loop.lane_count.max`** — The highest lane count the loop may set. 0 means no bounds, so the lane count step moves nothing.
+<a id="supervisor-loop-wake-enabled"></a>
+- **`supervisor_loop.wake.enabled`** — Turns the event wake on. When on, a lifecycle event of a kind listed in [`supervisor_loop.wake.kinds`](#supervisor-loop-wake-kinds) starts a supervisor pass at once instead of waiting for the next scheduled check; the schedule stays as the fallback. Off by default, so the supervisor keeps running on its schedule alone until you switch it on.
+<a id="supervisor-loop-wake-kinds"></a>
+- **`supervisor_loop.wake.kinds`** — The event kinds that wake the supervisor, as a list. Each kind must be one a subscription can filter on (`datawatch autonomous event-kinds` lists them); an unknown or duplicate kind is refused, and a hand-edited config with one falls back to the default list. The default list is a blocked Automaton (`prd.blocked`), a task needing review (`task.review_needed`), a failed task (`task.failed`), a failed final gate (`task.final_gate_failed`), every judge verdict (`judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass`), every task of an Automaton done or cancelled (`automaton.tasks_done_or_cancelled`), an Automaton stuck running (`automaton.stuck_running`), a task waiting too long for capacity (`task.capacity_wait_too_long`) and a burn guard rung change (`burn_guard.rung_changed`). Over the CLI and the comm channel the list is written comma-separated; the list may not be empty while the wake is on, and holds at most 64 kinds.
+<a id="supervisor-loop-wake-coalesce-seconds"></a>
+- **`supervisor_loop.wake.coalesce_seconds`** — The quiet window, in seconds, after a wake: further wake events arriving within it are handled by the same pass, so a burst of events does not start a pass per event. Between 0 and 3600; 0 wakes on every event. Default 30.
+<a id="supervisor-loop-wake-fallback-interval-minutes"></a>
+- **`supervisor_loop.wake.fallback_interval_minutes`** — How often, in minutes, the supervisor still runs when no event wakes it. Between 1 and 1440. The default of 20 equals the scheduled check, so turning the wake on changes nothing about the schedule.
+<a id="supervisor-wake-set"></a>
+- **`supervisor-wake` subscription set** — The built-in set of lifecycle subscriptions the daemon registers while [`supervisor_loop.wake.enabled`](#supervisor-loop-wake-enabled) is on, one per kind in [`supervisor_loop.wake.kinds`](#supervisor-loop-wake-kinds). Matching events are folded within the quiet window and typed into the supervisor session as a `supervisor wake: <kind> automaton=<id> task=<id>` line. Nothing is registered while the wake is off, and your own subscriptions are never changed. If no supervisor session is running the wake is dropped and the scheduled check covers it. Status: `GET /api/supervisor-loop/wake`, `datawatch supervisor-loop wake`, `supervisor wake` on the comm channel, the `wake` object of the `supervisor_loop_stats` MCP tool, and **Settings → Automata → Supervisor wake**.
+
+Terms used by the [event-driven supervisor how-to](howto/automaton-event-driven-supervisor.md):
+
+<a id="event-kind"></a>
+- **Event kind** — the name of one sort of lifecycle event, such as `task.failed` or `automaton.stuck_running`. The kinds are a closed set held in the [event kind registry](#event-kind-registry-entry); a subscription, the notify set and `supervisor_loop.wake.kinds` may name only a kind in it, and an unknown kind is refused when you save. Built-in kinds are fixed; an extension adds its own at start-up with `autonomous.RegisterEventKind` (lowercase dotted name, a one-line description of at most 200 characters, one of the groups Automaton, Task, Review, Capacity or Budget). Registering a kind makes it valid and lists it on every surface; it does not emit it. List them with `datawatch autonomous event-kinds`.
+<a id="subscription"></a>
+- **Subscription** — one stored rule that says "when an event matching this filter fires, deliver it to this sink". The filter names kinds and/or a level, and may narrow to one Automaton, one task or one peer. A subscription never widens what the notify set allows. It is different from the *wake*, which is a built-in set the daemon keeps for the supervisor, and from an *MCP resource subscription*, which belongs to one MCP session and stores nothing. See [lifecycle event subscription](#lifecycle-event-subscription).
+<a id="sink"></a>
+- **Sink** — where a subscription delivers: `comm` (a messaging channel), `session` (a datawatch session), `topic` (the push topic bus), `alert` (the in-app alert store), `mcp_queue` (a named queue a client polls), `webhook` (an outbound HTTPS call) or `peer` (another federation peer). An extension may register a further sink type with `autonomous.RegisterSinkType`; the daemon accepts and stores it, but its delivery engine does not deliver to it, so the extension must deliver the events itself.
+<a id="wake"></a>
+- **Wake** — starting a supervisor pass because an event arrived instead of waiting for the next scheduled check. It is controlled by `supervisor_loop.wake.enabled`, `supervisor_loop.wake.kinds`, `supervisor_loop.wake.coalesce_seconds` and `supervisor_loop.wake.fallback_interval_minutes`, and on each wake runs a supervisor loop pass at once and, when a supervisor session is running, delivers a `supervisor wake: <kind> automaton=<id> task=<id>` line into it. The daemon registers the wake when `supervisor_loop.wake.enabled` turns on, within a few seconds and with no restart.
+<a id="coalesce"></a>
+- **Coalesce** — fold events that arrive close together into one delivery. For the wake it is the quiet window `supervisor_loop.wake.coalesce_seconds` (0 to 3600, default 30; 0 wakes on every event): events inside the window share one pass, and events that arrive during a pass wait for the next one. For a stored subscription it is the `coalesce` flag, which batches human-facing sinks (comm and alert) per quiet window.
+<a id="fallback-check"></a>
+- **Fallback check** — the scheduled supervisor pass that still runs when no event wakes the supervisor, so a missed or never-sent event is caught on the next pass. Its interval is `supervisor_loop.wake.fallback_interval_minutes` (1 to 1440, default 20). While the wake is on the scheduled check runs a pass only when that many minutes have passed since its last pass; with the wake off it runs on every idle tick, as before. The scheduler reads it live.
+<a id="peer-event"></a>
+- **Peer event** — a lifecycle event that came from a federation peer: one the peer forwarded to this daemon (it carries `peer`, the sender's registered name, and a `forward` block with the origin host and hops), or, in the pull direction that no setting switches on yet, one read from the peer's pending-events queue. A peer event feeds notification sinks, the wake and MCP resource subscriptions; it is never written to Automaton state and never forwarded on. Only lifecycle events cross a peer: session output, secrets and configuration do not. See [Peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding).
 
 **Tag subtree count** — the number of distinct Automata under a tag, counting Automata that carry the tag or any tag below it. An Automaton that carries two of the tags in the subtree is counted once. It is the main count the tag browser shows. Sessions have their own subtree count, which also includes the tags a session inherits. The direct count (Automata carrying exactly that tag) is available as a tooltip when `autonomous.tags.direct_counts_visible` is on. See [howto/automata-tags.md](howto/automata-tags.md).
 

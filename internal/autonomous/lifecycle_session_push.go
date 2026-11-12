@@ -467,20 +467,8 @@ func (e *LifecycleSubscriptionEngine) handle(sub Subscription, ev LifecycleEvent
 	// one-shot deletion — the resolver runs first, this subscription's
 	// filter only narrows it (NotifyEventAllowed). A gated one-shot is
 	// simply ignored and stays armed.
-	if !e.m.NotifyEventAllowed(ev) {
+	if !e.m.LifecycleEventDeliverable(sub.Filter, ev) {
 		return
-	}
-	if sub.Filter.AutomationID != "" {
-		// Matches() treats AutomationID as a wildcard (the event carries
-		// no Automation membership); resolve it here, at dispatch time,
-		// per the LifecycleFilter.AutomationID contract.
-		owner := ""
-		if store := e.m.AutomationStore(); store != nil {
-			owner = store.OwnerOf(ev.PRDID)
-		}
-		if owner != sub.Filter.AutomationID {
-			return
-		}
 	}
 
 	switch sub.Sink.Type {
@@ -704,4 +692,26 @@ func (e *LifecycleSubscriptionEngine) audit(action string, details map[string]an
 		return
 	}
 	fn(action, details)
+}
+
+// LifecycleEventDeliverable applies the two checks every subscription runs
+// after the dispatcher has matched its filter: the resolved notify-event set
+// (NotifyEventAllowed), then the Automation scope. LifecycleFilter.Matches
+// treats AutomationID as a wildcard because an event carries no Automation
+// membership, so a filter that names one is resolved here, at dispatch time,
+// through the Automation store. The persisted-subscription engine and the
+// MCP resource subscriptions both deliver through this one check, so a kind
+// the Automaton's notify set excludes is never delivered on either path.
+func (m *Manager) LifecycleEventDeliverable(f LifecycleFilter, ev LifecycleEvent) bool {
+	if !m.NotifyEventAllowed(ev) {
+		return false
+	}
+	if f.AutomationID == "" {
+		return true
+	}
+	owner := ""
+	if store := m.AutomationStore(); store != nil {
+		owner = store.OwnerOf(ev.PRDID)
+	}
+	return owner == f.AutomationID
 }

@@ -272,6 +272,11 @@ func (s *Server) RegisterResources() {
 			MIMEType:    t.mimeType,
 		})
 	}
+
+	// The lifecycle events resource exists only with mcp.resource_subscriptions on.
+	if s.resourceSubs != nil {
+		s.registerLifecycleEventsResource()
+	}
 }
 
 // ── Static resource handlers ───────────────────────────────────────────────
