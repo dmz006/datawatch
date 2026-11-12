@@ -48,6 +48,10 @@ type FakeTmux struct {
 	// back to always resizing), matching a real tmux session that hasn't
 	// had NewSessionWithSize called yet.
 	WindowSizes map[string][2]int
+
+	// ListSessionsErr, when set, is returned by ListSessions in place of the
+	// session list, so a test can make the terminal listing fail.
+	ListSessionsErr error
 }
 
 // FakeTmuxCall records one method invocation.
@@ -250,6 +254,9 @@ func (f *FakeTmux) PaneCommand(session string) string {
 func (f *FakeTmux) ListSessions(prefix string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.ListSessionsErr != nil {
+		return nil, f.ListSessionsErr
+	}
 	var names []string
 	for name := range f.sessions {
 		if prefix == "" || len(name) >= len(prefix) && name[:len(prefix)] == prefix {
