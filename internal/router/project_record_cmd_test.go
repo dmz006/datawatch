@@ -50,6 +50,7 @@ func TestProjectRecordParseVerbs(t *testing.T) {
 		"project arcs acme",
 		"project set acme owner platform",
 		"project progress acme",
+		"project timeline acme focus=a1",
 	} {
 		c := Parse(in)
 		if c.Type != CmdProject {
@@ -69,7 +70,7 @@ func TestProjectRecordUnknownVerbStillRejected(t *testing.T) {
 	if !strings.Contains(out, `Unknown project verb "frobnicate"`) {
 		t.Errorf("unknown verb not reported:\n%s", out)
 	}
-	if !strings.Contains(out, "project show|arcs|progress <project-name>") {
+	if !strings.Contains(out, "project show|arcs|progress|timeline <project-name>") {
 		t.Errorf("usage does not list record verbs:\n%s", out)
 	}
 }
@@ -252,5 +253,81 @@ func TestProjectRecordHandlersLoopback(t *testing.T) {
 	out = strings.Join(router.HandleTestMessage("project show ghost"), "\n")
 	if !strings.Contains(out, "HTTP 404") {
 		t.Errorf("404 not surfaced:\n%s", out)
+	}
+}
+
+const projectTimelineBody = `{
+  "project": "acme", "level": "arcs", "total": 3, "has_more": true, "next_cursor": "c2",
+  "rows": [
+    {"kind": "arc", "id": "a1", "title": "Core", "first": "2026-11-01T10:00:00Z", "last": "2026-11-05T10:00:00Z"},
+    {"kind": "arc", "id": "a2", "title": "", "first": "2026-11-06T10:00:00Z", "last": null, "running": true},
+    {"kind": "arc", "id": "a3", "title": "Later", "first": null, "last": null}
+  ]
+}`
+
+func TestFormatProjectTimeline(t *testing.T) {
+	out := formatProjectTimeline("acme", projectTimelineBody)
+	for _, want := range []string{
+		"Timeline for project acme (arcs, 3 rows)",
+		"arc Core: 2026-11-01T10:00:00Z to 2026-11-05T10:00:00Z",
+		"arc a2: 2026-11-06T10:00:00Z to now",
+		"arc Later: - to -",
+		"more rows exist. Continue with: project timeline acme level=arcs cursor=c2",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if got := formatProjectTimeline("acme", "nope"); got != "nope" {
+		t.Errorf("non-JSON should pass through, got %q", got)
+	}
+	empty := formatProjectTimeline("acme", `{"level":"arcs","rows":[]}`)
+	if !strings.Contains(empty, "nothing to show") || strings.Contains(empty, "more rows") {
+		t.Errorf("empty reply:\n%s", empty)
+	}
+}
+
+func TestProjectTimelineQuery(t *testing.T) {
+	q, err := projectTimelineQuery([]string{"focus=a1", "level=tasks", "limit=5", "cursor=x"})
+	if err != nil || q.Get("focus") != "a1" || q.Get("level") != "tasks" || q.Get("limit") != "5" || q.Get("cursor") != "x" {
+		t.Errorf("query = %v, err = %v", q, err)
+	}
+	for _, bad := range []string{"nope", "color=red", "limit=0", "limit=x", "focus="} {
+		if _, err := projectTimelineQuery([]string{bad}); err == nil {
+			t.Errorf("%q should be refused", bad)
+		}
+	}
+}
+
+func TestProjectTimelineLoopback(t *testing.T) {
+	var gotQuery string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/projects/acme/timeline", func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(projectTimelineBody))
+	})
+	mux.HandleFunc("/api/projects/ghost/timeline", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "project not found", http.StatusNotFound)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	router := loopbackRouter(t, srv)
+
+	out := strings.Join(router.HandleTestMessage("project timeline acme focus=a1 level=automata"), "\n")
+	if !strings.Contains(out, "arc Core") || gotQuery != "focus=a1&level=automata" {
+		t.Errorf("reply %q, query %q", out, gotQuery)
+	}
+	out = strings.Join(router.HandleTestMessage("project timeline ghost"), "\n")
+	if !strings.Contains(out, "HTTP 404") {
+		t.Errorf("404 not surfaced:\n%s", out)
+	}
+	out = strings.Join(router.HandleTestMessage("project timeline acme bogus"), "\n")
+	if !strings.Contains(out, "unknown option") {
+		t.Errorf("bad option not reported:\n%s", out)
+	}
+	out = strings.Join(router.HandleTestMessage("project timeline"), "\n")
+	if !strings.Contains(out, "Usage: project timeline <project-name>") {
+		t.Errorf("usage missing:\n%s", out)
 	}
 }
