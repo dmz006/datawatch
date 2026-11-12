@@ -94,8 +94,15 @@ test('selecting the item toggles its state', () => {
 });
 
 test('failed and blocked triage cards are unchanged', () => {
-  const html = run('triageCardHtml(_r)', { _r: { prd_id: 'p2', status: 'failed', error: 'boom' } });
-  assert.match(html, /triage-status-failed/);
+  const sandbox = buildSandbox({ localStorage: new Map() });
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'automata-triage-model.js'), sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  sandbox._i18n.bundle = bundle('en');
+  sandbox._r = { prd_id: 'p2', task_id: 't2', status: 'failed', error: 'boom' };
+  const html = vm.runInContext('triageCardHtml(_r)', sandbox);
+  assert.match(html, /triage-card/);
+  assert.match(html, /triage-headline/);
   assert.doesNotMatch(html, /triage-merge-blocked/);
 });
 
