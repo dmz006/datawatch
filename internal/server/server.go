@@ -417,6 +417,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)                                  // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)                                  // BL6 — operator override
 	apiMux.HandleFunc("/api/cost/report", api.handleCostReport)                                // cost report engine (internal/costreport)
+	apiMux.HandleFunc("/api/cost/series", api.handleCostSeries)                                // cost report time series: tokens and per-unit money by hour or day
 	apiMux.HandleFunc("/api/trace/session/", api.handleTraceSession)                           // trace: one session's events + roll-up
 	apiMux.HandleFunc("/api/trace/automaton/", api.handleTraceAutomaton)                       // trace: an Automaton's events + roll-up
 	apiMux.HandleFunc("/api/trace/rollup", api.handleTraceRollup)                              // trace: roll-ups by dimension

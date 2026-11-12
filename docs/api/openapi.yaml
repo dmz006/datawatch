@@ -7075,6 +7075,31 @@ paths:
         "200": {description: OK}
         "400": {description: Bad group_by or bound}
         "503": {description: Manager not available}
+  /api/cost/series:
+    get:
+      summary: Tokens and per-unit money over time, bucketed by hour or day
+      operationId: costSeries
+      tags: [Cost]
+      description: |
+        The cost report's time dimension over the spend ledger. One line per
+        Automaton, project (the Automaton's project tag, or its project
+        directory's name) or model (the backend the session ran on). Every
+        point carries `tokens_in`, `tokens_out` and their sum `tokens`; money
+        is carried in `units`, one entry per billing unit the bucket spans
+        (`dollars` for metered API spend, `points` for bundled plans, `none`
+        for free local inference) and is never summed across units. Each
+        line has one point per bucket in `buckets`, zero-filled. A line with
+        no spend in the window is omitted, so an empty window returns an
+        empty `groups` list. `unknown_spend_note` and `unknown_before` name
+        spend the ledger cannot see when the window reaches past its horizon.
+      parameters:
+        - {name: group_by, in: query, required: false, schema: {type: string, enum: [automaton, project, model], default: automaton}}
+        - {name: window, in: query, required: false, schema: {type: string}, description: "How far back from now: a duration such as 36h, 7d or 2w. Default is cost_report.default_window_days."}
+        - {name: bucket, in: query, required: false, schema: {type: string, enum: [hour, day]}, description: "Point width. Default is hour for windows up to 48 hours and day beyond. A window and bucket that need more than 1000 points are rejected."}
+      responses:
+        "200": {description: OK}
+        "400": {description: Bad group_by, window or bucket}
+        "503": {description: Manager not available}
   /api/cost/usage:
     get:
       summary: Per-session usage + cost detail

@@ -719,21 +719,6 @@ func Build(
 		backends              []string
 		units                 map[string]*UnitTotal
 	}
-	unitAcc := func(m map[string]*UnitTotal, mode string) *UnitTotal {
-		unit := UnitDollars
-		switch mode {
-		case config.BillingModeBundledPlan:
-			unit = UnitPoints
-		case config.BillingModeFreeLocal:
-			unit = UnitNone
-		}
-		u := m[unit]
-		if u == nil {
-			u = &UnitTotal{Unit: unit, BillingMode: mode}
-			m[unit] = u
-		}
-		return u
-	}
 	total := map[string]*UnitTotal{}
 	buckets := map[string]*acc{}
 	add := func(key string) *acc {
@@ -787,25 +772,7 @@ func Build(
 			}
 			p := billing(r.Backend).Profile
 			for _, m := range []map[string]*UnitTotal{a.units, total} {
-				u := unitAcc(m, p.Mode)
-				u.Sessions++
-				u.TokensIn += r.TokensIn
-				u.TokensOut += r.TokensOut
-				u.ActiveSeconds += r.ActiveSeconds
-				if usdRec == nil {
-					continue
-				}
-				switch u.Unit {
-				case UnitDollars:
-					u.Dollars = addPtr(u.Dollars, *usdRec)
-				case UnitPoints:
-					if p.MonthlyPrice > 0 && finite(p.MonthlyPrice) {
-						if pc := p.PointCostEquivalent(); pc > 0 && finite(pc) {
-							u.Points = addPtr(u.Points, *usdRec/pc)
-						}
-						u.Percent = addPtr(u.Percent, *usdRec/p.MonthlyPrice*100)
-					}
-				}
+				foldUnit(m, p, r.TokensIn, r.TokensOut, r.ActiveSeconds, usdRec)
 			}
 		}
 		if rateFor == nil {
