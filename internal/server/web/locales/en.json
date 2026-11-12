@@ -5082,5 +5082,11 @@
   "pending_item_field_state": "Pending item state",
   "pending_item_insert_heading": "Or insert a pending item (work with no Automaton yet)",
   "pending_item_insert_none": "No waiting pending items.",
-  "pending_item_insert_reason_in_use": "already in Automation %1$s"
+  "pending_item_insert_reason_in_use": "already in Automation %1$s",
+  "compute_observed_peers_title": "Observed peers with no node",
+  "compute_observed_peers_hint": "These peers report in but have no compute node. Adding one needs an address you enter.",
+  "compute_observed_peer_add": "Add as a compute node",
+  "compute_observed_peer_add_tip": "Open the add form with this peer name filled in. You type the address; nothing is created until you save.",
+  "compute_unanswered_title": "Auto-created nodes that never answered",
+  "compute_unanswered_hint": "For review only. Nothing here is changed or removed automatically."
 }

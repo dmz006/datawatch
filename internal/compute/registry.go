@@ -146,10 +146,60 @@ func (r *Registry) Update(n *Node) error {
 		old.CreatedAt = time.Now().UTC()
 	}
 	n.CreatedAt = old.CreatedAt
+	if n.LastAnsweredAt.IsZero() {
+		n.LastAnsweredAt = old.LastAnsweredAt
+	}
 	n.UpdatedAt = time.Now().UTC()
 	cp := *n
 	r.nodes[n.Name] = &cp
 	return r.persistLocked()
+}
+
+// AnsweredPersistInterval is how much newer a LastAnsweredAt must be
+// than the stored one before MarkAnswered rewrites the file, so health
+// polling does not persist on every call.
+const AnsweredPersistInterval = 10 * time.Minute
+
+// MarkAnswered records that the named node's address answered at the
+// given time. Only LastAnsweredAt changes; the registry is persisted
+// only when the stored value was zero or is older than
+// AnsweredPersistInterval. Returns ErrNotFound if absent.
+func (r *Registry) MarkAnswered(name string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.nodes[name]
+	if !ok {
+		return ErrNotFound
+	}
+	at = at.UTC()
+	if !n.LastAnsweredAt.IsZero() && at.Sub(n.LastAnsweredAt) < AnsweredPersistInterval {
+		return nil
+	}
+	n.LastAnsweredAt = at
+	return r.persistLocked()
+}
+
+// UnansweredNode is one entry of the unanswered auto-created report.
+type UnansweredNode struct {
+	Name      string    `json:"name"`
+	Address   string    `json:"address"`
+	Kind      string    `json:"kind"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// UnansweredAutoCreated returns the auto-created nodes whose address
+// has never answered. It is a computed report; nothing is changed.
+func (r *Registry) UnansweredAutoCreated() []UnansweredNode {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []UnansweredNode{}
+	for _, n := range r.nodes {
+		if n.AutoCreated && n.LastAnsweredAt.IsZero() {
+			out = append(out, UnansweredNode{Name: n.Name, Address: n.Address, Kind: string(n.Kind), CreatedAt: n.CreatedAt})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // RecordBackendVersion stamps a version probe result onto the named
@@ -218,37 +268,65 @@ func (r *Registry) SetDrain(name string, drained bool, until time.Time, now time
 	return r.persistLocked()
 }
 
-// EnsureFromStatsPeer is the auto-create path: when a datawatch-stats
-// peer push arrives and no matching Node exists, create one with
-// sensible defaults (kind=remote, max_concurrent_models=1, etc.).
-// Returns the existing or newly-created Node.
-//
-// peerAddr is the http.Request RemoteAddr (host:port form is common);
-// it is normalized to carry an http:// scheme before storing.
-func (r *Registry) EnsureFromStatsPeer(peerName, peerAddr, shape string) (*Node, bool, error) {
-	peerAddr = normalizeAddress(peerAddr) // ensure http:// before compare/store
+// BindObservedPeer records the observer binding for a registered
+// observer peer. When a node with the peer's name exists and its
+// ObserverPeer is empty, ObserverPeer is set to the peer name; no other
+// field (Address, Kind, ...) is ever touched. When no node carries the
+// name nothing is created and bound is false. The registry is persisted
+// only when ObserverPeer actually changed.
+func (r *Registry) BindObservedPeer(peerName string) (bound bool, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if existing, ok := r.nodes[peerName]; ok {
-		// Refresh address if it changed (peer might have moved).
-		if peerAddr != "" && existing.Address != peerAddr {
-			existing.Address = peerAddr
-			existing.UpdatedAt = time.Now().UTC()
-			_ = r.persistLocked()
-		}
-		cp := *existing
-		return &cp, false, nil
+	n, ok := r.nodes[peerName]
+	if !ok {
+		return false, nil
 	}
-	n := AutoCreatedFromStatsPeer(peerName, peerAddr, shape)
-	if err := n.Validate(); err != nil {
-		return nil, false, err
+	if n.ObserverPeer != "" {
+		return true, nil
 	}
-	cp := *n
-	r.nodes[n.Name] = &cp
+	n.ObserverPeer = peerName
+	n.UpdatedAt = time.Now().UTC()
 	if err := r.persistLocked(); err != nil {
-		return nil, false, err
+		return false, err
 	}
-	return n, true, nil
+	return true, nil
+}
+
+// ObservedPeer is an observer peer as the registry sees it: a name and
+// a shape, with no compute node bound to it.
+type ObservedPeer struct {
+	Name  string `json:"name"`
+	Shape string `json:"shape,omitempty"`
+}
+
+// BoundPeerNames returns the set of observer peer names that a compute
+// node is bound to: either a node carries the name, or a node's
+// ObserverPeer equals it. This is the one definition of "bound" shared
+// by the free-peers route and ObservedOnly.
+func (r *Registry) BoundPeerNames() map[string]bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	bound := make(map[string]bool, len(r.nodes)*2)
+	for _, n := range r.nodes {
+		if n.ObserverPeer != "" {
+			bound[n.ObserverPeer] = true
+		}
+		bound[n.Name] = true
+	}
+	return bound
+}
+
+// ObservedOnly returns the given peers that have no compute node bound
+// to them. It is a computed view; nothing is stored.
+func (r *Registry) ObservedOnly(peers []ObservedPeer) []ObservedPeer {
+	bound := r.BoundPeerNames()
+	out := []ObservedPeer{}
+	for _, p := range peers {
+		if !bound[p.Name] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // load reads the JSON file (if present). Missing file = empty registry.

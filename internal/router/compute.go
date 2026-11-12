@@ -29,12 +29,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/compute"
 )
 
 const computeUsage = `Usage:
   compute                                          list nodes
   compute node                                     list nodes
-  compute node list                                list nodes
+  compute node list                                list nodes, observed peers with no node, and auto-created nodes that never answered
   compute node get <name>                          fetch one
   compute node add <name> kind=<k> [k=v ...]       add (kind = ollama|openai-compat|gemini-api|opencode-api)
                                                    pin: node_pinned_model=<model> allow_model_swap=true|false
@@ -92,15 +94,25 @@ TLS keys (https nodes):
                                    system roots; default off
   update replaces the whole node, so a tls_ key or verify_tls you leave out is cleared`
 
+// replyComputeNodeList replies with the node list as plain text ending in
+// the observed-peers and unanswered-auto-created sections.
+func (r *Router) replyComputeNodeList(label string) {
+	out, err := r.commGet("/api/compute/nodes", nil)
+	if err != nil {
+		r.reply(label, err.Error())
+		return
+	}
+	if txt, ferr := compute.FormatListText([]byte(out), compute.CommAddLine); ferr == nil {
+		r.reply(label, txt)
+		return
+	}
+	r.reply(label, prettyJSON(out))
+}
+
 func (r *Router) handleComputeCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
 	if text == "" || strings.EqualFold(text, "node") || strings.EqualFold(text, "node list") {
-		out, err := r.commGet("/api/compute/nodes", nil)
-		if err != nil {
-			r.reply("compute", err.Error())
-			return
-		}
-		r.reply("compute", prettyJSON(out))
+		r.replyComputeNodeList("compute")
 		return
 	}
 	parts := strings.SplitN(text, " ", 2)
@@ -149,12 +161,7 @@ func (r *Router) handleComputeCmd(cmd Command) {
 	}
 	switch subVerb {
 	case "list", "":
-		out, err := r.commGet("/api/compute/nodes", nil)
-		if err != nil {
-			r.reply("compute node list", err.Error())
-			return
-		}
-		r.reply("compute node list", prettyJSON(out))
+		r.replyComputeNodeList("compute node list")
 	case "get":
 		if tail == "" {
 			r.reply("compute node get", "Usage: compute node get <name>")

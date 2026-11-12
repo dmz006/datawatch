@@ -145,6 +145,19 @@ func (a *clusterLookupAdapter) GetClusterProfile(name string) (kubeconfigPath, c
 	return "", cp.Context, nil, nil
 }
 
+// observedPeerList returns the registered observer peers as the compute
+// registry's ObservedPeer view; empty when no peer registry is wired.
+func (s *Server) observedPeerList() []compute.ObservedPeer {
+	out := []compute.ObservedPeer{}
+	if s.peerRegistry == nil {
+		return out
+	}
+	for _, p := range s.peerRegistry.List() {
+		out = append(out, compute.ObservedPeer{Name: p.Name, Shape: p.Shape})
+	}
+	return out
+}
+
 // serverNow is the clock the server uses for drain bookkeeping and node
 // health "now" checks. Tests override it with a fixed clock.
 var serverNow = func() time.Time { return time.Now().UTC() }
@@ -162,7 +175,11 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapComputeList) {
 			return
 		}
-		writeJSONOK(w, map[string]any{"nodes": s.computeReg.List()})
+		writeJSONOK(w, map[string]any{
+			"nodes":                   s.computeReg.List(),
+			"observed_peers":          s.computeReg.ObservedOnly(s.observedPeerList()),
+			"unanswered_auto_created": s.computeReg.UnansweredAutoCreated(),
+		})
 
 	case rest == "" && r.Method == http.MethodPost:
 		if !s.fedCap(w, r, federation.CapComputeWrite) {
@@ -200,7 +217,8 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
 				return
 			}
-			// Reachable — capture the backend version (non-fatal).
+			// Reachable — record the answer and capture the backend version (non-fatal).
+			n.LastAnsweredAt = serverNow()
 			s.captureBackendVersion(pctx, &n)
 		}
 		code := http.StatusBadRequest
@@ -448,7 +466,8 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
 				return
 			}
-			// Reachable — capture the backend version (non-fatal).
+			// Reachable — record the answer and capture the backend version (non-fatal).
+			n.LastAnsweredAt = serverNow()
 			s.captureBackendVersion(pctx, &n)
 		}
 		if err := s.computeReg.Update(&n); err != nil {
@@ -829,6 +848,9 @@ func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request,
 	if perr != nil {
 		http.Error(w, perr.Error(), http.StatusBadGateway)
 		return
+	}
+	if note == "" {
+		_ = s.computeReg.MarkAnswered(name, serverNow())
 	}
 	if note != "" {
 		writeJSONOK(w, map[string]any{"models": models, "kind": kind, "note": note})

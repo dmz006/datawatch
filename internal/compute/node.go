@@ -325,9 +325,9 @@ type Node struct {
 	// v7.0.0-alpha.23b — explicit binding to a registered observer peer
 	// (datawatch-stats). Empty = "no observer attached" (Node still
 	// works from declared config; just no live probe). Operator-set via
-	// PWA picker, CLI, comm verb, or MCP. Auto-set by EnsureFromStatsPeer
-	// to peer.Name on first push so the implicit name-match binding is
-	// preserved durably. Detach (=unset) is operator-driven; observer
+	// PWA picker, CLI, comm verb, or MCP. Set to the peer name by
+	// BindObservedPeer when a same-name node already exists, so the
+	// implicit name-match binding is preserved durably. Detach (=unset) is operator-driven; observer
 	// going offline does NOT clear this (Q4: observer-down ≠ Node-down).
 	ObserverPeer string `yaml:"observer_peer,omitempty" json:"observer_peer,omitempty"`
 
@@ -343,9 +343,15 @@ type Node struct {
 	DrainReason string    `yaml:"drain_reason,omitempty" json:"drain_reason,omitempty"`
 
 	// Bookkeeping.
-	CreatedAt   time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
-	UpdatedAt   time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
-	AutoCreated bool      `yaml:"auto_created,omitempty" json:"auto_created,omitempty"`
+	CreatedAt time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
+	UpdatedAt time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
+	// AutoCreated marks nodes stored by earlier versions that created
+	// them automatically; nothing creates new ones this way any more.
+	AutoCreated bool `yaml:"auto_created,omitempty" json:"auto_created,omitempty"`
+	// LastAnsweredAt is the last time the node's address answered a
+	// probe. Zero means it has never answered (including nodes stored
+	// before this field existed).
+	LastAnsweredAt time.Time `yaml:"last_answered_at,omitempty" json:"last_answered_at,omitempty"`
 
 	// Backend version capture (save-time version probe, see
 	// version_probe.go). BackendVersion is the normalized semver core
@@ -603,35 +609,6 @@ func validRoutingMode(m RoutingMode) bool {
 		}
 	}
 	return false
-}
-
-// AutoCreatedFromStatsPeer derives a sensible default Node when a
-// datawatch-stats peer pushes for the first time and no matching
-// Node exists yet. Operator can edit later via REST/MCP/CLI/comm/UI.
-//
-// v7.0.0-alpha.23: Kind defaults to KindOllama (safe assumption for
-// observed peers — they're typically running ollama). Operator can
-// re-pick via the form. Shape hint kept as a tag marker.
-func AutoCreatedFromStatsPeer(peerName, peerAddr, shape string) *Node {
-	now := time.Now().UTC()
-	autoTags := []string{"v7-cfg-migration"}
-	if strings.EqualFold(shape, "C") {
-		autoTags = append(autoTags, "shape:cluster")
-	}
-	return &Node{
-		Name:    peerName,
-		Kind:    KindOllama,
-		Address: peerAddr,
-		DeclaredCapacity: DeclaredCapacity{
-			MaxConcurrentModels: 1, // safe default; operator bumps for clusters
-		},
-		SchedulingPriority: 50,
-		AutoCreated:        true,
-		AutoTags:           autoTags, // alpha.23 Q7: PWA strips from display
-		ObserverPeer:       peerName, // alpha.23b: explicit binding to the registering peer
-		CreatedAt:          now,
-		UpdatedAt:          now,
-	}
 }
 
 // MigrateAutoTags is a one-time daemon-startup pass: any tag whose

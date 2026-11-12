@@ -13457,7 +13457,7 @@ function loadComputeNodesPanel() {
     // Session pattern). Inline form was wider than .app shell on
     // narrow viewports. The actual form lives in openComputeAddPanel().
     const addForm = `<button class="btn-primary" style="font-size:12px;padding:6px 14px;margin-top:10px;" onclick="openComputeAddPanel()">+ ${escHtml(t('compute_add_title')||'Add ComputeNode')}</button>`;
-    panel.innerHTML = intro + rows + addForm;
+    panel.innerHTML = intro + rows + computeObservedPeersHTML((d && d.observed_peers) || []) + computeUnansweredHTML((d && d.unanswered_auto_created) || []) + addForm;
     // Drained nodes: the list endpoint does not carry the live held-task
     // count, so fetch each drained node's /health endpoint and fill the
     // placeholder line ("N tasks still finishing") once it lands.
@@ -13478,6 +13478,48 @@ function loadComputeNodesPanel() {
   });
 }
 window.loadComputeNodesPanel = loadComputeNodesPanel;
+
+// Observed peers with no node: each row offers a one-line action that opens
+// the normal add form with the name filled and the address left empty.
+// Nothing is created until the operator submits that form.
+function computeObservedPeersHTML(peers) {
+  if (!Array.isArray(peers) || peers.length === 0) return '';
+  const btnStyle = 'font-size:10px;padding:1px 8px;border:1px solid var(--border);background:transparent;color:var(--text2);border-radius:6px;cursor:pointer;';
+  const items = peers.map(p => {
+    const name = (p && p.name) || '';
+    const shape = (p && p.shape) ? `<span style="color:var(--text2);font-size:10px;">${escHtml(p.shape)}</span>` : '';
+    return `<div class="compute-observed-peer" style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;background:var(--bg2);">
+      <strong>${escHtml(name)}</strong>${shape}
+      <button style="${btnStyle}margin-left:auto;" title="${escHtml(t('compute_observed_peer_add_tip')||'Open the add form with this peer name filled in. You type the address; nothing is created until you save.')}" onclick="computeAddFromObservedPeer(${escHtml(JSON.stringify(name))})">${escHtml(t('compute_observed_peer_add')||'Add as a compute node')}</button>
+    </div>`;
+  }).join('');
+  return `<div id="computeObservedPeers" style="margin-top:12px;">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${escHtml(t('compute_observed_peers_title')||'Observed peers with no node')}</div>
+    <div style="font-size:10px;color:var(--text2);font-style:italic;margin-bottom:6px;">${escHtml(t('compute_observed_peers_hint')||'These peers report in but have no compute node. Adding one needs an address you enter.')}</div>
+    ${items}
+  </div>`;
+}
+window.computeObservedPeersHTML = computeObservedPeersHTML;
+
+// Review aid only: auto-created nodes whose address never answered.
+function computeUnansweredHTML(list) {
+  if (!Array.isArray(list) || list.length === 0) return '';
+  const items = list.map(u => `<div class="compute-unanswered" style="display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;background:var(--bg2);">
+      <strong>${escHtml((u && u.name) || '')}</strong>
+      <span style="color:var(--text2);font-size:10px;">${escHtml((u && u.address) || '')}</span>
+    </div>`).join('');
+  return `<div id="computeUnanswered" style="margin-top:12px;">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${escHtml(t('compute_unanswered_title')||'Auto-created nodes that never answered')}</div>
+    <div style="font-size:10px;color:var(--text2);font-style:italic;margin-bottom:6px;">${escHtml(t('compute_unanswered_hint')||'For review only. Nothing here is changed or removed automatically.')}</div>
+    ${items}
+  </div>`;
+}
+window.computeUnansweredHTML = computeUnansweredHTML;
+
+// Open the add form for an observed peer: name prefilled, address empty.
+window.computeAddFromObservedPeer = function(name) {
+  openComputeAddPanel(null, { name: name });
+};
 
 // ── Compute node drain controls ──────────────────────────────────────────
 // The daemon drains a node (stop placing new work; in-flight work finishes):
@@ -14983,12 +15025,14 @@ window.computeToggleEnabled = function(name, currentlyDisabled) {
 //   `datawatch:11434` issue)
 // - Test Connection button BEFORE save (operator: "needs test
 //   connection on add")
-window.openComputeAddPanel = function(existingNode) {
+window.openComputeAddPanel = function(existingNode, prefill) {
   // GATE alpha.36 (operator 2026-05-10): unified Add + Edit. Pass an
   // existing node to switch into edit mode — name field becomes
   // read-only, all other fields pre-fill, Save uses PUT instead of
   // POST. Form structure is identical so operator sees the same UX.
   const isEdit = !!(existingNode && existingNode.name);
+  // prefill seeds an add form only (name today); it never switches to edit mode.
+  const initName = isEdit ? existingNode.name : ((prefill && prefill.name) || '');
   ensureFreeObserversCached();
   const host = document.querySelector('.app') || document.body;
   const existing = document.getElementById('computeAddPanel');
@@ -15018,7 +15062,7 @@ window.openComputeAddPanel = function(existingNode) {
     <form id="computeAddForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;gap:6px;">
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('compute_field_name_simple')||'Name')}</label>
-        <input id="computeNewName" class="form-input" placeholder="gpu-1" value="${isEdit ? escHtml(existingNode.name) : ''}" ${isEdit ? 'readonly style="opacity:0.7;cursor:not-allowed;"' : ''} />
+        <input id="computeNewName" class="form-input" placeholder="gpu-1" value="${escHtml(initName)}" ${isEdit ? 'readonly style="opacity:0.7;cursor:not-allowed;"' : ''} />
         <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_field_name_hint')||'Short identifier, lowercase letters/numbers/dashes (e.g. gpu-1, dev-laptop, prod-h100)')}</div>
       </div>
       <div class="wizard-field">

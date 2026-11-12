@@ -39,7 +39,7 @@ A Compute Node has:
 - **Identity** — a unique kebab-case name, a protocol kind, and the URL of the endpoint.
 - **Declared capacity** — GPU count, GPU memory, system RAM, and max concurrent model slots. Operator-stated; the monitoring sidecar fills in live data on top.
 - **Hardware spec** — OS, CPU architecture, GPU vendor, GPU platform, and GPU model. Used by the scheduler and the Compute filter UI.
-- **Observer peer** — an optional binding to a `datawatch-stats` monitoring peer that pushes live metrics for this node.
+- **Observer peer** — an optional binding to a `datawatch-stats` monitoring peer that pushes live metrics for this node. A peer never creates a node by pushing stats; you bind it here, or add it as a node from the *Observed peers with no node* list.
 - **Scheduling priority** — a 0–100 hint that tells the dispatcher which node to prefer when multiple nodes are eligible.
 - **Permissions** — which consumers (Council, sessions, Automata, `/api/ask`) may place workloads here.
 - **Maintenance windows** — operator-declared blackout periods when the scheduler skips this node.
@@ -379,6 +379,12 @@ datawatch marketplace catalog
 
 ![Compute Nodes card — enabled/disabled toggles, kind badges, and health icons](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-compute.png)
 
+**Adding an observed peer as a node:**
+
+1. On the Compute page, find the peer under **Observed peers with no node**.
+2. Click **Add as a compute node**. The node form opens with the name filled in and the address empty.
+3. Enter the address of the LLM endpoint and click Save. Nothing is created until you save.
+
 **Attaching an observer peer:**
 
 1. In the edit form, find the **Observer peer** field.
@@ -668,20 +674,65 @@ After editing `nodes.json` directly, send `datawatch reload` (or `SIGHUP`) to ap
 
 ---
 
-## Auto-created nodes
+## Observed peers and nodes
 
-When a `datawatch-stats` monitoring peer pushes its first metrics snapshot and no Compute Node with that peer's name exists yet, the daemon auto-creates a node with:
+A monitoring peer (`datawatch-stats`) that pushes stats **never creates a compute node** and never supplies a node address. The address a push arrives from is not an Ollama server, so it is never used as one.
 
-- `kind = ollama` (safe default — edit via the form if needed)
-- `address` = the peer's reported address
-- `max_concurrent_models = 1`
-- `scheduling_priority = 50`
-- `observer_peer` set to the peer name
-- `auto_created = true`
+- **Matching node exists.** If a node with the peer's name already exists, the peer is bound to it (the observer binding). The node's address is never changed by a push.
+- **No matching node.** The peer is listed as **Observed peers with no node**. It keeps reporting stats for monitoring, and nothing else happens until you decide.
 
-Auto-created nodes appear with a migration banner in the PWA prompting you to confirm the kind and capacity. They work immediately for routing but are incomplete until you fill in the hardware spec and confirm the kind.
+You see the *Observed peers with no node* list in five places:
 
-Leaked auto-created nodes (where the backing observer peer was deleted) are swept on daemon startup.
+- the Compute page (Settings → Compute);
+- the node list REST response, as `observed_peers`;
+- the `datawatch compute node list` output;
+- the `compute node list` reply on a messaging channel;
+- the `compute_node_list` MCP tool.
+
+Each listed peer has the action **Add as a compute node**. It opens the normal node form with the name filled in and the address empty. Nothing is created until you fill in the address and submit the form.
+
+Federated peers and compute nodes are separate things. Keep a peer for monitoring only, and add an Ollama or other LLM node through the federation only when you want one.
+
+### Auto-created nodes that never answered
+
+Earlier versions created a node automatically the first time a peer pushed stats, using the connection's source address. Some of those addresses never pointed at an LLM server. The review report **Auto-created nodes that never answered** (`unanswered_auto_created` in the REST response) lists the nodes that were created that way and whose address has never answered a probe.
+
+The report only lists. No node is deleted or disabled automatically because of it. Review each entry and delete the ones you do not need with the normal delete action (`datawatch compute node delete <name>`), or fix the address in the edit form.
+
+A node leaves the report when:
+
+- its address answers a probe or health check (for example after you correct the address and save, or run a health check);
+- you delete it; or
+- you delete it and add it again as a normal node.
+
+**Operator review after upgrading:**
+
+- Run `datawatch compute node list` and check both sections. Any node under *Auto-created nodes that never answered* was created from a push connection's source address and may not be an LLM server.
+- Peers under *Observed peers with no node* were never nodes and need no action unless you want to route work to them.
+- The daemon-startup sweep still removes auto-created nodes whose bound peer no longer exists. Nothing else deletes nodes for you.
+
+```sh
+# See observed peers and the unanswered report.
+datawatch compute node list
+#  Observed peers with no node:
+#    gpu-box-2 - add with: compute node add gpu-box-2 address=...
+#  Auto-created nodes that never answered:
+#    old-peer (ollama, <address>)
+
+# The same data as JSON (observed_peers, unanswered_auto_created).
+datawatch compute node list --json
+
+# Add an observed peer as a compute node (you supply the address).
+datawatch compute node add gpu-box-2 kind=ollama address=http://gpu-box-2:11434
+
+# Review and delete an unanswered auto-created node by hand.
+datawatch compute node delete old-peer
+```
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/compute/nodes
+#  → {"nodes":[...],"observed_peers":[{"name":"gpu-box-2"}],"unanswered_auto_created":[{"name":"old-peer","kind":"ollama","address":"..."}]}
+```
 
 ---
 
@@ -1177,9 +1228,9 @@ Check `maintenance_windows` on the node. An open-ended window (no `to` field) st
 
 The detail endpoint falls back in this order: (1) pull from `monitoring_endpoint`, (2) last cached snapshot from the bound `observer_peer`, (3) error. If neither is available, the response says so. Set `monitoring_endpoint` or wait for the observer peer to push a snapshot.
 
-### Auto-created node has wrong kind
+### Auto-created node has wrong kind or a dead address
 
-Auto-created nodes default to `ollama`. If your endpoint is an OpenAI-compatible API (e.g. vLLM, OpenWebUI), edit the node and change `kind` to `openai-compat`. The PWA shows a migration banner on auto-created nodes until the kind is confirmed.
+Nodes created automatically by earlier versions default to `ollama` and may carry an address that was never an LLM server. They are listed under **Auto-created nodes that never answered** until the address answers. Edit the node to correct the address and kind (use `openai-compat` for vLLM, OpenWebUI and similar), or delete it.
 
 ### Deprecated kind value (`local`, `ssh`, `docker`, `k8s`, `remote`, `remote-proxy`)
 
@@ -1187,7 +1238,7 @@ These kinds are accepted for parsing but the dispatcher refuses to route through
 
 ### Orphaned auto-created nodes after observer peer deletion
 
-The daemon sweeps leaked auto-created nodes on startup (matches `auto_created: true` nodes whose bound peer no longer exists). If you find orphaned nodes, restart the daemon or delete them manually:
+The daemon sweeps leftover auto-created nodes on startup (nodes created automatically whose bound peer no longer exists). Nothing in the unanswered report deletes anything. If you find orphaned nodes, delete them manually:
 
 ```sh
 datawatch compute node delete leaked-node-name

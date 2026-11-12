@@ -3372,6 +3372,44 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: The compute registry or the served-models cache is not available}
 
+  /api/compute/nodes:
+    get:
+      summary: List compute nodes
+      description: 'The registered nodes plus two additive reports. observed_peers lists observer peers that no node is bound to (name and shape); submitting the add-node request for one makes it disappear. unanswered_auto_created lists nodes marked auto_created whose address has never answered a probe (name, address, kind, created_at); nothing is deleted or disabled automatically. Both keys are always present, as empty arrays when there is nothing to report.'
+      operationId: computeNodeList
+      tags: [Compute]
+      responses:
+        "200":
+          description: Nodes and reports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items: {type: object}
+                  observed_peers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        shape: {type: string}
+                  unanswered_auto_created:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        address: {type: string}
+                        kind: {type: string}
+                        created_at: {type: string, format: date-time}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the compute read capability}
+        "503": {description: The compute registry is not available}
+
   /api/compute/nodes/{name}:
     get:
       summary: Fetch one compute node
