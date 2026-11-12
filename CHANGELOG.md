@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.144.1 — A rejudge runs a fresh completion review
+
+### Changed
+
+- **A rejudge of a blocked Automaton reviews the real branch head and the rules text.** The completion review is anchored to the head of the Automaton's own working tree, and a hash of the rules and context text it reads is stored on the verdict as `rules_fingerprint`. The stored verdict is replayed only when both are unchanged; a verdict recorded before the fingerprint existed is judged again once. The recovery and judge-policy howtos, the operations guide and the glossary describe it.
+- **A reused completion verdict is recorded as a reuse, not as a second verdict.** Every rejudge now writes a `guardrail_rejudge` decision that names the commit it judged (`judged_commit_sha`) and says whether the stored verdict was reused (`verdict_reused`). When the stored verdict is reused it keeps its own time, commit and rules fingerprint, is not added to the Automaton's verdicts again and records no new `guardrail_verdict`; the completion review the daemon runs on its own records a `guardrail_reuse` decision the same way and does not classify the verdict a second time. When a new review runs the note starts `new review ran on commit`. Existing decision entries are unchanged; the two fields are omitted when empty or false. The completion rollup, including the stuck-running watchdog's one-time re-fire, follows the same rule: a moved head runs a new review (a pass or warn completes the Automaton and the watchdog does not block it), an unchanged head reuses the stored verdict.
+- **A rejudge says whether a new review ran or the stored verdict was reused, and the web app shows it.** The rejudge reply `message` (in the compact reply, `?view=compact`; the full reply has none) now names the judged commit: either `a new review ran on commit <sha>` (the verdict and outcome are in the decision log) or `the stored verdict was reused` because the head commit and the rules text are unchanged since it was made. The web app asks for the compact reply and shows that message in the toast for six seconds instead of a bare "complete" notice; with no message it keeps the short toast. The recovery how-to now explains that a rejudge is a fresh completion review and how to tell a fixed Automaton from a still-broken one by comparing the latest verdict's judged commit and time with the branch head and your fix (`verdict_reused` true on the latest `guardrail_rejudge` entry means you read a stored verdict). The MCP reference, the glossary and the OpenAPI description match. No new setting.
+
+### Fixed
+
+- **A rejudge of a blocked Automaton now runs a fresh completion review instead of replaying the old verdict.** The rejudge reviews the Automaton's current head commit, starts a judge session, records a new verdict with its own time and the commit it judged, and replaces the blocked state with the verdict's outcome. The stored verdict is reused only when the head commit and the rules text are both unchanged, and the reply then says that it was reused and why. A repeated rejudge no longer adds duplicate copies of an unchanged verdict. The completion rollup and its one-time re-fire follow the same rule. The decision log records each rejudge request with the commit judged and whether a new review ran.
+
 ## v9.144.0 — Automaton branches refresh themselves from main
 
 ### Added

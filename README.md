@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.144.0 (2026-11-12).** An Automaton's branch can refresh itself from main between tasks (off by default, settable globally and per Automaton), with a conflict question and refresh stats on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.144.1 (2026-11-12).** A rejudge of a blocked Automaton now runs a fresh completion review of its current head commit and reuses the stored verdict only when the head and the rules text are unchanged. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
