@@ -683,6 +683,12 @@ type Manager struct {
 	sendQueuesMu sync.Mutex
 	sendQueues   map[string]*sessionSendQueue
 
+	// runners holds the full IDs of sessions the daemon itself drives with
+	// a goroutine or process because they have no terminal pane. Access is
+	// protected by runnersMu. See runner_registry.go.
+	runnersMu sync.Mutex
+	runners   map[string]struct{}
+
 	// dualSummarizeFn, when non-nil, generates both a short and long summary
 	// from session output. prevShort is the previous short summary (used to
 	// avoid repeating information). Replaces the old single-string summarizeFn.
@@ -748,6 +754,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		uiPromptState:     make(map[string]*uiPromptRecord),
 		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:       make(map[string]time.Time),
+		runners:           make(map[string]struct{}),
 		encKey:            key,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
