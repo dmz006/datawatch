@@ -825,6 +825,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDependencyUpdateStatus(), tracked(s.handleDependencyUpdateStatus))
 	mcpSrv.AddTool(s.toolSupervisorWatchList(), tracked(s.handleSupervisorWatchList))
 	mcpSrv.AddTool(s.toolSupervisorWatchStats(), tracked(s.handleSupervisorWatchStats))
+	mcpSrv.AddTool(s.toolHousekeepingRepairs(), tracked(s.handleHousekeepingRepairs))
 	mcpSrv.AddTool(s.toolSupervisorLoopJobs(), tracked(s.handleSupervisorLoopJobs))
 	mcpSrv.AddTool(s.toolSupervisorLoopRuns(), tracked(s.handleSupervisorLoopRuns))
 	mcpSrv.AddTool(s.toolSupervisorLoopRunJob(), tracked(s.handleSupervisorLoopRunJob))

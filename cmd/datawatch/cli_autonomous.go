@@ -65,6 +65,8 @@ Subcommands:
                                   the watched repositories, the last poll, and the stored records
                                   (repository, ref, workflow, status, classification, first seen,
                                   alerted), newest first
+  housekeeping-repairs [--json]   Housekeeping repairs read: per group the mode (off, report, on),
+                                  what it would do and what it did
   supervisor-watch [--json]       Supervisor watch read: the mode, the last poll, one line per finding
                                   (kind, state, last seen, the operator line) and the comparison
                                   against the supervisor script's output
@@ -338,6 +340,7 @@ Subcommands:
 		newAutonomousRepoCIWatchCmd(),
 		newAutonomousSecurityFailureCmd(),
 		newAutonomousSupervisorWatchCmd(),
+		newAutonomousHousekeepingRepairsCmd(),
 		newAutonomousDecisionsCmd(),
 		// Decision records: the structured operator decisions on the Automaton.
 		newDecisionRecordsCmd(),
