@@ -114,6 +114,9 @@ const (
 	// (console.enabled, console.show_*) flow through the existing configure
 	// command and path.
 	CmdDashboardConsole CommandType = "dashboard console"
+	// Installable task and Automaton template packs: setting, list, install,
+	// accept, remove and inputs, mirroring /api/packs.
+	CmdPacks CommandType = "packs"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -1370,6 +1373,9 @@ func Parse(text string) Command {
 	case lower == "dashboard console" || lower == "dashboard-console":
 		return Command{Type: CmdDashboardConsole}
 
+	case lower == "packs" || strings.HasPrefix(lower, "packs "):
+		return Command{Type: CmdPacks, Text: strings.TrimSpace(text[len("packs"):])}
+
 	case lower == "peers" || strings.HasPrefix(lower, "peers "):
 		// BL172 (S11) — federated observer peers over chat. Forms:
 		//   "peers"                       → list
@@ -1979,6 +1985,7 @@ usage work <points|clear>        set or clear the typed remaining work
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
+packs [setting|install|accept|remove|inputs]  task and Automaton template packs; "packs" lists them
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —
