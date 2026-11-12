@@ -7,7 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **The Sessions page has one Group by control again.** The Filters sheet's **Group by** dropdown is the single control — the toolbar's second placement dropdown (⚙️) is removed — and it now offers the placement axes already visible on the loaded sessions (`compute:`, `peer:`, …) as `Tag (prefix)` entries alongside the tag-registry prefixes, so grouping by a placement axis is a first-class option. The existing saved choice (one shared field, per device) is preserved.
 - **The floating start-session button no longer covers open sheets and modals.** While a sheet or modal is open (the Sessions Filters sheet, the new-session modal, confirm and detail modals, the peer snapshot, the mic popup, the backend config, the update progress card, the Automata side drawer, the dashboard add-card panel, the phone tag filter) the button is hidden, so its row and the last chips of the sheet are fully visible and tappable. Long pages (Sessions list, Automata, Projects, Alerts, Observer, Dashboard, Settings, detail views) get extra padding under the last card so nothing hides behind the button; the button itself keeps its size and position on pages without an open sheet.
+- Docs: the Sessions how-to's toolbar diagram, group-by paragraph, Filters-sheet item and troubleshooting now describe the single Group by control and the start-session button's clearance from sheets and long pages.
 
 ### Changed
 
