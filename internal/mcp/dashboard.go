@@ -6,12 +6,14 @@
 //   dashboard_card_add       — append a card
 //   dashboard_card_delete    — remove a card
 //   dashboard_console_get    — operator console one-glance summary (GET /api/dashboard/console)
+//   dashboard_arc_get        — arc summary: stages, lanes, plan usage in points and tokens (GET /api/dashboard/arc)
 
 package mcp
 
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -58,6 +60,13 @@ func (s *Server) toolDashboardCardDelete() mcpsdk.Tool {
 func (s *Server) toolDashboardConsoleGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("dashboard_console_get",
 		mcpsdk.WithDescription("Operator console one-glance summary — the same data as GET /api/dashboard/console. One section each for open questions, held/blocked sessions, lanes, usage, and CI/release; each section is flagged available with a count, a one-line summary, and the PWA link."),
+	)
+}
+
+func (s *Server) toolDashboardArcGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("dashboard_arc_get",
+		mcpsdk.WithDescription("Arc summary — the same data as GET /api/dashboard/arc. One arc as its stages in order (bugs, features, final) with total, done, running, blocked and percent, a separate maintenance count, a plain-language blocked-stage reason, shared lane usage, and plan usage in points and tokens. Points and tokens only, never dollars."),
+		mcpsdk.WithString("arc", mcpsdk.Description("optional arc (Automation) id; omit for the default arc")),
 	)
 }
 
@@ -121,6 +130,21 @@ func (s *Server) handleDashboardCardDeleteMCP(_ context.Context, req mcpsdk.Call
 // and data as the REST surface the PWA console renders from.
 func (s *Server) handleDashboardConsoleGetMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body, err := s.proxyGet("/api/dashboard/console", nil)
+	if err != nil {
+		return nil, err
+	}
+	return mcpsdk.NewToolResultText(string(body)), nil
+}
+
+// handleDashboardArcGetMCP proxies the arc summary endpoint
+// (GET /api/dashboard/arc) and returns it verbatim — the same shape and
+// data as the REST surface. An optional "arc" argument picks the arc.
+func (s *Server) handleDashboardArcGetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	var q url.Values
+	if arc := req.GetString("arc", ""); arc != "" {
+		q = url.Values{"arc": []string{arc}}
+	}
+	body, err := s.proxyGet("/api/dashboard/arc", q)
 	if err != nil {
 		return nil, err
 	}

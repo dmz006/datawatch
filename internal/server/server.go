@@ -343,6 +343,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/dashboard/cards", api.handleDashboardCards)                        // #57 card CRUD (list + add)
 	apiMux.HandleFunc("/api/dashboard/cards/", api.handleDashboardCards)                       // #57 card CRUD (get/update/delete by id)
 	apiMux.HandleFunc("/api/dashboard/console", api.handleDashboardConsole)                    // operator console one-glance summary
+	apiMux.HandleFunc("/api/dashboard/arc", api.handleDashboardArc)                            // arc summary: stages, lanes, plan usage
 	apiMux.HandleFunc("/api/smoke/progress", api.handleSmokeProgress)                          // BL303 smoke progress (list)
 	apiMux.HandleFunc("/api/smoke/progress/", api.handleSmokeProgress)                         // BL303 (detail + delete with sub-paths)
 	apiMux.HandleFunc("/api/smoke/forward-url", api.handleSmokeForwardURL)                     // #54 cross-instance forward config
@@ -357,7 +358,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/projects", api.handleProjects)                                     // BL27
 	apiMux.HandleFunc("/api/projects/", api.handleProjects)                                    // BL27 (with name)
 	apiMux.HandleFunc("GET /api/projects/{name}/rollup", api.handleProjectRollup)              // project roll-up: arcs, Automata, tasks, points, throughput
-	apiMux.HandleFunc("GET /api/projects/{name}/history", api.handleProjectHistory)              // project history: finished/archived Automata, daily progress, Gantt rows
+	apiMux.HandleFunc("GET /api/projects/{name}/history", api.handleProjectHistory)            // project history: finished/archived Automata, daily progress, Gantt rows
 	apiMux.HandleFunc("/api/sessions/stale", api.handleSessionsStale)                          // BL40
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)                                     // BL30
 	apiMux.HandleFunc("/api/usage-backoff", api.handleUsageBackoff)                            // BL428 Phase 4
@@ -571,7 +572,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline)                         // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord)            // PUT sets and DELETE removes a project's daemon-held pipeline record
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate)        // POST checks a pipeline body or a repository file without saving
-	apiMux.HandleFunc("/api/autonomous/release-readiness", api.handleReleaseReadiness)                 // release readiness for one size: record, conflict and PWA counts against the bar, zeros included
+	apiMux.HandleFunc("/api/autonomous/release-readiness", api.handleReleaseReadiness)                   // release readiness for one size: record, conflict and PWA counts against the bar, zeros included
 	apiMux.HandleFunc("/api/autonomous/checks", api.handleAutonomousChecks)                              // resolved checks policy + recorded check findings
 	apiMux.HandleFunc("/api/autonomous/restart-interruptions", api.handleAutonomousRestartInterruptions) // what a restart now would interrupt + the restart policy
 	apiMux.HandleFunc("/api/autonomous/ship", api.handleAutonomousShip)                                  // resolved ship policy + recorded push/tag/CI-watch outcomes

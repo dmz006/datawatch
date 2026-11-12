@@ -106,6 +106,7 @@ animation loop.
 - [session-telemetry.md](session-telemetry.md) — hook payload schema
 - [guardrail-library.md](guardrail-library.md) — guardrail library and profiles
 - [autonomous-planning.md](autonomous-planning.md) — Automata lifecycle
+- [dashboard-arc-view.md](dashboard-arc-view.md) — the opt-in Arc card: stages, maintenance lane, blocked stage, lanes and plan usage in points and tokens
 - [api/mobile-surface.md](../api/mobile-surface.md) — WebSocket events for mobile/Wear/Auto
 
 ## See also

@@ -1514,6 +1514,8 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleAudit(cmd)
 	case CmdDashboardConsole:
 		r.handleDashboardConsole()
+	case CmdDashboardArc:
+		r.handleDashboardArc()
 	// BL220 — Configuration Accessibility Rule gap closures.
 	case CmdOrchestrator:
 		r.handleOrchestrator(cmd)

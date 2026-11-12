@@ -5,18 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.147.3 — Repair a failed Automaton in place and grace-period archiving of cancelled Automata
-
-### Fixed
-
-- **A failed Automaton can be repaired in place.** A failed Automaton now accepts the same structural edits as one that needs review: add a task, remove a task, edit a task, repair dependencies and ask for a revision. Task specs that already completed stay immutable.
-- **A cancelled Automaton is no longer archived the moment it is cancelled.** The early-archive race in cancel is fixed: the cancelled record is kept until `autonomous.archive_grace_minutes` has passed, so it can still be repaired or reset in that time.
-- **Cancel reports what it did.** The cancel reply states how many sessions were ended and how many were live.
+## v9.148.0 — Arc dashboard view
 
 ### Added
 
-- **`autonomous.archive_grace_minutes` (default 60).** How many minutes a cancelled Automaton is kept before the supervisor loop archives it. `0` archives at once, as before. The setting is on every surface: the config file, `GET` and `PUT /api/config`, the MCP config tools, the CLI, the chat commands and Settings in the web page, in all five languages.
-- Docs: the recovery how-to, the operations setting table and the definitions entry describe repairing a failed Automaton and the archive grace period.
+- **An arc view on the dashboard.** One arc (an Automation) is shown as its stages in the order they run: bugs, then features, then the final stage, each with how many pieces of work it holds, how many are done, running and blocked, and a percent done. A stage with blocked or failed work is named with a plain-language reason. Maintenance work is shown beside the arc as counts only and never counts as a stage. The view also shows how busy the shared Claude and pi lanes are, with queued work counted by priority, and how much of the plan is used in points and tokens. It shows no billed dollar figure, because the plan is flat. The view only reads: it never starts, pauses, unblocks or reorders anything.
+- **The arc summary on every surface.** REST `GET /api/dashboard/arc` (optional `arc` query, default is the first arc with staged work), the MCP tool `dashboard_arc_get`, the CLI `datawatch dashboard arc` (`--arc`, `--json`) and the chat verb `dashboard arc`. A part the daemon cannot read reports itself unavailable with a reason and the rest of the summary still renders. The web page renders the view as a dashboard card, with strings in all five languages.
+- Docs: a new how-to, `dashboard-arc-view.md`, with the dashboard how-tos, the definitions, the API and MCP mapping, the OpenAPI spec and the parity status updated to match.
 
 ## v9.147.2 — Lane fill tolerates an unreachable compute node that holds nothing
 
