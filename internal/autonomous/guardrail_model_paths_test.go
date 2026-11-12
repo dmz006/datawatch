@@ -130,7 +130,7 @@ func TestJudgeKeepsPinnedModel_PRDShape(t *testing.T) {
 		t.Fatalf("ci-watch judge: blocked=%v err=%v, want clean pass", blocked, err)
 	}
 	// rejudge judge
-	v, err := m.judgeCompletionRulesReview(ctx, prd, "")
+	v, _, err := m.judgeCompletionRulesReview(ctx, prd, "")
 	if err != nil || v.Outcome != "pass" {
 		t.Fatalf("rejudge judge: verdict=%+v err=%v, want clean pass", v, err)
 	}
@@ -231,7 +231,7 @@ func TestGuardrailJudgeModel_PathTierTable(t *testing.T) {
 			}
 			assertRecorderModel(t, rec, "ci-watch", sc.unitWant)
 
-			v, err := m.judgeCompletionRulesReview(ctx, prd, "")
+			v, _, err := m.judgeCompletionRulesReview(ctx, prd, "")
 			if err != nil || v.Outcome != "pass" {
 				t.Fatalf("rejudge judge: verdict=%+v err=%v", v, err)
 			}
@@ -290,7 +290,7 @@ func TestGuardrailJudgeModel_FailLoudlyWhenNoTier(t *testing.T) {
 		prd, _, _ := newJudgeShapePRD(t, m)
 		rec := &modelJudgeRecorder{}
 		m.SetGuardrail(rec.fn)
-		v, err := m.judgeCompletionRulesReview(ctx, prd, "")
+		v, _, err := m.judgeCompletionRulesReview(ctx, prd, "")
 		if err != nil {
 			t.Fatalf("rejudge returned err=%v; want a loud verdict (recorded by RejudgeCompletionGuardrail)", err)
 		}
