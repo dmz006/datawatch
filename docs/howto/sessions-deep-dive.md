@@ -52,8 +52,11 @@ pipe-pane`. The LLM runs inside that tmux session.
 > to capture output per turn in chunks so history no longer relies on
 > scrollback. Nothing has changed yet: `output.log` stays the full
 > append-only record, and the troubleshooting steps below still apply.
-> See the backlog row for per-turn chunked output capture in
-> `docs/plans/README.md`.
+> See the [design document](../plans/2026-10-14-turn-chunked-session-history.md)
+> (status: needs review) and the backlog row in
+> [`docs/plans/README.md`](../plans/README.md). Operator review is still
+> needed on its open questions, for example whether the index is encrypted
+> for `--secure` sessions and where turn history appears in the PWA.
 
 States: `Running` (LLM processing), `WaitingInput` (paused, awaiting
 your reply), `RateLimited` (auto-resumes), `Complete` / `Failed` /

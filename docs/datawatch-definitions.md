@@ -1283,7 +1283,9 @@ Key terms used across the docs, API, and hook payloads.
 not implemented): recording a session's output in one chunk per turn so
 session history does not depend on tmux scrollback. Today history comes
 from `output.log` (written by `tmux pipe-pane`) plus the tmux scrollback
-buffer. Do not rely on chunked capture existing yet.
+buffer. Do not rely on chunked capture existing yet. Design:
+[`plans/2026-10-14-turn-chunked-session-history.md`](plans/2026-10-14-turn-chunked-session-history.md);
+its open questions await operator review.
 
 **SessionTelemetry** — structured telemetry accumulated from hook
 payloads for a session. Contains the current task, active tool and
