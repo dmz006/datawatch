@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -266,22 +267,22 @@ const projectTimelineBody = `{
 }`
 
 func TestFormatProjectTimeline(t *testing.T) {
-	out := formatProjectTimeline("acme", projectTimelineBody)
+	out := formatProjectTimeline("acme", projectTimelineBody, url.Values{"focus": {"alpha"}, "limit": {"2"}})
 	for _, want := range []string{
 		"Timeline for project acme (arcs, 3 rows)",
 		"arc Core: 2026-11-01T10:00:00Z to 2026-11-05T10:00:00Z",
 		"arc a2: 2026-11-06T10:00:00Z to now",
 		"arc Later: - to -",
-		"more rows exist. Continue with: project timeline acme level=arcs cursor=c2",
+		"more rows exist. Continue with: project timeline acme level=arcs focus=alpha limit=2 cursor=c2",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
-	if got := formatProjectTimeline("acme", "nope"); got != "nope" {
+	if got := formatProjectTimeline("acme", "nope", nil); got != "nope" {
 		t.Errorf("non-JSON should pass through, got %q", got)
 	}
-	empty := formatProjectTimeline("acme", `{"level":"arcs","rows":[]}`)
+	empty := formatProjectTimeline("acme", `{"level":"arcs","rows":[]}`, nil)
 	if !strings.Contains(empty, "nothing to show") || strings.Contains(empty, "more rows") {
 		t.Errorf("empty reply:\n%s", empty)
 	}

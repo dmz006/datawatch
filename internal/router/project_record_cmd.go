@@ -138,7 +138,7 @@ func (r *Router) projectTimeline(name string, words []string) {
 		r.send(fmt.Sprintf("[%s] project timeline: %v", r.hostname, err))
 		return
 	}
-	r.send(formatProjectTimeline(name, body))
+	r.send(formatProjectTimeline(name, body, q))
 }
 
 // projectTimelineView is the subset of GET /api/projects/{name}/timeline the
@@ -161,7 +161,7 @@ type projectTimelineView struct {
 
 // formatProjectTimeline renders one line per row: kind, title, first, last or
 // "now". It says when more rows exist and how to continue.
-func formatProjectTimeline(name, rawBody string) string {
+func formatProjectTimeline(name, rawBody string, q url.Values) string {
 	var v projectTimelineView
 	if err := json.Unmarshal([]byte(rawBody), &v); err != nil {
 		return rawBody
@@ -189,7 +189,13 @@ func formatProjectTimeline(name, rawBody string) string {
 		lines = append(lines, fmt.Sprintf("  %s %s: %s to %s", row.Kind, title, first, last))
 	}
 	if v.HasMore && v.NextCursor != "" {
-		lines = append(lines, fmt.Sprintf("  more rows exist. Continue with: project timeline %s level=%s cursor=%s", name, v.Level, v.NextCursor))
+		hint := fmt.Sprintf("project timeline %s level=%s", name, v.Level)
+		for _, k := range []string{"parent", "automaton", "focus", "limit"} {
+			if val := q.Get(k); val != "" {
+				hint += " " + k + "=" + val
+			}
+		}
+		lines = append(lines, "  more rows exist. Continue with: "+hint+" cursor="+v.NextCursor)
 	}
 	return strings.Join(lines, "\n")
 }
