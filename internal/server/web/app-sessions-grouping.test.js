@@ -625,15 +625,44 @@ test('group select choice is restored after a reload and blocked storage is tole
   assert.equal(selectedGroupOption(cap.html), 'node');
 });
 
-test('toolbar placement control and the group select share one source of truth', () => {
+test('legacy placement axis and the group select share one source of truth', () => {
   const store = makeStore();
   store.map['dw_sessions_group_axis'] = 'ops';   // legacy saved axis
   const { sbx, cap } = paintedSandbox(store);
   sbx.renderSessionsView();
   assert.equal(selectedGroupOption(cap.html), 'tag|ops:', 'legacy axis migrates into the shared choice');
-  sbx.setSessionsGroupAxis('data');
+  // One Group by control on the page: the labelled select in the filters sheet.
+  assert.ok(!cap.html.includes('group-axis-control'), 'no second placement control');
+  sbx.setSessionGroupBy('tag|data:');
   assert.equal(run(sbx, 'state.sessionGroupBy.tagPrefix'), 'data:');
   assert.equal(selectedGroupOption(cap.html), 'tag|data:');
-  sbx.setSessionsGroupAxis('');
+  sbx.setSessionGroupBy('');
   assert.equal(run(sbx, 'state.sessionGroupBy'), null);
+});
+
+test('the group picker offers placement axes the loaded sessions carry', () => {
+  const sbx = freshSandbox();
+  // No registry placement tags; the sessions carry an unregistered axis.
+  run(sbx, `state.sessions = [
+    { id: 'a', state: 'running', system_tags: ['compute:gpu-1'] },
+    { id: 'b', state: 'idle', system_tags: ['peer:dev-box', 'lane:build'] },
+  ]`);
+  const html = sbx.renderSessionsGroupPicker(null);
+  for (const v of ['tag|compute:', 'tag|peer:', 'tag|lane:']) {
+    assert.ok(html.includes(`value="${v}"`), 'picker option ' + v);
+  }
+  // Selecting one groups through the ordinary tag-prefix path; every session
+  // lands in exactly one bucket.
+  sbx.setSessionGroupBy('tag|compute:');
+  const groups = sbx._sessionsGroupSessions(
+    run(sbx, 'state.sessions'), { axis: 'tag', tagPrefix: 'compute:' });
+  const byKey = {};
+  groups.forEach(g => { byKey[g.key] = g.count; });
+  assert.deepEqual(byKey, { 'compute:gpu-1': 1, ungrouped: 1 });
+  // The picker keeps its option even after the sessions vanish, but a plain
+  // re-render no longer invents the axis.
+  run(sbx, 'state.sessions = []');
+  const sel = sbx.renderSessionsGroupPicker({ axis: 'tag', tagPrefix: 'compute:' });
+  assert.ok(sel.includes('value="tag|compute:" selected'), 'chosen prefix stays an option');
+  assert.ok(!sel.includes('tag|peer:'), 'vanished axis not offered');
 });
