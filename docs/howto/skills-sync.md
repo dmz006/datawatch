@@ -276,4 +276,4 @@ session_inject: true                     # auto-inject into session prompt
 - [howto/council-mode](council-mode.md)
 - [howto/algorithm-mode](algorithm-mode.md)
 - [skills](../skills.md)
-- [Standard tasks and installable packs](automata-standard-tasks.md#managing-packs-on-each-surface) — packs are versioned folders read from skills registry sources; install, accept and remove them on REST, MCP, CLI and chat (trust and auto-accept rules; auto-accept is not yet called by the daemon)
+- [Standard tasks and installable packs](automata-standard-tasks.md#managing-packs-on-each-surface) — packs are versioned folders read from skills registry sources; install, accept and remove them on REST, MCP, CLI and chat (trust and auto-accept rules; auto-accept is not yet called by the daemon; the Packs sub-tab's per-source switch is built but not yet rendered)
