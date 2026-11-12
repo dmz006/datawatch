@@ -132,38 +132,82 @@ func TestRegistrySeed(t *testing.T) {
 	}
 }
 
-func TestRegistryEnsureFromStatsPeer(t *testing.T) {
+func TestBindObservedPeer_NoNodeCreatesNothing(t *testing.T) {
 	r := newTestRegistry(t)
-	n, created, err := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.5:9001", "B")
-	// v7.0.0-alpha.23: AutoCreatedFromStatsPeer now defaults to KindOllama
-	// (the operator's safe assumption for observed peers; they re-pick if wrong).
-	if err != nil || !created || n.Name != "gpu-remote" || n.Kind != KindOllama || !n.AutoCreated {
-		t.Fatalf("first peer: %v created=%v node=%+v", err, created, n)
+	bound, err := r.BindObservedPeer("gpu-remote")
+	if err != nil || bound {
+		t.Fatalf("bound=%v err=%v, want false,nil", bound, err)
 	}
-	// Second push from same peer should NOT re-create.
-	_, created2, _ := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.5:9001", "B")
-	if created2 {
-		t.Fatalf("second peer push should not auto-create")
+	if got := r.List(); len(got) != 0 {
+		t.Fatalf("registration created nodes: %+v", got)
 	}
-	// Address change should refresh (normalized to http:// on store).
-	n3, _, _ := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.6:9001", "B")
-	if n3.Address != "http://192.0.2.6:9001" {
-		t.Fatalf("address refresh: %s", n3.Address)
+	view := r.ObservedOnly([]ObservedPeer{{Name: "gpu-remote", Shape: "B"}})
+	if len(view) != 1 || view[0].Name != "gpu-remote" || view[0].Shape != "B" {
+		t.Fatalf("observed-only view = %+v", view)
 	}
-	// v7.0.0-alpha.23: Shape C now flagged via AutoTag "shape:cluster"
-	// (Kind defaults to KindOllama; operator re-picks if wrong).
-	nk8s, created3, _ := r.EnsureFromStatsPeer("k8s-pod-1", "192.0.2.241:9001", "C")
-	if !created3 || nk8s.Kind != KindOllama {
-		t.Fatalf("shape C: created=%v kind=%s", created3, nk8s.Kind)
+}
+
+func TestBindObservedPeer_ExistingNodeKeepsAddress(t *testing.T) {
+	r := newTestRegistry(t)
+	n := validNode("gpu-remote")
+	n.Kind = KindOllama
+	n.Address = "http://192.0.2.5:11434"
+	if err := r.Add(n); err != nil {
+		t.Fatalf("add: %v", err)
 	}
-	hasClusterTag := false
-	for _, tg := range nk8s.AutoTags {
-		if tg == "shape:cluster" {
-			hasClusterTag = true
+	// The registration's source address (192.0.2.99) is never an input.
+	bound, err := r.BindObservedPeer("gpu-remote")
+	if err != nil || !bound {
+		t.Fatalf("bound=%v err=%v", bound, err)
+	}
+	got, _ := r.Get("gpu-remote")
+	if got.ObserverPeer != "gpu-remote" {
+		t.Errorf("ObserverPeer = %q", got.ObserverPeer)
+	}
+	if got.Address != "http://192.0.2.5:11434" || got.Kind != KindOllama {
+		t.Errorf("address/kind changed: %q %q", got.Address, got.Kind)
+	}
+	if view := r.ObservedOnly([]ObservedPeer{{Name: "gpu-remote", Shape: "B"}}); len(view) != 0 {
+		t.Errorf("bound peer still observed-only: %+v", view)
+	}
+}
+
+func TestBindObservedPeer_NeverOverwritesAddress(t *testing.T) {
+	r := newTestRegistry(t)
+	n := validNode("gpu-remote")
+	n.Address = "http://192.0.2.5:11434"
+	n.ObserverPeer = "other-peer"
+	if err := r.Add(n); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	before, _ := r.Get("gpu-remote")
+	for i := 0; i < 2; i++ {
+		if _, err := r.BindObservedPeer("gpu-remote"); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if !hasClusterTag {
-		t.Fatalf("shape C: expected AutoTag shape:cluster, got %v", nk8s.AutoTags)
+	after, _ := r.Get("gpu-remote")
+	if after.Address != "http://192.0.2.5:11434" {
+		t.Errorf("address overwritten: %q", after.Address)
+	}
+	if after.ObserverPeer != "other-peer" {
+		t.Errorf("existing binding changed: %q", after.ObserverPeer)
+	}
+	if !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Errorf("node rewritten though nothing changed")
+	}
+}
+
+func TestObservedOnly_BoundByObserverPeerField(t *testing.T) {
+	r := newTestRegistry(t)
+	n := validNode("node-a")
+	n.ObserverPeer = "peer-x"
+	if err := r.Add(n); err != nil {
+		t.Fatal(err)
+	}
+	view := r.ObservedOnly([]ObservedPeer{{Name: "peer-x"}, {Name: "peer-y", Shape: "C"}})
+	if len(view) != 1 || view[0].Name != "peer-y" {
+		t.Fatalf("view = %+v", view)
 	}
 }
 
@@ -249,24 +293,6 @@ func TestRegistryAdd_NormalizesAddress(t *testing.T) {
 	got, _ := r.Get("gpu-1")
 	if got.Address != "http://gpu-1:11434" {
 		t.Errorf("stored Address = %q, want http://gpu-1:11434", got.Address)
-	}
-}
-
-// TestEnsureFromStatsPeer_NormalizesAddress verifies that scheme-less RemoteAddr
-// strings from incoming stats-peer pushes are stored with http:// prefix.
-func TestEnsureFromStatsPeer_NormalizesAddress(t *testing.T) {
-	r := newTestRegistry(t)
-	n, _, err := r.EnsureFromStatsPeer("gpu-stats", "192.0.2.5:9001", "B")
-	if err != nil {
-		t.Fatalf("EnsureFromStatsPeer: %v", err)
-	}
-	if n.Address != "http://192.0.2.5:9001" {
-		t.Errorf("Address = %q, want http://192.0.2.5:9001", n.Address)
-	}
-	// Update via second push — should also normalize.
-	n2, _, _ := r.EnsureFromStatsPeer("gpu-stats", "192.0.2.6:9001", "B")
-	if n2.Address != "http://192.0.2.6:9001" {
-		t.Errorf("refreshed Address = %q, want http://192.0.2.6:9001", n2.Address)
 	}
 }
 

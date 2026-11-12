@@ -263,12 +263,10 @@ func (s *Server) handlePeerRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// v7.0.0 S1 — auto-create a matching ComputeNode entry on first
-	// stats-peer registration so operators don't have to declare each
-	// Node twice. Defaults: kind=remote (or k8s for Shape C),
-	// max_concurrent_models=1. Operator edits via REST/MCP/CLI/comm/UI.
+	// Bind to an existing same-name ComputeNode; never creates a node
+	// and never derives an address from the request.
 	if s.computeReg != nil {
-		_, _, _ = s.computeReg.EnsureFromStatsPeer(req.Name, r.RemoteAddr, req.Shape)
+		_, _ = s.computeReg.BindObservedPeer(req.Name)
 	}
 	writeJSONOK(w, map[string]any{
 		"name":  req.Name,
@@ -342,17 +340,10 @@ func (s *Server) SetFederationSelfName(name string) { s.federationSelfName = nam
 // some ComputeNode (via Name match OR explicit ObserverPeer). The
 // inverse (peers NOT in this set) is the "free" set.
 func (s *Server) peersBoundToNodes() map[string]bool {
-	bound := map[string]bool{}
 	if s.computeReg == nil {
-		return bound
+		return map[string]bool{}
 	}
-	for _, n := range s.computeReg.List() {
-		if n.ObserverPeer != "" {
-			bound[n.ObserverPeer] = true
-		}
-		bound[n.Name] = true // implicit name-match counts as bound
-	}
-	return bound
+	return s.computeReg.BoundPeerNames()
 }
 
 // peerRowBound reports whether a merged peer row counts as bound to a
