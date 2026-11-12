@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.154.2 (2026-11-12).** The Sessions project grouping follows the session's Automaton, and the group picker keeps its value across refreshes and reloads. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.154.3 (2026-11-12).** The Projects sub-tab's Open settings link works, and projects can be added, edited and removed there. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

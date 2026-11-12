@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.154.3 — Projects sub-tab: fix Open settings link
+
+### Fixed
+
+- **The Open settings link on the Projects sub-tab now opens the right Settings section.** It goes to Settings, Automata, Project policy.
+- **Projects can be added, edited and removed on the Projects sub-tab.** A collapsible **Manage projects** block under the project picker takes a name, a directory, a description and a default backend; it is open when there are no projects, while you edit one and when an error is showing. Name and directory are required and the page says what is missing. The rest of the project record is still changed from the CLI, REST, MCP and the chat channel. The new strings are in all five locales.
+- Docs: the Projects tab and project automation policy how-tos and the definitions describe project setup.
+
 ## v9.154.2 — Sessions list grouping: Automaton-aware project source and a dropdown that keeps its value
 
 ### Fixed
