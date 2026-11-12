@@ -187,3 +187,31 @@ func TestSupervisorLoopArchiveGraceRejectedAtOnce(t *testing.T) {
 		t.Errorf("rejected record = %s, want archived at once", slStatus(t, h, 0))
 	}
 }
+
+// A cancelled record with no cancel decision and a long-stale update time must
+// earn a full grace from the first pass that sees it, not archive at once.
+func TestSupervisorLoopArchiveGraceNoDecisionEarnsFullGrace(t *testing.T) {
+	h, steps := slGraceRig(t, 60)
+	p, _ := h.m.Store().GetPRD(h.prds[0].ID)
+	p.Status = PRDCancelled
+	p.UpdatedAt = slBase.Add(-5 * time.Hour)
+	p.Decisions = nil
+	if err := h.m.Store().SavePRD(p); err != nil {
+		t.Fatal(err)
+	}
+	slSetClock(t, steps, slBase)
+	resultFor(t, steps.RunPass(context.Background()), stepCloseFinishedRecords)
+	if slStatus(t, h, 0) != PRDCancelled {
+		t.Fatalf("archived on first sight, want held for the full grace")
+	}
+	slSetClock(t, steps, slBase.Add(30*time.Minute))
+	resultFor(t, steps.RunPass(context.Background()), stepCloseFinishedRecords)
+	if slStatus(t, h, 0) != PRDCancelled {
+		t.Fatalf("archived 30 minutes after first sight, want held")
+	}
+	slSetClock(t, steps, slBase.Add(61*time.Minute))
+	resultFor(t, steps.RunPass(context.Background()), stepCloseFinishedRecords)
+	if slStatus(t, h, 0) == PRDCancelled {
+		t.Errorf("still cancelled 61 minutes after first sight, want archived")
+	}
+}

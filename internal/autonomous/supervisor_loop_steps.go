@@ -126,9 +126,10 @@ type SupervisorLoopSteps struct {
 	mergeGit MergeGitRunner
 
 	mu           sync.Mutex
-	infraRetried map[string]bool // held tasks already retried by the loop
-	lastDeployed string          // newest shipped release already deployed
-	lastConflict string          // newest merge conflict recorded
+	infraRetried map[string]bool      // held tasks already retried by the loop
+	cancelSeen   map[string]time.Time // first pass that saw a cancelled record with no cancel decision
+	lastDeployed string               // newest shipped release already deployed
+	lastConflict string               // newest merge conflict recorded
 }
 
 // NewSupervisorLoopSteps registers the steps over the coordinator. engine
@@ -138,7 +139,7 @@ func NewSupervisorLoopSteps(c *Coordinator, engine *supervisorloop.Engine, hooks
 	if c == nil || engine == nil {
 		return nil
 	}
-	s := &SupervisorLoopSteps{c: c, engine: engine, hooks: hooks, now: time.Now, infraRetried: map[string]bool{}}
+	s := &SupervisorLoopSteps{c: c, engine: engine, hooks: hooks, now: time.Now, infraRetried: map[string]bool{}, cancelSeen: map[string]time.Time{}}
 	s.archiveBranchCheck = s.archiveKeepsBranch
 	return s
 }
@@ -257,21 +258,43 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 	kept := 0
 	now := s.now()
 	grace := s.archiveGraceMinutes()
-	for _, p := range s.c.m.Store().ListPRDs() {
-		switch p.Status {
-		case PRDCompleted, PRDRejected, PRDCancelled:
-		default:
-			continue
+	// Read status and cancel time under the store lock: the executor and the
+	// cancel path mutate these shared records.
+	type fin struct {
+		p         *PRD
+		status    PRDStatus
+		cancelled time.Time
+	}
+	var fins []fin
+	st := s.c.m.Store()
+	prds := st.ListPRDs()
+	st.WithLock(func() {
+		for _, p := range prds {
+			switch p.Status {
+			case PRDCompleted, PRDRejected, PRDCancelled:
+				f := fin{p: p, status: p.Status}
+				if p.Status == PRDCancelled {
+					f.cancelled = s.cancelTime(p, now)
+				}
+				fins = append(fins, f)
+			}
+		}
+	})
+	live := map[string]bool{}
+	for _, f := range fins {
+		p := f.p
+		if f.status == PRDCancelled {
+			live[p.ID] = true
 		}
 		// The grace only shelters cancelled records; completed and rejected
 		// close in the same pass they reached their terminal state.
-		if p.Status == PRDCancelled && grace > 0 && now.Sub(s.cancelTime(p)) < time.Duration(grace)*time.Minute {
+		if f.status == PRDCancelled && grace > 0 && now.Sub(f.cancelled) < time.Duration(grace)*time.Minute {
 			held++
 			continue
 		}
 		// A cancelled record past its grace is still kept while its branch
 		// holds commits that are not on the base branch.
-		if p.Status == PRDCancelled && s.archiveBranchCheck != nil && s.archiveBranchCheck(p) {
+		if f.status == PRDCancelled && s.archiveBranchCheck != nil && s.archiveBranchCheck(p) {
 			kept++
 			continue
 		}
@@ -281,6 +304,15 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		}
 		closed++
 	}
+	// Forget first-seen times of records no longer cancelled, so a later
+	// cancel of the same record starts a fresh grace.
+	s.mu.Lock()
+	for id := range s.cancelSeen {
+		if !live[id] {
+			delete(s.cancelSeen, id)
+		}
+	}
+	s.mu.Unlock()
 	detail := fmt.Sprintf("closed %d finished records", closed)
 	if held > 0 {
 		detail += fmt.Sprintf(" (held %d cancelled within the %d-minute grace)", held, grace)
@@ -306,16 +338,27 @@ func (s *SupervisorLoopSteps) archiveGraceMinutes() int {
 }
 
 // cancelTime is when the grace for a cancelled record starts running: the
-// timestamp of its latest cancel decision, or, when it has none, the time the
-// record was last updated.
-func (s *SupervisorLoopSteps) cancelTime(p *PRD) time.Time {
-	t := p.UpdatedAt
+// timestamp of its latest cancel decision. A cancelled record with no cancel
+// decision has no trustworthy cancel time (its update time may be hours old),
+// so it earns a full grace from the first pass that sees it cancelled. Call
+// with the store lock held.
+func (s *SupervisorLoopSteps) cancelTime(p *PRD, now time.Time) time.Time {
+	var t time.Time
 	for _, d := range p.Decisions {
 		if d.Kind == "cancel" && d.At.After(t) {
 			t = d.At
 		}
 	}
-	return t
+	if !t.IsZero() {
+		return t
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if first, ok := s.cancelSeen[p.ID]; ok {
+		return first
+	}
+	s.cancelSeen[p.ID] = now
+	return now
 }
 
 // deployAfterShip runs the operator's deploy step once per newly shipped
