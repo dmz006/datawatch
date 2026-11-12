@@ -5,7 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
-const { vm, buildSandbox, loadScript, makeStubElement } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, makeStubElement, pageAllSubtabs } = require('./testutil_browser_stub');
 
 function load(showEmpty) {
   const view = makeStubElement(() => {});
@@ -29,7 +29,7 @@ const POLICY = { policy: {
 
 test('empty fields and lines are hidden by default', () => {
   const sb = load(false);
-  const html = sb._projectPageHTML(EMPTY, ROLL, '', null);
+  const html = pageAllSubtabs(sb, EMPTY, ROLL, '', null);
   assert.ok(!html.includes('Weekly share:'));
   assert.ok(!html.includes('none recorded'));
   const pol = sb._projectPolicyEffectiveHTML(POLICY, '');
@@ -42,7 +42,7 @@ test('empty fields and lines are hidden by default', () => {
 
 test('empty fields and lines show with labels when the control is on', () => {
   const sb = load(true);
-  const html = sb._projectPageHTML(EMPTY, ROLL, '', null);
+  const html = pageAllSubtabs(sb, EMPTY, ROLL, '', null);
   assert.ok(html.includes('Weekly share:'));
   assert.ok(html.includes('none recorded'));
   const pol = sb._projectPolicyEffectiveHTML(POLICY, '');
@@ -53,7 +53,7 @@ test('empty fields and lines show with labels when the control is on', () => {
 
 test('a project with data renders its values', () => {
   const sb = load(false);
-  const html = sb._projectPageHTML({ name: 'acme', owner: 'dana', description: 'hello', weekly_share: 20 }, ROLL, '', null);
+  const html = pageAllSubtabs(sb, { name: 'acme', owner: 'dana', description: 'hello', weekly_share: 20 }, ROLL, '', null);
   assert.ok(html.includes('dana'));
   assert.ok(html.includes('hello'));
   assert.ok(html.includes('20%'));
@@ -70,7 +70,7 @@ test('empty event stream, merge pipeline and arc sections are hidden unless show
   assert.ok(off._projectEventStreamHTML({ events: [{ kind: 'k' }] }, '').includes('project-event-row'));
   assert.ok(on._projectEventStreamHTML({ events: [] }, '').includes('project-event-stream'));
   assert.ok(on._projectMergePipelineHTML({ definition: { steps: [] } }, '').includes('project-merge-pipeline'));
-  const page = (sb) => sb._projectPageHTML({ name: 'acme', arcs: [] }, { arcs: [] }, '', null);
-  assert.ok(!page(off).includes('>Arcs<'));
-  assert.ok(page(on).includes('>Arcs<'));
+  const page = (sb) => pageAllSubtabs(sb, { name: 'acme', arcs: [] }, { arcs: [] }, '', null);
+  assert.ok(!page(off).includes('font-size:13px;">Arcs<'));
+  assert.ok(page(on).includes('font-size:13px;">Arcs<'));
 });

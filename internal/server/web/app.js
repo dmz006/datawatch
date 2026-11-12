@@ -3076,7 +3076,7 @@ const _PROJECTS_SECTION_KEY_PREFIX = 'cs_projects_section_collapsed_';
 // hist is the paged history of the project named by hist.name: items so far,
 // next is the cursor for the following page ('' when none), error is its load
 // failure. histBusy guards a Load more click against a second request.
-let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false };
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false, subtab: '' };
 const _PROJECTS_HISTORY_PAGE = 20;
 // _projectsLinks holds the read-only replies for the selected project (name):
 // its effective policy, its merge pipeline and its event stream. A reply for a
@@ -3147,12 +3147,19 @@ function projectsToggleSection(id) {
 }
 
 function _projectsHashParse(hash) {
-  const m = /^#projects(?:\/(.+))?$/.exec(String(hash || ''));
+  const m = /^#projects(?:\/([^/]+))?(?:\/[^/]+)?$/.exec(String(hash || ''));
   if (!m) return null;
   try { return m[1] ? decodeURIComponent(m[1]) : _PROJECTS_OVERVIEW; } catch (_) { return null; }
 }
-function _projectsHashBuild(name) {
-  return name ? '#projects/' + encodeURIComponent(name) : '#projects';
+// _projectsHashSubtab returns the sub-tab named by #projects/<name>/<subtab>,
+// or '' when the hash names none or an unknown one.
+function _projectsHashSubtab(hash) {
+  const m = /^#projects\/[^/]+\/([^/]+)$/.exec(String(hash || ''));
+  return m && _projectsSubtabValid(m[1]) ? m[1] : '';
+}
+function _projectsHashBuild(name, subtab) {
+  if (!name) return '#projects';
+  return '#projects/' + encodeURIComponent(name) + (subtab && subtab !== 'overview' ? '/' + subtab : '');
 }
 function _projectsCurrentHash() {
   return typeof location !== 'undefined' ? location.hash : '';
@@ -3446,37 +3453,88 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
   };
 
-  let body = '';
-  let ganttDone = false;
+  let overviewBody = '';
+  let arcsBody = '';
+  let unassignedBody = '';
+  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
   if (rollErr) {
     events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
-    body = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
+    overviewBody = loadingLine;
+    arcsBody = loadingLine;
+    unassignedBody = loadingLine;
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
-    body += _projectRollupHTML(roll, arcs);
+    overviewBody = _projectRollupHTML(roll, arcs);
     if (!arcs.length) {
       events.push(t('projects_event_no_arcs'));
-      if (showEmpty) body += _projectsSectionCard('arcs', escHtml(t('projects_page_arcs')), `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div>`);
-    } else body += _projectsSectionCard('arcs', escHtml(t('projects_page_arcs')), arcs.map(arcHTML).join(''));
-    body += _projectGanttHTML(hist);
-    ganttDone = true;
+      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
+    } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
-    if (un.length) body += _projectsSectionCard('unassigned', escHtml(t('projects_page_unassigned')), automataList(un));
+    if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
     else {
       events.push(t('projects_event_no_unassigned'));
-      if (showEmpty) body += _projectsSectionCard('unassigned', escHtml(t('projects_page_unassigned')), `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`);
+      if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
   }
-  if (!ganttDone) body += _projectGanttHTML(hist);
-  body += _projectHistoryHTML(hist);
-  body += _projectLinksHTML(p);
 
+  const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
   const evs = events.length
     ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
     : '';
+  const hasEvents = events.length > 0;
+  const active = _projectsActiveSubtab(hasEvents);
+  const bodies = {
+    overview: head + overviewBody,
+    arcs: arcsBody,
+    gantt: _projectGanttHTML(hist, true),
+    unassigned: unassignedBody,
+    history: _projectHistoryHTML(hist, true),
+    policy: _projectLinksHTML(p),
+    events: evs + _projectEventStreamHTML(L.events, L.eventsError),
+  };
+  const strip = _projectsSubtabStripHTML(active, hasEvents);
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
-    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${head}${body}${evs}</div></div>`;
+    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodies[active]}</div></div></div>`;
+}
+
+// ── Projects sub-tab strip ──────────────────────────────────────────────────
+// The selected project page shows one sub-tab body at a time. The choice is
+// remembered per browser; an unknown value means overview, and events falls
+// back to overview while there are no events to show.
+const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
+const _PROJECTS_SUBTABS = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+const _PROJECTS_SUBTAB_LABELS = {
+  overview: 'projects_subtab_overview', arcs: 'projects_subtab_arcs', gantt: 'projects_subtab_gantt',
+  unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
+  policy: 'projects_subtab_policy', events: 'projects_subtab_events',
+};
+function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(v) >= 0; }
+function _projectsRememberSubtab(v) {
+  try { localStorage.setItem(_PROJECTS_SUBTAB_KEY, v || ''); } catch (_) { /* not remembered */ }
+}
+function _projectsRecallSubtab() {
+  try { const v = localStorage.getItem(_PROJECTS_SUBTAB_KEY) || ''; return _projectsSubtabValid(v) ? v : 'overview'; } catch (_) { return 'overview'; }
+}
+function _projectsActiveSubtab(hasEvents) {
+  const v = _projectsSubtabValid(_projectsState.subtab) ? _projectsState.subtab : _projectsRecallSubtab();
+  return (v === 'events' && !hasEvents) ? 'overview' : v;
+}
+function _projectsSubtabStripHTML(active, hasEvents) {
+  const tabs = _PROJECTS_SUBTABS.filter(k => k !== 'events' || hasEvents);
+  return `<div class="projects-subtabs" role="tablist" aria-label="${escHtml(t('projects_subtabs_label'))}">` +
+    tabs.map(k => `<button type="button" role="tab" id="projectsSubtab_${k}" data-projects-subtab="${k}" aria-selected="${k === active ? 'true' : 'false'}" aria-controls="projectsSubtabBody" class="projects-subtab${k === active ? ' active' : ''}" onclick="selectProjectsSubtab('${k}')">${escHtml(t(_PROJECTS_SUBTAB_LABELS[k]))}</button>`).join('') + `</div>`;
+}
+function selectProjectsSubtab(k) {
+  if (!_projectsSubtabValid(k)) k = 'overview';
+  _projectsState.subtab = k;
+  _projectsRememberSubtab(k);
+  try {
+    if (_projectsState.selected) {
+      history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, k));
+    }
+  } catch (_) { /* history blocked */ }
+  _projectsPaint();
 }
 
 // ── Project roll-up section: progress bars, cost in points, throughput ──────
@@ -3643,10 +3701,9 @@ function _projectEventStreamHTML(ev, err) {
 // the selected project. A reply held for another project is not shown.
 function _projectLinksHTML(p) {
   const L = _projectsLinks.name === p.name ? _projectsLinks : { policy: null, policyError: '', merge: null, mergeError: '', events: null, eventsError: '' };
-  return `<div id="projectLinks" style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">` +
+  return `<div id="projectLinks" style="margin-top:12px;">` +
     _projectPolicyEffectiveHTML(L.policy, L.policyError) +
-    _projectMergePipelineHTML(L.merge, L.mergeError) +
-    _projectEventStreamHTML(L.events, L.eventsError) + `</div>`;
+    _projectMergePipelineHTML(L.merge, L.mergeError) + `</div>`;
 }
 
 // _projectArcDocsHTML lists an arc's plan and design document links and its
@@ -3753,8 +3810,8 @@ function _projectHistoryRowHTML(e) {
 
 // _projectHistoryHTML is the paged history list under the page. hist is null
 // while the first page loads. Load more appears while the server reports a
-// next cursor.
-function _projectHistoryHTML(hist) {
+// next cursor. bare drops the card wrapper for a sub-tab that holds only this block.
+function _projectHistoryHTML(hist, bare) {
   let inner;
   if (!hist) {
     inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_history_loading'))}</div>`;
@@ -3769,7 +3826,8 @@ function _projectHistoryHTML(hist) {
     const busy = _projectsState.histBusy ? ' disabled' : '';
     inner += `<button class="btn-secondary" id="projectHistoryMore" style="margin-top:8px;"${busy} onclick="projectsHistoryMore()">${escHtml(t('projects_history_load_more'))}</button>`;
   }
-  return _projectsSectionCard('history', escHtml(t('projects_history_heading')), `<div id="projectHistory">${inner}</div>`);
+  const block = `<div id="projectHistory">${inner}</div>`;
+  return bare ? block : _projectsSectionCard('history', escHtml(t('projects_history_heading')), block);
 }
 
 // ── Project Gantt: Automaton and task bars from the history endpoint ─────────
@@ -3836,8 +3894,9 @@ function _projectGanttPalette() {
 }
 
 // _projectGanttHTML is the Gantt block of the project page. hist is null while
-// the first history page loads; the window selector repaints on change.
-function _projectGanttHTML(hist) {
+// the first history page loads; the window selector repaints on change. bare
+// drops the card wrapper for a sub-tab that holds only this block.
+function _projectGanttHTML(hist, bare) {
   const key = _projectsState.ganttWindow || _PROJECTS_GANTT_DEFAULT_WINDOW;
   const select = `<label style="font-size:12px;color:var(--text2);margin-left:auto;">${escHtml(t('projects_gantt_window_label'))}
     <select id="projectGanttWindow" onchange="projectsGanttWindow(this.value)" style="font-size:12px;">${_PROJECTS_GANTT_WINDOWS.map(([k, , labelKey]) =>
@@ -3860,7 +3919,8 @@ function _projectGanttHTML(hist) {
       }
     }
   }
-  return _projectsSectionCard('gantt', escHtml(t('projects_gantt_heading')), `<div id="projectGantt" class="project-gantt">${top}${inner}</div>`);
+  const block = `<div id="projectGantt" class="project-gantt">${top}${inner}</div>`;
+  return bare ? block : _projectsSectionCard('gantt', escHtml(t('projects_gantt_heading')), block);
 }
 
 // _projectGanttSVG draws the bounded rows on a shared time axis. The axis has
@@ -3952,6 +4012,9 @@ function _projectsLoadSelected() {
 function renderProjectsView() {
   _projectsState.selected = (() => {
     const fromHash = _projectsHashParse(_projectsCurrentHash());
+    // A projects address opens Overview unless it names a sub-tab; no address
+    // at all keeps the remembered sub-tab.
+    if (fromHash !== null) _projectsState.subtab = _projectsHashSubtab(_projectsCurrentHash()) || 'overview';
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   _projectsPaint();
@@ -3999,7 +4062,7 @@ function selectProjectsView(name) {
   _projectsState.selected = name || _PROJECTS_OVERVIEW;
   _projectsRememberLast(_projectsState.selected);
   try {
-    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected));
+    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true)));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
   return _projectsLoadSelected().then(() => {

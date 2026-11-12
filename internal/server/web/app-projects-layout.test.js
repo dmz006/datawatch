@@ -1,5 +1,6 @@
-// Projects page layout — Gantt size cap, section order, collapsible section
-// cards with per-section memory, and the absence of hide/reorder controls.
+// Projects page layout — Gantt size cap inside the Gantt sub-tab, sub-tab order,
+// collapsible cards (only where a sub-tab holds more than one block) with
+// per-section memory, and the absence of hide/reorder controls.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -61,7 +62,11 @@ function hist() {
     ],
   };
 }
-function page(sb, roll = ROLLUP) { return sb._projectPageHTML(FULL, roll, '', hist()); }
+// page draws one sub-tab of the project page (Overview by default).
+function page(sb, roll = ROLLUP, sub = 'overview') {
+  vm.runInContext(`_projectsState.subtab = ${JSON.stringify(sub)}`, sb);
+  return sb._projectPageHTML(FULL, roll, '', hist());
+}
 
 function svgOf(html) {
   const m = /<svg class="project-gantt-svg"[\s\S]*?<\/svg>/.exec(html);
@@ -69,11 +74,11 @@ function svgOf(html) {
   return m[0];
 }
 
-// ---- size cap ----
+// ---- size cap (inside the Gantt sub-tab) ----
 
 test('the Gantt SVG is capped by a class rule and carries no viewport-relative unit', () => {
   const { sb } = load();
-  const svg = svgOf(page(sb));
+  const svg = svgOf(page(sb, ROLLUP, 'gantt'));
   assert.ok((svg.match(/<rect /g) || []).length >= 2, 'at least two bars');
   assert.match(svg, /^<svg class="project-gantt-svg"/);
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
@@ -83,13 +88,13 @@ test('the Gantt SVG is capped by a class rule and carries no viewport-relative u
   assert.ok(mw && Number(mw[1]) > 0, 'the rule sets a fixed pixel max-width');
   assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(rule[1]), 'the rule has no viewport-relative unit');
   assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(svg), 'the SVG markup has no viewport-relative unit');
-  const section = page(sb).match(/id="projectGantt"[\s\S]*?<\/svg>/)[0];
+  const section = page(sb, ROLLUP, 'gantt').match(/id="projectGantt"[\s\S]*?<\/svg>/)[0];
   assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(section), 'the Gantt block has no viewport-relative unit');
 });
 
 test('SVG font sizes are fixed numbers', () => {
   const { sb } = load();
-  const svg = svgOf(page(sb));
+  const svg = svgOf(page(sb, ROLLUP, 'gantt'));
   const sizes = svg.match(/font-size="[^"]*"/g) || [];
   assert.ok(sizes.length >= 3, 'text elements carry font-size');
   for (const s of sizes) assert.match(s, /^font-size="\d+(\.\d+)?"$/, s + ' is a plain number');
@@ -98,36 +103,44 @@ test('SVG font sizes are fixed numbers', () => {
 
 // ---- order ----
 
-test('the Gantt block comes before Unassigned Automata, and Unassigned before History', () => {
+test('the sub-tab strip puts Gantt before Unassigned, and Unassigned before History', () => {
   const { sb } = load({ showEmpty: true });
   for (const roll of [ROLLUP_NO_UNASSIGNED, ROLLUP]) {
     const html = page(sb, roll);
-    const g = html.indexOf('id="projectGantt"');
-    const u = html.indexOf('Unassigned Automata');
-    const h = html.indexOf('id="projectHistory"');
-    assert.ok(g > -1 && u > -1 && h > -1, 'all three blocks drawn');
+    const g = html.indexOf('data-projects-subtab="gantt"');
+    const u = html.indexOf('data-projects-subtab="unassigned"');
+    const h = html.indexOf('data-projects-subtab="history"');
+    assert.ok(g > -1 && u > -1 && h > -1, 'all three sub-tabs drawn');
     assert.ok(g < u, 'Gantt before Unassigned');
     assert.ok(u < h, 'Unassigned before History');
   }
-  assert.match(page(sb, ROLLUP), /data-automaton="loose-1"/, 'the unassigned Automaton is drawn');
+  assert.match(page(sb, ROLLUP, 'unassigned'), /data-automaton="loose-1"/, 'the unassigned Automaton is drawn');
 });
 
-// ---- collapse memory ----
+// ---- collapse memory (cards only where a sub-tab holds more than one block) ----
 
-const SECTION_IDS = ['arcs', 'gantt', 'unassigned', 'history', 'events'];
+const CARD_TABS = { overview: ['progress'], policy: ['policy', 'merge'], events: ['events', 'stream'] };
+const BARE_TABS = ['arcs', 'gantt', 'unassigned', 'history'];
 
-test('every drawn section sits in a card with a toggle', () => {
+test('multi-block sub-tabs draw cards with a toggle; single-block sub-tabs draw none', () => {
   const { sb } = load({ showEmpty: true });
-  const html = page(sb, ROLLUP_NO_UNASSIGNED);
-  const ids = Array.from(html.matchAll(/data-section="([^"]+)"/g)).map(m => m[1]);
-  for (const id of ['arcs', 'gantt', 'unassigned', 'history']) assert.ok(ids.includes(id), id + ' is a card');
-  for (const id of new Set(ids)) {
-    const card = new RegExp(`<div class="project-section-card[^"]*" id="projectSection-${id}" data-section="${id}"`);
-    assert.match(html, card, id + ' card wrapper');
-    assert.match(html, new RegExp(`projectsToggleSection\\('${id}'\\)`), id + ' has a toggle handler');
+  for (const [sub, want] of Object.entries(CARD_TABS)) {
+    const html = page(sb, ROLLUP_NO_UNASSIGNED, sub);
+    const ids = Array.from(html.matchAll(/data-section="([^"]+)"/g)).map(m => m[1]);
+    assert.deepEqual(ids, want, sub + ' cards');
+    for (const id of ids) {
+      assert.match(html, new RegExp(`<div class="project-section-card[^"]*" id="projectSection-${id}" data-section="${id}"`), id + ' card wrapper');
+      assert.match(html, new RegExp(`projectsToggleSection\\('${id}'\\)`), id + ' has a toggle handler');
+    }
+    assert.equal((html.match(/class="project-section-toggle"/g) || []).length, ids.length, 'one toggle per card');
+    assert.ok(!/ hidden>/.test(html) && !/ collapsed"/.test(html), 'nothing starts collapsed');
   }
-  assert.equal((html.match(/class="project-section-toggle"/g) || []).length, (html.match(/class="project-section-card/g) || []).length, 'one toggle per card');
-  assert.ok(!/ hidden>/.test(html) && !/ collapsed"/.test(html), 'nothing starts collapsed');
+  for (const sub of BARE_TABS) {
+    const html = page(sb, ROLLUP_NO_UNASSIGNED, sub);
+    assert.doesNotMatch(html, /project-section-card/, sub + ' has no card around its single block');
+  }
+  assert.match(page(sb, ROLLUP_NO_UNASSIGNED, 'gantt'), /id="projectGantt"/);
+  assert.match(page(sb, ROLLUP_NO_UNASSIGNED, 'history'), /id="projectHistory"/);
 });
 
 // fakeDom wires document.querySelectorAll to the cards found in html, enough for
@@ -157,47 +170,48 @@ function wireCards(sb, html) {
 test('collapsing stores a per-section value; a fresh render draws only that section collapsed; expanding clears it', () => {
   const storage = memStorage();
   const a = load({ storage, showEmpty: true });
-  const cards = wireCards(a.sb, page(a.sb));
-  a.sb.projectsToggleSection('gantt');
-  assert.equal(cards.gantt.body.hidden, true, 'body hidden in place');
-  assert.deepEqual(storage.keys(), ['cs_projects_section_collapsed_gantt'], 'one per-section key');
-  assert.equal(storage.getItem('cs_projects_section_collapsed_gantt'), '1');
+  const cards = wireCards(a.sb, page(a.sb, ROLLUP, 'policy'));
+  a.sb.projectsToggleSection('merge');
+  assert.equal(cards.merge.body.hidden, true, 'body hidden in place');
+  assert.deepEqual(storage.keys(), ['cs_projects_section_collapsed_merge'], 'one per-section key');
+  assert.equal(storage.getItem('cs_projects_section_collapsed_merge'), '1');
 
   const b = load({ storage, showEmpty: true });
-  const html = page(b.sb);
+  const html = page(b.sb, ROLLUP, 'policy');
   const card = id => new RegExp(`<div class="project-section-card( collapsed)?" id="projectSection-${id}"`).exec(html);
-  assert.equal(card('gantt')[1], ' collapsed', 'gantt drawn collapsed');
-  for (const id of ['arcs', 'unassigned', 'history']) assert.equal(card(id)[1], undefined, id + ' stays expanded');
-  const ganttCard = html.slice(html.indexOf('id="projectSection-gantt"'), html.indexOf('id="projectSection-unassigned"'));
-  assert.match(ganttCard, /aria-expanded="false"/);
-  assert.match(ganttCard, /project-section-body" hidden>/);
-  assert.match(ganttCard, /aria-label="Expand Gantt/);
+  assert.equal(card('merge')[1], ' collapsed', 'merge drawn collapsed');
+  assert.equal(card('policy')[1], undefined, 'policy stays expanded');
+  const mergeCard = html.slice(html.indexOf('id="projectSection-merge"'));
+  assert.match(mergeCard, /aria-expanded="false"/);
+  assert.match(mergeCard, /project-section-body" hidden>/);
+  assert.match(mergeCard, /aria-label="Expand /);
 
   const cards2 = wireCards(b.sb, html);
-  b.sb.projectsToggleSection('gantt');
-  assert.equal(cards2.gantt.body.hidden, false, 'expanded in place');
-  assert.notEqual(storage.getItem('cs_projects_section_collapsed_gantt'), '1', 'expanding clears the stored collapse');
+  b.sb.projectsToggleSection('merge');
+  assert.equal(cards2.merge.body.hidden, false, 'expanded in place');
+  assert.notEqual(storage.getItem('cs_projects_section_collapsed_merge'), '1', 'expanding clears the stored collapse');
   const c = load({ storage, showEmpty: true });
-  assert.doesNotMatch(page(c.sb), /project-section-card collapsed/, 'fresh render has nothing collapsed');
+  assert.doesNotMatch(page(c.sb, ROLLUP, 'policy'), /project-section-card collapsed/, 'fresh render has nothing collapsed');
 });
 
 test('a localStorage that throws still renders every section expanded without an error', () => {
   // app.js reads storage once at load, so the store starts blocking afterwards.
   const { sb } = load({ showEmpty: true });
   sb.localStorage = throwingStorage;
-  let html;
-  assert.doesNotThrow(() => { html = page(sb, ROLLUP_NO_UNASSIGNED); });
-  assert.ok(html.includes('id="projectGantt"') && html.includes('id="projectHistory"'));
-  assert.doesNotMatch(html, /project-section-card collapsed/);
-  assert.doesNotMatch(html, /project-section-body" hidden/);
-  const cards = wireCards(sb, html);
-  assert.doesNotThrow(() => sb.projectsToggleSection('gantt'));
-  assert.ok(cards.gantt, 'card present');
+  for (const sub of ['overview', 'gantt', 'history', 'policy', 'events']) {
+    let html;
+    assert.doesNotThrow(() => { html = page(sb, ROLLUP_NO_UNASSIGNED, sub); }, sub);
+    assert.doesNotMatch(html, /project-section-card collapsed/);
+    assert.doesNotMatch(html, /project-section-body" hidden/);
+  }
+  const cards = wireCards(sb, page(sb, ROLLUP_NO_UNASSIGNED, 'policy'));
+  assert.doesNotThrow(() => sb.projectsToggleSection('merge'));
+  assert.ok(cards.merge, 'card present');
 });
 
 test('the Projects view paints the cards through the real render path', async () => {
   const storage = memStorage();
-  storage.setItem('cs_projects_section_collapsed_history', '1');
+  storage.setItem('cs_projects_section_collapsed_merge', '1');
   const { sb, out } = load({ storage, showEmpty: true });
   sb.fetch = (url) => {
     const u = String(url);
@@ -207,30 +221,36 @@ test('the Projects view paints the cards through the real render path', async ()
     if (u.includes('/api/projects')) return ok([FULL]);
     return ok([]);
   };
-  sb.location.hash = '#projects/acme';
+  sb.location.hash = '#projects/acme/policy';
   vm.runInContext("_projectsState.selected = 'acme'", sb);
   sb.renderProjectsView();
   await flushAsync();
-  assert.match(out.view, /id="projectSection-gantt"/);
-  assert.match(out.view, /class="project-section-card collapsed" id="projectSection-history"/);
-  assert.ok(out.view.indexOf('id="projectGantt"') < out.view.indexOf('Unassigned Automata'));
+  assert.match(out.view, /class="project-section-card collapsed" id="projectSection-merge"/);
+  assert.match(out.view, /id="projectSection-policy"/);
+
+  sb.location.hash = '#projects/acme/gantt';
+  sb.renderProjectsView();
+  await flushAsync();
+  assert.match(out.view, /id="projectGantt"/);
+  assert.doesNotMatch(out.view, /project-section-card/);
 });
 
-// ---- no hide / reorder controls, no sub-tab ----
+// ---- no hide / reorder controls ----
 
-test('no control hides or moves a card and no sub-tab was added', () => {
+test('no control hides or moves a card', () => {
   const { sb } = load({ showEmpty: true });
-  const html = page(sb);
-  assert.doesNotMatch(html, /draggable/i);
-  assert.doesNotMatch(html, /ondrag|ondrop/i);
-  assert.doesNotMatch(html, /(hide|move|reorder|sort)[A-Za-z]*Section|projects(Hide|Move|Reorder)/);
-  assert.doesNotMatch(html, /role="tab"|role="tablist"|project-subtab|projects-subtab/);
-  assert.doesNotMatch(html, />\s*(Hide|Move up|Move down|Reorder|Remove)\s*</);
-  for (const m of html.matchAll(/class="project-section-toggle"[^>]*onclick="([^"]*)"/g)) {
-    assert.match(m[1], /^projectsToggleSection\('[a-z]+'\)$/, 'a toggle only collapses or expands');
+  for (const sub of ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events']) {
+    const html = page(sb, ROLLUP, sub);
+    assert.doesNotMatch(html, /draggable/i);
+    assert.doesNotMatch(html, /ondrag|ondrop/i);
+    assert.doesNotMatch(html, /(hide|move|reorder|sort)[A-Za-z]*Section|projects(Hide|Move|Reorder)/);
+    assert.doesNotMatch(html, />\s*(Hide|Move up|Move down|Reorder|Remove)\s*</);
+    for (const m of html.matchAll(/class="project-section-toggle"[^>]*onclick="([^"]*)"/g)) {
+      assert.match(m[1], /^projectsToggleSection\('[a-z]+'\)$/, 'a toggle only collapses or expands');
+    }
+    const ids = new Set(Array.from(html.matchAll(/data-section="([^"]+)"/g)).map(m => m[1]));
+    for (const id of ids) assert.ok(['progress', 'stream', 'policy', 'merge', 'events'].includes(id), id + ' is a known section');
   }
-  const ids = new Set(Array.from(html.matchAll(/data-section="([^"]+)"/g)).map(m => m[1]));
-  for (const id of ids) assert.ok([...SECTION_IDS, 'progress', 'stream', 'policy', 'merge'].includes(id), id + ' is a known section');
 });
 
 // ---- strings ----
