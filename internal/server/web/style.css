@@ -179,6 +179,33 @@ body {
   padding-top: env(safe-area-inset-top, 0);
 }
 
+/* BL312 S3 (2026-11-12) — header server dropdown (successor to the per-panel
+   .server-picker-bar chip row + the Sessions topbar slot). Fits the fixed
+   flex header on every width: compact, truncates long peer names instead of
+   wrapping, and hands keyboard/selection to the native control. */
+.server-dropdown {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  width: auto;
+  height: calc(var(--header-h) - 14px);
+  max-height: 34px;
+  padding: 0 26px 0 10px;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  appearance: auto;
+}
+.server-dropdown:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+
 .header-title {
   flex: 1;
   min-width: 0;
@@ -7784,7 +7811,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 
 /* ── Sessions top row: search box, filters slot, mode buttons ── */
 .sessions-topbar { display: block; }
-.sessions-topbar-servers:empty { display: none; }
 .sessions-search-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px 2px; }
 .sessions-search-row .session-filter-wrap { flex: 1; min-width: 0; }
 .sessions-search-row .session-filter-input { padding: 6px 28px 6px 10px; font-size: 13px; }
@@ -7794,8 +7820,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 
 @media (max-width: 640px) {
   .sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-  .sessions-topbar-servers { flex: 0 1 auto; min-width: 0; max-width: 38%; overflow-x: auto; white-space: nowrap; }
-  .sessions-topbar-servers .server-picker-bar { flex-wrap: nowrap; padding: 2px 4px; border-bottom: 0; }
   .sessions-search-row { flex: 1 1 auto; min-width: 0; padding: 0; }
   .sessions-search-row .session-filter-input { padding: 4px 24px 4px 8px; font-size: 12px; }
   .sessions-topbar .sessions-mode-toggle { flex: 0 0 auto; padding: 0; border-bottom: 0; gap: 2px; }
