@@ -96,7 +96,8 @@ test('a failed read shows its own error and does not hide the other sections', a
     '/autonomous/events': new Error('503 pending events queue disabled'),
   });
   await selectAndLoad(sb, 'acme');
-  const html = sb._projectLinksHTML({ name: 'acme' });
+  const L = vm.runInContext('_projectsLinks', sb);
+  const html = sb._projectLinksHTML({ name: 'acme' }) + sb._projectEventStreamHTML(L.events, L.eventsError);
   assert.ok(html.includes('boom'), 'policy error shown');
   assert.ok(html.includes('the project file is in use'), 'merge pipeline still shown');
   assert.ok(html.includes('503 pending events queue disabled'), 'events error shown');
@@ -129,7 +130,8 @@ test('an empty merge definition says so and an empty event list says so', async 
   });
   vm.runInContext('_projectsShowEmpty = function () { return true; }', sb);
   await selectAndLoad(sb, 'acme');
-  const html = sb._projectLinksHTML({ name: 'acme' });
+  const L = vm.runInContext('_projectsLinks', sb);
+  const html = sb._projectLinksHTML({ name: 'acme' }) + sb._projectEventStreamHTML(L.events, L.eventsError);
   assert.ok(html.includes('No policy values are set for this project.'));
   assert.ok(html.includes('No events for this project yet.'));
   assert.ok(html.includes('Some earlier events were dropped'), 'dropped note shown');

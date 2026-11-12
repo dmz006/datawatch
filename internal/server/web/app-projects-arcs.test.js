@@ -12,7 +12,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
-const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, makeStubElement, flushAsync, pageAllSubtabs } = require('./testutil_browser_stub');
 
 const APP = path.join(__dirname, 'app.js');
 
@@ -62,7 +62,7 @@ const ROLLUP = {
 
 test('the header shows every set field; the description is escaped', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, ROLLUP, '');
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '');
   assert.match(html, /class="project-detail-card" data-project="acme"/);
   assert.match(html, /Acme &lt;site&gt;/);
   assert.match(html, /Owner:<\/span> platform-team/);
@@ -79,7 +79,7 @@ test('the header shows every set field; the description is escaped', () => {
 
 test('only a missing weekly share becomes an Events entry; other unset fields are just hidden', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML({ name: 'bare', dir: '/w/bare' }, ROLLUP, '');
+  const html = pageAllSubtabs(sb, { name: 'bare', dir: '/w/bare' }, ROLLUP, '');
   assert.doesNotMatch(html, /Owner:<\/span>/);
   assert.doesNotMatch(html, /Weekly share:<\/span>/);
   assert.match(html, /id="projectEvents"/);
@@ -91,19 +91,19 @@ test('only a missing weekly share becomes an Events entry; other unset fields ar
 
 test('a missing weekly share is silent when there is no arc or unassigned Automaton', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML({ name: 'bare', dir: '/w/bare' }, { arcs: [], unassigned: { automata: [] }, total: {} }, '');
+  const html = pageAllSubtabs(sb, { name: 'bare', dir: '/w/bare' }, { arcs: [], unassigned: { automata: [] }, total: {} }, '');
   assert.doesNotMatch(html, /Weekly share is not set\./);
 });
 
 test('a weekly share of zero is a set value, not an unset one', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML({ ...FULL, weekly_share: 0 }, ROLLUP, '');
+  const html = pageAllSubtabs(sb, { ...FULL, weekly_share: 0 }, ROLLUP, '');
   assert.match(html, /Weekly share:<\/span> 0%/);
 });
 
 test('arcs are listed in priority order with their state, active arcs open', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, ROLLUP, '');
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '');
   const first = html.indexOf('data-automation="auto-a"');
   const second = html.indexOf('data-automation="auto-b"');
   assert.ok(first > -1 && second > first, 'priority 1 comes before priority 2');
@@ -116,13 +116,13 @@ test('arcs are listed in priority order with their state, active arcs open', () 
 test('an arc with no state reads as planned', () => {
   const { sb } = loadView();
   const roll = { arcs: [{ automation_id: 'auto-x', priority: 0, automata: [{ id: 'p', status: 's', session_ids: ['s-1'] }] }] };
-  const html = sb._projectPageHTML(FULL, roll, '');
+  const html = pageAllSubtabs(sb, FULL, roll, '');
   assert.match(html, /Planned<\/span>/);
 });
 
 test('an Automaton and each session link to the existing views', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, ROLLUP, '');
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '');
   assert.match(html, /onclick="_statusOpenAutomaton\(&quot;prd-1&quot;\);return false;"/);
   assert.match(html, /onclick="navigate\(&#39;session-detail&#39;,&quot;sess-bbb-222&quot;\);return false;"|onclick="navigate\('session-detail',&quot;sess-bbb-222&quot;\);return false;"/);
   assert.match(html, /data-session="sess-ccc-333"/);
@@ -132,7 +132,7 @@ test('an Automaton and each session link to the existing views', () => {
 test('an arc with no Automata is not expanded and its line goes to Events', () => {
   const { sb } = loadView();
   const roll = { arcs: [{ automation_id: 'auto-empty', priority: 1, state: 'planned', automata: [] }] };
-  const html = sb._projectPageHTML(FULL, roll, '');
+  const html = pageAllSubtabs(sb, FULL, roll, '');
   assert.match(html, /data-automation="auto-empty"/);
   assert.doesNotMatch(html, /project-automaton/);
   assert.match(html, /Arc auto-empty has no Automata yet\./);
@@ -141,7 +141,7 @@ test('an arc with no Automata is not expanded and its line goes to Events', () =
 test('an Automaton with no sessions goes to Events, not an empty list', () => {
   const { sb } = loadView();
   const roll = { arcs: [{ automation_id: 'a', priority: 1, automata: [{ id: 'p1', title: 'Solo', session_ids: [] }] }] };
-  const html = sb._projectPageHTML(FULL, roll, '');
+  const html = pageAllSubtabs(sb, FULL, roll, '');
   assert.match(html, /data-automaton="p1"/);
   assert.match(html, /Solo has no sessions yet\./);
   assert.doesNotMatch(html, /project-session-link/);
@@ -149,7 +149,7 @@ test('an Automaton with no sessions goes to Events, not an empty list', () => {
 
 test('no arcs and no unassigned Automata both say so in Events', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, { arcs: [], unassigned: { automata: [] } }, '');
+  const html = pageAllSubtabs(sb, FULL, { arcs: [], unassigned: { automata: [] } }, '');
   assert.doesNotMatch(html, /Arcs<\/div>/);
   assert.match(html, /No arcs are planned for this project\./);
   assert.match(html, /No unassigned Automata\./);
@@ -158,7 +158,7 @@ test('no arcs and no unassigned Automata both say so in Events', () => {
 test('unassigned Automata are shown when present', () => {
   const { sb } = loadView();
   const roll = { arcs: [], unassigned: { automata: [{ id: 'loose-1', title: 'Loose', session_ids: ['s-9'] }] } };
-  const html = sb._projectPageHTML(FULL, roll, '');
+  const html = pageAllSubtabs(sb, FULL, roll, '');
   assert.match(html, /Unassigned Automata/);
   assert.match(html, /data-automaton="loose-1"/);
   assert.doesNotMatch(html, /No unassigned Automata\./);
@@ -166,7 +166,7 @@ test('unassigned Automata are shown when present', () => {
 
 test('while the roll-up loads, the page shows a loading line and no arc or Events text', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, null, '');
+  const html = pageAllSubtabs(sb, FULL, null, '');
   assert.match(html, /Loading arcs…/);
   assert.doesNotMatch(html, /No arcs are planned/);
   assert.doesNotMatch(html, /id="projectEvents"/);
@@ -174,18 +174,21 @@ test('while the roll-up loads, the page shows a loading line and no arc or Event
 
 test('a roll-up failure is an Events entry with the escaped error', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, null, '<b>down</b>');
+  const html = pageAllSubtabs(sb, FULL, null, '<b>down</b>');
   assert.match(html, /Could not load the roll-up: &lt;b&gt;down&lt;\/b&gt;/);
   assert.doesNotMatch(html, /Loading arcs…/);
 });
 
 test('the Projects view reads the selected project roll-up and paints the arcs', async () => {
-  const { sb, out } = loadView({ projects: [FULL], rollup: ROLLUP, hash: '#projects/acme' });
+  const { sb, out } = loadView({ projects: [FULL], rollup: ROLLUP, hash: '#projects/acme/arcs' });
   sb.renderProjectsView();
   await flushAsync();
   assert.deepEqual(out.rollupCalls, ['/api/projects/acme/rollup']);
   assert.match(out.view, /data-automation="auto-a"/);
-  assert.match(out.view, /Owner:<\/span> platform-team/);
+  const ov = loadView({ projects: [FULL], rollup: ROLLUP, hash: '#projects/acme' });
+  ov.sb.renderProjectsView();
+  await flushAsync();
+  assert.match(ov.out.view, /Owner:<\/span> platform-team/, 'the header is on Overview');
 });
 
 test('Overview reads no roll-up', async () => {
@@ -196,7 +199,7 @@ test('Overview reads no roll-up', async () => {
 });
 
 test('a roll-up request that fails paints the failure as an Events entry', async () => {
-  const { sb, out } = loadView({ projects: [FULL], rollupFail: true, hash: '#projects/acme' });
+  const { sb, out } = loadView({ projects: [FULL], rollupFail: true, hash: '#projects/acme/events' });
   sb.renderProjectsView();
   await flushAsync();
   assert.match(out.view, /id="projectEvents"/);

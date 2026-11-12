@@ -7392,6 +7392,12 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .metric-trend-down { color: var(--success, #22c55e); }
 .metric-trend-flat { color: var(--text2); }
 
+/* Projects page sub-tab strip: scrolls sideways on a phone, never the page. */
+.projects-subtabs { display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; }
+.projects-subtabs button { flex-shrink: 0; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 8px 12px; font-size: 13px; cursor: pointer; }
+.projects-subtabs button.active, .projects-subtabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent, #3b82f6); font-weight: 600; }
+
+
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
 .obs-row-nowrap { flex-wrap: nowrap; }
 .obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }

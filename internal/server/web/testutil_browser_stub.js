@@ -159,4 +159,15 @@ function flushAsync(ticks = 10) {
   });
 }
 
-module.exports = { makeStubElement, makeStubCtx, buildSandbox, loadScript, flushAsync, vm };
+// pageAllSubtabs renders the selected project page once per sub-tab and joins
+// the bodies, so tests written for the single-page layout can still assert on
+// every section. Extra arguments are the _projectPageHTML arguments.
+function pageAllSubtabs(sb, ...args) {
+  const orig = sb._projectsActiveSubtab;
+  const keys = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+  try {
+    return keys.map(k => { sb._projectsActiveSubtab = () => k; return sb._projectPageHTML(...args); }).join('\n');
+  } finally { sb._projectsActiveSubtab = orig; }
+}
+
+module.exports = { makeStubElement, makeStubCtx, buildSandbox, loadScript, flushAsync, vm, pageAllSubtabs };

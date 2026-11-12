@@ -11,7 +11,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
-const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, makeStubElement, flushAsync, pageAllSubtabs } = require('./testutil_browser_stub');
 
 const APP = path.join(__dirname, 'app.js');
 
@@ -73,7 +73,7 @@ const ROLLUP = {
 
 test('the roll-up shows a whole-project bar with done/total and the percent', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, ROLLUP, '', null);
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '', null);
   assert.match(html, /class="project-rollup"/);
   assert.match(html, /aria-label="Whole project" aria-valuemin="0" aria-valuemax="100" aria-valuenow="57"/, '4 of 7 is 57%');
   assert.match(html, /4\/7 tasks · 57%/);
@@ -81,7 +81,7 @@ test('the roll-up shows a whole-project bar with done/total and the percent', ()
 
 test('each arc shows its own progress bar with its task count', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, ROLLUP, '', null);
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '', null);
   assert.match(html, /aria-label="auto-a" aria-valuemin="0" aria-valuemax="100" aria-valuenow="25"/);
   assert.match(html, /1\/4 tasks · 25%/);
   assert.match(html, /aria-label="auto-b" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"/);
@@ -90,14 +90,14 @@ test('each arc shows its own progress bar with its task count', () => {
 test('an empty total reads as 0%, never NaN', () => {
   const { sb } = loadView();
   const roll = { arcs: [], unassigned: { automata: [] }, total: { tasks: { done: 0, total: 0 }, points: 0, throughput: {} } };
-  const html = sb._projectPageHTML(FULL, roll, '', null);
+  const html = pageAllSubtabs(sb, FULL, roll, '', null);
   assert.match(html, /0\/0 tasks · 0%/);
   assert.doesNotMatch(html, /NaN/);
 });
 
 test('cost is shown in points and never in dollars', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, ROLLUP, '', null);
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '', null);
   assert.match(html, /Cost in points:<\/span> 1\.3 points|Cost in points:<\/span> 1\.25 points/);
   const block = html.slice(html.indexOf('class="project-rollup"'), html.indexOf('id="projectHistory"') > -1 ? html.indexOf('id="projectHistory"') : html.length);
   assert.doesNotMatch(block, /\$/, 'the roll-up block carries no dollar sign');
@@ -106,13 +106,13 @@ test('cost is shown in points and never in dollars', () => {
 
 test('when the roll-up is not priced the points line says so', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, { ...ROLLUP, points_priced: false }, '', null);
+  const html = pageAllSubtabs(sb, FULL, { ...ROLLUP, points_priced: false }, '', null);
   assert.match(html, /Cost in points:<\/span> Not priced: the backends are not on a bundled plan/);
 });
 
 test('throughput shows the finished counts and the per-day rates over the window', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, ROLLUP, '', null);
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '', null);
   assert.match(html, /Throughput, last 7 days:<\/span> 1 Automata finished \(0\.14 per day\) · 3 tasks finished \(0\.43 per day\)/);
 });
 
@@ -126,7 +126,7 @@ test('a roll-up without a total is summed from its arcs and the unassigned group
     ],
     unassigned: { tasks: { done: 1, total: 2 }, points: 0.5, throughput: { automata_finished: 0, tasks_finished: 0, automata_per_day: 0, tasks_per_day: 0 }, automata: [] },
   };
-  const html = sb._projectPageHTML(FULL, roll, '', null);
+  const html = pageAllSubtabs(sb, FULL, roll, '', null);
   assert.match(html, /4\/8 tasks · 50%/);
   assert.match(html, /Cost in points:<\/span> 2 points/);
   assert.match(html, /Throughput, last 7 days:<\/span> 1 Automata finished \(0\.5 per day\) · 3 tasks finished \(1\.5 per day\)/);
@@ -134,7 +134,7 @@ test('a roll-up without a total is summed from its arcs and the unassigned group
 
 test('while the roll-up loads there is no roll-up block', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, null, '', null);
+  const html = pageAllSubtabs(sb, FULL, null, '', null);
   assert.doesNotMatch(html, /class="project-rollup"/);
   assert.match(html, /Loading arcs…/);
 });
@@ -149,7 +149,7 @@ test('a history list shows Automata with links and snapshots as progress lines',
       { kind: 'task', time: '2026-11-06T00:00:00Z', id: 'x' },
     ],
   };
-  const html = sb._projectPageHTML(FULL, ROLLUP, '', hist);
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '', hist);
   assert.match(html, /id="projectHistory"/);
   assert.match(html, /data-kind="automaton" data-automaton="prd-9"/);
   assert.match(html, /Ship &lt;cart&gt;/, 'the Automaton title is escaped');
@@ -162,28 +162,28 @@ test('a history list shows Automata with links and snapshots as progress lines',
 test('Load more shows while a next cursor is present', () => {
   const { sb } = loadView();
   const hist = { name: 'acme', error: '', next: 'abc', items: [{ kind: 'snapshot', taken_at: '2026-11-07T00:00:00Z', progress: { tasks: 1, tasks_done: 0 } }] };
-  const html = sb._projectPageHTML(FULL, ROLLUP, '', hist);
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '', hist);
   assert.match(html, /id="projectHistoryMore"/);
   assert.match(html, /onclick="projectsHistoryMore\(\)"/);
 });
 
 test('an empty history says so, and a history error is shown escaped', () => {
   const { sb } = loadView();
-  const empty = sb._projectPageHTML(FULL, ROLLUP, '', { name: 'acme', error: '', next: '', items: [] });
+  const empty = pageAllSubtabs(sb, FULL, ROLLUP, '', { name: 'acme', error: '', next: '', items: [] });
   assert.match(empty, /Nothing has finished yet\./);
-  const failed = sb._projectPageHTML(FULL, ROLLUP, '', { name: 'acme', error: '<i>down</i>', next: '', items: [] });
+  const failed = pageAllSubtabs(sb, FULL, ROLLUP, '', { name: 'acme', error: '<i>down</i>', next: '', items: [] });
   assert.match(failed, /Could not load the history: &lt;i&gt;down&lt;\/i&gt;/);
 });
 
 test('the history is loading until its first page arrives', () => {
   const { sb } = loadView();
-  const html = sb._projectPageHTML(FULL, ROLLUP, '', null);
+  const html = pageAllSubtabs(sb, FULL, ROLLUP, '', null);
   assert.match(html, /Loading history…/);
 });
 
 test('the Projects view reads the first history page for the selected project', async () => {
   const { sb, out } = loadView({
-    projects: [FULL], rollup: ROLLUP, hash: '#projects/acme',
+    projects: [FULL], rollup: ROLLUP, hash: '#projects/acme/history',
     history: [{ items: [{ kind: 'snapshot', taken_at: '2026-11-07T00:00:00Z', progress: { tasks: 2, tasks_done: 1 } }], next_cursor: 'c1' }],
   });
   sb.renderProjectsView();
@@ -191,12 +191,11 @@ test('the Projects view reads the first history page for the selected project', 
   assert.deepEqual(out.historyCalls, ['/api/projects/acme/history?limit=20']);
   assert.match(out.view, /id="projectHistory"/);
   assert.match(out.view, /id="projectHistoryMore"/);
-  assert.match(out.view, /class="project-rollup"/);
 });
 
 test('Load more requests the next cursor and appends the page', async () => {
   const { sb, out } = loadView({
-    projects: [FULL], rollup: ROLLUP, hash: '#projects/acme',
+    projects: [FULL], rollup: ROLLUP, hash: '#projects/acme/history',
     history: [
       { items: [{ kind: 'snapshot', taken_at: '2026-11-07T00:00:00Z', progress: { tasks: 2, tasks_done: 1 } }], next_cursor: 'c1' },
       { items: [{ kind: 'snapshot', taken_at: '2026-11-06T00:00:00Z', progress: { tasks: 2, tasks_done: 0 } }] },
@@ -222,7 +221,7 @@ test('Load more does nothing when there is no next cursor', async () => {
 });
 
 test('a history request that fails shows the error on the page', async () => {
-  const { sb, out } = loadView({ projects: [FULL], rollup: ROLLUP, hash: '#projects/acme', historyFail: true });
+  const { sb, out } = loadView({ projects: [FULL], rollup: ROLLUP, hash: '#projects/acme/history', historyFail: true });
   sb.renderProjectsView();
   await flushAsync();
   assert.match(out.view, /Could not load the history:/);
