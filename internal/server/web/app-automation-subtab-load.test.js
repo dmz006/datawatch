@@ -245,20 +245,20 @@ test('a progress fetch that lands after the operator left the Automation sub-tab
   assert.equal(els.progressCard.style.display, 'none', 'the slot is hidden off the Automation sub-tab');
 });
 
-test('phone fit: the tab bar wraps and shrinks, with 40 px tap targets and no page scroll', () => {
+test('phone fit: the tab bar scrolls sideways, with 40 px tap targets and no page scroll', () => {
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
-  const start = css.indexOf('@media (max-width: 600px), (pointer: coarse) {\n  .automata-tabs-bar {');
+  const start = css.indexOf('@media (max-width: 600px), (pointer: coarse) {\n  .automata-tabs-bar,');
   assert.ok(start > 0, 'phone block for .automata-tabs-bar exists');
   const block = css.slice(start, css.indexOf('\n}\n', start) + 3);
-  assert.match(block, /\.automata-tabs-bar \{[^}]*flex-wrap: wrap;/, 'action buttons wrap instead of scrolling');
-  assert.match(block, /\.automata-tabs-bar \{[^}]*overflow: visible;/, 'nothing is clipped or scrolled in the bar');
-  assert.match(block, /\.automata-tabs-bar \{[^}]*max-width: 100%;/, 'the bar never exceeds the page width');
-  const tab = block.match(/\.automata-tabs-bar \.output-tab \{([^}]*)\}/);
+  assert.match(block, /flex-wrap: nowrap;/, 'the tabs never wrap');
+  assert.match(block, /overflow-x: auto;/, 'the strip scrolls sideways');
+  assert.match(block, /max-width: 100%;/, 'the bar never exceeds the page width');
+  assert.match(block, /mask-image: linear-gradient/, 'an edge fade shows more tabs exist');
+  assert.match(block, /\.header-title \{[^}]*font-size: 14px;/, 'the header title shrinks on phones');
+  const tab = block.match(/\.output-tab,?\s*\.projects-tabs-bar \.output-tab \{([^}]*)\}/);
   assert.ok(tab, 'tab rule');
   assert.match(tab[1], /min-height: 40px;/);
-  assert.match(tab[1], /min-width: 0;/);
-  assert.match(tab[1], /flex: 0 1 auto;/, 'tabs may shrink');
-  assert.match(tab[1], /text-overflow: ellipsis;/);
+  assert.match(tab[1], /flex: 0 0 auto;/, 'tabs keep their width and the strip scrolls');
   const btn = block.match(/\.automata-tabs-bar \.automata-action-btn \{([^}]*)\}/);
   assert.ok(btn, 'action button rule');
   assert.match(btn[1], /min-width: 40px;/);
@@ -266,10 +266,8 @@ test('phone fit: the tab bar wraps and shrinks, with 40 px tap targets and no pa
   assert.match(block, /\.automata-tabs-bar \.btn-primary \{[^}]*min-height: 40px;/, 'the New button reaches 40 px');
 });
 
-test('phone fit: three tabs and the action buttons fit 304 px of bar width by their rules', () => {
-  // The tab group needs about 250 px at 12 px type with 8 px side padding; the
-  // rest of the 304 px bar (320 px less 2 x 8 px padding) cannot hold a 40 px
-  // button row, so the buttons wrap. This guards the padding the estimate uses.
-  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
-  assert.match(css, /\.automata-tabs-bar \.output-tab \{[^}]*padding: 6px 8px;/);
+test('tab strip helper: one shared reveal is guarded for the node stub', () => {
+  const js = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  assert.match(js, /function _tabStripReveal\(stripEl\)/);
+  assert.match(js, /function _automationSubtabsReveal\(\) \{\s*try \{ _tabStripReveal\(/);
 });

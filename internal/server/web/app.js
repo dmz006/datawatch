@@ -3145,6 +3145,7 @@ function _projectsPaint() {
     const hist = _projectsState.hist && _projectsState.hist.name === selected ? _projectsState.hist : null;
     view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist);
   }
+  _tabStripsRevealAll();
 }
 
 function _projectsPickerHTML(list, selected, err) {
@@ -29497,7 +29498,7 @@ function _automataFallbackFromAutomation() {
 }
 
 function _automataHeaderTitle() {
-  if (_automataNormalizeTab() === 'projects') return t('nav_projects') || 'Projects';
+  if (_automataNormalizeTab() === 'projects') return t('nav_projects_short') || t('nav_projects') || 'Projects';
   return _automataNormalizeTab() === 'automation'
     ? (t('nav_automation') || 'Automation')
     : (t('automata_tab_automata') || 'Automata');
@@ -29572,6 +29573,7 @@ function switchAutomataTab(tab) {
   document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
+  _tabStripsRevealAll();
   if (state.activeView === 'autonomous') {
     const headerTitle = document.getElementById('headerTitle');
     if (headerTitle) headerTitle.textContent = _automataHeaderTitle();
@@ -39214,7 +39216,9 @@ function renderAutonomousView() {
   if (isAutomation) {
     _automationMount();
     _automationSubtabsReveal();
+    _tabStripsRevealAll();
   } else {
+    _tabStripsRevealAll();
     const reuse = _automataReuseList;
     _automataReuseList = false;
     if (st.tab === 'projects') renderProjectsView();
@@ -40190,19 +40194,42 @@ function _automationStopLoaders(keys) {
 // _automationSubtabsReveal scrolls the active second-row tab into view inside
 // its horizontally scrolling strip, so a tab chosen by deep link or keyboard
 // is visible. Guarded for DOMs without scrollIntoView (the node stub).
-function _automationSubtabsReveal() {
+function _tabStripReveal(stripEl) {
   try {
-    const btn = document.querySelector('.automation-subtabs .output-tab.active');
+    if (!stripEl || typeof stripEl.querySelector !== 'function') return;
+    const btn = stripEl.querySelector('.output-tab.active');
     if (!btn) return;
     if (typeof btn.scrollIntoView === 'function') {
       btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-      return;
+    } else if (typeof btn.offsetLeft === 'number') {
+      stripEl.scrollLeft = btn.offsetLeft - Math.max(0, (stripEl.clientWidth - btn.offsetWidth) / 2);
     }
-    const strip = btn.parentElement;
-    if (strip && typeof btn.offsetLeft === 'number') {
-      strip.scrollLeft = btn.offsetLeft - Math.max(0, (strip.clientWidth - btn.offsetWidth) / 2);
+    _tabStripFade(stripEl);
+  } catch (e) { /* cosmetic only */ }
+}
+// _tabStripFade marks which sides of a scrolling strip still hide tabs so the
+// CSS edge fades show only when there is more to scroll.
+function _tabStripFade(stripEl) {
+  try {
+    if (!stripEl || !stripEl.classList) return;
+    const max = stripEl.scrollWidth - stripEl.clientWidth;
+    stripEl.classList.toggle('tabs-more-right', max > 2 && stripEl.scrollLeft < max - 2);
+    stripEl.classList.toggle('tabs-more-left', max > 2 && stripEl.scrollLeft > 2);
+    if (!stripEl._tabFadeBound && typeof stripEl.addEventListener === 'function') {
+      stripEl._tabFadeBound = true;
+      stripEl.addEventListener('scroll', () => _tabStripFade(stripEl), { passive: true });
     }
   } catch (e) { /* cosmetic only */ }
+}
+function _tabStripsRevealAll() {
+  try {
+    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar').forEach(_tabStripReveal);
+  } catch (e) { /* cosmetic only */ }
+}
+window._tabStripReveal = _tabStripReveal;
+window._tabStripsRevealAll = _tabStripsRevealAll;
+function _automationSubtabsReveal() {
+  try { _tabStripReveal(document.querySelector('.automation-subtabs')); } catch (e) { /* cosmetic only */ }
 }
 window._automationSubtabsReveal = _automationSubtabsReveal;
 

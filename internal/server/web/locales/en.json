@@ -958,6 +958,7 @@
   "nav_alerts": "Alerts",
   "nav_automata": "Automata",
   "nav_projects": "Projects",
+  "nav_projects_short": "Projects",
   "projects_overview": "Overview",
   "projects_picker_label": "Project",
   "projects_none": "No projects yet. Add your first project with the form below.",
