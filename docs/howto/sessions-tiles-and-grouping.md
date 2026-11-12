@@ -128,8 +128,7 @@ often than search:
 - **Views** — your saved views: save the current cut under a name, apply,
   rename or delete one (see [Saved views](#saved-views)).
 - **Status chips** — the full set of state chips (running, waiting_input,
-  rate_limited, complete, failed, killed), so you can pick a state even when
-  the one-line count above the list does not show it. The same section
+  rate_limited, complete, failed, killed). The same section
   also holds the **watched only** toggle, the **Backend** chips and, when
   you use tags, the **Tags** filter.
 
@@ -185,14 +184,10 @@ Two details worth knowing:
 - In **tiles** mode the grid keeps following the viewport width on resizes,
   so rotating a tablet re-lays the tiles out without a reload.
 
-### The status counts
+### The state filter
 
-Above the list, one line of status counts shows one chip per state present,
-with its count, and the total session count at the end (e.g.
-`● running 4   ● waiting_input 2   sessions 21`). It takes a single line
-instead of a block of buttons, and the counts still filter: clicking a state
-chip **filters the page to that state**, and clicking it again (or choosing
-**All** in the Filters sheet's status chips) clears the selection. The chip
+The page has no count line above the list. The status chips in the Filters sheet
+**filter the page to that state**, and choosing **All** clears the selection. The chip
 choice is remembered per device (`cs_session_state_chip`). Picking a
 historical state (complete, failed, killed, …) also auto-enables the History
 toggle so those sessions actually become visible instead of silently

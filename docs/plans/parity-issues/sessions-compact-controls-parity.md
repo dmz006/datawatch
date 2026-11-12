@@ -6,7 +6,7 @@
 
 ## What changed in datawatch
 
-The Sessions page keeps its controls in one toolbar row so it fits a phone: a search box, a **Filters** button with a badge counting the active filters, a chip per server and the List, Tiles and Compact toggle. Grouping, saved views, the full set of state chips, the watched-only toggle, the backend chips and the tag filter moved behind the Filters button into a sheet (closes on an outside tap, its close button or Escape). The state counts take one line and still filter. On a narrow screen a session's tags collapse to one `+N` chip. The search box matches name, id, backend, tag text and state, shows an `N of M` count while active and remembers its text per device. Fold all and Unfold all buttons act on every group.
+The Sessions page keeps its controls in one toolbar row so it fits a phone: a search box, a **Filters** button with a badge counting the active filters, a chip per server and the List, Tiles and Compact toggle. Grouping, saved views, the full set of state chips, the watched-only toggle, the backend chips and the tag filter moved behind the Filters button into a sheet (closes on an outside tap, its close button or Escape). On a narrow screen a session's tags collapse to one `+N` chip. The search box matches name, id, backend, tag text and state, shows an `N of M` count while active and remembers its text per device. Fold all and Unfold all buttons act on every group.
 
 There is no new setting, endpoint, MCP tool, CLI command or chat verb: the daemon behaves exactly as before.
 

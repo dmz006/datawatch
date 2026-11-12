@@ -250,30 +250,34 @@ test('the Filters button shows a badge for grouping or a status chip and none wi
   assert.ok(!html.includes('sessionsFiltersBadge'));
 });
 
-// ── (3) status count row ────────────────────────────────────────────────
-test('the status row has one chip per state with counts, and a tap filters then clears', () => {
+// ── (3) no state count line ─────────────────────────────────────────────
+function assertNoCountLine(html, label) {
+  assert.ok(!html.includes('sessions-summary'), label + ': no state count line');
+  assert.ok(!/sessions 320</.test(html), label + ': no total in a count line');
+  assert.ok(!/Running \d+ · /.test(html), label + ': no "Running N · ..." text');
+}
+
+test('the Sessions page draws no state count line in list, tiles and compact, grouped or not', () => {
+  for (const mode of ['list', 'tiles', 'compact']) {
+    for (const group of [null, 'state']) {
+      const sb = loadApp();
+      seed(sb, `state.sessionsViewMode = '${mode}'; state.sessionGroupBy = ${group ? `{ axis: '${group}' }` : 'null'};`);
+      const html = render(sb);
+      assert.ok(html.length > 0);
+      assertNoCountLine(html, mode + (group ? ' grouped' : ' ungrouped'));
+    }
+  }
+});
+
+test('the state filter still works and no count line appears while it is set', () => {
   const sb = loadApp();
   seed(sb);
-  let html = render(sb);
-  const bar = html.slice(html.indexOf('sessions-summary-bar'));
-  const chips = bar.match(/<button type="button" class="sessions-summary-chip[^"]*"[^>]*data-state="([a-z_]+)"[^>]*>[^<]*<span class="sessions-summary-count">(\d+)<\/span>/g) || [];
-  assert.equal(chips.length, 4);
-  STATES.forEach(st => {
-    assert.match(bar, new RegExp(`data-state="${st}"[^>]*>[^<]*<span class="sessions-summary-count">80<`));
-  });
-  assert.match(bar, />sessions 320</);
-
   sb.setSessionStateChip('waiting_input');
-  html = sb.__box.html;
+  const html = sb.__box.html;
   assert.equal(countOf(html, /class="session-card /g), 60, 'first page of the 80 waiting sessions');
-  assert.match(html, />sessions 80</);
-  assert.match(html, /aria-pressed="true" data-state="waiting_input"/);
-  assert.match(html, /setSessionStateChip\('all'\)/, 'the active chip taps back to all');
-
+  assertNoCountLine(html, 'filtered');
+  assert.match(html, /setSessionStateChip\('all'\)/, 'the Filters sheet keeps its state chips');
   sb.setSessionStateChip('all');
-  html = sb.__box.html;
-  assert.match(html, />sessions 320</);
-  assert.match(html, /aria-pressed="false" data-state="waiting_input"/);
   assert.equal(vm.runInContext('state.sessionStateChip', sb), 'all');
 });
 
