@@ -124,6 +124,19 @@ autonomous_prd_cancel_story(id="<prd_id>", story_id="<story_id>", reason="...")
 autonomous_prd_cancel_task(id="<prd_id>", task_id="<task_id>", reason="...")
 ```
 
+## Cancelled tasks at completion
+
+A cancelled task no longer keeps an Automaton in `running`. When every task
+is completed or cancelled and at least one is completed, the completion review
+runs and the Automaton completes or blocks on its verdict. The review records
+one `cancelled_tasks_skipped` decision naming the cancelled tasks (once, even
+if the rollup is re-fired). A story whose tasks are all cancelled shows as
+cancelled (skipped) and does not fail the Automaton; a story with any failed
+task is still failed. If every task is cancelled there is nothing to judge, so
+the Automaton is neither judged nor completed: reset a task, remove the
+cancelled ones, or cancel the Automaton. An Automaton that was already stuck
+this way is advanced by the [stuck-running watchdog](#stuck-running-watchdog).
+
 ## Repairing a failed Automaton in place
 
 Cancelling a failed Automaton to fix it is no longer needed, and it used to
@@ -160,10 +173,13 @@ guardrail to run again — as a fresh judgment — without resetting or retrying
 any task:
 
 - The Automaton must be `blocked`; re-judging one that isn't is refused.
-- **Every task in every story must be `completed`.** If any task is pending,
-  running, failed, or cancelled, the call is refused and names the first such
-  task and its status — fix that one first (`reset_task` above) and re-judge
-  once the genuine work is done.
+- **Every task in every story must be `completed` or `cancelled`, with at
+  least one `completed`.** A cancelled task is skipped, not a blocker. If any
+  task is pending, running or failed, or if every task is cancelled, the call
+  is refused and names the first such task and its status — fix that one first
+  (`reset_task` above) and re-judge once the genuine work is done. When
+  cancelled tasks were skipped, the rejudge records a `cancelled_tasks_skipped`
+  decision naming them.
 - It never resets anything: no task goes back to pending, no story reopens.
 
 A rejudge is a fresh completion review, not a lookup of the old answer. When
@@ -502,7 +518,12 @@ a restart.
    starts the clock. After one full bound the watchdog records a
    `stuck_running_refire` note in the Automaton's decision history and re-runs
    the completion rollup once, the same way boot resume does. The clock
-   restarts. The re-fire is an ordinary completion review: if the branch head
+   restarts. When every task is completed or cancelled (at least one of each),
+   this step is an advance instead: the note is a
+   `stuck_running_cancelled_advance` decision that names the skipped cancelled
+   tasks, and the completion review runs without ending, signalling or
+   touching any session. An Automaton whose tasks are all cancelled is never
+   advanced this way, because there is no work to review; it follows step 2. The re-fire is an ordinary completion review: if the branch head
    moved since the stored verdict was made (for example a fix was committed
    while the Automaton was held), the judge runs again on the new head, and a
    `pass` or `warn` completes the Automaton instead of leaving it for the
@@ -521,7 +542,7 @@ a restart.
 
 The clock starts over whenever the state stops holding: a session starts, a
 task is reset to pending, or the Automaton leaves `running`. To clear a blocked
-Automaton, use `rejudge` (above) when every task completed, or `reset_task`
+Automaton, use `rejudge` (above) when every task is completed or cancelled (at least one completed), or `reset_task`
 for a task that did not.
 
 Set the bound on the PWA Settings Automata card ("Stuck Automaton timeout"),
