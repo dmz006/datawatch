@@ -12187,7 +12187,10 @@ func newConfigSetCmd() *cobra.Command {
 			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
 			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
 			"starts with worker_profile is refused as unknown.\n\n" +
-			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).",
+			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).\n\n" +
+			"MCP permission keys: mcp.allow_self_config and mcp.allow_sensitive_writes (each true|false; default true). " +
+			"mcp.allow_sensitive_writes gates the sensitive write tool class for session and peer callers; " +
+			"set it to false to refuse those writes and back to true to allow them. Each is sent as a boolean.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
