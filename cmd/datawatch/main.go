@@ -7253,6 +7253,20 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			if amgrCfg.Enabled {
 				amgr.Start(context.Background())
 			}
+			// Feed the pending item registry from the file registry once at
+			// start, when one is configured. A refresh never blocks start-up.
+			amgr.SetPendingItemSourceBaseDir(expandHome(cfg.Session.DefaultProjectDir))
+			if amgr.Config().Automation.EffectivePendingItemSource().Path != "" {
+				go func() {
+					r := amgr.RefreshPendingItems()
+					if r.Error != "" {
+						log.Printf("[autonomous] pending item refresh of %s failed: %s", r.Path, r.Error)
+						return
+					}
+					log.Printf("[autonomous] pending item refresh of %s: %d rows, %d added, %d updated, %d done, %d dropped, %d kept, %d skipped",
+						r.Path, r.Rows, r.Added, r.Updated, r.Done, r.Dropped, r.Kept, r.Skipped)
+				}()
+			}
 		}
 		// BL33 (v3.11.0) — plugin framework. Always wired so the REST
 		// surface is reachable for opt-in configuration; discovery is

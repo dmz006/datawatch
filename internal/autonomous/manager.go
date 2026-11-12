@@ -1051,6 +1051,10 @@ type Manager struct {
 	automations  *AutomationStore
 	pendingItems *PendingItemStore // pending items (pending_item_store.go): registry of named work with no Automaton yet
 	repoCIWatch  *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
+
+	// pendingRefresh: file registry refresh state and last result (pending_item_refresh.go).
+	pendingRefresh pendingRefreshState
+
 	// supervisor watch (supervisor_watch_pass.go): the shared finding store,
 	// the host/views the pass runs the checks through (wired by
 	// cmd/datawatch), and the test seam that replaces the whole check run.
