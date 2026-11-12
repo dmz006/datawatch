@@ -6,12 +6,12 @@ Parent release: datawatch next release
 
 The PWA gains a top-level **Projects** tab in the bottom navigation. It is read-only: the record is changed through REST, MCP, the CLI or the comm channel, not from the page.
 
-- **Projects picker.** The tab opens with a **Project** picker fed by `GET /api/projects`. **Overview** is the first choice and is the cross-project in-flight view. An empty list shows "No projects yet" with an **Open Settings** button.
+- **Projects picker.** The tab opens with a **Project** picker fed by `GET /api/projects`. **Overview** is the first choice and is the cross-project in-flight view. An empty list shows "No projects yet" with an **Open Settings** button that opens **Settings → Automata → Project policy**.
 - **Project page.** Choosing a project (or opening `#projects/<name>`) shows the project header: owner, repository, default branch, target, definition of done, lane defaults, weekly share and priority. The last project opened is remembered in the browser.
 - **Arcs, Automata and sessions.** Arcs are listed in their stored order with their state (planned, active, done). Each arc shows its Automata and their sessions, and sessions link to the existing session view. Automata not in any arc sit under **Unassigned Automata**.
 - **Progress roll-up.** Per-arc and whole-project progress bars, cost in points, and throughput over a window of days. Cost in points is marked "Not priced" when the backends are not on a bundled plan.
 - **History and Gantt.** **History** lists finished Automata and tasks with progress snapshots and pages with **Load more**. The **Gantt** draws Automata and tasks over a window of 7, 30 or 90 days; the newest rows are drawn first when the window is bounded.
-- **Effective policy and merge pipeline.** The page shows the effective project policy, with links to **Settings → Automation → Project policy** and **Settings → Automation → Merge pipeline**.
+- **Effective policy and merge pipeline.** The page shows the effective project policy, with links to **Settings → Automata → Project policy** and the **Merge pipeline** group in **Settings → Automata**. Each link switches Settings to the Automata tab, expands the section if it is collapsed, and scrolls to it.
 - **Events.** A read-only stream of events filtered to the project, with a note of the queue it reads and a notice when earlier events were dropped before they were read.
 - **Project defaults in Settings.** The Settings automation area gains a **Project defaults** card for `projects_defaults`: branch retention days, weekly share percent and major release trigger. These are stored daemon-wide defaults, used when a project sets none of its own.
 
