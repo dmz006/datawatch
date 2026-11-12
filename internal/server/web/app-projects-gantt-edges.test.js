@@ -61,3 +61,60 @@ test('edges: locale keys exist in every language', () => {
     keys.forEach(k => assert.ok(j[k] && !/\b[0-9a-f]{8}\b/.test(j[k]), l + ' ' + k));
   });
 });
+
+test('edges: a task dependency and a chain step between Automata are each drawn', () => {
+  const sb = load();
+  const f = vm.runInContext('_projectsGanttEdges', sb);
+  const auto = (id, a, b) => ({ type: 'row', row: { id, kind: 'automaton', status: 'completed', start: new Date(T + a * H).toISOString(), end: new Date(T + b * H).toISOString() } });
+  const tasks = [row('t1', 0, 10), row('t2', 20, 30, { depends_on: ['t1'] })];
+  const dep = Array.from(f(tasks, [], { range, now: T + 200 * H }));
+  assert.equal(dep.length, 1);
+  assert.deepEqual([dep[0].from, dep[0].to], ['t1', 't2']);
+  const chain = Array.from(f([auto('p1', 0, 10), auto('p2', 20, 30)], [{ from: 'p1', to: 'p2' }], { range, now: T + 200 * H }));
+  assert.equal(chain.length, 1);
+  assert.deepEqual([chain[0].from, chain[0].to], ['p1', 'p2']);
+  assert.ok(chain[0].x1 < chain[0].x2, 'from the end of p1 to the start of p2');
+});
+
+test('edges: the toggle hides the edge layer in the drawn page', () => {
+  const sb = load();
+  const items = [row('a', 0, 10), row('b', 20, 30, { depends_on: ['a'] })];
+  const g = { rows: [], kids: {}, expanded: {} };
+  sb.__items = items; sb.__g = g; sb.__range = range;
+  const draw = () => vm.runInContext('_projectsGanttEdgesSvg(__items, __g, __range, ' + (T + 200 * H) + ')', sb);
+  assert.match(draw(), /project-gantt-edges/);
+  vm.runInContext("_projectsGanttEdgeModeValue = 'off'", sb);
+  assert.equal(draw(), '', 'edges hidden by the toggle');
+});
+
+test('edges: at 300 rows only expanded and focused rows get edges', () => {
+  const sb = load();
+  const collect = vm.runInContext('_projectsGanttCollectEdges', sb);
+  const kids = {};
+  for (let i = 0; i < 300; i++) kids['auto:p' + i] = { rows: [], edges: [{ from: 'x' + i, to: 'y' + i }] };
+  const expanded = { 'auto:p7': true, 'auto:p250': true };
+  const got = Array.from(collect({ edges: [], kids, expanded })).map(e => e.from).sort();
+  assert.deepEqual(got, ['x250', 'x7'], 'collapsed rows contribute no edges');
+  // Past the edge cap the rest are marked extra: drawn only for a focused end.
+  const f = vm.runInContext('_projectsGanttEdges', sb);
+  const items = [];
+  for (let i = 0; i < 300; i++) items.push(row('r' + i, i, i + 0.5));
+  const list = [];
+  for (let i = 0; i < 299; i++) list.push({ from: 'r' + i, to: 'r' + (i + 1) });
+  const out = Array.from(f(items, list, { range: { start: T, end: T + 400 * H }, now: T + 500 * H, mode: 'on' }));
+  const cap = vm.runInContext('_PROJECTS_GANTT_EDGE_MAX', sb);
+  assert.equal(out.filter(e => !e.extra).length, cap);
+  assert.equal(out.filter(e => e.extra).length, 299 - cap);
+});
+
+test('ordering: by completion time, then topological with a tie broken by completion', () => {
+  const sb = load();
+  const sort = vm.runInContext('_projectsGanttSortChildren', sb);
+  const ids = l => Array.from(l).map(r => r.id).join(',');
+  const rows = [row('c', 12, 40), row('b', 2, 20, { depends_on: ['d'] }), row('d', 60, 80), row('a', 4, 30)];
+  assert.equal(ids(sort(rows.filter(r => !r.row.depends_on).map(r => r.row), [])), 'a,c,d');
+  const flat = rows.map(r => r.row);
+  const out = ids(sort(flat, []));
+  assert.ok(out.indexOf('d') < out.indexOf('b'), 'a dependency sits above its dependent');
+  assert.ok(out.indexOf('a') < out.indexOf('c'), 'free rows keep completion order');
+});

@@ -367,3 +367,168 @@ func TestProjectTimeline_UnknownCursorKeyIs400(t *testing.T) {
 		t.Errorf("err = %v, want 400", err)
 	}
 }
+
+// ---- Gantt accuracy: spans, ordering, edges, status wording ----
+
+// Each arc spans its own members' earliest start to latest end; no row, and no
+// reply field, carries a whole-window span covering unrelated arcs.
+func TestProjectTimeline_GanttArcSpansAreMemberMinMaxNotWholeWindow(t *testing.T) {
+	prds := []*autonomous.PRD{
+		tlPRD("m1", autonomous.PRDCompleted, -90, -80, "/x"),
+		tlPRD("m2", autonomous.PRDCompleted, -60, -30, "/x"),
+		tlPRD("n1", autonomous.PRDCompleted, -10, -5, "/x"),
+	}
+	out := tlBuild(t, timelineInput{
+		Arcs:        []config.ProjectArc{{AutomationID: "arcA"}, {AutomationID: "arcB"}},
+		PRDs:        prds,
+		Automations: []*autonomous.Automation{tlAutomation("arcA", "m1", "m2"), tlAutomation("arcB", "n1")},
+	})
+	a, b := tlRow(t, out.Rows, "arcA"), tlRow(t, out.Rows, "arcB")
+	if a.Start == nil || !a.Start.Equal(*tlTime(-90)) || a.End == nil || !a.End.Equal(*tlTime(-30)) {
+		t.Errorf("arcA span = %v..%v, want -90h..-30h", a.Start, a.End)
+	}
+	if b.Start == nil || !b.Start.Equal(*tlTime(-10)) || b.End == nil || !b.End.Equal(*tlTime(-5)) {
+		t.Errorf("arcB span = %v..%v, want -10h..-5h", b.Start, b.End)
+	}
+	if !a.End.Before(*b.Start) {
+		t.Errorf("arc spans must not overlap through a shared window: %v vs %v", a.End, b.Start)
+	}
+}
+
+// Rows come back in completion order: earliest end first, an unfinished row
+// after every finished one.
+func TestProjectTimeline_GanttAutomataOrderedByCompletionTime(t *testing.T) {
+	prds := []*autonomous.PRD{
+		tlPRD("late", autonomous.PRDCompleted, -50, -5, "/srv/acme"),
+		tlPRD("live", autonomous.PRDRunning, -40, -1, "/srv/acme", tlTask("k", autonomous.TaskInProgress, tlTime(-3), nil)),
+		tlPRD("early", autonomous.PRDCompleted, -60, -20, "/srv/acme"),
+	}
+	// No Automation chains these, so only completion time orders them.
+	out := tlBuild(t, timelineInput{Level: "automata", Parent: "none", PRDs: prds})
+	var ids []string
+	for _, r := range out.Rows {
+		ids = append(ids, r.ID)
+	}
+	if fmt.Sprint(ids) != "[early late live]" {
+		t.Errorf("order = %v, want [early late live]", ids)
+	}
+}
+
+// A dependency sits above its dependent even when it finished later; rows with
+// no dependency between them keep completion order (the tie break).
+func TestProjectTimeline_GanttTopologicalOrderTieBrokenByCompletion(t *testing.T) {
+	rows := []timelineRow{
+		{ID: "c", End: tlTime(-10), Start: tlTime(-12)},
+		{ID: "b", End: tlTime(-30), Start: tlTime(-32), DependsOn: []string{"d"}},
+		{ID: "d", End: tlTime(-5), Start: tlTime(-8)},
+		{ID: "a", End: tlTime(-20), Start: tlTime(-22)},
+	}
+	got := orderTimelineRows(rows, nil)
+	var ids []string
+	for _, r := range got {
+		ids = append(ids, r.ID)
+	}
+	// Completion order is b, a, c, d. b waits for d, so d is placed first and
+	// then b is released; the free rows a and c keep completion order after it.
+	if fmt.Sprint(ids) != "[a d b c]" && fmt.Sprint(ids) != "[a c d b]" {
+		t.Fatalf("order = %v", ids)
+	}
+	pos := map[string]int{}
+	for i, id := range ids {
+		pos[id] = i
+	}
+	if pos["d"] > pos["b"] {
+		t.Errorf("dependency d must precede b: %v", ids)
+	}
+	if pos["a"] > pos["c"] {
+		t.Errorf("tie between a and c must break by completion (a first): %v", ids)
+	}
+	if rows[0].ID != "c" {
+		t.Errorf("input was reordered")
+	}
+	// Edges count as dependencies too.
+	got = orderTimelineRows(rows, []timelineEdge{{From: "c", To: "a"}})
+	pos = map[string]int{}
+	for i, r := range got {
+		pos[r.ID] = i
+	}
+	if pos["c"] > pos["a"] {
+		t.Errorf("edge c->a must put c above a")
+	}
+}
+
+// A task's depends_on reaches the tasks reply, and the tasks are listed with
+// the dependency above the dependent.
+func TestProjectTimeline_GanttTaskDependencyIsReported(t *testing.T) {
+	second := tlTask("second", autonomous.TaskCompleted, tlTime(-8), tlTime(-7))
+	second.DependsOn = []string{"first"}
+	first := tlTask("first", autonomous.TaskCompleted, tlTime(-6), tlTime(-5))
+	p := tlPRD("a1", autonomous.PRDCompleted, -9, -1, "/x", second, first)
+	out := tlBuild(t, timelineInput{
+		Level: "tasks", Automaton: "a1",
+		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
+		PRDs:        []*autonomous.PRD{p},
+		Automations: []*autonomous.Automation{tlAutomation("arc1", "a1")},
+	})
+	s := tlRow(t, out.Rows, "second")
+	if len(s.DependsOn) != 1 || s.DependsOn[0] != "first" {
+		t.Errorf("depends_on = %v", s.DependsOn)
+	}
+	if out.Rows[0].ID != "first" || out.Rows[1].ID != "second" {
+		t.Errorf("order = %s,%s; the dependency must come first", out.Rows[0].ID, out.Rows[1].ID)
+	}
+}
+
+// A chain step between two Automata of one Automation is an edge in the
+// automata reply and in the focus reply.
+func TestProjectTimeline_GanttChainStepBetweenAutomataIsAnEdge(t *testing.T) {
+	prds := []*autonomous.PRD{
+		tlPRD("p1", autonomous.PRDCompleted, -50, -30, "/x"),
+		tlPRD("p2", autonomous.PRDCompleted, -29, -10, "/x"),
+	}
+	auto := &autonomous.Automation{ID: "arc1", Name: "arc arc1", Members: []autonomous.AutomationMember{
+		{ID: "m1", PRDID: "p1", OnComplete: "m2"},
+		{ID: "m2", PRDID: "p2"},
+	}}
+	in := timelineInput{
+		Level: "automata", Parent: "arc1",
+		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
+		PRDs:        prds,
+		Automations: []*autonomous.Automation{auto},
+	}
+	out := tlBuild(t, in)
+	found := false
+	for _, e := range out.Edges {
+		if e.From == "p1" && e.To == "p2" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("edges = %+v, want p1 -> p2", out.Edges)
+	}
+}
+
+// A running row has no end and the Running status; a finished row reads
+// Completed and only an Automaton merged into a release carries the release.
+func TestProjectTimeline_GanttRunningStatusAndCompletedRelease(t *testing.T) {
+	merged := tlPRD("shipped", autonomous.PRDCompleted, -20, -10, "/x")
+	merged.MergedInRelease = "v9.9.0"
+	plain := tlPRD("plain", autonomous.PRDCompleted, -20, -9, "/x")
+	live := tlPRD("live", autonomous.PRDRunning, -8, -1, "/x", tlTask("k", autonomous.TaskInProgress, tlTime(-3), nil))
+	out := tlBuild(t, timelineInput{
+		Level: "automata", Parent: "arc1",
+		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
+		PRDs:        []*autonomous.PRD{merged, plain, live},
+		Automations: []*autonomous.Automation{tlAutomation("arc1", "shipped", "plain", "live")},
+	})
+	s, p, l := tlRow(t, out.Rows, "shipped"), tlRow(t, out.Rows, "plain"), tlRow(t, out.Rows, "live")
+	if s.Status != "completed" || s.Release != "v9.9.0" {
+		t.Errorf("shipped = %q release %q", s.Status, s.Release)
+	}
+	if p.Status != "completed" || p.Release != "" {
+		t.Errorf("plain = %q release %q", p.Status, p.Release)
+	}
+	if l.Status != "running" || l.End != nil || !l.Running {
+		t.Errorf("live = %+v", l)
+	}
+}
