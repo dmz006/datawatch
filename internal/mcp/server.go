@@ -764,6 +764,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousProgress(), tracked(s.handleAutonomousProgress))
 	mcpSrv.AddTool(s.toolAutonomousProgressTrend(), tracked(s.handleAutonomousProgressTrend))
 	mcpSrv.AddTool(s.toolAutonomousLaneFillStatus(), tracked(s.handleAutonomousLaneFillStatus))
+	mcpSrv.AddTool(s.toolAutonomousLaneUtilization(), tracked(s.handleAutonomousLaneUtilization))
 	mcpSrv.AddTool(s.toolAutonomousInfraRetries(), tracked(s.handleAutonomousInfraRetries))
 	mcpSrv.AddTool(s.toolOnboardingReport(), tracked(s.handleOnboardingReport))
 	// Trace views (internal/trace) — read-only proxies of /api/trace/*.
