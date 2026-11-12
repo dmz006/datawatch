@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An Automaton no longer sits in running forever because one of its tasks was cancelled.** A cancelled task is now a skipped, final outcome: when every task is completed or cancelled and at least one is completed, the completion review runs, and the decision log names the skipped tasks. A story of only cancelled tasks is skipped, and a story with its other tasks completed is completed. The stuck-running check advances such an Automaton after its grace period (`autonomous.stuck_running_seconds`, default 900), and its watch message names the cancelled tasks. A task that is not running and not queued can be removed while the Automaton is running, on the web page, REST, MCP, CLI and messaging channel.
+- Docs: the recovery how-to has a Cancelled tasks section, the supervisor watch how-to has the new message, and the definitions list Skipped story and Cancelled task.
+
 ## v9.157.1 — Sessions page tag filter and view modes
 
 ### Fixed
