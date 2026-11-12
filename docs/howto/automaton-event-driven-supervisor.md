@@ -491,6 +491,32 @@ Read the wake status on any surface:
 - **A registered sink gets nothing.** The delivery engine does not deliver to a
   registered sink type. The extension must deliver.
 
+## Open items for the operator
+
+These are the points this release leaves for you to review or decide. Each one is
+described where it applies above; this list gathers them in one place.
+
+1. **The wake is not started by the daemon.** The settings, the status and the
+   subscription set exist, but the start-up call that registers the wake is not in
+   this release. Switching `supervisor_loop.wake.enabled` on does not yet wake the
+   supervisor. Until it ships, use a stored subscription with a `session` sink.
+2. **The fallback interval is not read.** `supervisor_loop.wake.fallback_interval_minutes`
+   is stored, validated and reported, but no scheduler uses it. The scheduled check
+   keeps its own interval.
+3. **The wake ignores the notify set.** A stored subscription and an MCP resource
+   subscription are both limited by the notify set; the wake set is not. Decide
+   whether that is what you want before you turn it on.
+4. **Pulling a peer's events has no switch.** The peer event subscription is in the
+   code but no setting, command, route or tool starts it. Only forwarding, where the
+   sending peer pushes, works today.
+5. **The `peer` filter is partial.** It is set through REST and the MCP resource URI
+   only. The CLI, the messaging channel, the `autonomous_subscribe` tool and the web
+   form do not have it yet.
+6. **A registered sink type is not delivered to.** An extension that registers one
+   must deliver the events itself.
+7. **Mobile parity.** Android and iPhone are tracked in the mobile app project and
+   are not changed here.
+
 ## Parity surface
 
 This how-to touches these surfaces. Each row says what is covered or why it is
