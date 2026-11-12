@@ -95,6 +95,9 @@ func (m *Manager) reattachSubprocess(sess *Session) bool {
 	if !ok || !subprocessAlive(pid, sess.Task) {
 		return false
 	}
+	// The task is still running and this daemon now drives it again, so hold
+	// it as a live runner until the watcher finishes.
+	m.RegisterRunner(sess.FullID)
 	go m.watchDetachedSubprocess(sess, pid)
 	return true
 }
@@ -102,6 +105,7 @@ func (m *Manager) reattachSubprocess(sess *Session) bool {
 // watchDetachedSubprocess waits for a re-attached task to end, then finishes
 // the session from its recorded exit status.
 func (m *Manager) watchDetachedSubprocess(sess *Session, pid int) {
+	defer m.ReleaseRunner(sess.FullID)
 	for subprocessAlive(pid, sess.Task) {
 		time.Sleep(subprocessWatchInterval)
 	}
