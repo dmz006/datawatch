@@ -4901,7 +4901,7 @@
   "projects_manage_cancel_action": "キャンセル",
   "projects_manage_edit_action": "編集",
   "projects_manage_remove_action": "削除",
-  "projects_manage_confirm_remove": "プロジェクト %1$s を削除しますか？ プロジェクトの記録だけが削除されます。実行中のセッションと Automaton の作業は停止しません。",
+  "projects_manage_confirm_remove": "プロジェクト %1$s を削除しますか？ プロジェクトの記録だけが削除されます。実行中のセッションとオートマトンの作業は停止しません。",
   "projects_manage_err_name": "プロジェクト名を入力してください。",
   "projects_manage_err_dir": "プロジェクトのディレクトリを入力してください。",
   "projects_manage_saved": "プロジェクト %1$s を保存しました。",

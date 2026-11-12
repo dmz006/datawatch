@@ -4901,7 +4901,7 @@
   "projects_manage_cancel_action": "Abbrechen",
   "projects_manage_edit_action": "Bearbeiten",
   "projects_manage_remove_action": "Entfernen",
-  "projects_manage_confirm_remove": "Projekt %1$s entfernen? Es wird nur der Projekteintrag entfernt. Laufende Sitzungen und Automaton-Arbeit werden nicht gestoppt.",
+  "projects_manage_confirm_remove": "Projekt %1$s entfernen? Es wird nur der Projekteintrag entfernt. Laufende Sitzungen und Automaten-Arbeit werden nicht gestoppt.",
   "projects_manage_err_name": "Gib einen Projektnamen ein.",
   "projects_manage_err_dir": "Gib das Projektverzeichnis ein.",
   "projects_manage_saved": "Projekt %1$s gespeichert.",
