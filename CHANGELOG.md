@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.146.2 — Drift checker git calls hardened against repository-configured programs
+
+### Security
+
+- **The file drift check and the undeclared-edit check no longer start programs named by a repository's own git configuration.** Every git call these checks make now passes `-c core.fsmonitor=false`, `-c core.hooksPath=` and `--no-optional-locks`, and `git diff` also gets `--no-ext-diff`, so a file-system monitor, a hooks directory or an external diff program set in a project's `.git/config` or attributes is never run by the check. A project folder that is empty, relative or starts with a dash is refused with an `invalid git directory` error and git is not run; that task gets no finding from the check. The calls stay read-only, and `drift_mode`, `undeclared_edit_mode` and what is flagged are unchanged. There is no new setting. Migration: none.
+  - **For the operator to review:** a project that relied on a custom `core.fsmonitor` or diff program to change what the check sees now gets plain git state. See [howto/file-drift-guardrail.md](docs/howto/file-drift-guardrail.md#how-the-checker-runs-git).
+
 ## v9.146.1 — Path handling in the Automata package is hardened
 
 ### Security
