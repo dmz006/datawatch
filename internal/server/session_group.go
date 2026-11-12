@@ -56,6 +56,7 @@ type sessionGroupRow struct {
 	Tags          []string
 	InheritedTags []string
 	Hostname      string
+	Server        string // peer name for a row read from a federated peer; empty or "local" for this node
 	ProjectDir    string
 	PRDID         string
 	StoryID       string
@@ -227,15 +228,9 @@ func groupAxisKey(axis, tagPrefix string, row sessionGroupRow) (string, string) 
 	case groupAxisState:
 		return string(row.State), ""
 	case groupAxisNode:
-		if row.Hostname == "" {
-			return groupUngroupedKey, ""
-		}
-		return row.Hostname, ""
+		return groupNodeKey(row), ""
 	case groupAxisProject:
-		if row.ProjectDir == "" {
-			return groupUngroupedKey, ""
-		}
-		return row.ProjectDir, ""
+		return groupProjectKey(row), ""
 	case groupAxisAutomaton:
 		if row.PRDID == "" {
 			return groupUngroupedKey, ""
@@ -256,6 +251,36 @@ func groupAxisKey(axis, tagPrefix string, row sessionGroupRow) (string, string) 
 		}
 		return groupUngroupedKey, ""
 	}
+}
+
+// groupNodeKey names the node that runs a row: a peer's row lands under the
+// peer's name, every other row under its own hostname. "local" and "all" are
+// only the aggregated read's tags, never node names.
+func groupNodeKey(row sessionGroupRow) string {
+	srv := strings.TrimSpace(row.Server)
+	if srv != "" && srv != "local" && srv != "all" {
+		return srv
+	}
+	if h := strings.TrimSpace(row.Hostname); h != "" {
+		return h
+	}
+	return groupUngroupedKey
+}
+
+// groupProjectKey is the row's project_dir with trailing slashes dropped, so
+// one folder never splits in two over a trailing slash.
+func groupProjectKey(row sessionGroupRow) string {
+	dir := strings.TrimSpace(row.ProjectDir)
+	if len(dir) > 1 {
+		dir = strings.TrimRight(dir, "/")
+		if dir == "" {
+			dir = "/"
+		}
+	}
+	if dir == "" {
+		return groupUngroupedKey
+	}
+	return dir
 }
 
 // sortedGroupTags is the deduped, sorted union of the row's own tags and its
@@ -295,13 +320,17 @@ func (s *Server) writeSessionGrouped(w http.ResponseWriter, r *http.Request, ses
 	rows := make([]sessionGroupRow, 0, len(sessions))
 	for _, sess := range sessions {
 		var inherited []string
+		host := sess.Hostname
+		if host == "" {
+			host = s.hostname // a row with no hostname ran on this node
+		}
 		if s.manager != nil {
 			inherited = s.manager.InheritedTags(sess)
 		}
 		rows = append(rows, sessionGroupRow{
 			ID: sess.ID, FullID: sess.FullID, Name: sess.Name, State: sess.State,
 			Tags: sess.Tags, InheritedTags: inherited,
-			Hostname: sess.Hostname, ProjectDir: sess.ProjectDir,
+			Hostname: host, ProjectDir: sess.ProjectDir,
 			PRDID: sess.PRDID, StoryID: sess.StoryID, TaskID: sess.TaskID,
 		})
 	}

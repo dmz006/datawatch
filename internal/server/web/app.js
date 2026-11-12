@@ -3936,11 +3936,12 @@ function _isPeerRow(s) {
   return !!(s && typeof s.server === 'string' && s.server && s.server !== 'local' && s.server !== 'all');
 }
 // _sessionsNodeAxisNeedsPeers: in local mode the list read covers only this
-// daemon, so while sessions are grouped by node the peers' sessions come from
-// the aggregated read as well.
+// daemon, so while sessions are grouped by node or by Automaton (whose task
+// sessions may run on a peer) the peers' sessions come from the aggregated
+// read as well.
 function _sessionsNodeAxisNeedsPeers() {
   const by = _sessionsGroupValidate(state.sessionGroupBy);
-  return !!(by && by.axis === 'node' && _sessionsLocalMode());
+  return !!(by && (by.axis === 'node' || by.axis === 'automaton') && _sessionsLocalMode());
 }
 // _loadPeerSessionsForNodes merges the peers' rows from the aggregated read
 // into state.sessions (this daemon's own rows are left as they are) and drops
@@ -4676,8 +4677,10 @@ function _sessionsGroupValidate(by) {
 // on its card. No matching tag → ungrouped.
 function _sessionsTagPlacement(sess, tagPrefix) {
   const src = sess || {};
+  const seen = {};
   const tags = [].concat(src.tags || [], src.inherited_tags || [])
-    .filter(t => typeof t === 'string' && t).sort();
+    .map(t => (typeof t === 'string') ? t.trim() : '')
+    .filter(t => t && !seen[t] && (seen[t] = true)).sort();
   if (tagPrefix) {
     for (let i = 0; i < tags.length; i++) {
       if (tags[i].indexOf(tagPrefix) === 0) return tags[i];
@@ -4704,6 +4707,25 @@ function _sessionsNodeKey(s) {
 }
 window._sessionsNodeKey = _sessionsNodeKey;
 
+// _sessionsProjectKey is the project group key: the session's project_dir
+// with trailing slashes dropped, so one folder never splits in two over a
+// trailing slash. The server reads the same key.
+function _sessionsProjectKey(s) {
+  const dir = (typeof s.project_dir === 'string') ? s.project_dir.trim() : '';
+  const key = (dir.length > 1) ? dir.replace(/\/+$/, '') : dir;
+  return key || SESSIONS_GROUP_UNGROUPED;
+}
+window._sessionsProjectKey = _sessionsProjectKey;
+
+// _sessionsKeyCompare orders group keys the way the server does: plain key
+// order, with the ungrouped bucket always last.
+function _sessionsKeyCompare(a, b) {
+  if (a === b) return 0;
+  if (a === SESSIONS_GROUP_UNGROUPED) return 1;
+  if (b === SESSIONS_GROUP_UNGROUPED) return -1;
+  return (a < b) ? -1 : 1;
+}
+
 function _sessionsGroupKeyFor(sess, by) {
   const s = sess || {};
   switch (by.axis) {
@@ -4712,7 +4734,7 @@ function _sessionsGroupKeyFor(sess, by) {
     case 'node':
       return _sessionsNodeKey(s);
     case 'project':
-      return (typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED;
+      return _sessionsProjectKey(s);
     case 'tag':
       return _sessionsTagPlacement(s, by.tagPrefix);
     case 'automaton':
@@ -4829,7 +4851,7 @@ function _sessionsGroupSessions(pool, by) {
     g.count++;
     g.sessions.push(sess);
   });
-  groups.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+  groups.sort((a, b) => _sessionsKeyCompare(a.key, b.key));
   groups.forEach(g => {
     g.mix = _sessionsGroupStateMix(g.sessions);
     const info = _sessionsGroupTitleInfo(g.key, by, g.sessions);
@@ -4992,12 +5014,12 @@ function renderSessionsAutomaton(pool, nowMs, viewMode) {
   const blocks = [];
   const bIndex = {};
   list.forEach(sess => {
-    const key = (sess && typeof sess.prd_id === 'string' && sess.prd_id) ? sess.prd_id : SESSIONS_GROUP_UNGROUPED;
+    const key = _sessionsGroupKeyFor(sess, { axis: 'automaton' });
     let b = bIndex[key];
     if (!b) { b = { key, sessions: [] }; bIndex[key] = b; blocks.push(b); }
     b.sessions.push(sess);
   });
-  blocks.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+  blocks.sort((a, b) => _sessionsKeyCompare(a.key, b.key));
   const collapsed = {};
   try {
     _sessionsCollapsedSet().forEach(k => { collapsed[k] = true; });
@@ -5012,7 +5034,9 @@ function renderSessionsAutomaton(pool, nowMs, viewMode) {
       if (!st) { st = { key: sk, sessions: [] }; sIndex[sk] = st; stories.push(st); }
       st.sessions.push(sess);
     });
-    stories.sort((a, b) => (a.key < b.key) ? -1 : (a.key > b.key) ? 1 : 0);
+    // The root block (sessions with no story) leads, then the story ids.
+    stories.sort((a, b) => (a.key === 'root') ? (b.key === 'root' ? 0 : -1)
+      : (b.key === 'root') ? 1 : (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     if (!stories.length) stories.push({ key: 'root', sessions: [] });
     const storyHtml = stories.map(st => {
       const sCk = 'automaton|::' + b.key + '::' + st.key;
