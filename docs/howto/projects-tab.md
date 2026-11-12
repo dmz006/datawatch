@@ -182,8 +182,8 @@ Choose **Automata**, then the **Projects** sub-tab, then `core-api`. From the to
 | Unassigned Automata | Automata of this project that no arc holds |
 | Gantt | One row per Automaton and per task, over the last 7, 30 or 90 days. Running work reads "now" |
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
-| Effective policy | Read-only summary of the project's policy, with a link to the policy panel in Settings |
-| Merge pipeline | Read-only, with a link to the merge pipeline settings |
+| Effective policy | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section |
+| Merge pipeline | Read-only, with an **Open settings** link that opens Settings on the Automata tab at the Merge pipeline group |
 | Events | The event stream filtered to this project. It is hidden while it has nothing to show, and it lists notes for empty sections (no arcs, no unassigned Automata) and a missing weekly share, but only when the project has an arc or an unassigned Automaton that needs one |
 
 A row links to its Automaton view, and a session link opens the session. The
@@ -287,8 +287,9 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
 | Change the window of the Gantt | Gantt header: 7, 30 or 90 days |
 | Page through history | **Load more** at the foot of History |
-| Change policy | **Settings → Automation → Project policy** (link on the page) |
-| Change the merge pipeline | **Settings → Automation → Merge pipeline** (link on the page) |
+| Change policy | **Settings → Automata → Project policy** (the **Open settings** link on the page opens the Automata tab, expands that section and scrolls to it) |
+| Change the merge pipeline | **Settings → Automata**, the **Merge pipeline** group of the Automata settings card (the **Open settings** link on the page opens the Automata tab, expands that card and scrolls to it) |
+| Find project setup when there are no projects yet | The empty Projects picker shows **Open Settings**, which opens **Settings → Automata → Project policy** |
 
 The page has no edit control for the record. Arcs, target, lane defaults and the
 numeric record fields are changed with the surfaces below.
