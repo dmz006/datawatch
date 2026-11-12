@@ -17,7 +17,7 @@ import (
 
 func (s *Server) toolComputeNodeList() mcpsdk.Tool {
 	return mcpsdk.NewTool("compute_node_list",
-		mcpsdk.WithDescription("v7.0.0 S1 — list every ComputeNode in the registry."),
+		mcpsdk.WithDescription("v7.0.0 S1 — list every ComputeNode in the registry. The result also includes an 'Observed peers with no node' list (observed_peers) and an unanswered auto-created nodes report (unanswered_auto_created). To add an observed peer, call compute_node_add with the peer name and an address the operator enters."),
 	)
 }
 
