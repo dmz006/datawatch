@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.161.0 — Child Automata inherit their parent's context
+
+### Added
+
+- **A child Automaton starts from its parent's setup.** An Automaton that has a parent (one a running Automaton spawns for a task, a fix Automaton filed from a scan, or a defect filed against a parent) now copies, where its creation gave no value of its own: the project link and the project's repository directory (never a worktree path), the parent's Automation (it joins right after the parent through the normal member insert), backend and model as a pair, verification backend and model, tags and priority. An explicit value always wins, a model never travels without its backend, and a child of a Sonnet or Haiku parent is never put on an Opus or Fable model by inheritance. It runs once per child, never fails a creation and leaves one `child_inherit` entry in the child's decisions naming what was inherited, clamped or skipped.
+- **New setting `autonomous.automation.child_inherit`** (true or false, on by default; an unset key reads true, `false` restores the earlier behavior; any other value is refused with 400). It is read when each child is created, so a change needs no restart. It is in `GET` and `PUT /api/config`, the MCP `autonomous_config_set` argument `automation_child_inherit`, comm `configure`, and Settings, Automata in the web app.
+- **Every creation surface takes an optional parent Automaton id:** REST `parent_prd_id` on `POST /api/autonomous/prds` (an unknown parent is a 404), MCP `autonomous_prd_create` `parent_prd_id`, CLI `datawatch autonomous prd-create --parent <id>`, comm `autonomous create <spec> --parent <id>`, and a *Parent Automaton (optional)* field on the new Automaton form. Four strings were added in English, German, Spanish, French and Japanese.
+- Docs: how-to `automaton-child-inheritance`, the operations manual section, and the definitions entries.
+
 ## v9.160.1 — Header server dropdown and Filters sheet fixes
 
 ### Fixed
