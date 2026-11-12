@@ -3124,9 +3124,8 @@ function _projectsPaint() {
   const err = _projectsState.error;
   if (list && list.length === 0 && !err) {
     view.innerHTML = `<div id="projectsView" style="padding:16px;">
-      <div id="projectsNone" style="color:var(--text2);font-size:14px;line-height:1.5;">${escHtml(t('projects_none') || 'No projects yet.')}
-        <button class="btn-secondary" style="margin-left:8px;" onclick="_projectsOpenSettings('project_policy')">${escHtml(t('projects_none_settings_action') || 'Open Settings')}</button>
-      </div></div>`;
+      <div id="projectsNone" style="color:var(--text2);font-size:14px;line-height:1.5;margin-bottom:12px;">${escHtml(t('projects_none') || 'No projects yet.')}</div>
+      ${_projectsManageHTML([])}</div>`;
     return;
   }
   const sel = _projectsState.selected;
@@ -3158,7 +3157,163 @@ function _projectsPickerHTML(list, selected, err) {
         <input type="checkbox" id="projectsShowEmpty" ${_projectsShowEmpty() ? 'checked' : ''} title="${escHtml(t('projects_show_empty_help') || '')}" onchange="toggleProjectsShowEmpty(this.checked)">
         ${escHtml(t('projects_show_empty') || 'Show empty')}
       </label>
-    </div>`;
+    </div>
+    ${_projectsManageHTML(list)}`;
+}
+
+// ── Manage projects ─────────────────────────────────────────────────────────
+// Add, edit and remove project records from the Projects page. Writes go to
+// POST /api/projects (the whole entry) and DELETE /api/projects/<name>. On
+// edit the entry is started from the listed record so its policy and arcs are
+// sent back unchanged; the name is read-only. Removing a project removes only
+// the alias record: no session is stopped or signalled.
+// edit is the name being edited ('' = adding); draft holds the form values so a
+// repaint does not lose typing.
+let _projectsManage = { edit: '', draft: { name: '', dir: '', description: '', default_backend: '' }, busy: false, error: '', message: '' };
+
+function _projectsManageDraftReset(entry) {
+  _projectsManage.draft = {
+    name: entry ? entry.name : '',
+    dir: entry ? (entry.dir || '') : '',
+    description: entry ? (entry.description || '') : '',
+    default_backend: entry ? (entry.default_backend || '') : '',
+  };
+}
+
+function _projectsManageHTML(list) {
+  const m = _projectsManage;
+  const editing = !!m.edit;
+  const d = m.draft;
+  const rows = (list || []).map(p => `<tr data-project-row="${escHtml(p.name)}">
+      <td>${escHtml(p.name)}</td>
+      <td style="word-break:break-all;">${escHtml(p.dir || '')}</td>
+      <td>${escHtml(p.default_backend || '')}</td>
+      <td>${escHtml(p.description || '')}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn-secondary" id="projectsManageEdit_${escHtml(p.name)}" data-projects-manage="edit" data-project="${escHtml(p.name)}" onclick="projectsManageStartEdit(${escHtml(JSON.stringify(p.name))})">${escHtml(t('projects_manage_edit_action'))}</button>
+        <button class="btn-secondary" id="projectsManageRemove_${escHtml(p.name)}" data-projects-manage="remove" data-project="${escHtml(p.name)}" onclick="projectsManageRemove(${escHtml(JSON.stringify(p.name))})">${escHtml(t('projects_manage_remove_action'))}</button>
+      </td></tr>`).join('');
+  const listHtml = rows ? `<table id="projectsManageList" data-projects-manage="list" style="width:100%;font-size:13px;text-align:left;margin-bottom:12px;">
+      <thead><tr><th>${escHtml(t('projects_manage_col_name'))}</th><th>${escHtml(t('projects_manage_col_dir'))}</th><th>${escHtml(t('projects_manage_col_backend'))}</th><th>${escHtml(t('projects_manage_col_description'))}</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>` : '';
+  const msg = m.error
+    ? `<div id="projectsManageError" data-projects-manage="error" style="color:var(--error,#ef4444);font-size:13px;margin-bottom:8px;">${escHtml(m.error)}</div>`
+    : (m.message ? `<div id="projectsManageMessage" data-projects-manage="message" style="color:var(--text2);font-size:13px;margin-bottom:8px;">${escHtml(m.message)}</div>` : '');
+  const dis = m.busy ? 'disabled' : '';
+  const inp = 'style="width:100%;max-width:420px;"';
+  return `<details id="projectsManage" data-projects-manage="block" ${(rows && !editing && !m.error) ? '' : 'open'} style="margin:8px 0 16px;">
+    <summary style="cursor:pointer;font-size:14px;">${escHtml(t('projects_manage_title'))}</summary>
+    <div style="margin-top:8px;">
+    ${listHtml}${msg}
+    <form id="projectsManageForm" data-projects-manage="form" data-mode="${editing ? 'edit' : 'add'}" onsubmit="projectsManageSave();return false;" style="display:grid;gap:8px;">
+      <div style="font-size:13px;font-weight:600;">${escHtml(editing ? t('projects_manage_edit_title', [m.edit]) : t('projects_manage_add_title'))}</div>
+      <label style="font-size:13px;">${escHtml(t('projects_manage_field_name'))}<br>
+        <input type="text" id="projectsManageName" data-projects-manage="name" ${inp} value="${escHtml(d.name)}" ${editing ? 'readonly' : ''} oninput="projectsManageInput('name',this.value)"></label>
+      <label style="font-size:13px;">${escHtml(t('projects_manage_field_dir'))}<br>
+        <input type="text" id="projectsManageDir" data-projects-manage="dir" ${inp} value="${escHtml(d.dir)}" placeholder="/home/user/project" oninput="projectsManageInput('dir',this.value)"></label>
+      <label style="font-size:13px;">${escHtml(t('projects_manage_field_description'))}<br>
+        <input type="text" id="projectsManageDescription" data-projects-manage="description" ${inp} value="${escHtml(d.description)}" oninput="projectsManageInput('description',this.value)"></label>
+      <label style="font-size:13px;">${escHtml(t('projects_manage_field_backend'))}<br>
+        <input type="text" id="projectsManageBackend" data-projects-manage="backend" ${inp} value="${escHtml(d.default_backend)}" oninput="projectsManageInput('default_backend',this.value)"></label>
+      <div style="display:flex;gap:8px;">
+        <button type="submit" class="btn-primary" id="projectsManageSave" data-projects-manage="save" ${dis}>${escHtml(editing ? t('projects_manage_save_action') : t('projects_manage_add_action'))}</button>
+        ${editing ? `<button type="button" class="btn-secondary" id="projectsManageCancel" data-projects-manage="cancel" onclick="projectsManageCancel()" ${dis}>${escHtml(t('projects_manage_cancel_action'))}</button>` : ''}
+      </div>
+    </form></div></details>`;
+}
+
+function projectsManageInput(field, value) {
+  _projectsManage.draft[field] = value;
+}
+
+function projectsManageStartEdit(name) {
+  const entry = (Array.isArray(_projectsState.list) ? _projectsState.list : []).find(p => p && p.name === name);
+  if (!entry) return;
+  _projectsManage.edit = name;
+  _projectsManage.error = '';
+  _projectsManage.message = '';
+  _projectsManageDraftReset(entry);
+  _projectsPaint();
+}
+
+function projectsManageCancel() {
+  _projectsManage.edit = '';
+  _projectsManage.error = '';
+  _projectsManageDraftReset(null);
+  _projectsPaint();
+}
+
+// _projectsManageRefresh reloads the list (and so the picker) after a write.
+function _projectsManageRefresh() {
+  return _projectsLoad().then(() => { if (_projectsActive()) _projectsPaint(); });
+}
+
+function projectsManageSave() {
+  const m = _projectsManage;
+  if (m.busy) return Promise.resolve();
+  const d = m.draft;
+  const name = String(d.name || '').trim();
+  const dir = String(d.dir || '').trim();
+  m.message = '';
+  if (!name) { m.error = t('projects_manage_err_name'); _projectsPaint(); return Promise.resolve(); }
+  if (!dir) { m.error = t('projects_manage_err_dir'); _projectsPaint(); return Promise.resolve(); }
+  let body;
+  if (m.edit) {
+    const entry = (Array.isArray(_projectsState.list) ? _projectsState.list : []).find(p => p && p.name === m.edit);
+    // Start from the entry as listed: policy and arcs go back unchanged.
+    body = Object.assign({}, entry || {}, { name: m.edit });
+    if (body.policy === undefined || body.policy === null) delete body.policy;
+  } else {
+    body = { name: name };
+  }
+  body.dir = dir;
+  body.description = String(d.description || '').trim();
+  body.default_backend = String(d.default_backend || '').trim();
+  m.busy = true;
+  m.error = '';
+  _projectsPaint();
+  return apiFetch('/api/projects', { method: 'POST', body: JSON.stringify(body) })
+    .then(() => {
+      const wasEdit = !!m.edit;
+      m.busy = false;
+      m.edit = '';
+      _projectsManageDraftReset(null);
+      m.message = t('projects_manage_saved', [name]);
+      if (wasEdit) m.message = t('projects_manage_saved', [name]);
+      return _projectsManageRefresh();
+    })
+    .catch(e => {
+      m.busy = false;
+      m.error = String((e && e.message) || e);
+      if (_projectsActive()) _projectsPaint();
+    });
+}
+
+// projectsManageRemove deletes one project record after a confirm. It only
+// removes the alias; it never touches a session.
+function projectsManageRemove(name) {
+  const m = _projectsManage;
+  if (m.busy) return Promise.resolve();
+  if (typeof confirm === 'function' && !confirm(t('projects_manage_confirm_remove', [name]))) return Promise.resolve();
+  m.busy = true;
+  m.error = '';
+  m.message = '';
+  return apiFetch('/api/projects/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(() => {
+      m.busy = false;
+      if (m.edit === name) { m.edit = ''; _projectsManageDraftReset(null); }
+      if (_projectsState.selected === name) {
+        _projectsState.selected = _PROJECTS_OVERVIEW;
+        _projectsRememberLast('');
+      }
+      m.message = t('projects_manage_removed', [name]);
+      return _projectsManageRefresh();
+    })
+    .catch(e => {
+      m.busy = false;
+      m.error = String((e && e.message) || e);
+      if (_projectsActive()) _projectsPaint();
+    });
 }
 
 // toggleProjectsShowEmpty remembers the viewer's show-empty choice and repaints.
