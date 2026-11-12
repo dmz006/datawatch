@@ -145,6 +145,19 @@ so the Tags section does not draw one chip per tag. It is built like this:
   insensitive; it matches the tag's value, its axis, your tag's name and the
   full tag name). Typing keeps the cursor in the box. While you search every
   matching group is open and shows all of its matches.
+- **Names lead, ids trail** — no list in the sheet leads with a raw id. A
+  chip's main text is the readable name and the id rides behind it as small
+  secondary text (the tooltip is "Name (id)", never the id alone): your
+  operator tags show their name, the **Project** group shows the registered
+  project name or the folder name (the directory path, when present, is the
+  secondary text — a path is never the main text), the **Compute node**
+  group shows the node's registered name with the recorded key as secondary
+  text, and the **Find an Automaton** picker shows the title first with the
+  id small beside it. The selected-tags chips above the list follow the same
+  rule (an Automaton shows its title, not its id). When a lookup resolves
+  to no name the chip says **unnamed** with the id small — a bare id is
+  never the primary text. Filtering is untouched: selections, match mode,
+  saved views and the tags themselves all key on the tag's value as before.
 - **Groups** — chips sit under collapsible headers in a fixed order: **Kind**,
   **Role**, **Lane**, **Compute node**, **Project**, **Your tags**, **Other**.
   Each header shows how many tags it holds for the current list (the
@@ -156,13 +169,25 @@ so the Tags section does not draw one chip per tag. It is built like this:
   looking at carry that tag (own, inherited and placement tags together), not
   the daemon-wide inventory count. A tag no listed session carries is left
   out unless you have it selected, so you can always deselect it.
+- **The Compute node group is named per node, from the list itself** — its
+  entries are built from the sessions you are looking at, not from the tag
+  inventory: one entry per node, a local host under its real hostname and a
+  federated peer under the peer name it is registered under. A list that
+  holds only peers' sessions therefore shows exactly those peers — a peer's
+  session carries no `compute:` tag of its own, so an inventory of tag
+  values cannot see it — and a local session that recorded the host under an
+  alias merges into that host's single entry with the counts summed. There
+  is no "local" or "all" entry: the group uses the same names as
+  [grouping by node](#the-node-axis-in-the-web-ui).
 - **No chips for Automatons, stages and tasks** — the per-Automaton,
   per-stage and per-task system tags (`automaton:`, `stage:`, `task:`,
   `story:`) never get a chip. Reach one Automaton through the **Automaton**
   picker under the chips instead: type in **Find an Automaton** to narrow by
   title or id, then tap a row. Rows show the title first and the id small
-  beside it; selected rows come first, and about eight rows show until you
-  narrow the search. For stages and tasks use [Grouping](#grouping).
+  beside it (an Automaton with no title in the registry shows **unnamed**
+  with the id small, never the bare id); selected rows come first, and about
+  eight rows show until you narrow the search. For stages and tasks use
+  [Grouping](#grouping).
 - **Any / all and Clear** — the match mode and the clear action sit below the
   picker and work as before.
 
@@ -180,7 +205,12 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
 
 - **List** is the classic one-card-per-row layout. It stays the default on
   phone-width viewports (narrower than 600 px), where the dense rows read
-  better on a small screen.
+  better on a small screen. Each card carries the same labelled placement
+  facts as a tile — **Runs on** (the real host name, or the peer's name
+  when the session is federated) and **Model on** (the compute node serving
+  the model for pi and Ollama, **Anthropic cloud** for a Claude session) —
+  each line left out when it cannot be named, each with a hover title that
+  says what it means.
 - **Tiles** is the grid: work tiles that stack left-to-right as well as
   up-down, reflowing with the window width. This is the default on wider
   viewports. Each tile shows:
