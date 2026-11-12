@@ -17,7 +17,8 @@
 //
 // Parameters (all optional, but kinds or level is required, as for a
 // persisted subscription): kinds (comma separated event kinds), level (prd,
-// task or automation), prd_id, task_id and automation_id.
+// task or automation), prd_id, task_id, automation_id and peer (the registered
+// name of the federation peer that forwarded the event).
 //
 // With the setting off none of this is installed: the server advertises
 // resources without subscribe, registers no events resource, and refuses
@@ -47,7 +48,7 @@ const (
 	lifecycleEventsResourceURI = "datawatch://events/lifecycle"
 	// lifecycleEventsResourceTemplate lets a client discover the filter
 	// parameters (RFC 6570 query expansion).
-	lifecycleEventsResourceTemplate = lifecycleEventsResourceURI + "{?kinds,level,prd_id,task_id,automation_id}"
+	lifecycleEventsResourceTemplate = lifecycleEventsResourceURI + "{?kinds,level,prd_id,task_id,automation_id,peer}"
 	// resourceUpdatedMethod is the MCP notification sent for a matching event.
 	resourceUpdatedMethod = "notifications/resources/updated"
 	// maxResourceSubscriptionsPerSession bounds the subscriptions one MCP
@@ -112,9 +113,9 @@ func ParseLifecycleResourceURI(raw string) (autonomous.LifecycleFilter, error) {
 	}
 	for name := range values {
 		switch name {
-		case "kinds", "level", "prd_id", "task_id", "automation_id":
+		case "kinds", "level", "prd_id", "task_id", "automation_id", "peer":
 		default:
-			return f, fmt.Errorf("unknown filter parameter %q (want kinds, level, prd_id, task_id or automation_id)", name)
+			return f, fmt.Errorf("unknown filter parameter %q (want kinds, level, prd_id, task_id, automation_id or peer)", name)
 		}
 	}
 	if kinds := strings.TrimSpace(values.Get("kinds")); kinds != "" {
@@ -126,6 +127,7 @@ func ParseLifecycleResourceURI(raw string) (autonomous.LifecycleFilter, error) {
 	f.PRDID = strings.TrimSpace(values.Get("prd_id"))
 	f.TaskID = strings.TrimSpace(values.Get("task_id"))
 	f.AutomationID = strings.TrimSpace(values.Get("automation_id"))
+	f.Peer = strings.TrimSpace(values.Get("peer"))
 	// The persisted-subscription validator owns the filter rules; the sink is
 	// a placeholder it accepts, so the two paths cannot drift apart.
 	probe := autonomous.Subscription{Filter: f, Sink: autonomous.SubscriptionSink{Type: autonomous.SinkMCPQueue, Target: "resource"}}
@@ -290,7 +292,7 @@ func (r *resourceSubscriptions) count(sessionID string) int {
 func (s *Server) registerLifecycleEventsResource() {
 	const name = "Automata Lifecycle Events"
 	const desc = "Recent Automata events. Subscribe with resources/subscribe on a URI with a filter " +
-		"(kinds, level, prd_id, task_id, automation_id as query parameters; kinds or level is required) " +
+		"(kinds, level, prd_id, task_id, automation_id, peer as query parameters; kinds or level is required) " +
 		"to receive notifications/resources/updated when a matching lifecycle event fires. " +
 		"The filter and event kinds are the same as a persisted subscription's; list the kinds with autonomous_event_kinds."
 	res := mcpsdk.NewResource(lifecycleEventsResourceURI, name,
@@ -328,7 +330,7 @@ func (s *Server) handleLifecycleEventsResource(_ context.Context, req mcpsdk.Rea
 		if f.Level != "" {
 			filter["level"] = f.Level
 		}
-		for k, v := range map[string]string{"prd_id": f.PRDID, "task_id": f.TaskID, "automation_id": f.AutomationID} {
+		for k, v := range map[string]string{"prd_id": f.PRDID, "task_id": f.TaskID, "automation_id": f.AutomationID, "peer": f.Peer} {
 			if v != "" {
 				filter[k] = v
 			}

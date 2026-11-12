@@ -148,6 +148,11 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 			return fmt.Errorf("filter kind %q is not a known event kind", k)
 		}
 	}
+	if sub.Filter.Peer != "" {
+		if err := ValidatePeerName(sub.Filter.Peer); err != nil {
+			return fmt.Errorf("filter peer: %w", err)
+		}
+	}
 	if strings.TrimSpace(sub.Sink.Type) == "" {
 		return fmt.Errorf("sink type is required")
 	}
