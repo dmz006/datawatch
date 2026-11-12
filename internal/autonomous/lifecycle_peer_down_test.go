@@ -644,10 +644,10 @@ func TestPeerDownRecovers(t *testing.T) {
 			Jitter: func() float64 { return 0.5 },
 			Sleep: func(d time.Duration) {
 				clock.Sleep(d)
-				switch n := failuresSeen.Add(1); {
-				case n == 1:
+				switch failuresSeen.Add(1) {
+				case 1:
 					<-gate // hold the first backoff until the local checks are done
-				case n == 2:
+				case 2:
 					// The peer comes back during the second backoff.
 					remote := fwdEvent()
 					remote.ID = "remote-1"
