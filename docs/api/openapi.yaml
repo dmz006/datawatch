@@ -7067,6 +7067,21 @@ paths:
         `spend_unknown` says so in `spend_unknown_note`.
         `attribution` is the attribution check over the window:
         `automaton_launched`, `unattributed`, `session_ids`, `ok`, `note`.
+
+        Each row says how to read its money. `billing_mode` is `bundled_plan`
+        (an `allowance` LLM entry), `api_metered` (an `api` entry),
+        `free_local` (a `local` entry) or `mixed`; it comes from each
+        backend's LLM entry `billing_mode`, then the provider's
+        `usage.billing` profile, then the kind default. `billing_label` is the
+        one line every UI shows. Dollars and points are never added together:
+        a row that spans billing units is `mixed`, has no `usd_estimate`, and
+        carries `unit_totals`, one entry per unit in the order `dollars`,
+        `points`, `none` (each with `unit`, `billing_mode`, `sessions`,
+        `tokens_in`, `tokens_out`, `active_seconds` and the figure for its
+        unit: `dollars`, or `points` and `percent`). `totals_by_unit` repeats
+        the per-unit totals across all rows. A bundled-plan row carries
+        `api_equivalent_usd`, `estimated_usage_points` and
+        `share_of_monthly_price` instead of a `usd_estimate`.
       parameters:
         - {name: group_by, in: query, required: false, schema: {type: string, enum: [automaton, automation, backend, release, week]}}
         - {name: since, in: query, required: false, schema: {type: string}, description: RFC 3339 or YYYY-MM-DD}
@@ -10722,6 +10737,10 @@ components:
         enabled: {type: boolean}
         plan_tier: {type: string}
         max_inflight: {type: integer, nullable: true}
+        billing_mode:
+          type: string
+          enum: ["", api, allowance, local]
+          description: How the entry is paid for. api is metered per token, allowance is a flat plan allowance that resets on a schedule, local is local inference with no per-call charge. Empty resolves from the usage.billing profile for the kind, then the kind default. On upgrade every entry without a value is written once with its resolved value.
         roles:
           type: array
           items: {type: string}
@@ -10737,6 +10756,10 @@ components:
       properties:
         name: {type: string}
         kind: {type: string}
+        billing_mode:
+          type: string
+          enum: ["", api, allowance, local]
+          description: How the entry is paid for. On update, omit to keep the stored value. An unknown value is a 400 naming the allowed values.
         roles:
           type: array
           items: {type: string}

@@ -195,9 +195,13 @@ reads as `allowance`, `api_metered` as `api`, `free_local` as `local`), then the
 kind default (`claude-code` is `allowance`; `ollama`, `openwebui` and `shell`
 are `local`; everything else is `api`).
 
-On upgrade the daemon writes the resolved value onto every entry that has none,
-so nothing changes behavior. An entry that already has a value is never
-touched.
+**Migration.** On upgrade the daemon writes the resolved value onto every entry
+that has none, so nothing changes behavior: a cost report row reads the same
+before and after. An entry that already has a value is never touched, and a
+second load changes nothing. After it runs, each entry shows its mode in the
+Settings page, `GET /api/llms`, `llm_list` and the YAML, and changing the
+profile's `mode` no longer moves that entry. Details of the resolution are in
+[What api, allowance and local mean](cost-report.md#what-api-allowance-and-local-mean).
 
 ```sh
 datawatch llm add claude-api --kind claude --billing-mode api
@@ -209,9 +213,22 @@ datawatch config set llms.claude-api.billing_mode allowance
 The same field is accepted by REST (`POST /api/llms`, `PUT /api/llms/{name}`,
 `PUT /api/config` with `llms.<name>.billing_mode`), MCP (`llm_add`,
 `llm_update`; read back with `llm_get` / `llm_list`), the comm channel
-(`llm add|update <name> billing_mode=<mode>`), `config.yaml` and the Settings →
+(`llm add|update <name> billing_mode=<mode>`, or `configure
+llm.<name>.billing_mode=<mode>`), `config.yaml` and the Settings →
 Compute → LLM edit form (**Billing mode**, in all five locales). Every path
 refuses an unknown value with the same message naming the allowed values.
+
+### Mixed totals are shown per unit
+
+When one report row spans entries with different modes, for example a
+`claude-code` entry on `allowance`, an `aider` entry on `api` and an `ollama`
+entry on `local`, the cost report does not add them. The row reads `mixed`, has
+no single money figure, and lists one total per unit: dollars for the `api`
+entries, points for the `allowance` entries, and tokens and time only for the
+`local` entries. The usage charts follow the same rule: cost over time draws one
+chart per unit, each axis labelled with its unit, and the combined usage report
+lists money per unit on its own line. See
+[Dollars and points are never added together](cost-report.md#dollars-and-points-are-never-added-together).
 
 ### What the billing mode changes
 
@@ -230,6 +247,29 @@ that backend. The profile still supplies the rest (`monthly_price`, `plan`, the
 reset, the allowance unit), so an `allowance` entry still needs a profile with a
 `monthly_price` for the report to show points. See
 [LLM billing mode](../operations.md#llm-billing-mode).
+
+### The usage charts
+
+The Automata page draws the combined usage report as four chart cards: cost over
+time, tool usage, retries and failure categories, and the combined table. They
+read the same resolved billing mode, so an `api` entry's spend is drawn in
+dollars, an `allowance` entry's in points and a `local` entry's as tokens only.
+The report is also available as `GET /api/cost/series`,
+`GET /api/cost/tool-usage` and `GET /api/cost/failures`, `datawatch cost charts`,
+the comm channel `cost charts` verb and the MCP `cost_charts` tool; see
+[the chart cards](cost-report.md#the-chart-cards-on-the-automata-page).
+
+### Parity
+
+| Surface | Billing mode | Usage charts |
+|---|---|---|
+| **REST** | `billing_mode` on `POST /api/llms`, `PUT /api/llms/{name}` and `PUT /api/config`; returned by `GET /api/llms` and `GET /api/config` | `GET /api/cost/series`, `/tool-usage`, `/failures` |
+| **MCP** | `llm_add`, `llm_update`; read back with `llm_get`, `llm_list` | `cost_charts` |
+| **CLI** | `datawatch llm add\|update --billing-mode <mode>`; `datawatch config set llms.<name>.billing_mode <mode>` | `datawatch cost charts` |
+| **Comm channel** | `llm add\|update <name> billing_mode=<mode>`; `configure llm.<name>.billing_mode=<mode>` | `cost charts` |
+| **YAML / config** | `billing_mode:` on each entry under `llms` | No setting of its own; `cost_report.default_window_days` sets the default window |
+| **PWA** | **Billing mode** on the Settings → Compute → LLM edit form | Four chart cards on the Automata page |
+| **Android, iPhone** | Tracked in the parity issue | Tracked in the parity issue |
 
 ## Tag roles on LLMs
 
