@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.142.1 (2026-11-12).** The release workflow's gosec and Trivy Code Scanning uploads retry and then warn instead of failing the job, so a GitHub rate-limit answer no longer stops a release. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.143.0 (2026-11-12).** MCP tools that read or write secrets, identity and similar sensitive data now sit in their own class with a separate allow_sensitive_writes switch, reachable from every operator surface and audited. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
