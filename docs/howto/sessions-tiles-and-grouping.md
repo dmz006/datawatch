@@ -170,6 +170,11 @@ so the picker shows exactly the prefixes you can narrow to — e.g.
 The PWA remembers the grouping you choose on this device. It restores it
 after a page reload and keeps it through list refreshes, so the picker never
 snaps back to its default.
+The toolbar placement control (the ⚙️ dropdown that groups by a `compute:`,
+`stage:` … tag) is the same choice, not a second one: picking a placement there
+updates this picker and vice versa. The choice is saved in this browser's local
+storage (not on the daemon). Applying a saved view replaces it, and an older
+placement choice saved before this change is picked up once and carried over.
 
 | Axis | What groups | Notes |
 |---|---|---|
