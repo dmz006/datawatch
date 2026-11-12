@@ -7146,10 +7146,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   /* Touch: a link inside the metaExtra row keeps a >=40x40px tap target
      (mobile-fit TAP_MIN=40), same form as the #statsPanel link rule. */
   .list-state-meta-row a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
-  /* The alerts help link ("?") rides the alerts loader's metaExtra row; the
-     class is what guarantees the 40px tap target even if the row markup
-     changes. */
-  a.alerts-help-link { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; min-width: 40px; }
 }
 .list-state-cached {
   display: inline-block; padding: 0 6px; border-radius: 999px;

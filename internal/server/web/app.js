@@ -2923,11 +2923,17 @@ function navigate(view, sessionId, fromPopstate) {
       'sessions':       viewer + '#sessions-list',
       'session-detail': viewer + '#inside-a-session-terminal-area',
       'autonomous':     viewer + (_automataNormalizeTab() === 'automation' ? '#automation' : '#automata'),
+      'alerts':         '/diagrams.html#docs/howto/alerts-and-notifications.md',
       'observer':       viewer + '#observer',
       'settings':       viewer + '#settings',
     };
     if (anchorMap[view]) {
       helpLink.href = anchorMap[view];
+      // Per-view tooltip: Alerts names its own howto; the generic title
+      // (the index.html default) goes back to every other view.
+      helpLink.title = view === 'alerts'
+        ? (t('alerts_help_tip') || 'Open the Alerts howto — explains alert rules, quick replies, and notifications')
+        : 'Open documentation for this view';
       helpLink.style.display = 'inline-flex';
     } else {
       helpLink.style.display = 'none';
@@ -45605,16 +45611,11 @@ function _alertsBuildHtml(result) {
   return tabsRow + topBar + bodyHTML + moreHTML;
 }
 
-// The alerts help link: the "?" round glyph in the top-right of the Alerts
-// tab, pointing at the Alerts howto. Rendered through the loader's metaExtra
-// option (see listLoader) so it sits on the meta row and keeps its tap target
-// via the .alerts-help-link coarse-pointer rule in style.css.
-function _alertsHelpLinkHtml() {
-  return `<a href="/diagrams.html#docs/howto/alerts-and-notifications.md" target="_blank" rel="noopener" class="alerts-help-link" title="${escHtml(t('alerts_help_tip')||'Open the Alerts howto — explains alert rules, quick replies, and notifications')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
-}
 // The loader is cached per key in window._listLoaders, so build it through
-// this helper: the first call creates it (with the metaExtra help link), and
-// later calls return the cached loader, so the link never drops off.
+// this helper: the first call creates it and later calls return the cached
+// loader. (The tab's "?" help link lives in the shared header help link —
+// the nav function's anchorMap entry for the 'alerts' view — not in the
+// content any more.)
 function _alertsLoader(server) {
   const lkey = 'alerts:' + (server || 'local');
   const cur = window._listLoaders && window._listLoaders[lkey];
@@ -45622,7 +45623,6 @@ function _alertsLoader(server) {
   return listLoader({
     key: lkey, el: 'alertsList', pollMs: 30000,
     fetch: _alertsFetch, render: _alertsBuildHtml,
-    metaExtra: () => _alertsHelpLinkHtml(),
     active: () => !!document.getElementById('alertsList'),
   });
 }
