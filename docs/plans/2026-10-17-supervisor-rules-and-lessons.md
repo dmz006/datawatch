@@ -494,8 +494,7 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
 6. Merge procedure: `<workspace>/supervisor-scratch/sv/trial-merge.sh <id>` in a throwaway worktree; resolve conflicts (a helper subagent for
    semantic ones); changelog body = lines added by the branch against its merge-base; `BUMP=minor` for a feature,
    patch for a fix or refactor; `<workspace>/supervisor-scratch/sv/finish-merge.sh` (lint, full `go test` with `env -u TMUX -u TMUX_TMPDIR`, and the PWA suite `node --test internal/server/web/*.test.js`; the PWA suite was missing until 2026-10-30 and a field-order test failed on main for three releases before a task gate caught it);
-   ship only on go exit 0 and only with a clean main checkout; `<workspace>/supervisor-scratch/sv/ship-merge.sh`; cancel the PRD record only
-   after the ship succeeded; update the registry row; redeploy when a release or setting needs it and no worker is
+   ship only on go exit 0 and only with a clean main checkout; `<workspace>/supervisor-scratch/sv/ship-merge.sh`; do NOT cancel the PRD record (operator, 2026-11-01 and again 2026-11-12: cancel means abandoned work only); record the shipped state with `datawatch autonomous shipped record <id> --release R --commit C` after the ship succeeded; update the registry row; redeploy when a release or setting needs it and no worker is
    on a final task (record in-flight sessions; resume PRDs the restart parked). After each redeploy run
    `scripts/check-waiter-nodes.sh` with the daemon address and token (`DATAWATCH_URL`, `DATAWATCH_TOKEN`): exit
    status 2, or any over-limit node it reports, is a defect to triage before the next tick — the pool may briefly
