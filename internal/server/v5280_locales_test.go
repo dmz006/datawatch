@@ -159,6 +159,18 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"voice_retry",
 		"nav_autonomous",
 		"nav_alerts",
+		// e73d0004 — alerts tab: session-counting tab buttons, the heading
+		// that shows both numbers, and the localized session "last" time label.
+		"alert_session_last",
+		"alerts_tab_active_sessions",
+		"alerts_tab_historical_sessions",
+		"alerts_tab_system_alerts",
+		"alerts_heading_active_one",
+		"alerts_heading_active_many",
+		"alerts_heading_historical_one",
+		"alerts_heading_historical_many",
+		"alerts_heading_system_one",
+		"alerts_heading_system_many",
 		"nav_settings",
 		"nav_projects",
 		"settings_scope_lint",
