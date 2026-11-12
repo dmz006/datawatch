@@ -5392,5 +5392,6 @@
   "lane_utilization_plan_points": "%1$s / %2$s ポイント",
   "lane_utilization_plan_tokens": "%1$s トークン",
   "lane_utilization_plan_percent": "プランの %1$s%%",
-  "lane_utilization_gantt_heading": "レーン使用率"
+  "lane_utilization_gantt_heading": "レーン使用率",
+  "sessions_filters_unnamed": "無名"
 }

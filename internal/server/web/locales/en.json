@@ -5136,6 +5136,7 @@
   "sessions_filters_tag_automaton": "Automaton",
   "sessions_filters_tag_automaton_ph": "Find an Automaton",
   "sessions_filters_tag_automaton_none": "No Automaton matches",
+  "sessions_filters_unnamed": "unnamed",
   "sessions_filters_tag_selected": "Selected filters",
   "sessions_filters_tag_remove": "Remove %1$s",
   "sessions_filters_tag_clear_all": "Clear all",

@@ -5392,5 +5392,6 @@
   "lane_utilization_plan_points": "%1$s von %2$s Punkten",
   "lane_utilization_plan_tokens": "%1$s Tokens",
   "lane_utilization_plan_percent": "%1$s%% des Plans",
-  "lane_utilization_gantt_heading": "Lane-Auslastung"
+  "lane_utilization_gantt_heading": "Lane-Auslastung",
+  "sessions_filters_unnamed": "unbenannt"
 }

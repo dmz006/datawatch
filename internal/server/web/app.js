@@ -4506,11 +4506,60 @@ function _sessionTagRegistryName(entry) {
   return (reg && reg.name) ? String(reg.name) : '';
 }
 
-// _sessionTagEntryLabel is the chip text: the value for a placement tag, the
-// registry name (else the id) for an operator tag.
+// _sessionsChipLabel is the label rule for every list in the Filters sheet
+// and the compact summary row: a human-readable name as the primary text,
+// the id only as a small secondary text; when no name is known the primary
+// text is the localized “unnamed” word and the secondary text is the id's
+// first 8 characters. A bare id is never the primary text.
+function _sessionsChipLabel(name, id) {
+  name = String((name == null) ? '' : name).trim();
+  id = String((id == null) ? '' : id).trim();
+  if (!name || name === id) {
+    return { primary: _stx('sessions_filters_unnamed', 'unnamed'), secondary: id ? id.slice(0, 8) : '' };
+  }
+  return { primary: name, secondary: id };
+}
+window._sessionsChipLabel = _sessionsChipLabel;
+
+// _sessionTagProjectParts resolves a project placement entry: the registered
+// project name when known, else the folder name — the stored value is a
+// directory, so a directory is never the primary text; the directory then
+// reads as the small secondary text.
+function _sessionTagProjectParts(value) {
+  const dir = String(value || '');
+  const folder = String(dir).split('/').filter(Boolean).pop() || dir;
+  let projName = '';
+  try {
+    const maps = _sessionsGroupTitleMaps();
+    projName = (dir && maps.project && maps.project[String(dir).replace(/\/+$/, '')]) || '';
+  } catch (_) { /* titles not loaded: the folder name is enough */ }
+  if (projName && projName !== dir) return { primary: projName, secondary: dir };
+  if (folder && folder !== dir) return { primary: folder, secondary: dir };
+  return { primary: dir, secondary: '' };
+}
+window._sessionTagProjectParts = _sessionTagProjectParts;
+
+// _sessionTagEntryLabel is the chip's label parts { primary, secondary }: the
+// value for a placement tag (a project entry resolves to the registered
+// project name or the folder name), the registry name for an operator tag.
+// A bare tag id is never the primary text.
 function _sessionTagEntryLabel(entry) {
-  if (entry.axis) return String(entry.value || entry.tag);
-  return _sessionTagRegistryName(entry) || String(entry.tag);
+  const e = entry || {};
+  if (e.axis) {
+    if (e.axis === 'project') return _sessionTagProjectParts(e.value);
+    if (e.axis === 'compute') {
+      const key = String(e.value || e.tag || '');
+      let nm = key;
+      try {
+        const maps = _sessionsGroupTitleMaps();
+        if (key && maps.node && maps.node[key]) nm = String(maps.node[key]);
+      } catch (_) { /* titles not loaded: the value is the name */ }
+      return { primary: _sessionsChipLabel(nm, '').primary, secondary: (nm !== key) ? key : '' };
+    }
+    const name = String(e.value || '');
+    return name ? _sessionsChipLabel(name, '') : _sessionsChipLabel('', String(e.tag || ''));
+  }
+  return _sessionsChipLabel(_sessionTagRegistryName(e), String(e.tag || ''));
 }
 
 // _sessionTagMatchesQuery: case-insensitive substring over value, axis,
@@ -4605,7 +4654,7 @@ function _sessionTagVisibleGroups() {
   if (compute.length) groups.compute = compute;
   return _SESSION_TAG_GROUPS.filter(k => groups[k] && groups[k].length).map(k => ({
     key: k,
-    entries: groups[k].sort((a, b) => (b.count - a.count) || _sessionTagEntryLabel(a.entry).localeCompare(_sessionTagEntryLabel(b.entry))),
+    entries: groups[k].sort((a, b) => (b.count - a.count) || _sessionTagEntryLabel(a.entry).primary.localeCompare(_sessionTagEntryLabel(b.entry).primary)),
   }));
 }
 
@@ -4622,7 +4671,13 @@ const _SESSION_TAG_GROUP_LABELS = {
 function _sessionTagChipHTML(item) {
   const e = item.entry;
   const on = _sessionTagSelection().indexOf(e.tag) >= 0;
-  return `<button type="button" class="backend-filter-badge sessions-tag-chip ${on ? 'active' : ''}" aria-pressed="${on ? 'true' : 'false'}" title="${escHtml(t('session_tag_chip_tip', [e.tag, item.count]))}" onclick="sessionTagChipToggle('${escJsAttr(e.tag)}')">${escHtml(_sessionTagEntryLabel(e))}<span class="badge-count">${item.count}</span></button>`;
+  const lbl = _sessionTagEntryLabel(e);
+  const idText = (lbl.secondary && lbl.secondary !== lbl.primary) ? lbl.secondary : '';
+  // The tooltip starts with the name; the id rides in parentheses after it
+  // so a bare id never leads a tooltip.
+  const tipName = idText ? (lbl.primary + ' (' + idText + ')') : lbl.primary;
+  const idHtml = idText ? `<span class="sessions-chip-id">${escHtml(idText)}</span>` : '';
+  return `<button type="button" class="backend-filter-badge sessions-tag-chip ${on ? 'active' : ''}" aria-pressed="${on ? 'true' : 'false'}" title="${escHtml(t('session_tag_chip_tip', [tipName, item.count]))}" onclick="sessionTagChipToggle('${escJsAttr(e.tag)}')">${escHtml(lbl.primary)}<span class="badge-count">${item.count}</span>${idHtml}</button>`;
 }
 
 // _sessionTagResultsHTML draws only the part that changes while typing: the
@@ -4672,21 +4727,33 @@ function _sessionTagAutomatonRows() {
   };
   sel.forEach(add);
   entries.forEach(e => { if (e && e.tag && _sessionTagAxisOf(e) === 'automaton') add(e.tag); });
+  // Label rule: the title as primary text, the id as small secondary text;
+  // when no title is known the primary text is “unnamed” and the secondary
+  // text the id's first 8 characters — a bare id never leads.
+  rows.forEach(r => {
+    const lbl = _sessionsChipLabel(r.title, r.id);
+    r.title = lbl.primary;
+    r.idText = lbl.secondary;
+  });
   const hit = r => !q || r.title.toLowerCase().indexOf(q) >= 0 || r.id.toLowerCase().indexOf(q) >= 0;
   const picked = rows.filter(r => sel.indexOf(r.tag) >= 0).filter(hit);
-  const rest = rows.filter(r => sel.indexOf(r.tag) < 0).filter(hit).sort((a, b) => ((a.title ? 0 : 1) - (b.title ? 0 : 1)) || (a.title || a.id).localeCompare(b.title || b.id));
+  const rest = rows.filter(r => sel.indexOf(r.tag) < 0).filter(hit).sort((a, b) => (a.title.localeCompare(b.title) || a.id.localeCompare(b.id)));
   return picked.concat(rest);
 }
 
-// _sessionTagAutomatonResultsHTML draws the picker rows (not chips): title
-// as the primary text, the id as small secondary text.
+// _sessionTagAutomatonResultsHTML draws the picker rows (not chips): the
+// title as the primary text, the id as small secondary text; “unnamed” plus
+// the id's first 8 characters when no title is known.
 function _sessionTagAutomatonResultsHTML() {
   const rows = _sessionTagAutomatonRows();
   if (!rows.length) return `<div class="sessions-tag-empty">${escHtml(_stx('sessions_filters_tag_automaton_none', 'No Automaton matches'))}</div>`;
   const sel = _sessionTagSelection();
   return rows.slice(0, Math.max(SESSION_TAG_PICKER_LIMIT, rows.filter(r => sel.indexOf(r.tag) >= 0).length)).map(r => {
     const on = sel.indexOf(r.tag) >= 0;
-    return `<button type="button" class="sessions-tag-pick ${on ? 'active' : ''}" role="option" aria-selected="${on ? 'true' : 'false'}" onclick="sessionTagChipToggle('${escJsAttr(r.tag)}')"><span class="sessions-tag-pick-title">${escHtml(r.title || r.id)}</span>${r.title ? `<span class="sessions-tag-pick-id">${escHtml(r.id)}</span>` : ''}</button>`;
+    // The tooltip starts with the title; the id rides in parentheses after
+    // it so a bare id never leads a tooltip.
+    const tip = (r.idText && r.idText !== r.title) ? (r.title + ' (' + r.idText + ')') : r.title;
+    return `<button type="button" class="sessions-tag-pick ${on ? 'active' : ''}" role="option" aria-selected="${on ? 'true' : 'false'}" title="${escHtml(tip)}" onclick="sessionTagChipToggle('${escJsAttr(r.tag)}')"><span class="sessions-tag-pick-title">${escHtml(r.title)}</span>${r.idText ? `<span class="sessions-tag-pick-id">${escHtml(r.idText)}</span>` : ''}</button>`;
   }).join('');
 }
 
@@ -4753,32 +4820,46 @@ window.sessionTagAxisShowAll = function(key) {
   _sessionTagPanelRepaint();
 };
 
-// _sessionTagSelectedLabel is the summary-chip text for a selected tag: an
-// Automaton shows its title, anything else its value or registry name.
+// _sessionTagSelectedLabel is the summary-chip label parts { primary,
+// secondary } for a selected tag: an Automaton shows its title, a project
+// entry the registered project name or the folder name, anything else its
+// value or registry name. A bare id is never the primary text.
 function _sessionTagSelectedLabel(tag) {
   tag = String(tag);
   if (tag.indexOf('automaton:') === 0) {
     const id = tag.slice('automaton:'.length);
     const info = _sessionsGroupTitleInfo(id, { axis: 'automaton' }, (state.sessions || []).filter(s => s && String(s.prd_id || s.automaton_id || '') === id));
-    return info.title || id;
+    const lbl = _sessionsChipLabel(info.title, info.id || id);
+    return { primary: lbl.primary, secondary: (lbl.secondary !== lbl.primary ? lbl.secondary : '') };
   }
   const inv = state._sessionTagInventory;
   const e = ((inv && inv.entries) || []).find(x => x && x.tag === tag) || { tag };
-  if (e.axis) return String(e.value || tag);
-  const i = tag.indexOf(':');
-  return _sessionTagRegistryName(e) || (i > 0 ? tag.slice(i + 1) : tag);
+  if (e.axis) {
+    if (e.axis === 'project') return _sessionTagProjectParts(e.value);
+    const name = String(e.value || '');
+    if (name) return { primary: name, secondary: '' };
+  }
+  const lbl = _sessionsChipLabel(_sessionTagRegistryName(e), tag);
+  return { primary: lbl.primary, secondary: (lbl.secondary !== lbl.primary ? lbl.secondary : '') };
 }
 
 // _sessionTagSelectedSummaryHTML is the compact row above the session list:
-// one small removable chip per selected tag plus a clear-all. Empty when
-// nothing is selected.
+// one small removable chip per selected tag plus a clear-all. Each chip's
+// primary text is the human-readable name (“unnamed” plus the id's first 8
+// characters when no name is known); the id rides as small secondary text.
+// Empty when nothing is selected.
 function _sessionTagSelectedSummaryHTML() {
   const sel = _sessionTagSelection();
   if (!sel.length) return '';
   const chips = sel.map(tag => {
-    const label = _sessionTagSelectedLabel(tag);
-    const rm = _stx('sessions_filters_tag_remove', 'Remove %1$s').replace('%1$s', label);
-    return `<span class="sessions-tag-sel-chip"><span class="sessions-tag-sel-text">${escHtml(label)}</span><button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" onclick="sessionTagChipToggle('${escJsAttr(tag)}')">&#10005;</button></span>`;
+    const lbl = _sessionTagSelectedLabel(tag);
+    const idText = (lbl.secondary && lbl.secondary !== lbl.primary) ? lbl.secondary : '';
+    // The tooltip names the tag by its name; the id rides in parentheses
+    // after it so a bare id never leads a tooltip.
+    const tipName = idText ? (lbl.primary + ' (' + idText + ')') : lbl.primary;
+    const rm = _stx('sessions_filters_tag_remove', 'Remove %1$s').replace('%1$s', tipName);
+    const idHtml = idText ? `<span class="sessions-chip-id">${escHtml(idText)}</span>` : '';
+    return `<span class="sessions-tag-sel-chip"><span class="sessions-tag-sel-text">${escHtml(lbl.primary)}</span>${idHtml}<button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" onclick="sessionTagChipToggle('${escJsAttr(tag)}')">&#10005;</button></span>`;
   }).join('');
   const clear = _stx('sessions_filters_tag_clear_all', 'Clear all');
   return `<div class="sessions-tag-selected" role="group" aria-label="${escHtml(_stx('sessions_filters_tag_selected', 'Selected filters'))}">${chips}<button type="button" class="sessions-tag-sel-clear" onclick="tagBrowseClear('session')">${escHtml(clear)}</button></div>`;

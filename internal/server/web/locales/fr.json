@@ -5392,5 +5392,6 @@
   "lane_utilization_plan_points": "%1$s sur %2$s points",
   "lane_utilization_plan_tokens": "%1$s tokens",
   "lane_utilization_plan_percent": "%1$s%% du forfait",
-  "lane_utilization_gantt_heading": "Utilisation des voies"
+  "lane_utilization_gantt_heading": "Utilisation des voies",
+  "sessions_filters_unnamed": "sans nom"
 }
