@@ -2611,12 +2611,35 @@ The hardened installer is `scripts/ci-install-trivy.sh <tag> <install-dir>`:
 Coverage: `bash scripts/tests/ci-install-trivy_test.sh` (fake curl; success,
 persistent-failure and usage-error paths).
 
-**Migration status:** all eight "Install Trivy" steps in `release.yaml` (2),
-`containers.yaml` (2) and `image-refresh.yaml` (4) now run
-`bash scripts/ci-install-trivy.sh "<pinned tag>" /usr/local/bin`; none fetches
-the installer from `main` any more. The pins were left as they were:
-`containers.yaml` uses `v0.70.0`, while `release.yaml` and `image-refresh.yaml`
-use `v0.73.0`. Unifying them is an operator decision. Full write-up in
+**Single pin.** The Trivy version lives only in `scripts/trivy-version.txt`
+(one `vX.Y.Z` tag, currently `v0.73.0`). The eight "Install Trivy" steps in
+`release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) run
+`bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin`;
+no workflow holds a `TRIVY_VERSION:` value or a literal tag. To bump Trivy,
+edit that one file. The tag is `v0.73.0`, the newer of the two values the
+workflows used to carry (the container build had `v0.70.0`): the three
+workflows scan the same shipped images, so they now share one scanner version.
+The vulnerability database is refreshed on every run regardless of the pin;
+a new Trivy release can change scan results and turn a blocking release job
+red, which is why a bump is a deliberate edit.
+
+**Helm in the kind smoke workflow.** `kind-smoke.yaml` no longer pipes the
+moving `get-helm-3` script into `bash`. It runs
+`sudo bash scripts/ci-install-helm.sh "$(cat scripts/helm-version.txt)" /usr/local/bin`.
+The Helm tag is pinned in `scripts/helm-version.txt` (currently `v3.17.3`); the
+script downloads that release archive from `get.helm.sh` to a temp file (5
+retries, 10 s apart, 20 s connect and 120 s total timeouts), unpacks only
+`linux-amd64/helm`, and on a persistent failure exits non-zero naming curl's
+status and the URL. Coverage: `bash scripts/tests/ci-install-helm_test.sh`. The
+Helm pin is separate from the Trivy pin and `check-trivy-version-single.sh` does
+not cover it; the archive checksum is not verified.
+
+`bash scripts/check-trivy-version-single.sh` enforces this (bad or missing
+version file, a literal pin in a workflow, an installer caller that never reads
+the file); its coverage is
+`bash scripts/tests/check-trivy-version-single_test.sh`.
+
+The guard runs in `make lint` and `ci.yaml`. Full write-up in
 [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
