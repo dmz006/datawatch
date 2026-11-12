@@ -57,9 +57,13 @@ type sessionGroupRow struct {
 	InheritedTags []string
 	Hostname      string
 	ProjectDir    string
-	PRDID         string
-	StoryID       string
-	TaskID        string
+	// SystemTags are the placement system tags of the session (or, for an
+	// Automaton task session, of its owning Automaton); the `project:` tag
+	// names the datawatch project.
+	SystemTags []string
+	PRDID      string
+	StoryID    string
+	TaskID     string
 }
 
 // sessionGroupMember is one session inside a group or story block. Chips are
@@ -232,10 +236,7 @@ func groupAxisKey(axis, tagPrefix string, row sessionGroupRow) (string, string) 
 		}
 		return row.Hostname, ""
 	case groupAxisProject:
-		if row.ProjectDir == "" {
-			return groupUngroupedKey, ""
-		}
-		return row.ProjectDir, ""
+		return resolveGroupProject(row), ""
 	case groupAxisAutomaton:
 		if row.PRDID == "" {
 			return groupUngroupedKey, ""
@@ -256,6 +257,23 @@ func groupAxisKey(axis, tagPrefix string, row sessionGroupRow) (string, string) 
 		}
 		return groupUngroupedKey, ""
 	}
+}
+
+// resolveGroupProject returns the project-axis key for a row: the datawatch
+// project name from the `project:` placement system tag first, then the
+// session working folder when no project is known, then ungrouped. An
+// Automaton task session therefore groups under its project, never under its
+// worktree path.
+func resolveGroupProject(row sessionGroupRow) string {
+	for _, t := range row.SystemTags {
+		if name := strings.TrimSpace(strings.TrimPrefix(t, "project:")); strings.HasPrefix(t, "project:") && name != "" {
+			return name
+		}
+	}
+	if row.ProjectDir != "" {
+		return row.ProjectDir
+	}
+	return groupUngroupedKey
 }
 
 // sortedGroupTags is the deduped, sorted union of the row's own tags and its
@@ -298,10 +316,16 @@ func (s *Server) writeSessionGrouped(w http.ResponseWriter, r *http.Request, ses
 		if s.manager != nil {
 			inherited = s.manager.InheritedTags(sess)
 		}
+		sysTags := sess.SystemTags
+		if s.manager != nil && sess.PRDID != "" {
+			if owner := s.manager.SystemTagsByPRD(sess.PRDID); len(owner) > 0 {
+				sysTags = append(append([]string(nil), sysTags...), owner...)
+			}
+		}
 		rows = append(rows, sessionGroupRow{
 			ID: sess.ID, FullID: sess.FullID, Name: sess.Name, State: sess.State,
 			Tags: sess.Tags, InheritedTags: inherited,
-			Hostname: sess.Hostname, ProjectDir: sess.ProjectDir,
+			Hostname: sess.Hostname, ProjectDir: sess.ProjectDir, SystemTags: sysTags,
 			PRDID: sess.PRDID, StoryID: sess.StoryID, TaskID: sess.TaskID,
 		})
 	}

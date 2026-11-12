@@ -173,6 +173,36 @@ func TestSessionGroupProjectAxis(t *testing.T) {
 	}
 }
 
+// TestSessionGroupProjectResolution checks the project axis prefers the
+// datawatch project name over the working folder.
+func TestSessionGroupProjectResolution(t *testing.T) {
+	rows := []sessionGroupRow{
+		{ID: "a1", FullID: "h/a1", State: session.StateRunning, PRDID: "prd1",
+			ProjectDir: "/home/u/.datawatch/prd-worktrees/prd1/task",
+			SystemTags: []string{"role:worker", "project:datawatch"}},
+		{ID: "p1", FullID: "h/p1", State: session.StateRunning, ProjectDir: "/repo/plain"},
+		{ID: "n1", FullID: "h/n1", State: session.StateRunning},
+	}
+	g, err := GroupSessions(rows, "project", "")
+	if err != nil {
+		t.Fatalf("GroupSessions: %v", err)
+	}
+	if groupByKey(t, g, "datawatch").Count != 1 {
+		t.Fatalf("Automaton task session should group under datawatch: %+v", g.Groups)
+	}
+	if groupByKey(t, g, "/repo/plain").Count != 1 {
+		t.Fatalf("plain session should group under its folder: %+v", g.Groups)
+	}
+	if groupByKey(t, g, "ungrouped").Count != 1 {
+		t.Fatalf("row with nothing known should be ungrouped: %+v", g.Groups)
+	}
+	for _, grp := range g.Groups {
+		if strings.Contains(grp.Key, "prd-worktrees") {
+			t.Fatalf("worktree path leaked as a group: %+v", g.Groups)
+		}
+	}
+}
+
 // TestSessionGroupInheritedTagsCovered covers rows whose matching tag is
 // inherited from the Automaton rather than owned by the session.
 func TestSessionGroupInheritedTagsCovered(t *testing.T) {
