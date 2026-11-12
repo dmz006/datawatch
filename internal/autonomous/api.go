@@ -238,7 +238,7 @@ func (a *API) restartPlanningOnBoot(prd *PRD, h planningResumeHooks, reason, pol
 	})
 	h.recordDecision(BootResumeEntry{
 		PRDID: prd.ID, Outcome: "planning_restarted", At: time.Now(),
-		Reason: fmt.Sprintf("%s; policy=%s; planning is started again once and planning_restarted_once is now set, so a further restart falls back to draft. %s", reason, policy, orphanNote(orphans)),
+		Reason: fmt.Sprintf("%s; policy=%s; planning is started again once and planning_restarted_once is now set, so a further restart falls back to draft. %s%s", reason, policy, orphanNote(orphans), a.M.bootBackoffNote(prd.DecompositionProfile)),
 	})
 	fmt.Printf("[autonomous] boot-resume: prd=%s planning restarted once (policy=%s)\n", prd.ID, policy)
 	h.startDecompose(prd.ID)
@@ -389,6 +389,7 @@ func (a *API) resumeRunningPRDs() {
 				parked++
 				continue
 			}
+			dec.reason += a.M.bootBackoffNote(prd.Backend)
 			a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "resumed", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now})
 			fmt.Printf("[autonomous] boot-resume: prd=%s resumed age=%ds reason=%s\n", prd.ID, dec.ageSec, dec.reason)
 			resumed++
