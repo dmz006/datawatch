@@ -146,10 +146,60 @@ func (r *Registry) Update(n *Node) error {
 		old.CreatedAt = time.Now().UTC()
 	}
 	n.CreatedAt = old.CreatedAt
+	if n.LastAnsweredAt.IsZero() {
+		n.LastAnsweredAt = old.LastAnsweredAt
+	}
 	n.UpdatedAt = time.Now().UTC()
 	cp := *n
 	r.nodes[n.Name] = &cp
 	return r.persistLocked()
+}
+
+// AnsweredPersistInterval is how much newer a LastAnsweredAt must be
+// than the stored one before MarkAnswered rewrites the file, so health
+// polling does not persist on every call.
+const AnsweredPersistInterval = 10 * time.Minute
+
+// MarkAnswered records that the named node's address answered at the
+// given time. Only LastAnsweredAt changes; the registry is persisted
+// only when the stored value was zero or is older than
+// AnsweredPersistInterval. Returns ErrNotFound if absent.
+func (r *Registry) MarkAnswered(name string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.nodes[name]
+	if !ok {
+		return ErrNotFound
+	}
+	at = at.UTC()
+	if !n.LastAnsweredAt.IsZero() && at.Sub(n.LastAnsweredAt) < AnsweredPersistInterval {
+		return nil
+	}
+	n.LastAnsweredAt = at
+	return r.persistLocked()
+}
+
+// UnansweredNode is one entry of the unanswered auto-created report.
+type UnansweredNode struct {
+	Name      string    `json:"name"`
+	Address   string    `json:"address"`
+	Kind      string    `json:"kind"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// UnansweredAutoCreated returns the auto-created nodes whose address
+// has never answered. It is a computed report; nothing is changed.
+func (r *Registry) UnansweredAutoCreated() []UnansweredNode {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []UnansweredNode{}
+	for _, n := range r.nodes {
+		if n.AutoCreated && n.LastAnsweredAt.IsZero() {
+			out = append(out, UnansweredNode{Name: n.Name, Address: n.Address, Kind: string(n.Kind), CreatedAt: n.CreatedAt})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // RecordBackendVersion stamps a version probe result onto the named

@@ -342,6 +342,10 @@ type Node struct {
 	// AutoCreated marks nodes stored by earlier versions that created
 	// them automatically; nothing creates new ones this way any more.
 	AutoCreated bool `yaml:"auto_created,omitempty" json:"auto_created,omitempty"`
+	// LastAnsweredAt is the last time the node's address answered a
+	// probe. Zero means it has never answered (including nodes stored
+	// before this field existed).
+	LastAnsweredAt time.Time `yaml:"last_answered_at,omitempty" json:"last_answered_at,omitempty"`
 
 	// Backend version capture (save-time version probe, see
 	// version_probe.go). BackendVersion is the normalized semver core
