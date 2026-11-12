@@ -3243,6 +3243,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   };
 
   let body = '';
+  let ganttDone = false;
   if (rollErr) {
     events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
@@ -3254,6 +3255,8 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       events.push(t('projects_event_no_arcs'));
       if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
     } else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+    body += _projectGanttHTML(hist);
+    ganttDone = true;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
     else {
@@ -3261,7 +3264,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
   }
-  body += _projectGanttHTML(hist);
+  if (!ganttDone) body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
   body += _projectLinksHTML(p);
 
