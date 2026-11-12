@@ -5341,5 +5341,10 @@
   "dash_card_help_usage_burn": "Montre les points d'usage consommés chaque jour de la semaine, d'après la série quotidienne du calculateur d'usage.",
   "dash_card_help_label": "Aide pour cette carte",
   "projects_section_collapse": "Réduire %1$s",
-  "projects_section_expand": "Développer %1$s"
+  "projects_section_expand": "Développer %1$s",
+  "automation_focus_button": "Focus",
+  "projects_gantt_focus_title": "Focus : %1$s",
+  "projects_gantt_focus_back": "Retour",
+  "projects_gantt_focus_empty": "Cette automatisation n'a pas encore d'automates ni de tâches. Elle est planifiée.",
+  "projects_gantt_focus_range_text": "Première tâche %1$s – dernière tâche %2$s"
 }

@@ -3167,6 +3167,7 @@ function _projectsActive() {
 
 function _projectsPaint() {
   _projectsGanttStopDrag();
+  _projectsFocus = null; // painting the project page leaves the focus page
   // The Projects page lives in the Automata panel area.
   const view = document.getElementById('automataPanel');
   if (!view) return;
@@ -3434,7 +3435,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     const tasks = arc.tasks || {};
     const summary = `<summary style="cursor:pointer;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:4px 0;">
       <span style="color:var(--text2);font-size:12px;">${escHtml(t('projects_page_priority'))} ${escHtml(arc.priority || 0)}</span>
-      <strong style="font-size:14px;">${escHtml(arc.automation_id)}</strong>
+      <strong style="font-size:14px;">${escHtml(arc.automation_id)}</strong>${projectsFocusButtonHtml(arc.automation_id, arc.automation_id, 'project')}
       <span style="font-size:12px;">${escHtml(stateLabel)}</span>
       <span style="flex:1 1 160px;min-width:140px;">${_projectBarHTML(tasks.done, tasks.total, arc.automation_id)}</span>
       <span style="font-size:12px;color:var(--text2);">${pts(arc.points)}</span>
@@ -3920,9 +3921,21 @@ function _projectsGanttFlatten(g) {
 }
 
 // _projectsGanttCap bounds the drawn items. total counts every item.
-function _projectsGanttCap(flat) {
-  return { items: flat.slice(0, _PROJECTS_GANTT_MAX_ROWS), total: flat.length };
+function _projectsGanttCap(flat, max) {
+  const m = max == null ? _PROJECTS_GANTT_MAX_ROWS : max;
+  return { items: m >= flat.length ? flat : flat.slice(0, m), total: flat.length };
 }
+
+// _projectsGanttRangeRows are the rows the range and the zoom bounds read: the
+// timeline rows, or for a focus page its task rows (set as g.rangeRows).
+function _projectsGanttRangeRows(g) {
+  return g.rangeRows && g.rangeRows.length ? g.rangeRows : g.rows;
+}
+
+// The two surfaces that draw the Gantt: the project page and the focus page. The
+// draw code reads its handler names, element ids and row cap from one of these.
+const _PROJECTS_GANTT_UI = { preset: 'projectsGanttPreset', toggle: 'projectsGanttToggle', more: 'projectsGanttMore', wheel: 'projectsGanttWheel', down: 'projectsGanttDown', axisId: 'projectGanttAxis', chartId: 'projectGanttChart', rangeId: 'projectGanttRange', rangeTextKey: 'projects_gantt_range_text', emptyKey: 'projects_gantt_empty', cap: _PROJECTS_GANTT_MAX_ROWS, focusButtons: true };
+const _PROJECTS_FOCUS_UI = { preset: 'projectsFocusPreset', toggle: 'projectsFocusToggle', more: 'projectsFocusToggle', wheel: 'projectsFocusWheel', down: 'projectsFocusDown', axisId: 'projectFocusAxis', chartId: 'projectFocusChart', rangeId: 'projectFocusRange', rangeTextKey: 'projects_gantt_focus_range_text', emptyKey: 'projects_gantt_focus_empty', cap: Infinity, focusButtons: false };
 
 // _projectGanttPalette reads the theme colours the Gantt draws with, falling
 // back to the dashboard defaults where the page has no computed style.
@@ -3941,7 +3954,7 @@ function _projectsGanttGet() {
 
 // _projectsGanttCurrent is the visible range of a Gantt state.
 function _projectsGanttCurrent(g, now) {
-  return g.view || _projectsGanttPresetRange(g.preset || _PROJECTS_GANTT_DEFAULT_WINDOW, g.rows, now);
+  return g.view || _projectsGanttPresetRange(g.preset || _PROJECTS_GANTT_DEFAULT_WINDOW, _projectsGanttRangeRows(g), now);
 }
 
 // _projectGanttHTML is the Gantt section of the project page. The state is read
@@ -3950,7 +3963,8 @@ function _projectGanttHTML() {
   return _projectsSectionCard('gantt', escHtml(t('projects_gantt_heading')), `<div id="projectGantt" class="project-gantt">${_projectGanttInnerHTML(_projectsGanttGet())}</div>`);
 }
 
-function _projectGanttInnerHTML(g) {
+function _projectGanttInnerHTML(g, ui) {
+  ui = ui || _PROJECTS_GANTT_UI;
   if (!g || (g.loading && !g.rows.length && !g.error)) {
     return `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
   }
@@ -3961,13 +3975,13 @@ function _projectGanttInnerHTML(g) {
   const range = _projectsGanttCurrent(g, now);
   const preset = g.view ? '' : (g.preset || _PROJECTS_GANTT_DEFAULT_WINDOW);
   const buttons = _PROJECTS_GANTT_PRESETS.map(([k, , labelKey]) =>
-    `<button type="button" class="project-gantt-preset${k === preset ? ' active' : ''}" data-preset="${k}" aria-pressed="${k === preset ? 'true' : 'false'}" onclick="projectsGanttPreset('${k}')">${escHtml(t(labelKey))}</button>`).join('');
-  const rangeText = t('projects_gantt_range_text', [new Date(range.start).toLocaleDateString(), new Date(range.end).toLocaleDateString()]);
-  const top = `<div class="project-gantt-toolbar"><span class="project-gantt-range-label">${escHtml(t('projects_gantt_range_label'))}</span>${buttons}<span class="project-gantt-range" id="projectGanttRange">${escHtml(rangeText)}</span></div>`;
+    `<button type="button" class="project-gantt-preset${k === preset ? ' active' : ''}" data-preset="${k}" aria-pressed="${k === preset ? 'true' : 'false'}" onclick="${ui.preset}('${k}')">${escHtml(t(labelKey))}</button>`).join('');
+  const rangeText = t(ui.rangeTextKey, [new Date(range.start).toLocaleDateString(), new Date(range.end).toLocaleDateString()]);
+  const top = `<div class="project-gantt-toolbar"><span class="project-gantt-range-label">${escHtml(t('projects_gantt_range_label'))}</span>${buttons}<span class="project-gantt-range" id="${ui.rangeId}">${escHtml(rangeText)}</span></div>`;
   if (!g.rows.length) {
-    return top + `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_empty'))}</div>`;
+    return top + `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t(ui.emptyKey))}</div>`;
   }
-  const capped = _projectsGanttCap(_projectsGanttFlatten(g));
+  const capped = _projectsGanttCap(_projectsGanttFlatten(g), ui.cap);
   const pal = _projectGanttPalette();
   const span = range.end - range.start;
   const pct = ts => Math.max(0, Math.min(100, (ts - range.start) / span * 100));
@@ -3985,14 +3999,14 @@ function _projectGanttInnerHTML(g) {
       return;
     }
     if (it.type === 'more') {
-      rows += `<div class="project-gantt-row" data-kind="more"><div class="project-gantt-label" style="padding-left:${pad + 18}px;"><button type="button" class="btn-secondary project-gantt-more"${it.busy ? ' disabled' : ''} onclick="${escHtml(`projectsGanttMore(${JSON.stringify(it.key)})`)}">${escHtml(t('projects_gantt_load_more'))}</button></div><div class="project-gantt-track"></div></div>`;
+      rows += `<div class="project-gantt-row" data-kind="more"><div class="project-gantt-label" style="padding-left:${pad + 18}px;"><button type="button" class="btn-secondary project-gantt-more"${it.busy ? ' disabled' : ''} onclick="${escHtml(`${ui.more}(${JSON.stringify(it.key)})`)}">${escHtml(t('projects_gantt_load_more'))}</button></div><div class="project-gantt-track"></div></div>`;
       return;
     }
     const r = it.row;
     const label = r.kind === 'unassigned' ? t('projects_gantt_no_arc') : (r.title || r.id || '');
     const sp = _projectsGanttSpan(r, now);
     const toggle = it.expandable
-      ? `<button type="button" class="project-gantt-toggle" aria-expanded="${it.expanded ? 'true' : 'false'}" aria-label="${escHtml(t(it.expanded ? 'projects_gantt_collapse' : 'projects_gantt_expand', [label]))}" onclick="${escHtml(`projectsGanttToggle(${JSON.stringify(it.key)})`)}">${it.expanded ? '▾' : '▸'}</button>`
+      ? `<button type="button" class="project-gantt-toggle" aria-expanded="${it.expanded ? 'true' : 'false'}" aria-label="${escHtml(t(it.expanded ? 'projects_gantt_collapse' : 'projects_gantt_expand', [label]))}" onclick="${escHtml(`${ui.toggle}(${JSON.stringify(it.key)})`)}">${it.expanded ? '▾' : '▸'}</button>`
       : '<span class="project-gantt-toggle-spacer"></span>';
     let track;
     if (!sp) {
@@ -4006,12 +4020,13 @@ function _projectGanttInnerHTML(g) {
       track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
         + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
     }
-    rows += `<div class="project-gantt-row" data-kind="${escHtml(r.kind)}" data-key="${escHtml(it.key)}"><div class="project-gantt-label" style="padding-left:${pad}px;${r.kind === 'task' ? 'color:var(--text2);' : 'font-weight:600;'}">${toggle}<span class="project-gantt-label-text" title="${escHtml(label)}">${escHtml(label)}</span></div><div class="project-gantt-track">${track}</div></div>`;
+    const focusBtn = ui.focusButtons && r.kind === 'arc' ? projectsFocusButtonHtml(r.id, label, 'project') : '';
+    rows += `<div class="project-gantt-row" data-kind="${escHtml(r.kind)}" data-key="${escHtml(it.key)}"><div class="project-gantt-label" style="padding-left:${pad}px;${r.kind === 'task' ? 'color:var(--text2);' : 'font-weight:600;'}">${toggle}<span class="project-gantt-label-text" title="${escHtml(label)}">${escHtml(label)}</span>${focusBtn}</div><div class="project-gantt-track">${track}</div></div>`;
   });
   const note = capped.total > capped.items.length
     ? `<div style="color:var(--text2);font-size:12px;margin-top:4px;">${escHtml(t('projects_gantt_bounded', [capped.items.length, capped.total]))}</div>` : '';
-  return top + `<div class="project-gantt-scroll"><div class="project-gantt-chart" id="projectGanttChart" role="group" aria-label="${escHtml(t('projects_gantt_heading'))}" onwheel="projectsGanttWheel(event)" onpointerdown="projectsGanttDown(event)">`
-    + `<div class="project-gantt-row project-gantt-axis"><div class="project-gantt-label"></div><div class="project-gantt-track" id="projectGanttAxis">${ticks}</div></div>${rows}</div></div>${note}`;
+  return top + `<div class="project-gantt-scroll"><div class="project-gantt-chart" id="${ui.chartId}" role="group" aria-label="${escHtml(t('projects_gantt_heading'))}" onwheel="${ui.wheel}(event)" onpointerdown="${ui.down}(event)">`
+    + `<div class="project-gantt-row project-gantt-axis"><div class="project-gantt-label"></div><div class="project-gantt-track" id="${ui.axisId}">${ticks}</div></div>${rows}</div></div>${note}`;
 }
 
 // _projectsGanttRepaint redraws only the Gantt body when it is on the page, so
@@ -4127,14 +4142,17 @@ function projectsGanttMore(key) {
 function projectsGanttPreset(key) {
   const g = _projectsGanttGet();
   if (!g) return;
+  _projectsGanttSetPreset(g, key);
+  _projectsGanttRepaint();
+}
+function _projectsGanttSetPreset(g, key) {
   g.preset = _PROJECTS_GANTT_PRESETS.some(p => p[0] === key) ? key : _PROJECTS_GANTT_DEFAULT_WINDOW;
   g.view = null;
-  _projectsGanttRepaint();
 }
 
 // _projectsGanttAxisBox is the on-screen box of the time axis, or null.
-function _projectsGanttAxisBox() {
-  const el = typeof document !== 'undefined' ? document.getElementById('projectGanttAxis') : null;
+function _projectsGanttAxisBox(id) {
+  const el = typeof document !== 'undefined' ? document.getElementById(id || 'projectGanttAxis') : null;
   const b = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
   return b && b.width > 0 ? b : null;
 }
@@ -4143,12 +4161,15 @@ function _projectsGanttAxisBox() {
 function projectsGanttWheel(ev) {
   const g = _projectsGanttGet();
   if (!g || !ev) return;
+  _projectsGanttWheelOn(g, ev, 'projectGanttAxis');
+  _projectsGanttRepaint();
+}
+function _projectsGanttWheelOn(g, ev, axisId) {
   if (ev.preventDefault) ev.preventDefault();
   const now = Date.now();
-  const box = _projectsGanttAxisBox();
+  const box = _projectsGanttAxisBox(axisId);
   const frac = box ? (ev.clientX - box.left) / box.width : 0.5;
-  g.view = _projectsGanttZoom(_projectsGanttCurrent(g, now), (ev.deltaY || 0) > 0 ? 1.25 : 0.8, frac, _projectsGanttBounds(g.rows, now));
-  _projectsGanttRepaint();
+  g.view = _projectsGanttZoom(_projectsGanttCurrent(g, now), (ev.deltaY || 0) > 0 ? 1.25 : 0.8, frac, _projectsGanttBounds(_projectsGanttRangeRows(g), now));
 }
 
 // Drag pan. The move and up listeners exist only while a drag is in progress and
@@ -4163,26 +4184,213 @@ function _projectsGanttStopDrag() {
 }
 function projectsGanttDown(ev) {
   const g = _projectsGanttGet();
-  if (!g || !ev || (ev.button || 0) !== 0) return;
+  if (!g) return;
+  _projectsGanttDownOn(g, ev, 'projectGanttAxis', () => _projectsActive() && _projectsGanttGet() === g, _projectsGanttRepaint);
+}
+// _projectsGanttDownOn starts a drag pan of g. live says whether g is still on
+// the page; repaint redraws it.
+function _projectsGanttDownOn(g, ev, axisId, live, repaint) {
+  if (!ev || (ev.button || 0) !== 0) return;
   if (ev.target && ev.target.closest && ev.target.closest('button')) return;
-  const box = _projectsGanttAxisBox();
+  const box = _projectsGanttAxisBox(axisId);
   if (!box) return;
   _projectsGanttStopDrag();
   const now = Date.now();
   const startRange = _projectsGanttCurrent(g, now);
-  const bounds = _projectsGanttBounds(g.rows, now);
+  const bounds = _projectsGanttBounds(_projectsGanttRangeRows(g), now);
   const x0 = ev.clientX;
   const move = e => {
-    if (!_projectsActive() || _projectsGanttGet() !== g) { _projectsGanttStopDrag(); return; }
+    if (!live()) { _projectsGanttStopDrag(); return; }
     const dt = -(e.clientX - x0) / box.width * (startRange.end - startRange.start);
     g.view = _projectsGanttPan(startRange, dt, bounds);
-    _projectsGanttRepaint();
+    repaint();
   };
   const up = () => _projectsGanttStopDrag();
   _projectsGanttDrag = { move, up };
   document.addEventListener('pointermove', move);
   document.addEventListener('pointerup', up);
   document.addEventListener('pointercancel', up);
+}
+
+// ── Focus view: one Automation's timeline on its own page ──
+// Focus opens from an arc row of the Gantt, an arc card of the project page or
+// the Automation detail header. One read, GET /api/projects/{name}/timeline?focus=<id>,
+// returns the Automata of the Automation each followed by its tasks. The range
+// runs from the first task to the last task. The page reuses the Gantt helpers
+// and drawing code (_projectGanttInnerHTML with _PROJECTS_FOCUS_UI) and has no
+// row cap. It only reads. A reply that arrives after the viewer left the page is
+// dropped; there is no timer.
+let _projectsFocus = null;
+const _PROJECTS_FOCUS_KEY_PREFIX = 'focus:';
+
+// projectsFocusButtonHtml is the Focus button of an arc row, an arc card or the
+// Automation detail header. from is 'project' or 'automation': where Back returns.
+function projectsFocusButtonHtml(id, title, from) {
+  if (!id) return '';
+  const cls = from === 'automation' ? 'btn-secondary automation-focus-button' : 'btn-secondary project-gantt-focus';
+  const call = `projectsFocusOpen(${JSON.stringify(id)},${JSON.stringify(title || '')},${JSON.stringify(from)});if(event){event.stopPropagation();event.preventDefault();}`;
+  return `<button type="button" class="${cls}" data-focus="${escHtml(id)}" onclick="${escHtml(call)}">${escHtml(t('automation_focus_button'))}</button>`;
+}
+window.projectsFocusButtonHtml = projectsFocusButtonHtml;
+
+// _projectsFocusTree splits the flat focus reply into Automata (rows), their
+// tasks (kids, keyed like the Gantt rows) and the list of all task rows.
+function _projectsFocusTree(rows) {
+  const out = { rows: [], kids: {}, tasks: [] };
+  let cur = null;
+  (rows || []).forEach(r => {
+    if (!r || typeof r !== 'object') return;
+    if (r.kind === 'automaton') {
+      cur = { row: r, tasks: [] };
+      out.rows.push(cur);
+    } else if (r.kind === 'task' && cur) {
+      cur.tasks.push(r);
+      out.tasks.push(r);
+    }
+  });
+  out.rows = out.rows.map(c => {
+    const row = Object.assign({}, c.row, { has_children: c.tasks.length > 0 });
+    out.kids[_projectsGanttKey(row)] = { rows: c.tasks, next: '', loading: false, loaded: true };
+    return row;
+  });
+  return out;
+}
+
+// _projectsFocusRemembered says whether this browser stored an expanded set for
+// the Automation. A blocked store reads as nothing remembered.
+function _projectsFocusRemembered(id) {
+  try { return localStorage.getItem(_PROJECTS_GANTT_EXPANDED_KEY_PREFIX + _PROJECTS_FOCUS_KEY_PREFIX + id) !== null; } catch (_) { return false; }
+}
+
+function _projectsFocusLive(f) {
+  return !!f && _projectsFocus === f && typeof document !== 'undefined' && !!document.getElementById('projectFocus');
+}
+
+function _projectsFocusInner(f) {
+  return _projectGanttInnerHTML(f, _PROJECTS_FOCUS_UI);
+}
+
+// _projectsFocusRepaint redraws only the Gantt body of the focus page.
+function _projectsFocusRepaint() {
+  const f = _projectsFocus;
+  if (!_projectsFocusLive(f)) return;
+  const el = document.getElementById('projectFocusBody');
+  if (el) el.innerHTML = _projectsFocusInner(f);
+}
+
+// _projectsFocusPageHTML is the whole focus page: Back, the title and the Gantt.
+function _projectsFocusPageHTML(f) {
+  const head = `<div class="automation-detail-header"><button type="button" class="automation-detail-back project-focus-back" onclick="projectsFocusBack()">← ${escHtml(t('projects_gantt_focus_back'))}</button><h2 class="automation-detail-title">${escHtml(t('projects_gantt_focus_title', [f.title]))}</h2></div>`;
+  const page = `<div id="projectFocus" class="project-focus" data-automation="${escHtml(f.id)}">${head}<div id="projectFocusBody" class="project-gantt">${_projectsFocusInner(f)}</div></div>`;
+  return f.from === 'automation' ? `<div class="view-content automation-detail" style="position:relative;">${page}</div>` : `<div style="padding:12px 16px;">${page}</div>`;
+}
+
+// _projectsFocusRead reads the focus reply. For the project page the project is
+// known; from the Automation page it is the first project that holds the
+// Automation (a project that does not is skipped on its not-found reply).
+function _projectsFocusRead(f) {
+  const url = name => '/api/projects/' + encodeURIComponent(name) + '/timeline?focus=' + encodeURIComponent(f.id);
+  const known = (_projectsState.list || []).map(p => p && p.name).filter(Boolean);
+  const names = f.project ? Promise.resolve([f.project])
+    : known.length ? Promise.resolve(known)
+      : apiFetch('/api/projects').then(l => (Array.isArray(l) ? l : []).map(p => p && p.name).filter(Boolean));
+  return names.then(list => {
+    const next = i => {
+      if (i >= list.length) return Promise.resolve(null);
+      return apiFetch(url(list[i])).then(r => r, err => {
+        if (/not found/i.test((err && err.message) || '')) return next(i + 1);
+        return Promise.reject(err);
+      });
+    };
+    return next(0);
+  });
+}
+
+// projectsFocusOpen opens the focus page of an Automation (its id and title).
+function projectsFocusOpen(id, title, from) {
+  if (!id) return Promise.resolve();
+  const fromAutomation = from === 'automation';
+  const el = typeof document !== 'undefined' ? document.getElementById(fromAutomation ? 'view' : 'automataPanel') : null;
+  if (!el) return Promise.resolve();
+  _projectsGanttStopDrag();
+  const f = {
+    id, title: title || id, from: fromAutomation ? 'automation' : 'project',
+    project: fromAutomation ? '' : _projectsState.selected,
+    rows: [], kids: {}, rangeRows: [], next: '', error: '', loading: true,
+    preset: _PROJECTS_GANTT_DEFAULT_WINDOW, view: null,
+    expanded: _projectsGanttExpandedLoad(_PROJECTS_FOCUS_KEY_PREFIX + id),
+    remembered: _projectsFocusRemembered(id),
+  };
+  _projectsFocus = f;
+  if (fromAutomation) _automationState.detailId = null; // the live refresh must not redraw over this page
+  el.innerHTML = _projectsFocusPageHTML(f);
+  return _projectsFocusRead(f).then(r => {
+    if (!_projectsFocusLive(f)) return;
+    const body = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+    const tree = _projectsFocusTree(Array.isArray(body.rows) ? body.rows : []);
+    f.rows = tree.rows;
+    f.kids = tree.kids;
+    f.rangeRows = tree.tasks;
+    // With nothing remembered every Automaton opens, so every task is listed.
+    if (!f.remembered) tree.rows.forEach(r => { if (r.has_children) f.expanded[_projectsGanttKey(r)] = true; });
+    f.error = '';
+  }).catch(err => {
+    if (!_projectsFocusLive(f)) return;
+    f.error = (err && err.message) || String(err);
+  }).then(() => {
+    if (!_projectsFocusLive(f)) return;
+    f.loading = false;
+    _projectsFocusRepaint();
+  });
+}
+window.projectsFocusOpen = projectsFocusOpen;
+
+// projectsFocusBack returns to the page the viewer came from.
+function projectsFocusBack() {
+  const f = _projectsFocus;
+  _projectsGanttStopDrag();
+  _projectsFocus = null;
+  if (!f) return Promise.resolve();
+  if (f.from === 'automation') return openAutomationDetail(f.id);
+  if (_projectsActive()) _projectsPaint();
+  return Promise.resolve();
+}
+window.projectsFocusBack = projectsFocusBack;
+
+// projectsFocusShown says whether the focus page is the current page.
+function projectsFocusShown() {
+  return _projectsFocusLive(_projectsFocus);
+}
+
+// projectsFocusToggle expands or collapses an Automaton. Its tasks came with the
+// reply, so nothing is fetched. The set is remembered per browser.
+function projectsFocusToggle(key) {
+  const f = _projectsFocus;
+  if (!_projectsFocusLive(f) || !key) return Promise.resolve();
+  if (f.expanded[key]) delete f.expanded[key]; else f.expanded[key] = true;
+  _projectsGanttExpandedSave(_PROJECTS_FOCUS_KEY_PREFIX + f.id, f.expanded);
+  _projectsFocusRepaint();
+  return Promise.resolve();
+}
+
+function projectsFocusPreset(key) {
+  const f = _projectsFocus;
+  if (!_projectsFocusLive(f)) return;
+  _projectsGanttSetPreset(f, key);
+  _projectsFocusRepaint();
+}
+
+function projectsFocusWheel(ev) {
+  const f = _projectsFocus;
+  if (!_projectsFocusLive(f) || !ev) return;
+  _projectsGanttWheelOn(f, ev, 'projectFocusAxis');
+  _projectsFocusRepaint();
+}
+
+function projectsFocusDown(ev) {
+  const f = _projectsFocus;
+  if (!_projectsFocusLive(f)) return;
+  _projectsGanttDownOn(f, ev, 'projectFocusAxis', () => _projectsFocusLive(f), _projectsFocusRepaint);
 }
 
 // _projectsLoadHistory reads one page of GET /api/projects/{name}/history for
@@ -43317,7 +43525,7 @@ function buildAutomationDetailHTML(automation, ctx) {
       <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
       <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a) || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
-      ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}
+      ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}${a.id ? projectsFocusButtonHtml(a.id, a.name, 'automation') : ''}
     </div>${desc}${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
@@ -43429,6 +43637,7 @@ window.automationDetailBack = automationDetailBack;
 // refreshAutomationView reloads whatever the Automation tab shows: the open
 // detail, or else the list. Live updates and returning to the tab call it.
 function refreshAutomationView() {
+  if (typeof projectsFocusShown === 'function' && projectsFocusShown()) return Promise.resolve();
   const id = _automationState.detailId;
   if (id) return renderAutomationDetail(id, { quiet: true });
   return loadAutomationList();
