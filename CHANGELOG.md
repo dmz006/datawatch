@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.153.0 — Compact Sessions page controls on a phone
+
+### Changed
+
+- **The Sessions page controls are compact, so they fit a phone.** The page keeps its controls in one toolbar row: a search box, a **Filters** button with a badge counting the active filters, a chip per server and the List, Tiles and Compact toggle. Grouping, saved views, the full set of state chips, the watched-only toggle, the backend chips and the tag filter move behind the Filters button, in a sheet that closes by tapping outside it, its close button or Escape. The status counts take one line, and on a narrow screen a session's tags collapse to one `+N` chip.
+- **Search on the Sessions page.** The search box matches a session's name, id, backend, tag text and state, shows an `N of M` count while a search is active, and remembers the text on this device.
+- No new setting, and the daemon, REST, MCP, CLI and chat channel behave exactly as before. The new strings are in all five locales.
+- Docs: the Sessions tiles and grouping how-to and the definitions describe the toolbar row and the Filters sheet.
+
 ## v9.152.0 — Per-LLM billing mode and usage charts
 
 ### Added
