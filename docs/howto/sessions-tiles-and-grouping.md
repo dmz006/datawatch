@@ -59,8 +59,11 @@ its controls packed into fewer rows. There is no new setting, and the
 daemon, REST, MCP, CLI and comm channel behave exactly as before.
 
 ```
-Sessions
-┌─[ Search…  ]  [ Filters (2) ]  [ server-a ] [ server-b ]   [ List │ Tiles │ Compact ]
+header (fixed, every page):   …  [ ▾ All servers │ This server │ server-a │ server-b ]
+
+Sessions (toolbar row):
+┌─[ Search…  ]  [ Filters (2) ]  [ 🌐 server-a ]   [ List │ Tiles │ Compact ]
+│  (the 🌐 indicator shows only while a federated server is active)
 │  ● running 4   ● waiting_input 2   ● complete 11   ● failed 1   ● killed 3
 │  ────────────────────────────────────────────────────────────
 │  ▾ automation:lane-fill        4  (running 2, waiting_input 1, complete 1)
@@ -142,6 +145,16 @@ often than search:
   the one-line count above the list does not show it. The same section
   also holds the **watched only** toggle, the **Backend** chips and, when
   you use tags, the **Tags** filter.
+- **The floating "Start session" button clears out while the sheet is
+  open.** On a phone the sheet is a bottom sheet, and while it is open the
+  floating **Start session** button (bottom right) is hidden — it is one of
+  the overlays that button steps aside from — and the sheet carries extra
+  bottom padding, so its last rows (the **Status** chips and below) sit
+  above the button's old zone and are fully visible and tappable. The same
+  clearance applies to long pages: the Sessions list, Automata, Projects,
+  Alerts, Observer, Dashboard, Settings and the detail views all keep extra
+  padding under their last card, so nothing there hides behind the button,
+  which itself keeps its size and position while no sheet or modal is open.
 
 Close the sheet by tapping outside it, by pressing its close button, or by
 pressing **Escape**. Your choices apply as you make them, so closing needs no
@@ -229,16 +242,18 @@ Each option groups on exactly one thing, and a session with no match for the
 chosen option falls in the **ungrouped** group (it sorts last).
 
 The tag entries after `Tag` are built from the prefixes present in your tag
-registry (your automation:/stage:/kind: tags plus the placement auto-tags),
-so the picker shows exactly the prefixes you can narrow to — e.g.
-`Tag(automation:)`, `Tag(compute:)`, `Tag(peer:)`.
+registry (your automation:/stage:/kind: tags plus the placement auto-tags)
+plus the placement axes already visible on the loaded sessions (`compute:`,
+`peer:`, …), so the picker shows exactly the prefixes you can narrow to —
+e.g. `Tag(automation:)`, `Tag(compute:)`, `Tag(peer:)`.
 
 The PWA remembers the grouping you choose on this device. It restores it
 after a page reload and keeps it through list refreshes, so the picker never
-snaps back to its default.
-The toolbar placement control (the ⚙️ dropdown that groups by a `compute:`,
-`stage:` … tag) is the same choice, not a second one: picking a placement there
-updates this picker and vice versa. The choice is saved in this browser's local
+snaps back to its default. This dropdown is now the **one** Group by control
+on the Sessions page — the toolbar used to carry a second placement control
+(the ⚙️ dropdown that grouped by a `compute:`, `stage:` … tag), and that
+duplicate is gone: grouping by a placement axis is just one of the
+`Tag(<prefix>)` entries here. The choice is saved in this browser's local
 storage (not on the daemon). Applying a saved view replaces it, and an older
 placement choice saved before this change is picked up once and carried over.
 
@@ -559,6 +574,11 @@ in your tag registry.
 
 ## Troubleshooting
 
+- **The toolbar placement dropdown (⚙️) is gone.** There is one Group by
+  control, not two: the Filters sheet's **Group by** dropdown. Grouping by
+  a placement axis is one of its `Tag(<prefix>)` entries (`Tag(compute:)`,
+  `Tag(peer:)`, …); the sheet's and the (former) toolbar control shared one
+  saved choice, so nothing about your saved grouping is lost.
 - **A session is in the ungrouped group on the tag axis.** It has no tag
   matching the chosen prefix (or none at all). Check the tile's tag chip
   and the inherited tags of its Automaton — a session spawned by an
