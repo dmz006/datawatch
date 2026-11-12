@@ -276,7 +276,7 @@ test('the state filter still works and no count line appears while it is set', (
   const html = sb.__box.html;
   assert.equal(countOf(html, /class="session-card /g), 60, 'first page of the 80 waiting sessions');
   assertNoCountLine(html, 'filtered');
-  assert.match(html, /setSessionStateChip\('all'\)/, 'the Filters sheet keeps its state chips');
+  assert.equal(vm.runInContext('state.sessionStateChip', sb), 'waiting_input', 'the state filter is applied');
   sb.setSessionStateChip('all');
   assert.equal(vm.runInContext('state.sessionStateChip', sb), 'all');
 });

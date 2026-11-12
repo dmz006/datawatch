@@ -13,4 +13,4 @@ There is no new setting, endpoint, MCP tool, CLI command or chat verb: the daemo
 ## What the mobile app needs
 
 - Decide whether the app's session list should offer the same one-row layout: a search over name, id, backend, tags and state with an `N of M` count, and one Filters entry that holds grouping, saved views, state, backend and tag filters.
-- The web page added 21 strings in all five locales (`sessions_search_*`, `sessions_filters_*`, `sessions_summary_clear_tip`, `sessions_summary_filter_tip`, `sessions_fold_all`, `sessions_unfold_all`, `sessions_fold_all_tip`, `sessions_unfold_all_tip`, `sessions_tags_less`, `sessions_tags_collapse_tip`, `sessions_tags_expand_tip`); reuse the wording where the app has the same controls.
+- The web page added 19 strings in all five locales (`sessions_search_*`, `sessions_filters_*`, `sessions_fold_all`, `sessions_unfold_all`, `sessions_fold_all_tip`, `sessions_unfold_all_tip`, `sessions_tags_less`, `sessions_tags_collapse_tip`, `sessions_tags_expand_tip`); reuse the wording where the app has the same controls.
