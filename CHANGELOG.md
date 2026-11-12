@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.158.1 — Completion marker no longer raises an uncommitted-work question
+
+### Fixed
+
+- **An Automaton no longer asks about its own completion marker file.** A worker writes `DATAWATCH_COMPLETE` at the root of its worktree to say it is done, and that file used to show up as uncommitted work, so the check held the Automaton with a commit, discard or retry question about a file nobody should commit. The daemon now treats `DATAWATCH_COMPLETE`, `CHECKPOINT.md` and the advisory tree lock as its own marker files: new worktrees exclude the marker through the worktree's own exclude file (the repository `.gitignore` lists it too), both uncommitted-work checks skip the marker files and say so in the question text and blocked reason, and just before the finished check the daemon deletes the regular marker file at the root of a finished Automaton's worktree. A worktree holding only a marker is not held; a marker plus a real file is held for the real file only; a same-named file in a subfolder is ordinary work.
+- **Older open questions that list only marker files answer themselves.** At daemon start, every open uncommitted-work question whose files are all marker files is answered `ignore` by the daemon (actor `autonomous`) and a decision is recorded on the Automaton; `ignore` touches no file and only clears the hold. A question that lists any real file is left for you.
+
+### Documentation
+
+- The uncommitted-work how-to, the operations guide, the command reference and the definitions describe the marker handling and the start-up sweep. No new setting, endpoint, command or tool is involved.
+
 ## v9.158.0 — Lane utilization view
 
 ### Added

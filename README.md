@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.158.0 (2026-11-12).** A lane utilization view shows how busy each lane was over a window, on REST, MCP, the CLI, chat, a Dashboard detail card and a Gantt lane layer. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.158.1 (2026-11-12).** An Automaton no longer asks about the completion marker file left in its worktree: the daemon ignores and removes it, and answers older marker-only questions itself. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
