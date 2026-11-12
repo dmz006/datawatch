@@ -1711,6 +1711,18 @@ switch is off the daemon 503s and names the switch.
 | `withdraw <id> --reason <text>` | Withdraw an open question; the reason is recorded verbatim |
 | `raise --text <text> --option id=label [..] [--default <option id or hold>]` | Raise a question to the Automaton's operator: name what it is about with the context flags (`--prd-id`, `--task-id`, `--proposal-path`, `--registry-row-key`), add a recommendation with `--recommend`/`--rationale`, and opt this question into the session line with `--return-path --session <id>` |
 
+**Uncommitted-work questions and the completion marker.** A question raised by
+the uncommitted-work check offers `commit`, `discard` and `retry` (answer with
+`--option <id>`). The worker's `DATAWATCH_COMPLETE` marker file (and
+`CHECKPOINT.md` and the advisory tree lock) is the daemon's own file, not work:
+it is skipped by the check, so a worktree holding only a marker raises no
+question, and one holding a marker plus a real file lists only the real file. The
+question text then ends with a "Skipped the Automaton marker file ..." sentence.
+An older open question whose only listed file is a marker is answered `ignore` by
+the daemon itself (actor `autonomous`), so you will not see it waiting in
+`question list`; a question that lists a real file is left for you. See
+[howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md#the-completion-marker-file).
+
 See [howto/operator-questions-answering.md](howto/operator-questions-answering.md)
 for the full walkthrough and
 [howto/operator-questions-notifications.md](howto/operator-questions-notifications.md)
