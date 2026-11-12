@@ -58,9 +58,9 @@ The tab always shows something and tells you where the data came from.
 | You see | It means |
 |---|---|
 | Three grey placeholder rows and **Loading…** | First load, with nothing saved on this device yet. |
-| The list with a **Cached** label and **Last updated N s ago**, and a small **Loading…** beside it | The list from your last visit, drawn immediately from this browser's storage while a fresh request runs. |
-| The list with **Last updated N s ago** | A fresh copy. The age counts up while you look at it. |
-| The list with **Data may be out of date** | The copy is older than the 30 second refresh interval and no load is running, for example because the last refresh was slow. The rows are still shown. |
+| The list with a **Cached** label and a small **Loading…** beside it | The list from your last visit, drawn immediately from this browser's storage while a fresh request runs. |
+| The list, with no state badge | A fresh copy that arrived from the server. |
+| The list with **Data may be out of date** | The copy is stale: the last refresh failed, or the data is older than 5 minutes. The rows are still shown. |
 | A red **Could not load this list: <reason>** banner with a **Retry** button | The request failed or took longer than 15 seconds (the reason then reads `timeout (15 s)`). Any cached rows stay visible below the banner. |
 | **No automata. Launch one with ⚡.** | The load succeeded and there is nothing to show. It never appears while loading or after a failure. |
 
