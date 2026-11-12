@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Projects Gantt is accurate.** An Automaton bar now runs from its created time to its completion time, a task bar from its start to its completion, and an arc bar from the earliest Automaton start to the latest Automaton end; work still running is drawn to now. The default **All time** axis fits the rows that are showing (expanded Automata and tasks included) with a 2 percent margin at each end instead of a wide empty range. Rows are ordered by completion, then running and waiting work by start, with a dependency above its dependent, and a finished or shipped Automaton reads **Completed**.
+
+### Added
+
+- **Dependency edges on the Gantt.** Thin arrows run from the end of a task to the start of each task that waits for it, and between the Automata of an Automation that follow one another. Hovering or tabbing to a bar lights its own edges and dims the rest; an **Edges** toggle turns the arrows off and **All edges** lifts the cap of 120 drawn edges. The choice is remembered in the browser only.
+- **New timeline fields on `GET /api/projects/{name}/timeline`:** `start`, `end`, `status` and, on task rows, `depends_on`, plus `edges` on Automata-level and focus replies. The MCP tool `project_timeline`, the CLI `datawatch projects timeline` and the chat verb `project timeline` pass the same fields through unchanged. The read stays read-only and never signals, stops or restarts a session.
+- Docs: the Projects how-to (Gantt row and the project timeline section), the API and MCP mapping, the commands reference and the OpenAPI description now describe the span rules, axis, edges, row order and fields.
+
 ## v9.161.0 — Child Automata inherit their parent's context
 
 ### Added
