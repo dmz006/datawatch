@@ -70,10 +70,10 @@ type Router struct {
 	// for the comm-channel configure path (surface "comm"); nil = the
 	// configure path produces no audit record.
 	configAudit *federation.ConfigAuditor
-	chanTracker          *stats.ChannelCounters                 // per-channel message counters
-	transcriber          transcribe.Transcriber                 // optional voice-to-text transcriber
-	visioner             Visioner                               // optional image-to-text describer (BL368)
-	remote               *proxy.RemoteDispatcher                // optional remote server dispatcher
+	chanTracker *stats.ChannelCounters  // per-channel message counters
+	transcriber transcribe.Transcriber  // optional voice-to-text transcriber
+	visioner    Visioner                // optional image-to-text describer
+	remote      *proxy.RemoteDispatcher // optional remote server dispatcher
 
 	// Memory system — optional, nil when memory is disabled
 	memoryRetriever MemoryRetriever
