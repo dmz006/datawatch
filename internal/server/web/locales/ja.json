@@ -4916,5 +4916,7 @@
   "dash_arc_points": "ポイント",
   "dash_arc_points_used": "%2$s ポイント中 %1$s ポイント使用 (%3$s%)",
   "dash_arc_points_remaining": "残り %1$s ポイント",
-  "dash_arc_tokens": "トークン: 合計 %1$s (入力 %2$s、出力 %3$s)"
+  "dash_arc_tokens": "トークン: 合計 %1$s (入力 %2$s、出力 %3$s)",
+  "projects_section_collapse": "%1$sを折りたたむ",
+  "projects_section_expand": "%1$sを展開する"
 }

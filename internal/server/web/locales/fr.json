@@ -4916,5 +4916,7 @@
   "dash_arc_points": "Points",
   "dash_arc_points_used": "%1$s sur %2$s points (%3$s %)",
   "dash_arc_points_remaining": "%1$s points restants",
-  "dash_arc_tokens": "Tokens : %1$s au total (%2$s en entrée, %3$s en sortie)"
+  "dash_arc_tokens": "Tokens : %1$s au total (%2$s en entrée, %3$s en sortie)",
+  "projects_section_collapse": "Réduire %1$s",
+  "projects_section_expand": "Développer %1$s"
 }
