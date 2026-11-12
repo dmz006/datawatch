@@ -173,7 +173,7 @@ so the picker shows exactly the prefixes you can narrow to — e.g.
 | `tag` + prefix | the first tag carrying that prefix | Only tags with the prefix (e.g. `automation:`) form groups; everything else goes to the ungrouped group. This is how you get the "just the automation cut" or "just the compute-node cut". |
 | `state` | the session's state | One group per state (running, waiting_input, complete, …) — handy for a quick "what is stuck" scan. |
 | `node` | the session's hostname / server / compute node | The ungrouped group catches sessions without a node ref. |
-| `project` | the session's project directory | The ungrouped group catches sessions without one. |
+| `project` | the datawatch project named by the session's `project:` placement tag, else its working folder | An Automaton task session groups under its project (taken from its owning Automaton when the session has no `project:` tag of its own), never under its worktree path. A session with no project tag falls back to its working folder; one with neither lands in the ungrouped group. The PWA and the grouped read (REST, MCP, CLI, comm) resolve the key the same way. |
 | `automaton` | the Automaton the session belongs to | **Sub-task nesting**: sessions sit under the Automaton block, and inside it under their story block. In the grouped read (CLI, comm) each block also carries a done/total session tally. Sessions with no Automaton land in the ungrouped group. |
 
 Group mechanics, in every mode:
@@ -457,6 +457,7 @@ in your tag registry.
   the full group, not the rendered page.
 - **`invalid group_by` from the API/CLI.** The axis must be exactly one of
   `tag`, `state`, `node`, `project`, `automaton`.
+- **Project groups show a folder path instead of a project name.** The session has no `project:` placement tag and no owning Automaton project, so it falls back to its working folder. Tag the session with a `project:` tag to group it by project.
 
 ## Related guides
 

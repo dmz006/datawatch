@@ -39,7 +39,7 @@ Next to the toggle is a **Group by** select with these choices:
 | **tag** | Each tag an item carries; an item with several tags appears under each. |
 | **state** | The item's status (running, blocked, done, failed and so on). |
 | **node** | The compute node it runs on. |
-| **project** | The project folder it works in. |
+| **project** | The project it belongs to. On Sessions this is the project named by the session's `project:` tag, falling back to the working folder; Automaton task sessions group under their project, not their worktree path. See [Sessions tiles, grouping and saved views](sessions-tiles-and-grouping.md). |
 | **automation:**, **stage:**, **kind:**, **compute:**, **peer:**, **backend:**, **lane:**, **role:**, **project:** | The value of the tag that starts with that prefix, such as `stage:build`. |
 
 Items that have no value on the chosen axis go under a group named **No tag**
