@@ -1038,6 +1038,10 @@ paths:
         `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset
         key reads as 30 and an explicit `0` turns triage alerts off; a negative or
         non-integer value is rejected with 400),
+        `autonomous.automation.child_inherit` (true|false, default true; when on, a child
+        Automaton inherits settings from its parent Automaton, and false restores the
+        earlier behaviour; an unset key reads as true and a non-boolean value is rejected
+        with 400),
         `autonomous.automation.pending_item_policy` (hold|skip, default hold),
         `autonomous.automation.pending_item_auto_resume` (true|false, default true),
         `autonomous.automation.pending_item_source.path` (a file path; empty = no file
