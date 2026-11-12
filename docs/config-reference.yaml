@@ -3526,6 +3526,17 @@ autonomous:
   # evidence grounding. 0 = default (8192). Raise for large PRDs;
   # lower to reduce token cost.
   verifier_diff_max_bytes: 0
+  # Verifier headroom gates, read from one shared measurement store. A verifier
+  # cap above 1 on a node, and a compute node's verifier_slots written above 1,
+  # need a fresh headroom measurement that leaves at least this many MB of free
+  # GPU memory. Unset reads the default of 1024 MB; an explicit 0 turns the
+  # floor check off. Negative is a config error. The daemon writes the
+  # measurement itself, only while a node is idle and its cap is above 1.
+  verifier_min_free_mem_mb: 1024
+  # How old, in hours, a headroom measurement may be and still count as fresh
+  # for those gates. Unset or 0 reads the default of 24 hours; negative is a
+  # config error.
+  verifier_headroom_max_age_hours: 24
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true

@@ -10,7 +10,9 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/federation"
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -42,7 +44,7 @@ func (s *Server) toolComputeNodeAdd() mcpsdk.Tool {
 		mcpsdk.WithString("gpu_mem_gb", mcpsdk.Description("declared GPU memory in GB")),
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100, default 50")),
 		mcpsdk.WithString("session_slots", mcpsdk.Description("operator-set worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory). Capped by max_concurrent_sessions when set.")),
-		mcpsdk.WithString("verifier_slots", mcpsdk.Description("worker slots for verifiers on this node (unset = the node hosts a local engine, else none; explicit 0 = no verifier slots). Negative values are refused.")),
+		mcpsdk.WithString("verifier_slots", mcpsdk.Description("worker slots for verifiers on this node (unset = the node hosts a local engine, else none; explicit 0 = no verifier slots). Negative values are refused. Above 1 needs a fresh headroom measurement that supports it; otherwise the write is refused (409) naming the node, free memory and shortfall.")),
 		mcpsdk.WithString("verifier_min_free_mem_mb", mcpsdk.Description("free GPU memory in MB required before a new verifier slot starts here (unset = 1024 MB; 0 turns the check off). Negative values are refused.")),
 		mcpsdk.WithString("verifier_context_mb", mcpsdk.Description("extra context memory in MB one verifier slot holds, used to size the advice figure from the node's free GPU memory (0 = none). Negative values are refused.")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
@@ -70,7 +72,7 @@ func (s *Server) toolComputeNodeUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100")),
 		mcpsdk.WithString("max_concurrent_sessions", mcpsdk.Description("cap on autonomous sessions in flight on this node (0 = unlimited)")),
 		mcpsdk.WithString("session_slots", mcpsdk.Description("operator-set worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory). Capped by max_concurrent_sessions when set. Update replaces the whole node, so omitting this clears the override.")),
-		mcpsdk.WithString("verifier_slots", mcpsdk.Description("worker slots for verifiers on this node (unset = the node hosts a local engine, else none; explicit 0 = no verifier slots). Negative values are refused. Update replaces the whole node, so omitting this clears the override.")),
+		mcpsdk.WithString("verifier_slots", mcpsdk.Description("worker slots for verifiers on this node (unset = the node hosts a local engine, else none; explicit 0 = no verifier slots). Negative values are refused. Above 1 needs a fresh headroom measurement that supports it; otherwise the write is refused (409) naming the node, free memory and shortfall. Update replaces the whole node, so omitting this clears the override.")),
 		mcpsdk.WithString("verifier_min_free_mem_mb", mcpsdk.Description("free GPU memory in MB required before a new verifier slot starts here (unset = 1024 MB; 0 turns the check off). Negative values are refused. Update replaces the whole node, so omitting this resets the default.")),
 		mcpsdk.WithString("verifier_context_mb", mcpsdk.Description("extra context memory in MB one verifier slot holds, used to size the advice figure from the node's free GPU memory (0 = none). Negative values are refused. Update replaces the whole node, so omitting this clears it.")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
@@ -145,8 +147,30 @@ func (s *Server) handleComputeNodeGetMCP(_ context.Context, req mcpsdk.CallToolR
 	return textOK(string(out)), nil
 }
 
+// checkVerifierSlotsBody refuses, before the proxied write, a verifier_slots
+// above 1 that the daemon's headroom store does not support. It is the same
+// decision the REST write gate makes, so the MCP caller gets the CapRefusal
+// text (naming the node, free MB and shortfall) without a round trip. It does
+// nothing when the server has no store.
+func (s *Server) checkVerifierSlotsBody(body map[string]any) error {
+	if s.headroomStore == nil || s.headroomConfig == nil {
+		return nil
+	}
+	slots, ok := body["verifier_slots"].(int)
+	if !ok || slots <= 1 {
+		return nil
+	}
+	name, _ := body["name"].(string)
+	ac := s.headroomConfig()
+	return compute.CheckVerifierSlotsWrite(s.headroomStore, name, slots,
+		ac.EffectiveVerifierMinFreeMB(), ac.EffectiveVerifierHeadroomMaxAge(), time.Now())
+}
+
 func (s *Server) handleComputeNodeAddMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := computeBodyFromReq(req)
+	if err := s.checkVerifierSlotsBody(body); err != nil {
+		return mcpsdk.NewToolResultError(err.Error()), nil
+	}
 	out, err := s.proxyJSON("POST", "/api/compute/nodes", body)
 	if err != nil {
 		return nil, err
@@ -191,6 +215,9 @@ func (s *Server) handleComputePinSettingsMCP(ctx context.Context, req mcpsdk.Cal
 func (s *Server) handleComputeNodeUpdateMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := computeBodyFromReq(req)
 	name := mustString(req, "name")
+	if err := s.checkVerifierSlotsBody(body); err != nil {
+		return mcpsdk.NewToolResultError(err.Error()), nil
+	}
 	out, err := s.proxyJSON("PUT", "/api/compute/nodes/"+name, body)
 	if err != nil {
 		return nil, err
@@ -432,6 +459,39 @@ func (s *Server) handleComputePlacementAnswerMCP(ctx context.Context, req mcpsdk
 		return deny, nil
 	}
 	out, err := s.proxyJSON("POST", "/api/compute/placements/"+strings.Trim(id, "/")+"/"+decision, nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// Headroom tools: both proxy the node's /headroom REST route, which runs the
+// one headroom service the REST, CLI and comm surfaces share.
+
+func (s *Server) toolComputeNodeHeadroomMeasure() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_headroom_measure",
+		mcpsdk.WithDescription("Measure one compute node's headroom now and store it: free memory plus the per-request cost of one small request against the smallest pull-allowed model the node serves. Runs only on demand and only while the node holds no lease; a busy node is refused (409). A node whose resident or probe model is not on the model-pull consent list is refused (403). Returns the measurement with its age, freshness and supported verifier cap."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
+	)
+}
+
+func (s *Server) handleComputeNodeHeadroomMeasureMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodPost, "/api/compute/nodes/"+mustString(req, "name")+"/headroom", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolComputeNodeHeadroomGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_headroom_get",
+		mcpsdk.WithDescription("Return the stored headroom measurement of one compute node with its age in seconds, whether it is still fresh under the configured age bound, and the verifier cap it supports (1 when stale, 0 when unbounded). Reads only; nothing is measured. 404 when the node has never been measured."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
+	)
+}
+
+func (s *Server) handleComputeNodeHeadroomGetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/compute/nodes/"+mustString(req, "name")+"/headroom", nil)
 	if err != nil {
 		return nil, err
 	}

@@ -757,6 +757,75 @@ datawatch compute node update gpu-1 --verifier-slots 3
 
 **How long one slot may be held.** The slots bound how many verifiers run at once; how long a single run may take is bounded by `autonomous.verifier_max_run_seconds` (default 2700, forty-five minutes), a total wall-clock limit on one verifier session. An explicit `0` means no cap and is kept as `0`; a negative value is refused when the daemon loads the config, and a negative or non-whole value is refused on every settings surface. The cap is enforced: a verifier that keeps producing output is still ended once its run time (not counting time waiting for a slot) reaches the cap, its slot is freed at once, and the verification is retried once on the next backend in the verifier policy order. The no-progress watchdog and `autonomous.verification_timeout_seconds` still apply alongside it. It is never set on the node. See [operations.md — Verifier throughput](../operations.md#verifier-throughput) and [the verifier run cap howto](automaton-verifier-run-cap.md).
 
+### Raising verifiers above one: the measured headroom check
+
+One verifier per node is the default and needs no measurement. A second concurrent judge on the same GPU slows both runs and can push the resident model out of memory, so datawatch will not let a node run more than one verifier until it has **measured** that the node has room. This section is for the operator who wants a node to run two or more verifiers at once.
+
+**What the defaults mean.**
+
+| Setting | Unset | `0` | Above 1 |
+|---------|-------|-----|---------|
+| `verifier_slots` (per node) | One verifier on a node that hosts a local engine, none on a node that does not | No verifier pool on the node: a verifier for it uses the node's ordinary executor slots, as it did before verifier slots existed | Needs a fresh measurement that supports it (see below) |
+| `autonomous.verifier_min_free_mem_mb` | 1024 MB must stay free after the extra verifiers are counted | The free-memory check is turned off | The floor in MB |
+| `autonomous.verifier_headroom_max_age_hours` | 24 hours | Also 24 hours (the default) | How many hours a measurement stays fresh |
+
+A value of 1 (or the unset default) never needs a measurement. The measurement only matters when you ask for more than one.
+
+**One age and one floor for both gates.** Two checks use the stored measurement, and they read the very same two settings, `autonomous.verifier_headroom_max_age_hours` (default 24 hours) and `autonomous.verifier_min_free_mem_mb` (default 1024 MB, `0` turns the check off):
+
+- The **write gate** refuses to save a node whose `verifier_slots` is above 1 unless its measurement supports that count.
+- The **admission gate** holds a node's verifier pool at 1 while its measurement does not support the configured count. A node already saved with a higher count (for example from the YAML file) is clamped to 1, with the reason written to the daemon log, until a fresh measurement supports it.
+
+This floor is separate from the per-node `verifier_min_free_mem_mb` above, which holds back a single new verifier start while the node's free GPU memory is below it; the two do not replace each other. There is no second age or second floor for the cap gates: change either setting once and both gates follow it with no restart. Both gates read one shared store of measurements, so a measurement taken on any surface counts for both. The store lives in daemon memory, so a daemon restart clears it and every node falls back to one verifier until it is measured again.
+
+A measurement supports a cap when `free memory - minimum free` covers `(cap - 1) x per-request memory`. For example, a node with 9000 MB free, a 1024 MB floor and 3000 MB per request supports a cap of 3 (`(9000 - 1024) / 3000` is 2 extra verifiers). A measurement older than the age setting supports only 1.
+
+**Run the measurement.** The measurement reads the node's free memory with its resident model loaded, then sends one small request to learn how much memory one extra parallel request takes. It is run on request, on every surface, and each surface calls the same service:
+
+| Surface | Measure now | Read the stored measurement |
+|---------|-------------|-----------------------------|
+| PWA | Settings → Compute → the node → detail → **Headroom** card → **Measure now** | The same card: free memory, memory per verifier request, resident model, when it was measured, its age, fresh or stale, the maximum age and **Supports cap** (`unbounded` when a request costs no measurable memory) |
+| REST | `POST /api/compute/nodes/{name}/headroom` | `GET /api/compute/nodes/{name}/headroom` |
+| MCP | `compute_node_headroom_measure` with `name` | `compute_node_headroom_get` with `name` |
+| CLI | `datawatch compute headroom measure gpu-1` | `datawatch compute headroom get gpu-1` |
+| Comm channel | `compute headroom measure gpu-1` | `compute headroom gpu-1` |
+
+```sh
+datawatch compute headroom measure gpu-1   # idle node only
+datawatch compute headroom get gpu-1       # age, fresh or stale, supported cap
+datawatch compute node update gpu-1 --verifier-slots 2   # accepted only if the measurement supports 2
+```
+
+The reply carries `free_mb`, `per_request_mb`, `resident_model`, `measured_at`, `age_seconds`, `fresh`, `min_free_mb`, `max_age_hours` and `supported_cap`. `GET` returns 404 until the node has been measured at least once. While any node has a cap above 1 configured, the daemon also re-measures that node itself every few minutes whenever it is idle, so a measurement you took does not go stale on an idle node; a node that keeps working ages out after the age setting and the gates refuse again.
+
+**Rules the measurement follows.**
+
+- **Idle only.** A node that holds any lease (an executor, a verifier or an external worker) is never measured. A busy node is refused (REST status 409) and the reply names how many leases it holds. A measurement taken under load would understate the node's real headroom, so wait for the node to go quiet, or drain it first (see [Draining a node for maintenance](#draining-a-node-for-maintenance)), and measure again.
+- **Pull-allowed models only.** A measurement you request may only involve models the operator's model-pull consent allows ([Model pull consent](model-pull-consent.md)): both the model resident on the node and the probe model must be allowed. If the resident model is not allowed, or the node serves no allowed model at all, the measurement is refused (REST status 403, "model not allowed"). Allow the model in `autonomous.model_pull_consent` (a `models[]` entry with `allowed: true`, or its publisher on the `publishers[]` list), then measure again.
+- **The probe model is the smallest allowed model.** From the models the node serves, only the pull-allowed ones are kept and ordered by size, smallest first. The size is the parameter count in the model tag (`qwen3:4b` is 4 billion, `llama3:70b` is 70 billion); the size the node reports for a model is not used for this ordering. Models of equal size sort by name, and a model whose tag carries no size sorts after those that do. The first one is the model of the single probe request, so the probe loads the least memory it can. When the node's observer data already reports a per-process memory figure, that figure is used and no probe request is sent.
+- **The node must be observed.** The free-memory figure comes from the node's observer data (free GPU memory when it reports GPUs, otherwise free system memory). A node with no observer data cannot be measured; the reply says so (REST status 502). Attach an observer first (see [Observer peers](federated-observer.md)).
+
+**The refusal message and what to do.** Both gates name the node and the reason in the same words. A request to save, or a configured count held at 1, shows one of three messages:
+
+| Message | Meaning | What to do |
+|---------|---------|------------|
+| `cap on node gpu-1 refused: no fresh measurement` | The node has never been measured since the daemon started | Run the measurement (table above) while the node is idle, then save again |
+| `cap on node gpu-1 refused: measurement stale` | The last measurement is older than `autonomous.verifier_headroom_max_age_hours` | Measure again; raise the age setting only if you accept an older figure for both gates |
+| `cap on node gpu-1 refused: measured free 7000 MB, shortfall 1500 MB (insufficient free memory)` | The node does not have the memory for that many verifiers above the floor | Ask for a lower cap, free memory on the node (unload a model or move work away) and measure again, or lower `autonomous.verifier_min_free_mem_mb` (`0` turns the check off, which removes the protection for the resident model) |
+
+A refused save changes nothing: the node keeps its old value. A configured count that is clamped to 1 keeps working at 1, so no verification stops while you measure.
+
+**Surfaces for the two settings.**
+
+| Surface | How |
+|---------|-----|
+| YAML | `autonomous.verifier_min_free_mem_mb` and `autonomous.verifier_headroom_max_age_hours` in `config.yaml` |
+| CLI | `datawatch config set autonomous.verifier_min_free_mem_mb 2048` and `datawatch config set autonomous.verifier_headroom_max_age_hours 12` |
+| REST | `PUT /api/config` with `{"autonomous.verifier_min_free_mem_mb": 2048}` |
+| MCP | `config_set` with `key: autonomous.verifier_min_free_mem_mb` (or `autonomous.verifier_headroom_max_age_hours`) |
+| Comm channel | `configure autonomous.verifier_min_free_mem_mb=2048` |
+| PWA | Settings → General → the *Autonomous Automata planning* card: *Verifier min free memory* and *Verifier headroom max age* |
+
 ---
 
 ## How a pi-family worker picks its node

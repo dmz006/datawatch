@@ -3251,7 +3251,7 @@ paths:
                     description: When true, model pulls to this node verify its https certificate against the system roots. Always returned, including an explicit false. Default false.
     put:
       summary: Replace one compute node
-      description: 'Replaces the whole node. Omitting session_slots clears the override, omitting the verifier settings resets them to their defaults, and omitting max_concurrent_sessions clears the ceiling. Omitting verify_tls sets it to false. Negative verifier values are refused ("compute node: verifier_slots %d must be >= 0" and the like).'
+      description: 'Replaces the whole node. Omitting session_slots clears the override, omitting the verifier settings resets them to their defaults, and omitting max_concurrent_sessions clears the ceiling. A verifier_slots above 1 is refused with 409 unless the node''s fresh headroom measurement supports it (the message names the node, the measured free memory and the shortfall). Omitting verify_tls sets it to false. Negative verifier values are refused ("compute node: verifier_slots %d must be >= 0" and the like).'
       operationId: computeNodePut
       tags: [Compute]
       parameters:
@@ -3272,6 +3272,91 @@ paths:
       responses:
         "200":
           description: The updated node record
+        "409":
+          description: verifier_slots above 1 is not supported by the node's fresh headroom measurement; nothing is saved and the effective cap stays 1
+
+  /api/compute/nodes/{name}/headroom:
+    get:
+      summary: Stored headroom measurement of a compute node
+      description: |
+        Reads the last headroom measurement stored for the node, with its age,
+        whether it is still fresh under the configured age bound and the verifier
+        cap it supports. Read only: nothing is measured. The measurement is taken
+        only by the POST on this path, on demand.
+      operationId: computeNodeHeadroomGet
+      tags: [Compute]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The stored measurement and its view
+          content:
+            application/json:
+              schema:
+                  type: object
+                  properties:
+                    node: {type: string}
+                    free_mb: {type: integer, description: "Free memory on the node with its resident model loaded (free GPU MB when the node reports GPUs, else free system MB)."}
+                    per_request_mb: {type: integer, description: "Memory one extra parallel request needs, from the observer or one probe request."}
+                    resident_model: {type: string}
+                    measured_at: {type: string, format: date-time}
+                    age_seconds: {type: integer, minimum: 0, description: "Seconds since the measurement."}
+                    fresh: {type: boolean, description: "True while the measurement is within autonomous.verifier_headroom_max_age_hours."}
+                    min_free_mb: {type: integer, minimum: 0, description: "The configured free-memory floor (autonomous.verifier_min_free_mem_mb; 0 = check off)."}
+                    max_age_hours: {type: integer, minimum: 0, description: "The configured age bound in hours (24 when unset)."}
+                    supported_cap: {type: integer, minimum: 0, description: "The verifier cap this measurement supports: 1 when stale or the floor leaves no room, 0 when unbounded (zero per-request cost), else the largest cap that fits."}
+        "404":
+          description: The node has never been measured.
+        "503":
+          description: The headroom store is not wired.
+    post:
+      summary: Measure a compute node's headroom now (idle nodes only)
+      description: |
+        Measures the node on demand and stores the result in the daemon's one
+        headroom store, which the verifier_slots write gate and the admission
+        gate read. It never runs on a timer. A node holding any lease is refused
+        with 409 (the measurement is idle-only). The probe model and the resident
+        model must both be pull-allowed under autonomous.model_pull_consent, or
+        the measurement is refused with 403. Sends one small request to the node
+        unless the observer reports a per-request figure.
+      operationId: computeNodeHeadroomMeasure
+      tags: [Compute]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The measurement just taken, stored, with its view
+          content:
+            application/json:
+              schema:
+                  type: object
+                  properties:
+                    node: {type: string}
+                    free_mb: {type: integer, description: "Free memory on the node with its resident model loaded (free GPU MB when the node reports GPUs, else free system MB)."}
+                    per_request_mb: {type: integer, description: "Memory one extra parallel request needs, from the observer or one probe request."}
+                    resident_model: {type: string}
+                    measured_at: {type: string, format: date-time}
+                    age_seconds: {type: integer, minimum: 0, description: "Seconds since the measurement."}
+                    fresh: {type: boolean, description: "True while the measurement is within autonomous.verifier_headroom_max_age_hours."}
+                    min_free_mb: {type: integer, minimum: 0, description: "The configured free-memory floor (autonomous.verifier_min_free_mem_mb; 0 = check off)."}
+                    max_age_hours: {type: integer, minimum: 0, description: "The configured age bound in hours (24 when unset)."}
+                    supported_cap: {type: integer, minimum: 0, description: "The verifier cap this measurement supports: 1 when stale or the floor leaves no room, 0 when unbounded (zero per-request cost), else the largest cap that fits."}
+        "409":
+          description: The node holds a lease (it is busy). Nothing is measured or stored. The body names the node and the held count.
+          content:
+            application/json:
+              schema: {type: object, properties: {error: {type: string}, node: {type: string}, held: {type: integer}}}
+        "403":
+          description: No pull-allowed model is served by the node, or its resident model is not pull-allowed (autonomous.model_pull_consent). Nothing is measured.
+          content:
+            application/json:
+              schema: {type: object, properties: {error: {type: string}, node: {type: string}}}
+        "404":
+          description: Unknown compute node (on POST), or no measurement stored yet (on GET).
+        "502":
+          description: The probe could not read the node or its request failed.
+        "503":
+          description: The headroom store or the node registry is not wired.
 
   /api/compute/nodes/{name}/detail:
     get:
@@ -12287,6 +12372,8 @@ components:
         failure_escalation: {$ref: "#/components/schemas/FailureEscalationPolicy"}
         default_auto_pr: {type: boolean, description: "Turns auto-PR on or off for this project's Automata"}
         max_concurrent_tasks: {type: integer, minimum: 1}
+        verifier_min_free_mem_mb: {type: integer, minimum: 0, description: "Free GPU MB a node must keep with extra verifier slots running; gates verifier caps above 1 and verifier_slots writes above 1. Unset = 1024; 0 turns the check off; negative is a validation error."}
+        verifier_headroom_max_age_hours: {type: integer, minimum: 0, description: "How old, in hours, a headroom measurement may be and still count as fresh for the verifier cap gates. 0 or unset = the default of 24 hours; negative is a validation error."}
         plan_tier_max_inflight:
           type: object
           description: "Per-plan-tier inflight caps; a negative budget is a validation error"

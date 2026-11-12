@@ -53,6 +53,7 @@ import (
 	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	dwserver "github.com/dmz006/datawatch/internal/server"
@@ -71,6 +72,10 @@ type Server struct {
 	cfg                   *config.MCPConfig
 	costReportCfg         config.CostReportConfig // cost_report block (internal/costreport) used by the cost_report tool
 	usageCfg              config.UsageConfig      // usage.billing profiles → the cost_report rows' billing_mode / label fields
+	// headroomStore is the daemon's one verifier headroom store (Options.HeadroomStore);
+	// headroomConfig reads the live autonomous config for its floor and age.
+	headroomStore  *compute.HeadroomStore
+	headroomConfig func() config.AutonomousConfig
 	// fallbackToken is cfg.Server.Token (SEC-002) — see Options.FallbackToken.
 	fallbackToken       string
 	dataDir             string
@@ -321,6 +326,15 @@ type Options struct {
 	// DependencyUpdateConfig reads the live dependency update settings for
 	// the dependency_update_status tool; nil reads the defaults.
 	DependencyUpdateConfig func() config.DependencyUpdateConfig
+	// HeadroomStore is the daemon's one verifier headroom store, the same
+	// instance the REST server and the capacity admission gate read. The node
+	// add and update tools refuse a verifier_slots above 1 the store does not
+	// support before they proxy the write. HeadroomConfig returns the live
+	// autonomous config, read for the free-memory floor and the freshness bound.
+	// Both are nil in the stdio process, which proxies to the daemon's REST
+	// write gate instead.
+	HeadroomStore  *compute.HeadroomStore
+	HeadroomConfig func() config.AutonomousConfig
 }
 
 // New creates a new MCP server backed by the given session manager.
@@ -349,6 +363,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		usageCfg:            opts.UsageCfg,
 		configAudit:         opts.ConfigAudit,
 		dependencyUpdateCfg: opts.DependencyUpdateConfig,
+		headroomStore:       opts.HeadroomStore,
+		headroomConfig:      opts.HeadroomConfig,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get
@@ -985,6 +1001,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodeDrain(), tracked(s.handleComputeNodeDrainMCP))
 	mcpSrv.AddTool(s.toolComputeNodeUndrain(), tracked(s.handleComputeNodeUndrainMCP))
 	mcpSrv.AddTool(s.toolComputeNodeDetail(), tracked(s.handleComputeNodeDetailMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHeadroomMeasure(), tracked(s.handleComputeNodeHeadroomMeasureMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHeadroomGet(), tracked(s.handleComputeNodeHeadroomGetMCP))
 	mcpSrv.AddTool(s.toolComputePinSettings(), tracked(s.handleComputePinSettingsMCP))
 	mcpSrv.AddTool(s.toolComputeServedModels(), tracked(s.handleComputeServedModels))
 	// alpha.23b — observer-peer attach/detach + free-list.

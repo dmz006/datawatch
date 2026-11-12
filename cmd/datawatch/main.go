@@ -123,7 +123,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.149.0"
+var Version = "9.150.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3569,9 +3569,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		pipeAdapter = pipelinePkg.NewRouterAdapter(pipeExec)
 	}
 
+	// One headroom-measurement store for the whole daemon: attached to the REST
+	// server below and read by the capacity admission gate (wireCapacity).
+	headroom := newHeadroomWiring(cfg)
 	// Start the PWA/WebSocket server if enabled
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
+		headroom.attach(httpServer)
 		server.Version = Version
 		if spendLedger != nil {
 			httpServer.SetCostReportLedger(spendLedger)
@@ -3705,6 +3709,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				seed = append(seed, n)
 			}
 			computeReg.Seed(seed)
+			// Config load: a configured verifier_slots above 1 that the shared
+			// store does not support is recorded here and held at 1 by admission.
+			recordConfigVerifierSlotsRefusals(headroom.Store, cfg, time.Now())
 			// v7.0.0-alpha.23 Q7 — one-time pass that moves any
 			// historically auto-applied tag (e.g. "v7-cfg-migration")
 			// from operator-visible Tags to internal AutoTags. Idempotent.
@@ -4531,6 +4538,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if res.Error != "" {
 				return fmt.Errorf("%s", res.Error)
 			}
+			// Config reload: the same verifier_slots check as config load.
+			recordConfigVerifierSlotsRefusals(headroom.Store, cfg, time.Now())
 			return nil
 		})
 		httpServer.RegisterReloader("filters", func() error {
@@ -7529,12 +7538,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}, amgr)
 			var requestWatchReader requestwatch.Reader = requestWatcher
 			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
-			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
+			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, headroom.Gate, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
 			// Pin-time model check: refuse (or warn on) a worker or verifier
 			// model that no registered node serves.
 			wireModelRouting(cfg, amgr, httpServer)
+			// The verifier headroom measurer is the one production writer of the
+			// store the cap gates read. It starts after model routing so the
+			// served-models cache it reads through is wired.
+			startVerifierHeadroomMeasurer(ctx, headroom.Store, httpServer, capLedger, servedModelsCache)
 			classifyWiring.ledger.Store(capLedger)
 			// placement-tags — restart backfill: the ledger now holds the leases that
 			// survived the restart (adoption hold still on, so the session manager
@@ -9629,6 +9642,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		UsageCfg:               cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
 		DependencyUpdateConfig: func() config.DependencyUpdateConfig { return cfg.Autonomous.Automation.DependencyUpdate },
 		ConfigAudit:            cfgAuditSink, // BL110 — shared sink (same instance as REST + comm)
+		// The daemon's one headroom store, the same instance the REST server
+		// and the admission gate read; the node tools refuse an unsupported
+		// verifier_slots above 1 with it.
+		HeadroomStore:  headroom.Store,
+		HeadroomConfig: func() config.AutonomousConfig { return cfg.Autonomous },
 		RestartForceFn: guardRestartForce(func(bool) {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.

@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.150.0 — Measured headroom check for a verifier cap above 1
+
+### Added
+
+- **Verifier headroom settings and one shared measurement store.** Two new config keys, `autonomous.verifier_min_free_mem_mb` (free GPU MB a node keeps with extra verifier slots running; unset = 1024, `0` = check off) and `autonomous.verifier_headroom_max_age_hours` (how old a headroom measurement may be and still count as fresh; `0` or unset = 24). Both are settable over REST config, MCP `autonomous_config_set`, the CLI `config set` and the comm `configure` command, and show in the PWA general settings. A negative value is a validation error. The daemon builds one headroom store at startup and both verifier gates read it with the same floor and age.
+- **Verifier admission and write gates on the measurement.** The capacity sync clamps a node's verifier pool to 1 unless its fresh measurement supports the configured `verifier_slots`; the refusal is logged once per change. A node save (REST, MCP, CLI, comm) that raises `verifier_slots` above 1 is refused with 409 unless the same measurement supports it; the message names the node, the measured free memory and the shortfall. Setting `0` or `1` is never gated. Config load keeps the value and the admission gate holds the effective cap at 1, so a restart does not fail on a memory-only store.
+- **The daemon now writes the headroom measurement.** A probe loop, started at daemon startup, measures each node whose configured verifier cap is above 1 while the node holds no lease, about every five minutes, and stores the result in the one shared store. Until a node has a fresh measurement, its verifier cap stays at 1, and a save that raises its `verifier_slots` above 1 returns 409. Each measurement sends one small probe request (one token, to the smallest served model) to the node unless the observer reports a per-request figure. Failures are logged once per change and store nothing.
+- **The write gate covers every save that leaves `verifier_slots` above 1.** A save is refused when the store does not support the value, the stored value included, so a node saved with an unsupported `3` returns 409 until a fresh measurement supports it. The MCP `compute_node_add` and `compute_node_update` tools check the same decision against the daemon's store before they proxy the write. Config load and reload record a refusal in the log for each node whose configured cap the store does not support; the saved value is kept, and the admission gate holds the effective cap at 1 until a measurement supports it.
+- **MCP `autonomous_config_set`** returns a tool error for a negative `verifier_min_free_mem_mb` or `verifier_headroom_max_age_hours`, instead of dropping the value silently.
+- **On-demand compute-node headroom measurement.** `POST /api/compute/nodes/{name}/headroom` measures a node now and stores the result in the daemon's one headroom store; `GET` reads it back with its age, freshness and the verifier cap it supports. Both are on the MCP tools `compute_node_headroom_measure` and `compute_node_headroom_get`, the CLI `datawatch compute headroom measure|get <node>` and the comm verb `compute headroom [measure] <node>`. A measurement runs only when asked, only on a node that holds no lease (a busy node is refused with 409) and only with a model the model-pull consent allows (403 otherwise).
+- PWA: the compute node detail shows a Headroom card (last measurement, age, fresh or stale, supported cap) with a Measure now button and a Parallel verifiers field with Save; Settings has the two new headroom settings, in all five languages.
+- Docs: the compute nodes how-to, the definitions, the API and MCP mapping, the OpenAPI spec and the testing tracker describe the measured headroom check.
+
 ## v9.149.0 — Per-node verify_tls option for model pulls
 
 ### Added

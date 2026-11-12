@@ -220,6 +220,8 @@ compute_node_detach_observer
 compute_node_detail
 compute_node_drain
 compute_node_get
+compute_node_headroom_get
+compute_node_headroom_measure
 compute_node_health
 compute_node_list
 compute_node_pull_model

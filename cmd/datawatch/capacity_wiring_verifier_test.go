@@ -2,9 +2,11 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // ptrInt is the test's *int helper for a node's verifier_slots value.
@@ -24,10 +26,14 @@ func noObserverRead() verifierObserverRead {
 func TestSyncVerifierPools_CapAppliedToNodeVerifyPool(t *testing.T) {
 	led := capacity.New(capacity.Options{})
 	cache := newVerifierNodeCache()
+	// A fresh measurement that supports cap 3 (2 extra requests of 512 MB on
+	// 8 GB free, well above the 1024 MB floor), so the configured cap applies.
+	store := compute.NewHeadroomStore()
+	store.Put(compute.HeadroomMeasurement{Node: "gpu-a", FreeMB: 8192, PerRequestMB: 512, MeasuredAt: time.Now()})
 	nodes := []verifierNodeInfo{
 		{node: &compute.Node{Name: "gpu-a", VerifierSlots: ptrInt(3)}, hosting: true, executor: 4},
 	}
-	syncVerifierPools(led, cache, noObserverRead(), nodes)
+	syncVerifierPools(led, cache, newVerifierCapGate(store, &config.Config{}), noObserverRead(), nodes)
 
 	if got := led.Limit(capacity.VerifierPool("gpu-a")); got != 3 {
 		t.Fatalf("Limit(node-verify:gpu-a) = %d, want 3 (explicit verifier_slots)", got)
@@ -55,7 +61,7 @@ func TestSyncVerifierPools_ExplicitZeroLeavesNoVerifierPool(t *testing.T) {
 	nodes := []verifierNodeInfo{
 		{node: &compute.Node{Name: "gpu-b", VerifierSlots: ptrInt(0)}, hosting: true, executor: 2},
 	}
-	syncVerifierPools(led, cache, noObserverRead(), nodes)
+	syncVerifierPools(led, cache, newVerifierCapGate(nil, &config.Config{}), noObserverRead(), nodes)
 
 	if got := led.Limit(capacity.VerifierPool("gpu-b")); got != 0 {
 		t.Fatalf("Limit(node-verify:gpu-b) = %d, want 0 (explicit 0 = no verifier pool)", got)
@@ -76,7 +82,7 @@ func TestSyncVerifierPools_HostingDefaultSlots(t *testing.T) {
 		{node: &compute.Node{Name: "host"}, hosting: true},
 		{node: &compute.Node{Name: "plain"}, hosting: false},
 	}
-	syncVerifierPools(led, cache, noObserverRead(), nodes)
+	syncVerifierPools(led, cache, newVerifierCapGate(nil, &config.Config{}), noObserverRead(), nodes)
 
 	if got := led.Limit(capacity.VerifierPool("host")); got != 1 {
 		t.Errorf("Limit(node-verify:host) = %d, want 1 (hosting default)", got)
@@ -110,7 +116,7 @@ func TestVerifierHeadroom_BelowMinFreeBlocks(t *testing.T) {
 	nodes := []verifierNodeInfo{
 		{node: &compute.Node{Name: "gpu-c", VerifierSlots: ptrInt(1), VerifierContextMB: 256}, hosting: true, executor: 2},
 	}
-	syncVerifierPools(led, cache, read, nodes)
+	syncVerifierPools(led, cache, newVerifierCapGate(nil, &config.Config{}), read, nodes)
 
 	blocked, reason := cache.blocked("gpu-c")
 	if !blocked {
@@ -139,7 +145,7 @@ func TestVerifierHeadroom_NoObserverDataFailsOpen(t *testing.T) {
 	nodes := []verifierNodeInfo{
 		{node: &compute.Node{Name: "gpu-d"}, hosting: true},
 	}
-	syncVerifierPools(led, cache, noObserverRead(), nodes)
+	syncVerifierPools(led, cache, newVerifierCapGate(nil, &config.Config{}), noObserverRead(), nodes)
 
 	for _, name := range []string{"gpu-d", "never-seen"} {
 		blocked, reason := cache.blocked(name)
@@ -170,7 +176,7 @@ func TestVerifierHeadroom_ClosureDoesNotCallObserver(t *testing.T) {
 	nodes := []verifierNodeInfo{
 		{node: &compute.Node{Name: "gpu-e"}, hosting: true},
 	}
-	syncVerifierPools(led, cache, read, nodes)
+	syncVerifierPools(led, cache, newVerifierCapGate(nil, &config.Config{}), read, nodes)
 	if calls != 1 {
 		t.Fatalf("observer reads during sync = %d, want 1 (one sample per node)", calls)
 	}

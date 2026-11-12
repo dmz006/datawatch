@@ -29,12 +29,41 @@ import (
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // SetComputeRegistry wires the runtime *compute.Registry into the
 // server. Called from cmd/datawatch/main.go after registry init.
 func (s *Server) SetComputeRegistry(r *compute.Registry) { s.computeReg = r }
+
+// SetHeadroomStore wires the daemon's one headroom-measurement store into the
+// server. The verifier_slots write gate reads it; cmd/datawatch passes the
+// same instance to the capacity admission gate.
+func (s *Server) SetHeadroomStore(st *compute.HeadroomStore) { s.headroomStore = st }
+
+// HeadroomStore returns the wired headroom-measurement store (nil until wired).
+func (s *Server) HeadroomStore() *compute.HeadroomStore { return s.headroomStore }
+
+// checkVerifierSlotsWrite is the write gate on a node's verifier_slots: a
+// value above 1 is accepted only when the shared measurement supports it,
+// using the same floor and freshness bound as the admission gate
+// (autonomous.verifier_min_free_mem_mb and autonomous.verifier_headroom_max_age_hours).
+// Unset, 0 and 1 are always accepted. Every other value above 1 is gated, the
+// stored value included: a save that keeps an unsupported 3 is refused the
+// same as a raise, so the cap cannot stay above 1 without a measurement. The
+// refusal names the node, the measured free memory and the shortfall.
+func (s *Server) checkVerifierSlotsWrite(n *compute.Node) error {
+	if n.VerifierSlots == nil || *n.VerifierSlots <= 1 {
+		return nil
+	}
+	var ac config.AutonomousConfig
+	if s.cfg != nil {
+		ac = s.cfg.Autonomous
+	}
+	return compute.CheckVerifierSlotsWrite(s.headroomStore, n.Name, *n.VerifierSlots,
+		ac.EffectiveVerifierMinFreeMB(), ac.EffectiveVerifierHeadroomMaxAge(), serverNow())
+}
 
 // VerifierNodeStatus is one compute node's verifier admission state as the
 // daemon's capacity wiring last saw it (cmd/datawatch's VerifierNodeState):
@@ -148,6 +177,12 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		// Validate before probing so field errors return 400, not 502.
 		if verr := n.Validate(); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+		// Measurement write gate: a verifier_slots above 1 is refused (409,
+		// nothing saved) unless the node's headroom measurement supports it.
+		if gerr := s.checkVerifierSlotsWrite(&n); gerr != nil {
+			http.Error(w, gerr.Error(), http.StatusConflict)
 			return
 		}
 		// v7.0.0-alpha.19 #245 Q3 — operator-spec’d save-time probe for
@@ -321,6 +356,20 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSuffix(rest, "/detail")
 		s.handleComputeNodeDetail(w, r, name)
 
+	// On-demand headroom measurement (POST, idle nodes only, never on a
+	// timer) and the stored headroom view (GET). See compute_headroom.go.
+	case strings.HasSuffix(rest, "/headroom") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
+		s.handleComputeNodeHeadroomMeasure(w, r, strings.TrimSuffix(rest, "/headroom"))
+
+	case strings.HasSuffix(rest, "/headroom") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapComputeRead) {
+			return
+		}
+		s.handleComputeNodeHeadroomGet(w, r, strings.TrimSuffix(rest, "/headroom"))
+
 	// v7.0.0-alpha.18 #242 — list models available on this Node for the
 	// requested LLM kind. Used by PWA's kind-aware model dropdown so
 	// operators don't have to know exact model names.
@@ -380,6 +429,12 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		// be >= 0"), not saved and rejected later at admission.
 		if verr := n.Validate(); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+		// Measurement write gate: a verifier_slots above 1 is refused (409,
+		// nothing saved) unless the node's headroom measurement supports it.
+		if gerr := s.checkVerifierSlotsWrite(&n); gerr != nil {
+			http.Error(w, gerr.Error(), http.StatusConflict)
 			return
 		}
 		if r.URL.Query().Get("probe") != "skip" {
