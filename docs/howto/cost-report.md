@@ -21,6 +21,10 @@ exec_steps:
     description: Read the report again after the setting changes, to see it with tokens only and over the wider window
     args: {}
     read_only: true
+  - tool: cost_charts
+    description: Read the charts as one report, cost over time, tool usage and retries and failure categories, for a grouping and window. group_by is automaton, project, model or automation and window is like 7d or 2w; both are optional. A grouping one view does not know leaves that view on its default and the report names it in notes. Tool usage is a count per group, never a tool name
+    args: {group_by: project, window: 7d}
+    read_only: true
 ---
 
 # Cost report
@@ -409,6 +413,12 @@ recorded sessions, so the same window and grouping give the same rows.
 - It does not add dollars to points. A row that mixes billing units shows each
   unit's total separately instead of one blended number.
 - It does not retain more than the ledger does: 31 days of recorded sessions,
-  with older spend visible only through lifetime totals.
+  with older spend visible only through lifetime totals. The charts read the
+  same ledger, so a window that reaches past it is marked unknown, not zero.
+- The charts do not name tools. Only a count of tool calls per group is
+  recorded, so tool usage cannot be split by tool.
+- The retries figure is a floor: each task's retry count is counted once and
+  restarts when the task is reset.
 
-Definitions: [`docs/datawatch-definitions.md#cost-report`](../datawatch-definitions.md#cost-report).
+Definitions: [`docs/datawatch-definitions.md#cost-report`](../datawatch-definitions.md#cost-report)
+and [`#usage-charts-and-the-combined-usage-report`](../datawatch-definitions.md#usage-charts-and-the-combined-usage-report).
