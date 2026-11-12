@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.154.4 (2026-11-12).** Skills: a how-to for finding, installing and writing skills, and a coverage matrix of every datawatch feature. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.154.5 (2026-11-12).** Sessions grouped by node use the node that runs each session, group headers show titles, and Compact is a smaller tile grid. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

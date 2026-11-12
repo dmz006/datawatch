@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.154.5 — Sessions grouping by node, per-option grouping review, and compact tiles
+
+### Fixed
+
+- **Sessions grouped by node put each session under the node that runs it.** A federation peer's sessions land under the peer's name and this daemon's under its real hostname; `local` is never a group name, and a session with no hostname of its own is keyed under this daemon's hostname in the grouped read. The page reads peers' sessions for the node axis and for the Automaton axis.
+- **Group headers show titles.** On the Automaton, project and node axes a header shows the record's human title with the id as secondary text, and the ungrouped group always sorts last. A folder with a trailing slash is one group.
+- **Compact is the tile grid at a smaller size** on the Sessions list: the same content and menu, never rows.
+- Docs: the Sessions tiles and grouping how-to and the definitions describe the node axis and the headers.
+
 ## v9.154.4 — Skills mapping of every datawatch feature
 
 ### Documentation
