@@ -4901,7 +4901,7 @@
   "projects_manage_cancel_action": "Cancelar",
   "projects_manage_edit_action": "Editar",
   "projects_manage_remove_action": "Quitar",
-  "projects_manage_confirm_remove": "¿Quitar el proyecto %1$s? Solo se quita el registro del proyecto. Las sesiones en curso y el trabajo de los Automaton no se detienen.",
+  "projects_manage_confirm_remove": "¿Quitar el proyecto %1$s? Solo se quita el registro del proyecto. Las sesiones en curso y el trabajo de los autómatas no se detienen.",
   "projects_manage_err_name": "Introduce un nombre de proyecto.",
   "projects_manage_err_dir": "Introduce el directorio del proyecto.",
   "projects_manage_saved": "Proyecto %1$s guardado.",

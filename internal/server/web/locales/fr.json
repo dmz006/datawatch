@@ -4901,7 +4901,7 @@
   "projects_manage_cancel_action": "Annuler",
   "projects_manage_edit_action": "Modifier",
   "projects_manage_remove_action": "Retirer",
-  "projects_manage_confirm_remove": "Retirer le projet %1$s ? Seul l'enregistrement du projet est retiré. Les sessions en cours et le travail des Automaton ne sont pas arrêtés.",
+  "projects_manage_confirm_remove": "Retirer le projet %1$s ? Seul l'enregistrement du projet est retiré. Les sessions en cours et le travail des automates ne sont pas arrêtés.",
   "projects_manage_err_name": "Saisissez un nom de projet.",
   "projects_manage_err_dir": "Saisissez le répertoire du projet.",
   "projects_manage_saved": "Projet %1$s enregistré.",
