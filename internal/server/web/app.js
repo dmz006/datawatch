@@ -5348,6 +5348,11 @@ const SESSIONS_VIEW_NAME_MAX = 80;
 function _sessionsGroupValidate(by) {
   if (!by || typeof by.axis !== 'string') return null;
   if (SESSIONS_GROUP_AXES.indexOf(by.axis) < 0) return null;
+  // A tag-prefix choice that duplicates a built-in axis (node:, project:)
+  // keeps one grouping one name: it reads as that built-in axis.
+  if (by.axis === 'tag' && (by.tagPrefix === 'node:' || by.tagPrefix === 'project:')) {
+    return { axis: by.tagPrefix.slice(0, -1), tagPrefix: '' };
+  }
   return {
     axis: by.axis,
     tagPrefix: (by.axis === 'tag' && typeof by.tagPrefix === 'string') ? by.tagPrefix : '',
@@ -5356,8 +5361,9 @@ function _sessionsGroupValidate(by) {
 
 // Group choice persistence: one source of truth, state.sessionGroupBy
 // (axis plus tag prefix), saved on this device. Storage may be blocked, so
-// every access is guarded. The toolbar placement control reads and writes the
-// same field (axis "a" is the tag prefix "a:").
+// every access is guarded. The labelled "Group by" select is the only
+// grouping control (the old toolbar placement/gear control is gone); its
+// tag prefixes keep one grouping one name ("a:" ≡ axis "a").
 const SESSIONS_GROUP_STORE_KEY = 'dw_sessions_group_by';
 const SESSIONS_GROUP_LEGACY_KEY = 'dw_sessions_group_axis';
 
@@ -5384,7 +5390,9 @@ function _sessionsGroupCurrent() {
     state.sessionGroupBy = by;
     state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
   }
-  return _sessionsGroupValidate(state.sessionGroupBy);
+  const current = _sessionsGroupValidate(state.sessionGroupBy);
+  state.sessionGroupBy = current;
+  return current;
 }
 
 function _sessionsGroupSave() {
@@ -5876,7 +5884,12 @@ function _sessionsGroupPrefixOptions() {
   const set = {};
   names.forEach(n => {
     const i = n.indexOf(':');
-    if (i > 0) set[n.slice(0, i + 1)] = true;
+    if (i < 1) return;
+    const p = n.slice(0, i + 1);
+    // Prefixes that duplicate a built-in axis (node:, project:) are hidden:
+    // one grouping, one name — the built-in axis is the canonical one.
+    if (p === 'node:' || p === 'project:') return;
+    set[p] = true;
   });
   return Object.keys(set).sort();
 }
@@ -5898,13 +5911,15 @@ function renderSessionsGroupPicker(by) {
   const prefixes = _sessionsGroupPrefixOptions();
   // The tag registry may not be loaded (or may be empty mid-refresh); the
   // chosen prefix must stay an option or the select snaps to "No grouping".
-  if (cur && cur.axis === 'tag' && cur.tagPrefix && prefixes.indexOf(cur.tagPrefix) < 0) {
+  if (cur && cur.axis === 'tag' && cur.tagPrefix
+      && prefixes.indexOf(cur.tagPrefix) < 0
+      && cur.tagPrefix !== 'node:' && cur.tagPrefix !== 'project:') {
     prefixes.push(cur.tagPrefix);
     prefixes.sort();
   }
   if (prefixes.length) {
     prefixOpts = `<optgroup label="${escHtml(_stx('sessions_group_tag_prefixes', 'Tag prefix'))}">
-      ${prefixes.map(p => opt('tag|' + p, axisLabel('tag') + '(' + p + ')')).join('')}
+      ${prefixes.map(p => opt('tag|' + p, axisLabel('tag') + ': ' + p.replace(/:$/, ''))).join('')}
     </optgroup>`;
   }
   return `<div class="sessions-group-picker" role="group" aria-label="${escHtml(_stx('sessions_group_by', 'Group by'))}">
@@ -6172,7 +6187,7 @@ function _sessionsSheetHTML(parts) {
   const statusBody = `<div class="state-filter-chips sessions-sheet-chips">${p.stateBadges || ''}${watchBtn}</div>`
     + (p.llmBadges ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_backend', 'Backend'))}</div><div class="backend-filter-badges sessions-sheet-chips">${p.llmBadges}</div>` : '')
     + (p.tagPanel ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_tags', 'Tags'))} ${p.tagHelp || ''}</div>${p.tagPanel}` : '');
-  const groupBody = renderSessionsGroupPicker(p.groupBy) + _sessionsGroupControl();
+  const groupBody = renderSessionsGroupPicker(p.groupBy);
   return `<div class="sessions-sheet-backdrop" id="sessionsSheetBackdrop" onclick="sessionsFiltersBackdrop(event)">
     <div class="sessions-sheet" role="dialog" aria-modal="true" aria-label="${escHtml(title)}">
       <div class="sessions-sheet-head"><strong>${escHtml(title)}</strong><button type="button" class="sessions-sheet-close" onclick="sessionsFiltersClose()" title="${escHtml(close)}" aria-label="${escHtml(close)}">&#10005;</button></div>
@@ -55842,12 +55857,6 @@ function _sessionsGroupAxis() {
   return '';
 }
 
-// setSessionsGroupAxis switches the grouping through the shared setter.
-window.setSessionsGroupAxis = function(axis) {
-  const a = String(axis || '');
-  setSessionGroupBy(a ? 'tag|' + a + ':' : '');
-};
-
 // _sessionGroupTagClick toggles one placement tag in the session tag
 // selection: the registry ID when the tag is registered, the tag name
 // otherwise; _sessionTagFilter understands both.
@@ -55900,17 +55909,6 @@ function _sessionsGroupCards(sessions, axis) {
     html += pg.items.map(s => sessionCard(s, idx++, sessions.length)).join('') + _listMoreHTML('session', g.key, pg);
   });
   return html;
-}
-
-// _sessionsGroupControl is the sessions toolbar's axis dropdown. It appears
-// while some placement tag is known.
-function _sessionsGroupControl() {
-  const axes = _placementAxisOrder(Object.keys(_placementTagsByAxis(state.sessions)));
-  const cur = _sessionsGroupAxis();
-  if (cur && axes.indexOf(cur) < 0) axes.push(cur);
-  if (!axes.length) return '';
-  const opts = [''].concat(axes).map(a => `<option value="${escAttr(a)}" ${a === cur ? 'selected' : ''}>${a ? escHtml(a) : escHtml(_tagT('sessions_group_none', 'No grouping'))}</option>`).join('');
-  return `<span class="backend-filter-badge group-axis-control${cur ? ' active' : ''}" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(_tagT('sessions_group_tip', 'Group the session list by a placement (system) tag'))}"><span>⚙️</span><select style="border:none;background:transparent;color:inherit;font:inherit;font-size:11px;padding:0;max-width:96px;" onchange="setSessionsGroupAxis(this.value)" aria-label="${escHtml(t('sessions_group_by_label') || 'Group by placement')}">${opts}</select></span>`;
 }
 
 function _sessionTagChipList(sess) {
