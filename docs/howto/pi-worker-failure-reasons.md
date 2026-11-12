@@ -45,8 +45,9 @@ fixed.
 - A running daemon with Automata enabled and a task running on the **pi-prompt**
   backend. Sessions on other backends are not affected.
 - For the node test and the node alert: the task runs on a **compute node**
-  (see [Compute Nodes](compute-nodes.md)). A launch with no compute node, or no
-  model, is not tested.
+  (see [Compute Nodes](compute-nodes.md)) that belongs to a **pooled** LLM entry,
+  one that lists more than one compute node. A launch with no compute node, no
+  model, or a single-node entry is not tested.
 - Read access to the daemon on the surface you use: the web app, the CLI, REST,
   MCP or the chat channel.
 
@@ -148,7 +149,8 @@ Compute node gpu-box-1, model qwen3.8:27b: 3 consecutive unresponsive failures.
 
 ## The preflight
 
-Before a pi worker is started on a compute node, the daemon sends the node a
+Before a pi worker is started on a compute node of a pooled LLM entry (one that
+lists more than one compute node), the daemon sends the node a
 one-token chat completion for the worker's model (`max_tokens` 1) and waits at
 most 20 seconds for it. This is the **launch probe**. It finds a stuck or
 unreachable model before a session exists and spend begins.
@@ -157,7 +159,7 @@ unreachable model before a session exists and spend begins.
 |---|---|
 | Passes | The worker starts. Any unhealthy mark on the node is cleared. |
 | Fails (connection error, non-2xx status or the 20 seconds run out) | No session is started. The node is marked unhealthy, with the probe error as the reason. The task is deferred through the model-unresponsive requeue above, so the same limits and the same node alert apply. |
-| Skipped (no node address, or no model) | The worker starts as before. |
+| Skipped (no node address, no model, or the node belongs to a single-node entry) | The worker starts as before. A single-node worker makes no node call at launch. |
 
 The probe error names the node URL and the model, for example
 `preflight http://gpu-box-1:11434/v1 model "qwen3.8:27b": status 503: ...`.
@@ -290,7 +292,8 @@ Bot: Queued tasks (1):
 - **Only pi-prompt sessions.** Other backends keep their own stall handling.
 - **The node count and the unhealthy mark are in memory.** A daemon restart
   clears both.
-- **A launch with no compute node, or no model, is not probed.**
+- **A launch with no compute node, no model, or a single-node entry is not
+  probed.** Only a node in a pooled entry is tested at launch.
 - **A throttle from the model provider is not this.** It has its own handling.
 
 ## See also
