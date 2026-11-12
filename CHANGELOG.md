@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Path handling in the Automata package is hardened without changing behavior for valid input.** Paths read from `git status` now pass one shared relative-path guard (no empty path, NUL byte, absolute path or `..` escape) before they are joined onto a worktree, in the uncommitted-work check, the daemon-only-change checks and the task-commit file list. The cleanup **Fix permissions** action checks that a path is inside the worktree base before any file-system call, so an outside path gets the same refusal whether or not it exists. Migration: none.
+  - **For the operator to review:** a path that the guard rejects is now skipped silently rather than read, so if a worktree holds an odd file name (for example one whose cleaned form is `.` or escapes upward), check that it still shows in the uncommitted-work list as you expect. The docs describe this from the code and its tests; they were not checked against a live run.
+
 ## v9.146.0 — Every session kind carries the full set of placement tag axes
 
 ### Changed
