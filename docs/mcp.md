@@ -2058,10 +2058,10 @@ read tools `config:read`, the write tools `config:write`.
 
 ---
 
-## Project record, arcs and the Projects tab
+## Project record, arcs and the Projects sub-tab
 
 The seven project tools read and write the project record behind the web app's
-Projects tab. The same data is on REST (`/api/projects…`), the CLI
+Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 (`datawatch projects …`) and the comm channel (`project …`). The guide is
 [howto/projects-tab.md](howto/projects-tab.md).
 
