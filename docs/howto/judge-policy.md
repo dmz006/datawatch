@@ -447,7 +447,11 @@ How you act on it:
   still has incomplete tasks, is refused (naming the first such task). The
   re-judgment is a fresh completion review when the branch head or the rules
   text has changed since the stored verdict; it replays the stored verdict only
-  when both are unchanged and the verdict cache is on.
+  when both are unchanged and the verdict cache is on. The compact reply
+  (`?view=compact`, which the MCP tool and the web app use) carries a
+  `message` that says which it was: `a new review ran on commit <sha>`, or
+  `the stored verdict was reused` with the reason. The web app shows it in the
+  notice after Retry or Reroute.
 - **A held review (`timed_out`, `needs_review`) is not a re-judge target** —
   the re-judge endpoint applies only to blocked Automata. Resolve it through
   [How to resolve a hold](#how-to-resolve-a-hold): fix the capacity or the

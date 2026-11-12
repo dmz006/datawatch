@@ -250,15 +250,29 @@ Reading the judge's verdict:
 ### REST
 
 ```bash
-curl -sk -X POST https://HOST:PORT/api/autonomous/prds/<prd_id>/rejudge \
+curl -sk -X POST 'https://HOST:PORT/api/autonomous/prds/<prd_id>/rejudge?view=compact' \
   -H 'Content-Type: application/json' -d '{"actor":"operator"}'
 ```
+
+The compact reply carries a plain-language `message` that says which of the
+two happened. When a new review ran it reads `rejudge complete; a new review
+ran on commit <sha>; the verdict and outcome are in the decision log`. When
+the stored verdict was reused it reads `rejudge complete; the stored verdict
+was reused because the head commit <sha> and the rules text are unchanged
+since it was made; no new review ran`. Without `?view=compact` the reply is
+the whole Automaton and has no `message`; the decision log says the same
+thing either way. The **Retry** and **Reroute** buttons in the web app ask
+for the compact reply and show this message in the notice for six seconds, so
+you can tell a fresh review from a reused verdict without opening the
+decision log.
 
 ### MCP
 
 ```
 autonomous_prd_rejudge(id="<prd_id>")
 ```
+
+The MCP tool returns the same compact reply, with the same `message`.
 
 ## What happens to Automata when the daemon restarts
 
