@@ -789,7 +789,7 @@ var nonConfigWriteTools = map[string]bool{
 	"backends_list": true, "budget_status": true, "burn_guard_config_get": true, "burn_guard_run": true,
 	"burn_guard_status": true, "capacity_admission": true, "capacity_status": true, "channel_diagnostics": true,
 	"channel_info": true, "channel_routing_config_get": true, "claude_efforts": true, "claude_models": true,
-	"claude_permission_modes": true, "compute_node_detail": true, "compute_node_get": true, "compute_node_health": true,
+	"claude_permission_modes": true, "compute_node_detail": true, "compute_node_get": true, "compute_node_headroom_get": true, "compute_node_headroom_measure": true, "compute_node_health": true,
 	"compute_node_list": true, "cooldown_clear": true, "cooldown_set": true,
 	"cooldown_status": true, "cost_rates": true, "cost_report": true, "cost_summary": true,
 	"cost_usage": true, "council_config_get": true, "council_get_run": true, "council_list_runs": true,
