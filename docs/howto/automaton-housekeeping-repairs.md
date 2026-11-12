@@ -68,8 +68,33 @@ the docs sync only refreshes a gitignored copy, so cancel the retried gate to
 stop it; for a removed stray file, restore it from the worker's session output
 if needed and cancel the retried task to stop it.
 
-The judge re-run, review start, lease re-adoption, placement re-run and worktree
-pruning rows in the table are not written yet.
+The `advance_judge` group also has three repairs for finished and review-blocked
+Automata, run in `on` and only reported in `report`. They are written and tested
+but, like the rest of the pass, the daemon does not start them yet, so none acts
+today:
+
+- **Advance.** An Automaton that is running with every task finished (done or
+  cancelled) is moved to its next state by the normal completion step, once the
+  grace has passed. It is left alone while a live run still holds it, and it is
+  refused as unsafe while any task is unfinished.
+- **Judge repair.** An Automaton blocked by the rules review with no repair task
+  yet gets one repair task, made once from the review's real findings (a task
+  carrying the findings is added to the last story, then reset with a plain
+  reset). The fact is recorded on the Automaton so a second one is never made. If
+  someone already made a repair task, it is theirs to finish and is left alone.
+- **Merge report.** An Automaton waiting to merge or ready to merge is only
+  reported. Nothing here can merge.
+
+The advance and judge repairs refuse, as an unsafe finding (recorded as skipped,
+one alert), when a task is not finished, when the judge repair was already made
+once, or when the review recorded no findings. Their undo hints: the advance moved
+on by the normal completion step, so pause or cancel the Automaton from the
+Automata page to stop it; for the judge repair, cancel the repair task from the
+Automaton's task list (it is recorded and will not be made again); the merge
+report changed nothing.
+
+The review start, lease re-adoption, placement re-run and worktree pruning rows in
+the table are not written yet.
 
 **Operator review before relying on this page.** Check these against the
 shipped code before you turn any group to `on`:
@@ -85,6 +110,15 @@ shipped code before you turn any group to `on`:
 - The three task chain repairs run fixed commands (`make sync-docs`, `git clean -f -- <one path>`) in
   the Automaton worktree. Confirm you accept those commands, and that a final-gate failure
   naming `internal/server/web/docs` as stale is a reliable signal, before turning `task_chain` to `on`.
+- The advance repair re-fires the completion step, and the judge repair adds
+  one task titled "Fix rules review findings" (actor `housekeeping-repair`) to
+  the Automaton's last story. Confirm you accept both, and that "blocked with a
+  rules review outcome" is a reliable signal, before turning `advance_judge` to `on`.
+- The table's `STUCK` row describes asking the judge to run again, and `MERGE WAIT`
+  describes starting a review; the shipped advance repair instead re-fires the
+  completion step for a running Automaton whose tasks are all finished, and
+  `MERGE WAIT` / `MERGE READY` are reported only. Decide whether the table rows
+  should be reworded or built as written.
 - An unsafe finding is never repaired: it is recorded as skipped, and one
   warning alert is raised for that subject until it stops being found.
 
@@ -182,7 +216,8 @@ for each shipped repair:
 - `task_chain`: pause the Automation to stop the started step, or cancel that
   step's Automaton.
 - `advance_judge`: cancel the task, or hold it again by resolving its review with
-  the hold answer.
+  the hold answer; for an advance, pause or cancel the Automaton; for the judge
+  repair, cancel the repair task; the merge report changed nothing.
 - `lane_fill`: set the lane count back with the lane count control; the bounds
   are `supervisor_loop.lane_count.min` and `.max`.
 - `leftovers`: nothing to undo; the sweep only refreshes status and raises the
