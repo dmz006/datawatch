@@ -388,6 +388,8 @@ The two axes with a fixed vocabulary: `role` takes one of `worker`,
 `decompose`, `review`, `rejudge`, `auto-fix`. The rest take the name of
 whatever the engine records for them.
 
+To start the operator's supervisor session with the role, pass `launch_role: supervisor` to the session start (REST `POST /api/sessions/start`, MCP `start_session`, or `datawatch session new --launch-role supervisor`); it then carries `role:supervisor` plus the compute, backend, lane and project tags and no automaton tag.
+
 A tag is written **per enabled axis with a value**. A missing value is not an
 error and produces no tag: local work writes **no `peer:` tag at all**, and
 `peer:<name>` appears when the work ran on another daemon.
@@ -420,6 +422,55 @@ An object's system tags are re-derived from its stored facts under the
 in-force block whenever the object is saved, so they stay in step with the
 settings. The tags **you** assign to an object and the tags its sessions
 inherit are separate fields that none of this reads or rewrites.
+
+### Which sessions carry which axes
+
+Every kind of session the daemon starts carries the run axes its record
+supports. In the table, **✓** means the session carries the axis, **—** means
+it never does (it records no such fact), and **if set** means it carries the
+axis when its start named one (a launch role, kind, stage or Automaton). The
+`peer` axis is written only when the work ran on another daemon, so it is
+listed as **federated** for every kind that can be sent to a peer.
+
+| Session kind | compute | peer | backend | lane | role | project | automaton | automation | stage | kind |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Task worker | ✓ | federated | ✓ | ✓ | ✓ | ✓ | ✓ | if set | if set | ✓ |
+| Planner | ✓ | federated | ✓ | ✓ | ✓ | ✓ | ✓ | if set | if set | ✓ |
+| Verifier | ✓ | federated | ✓ | ✓ | ✓ | ✓ | ✓ | if set | if set | ✓ |
+| Judge | ✓ | federated | ✓ | ✓ | ✓ | ✓ | ✓ | if set | if set | ✓ |
+| One-shot | ✓ | federated | ✓ | ✓ | if set | ✓ | if set | if set | if set | if set |
+| Scheduled | ✓ | federated | ✓ | ✓ | if set | ✓ | if set | if set | if set | if set |
+| Supervisor | ✓ | federated | ✓ | ✓ | ✓ | ✓ | — | — | — | if set |
+| Other operator-started | ✓ | federated | ✓ | ✓ | if set | ✓ | if set | if set | if set | if set |
+| Restarted | keeps the full set its record holds | | | | | | | | | |
+| Council | ✓ | federated | ✓ | ✓ | if set | ✓ | — | — | — | if set |
+| Eval | ✓ | federated | ✓ | ✓ | if set | ✓ | — | — | — | if set |
+
+- **Local sessions carry the local node name.** A session on the local host
+  carries the local node name in its `compute:` tag (`compute:local` when
+  the record stored no node), so no session is left without a compute tag.
+- **No Automaton, no `automaton:` tag.** A session with no Automaton carries
+  no `automaton:` tag (and no `automation:` tag), whatever role it runs as.
+  That is not an error.
+- **Restarted sessions keep the full set.** A restart re-runs the placement
+  stamp from the session's record, so a restarted session carries the same
+  axes it carried before, including role, kind, stage and Automaton.
+- An axis you have turned off (see [The ten axes](#the-ten-axes)) is left out
+  of every row.
+- **Sessions started before this change** keep the tags they had. They
+  recorded no launch facts, so `datawatch autonomous tags sweep` leaves them
+  unchanged rather than guessing at the missing role, kind, stage or
+  Automaton; the sweep only rebuilds the full set for a session whose record
+  carries launch facts. Preview with `datawatch autonomous tags sweep
+  --dry-run`; to give an old session the extra axes, restart it with launch
+  facts or set the tags yourself.
+
+**For the operator to review:** the table reflects the start paths in the
+current code. Confirm that the Council and Eval rows (no Automaton axes) and
+the Supervisor row (no `automaton`, `automation` or `stage`) match what you
+expect before the next release. Also note that sessions started before this
+change may stay without role, kind, stage or Automaton tags: the sweep does
+not infer launch facts they never recorded.
 
 ### Filtering by a tag or an axis
 
@@ -527,10 +578,52 @@ tree:
 
 ### Stamping, re-stamping and the startup backfill
 
-- **Every session the machine starts is stamped at placement** with the
-  tags of its placement record: node, backend, lane, role, project
-  (and the peer, when the placement names one). The tags live in the
-  session's `system_tags`, which the machine owns.
+- **Every session the daemon starts is stamped at placement** with the axes
+  its record supports: node (`compute:`), backend, lane, role, project and,
+  for an Automaton's work, its Automaton, Automation, stage and kind (and
+  the peer, when the placement names one). The stamp rides the daemon's
+  start hook, so it runs on every start path — a session you start, a
+  scheduled start, a comm-channel start, an Automaton's work — and a session
+  that belongs to no Automaton carries no `automaton:` or `automation:`
+  tag, just the axes its record supports. The tags live in the session's
+  `system_tags`, which the machine owns.
+- **Every session you start carries the axes its record supports.** A
+  start through `POST /api/sessions/start` (REST, the MCP `start_session`
+  tool or `datawatch session new`) stamps the new session with its
+  compute node — the local node, so the tag reads `compute:local`, when
+  it stored no node — its backend, its lane (when the backend names one)
+  and its project. Tagging is best-effort after the session already
+  exists: a failure is logged and the session stays usable without its
+  tags.
+- **A session started with launch facts carries every axis that applies
+  to it.** `launch_role`, `launch_kind` and `launch_stage` are stored on
+  the session record, and the session's placement is built from those
+  facts plus the record's own: the node it ran on — for a session that
+  ran locally and stored no node, the local node, so the tag reads
+  `compute:local` — its role and kind (such as `role:planner` or
+  `role:supervisor`) and its stage, alongside the backend, lane and
+  project it records and the Automaton and Automation the work belongs
+  to (when `launch_automaton` names one). The axes present are exactly
+  the ones the record supports (the rule is in [The ten axes](#the-ten-axes)
+  above), and a start with no launch facts carries none of the
+  role, kind, stage, automaton or automation axes because it records
+  none of those facts. Turn an axis off and its tag is no longer written
+  on any session.
+- **A restarted session re-stamps from its record.** Restarting a session
+  (the PWA Restart button, `POST /api/sessions/{id}/restart`, the MCP
+  `restart_session` tool, the CLI `datawatch session restart`, or the
+  restart path that reuses a completed or failed session's ID) runs the
+  same placement stamp a fresh start does, so a restarted session keeps
+  the role, kind, stage and automaton axes its record holds — no sweep is
+  needed after a restart. A restart that fails changes no tags.
+- **An existing session with no recorded launch facts keeps the tags it
+  already has.** Records written before launch facts existed load with
+  empty values, and the sweep re-derives them the way it always has: role
+  and kind from the session name, and no node fallback when the record
+  names no node. The daemon never invents an axis it cannot read from the
+  record, so a pass over such sessions leaves them unchanged. Where the
+  record does carry launch facts, the record — not the session name — is
+  what the daemon reads.
 - **A retry on another node re-stamps the same session.** The whole
   `system_tags` list is replaced, so the old node's `compute:` tag and any
   old `peer:` tag are gone and the new placement's tags are the ones you
@@ -552,7 +645,13 @@ The tag sweep applies the in-force `tags.placement` block to **everything
 that already exists**: one pass over every session (live and archived) and
 every record the Automata own — Automata, tasks, Automations, decision
 records, templates and held questions — re-deriving each one's system tags
-from its stored facts and writing only the ones that changed.
+from its stored facts and writing only the ones that changed. For a
+session that records its launch facts the pass rebuilds the placement
+through the same build as at launch — including the local node
+(`compute:local`) for a local session that stored no node — while a
+session without launch facts keeps the derivation it always had, so the
+sweep leaves those sessions unchanged rather than guessing at missing
+facts.
 
 It is safe to run any time:
 
@@ -715,6 +814,12 @@ An empty tag list clears an Automaton's or a session's own tags.
 - **Looking for a `peer:` tag on local work.** Local sessions run on this
   daemon and write no peer tag; `peer:<name>` appears only when the session
   ran on another daemon.
+- **Expecting the sweep to add a `compute:` tag to an old local session.**
+  A session that stored no node only gains `compute:local` once its record
+  carries launch facts — the sweep then rebuilds its placement from the
+  record, with the local-node fallback. A record without launch facts keeps
+  the derivation it always had, node tag or not. To see exactly what a
+  sweep would do to your sessions, run it with `--dry-run` first.
 - **Expects a `stage:` or `kind:` tag on an Automaton.** An Automaton carries
   its own project, its Automation and itself; the stage rides on its tasks
   and the kind on the runs. Filter a task or session list by the axis.

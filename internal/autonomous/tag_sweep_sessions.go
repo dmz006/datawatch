@@ -127,15 +127,49 @@ func sweepOwnsSession(prdID string, systemTags []string) bool {
 	return prdID != "" || len(systemTags) > 0
 }
 
-// rebuildPlacement rebuilds one session's Placement from the session's own
-// stored facts plus its Automaton's: the node it stored, its backend
-// family (and the lane that backend rides), its model, its project
-// directory's base name, and — when it belongs to an Automaton — the
-// Automaton's ID, the Automation it is a member of and the stage of that
-// membership. The role and kind are read from the session's name in the
-// launch vocabulary; a name outside it (an ordinary session) takes neither.
-// No lease, task or capacity fact is mixed in: a session holds none.
+// sweepLocalNode is the node name a launch-fact session with no stored compute
+// node is placed on: the daemon's own node, the name local work carries
+// everywhere else in the placement vocabulary.
+const sweepLocalNode = "local"
+
+// rebuildPlacement rebuilds one session's Placement from its stored facts. A
+// session that recorded its launch facts (LaunchRole, LaunchKind or
+// LaunchStage) gets the full placement through SessionPlacement: the role,
+// kind and stage it was launched with, and the local node when it stored
+// none. A session with no recorded launch facts is an existing session, and
+// it keeps exactly the derivation the sweep always gave it (legacyPlacement),
+// so no existing session's tags change.
 func (st *SessionTagSweepStore) rebuildPlacement(s *session.Session) Placement {
+	if s.LaunchRole == "" && s.LaunchKind == "" && s.LaunchStage == "" {
+		return st.legacyPlacement(s)
+	}
+	return SessionPlacement(s, sweepLocalNode, st.automationOf)
+}
+
+// automationOf is the Automation lookup SessionPlacement takes: the
+// Automation a PRD is a member of, through the same AutomationForPRD lookup the
+// rest of the manager uses. A nil manager, an unknown PRD or a PRD in no
+// Automation gives "".
+func (st *SessionTagSweepStore) automationOf(prdID string) string {
+	if st.m == nil {
+		return ""
+	}
+	prd, ok := st.m.Store().GetPRD(prdID)
+	if !ok || prd == nil {
+		return ""
+	}
+	if a := st.m.AutomationForPRD(prd); a != nil {
+		return a.ID
+	}
+	return ""
+}
+
+// legacyPlacement is the derivation a session with no recorded launch facts
+// has always been given. It reads its role and kind from its name, takes no
+// local-node fallback, and reads its stage from its Automaton's membership.
+// Its Automaton, Automation and stage come from the stored PRD, as before.
+// No lease, task or capacity fact is mixed in: a session holds none.
+func (st *SessionTagSweepStore) legacyPlacement(s *session.Session) Placement {
 	role, kind := sessionNameRoleKind(s.Name)
 	p := Placement{
 		Node:    strings.TrimSpace(s.ComputeNodeRef),

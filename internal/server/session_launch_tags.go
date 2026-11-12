@@ -10,28 +10,35 @@
 //
 //   - validateSessionLaunch rejects role/kind values outside the known
 //     vocabulary before any session is started.
-//   - applySessionLaunchTags builds an autonomous.Placement from the
-//     request facts plus the session's own facts (backend, model, node,
-//     project) and hands it to autonomous.ApplyPlacementTags with the
-//     live placement-tag config (autonomous.tags.placement). The tags
-//     land in the session's system tags; nothing else is touched.
+//   - applySessionLaunchTags records the request's role/kind/stage on the
+//     session record (SetLaunchFacts; the Automaton is already stored as the
+//     session's PRDID by the start), then builds the session's placement
+//     with autonomous.SessionPlacement and hands it to
+//     autonomous.ApplyPlacementTags with the live placement-tag config
+//     (autonomous.tags.placement). The tags land in the session's system
+//     tags; nothing else is touched.
 //
-// A request without any launch field takes the fast path in
-// applySessionLaunchTags and is byte-for-byte the same as before this
-// feature existed.
+// Every started session gets its placement tags, including a plain start
+// with no launch fields: it carries compute (the local node when it stored
+// none), backend, lane and project tags, and no role, kind, automaton,
+// automation or stage tag, because it records none of those facts.
 
 package server
 
 import (
 	"fmt"
 	"log"
-	"path/filepath"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 )
+
+// launchLocalNode is the node name a session that ran locally and stored no
+// compute node is placed on (its tag reads compute:local). It is the same
+// name the tag sweep uses for launch-fact sessions.
+const launchLocalNode = "local"
 
 // launchRoles is the known launch-role vocabulary (docs/plans/
 // 2026-11-06-automata-pages-redesign.md section 12).
@@ -77,40 +84,48 @@ type launchFacts struct {
 	Stage     string
 }
 
-// applySessionLaunchTags writes the launch placement tags onto a freshly
-// started session. Request facts (role/kind/automaton/stage) plus the
-// session's own facts (backend, model, node, project) are folded into one
-// autonomous.Placement and handed to autonomous.ApplyPlacementTags with
-// the live placement-tag config, so the master switch and per-axis
-// on/off + template overrides apply exactly as on a worker launch.
+// applySessionLaunchTags records the request's launch facts on a freshly
+// started session and writes its placement tags. The role, kind and stage
+// are stored with SetLaunchFacts; the session's own record supplies the
+// rest (backend, node, project, and the Automaton as PRDID). The placement
+// comes from autonomous.SessionPlacement and is applied with the live
+// placement-tag config, so the master switch and per-axis on/off + template
+// overrides apply exactly as on a worker launch.
 //
-// A request without any launch field (all four facts empty) is a no-op and
-// never touches the tag machinery. Applying tags is best-effort after the
-// session already exists: a failure is logged, never returned — the session
-// stays usable without its tags.
+// This runs for every started session, including a plain start with no
+// launch fields. Applying facts and tags is best-effort after the session
+// already exists: a failure is logged, never returned — the session stays
+// usable without its tags.
 func (s *Server) applySessionLaunchTags(sess *session.Session, f launchFacts) {
-	role := strings.TrimSpace(f.Role)
-	kind := strings.TrimSpace(f.Kind)
-	automaton := strings.TrimSpace(f.Automaton)
-	stage := strings.TrimSpace(f.Stage)
 	if sess == nil || s.manager == nil {
 		return
 	}
-	if role == "" && kind == "" && automaton == "" && stage == "" {
-		return // launch fields absent — behave exactly as before.
+	role := strings.TrimSpace(f.Role)
+	kind := strings.TrimSpace(f.Kind)
+	stage := strings.TrimSpace(f.Stage)
+	automaton := strings.TrimSpace(f.Automaton)
+
+	if err := s.manager.SetLaunchFacts(sess.FullID, role, kind, stage); err != nil {
+		log.Printf("launch facts: session %s: %v", sess.FullID, err)
 	}
 
-	p := autonomous.Placement{
-		Role:      role,
-		Kind:      kind,
-		Automaton: automaton,
-		Automation: s.launchAutomationID(automaton),
-		Stage:     stage,
-		Project:   filepath.Base(sess.ProjectDir),
-		Backend:   sess.BackendFamily,
-		Model:     sess.Model,
-		Lane:      launchLaneForBackend(sess.BackendFamily),
-		Node:      sess.ComputeNodeRef,
+	// Re-read the record so the placement sees the facts just stored.
+	cur := sess
+	if got, ok := s.manager.GetSession(sess.FullID); ok && got != nil {
+		cur = got
+	}
+	p := autonomous.SessionPlacement(cur, launchLocalNode, s.launchAutomationID)
+	// The start does not store launch_automaton as the record's PRDID, so
+	// the request's Automaton is carried onto the placement here.
+	if p.Automaton == "" && automaton != "" {
+		p.Automaton = automaton
+		p.Automation = s.launchAutomationID(automaton)
+	}
+	// autonomous.laneForBackend knows the "claude" backend but not
+	// "claude-code", the family a Claude session records; fill the lane
+	// for that case so every Claude session gets its lane tag.
+	if p.Lane == "" {
+		p.Lane = launchLaneForBackend(cur.BackendFamily)
 	}
 
 	// The live placement-tag config: whatever autonomous.tags.placement
@@ -123,8 +138,8 @@ func (s *Server) applySessionLaunchTags(sess *session.Session, f launchFacts) {
 	}
 	pc = pc.EffectivePlacement()
 
-	if err := autonomous.ApplyPlacementTags(s.manager, nil, "", sess.FullID, p, pc); err != nil {
-		log.Printf("launch tags: session %s: %v", sess.FullID, err)
+	if err := autonomous.ApplyPlacementTags(s.manager, nil, "", cur.FullID, p, pc); err != nil {
+		log.Printf("launch tags: session %s: %v", cur.FullID, err)
 	}
 }
 
@@ -148,15 +163,15 @@ func (s *Server) launchAutomationID(prdID string) string {
 }
 
 // launchLaneForBackend names the lane a backend's session runs in, mirroring
-// autonomous.laneForBackend: Claude backends ride the claude lane, every
-// other pool backend rides the gpu lane, and anything else (no recognized
-// backend) names no lane so the lane axis simply stays unset.
+// autonomous.laneForBackend and adding the "claude-code" family it does not
+// list. Other pool backends ride the gpu lane; anything unrecognized names no
+// lane, so the lane axis stays unset.
 func launchLaneForBackend(backend string) string {
 	switch strings.TrimSpace(backend) {
 	case "claude", "claude-code":
-		return "claude"
+		return string(autonomous.LaneTypeClaude)
 	case "pi", "pi-prompt", "ollama", "vllm":
-		return "gpu"
+		return string(autonomous.LaneTypeGPU)
 	default:
 		return ""
 	}

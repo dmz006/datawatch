@@ -118,6 +118,13 @@ type Session struct {
 	// Empty for legacy sessions and for kinds that don't bind to a node
 	// (e.g. claude-code on local host).
 	ComputeNodeRef string `json:"compute_node_ref,omitempty"`
+	// LaunchRole, LaunchKind and LaunchStage record the placement facts a
+	// session was launched with. Optional: records written before these
+	// fields existed load with empty values. Recorded by
+	// Manager.SetLaunchFacts; Start and Restart do not read them yet.
+	LaunchRole  string `json:"launch_role,omitempty"`
+	LaunchKind  string `json:"launch_kind,omitempty"`
+	LaunchStage string `json:"launch_stage,omitempty"`
 	// Priority orders this session's calls in the capacity wait queue (higher
 	// first; default 0). Same shape as autonomous.PRD.Priority.
 	Priority int `json:"priority,omitempty"`

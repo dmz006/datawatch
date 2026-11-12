@@ -614,7 +614,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Session"
         "400":
-          description: Bad request (missing task, backend not found, etc.)
+          description: Bad request (missing task, backend not found, an unknown `launch_role` or `launch_kind`, etc.). A refused launch field returns 400 and the session is not started.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -11478,6 +11478,28 @@ components:
             type: string
           description: Tag IDs the session carries from the start; an unknown ID refuses the start
           example: ["5e6f7a8b"]
+        launch_role:
+          type: string
+          enum: [worker, verifier, planner, judge, supervisor]
+          description: |
+            Role the session plays. Stamps the `role:` placement tag. An unknown role is
+            refused with 400 before the session starts. Omit for a plain session.
+          example: "supervisor"
+        launch_kind:
+          type: string
+          description: |
+            Kind of session: `task`, `decompose`, `review`, `rejudge` or `auto-fix`. Stamps
+            the `kind:` placement tag. An unknown kind is refused with 400 before the session
+            starts. Omit for a plain session.
+          example: "task"
+        launch_stage:
+          type: string
+          description: Stage of the Automaton the session serves. Stamps the `stage:` placement tag.
+          example: "build"
+        launch_automaton:
+          type: string
+          description: Automaton the session belongs to. Stamps the `automaton:` placement tag.
+          example: "3ab70001"
         task:
           type: string
           description: Task description passed to the LLM

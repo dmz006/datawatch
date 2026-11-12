@@ -333,6 +333,7 @@ type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile
 // Manager manages LLM coding sessions via tmux.
 type Manager struct {
 	judgeDeliveryPerThousand int                 // extra judge main-prompt wait, seconds per 1000 prompt lines; guarded by mu
+	placementStartHook       func(*Session)      // called with each started session; guarded by mu; see placement_start_hook.go
 	tagIdx                   systemTagIndexCache // system tag index cache; own mutex, never m.mu
 	// platformContextFirstPromptOff disables first-prompt delivery of the
 	// platform context. The zero value keeps it on, matching the guardrails
@@ -2674,6 +2675,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.notifySessionCreated(sess)
 		go m.runSubprocess(sess)
 		m.notifySessionStart(sess)
+		m.runPlacementStartHook(sess)
 		return sess, nil
 	}
 
@@ -3065,6 +3067,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 
 	m.notifySessionStart(sess)
+	m.runPlacementStartHook(sess)
 
 	return sess, nil
 }
@@ -4752,6 +4755,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.onStateChange(sess, oldState)
 	}
 	m.notifySessionStart(sess)
+	// Re-derive the relaunched session's placement (system) tags from its
+	// record, the same as Start. Only reached on a successful relaunch: every
+	// error return above leaves the hook uncalled. RestartSession delegates
+	// here, so it is covered too.
+	m.runPlacementStartHook(sess)
 
 	return sess, nil
 }

@@ -2717,6 +2717,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	liveRestartSettings := func() restartPolicySettings { return restartSettingsFrom(cfg.Autonomous) }
 
+	// Placement tags on every started session (scheduled and comm-channel
+	// starts included): the session manager is the tag sink, the live
+	// tags.placement block is the config source, and the Automation axis
+	// reads the autonomous manager, attached later in startup, at call time.
+	mgr.SetPlacementStartHook(placementStartFunc(mgr,
+		func() config.PlacementConfig { return cfg.Autonomous.Tags.Placement },
+		placementAutomationOf(func() *autonomouspkg.Manager { return autonomousMgrRef })))
+
 	// Batch output lines per session to prevent WebSocket flood.
 	// Accumulates lines for 100ms then sends as one message.
 	outputBatches := make(map[string][]string)
@@ -12679,8 +12687,9 @@ func newSessionCmd() *cobra.Command {
 
 	// session new "task description"
 	newCmd := &cobra.Command{
-		Use:   "new [task]",
-		Short: "Start a new AI coding session",
+		Use:     "new [task]",
+		Aliases: []string{"start"},
+		Short:   "Start a new AI coding session",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -12706,7 +12715,8 @@ func newSessionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
+			launchRole, _ := cmd.Flags().GetString("launch-role")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -12721,6 +12731,7 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
 	newCmd.Flags().Bool("git", false, "opt in to git init, snapshot and automatic commit")
 	newCmd.Flags().String("priority", "", "capacity-queue priority (integer; higher is admitted first when capacity is contended; default 0)")
+	newCmd.Flags().String("launch-role", "", "placement role: worker|verifier|planner|judge|supervisor (use supervisor for the operator's supervisor session; sent as launch_role)")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -13422,6 +13433,22 @@ func sessionPriorityFlag(cmd *cobra.Command) (*int, error) {
 	return &p, nil
 }
 
+// sessionNewStartBodyRole is sessionNewStartBodyPriority plus the optional
+// launch_role placement fact (worker|verifier|planner|judge|supervisor),
+// sent only when one was given; the server validates it.
+func sessionNewStartBodyRole(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) ([]byte, error) {
+	body, err := sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
+	if err != nil || strings.TrimSpace(launchRole) == "" {
+		return body, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	m["launch_role"] = strings.TrimSpace(launchRole)
+	return json.Marshal(m)
+}
+
 // sessionNewStartBodyPriority is sessionNewStartBody plus the optional
 // capacity-queue priority, sent only when one was given.
 func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int) ([]byte, error) {
@@ -13448,9 +13475,9 @@ func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, 
 	return json.Marshal(req)
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) error {
 	// Try the structured HTTP API first
-	body, err := sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
+	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
 	if err != nil {
 		return err
 	}
