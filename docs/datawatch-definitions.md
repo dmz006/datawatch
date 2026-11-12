@@ -1564,7 +1564,9 @@ It is one of three classes every MCP tool belongs to: **configuration writes** (
 
 **Audit.** Calls to the class are recorded in the same audit trail as configuration writes, allowed and refused, with `class: "sensitive"` (configuration writes carry `class: "config"`). A sensitive record keeps the argument names and never the values.
 
-**How to set it** — in YAML under `mcp:` as `allow_sensitive_writes: false`, then restart the daemon. It is YAML-only at present: the CLI, the Settings screen, `PUT /api/config` and the `config_set` tool do not handle it yet.
+**How to set it** — on the Settings page, in the **Self-config** card, as the **Allow sensitive writes** toggle; with `datawatch config set mcp.allow_sensitive_writes false`; with `PUT /api/config`; or with the comm `configure` command. Each is applied to the running daemon and saved to the config file, with no restart. `GET /api/config` and `datawatch config get` report the effective value, so a config that never set the key reads `true`. In YAML it is `allow_sensitive_writes: false` under `mcp:`, followed by a restart. Write exactly `true` or `false`: any other text, such as `on`, is read as off.
+
+**A session can change it.** The `config_set` tool reaches the same setting and, unlike `mcp.allow_self_config`, the key is not bootstrap-protected, so while self-config is on a session may set it back to `true`. Close `mcp.allow_self_config` as well when the switch must be operator-only.
 
 **See also:** [Self-config](#self-config) · [`howto/self-config-capability.md`](howto/self-config-capability.md#sensitive-writes-a-separate-switch) · [`operations.md`](operations.md#sensitive-writes-what-sessions-and-peers-may-not-do)
 

@@ -520,8 +520,13 @@ mcp:
   # send_input, start_session, tailscale_acl_push, tailscale_auth_key and
   # acme_renew. Independent of allow_self_config. Calls are audited in the
   # self-config audit trail with class "sensitive" (argument names only,
-  # never values). YAML-only today (no CLI / PWA / PUT /api/config path);
-  # restart after editing. See docs/howto/self-config-capability.md.
+  # never values). Operator surfaces (CLI `datawatch config set`, Web UI
+  # Settings → General → Self-config, REST PUT /api/config, comm
+  # `configure`) apply a change to the running daemon and save it, no
+  # restart; a hand edit of this file needs a restart. Not bootstrap-
+  # protected: while allow_self_config is on, a session can write it with
+  # config_set. Write exactly true/false (other text reads as false).
+  # See docs/howto/self-config-capability.md.
   allow_sensitive_writes: true
   # Where the self-config audit file (JSONL) is written: one record per
   # configuration-write attempt from every session-facing surface
