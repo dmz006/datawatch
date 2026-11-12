@@ -2539,6 +2539,13 @@ type SessionConfig struct {
 	// `GET /api/sessions/stale`. Default 1800 (30 min). 0 disables.
 	StaleTimeoutSeconds int `yaml:"stale_timeout_seconds,omitempty"`
 
+	// FinaliseIntervalMinutes is how often the daemon finalises session
+	// records whose process is gone. Default 10. 0 turns the scheduled runs
+	// off (the start-up run always happens). A negative value falls back to
+	// 10. There is deliberately no omitempty so an explicit 0 survives a
+	// save and reload.
+	FinaliseIntervalMinutes int `yaml:"finalise_interval_minutes"`
+
 	// RateLimitGlobalPause (BL30) — when true, hitting a rate limit
 	// on any backend pauses new session creation across all backends
 	// until the cooldown elapses or the operator clears it.
@@ -7383,19 +7390,20 @@ func DefaultConfig() *Config {
 			DeviceName: hostname,
 		},
 		Session: SessionConfig{
-			MaxSessions:         10,
-			InputIdleTimeout:    10,
-			TailLines:           20,
-			AlertContextLines:   10,
-			LLMBackend:          "claude-code",
-			DefaultProjectDir:   home,
-			AutoGitCommit:       true,
-			AutoGitInit:         false,
-			GitDefault:          false,
-			ClaudeEnabled:       true,
-			MCPMaxRetries:       5,
-			ScheduleSettleMs:    200,
-			StaleTimeoutSeconds: 1800,
+			MaxSessions:             10,
+			InputIdleTimeout:        10,
+			TailLines:               20,
+			AlertContextLines:       10,
+			LLMBackend:              "claude-code",
+			DefaultProjectDir:       home,
+			AutoGitCommit:           true,
+			AutoGitInit:             false,
+			GitDefault:              false,
+			ClaudeEnabled:           true,
+			MCPMaxRetries:           5,
+			ScheduleSettleMs:        200,
+			StaleTimeoutSeconds:     1800,
+			FinaliseIntervalMinutes: 10,
 			// BL219 — tooling lifecycle defaults.
 			GitignoreCheckOnStart: true,
 			GitignoreArtifacts:    []string{"aider", "goose", "gemini"},
@@ -7853,6 +7861,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Session.StaleTimeoutSeconds == 0 {
 		cfg.Session.StaleTimeoutSeconds = 1800
+	}
+	if cfg.Session.FinaliseIntervalMinutes < 0 {
+		cfg.Session.FinaliseIntervalMinutes = 10
 	}
 	if cfg.Session.LLMBackend == "" {
 		cfg.Session.LLMBackend = "claude-code"
