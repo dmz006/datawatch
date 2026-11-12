@@ -327,7 +327,7 @@ const state = {
   // needsInputLastShown state fields are gone with it.
   notifPermission: Notification.permission,
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
-  servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _injectServerPickerBar/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
+  servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _initServerDropdown/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
   _fedConnStatus: null,   // {server, phase:'connecting'|'loading_sessions'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
   // Per-server daemon version bookkeeping (see _daemonVersionNoteFrame):
@@ -2949,6 +2949,7 @@ function navigate(view, sessionId, fromPopstate) {
   }
 
   renderServerHeaderLine(); // shared shell: every page gets the stable server line
+  renderServerDropdown();   // …and the header server dropdown stays in sync with every page
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
     if (state.activeSession !== sessionId) _clearImageAttachment();
@@ -4681,7 +4682,6 @@ function renderSessionsView() {
               <button class="btn-primary" onclick="selectServer(null)" style="margin-top:10px;">${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>
             </div>
           </div>`;
-        _injectServerPickerBar(view, renderSessionsView);
         return;
       }
       // 'connecting' or 'loading_sessions' reach here now (GH#235 parity
@@ -4700,7 +4700,6 @@ function renderSessionsView() {
         <div class="view-content" style="position:relative;">
           ${loadingEyeBlock(fcsLabel, 'panel')}
         </div>`;
-      _injectServerPickerBar(view, renderSessionsView);
       return;
     }
     // GH#172 D60 — until the first data arrives an empty state looks like
@@ -4719,7 +4718,6 @@ function renderSessionsView() {
           ${failed}
           <div class="session-list">${sl.error ? '' : skeletonCard.repeat(3)}</div>
         </div>`;
-      _injectServerPickerBar(view, renderSessionsView);
       if (!sl.error && !sl.loading) loadSessionsList();
       return;
     }
@@ -4735,7 +4733,6 @@ function renderSessionsView() {
         </div>
         ${sheetHtml}
       </div>`;
-    _injectServerPickerBar(view, renderSessionsView);
     return;
   }
 
@@ -4770,7 +4767,7 @@ function renderSessionsView() {
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
-    <div class="sessions-topbar"><div class="sessions-topbar-servers"></div>${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
+    <div class="sessions-topbar">${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
     ${toggleBtn}
     ${renderSessionsSummaryBar(visible)}${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
     ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
@@ -4811,9 +4808,6 @@ function renderSessionsView() {
   } else if (selectBar) {
     selectBar.remove();
   }
-  // BL312 S3 — prepend server picker bar if remote servers are registered
-  // (at phone width it sits in the shared top row instead of its own row)
-  _injectServerPickerBar(_sessionsPickerHost(view), renderSessionsView);
   _sessionTagsEnsure(renderSessionsView, state.sessions);
 }
 
@@ -4957,16 +4951,6 @@ function sessionsSearchClear() {
   _sessionsSearchWriteStored('');
   state._sessionsSearchKeep = { s: 0, e: 0 };
   if (state.activeView === 'sessions') renderSessionsView();
-}
-
-function _sessionsPickerHost(view) {
-  try {
-    if (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 640px)').matches) {
-      const slot = view && view.querySelector ? view.querySelector('.sessions-topbar-servers') : null;
-      if (slot) return slot;
-    }
-  } catch (_) { /* fall through to the page top */ }
-  return view;
 }
 
 function renderSessionsSearchRow(filterVal, filtersActive, shown, total) {
@@ -13613,13 +13597,10 @@ function renderSettingsView() {
       </div>
     </div>`;
 
-  // Settings-tab federation pass (2026-10-08): server picker added so
-  // Settings can show/edit a selected remote peer's own config instead
-  // of always being local-only. hideAll:true matches the Observer
-  // precedent -- an aggregated "All servers" view of ~45 independent
-  // config sections has no coherent meaning the way Dashboard's single
-  // PRD/cost rollup does.
-  _injectServerPickerBar(view, renderSettingsView, { hideAll: true });
+  // The server picker now lives in the app header (#serverDropdown), so
+  // Settings can show/edit a selected remote peer's own config instead of
+  // always being local-only -- the header dropdown is the single picker
+  // on this page.
 
   // Version-skew audit — fill the general/plugins/comms/compute/automata
   // "Showing:" lines now that state.activeServer is settled for this render.
@@ -25979,14 +25960,14 @@ function selectServer(name) {
     // Re-render the view the operator is on so its picker bar re-injects
     // with the new active chip highlighted (it used to redraw only Sessions).
     _rerenderActiveViewForServerSwitch();
+    renderServerDropdown(); // keep the header dropdown's highlighted entry on the new server
   }
 }
 
 // Re-renders the view currently shown after a real picker switch. The view is
-// read from state.activeView (the field navigate() sets). Views that show no
-// picker bar are skipped (no route). Settings and Observer inject the bar with
-// hideAll, so the "All" selection is skipped there and they keep their present
-// behaviour.
+// read from state.activeView (the field navigate() sets). Views that never
+// rendered are skipped (no route). The header dropdown itself is synced
+// separately by selectServer() — the views here only re-pull their own data
 function _rerenderActiveViewForServerSwitch() {
   const routes = {
     sessions:   { render: () => renderSessionsView(),   hidesAll: false },
@@ -26140,86 +26121,85 @@ function testServerEntry(name, btnEl) {
     .finally(() => { if (btnEl) { btnEl.disabled = false; btnEl.textContent = t('server_test_btn')||'Test'; } });
 }
 
-// ── BL312 S3 — Per-tab server picker component ─────────────────────────────────
+// ── BL312 S3 — Header server dropdown ─────────────────────────────────────────
+// One native <select> in the app header (#serverDropdown) replaces the old
+// per-panel chip row (.server-picker-bar) and the Sessions topbar slot
+// (.sessions-topbar-servers): it shows the current server plus "All" and
+// every enabled peer on every page — phone and wide screen alike (the
+// native control truncates long names instead of wrapping a row of chips) —
+// and a single generic onchange covers every choice, so choosing an entry
+// goes through selectServer() exactly as the chips did.
+//
+// The server name travels in the option's value attribute (escHtml-escaped,
+// read by the one shared handler via this.value), so a hostile peer name
+// (quotes, <, >, …) can never truncate or break an inline handler.
+// Reachability status is patched onto the matching option by matching the
+// option's own value / dataset values -- never by building a CSS selector
+// from the server name.
+//
+// The swipe-gesture modal (openServerPickerModal) still works off the same
+// state/endpoint and calls the same selectServer() as the dropdown. The
+// "Back to local" controls, the Settings servers-list button and the
+// federated error-panel button are unchanged -- every entry point goes
+// through the single selectServer().
 
-// Returns HTML for a compact server picker bar.
-// Shows "All" + the local server's own hostname + one chip per enabled
-// remote server.
-// Hidden when no remote servers are registered.
-function _serverPickerBar(opts) {
-  const servers = (state.servers && Array.isArray(state.servers.servers)
+function _pickerServers() {
+  const raw = (state.servers && Array.isArray(state.servers.servers))
     ? state.servers.servers
-    : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
-  if (!servers.length) return '';
-  const active = state.activeServer || null;
-  // GH#194 — never label the connected server "local" to the operator;
-  // show its real hostname once known (_ensureLocalHostname, kicked off
-  // by _injectServerPickerBar below). _localHostname is null on the
-  // very first render before that fetch resolves -- server_local_label
-  // is a brief, generic placeholder ("This server"), never the word
-  // "Local", patched to the real name in place once it arrives.
-  const localLabel = _localHostname || t('server_local_label') || 'This server';
-  // BL317 — Observer has no backing aggregation for its ~9 independent
-  // cards (eBPF, plugins, backend health, certs, envelopes, peer
-  // resources, and its own pre-existing "observer peers" cross-node
-  // concept, unrelated to multi-server federation) and fanning all of
-  // that out would be a much bigger redesign than Dashboard's, so its
-  // picker stays single-server-at-a-time rather than offering a
-  // non-functional "All" that would silently keep showing local-only
-  // data (operator decision, 2026-10-07).
-  const chips = (opts && opts.hideAll) ? [
-    { name: null, label: localLabel },
-    ...servers.map(s => ({ name: s.name, label: s.label || s.name }))
-  ] : [
-    { name: 'all', label: t('server_all_label') || 'All' },
-    { name: null, label: localLabel },
-    ...servers.map(s => ({ name: s.name, label: s.label || s.name }))
-  ];
-  const btns = chips.map(c => {
-    const isActive = c.name === active;
-    // Operator-reported (2026-10-08): a genuinely-down federated host
-    // (connection refused) looked IDENTICAL to a working one in the
-    // picker -- no visual signal until clicked and waited on. Grey out
-    // (never remove -- a legitimately-configured-but-temporarily-down
-    // host looking deleted/never-existed is worse than showing it
-    // dimmed) once a background probe (_probePickerReachability, kicked
-    // off after this bar renders, never blocking it) confirms it's
-    // unreachable. Still fully clickable either way -- the probe result
-    // can be stale, and clicking is how the real, authoritative error
-    // surfaces (_checkFederatedConnection/_fedFetchError).
-    const unreachable = c.name && c.name !== 'all' && _serverReachability[c.name] === false;
-    const dim = unreachable ? 'opacity:0.45;' : '';
-    // GH#194 — the local chip's own tooltip names the real hostname
-    // too (once known), never the word "Local".
-    const title = unreachable
-      ? ` title="${escHtml(t('server_chip_unreachable_tip') || 'Unreachable (click to try anyway)')}"`
-      : (c.name === null && _localHostname) ? ` title="${escHtml(t('server_chip_this_server_tip', [_localHostname]) || _localHostname)}"` : '';
-    // Operator-reported (2026-10-07): a server/peer name containing a
-    // `"` (e.g. a real federated peer named "Apple Testing Sandbox" --
-    // wait, the actual trigger was any name at all, since
-    // JSON.stringify's own double quotes collide with this attribute's
-    // double-quote delimiter -- truncates the onclick value at the
-    // first embedded `"`, leaving an incomplete `selectServer(` that
-    // throws "Unexpected end of input" on click. Breaks every named
-    // chip unconditionally (and the "All" chip too), not just names
-    // with unusual characters. Fixed the same way loadServersList()'s
-    // testServerEntry button already does it correctly: escHtml() the
-    // whole onclick expression so embedded quotes become &quot;
-    // entities instead of raw characters.
-    return `<button data-server-name="${escHtml(c.name || '')}"${title} onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'})`)}" style="font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--border);cursor:pointer;${dim}background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};">${escHtml(c.label)}${unreachable ? ' ⚠' : ''}</button>`;
-  }).join('');
-  return `<div class="server-picker-bar" style="display:flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg2,#1e2030);border-bottom:1px solid var(--border);flex-wrap:wrap;"><span style="font-size:11px;color:var(--text-dim,#888);flex-shrink:0;">${escHtml(t('server_picker_label') || 'Server:')}</span>${btns}</div>`;
+    : (Array.isArray(state.servers) ? state.servers : []);
+  return raw.filter(s => s && s.enabled !== false);
 }
 
-// Operator-reported (2026-10-08): see the chip-dimming comment above.
+// Returns the <select id="serverDropdown"> markup for the header dropdown.
+// opts.hideAll (Settings/Observer parity) omits the "All" option; with
+// hideAll and no configured peers there is nothing to show at all.
+// Unreachable peers stay listed (never removed -- a temporarily down host
+// must not look like it doesn't exist) and stay selectable: choosing one is
+// exactly how the authoritative error surfaces.
+// Returns ONLY the inner <option>…</option> body for the header dropdown.
+// Kept separate from _serverPickerBar so a surface that already has a
+// <select id="serverDropdown"> in the DOM (index.html) can fill just the
+// options without nesting a select inside a select.
+function _serverOptionsHtml(opts) {
+  const servers = _pickerServers();
+  const selVal = state.activeServer === 'all' ? 'all' : (state.activeServer || '');
+  // GH#194 — the "this server" option shows the real hostname (lazy-resolved
+  // from /api/health by _ensureLocalHostname below), never the word "Local".
+  const localLabel = _localHostname || t('server_local_label') || 'This server';
+  const unreachableSuffix = ' ' + (t('server_dropdown_unreachable') || '(unreachable)');
+  const options = [];
+  if (!(opts && opts.hideAll)) options.push({ value: 'all', label: t('server_dropdown_all') || 'All servers' });
+  options.push({ value: '', label: localLabel });
+  servers.forEach(s => options.push({ value: s.name, label: s.label || s.name }));
+  return options.map(o => {
+    const unreachable = !!(o.value && o.value !== 'all' && _serverReachability[o.value] === false);
+    return `<option value="${escHtml(o.value)}" data-base-label="${escHtml(o.label)}" data-reachability="${unreachable ? 'down' : 'unknown'}"${o.value === selVal ? ' selected aria-current="true"' : ''}>${escHtml(o.label)}${unreachable ? escHtml(unreachableSuffix) : ''}</option>`;
+  }).join('');
+}
+
+// Returns the full <select id="serverDropdown"> markup for the header
+// dropdown. opts.hideAll (Settings/Observer parity) omits the "All"
+// option; with hideAll and no configured peers there is nothing to show at
+// all. Unreachable peers stay listed (never removed -- a temporarily down
+// host must not look like it doesn't exist) and stay selectable: choosing
+// one is exactly how the authoritative error surfaces.
+function _serverPickerBar(opts) {
+  if ((opts && opts.hideAll) && !_pickerServers().length) return '';
+  return '<select id="serverDropdown" class="server-dropdown" aria-label="Server" onchange="onServerDropdownChange(this.value)">' + _serverOptionsHtml(opts) + '</select>';
+}
+
 // _serverReachability[name] is undefined (unknown/checking), true, or
-// false -- persists for the page session so re-rendering the bar (e.g.
-// switching views) doesn't re-probe hosts already known-bad.
+// false -- persists for the page session so re-rendering the dropdown
+// (e.g. switching views) doesn't re-probe hosts already resolved.
 const _serverReachability = {};
+const _serverProbeInFlight = new Set();
+// Fire-and-forget: returns immediately, never awaited by a render. Only
+// re-probes hosts not yet resolved (or probed) this session.
 function _probePickerReachability(servers) {
   (servers || []).forEach(s => {
-    if (_serverReachability[s.name] !== undefined) return; // already probed
-    _serverReachability[s.name] = undefined; // mark "checking" so a concurrent call doesn't double-probe
+    if (!s || _serverReachability[s.name] !== undefined) return; // already resolved this session
+    if (_serverProbeInFlight.has(s.name)) return;                // a probe is already running
+    _serverProbeInFlight.add(s.name);
     const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const timeoutId = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
     fetch('/api/proxy/' + encodeURIComponent(s.name) + '/api/health', Object.assign(
@@ -26229,44 +26209,45 @@ function _probePickerReachability(servers) {
       .catch(() => { _serverReachability[s.name] = false; })
       .finally(() => {
         if (timeoutId) clearTimeout(timeoutId);
-        _updatePickerChipReachability(s.name);
+        _serverProbeInFlight.delete(s.name);
+        _updatePickerOptionReachability(s.name);
       });
   });
 }
-// Patches ONLY the one chip whose probe just resolved -- never a full
-// bar re-render, so an in-progress operator interaction (e.g. a click
-// on a different chip) is never disturbed by a probe landing late.
-function _updatePickerChipReachability(name) {
-  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+// Patches ONLY the one option whose probe just resolved -- never a full
+// dropdown re-render, so an in-progress operator interaction is never
+// disturbed by a probe landing late. Matches on the option's own value /
+// dataset values -- never by building a CSS selector from the name.
+function _updatePickerOptionReachability(name) {
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  const sel = document.getElementById('serverDropdown');
+  if (!sel || typeof sel.querySelectorAll !== 'function') return;
   const unreachable = _serverReachability[name] === false;
-  Array.from(document.querySelectorAll('.server-picker-bar button')).filter(btn => btn.dataset && btn.dataset.serverName === name).forEach(btn => {
-    if (unreachable) {
-      btn.style.opacity = '0.45';
-      btn.title = t('server_chip_unreachable_tip') || 'Unreachable (click to try anyway)';
-      if (!btn.textContent.includes('⚠')) btn.textContent = btn.textContent + ' ⚠';
-    }
-  });
+  const suffix = unreachable ? ' ' + (t('server_dropdown_unreachable') || '(unreachable)') : '';
+  Array.from(sel.querySelectorAll('option'))
+    .filter(o => o && o.value === name)
+    .forEach(o => {
+      const base = (o.dataset && o.dataset.baseLabel)
+        || (typeof o.textContent === 'string' ? o.textContent.replace(/\s*\([^()]*\)\s*$/, '') : '');
+      o.textContent = base + suffix;
+      if (o.dataset && 'reachability' in o.dataset) o.dataset.reachability = unreachable ? 'down' : 'unknown';
+    });
 }
 
 // GH#194 — the PWA must never label the connected server "local" to the
-// operator; every surface that used to say "Local" shows the real
-// hostname instead (from /api/health's own hostname field, the same one
-// GH#192/D78a already wired server-side for /api/stats). Cached for the
-// page session -- it never changes while this tab is open -- and
-// fetched once, lazily, the first time the picker bar (or anything else
-// that needs it) is rendered, same lazy-background pattern as the
-// reachability probe above: never blocks the bar's own synchronous
-// render, patches the chip in place once resolved.
+// operator: the "this server" option shows the real hostname instead (from
+// /api/health's own hostname field, the same one GH#192/D78a already wired
+// server-side for /api/stats). Cached for the page session -- it never
+// changes while this tab is open -- and fetched once, lazily: never blocks
+// a synchronous render; the dropdown re-renders once the value resolves.
 let _localHostname = null;
 let _localHostnameFetching = false;
 const _localHostnameWaiters = [];
 // cb (optional) fires once the real hostname resolves -- for a surface
 // that needs to fully regenerate its own markup (e.g. the swipe-gesture
-// modal's "● "/"○ " active-marker prefix) rather than the simple
-// text-patch _updatePickerChipLocalLabel does for the picker bar.
-// Never re-registers a waiter once _localHostname is already known --
-// callers that pass cb only do so from inside their own render, so a
-// resolved hostname must call cb at most once, not loop.
+// modal's "● "/"○ " active-marker prefix). Never re-registers a waiter
+// once _localHostname is already known, so a resolved hostname calls each
+// cb at most once (callers register from inside their own render only).
 function _ensureLocalHostname(cb) {
   if (_localHostname) { if (cb) setTimeout(cb, 0); return; }
   if (cb) _localHostnameWaiters.push(cb);
@@ -26277,77 +26258,47 @@ function _ensureLocalHostname(cb) {
     .then(h => {
       if (h && h.hostname) {
         _localHostname = h.hostname;
-        _updatePickerChipLocalLabel();
+        renderServerDropdown();
         _localHostnameWaiters.splice(0).forEach(fn => { try { fn(); } catch (_) {} });
       }
     })
     .catch(() => {})
     .finally(() => { _localHostnameFetching = false; });
 }
-function _updatePickerChipLocalLabel() {
-  if (typeof document === 'undefined' || !document.querySelectorAll || !_localHostname) return;
-  document.querySelectorAll('.server-picker-bar button[data-server-name=""]').forEach(btn => {
-    const hadWarn = btn.textContent.includes('⚠');
-    btn.textContent = _localHostname + (hadWarn ? ' ⚠' : '');
-    btn.title = t('server_chip_this_server_tip', [_localHostname]) || _localHostname;
-  });
-}
 
-// Injects the server picker bar into the top of containerEl.
-// Fetches server list if not yet loaded, then re-renders via rerenderFn.
-// Operator-reported (2026-10-07): the picker never appeared at all for a
-// user who went straight to Sessions without ever visiting Settings — root
-// cause was state.servers defaulting to [] instead of undefined, so the
-// "haven't fetched yet" check here was always false and the fetch never
-// ran. Fixed at the state-init site; this function additionally no longer
-// renders nothing while loading (now a small text placeholder) and no
-// longer permanently gives up on a failed fetch (loadServerListEager
-// retries with backoff instead of poisoning state.servers to null forever)
-// — the host list must load independently of, and before, any individual
-// host's own connectivity, so a broken host never blocks seeing/picking a
-// working one.
-function _injectServerPickerBar(containerEl, rerenderFn, opts) {
-  if (!containerEl) return;
+// Bootstraps the header dropdown (idempotent -- safe to call from navigate
+// and from selectServer). Renders synchronously, then, only when the list
+// hasn't been fetched yet (state.servers === undefined is the load-bearing
+// "haven't fetched yet" signal; it stays undefined on a failed attempt so
+// the next render retries), loads it with capped-backoff retry, re-renders
+// and probes reachability once real data lands. Operator-reported
+// (2026-10-07): the picker never appeared for a user who went straight to
+// Sessions without ever visiting Settings -- the "haven't fetched yet"
+// check and the retry-backoff loader below are the fix.
+function _initServerDropdown() {
+  renderServerDropdown();
+  if (typeof state === 'undefined') return;
+  const peers = _pickerServers();
   if (state.servers === undefined) {
-    if (rerenderFn) _onServerListReady(rerenderFn);
+    _onServerListReady(() => {
+      renderServerDropdown();
+      _probePickerReachability(_pickerServers());
+    });
     loadServerListEager();
-    const placeholder = `<div class="server-picker-bar server-picker-bar-loading" style="display:flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg2,#1e2030);border-bottom:1px solid var(--border);"><span style="font-size:11px;color:var(--text-dim,#888);">${escHtml(t('server_picker_loading') || 'Loading servers…')}</span></div>`;
-    const existingPh = containerEl.querySelector('.server-picker-bar');
-    if (existingPh) { existingPh.outerHTML = placeholder; return; }
-    const tmpPh = document.createElement('div');
-    tmpPh.innerHTML = placeholder;
-    const barPh = tmpPh.firstChild;
-    if (barPh) containerEl.insertBefore(barPh, containerEl.firstChild);
-    return;
+  } else if (peers.length) {
+    _probePickerReachability(peers); // already-resolved entries dedupe out
   }
-  const html = _serverPickerBar(opts);
-  const existing = containerEl.querySelector('.server-picker-bar');
-  if (!html) { if (existing) existing.remove(); return; }
-  if (existing) { existing.outerHTML = html; return; }
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  const bar = tmp.firstChild;
-  if (bar) containerEl.insertBefore(bar, containerEl.firstChild);
-  // Kick off background reachability probing AFTER the bar is already
-  // fully rendered and in the DOM -- per the operator's explicit
-  // requirement, the picker itself must never be blocked by a slow or
-  // dead host (a silent-packet-drop host can take far longer to time
-  // out than an actively-refused connection).
-  const realServers = (state.servers && Array.isArray(state.servers.servers)
-    ? state.servers.servers
-    : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
-  if (realServers.length) _probePickerReachability(realServers);
-  // GH#194 — same lazy, non-blocking pattern for the local chip's real
-  // hostname (never blocks this render; patches the chip in place once
-  // /api/health resolves).
+  // GH#194 — same lazy, non-blocking pattern for this server's real
+  // hostname (never blocks this render; the dropdown re-renders on resolve).
   _ensureLocalHostname();
 }
 
-// Shared /api/servers loader used by every picker surface (top-bar,
-// swipe-gesture modal). state.servers stays undefined until a real
-// response lands — never poisoned to null on a one-shot failure, which
-// used to hide the picker permanently with no retry (operator-reported
-// 2026-10-07). Retries with capped backoff on failure instead.
+// Shared /api/servers loader used by every server-list surface (header
+// dropdown, swipe-gesture modal). state.servers stays undefined until a
+// real response lands — never poisoned to null on a one-shot failure,
+// which used to hide the picker permanently with no retry
+// (operator-reported 2026-10-07). Retries with capped backoff on failure
+// instead.
 let _serversLoadRetryDelay = 2000;
 const _serversLoadWaiters = [];
 function loadServerListEager() {
@@ -26380,6 +26331,31 @@ function _onServerListReady(fn) {
   loadServerListEager();
 }
 
+// Renders (or re-renders) the header dropdown from current state and syncs
+// its value to state.activeServer ('all' / a peer name / '' = this server).
+// No-op when the select isn't in the DOM (e.g. an older cached shell or a
+// test harness without the header markup).
+function renderServerDropdown() {
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  const sel = document.getElementById('serverDropdown');
+  if (!sel) return;
+  try {
+    // Fill the existing <select id="serverDropdown"> with its options only
+    // (never a nested <select>).
+    sel.innerHTML = _serverOptionsHtml();
+    if (sel.style) sel.style.display = '';
+    if ('value' in sel) sel.value = (state.activeServer === 'all' ? 'all' : (state.activeServer ? state.activeServer : ''));
+  } catch (_) { /* a partial shell must never break navigation */ }
+}
+
+// The single generic change handler: the selected name arrives in `value`
+// (never inline-built per server), so no hostile peer name can break it.
+// '' = this server (local), 'all' = federated aggregate, anything else =
+// that peer. Delegates to the one selectServer() every other entry point
+// uses.
+function onServerDropdownChange(value) {
+  selectServer(value === 'all' ? 'all' : (value || null));
+}
 // ── Signal Device Linking ──────────────────────────────────────────────────────
 
 function loadLinkStatus() {
@@ -39337,7 +39313,6 @@ function renderAutonomousView() {
   // The repo CI watch state no longer has a line in this sub-tab bar; its
   // failing/pending runs and never-polled state arrive as Events entries
   // and alerts from the backend.
-  _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
 
@@ -45638,7 +45613,6 @@ function renderAlertsView() {
   if (!view) return;
   view.innerHTML = `<div class="view-content">
     <div id="alertsList" style="padding:12px;"></div></div>`;
-  _injectServerPickerBar(view, renderAlertsView); // BL312 S3
   // Cached alerts paint at once with a "Cached" badge; the fetch runs behind
   // them and a failure shows a banner with Retry above whatever is cached.
   const ctl = _alertsLoader(state.activeServer || 'local');
@@ -52014,7 +51988,6 @@ function renderDashboardView() {
   // Load layout from server; falls back to default and calls _dashBuildGrid
   _dashLoadLayout();
   _dash.rafId = requestAnimationFrame(_dashLoop);
-  _injectServerPickerBar(viewEl, renderDashboardView); // BL312 S6
 }
 
 // BL313 — unhide dashboard nav button; only shown when autonomous.enabled.
@@ -52751,7 +52724,6 @@ function renderObserverView() {
   loadKgPanel();
   renderObserverPeersCard();
   loadCommBackendsStatus(); // BL241
-  _injectServerPickerBar(view, renderObserverView, { hideAll: true }); // BL312 S6 / BL317
 }
 window.renderObserverView = renderObserverView;
 

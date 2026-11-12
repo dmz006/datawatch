@@ -88,6 +88,18 @@
     <header class="header">
       <button class="back-btn" id="backBtn" style="display:none"><span class="back-chevron"></span></button>
       <span class="header-title" id="headerTitle">datawatch</span>
+      <!-- BL312 S3 (2026-11-12) — Header server dropdown: the single server picker
+           for every page (successor to the per-panel .server-picker-bar chip row
+           and the Sessions .sessions-topbar-servers slot). Shows this server's
+           real hostname (GH#194), "All", and each enabled peer; long peer names
+           truncate inside the native control instead of wrapping a chip row.
+           Server names travel in each option's escHtml-escaped value attribute
+           and are read by the one generic onchange (onServerDropdownChange →
+           selectServer()), so a hostile peer name can never break the inline
+           handler. app.js (renderServerDropdown) re-renders this element on
+           every navigation and server switch; the static placeholder below
+           keeps the control visible before the first JS render. -->
+      <select id="serverDropdown" class="server-dropdown" aria-label="Server" onchange="onServerDropdownChange(this.value)"><option value="" selected>This server</option></select>
       <!-- BL257 P2 v6.8.1 — Identity Wizard entry-point. Robot icon opens
            a 6-step modal that walks the operator through filling in their
            identity (role, goals, projects, values, focus, notes).

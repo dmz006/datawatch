@@ -153,6 +153,12 @@ Overall average: **60-90% token reduction** on common development operations.
 
 ## Checkpoints
 
+## 2026-11-09 14:14 — DONE — header server dropdown (chip row → one `<select>`)
+- Replaced the `.server-picker-bar` chip row (all views incl. the Sessions `.sessions-topbar-servers` slot) with one native `<select id="serverDropdown">` in the shared fixed header. `app.js`: new picker section (`_serverOptionsHtml`, `_serverPickerBar`, `renderServerDropdown`, `onServerDropdownChange`, `_initServerDropdown`, `_updatePickerOptionReachability`) with `_serverOptionsHtml` split so the `<select id>` never duplicates (nested-`<select>` bug fixed); `selectServer()` stays the sole mutation path (idempotent); state.servers===undefined first-load signal preserved; 10 view-level injection call sites + `_sessionsPickerHost` + the Sessions slot removed; reachability marking now `data-reachability="down"` + `server_dropdown_unreachable` suffix, never `disabled`, no CSS selectors built from names.
+- `index.html` (header markup), `style.css` (`.server-dropdown` rules; phone = max-width 40% + ellipsis, no wrap; `.sessions-topbar-servers` rules removed), `locales/en.json` (4 `server_dropdown_*` keys). Picker modal (3-finger swipe `serverPickerModal`) and all 4 other `selectServer` controls kept working.
+- Tests: 11 picker test files migrated (2 rewritten: `app-server-picker-selector`, `app-select-server-controls` with per-control `peerCode` pattern) + 4 adjacent files checked (`gh192-phase3`, `reload-guard`, `multi-server-version-skew`, `server-badge`) — **all 42+114 pass**, `style-css-balanced` pass, `node --check app.js` clean, temp `picker_section_new.js` removed.
+- No new localStorage key (selection stays in-memory, as before).
+
 ## 2026-11-09 07:55 — draft written
 - Wrote `docs/plans/parity-issues/2026-11-09-verifier-judge-script-restart-parity.md` — the verifier/judge/verification-script half of the 2026-11-08 restart-safety work (sibling to `2026-11-09-planning-boot-resume-parity.md`, the planning half).
 - Content grounded in the tree: `verifying_status.go` five-outcome decision + `ResolveVerifyingResume`, `ConsumeVerifierResult` in manager.go, detached `verify-runs` record, judge once-only, no new endpoint/field/setting/`boot_resume` value; gaps = 4 matrix rows pending re-run (`verify-session`, `verify-script`, `verify-script-mid`, `final-gate`) + no live deploy-restart confirmation; surfaces table follows the planning draft.
