@@ -6873,6 +6873,9 @@ func (m *Manager) run(ctx context.Context) {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
+	// Timed merge retry runs on its own goroutine so a slow pass never
+	// blocks the poll loop; it exits on ctx.Done.
+	go m.runMergeRetryLoop(ctx)
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {

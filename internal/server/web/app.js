@@ -10225,8 +10225,10 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.parallel.read_only_tasks': DOCS_DEFINITIONS + '#read-only-tasks',
   'autonomous.parallel.worktree_per_task': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.merge_conflict_policy': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.merge_retry_seconds': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  merge_blocked_card_title: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
@@ -16761,6 +16763,7 @@ function renderTask(prd, story, task, editable) {
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
+    ${taskMergeBlockedLineHtml(task)}
     ${expandedBody}
   </div>`;
 }
@@ -19470,6 +19473,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.parallel.merge_conflict_policy', label: 'Task merge conflict policy (additive_then_model, block or triage; default additive_then_model)', labelKey: 'settings_parallel_merge_conflict_policy', docsKey: 'autonomous.parallel.merge_conflict_policy', type: 'select', options: ['additive_then_model', 'block', 'triage'], default: 'additive_then_model',
       optionLabelKeys: { additive_then_model: 'parallel_policy_additive_then_model', block: 'parallel_policy_block', triage: 'parallel_policy_triage' } },
     { key: 'autonomous.parallel.merge_conflict_model', label: 'Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)', labelKey: 'settings_parallel_merge_conflict_model', docsKey: 'autonomous.parallel.merge_conflict_model', type: 'text', placeholder: '' },
+    { key: 'autonomous.parallel.merge_retry_seconds', label: 'Task merge retry interval (seconds between retries of a pending task merge; 0 = off; default 60)', labelKey: 'settings_parallel_merge_retry_seconds', helpKey: 'settings_parallel_merge_retry_seconds_help', docsKey: 'autonomous.parallel.merge_retry_seconds', type: 'number', min: 0, step: 1, default: 60 },
     { key: 'autonomous.parallel.read_only_tasks', label: 'Read-only tasks in parallel (a task flagged read only skips the tree lock and runs beside other tasks; on by default)', labelKey: 'settings_parallel_read_only_tasks', docsKey: 'autonomous.parallel.read_only_tasks', type: 'toggle' },
     // Supervisor loop (autonomous.supervisor_loop.*) — the loop that keeps every Automaton moving;
     // the keys are the plan's supervisor_loop.* keys, and the Supervisor loop card in the Automaton view reads it.
@@ -31796,6 +31800,7 @@ function _automationHelpLinkHtml(helpKey, anchor) {
   return `<a class="automation-card-help" href="/diagrams.html#docs/howto/automation-tab.md${anchor}" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
 }
 window.triageCardHtml = function(record) {
+  if (record && typeof record === 'object' && record.status === 'merge_blocked') return window.mergeBlockedTriageCardHtml(record);
   _triageBindClick();
   const head = `<div style="display:flex;align-items:center;gap:8px;min-width:0;"><div class="cap-title">${escHtml(t('triage_card_title'))}</div>${_automationHelpLinkHtml('automation_help_triage_card', '#the-needs-attention-card')}</div>`;
   if (!record || typeof record !== 'object') {
@@ -32355,6 +32360,71 @@ function taskMergeBadgeHtml(task) {
   return `<span class="prd-task-llm-badge prd-task-merge-badge prd-task-merge-${state}" title="${escHtml(tip)}" style="border:1px solid ${color};color:${color};">${escHtml(label)}</span>`;
 }
 window.taskMergeBadgeHtml = taskMergeBadgeHtml;
+
+// ── Merge-blocked line and triage item ──────────────────────────────────────
+// A task whose merge into the Automaton branch cannot proceed carries
+// merge_block { kind, reason, action, files, since, attempts }. The task card
+// shows one short line with the reason and the next action, and nothing when
+// the merge is not blocked. A Triage record with status merge_blocked lists
+// the blocked tasks in merge_blocks { task_id, task_title, reason, action,
+// since, attempts }; the item says what it is, why, how long and the action,
+// and is selectable. Every value is escaped; the help entry opens the glossary.
+function mergeBlockedHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('merge_blocked_help_link');
+  return ` <a href="/diagrams.html#docs/datawatch-definitions.md#parallel-task-worktrees" target="_blank" rel="noopener noreferrer" class="docs-link merge-blocked-help" onclick="event.stopPropagation()" title="${escHtml(label)}">?</a>`;
+}
+function _mergeBlockedAge(since) {
+  const ms = Date.parse(since);
+  if (isNaN(ms) || ms < 0) return '';
+  const mins = Math.max(0, Math.floor((Date.now() - ms) / 60000));
+  if (mins < 1) return t('merge_blocked_age_now');
+  if (mins < 60) return t('merge_blocked_age_minutes', [mins]);
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return t('merge_blocked_age_hours', [hrs]);
+  return t('merge_blocked_age_days', [Math.floor(hrs / 24)]);
+}
+function taskMergeBlockedLineHtml(task) {
+  const b = task && typeof task === 'object' ? task.merge_block : null;
+  if (!b || typeof b !== 'object') return '';
+  const reason = typeof b.reason === 'string' ? b.reason.trim() : '';
+  const action = typeof b.action === 'string' ? b.action.trim() : '';
+  if (!reason && !action) return '';
+  const text = t('merge_blocked_line', [reason || t('merge_blocked_reason_unknown'), action || t('merge_blocked_action_unknown')]);
+  return `<div class="prd-task-merge-blocked" style="font-size:12px;color:var(--warning,#a06b00);padding:2px 8px;min-width:0;overflow-wrap:anywhere;">${escHtml(text)}${mergeBlockedHelpLink()}</div>`;
+}
+window.taskMergeBlockedLineHtml = taskMergeBlockedLineHtml;
+window.mergeBlockedTriageCardHtml = function(record) {
+  const r = record && typeof record === 'object' ? record : {};
+  const blocks = Array.isArray(r.merge_blocks) ? r.merge_blocks.filter(b => b && typeof b === 'object') : [];
+  const id = String(r.prd_id || '');
+  const color = 'var(--warning,#a06b00)';
+  const line = (text) => `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+  const rows = blocks.map(b => {
+    const age = _mergeBlockedAge(b.since);
+    return `<div class="merge-blocked-row" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+      `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(String(b.task_title || b.task_id || ''))}</div>` +
+      line(t('merge_blocked_why', [String(b.reason || t('merge_blocked_reason_unknown'))])) +
+      (age ? line(t('merge_blocked_how_long', [age])) : '') +
+      line(t('merge_blocked_next_action', [String(b.action || t('merge_blocked_action_unknown'))])) + `</div>`;
+  }).join('');
+  const head = `<div class="cap-title">${escHtml(t('merge_blocked_card_title'))}${mergeBlockedHelpLink()}</div>`;
+  const name = `<div style="margin-top:4px;font-weight:600;overflow-wrap:anywhere;">${escHtml(r.prd_title || r.prd_id || '')} ` +
+    `<span class="triage-status-chip triage-status-merge-blocked" style="display:inline-block;padding:1px 8px;border:1px solid ${color};border-radius:10px;font-size:11px;font-weight:700;color:${color};">${escHtml(t('merge_blocked_status'))}</span></div>`;
+  const owner = r.automation_name ? line(t('automation_triage_owner', [r.automation_name])) : '';
+  const what = line(t('merge_blocked_what'));
+  return `<div class="prd-capacity-card triage-card triage-merge-blocked" data-triage-id="${escHtml(id)}" role="button" tabindex="0" aria-pressed="false" ` +
+    `onclick="window.triageToggleSelect(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.triageToggleSelect(this);}" style="min-width:0;cursor:pointer;">` +
+    `${head}${name}${owner}${what}${rows}</div>`;
+};
+window.triageToggleSelect = function(el) {
+  if (!el || !el.classList) return false;
+  const on = !el.classList.contains('triage-selected');
+  el.classList.toggle('triage-selected', on);
+  el.setAttribute('aria-pressed', on ? 'true' : 'false');
+  el.style.outline = on ? '2px solid var(--accent,#4a90d9)' : '';
+  return on;
+};
 
 // ── Parallel execution metrics card ─────────────────────────────────────────
 // An Automaton records, when it completes, how many tasks it had (total_tasks),

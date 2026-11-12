@@ -12148,7 +12148,8 @@ func newConfigSetCmd() *cobra.Command {
 			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.\n\n" +
 			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
 			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
-			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
+			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model), " +
+			"autonomous.parallel.merge_retry_seconds (whole seconds >= 0; default 60, 0 = timer off).\n\n" +
 			"Merge pipeline release keys: autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch|minor|major|none), " +
 			"autonomous.merge_pipeline.major_trigger (manual|milestone|never), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet) and " +
 			"autonomous.merge_pipeline.version_scheme (semver; other schemes are not available yet). Each also takes the form autonomous.merge_pipeline.projects.<project>.<key> for one project.\n\n" +

@@ -873,7 +873,8 @@ func (c *Coordinator) triagePass() {
 				c.m.ReleaseAutomatonWorktree(prd)
 				continue
 			}
-			if prd.Triage != nil {
+			if prd.Triage != nil && prd.Triage.Status != TriageStatusMergeBlocked {
+				// a merge_blocked record belongs to refreshMergeBlockTriage
 				if err := m.ClearTriageRecord(prd.ID); err != nil {
 					log.Printf("[autonomous] clear triage record for %s: %v", prd.ID, err)
 				}

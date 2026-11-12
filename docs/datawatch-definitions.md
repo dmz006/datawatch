@@ -2732,9 +2732,13 @@ When an Automaton completes it records how well its tasks ran in parallel. `tota
 
 **Task merge state** — where the merge of a task branch stands, shown as a badge on the task card, in `datawatch autonomous prd-get`, in the chat `autonomous get` reply and as `merge_state` in the task read. `pending` means the branch is waiting to be merged, `merged` means it is in the Automaton branch (the task then also carries `merge_commit`, the Automaton branch commit that holds its work), `conflict` means the merge hit a conflict and `held` means the conflict policy stopped the task for the operator.
 
+**Merge blocked** — a finished task whose branch cannot merge into the Automaton branch yet. The task card shows one line with the reason and the next action, and Triage lists the Automaton as *waiting to merge* with the reason, how long it has been blocked and the action to take. Nothing is shown when no merge is blocked.
+
 **Merge conflict policy** (`autonomous.parallel.merge_conflict_policy`) — what happens when a task branch does not merge cleanly. `additive_then_model` (the default) keeps both sides when the two changes only add lines, and asks the merge conflict model to resolve anything else. `block` holds the task at once. `triage` raises the conflict as a question for the operator.
 
 **Merge conflict model** (`autonomous.parallel.merge_conflict_model`) — the model that resolves a merge conflict under `additive_then_model`. Empty, the default, uses the strongest configured planning model.
+
+**Merge retry interval** (`autonomous.parallel.merge_retry_seconds`, default `60`) — how many seconds the daemon waits before it tries again to merge a task branch whose merge is still `pending`. While an earlier merge is pending, the next task is held. `0` turns the timed retry off.
 
 ### Read-only tasks
 

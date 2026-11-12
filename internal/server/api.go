@@ -10118,7 +10118,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case parallelKeyPrefix + "read_only_tasks",
 			parallelKeyPrefix + "worktree_per_task",
 			parallelKeyPrefix + "merge_conflict_policy",
-			parallelKeyPrefix + "merge_conflict_model":
+			parallelKeyPrefix + "merge_conflict_model",
+			parallelKeyPrefix + "merge_retry_seconds":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applyParallelValue(&cfg.Autonomous.Parallel,
@@ -15191,6 +15192,7 @@ func parallelSurface(c config.AutonomousParallelConfig) map[string]interface{} {
 		"worktree_per_task":     autonomous.EffectiveWorktreePerTask(c),
 		"merge_conflict_policy": autonomous.EffectiveMergeConflictPolicy(c),
 		"merge_conflict_model":  autonomous.EffectiveMergeConflictModel(c),
+		"merge_retry_seconds":   autonomous.EffectiveMergeRetrySeconds(c),
 	}
 }
 
@@ -15288,6 +15290,16 @@ func validateParallelPatch(patch map[string]interface{}) error {
 			return fmt.Errorf("%smerge_conflict_model: must be a string", parallelKeyPrefix)
 		}
 	}
+	if v, ok := patch[parallelKeyPrefix+"merge_retry_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("%smerge_retry_seconds: must be a whole number of seconds >= 0 (0 = timer off, default %d)",
+				parallelKeyPrefix, config.DefaultMergeRetrySeconds)
+		}
+		if err := config.ValidateMergeRetrySeconds(&n); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -15312,6 +15324,10 @@ func applyParallelValue(pc *config.AutonomousParallelConfig, field string, v int
 	case "merge_conflict_model":
 		if str, ok := v.(string); ok {
 			pc.MergeConflictModel = str
+		}
+	case "merge_retry_seconds":
+		if n, ok := wholeNumber(v); ok && config.ValidateMergeRetrySeconds(&n) == nil {
+			pc.MergeRetrySeconds = &n
 		}
 	}
 }

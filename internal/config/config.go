@@ -8083,6 +8083,9 @@ func validateLoaded(cfg *Config) error {
 	if err := ValidateMergeConflictPolicy(cfg.Autonomous.Parallel.MergeConflictPolicy); err != nil {
 		return err
 	}
+	if err := ValidateMergeRetrySeconds(cfg.Autonomous.Parallel.MergeRetrySeconds); err != nil {
+		return err
+	}
 	// A fully-zero observer.pull block means "unset" (a zero-value Config
 	// or an empty block) and keeps the shipped defaults; an explicit value
 	// in the block is what ValidateObserverPullConfig checks.
@@ -8740,6 +8743,24 @@ type AutonomousParallelConfig struct {
 	// MergeConflictModel: model that resolves a merge conflict. Empty
 	// means the strongest configured planning model.
 	MergeConflictModel string `yaml:"merge_conflict_model" json:"merge_conflict_model"`
+	// MergeRetrySeconds: whole seconds between timed merge retry passes.
+	// Pointer so an explicit 0 (timer off) survives; nil means the default
+	// (see autonomous.EffectiveMergeRetrySeconds).
+	MergeRetrySeconds *int `yaml:"merge_retry_seconds" json:"merge_retry_seconds"`
+}
+
+// DefaultMergeRetrySeconds is the merge retry interval read when
+// autonomous.parallel.merge_retry_seconds is absent.
+const DefaultMergeRetrySeconds = 60
+
+// ValidateMergeRetrySeconds refuses a negative interval. Nil is valid (the
+// key is absent and the default applies); 0 turns the timer off.
+func ValidateMergeRetrySeconds(v *int) error {
+	if v != nil && *v < 0 {
+		return fmt.Errorf("autonomous.parallel.merge_retry_seconds: %d must be a whole number >= 0 (0 = timer off, default %d)",
+			*v, DefaultMergeRetrySeconds)
+	}
+	return nil
 }
 
 // Valid values of autonomous.parallel.merge_conflict_policy.

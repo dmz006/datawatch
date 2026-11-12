@@ -148,6 +148,8 @@ question states**.
 
 Clicking a Triage card opens its detail panel.
 
+**A blocked merge on the card.** A finished task's work does not always merge into the Automaton branch at once. If the Automaton worktree holds a stale uncommitted edit, the merge cannot go ahead and the work waits, still safe on the task's own branch. The needs-attention card then lists that Automaton as having a merge blocked, with the task, the reason (for example that the worktree has uncommitted changes, and which files) and the action to take (commit or discard that edit). The same reason and action show on the Automaton's own card. The card clears by itself once the merge goes through.
+
 ### The cards on the other sub-tabs
 
 Each card loads with its own loading skeleton and, if the request fails, its own
@@ -179,6 +181,10 @@ never blanks the cards.
   counts and the permission problem with its **Fix permissions** button are on
   the Events tab. Details and every surface:
   [automaton-worktree-cleanup.md](automaton-worktree-cleanup.md).
+
+### When a task's merge is waiting
+
+When a task finishes, its work is merged into the Automaton branch before the next task starts. If that merge is blocked, the Automaton and the Triage show it with the reason and the action, as described under the needs-attention card. You do not have to retry it by hand: the daemon tries the merge again on a timer. Set the wait between tries with **Task merge retry interval** in Settings (`autonomous.parallel.merge_retry_seconds`, 60 seconds unless you changed it). `0` turns the timed retry off, and the merge then waits until you clear the cause and act. While an earlier task's merge is pending, the next task waits; nothing later runs on top of work that has not landed.
 
 ### Reading the merge state and the safe-to-delete report
 

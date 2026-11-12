@@ -42,6 +42,16 @@ func EffectiveMergeConflictPolicy(c config.AutonomousParallelConfig) string {
 	return c.MergeConflictPolicy
 }
 
+// EffectiveMergeRetrySeconds returns the seconds between timed merge retry
+// passes: the default 60 when unset or negative, 0 when explicitly 0 (timer
+// off).
+func EffectiveMergeRetrySeconds(c config.AutonomousParallelConfig) int {
+	if c.MergeRetrySeconds == nil || config.ValidateMergeRetrySeconds(c.MergeRetrySeconds) != nil {
+		return config.DefaultMergeRetrySeconds
+	}
+	return *c.MergeRetrySeconds
+}
+
 // EffectiveMergeConflictModel returns the model that resolves merge
 // conflicts. Empty means the strongest configured planning model; the
 // caller resolves that.

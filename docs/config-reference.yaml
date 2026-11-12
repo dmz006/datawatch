@@ -2970,6 +2970,10 @@ autonomous:
     # merge_conflict_model: the model that resolves a conflict. Default empty,
     # which uses the strongest configured planning model.
     merge_conflict_model: ""
+    # merge_retry_seconds: whole seconds between timed merge retry passes over
+    # blocked merges. Default 60. 0 turns the timer off. A negative value is
+    # refused.
+    merge_retry_seconds: 60
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node session_slots (0 = derive from observer GPU
