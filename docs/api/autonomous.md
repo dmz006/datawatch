@@ -1650,7 +1650,8 @@ Lane fill runs a planner on every coordinator poll. It records, for each idle la
   ],
   "queued_eligible": {"gpu": 3, "claude": 1},
   "evidence": {"checked_at": "2026-10-24T13:00:00Z", "gpu_active_sessions": 1,
-               "loaded_models": [{"host": "local", "model": "qwen3.8:27b"}], "error": ""},
+               "loaded_models": [{"host": "local", "model": "qwen3.8:27b"}], "error": "",
+               "degraded": [{"host": "ralf", "error": "dial tcp: connection refused", "since": "2026-10-24T12:40:00Z"}]},
   "decisions": [
     {"at": "2026-10-24T13:00:00Z", "mode": "shadow", "lane_id": "gpu-2", "lane_type": "gpu",
      "action": "start_prd", "prd_id": "b1c2d3e4", "title": "Example", "reason": "...",
@@ -1665,7 +1666,8 @@ Lane fill runs a planner on every coordinator poll. It records, for each idle la
 ```
 
 - `lanes[].state` is `occupied` or `idle`. An idle lane carries a `blocker` when the planner will not call it idle without a reason.
-- `evidence.error` is set when a pool host could not be read. A GPU lane is then never reported as idle.
+- `evidence.error` is set when a pool host could not be read and the failure blocks. A GPU lane is then never reported as idle.
+- `evidence.degraded` lists pool hosts that could not be read but do not block the lanes (`host`, `error`, `since`, the time the host first failed); it is `[]` when none is degraded. A host is degraded only when it holds no work, no lane is placed on it, and it has been unreachable for at least `autonomous.lane_fill.host_down_after_minutes` (default 10; `0` never). The lanes are then judged from the readable hosts. A failed session list always blocks.
 - `decisions[].action` is `start_prd`, `decompose`, `decompose_ahead`, `report_merge`, `blocked` or `idle`. `executed: false` is a would-start in shadow mode and must not be shown as a start.
 - `decisions[].mode` is `off`, `shadow` or `on`, the mode in effect when the decision was made.
 - `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. It is absent when the decision is not a refusal.

@@ -99,12 +99,58 @@ func PoolEvidenceClock(now func() time.Time) PoolEvidenceOption {
 	}
 }
 
+// PoolHostDegraded is a pool host whose loaded models could not be read but
+// whose failure does not block lane planning: it holds no work and has been
+// unreachable past the host-down threshold. It is a warning, never an error.
+type PoolHostDegraded struct {
+	Host string
+	// Error is the failure text, without the endpoint URL.
+	Error string
+	// Since is when the host first failed, counting only consecutive failed
+	// reads.
+	Since time.Time
+}
+
+// HostHolders names the pool hosts that currently hold work.
+type HostHolders interface {
+	// HeldHosts returns the set of pool host names that hold a session lease
+	// or an Automaton placement, are named as the node of a running session,
+	// or are a node a lane's work is placed on.
+	HeldHosts(ctx context.Context) map[string]bool
+}
+
+// PoolEvidenceHostDownAfter sets where the source reads the host-down
+// threshold in minutes, live on each check. 0 means never treat an unreachable
+// host as down, so every failed read blocks. Without this option the threshold
+// is 0.
+func PoolEvidenceHostDownAfter(fn func() int) PoolEvidenceOption {
+	return func(s *poolEvidenceSource) {
+		if fn != nil {
+			s.downAfter = fn
+		}
+	}
+}
+
+// PoolEvidenceHolders sets the source of the hosts that hold work. With none,
+// nothing is known to be held, but the not-yet-down rule and the zero
+// threshold still apply.
+func PoolEvidenceHolders(h HostHolders) PoolEvidenceOption {
+	return func(s *poolEvidenceSource) { s.holders = h }
+}
+
 type poolEvidenceSource struct {
-	sessions SessionLister
-	hosts    HostLister
-	fetch    ModelFetcher
-	backend  func() string
-	now      func() time.Time
+	sessions  SessionLister
+	hosts     HostLister
+	fetch     ModelFetcher
+	backend   func() string
+	now       func() time.Time
+	downAfter func() int
+	holders   HostHolders
+
+	// firstFail is, per pool host, the time of its first consecutive failed
+	// read. It is cleared by a successful read and when the host leaves the
+	// pool. Guarded by mu.
+	firstFail map[string]time.Time
 
 	mu       sync.Mutex
 	cached   bool
@@ -121,9 +167,17 @@ type poolEvidenceSource struct {
 // names a pool host as the node they talk to. A resident model alone does not
 // count as busy; loaded models are only reported.
 //
-// When a host cannot be read, Check returns the partial evidence and an error
-// that names the host, so the planner never calls the pool idle on a guess.
-// A result is reused for at most 5 seconds.
+// A failed read of a host's loaded models is blocking, and Check returns the
+// partial evidence and an error that names the host, so the planner never
+// calls the pool idle on a guess, when any of these holds: the host holds work
+// (a lease, an Automaton placement, a running session naming it, or a lane
+// node, see HostHolders); the host has been unreachable for less than the
+// host-down threshold (PoolEvidenceHostDownAfter); or the threshold is 0.
+// Otherwise the host is degraded: the failure is left out of the error, the
+// lanes are judged from the readable hosts, and the host is listed in
+// PoolEvidence.Degraded with the error text and the time it first failed. A
+// failed session list on this host or a pool host always blocks. A result,
+// its Degraded list included, is reused for at most 5 seconds.
 func NewPoolEvidenceSource(sessions SessionLister, hosts HostLister, fetch ModelFetcher, opts ...PoolEvidenceOption) PoolEvidenceSource {
 	s := &poolEvidenceSource{
 		sessions: sessions, hosts: hosts, fetch: fetch,
@@ -204,15 +258,53 @@ func (s *poolEvidenceSource) read(ctx context.Context, gpuBackend string, now ti
 		}(i, h)
 	}
 	wg.Wait()
-	for _, r := range results {
-		if r.err != nil {
-			faults = append(faults, hostFault(r.host.Name, "loaded models", r.err))
-			continue
-		}
-		for _, m := range r.models {
-			ev.LoadedModels = append(ev.LoadedModels, LoadedModel{Host: r.host.Name, Model: m})
+
+	// Forget the first-failure time of a host that left the pool.
+	for name := range s.firstFail {
+		if !poolNodes[name] {
+			delete(s.firstFail, name)
 		}
 	}
+	downAfter := 0
+	if s.downAfter != nil {
+		downAfter = s.downAfter()
+	}
+	var held map[string]bool
+	heldRead := false
+	for _, r := range results {
+		name := r.host.Name
+		if r.err == nil {
+			delete(s.firstFail, name)
+			for _, m := range r.models {
+				ev.LoadedModels = append(ev.LoadedModels, LoadedModel{Host: name, Model: m})
+			}
+			continue
+		}
+		if s.firstFail == nil {
+			s.firstFail = map[string]time.Time{}
+		}
+		first, ok := s.firstFail[name]
+		if !ok {
+			first = now
+			s.firstFail[name] = first
+		}
+		blocking := downAfter <= 0 || now.Sub(first) < time.Duration(downAfter)*time.Minute
+		if !blocking {
+			if !heldRead {
+				heldRead = true
+				if s.holders != nil {
+					held = s.holders.HeldHosts(ctx)
+				}
+			}
+			blocking = held[name]
+		}
+		if blocking {
+			faults = append(faults, hostFault(name, "loaded models", r.err))
+			continue
+		}
+		ev.Degraded = append(ev.Degraded, PoolHostDegraded{Host: name, Error: hostFault(name, "loaded models", r.err).Error(), Since: first})
+	}
+	sort.SliceStable(ev.Degraded, func(i, j int) bool { return ev.Degraded[i].Host < ev.Degraded[j].Host })
 	sort.SliceStable(ev.LoadedModels, func(i, j int) bool {
 		a, b := ev.LoadedModels[i], ev.LoadedModels[j]
 		if a.Host != b.Host {

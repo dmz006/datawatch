@@ -79,6 +79,9 @@ func laneFillConfigArgs(req mcpsdk.CallToolRequest) map[string]any {
 	if _, ok := args["lane_fill_stale_after_hours"]; ok {
 		lane["stale_after_hours"] = req.GetFloat("lane_fill_stale_after_hours", 0)
 	}
+	if _, ok := args["lane_fill_host_down_after_minutes"]; ok {
+		lane["host_down_after_minutes"] = req.GetFloat("lane_fill_host_down_after_minutes", 0)
+	}
 	for _, k := range []string{"require_confirmed_proposal", "check_main_carries", "require_worktree", "lane_counts_from_caps"} {
 		if _, ok := args["lane_fill_"+k]; ok {
 			lane[k] = req.GetBool("lane_fill_"+k, true)

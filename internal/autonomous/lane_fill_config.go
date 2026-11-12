@@ -34,6 +34,9 @@ type LaneFillConfig struct {
 	// StaleAfterHours: hours an Automaton may sit queued before lane fill
 	// treats it as stale. Nil means 72; an explicit 0 turns the rule off.
 	StaleAfterHours *int `json:"stale_after_hours,omitempty"`
+	// HostDownAfterMinutes: minutes a pool host may stay unreachable before it
+	// is treated as down. Nil means 10; an explicit 0 never treats it as down.
+	HostDownAfterMinutes *int `json:"host_down_after_minutes,omitempty"`
 	// RequireConfirmedProposal, CheckMainCarries, RequireWorktree and
 	// LaneCountsFromCaps are eligibility and counting rules; nil means true.
 	RequireConfirmedProposal *bool `json:"require_confirmed_proposal,omitempty"`
@@ -66,6 +69,7 @@ func LaneFillConfigFromYAML(c config.AutonomousLaneFillConfig) LaneFillConfig {
 		CountVerifierWait: c.CountVerifierWait,
 
 		StaleAfterHours:          c.StaleAfterHours,
+		HostDownAfterMinutes:     c.HostDownAfterMinutes,
 		RequireConfirmedProposal: c.RequireConfirmedProposal,
 		CheckMainCarries:         c.CheckMainCarries,
 		RequireWorktree:          c.RequireWorktree,
@@ -91,6 +95,7 @@ func (c LaneFillConfig) yaml() config.AutonomousLaneFillConfig {
 		CountVerifierWait: c.CountVerifierWait,
 
 		StaleAfterHours:          c.StaleAfterHours,
+		HostDownAfterMinutes:     c.HostDownAfterMinutes,
 		RequireConfirmedProposal: c.RequireConfirmedProposal,
 		CheckMainCarries:         c.CheckMainCarries,
 		RequireWorktree:          c.RequireWorktree,
@@ -142,6 +147,12 @@ func (c LaneFillConfig) EffectiveModeFor(t LaneType) string {
 // EffectiveStaleAfterHours returns the stale threshold in effect (nil = 72,
 // explicit 0 = rule off).
 func (c LaneFillConfig) EffectiveStaleAfterHours() int { return c.yaml().EffectiveStaleAfterHours() }
+
+// EffectiveHostDownAfterMinutes returns the host-down threshold in effect (nil
+// = 10, explicit 0 = never treat an unreachable host as down).
+func (c LaneFillConfig) EffectiveHostDownAfterMinutes() int {
+	return c.yaml().EffectiveHostDownAfterMinutes()
+}
 
 // EffectiveRequireConfirmedProposal returns the confirmed-proposal rule in
 // effect (unset = true).

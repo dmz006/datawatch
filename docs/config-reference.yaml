@@ -1920,6 +1920,11 @@ autonomous:
   #   update before lane fill calls it stale (reason code "stale") and does not
   #   start it. An absent key reads 72; an explicit 0 turns the stale rule off
   #   and survives a round trip.
+  # host_down_after_minutes: whole number >= 0, default 10. How many minutes a
+  #   pool host may stay unreachable before lane fill treats it as down and
+  #   judges the lanes from the readable hosts. An absent key reads 10; an
+  #   explicit 0 never treats an unreachable host as down and survives a round
+  #   trip. Negative or non-integer values are refused.
   # require_confirmed_proposal: bool, default true (an absent key reads true).
   #   An implementation Automaton is taken only when a proposal file named in
   #   its spec (docs/plans/<name>.md, read from the base repository) has a line
@@ -1963,6 +1968,7 @@ autonomous:
     claude_backend: claude-code
     count_verifier_wait: true
     stale_after_hours: 72
+    host_down_after_minutes: 10
     require_confirmed_proposal: true
     check_main_carries: true
     require_worktree: true
