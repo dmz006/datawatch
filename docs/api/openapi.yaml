@@ -10823,11 +10823,24 @@ components:
         last_prompt:
           type: string
           description: The prompt text that triggered waiting_input state
+        ended_at:
+          type: string
+          format: date-time
+          description: When the daemon finalised the record because its process was gone. Present only on a session that was finalised this way; omitted on every other session.
+        end_note:
+          type: string
+          description: Why the record was finalised. Always `process gone, finalised` when present; omitted on a session that was not finalised this way.
+          example: "process gone, finalised"
 
     SessionState:
       type: string
       enum: [running, waiting_input, complete, failed, killed]
       description: |
+        The true state of the session. A record is never left in `running` or
+        another non-final state after its terminal session and process are gone:
+        the daemon finalises it as `killed`, or `complete` when its output ends
+        with the completion marker, and sets `ended_at` and `end_note`.
+
         - `running`: claude-code is actively running
         - `waiting_input`: claude-code is waiting for user response
         - `complete`: claude-code exited successfully
