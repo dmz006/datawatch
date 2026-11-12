@@ -4447,5 +4447,21 @@
   "automata_std_off": "Off",
   "automata_std_load_failed": "Load failed:",
   "automata_std_howto": "Standard tasks how-to",
-  "automata_std_mode_note": "The mode is fixed to model session for now. Changing it will be done in Settings under the standard task settings once that setting exists; the setting key is"
+  "automata_std_mode_note": "The mode is fixed to model session for now. Changing it will be done in Settings under the standard task settings once that setting exists; the setting key is",
+  "settings_packs": "Standard task packs",
+  "settings_packs_enabled": "Enable standard task packs (needs a connected skills registry)",
+  "settings_packs_enabled_help": "Packs can be enabled only when at least one skills registry source is connected and enabled. Connect one in the skills registry settings first; otherwise the daemon refuses and the switch stays off.",
+  "settings_packs_active": "Active packs, in order (comma separated)",
+  "settings_packs_active_help": "The packs in use, first to last. builtin ships with datawatch; any other name must be an installed pack.",
+  "settings_packs_inputs_level": "Pack inputs: level (global or project)",
+  "settings_packs_inputs_pack": "Pack inputs: pack name",
+  "settings_packs_inputs_key": "Pack inputs: project key (project level only)",
+  "settings_packs_inputs_values": "Pack inputs: values (name=value, separated by semicolons)",
+  "settings_packs_inputs_help": "Inputs a pack asks for. Saving replaces the inputs stored at that level for that pack. Secret values stay references.",
+  "settings_packs_error_refused": "The daemon did not save this value. Nothing changed.",
+  "settings_packs_error_network": "Could not reach the daemon. Nothing changed.",
+  "settings_packs_error_level": "Level must be global or project.",
+  "settings_packs_error_pack": "Enter the pack name first.",
+  "settings_packs_error_project_key": "Enter the project key for project level inputs.",
+  "settings_packs_error_pairs": "Write each input as name=value, separated by semicolons."
 }
