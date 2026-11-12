@@ -3344,6 +3344,23 @@ autonomous:
         path_globs: ["security/**", "internal/server/auth*"]
       design:
         tags: [design, ui]
+  # Task-type routing table: map each task type to a worker and verification LLM
+  # when tasks are created. Off by default. A task LLM set by an operator, a story
+  # LLM or an Automaton LLM always wins over the table; started or hand-edited
+  # tasks are never rewritten. Rows live in named profiles and one is active.
+  # A bad block is rejected and nothing is applied. Readable and settable through
+  # GET and PUT /api/config, get_config and config_set; no dedicated CLI, comm
+  # channel or web UI yet. A config without this block gets the default profile.
+  task_routing:
+    enabled: false
+    active_profile: default
+    # profiles:
+    #   default:
+    #     docs_set: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+    #     daemon_backend_code: {worker_backend: claude-code, worker_model: sonnet}
+    #     # A row can also set verification_backend, verification_model, effort,
+    #     # second_choice {backend, model, effort}, and allow_premium_model (needed
+    #     # for any Opus or Fable model name).
   # Fallback backend for autonomous task sessions. Task backend resolution
   # checks (1) task.backend, (2) prd.backend, (3) this field, (4) the global
   # session.llm_backend. Set to "opencode" to ensure all autonomous tasks run

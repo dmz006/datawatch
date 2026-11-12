@@ -3063,6 +3063,14 @@ A **report path** (`report_path`) is the one clean repo-relative file — under 
 
 A **planning route** is the choice of planner (an LLM backend and a model, plus its escalation targets) that drafts an Automaton's plan when it is decomposed. It comes from the first rule in `autonomous.planning_routing.rules` whose match fields all pass; if routing is off or no rule matches, the global planner is used, and a planner set on the Automaton itself always wins. With `shadow` on, the route is recorded (and counted as would-route in the scorecard) but not applied. Routing is off by default with no rules, and the example rules are not active. How-to: [howto/automata-planning-routing.md](howto/automata-planning-routing.md).
 
+### Task type
+
+A **task type** is the class a task is sorted into so the task-routing table can pick its LLM: `docs_set`, `changelog_entry`, `parity_issue_draft`, `bounded_load_step`, `version_note`, `locale_strings`, `tests`, `formatting_cleanup`, `ui_code`, `daemon_backend_code`, `mcp_api_surface`, `merge_conflict_repair`, `final_gate` or `review_repair`. It is decided by the task's own kind or template, then ordered keyword rules over the title and spec, then the default `daemon_backend_code`; a task that lists a non-test Go file under `internal/` is never a mechanical type. How-to: [howto/automata-task-routing.md](howto/automata-task-routing.md).
+
+### Task routing profile
+
+A **task routing profile** is a named table that maps each task type to a row: worker backend and model, optional verification backend and model, effort, an optional second choice and `allow_premium_model` (needed to name an Opus or Fable model). One profile is active (`autonomous.task_routing.active_profile`); switching it changes only tasks created afterwards. The routing table is off by default, and an LLM set on the task, its story or its Automaton always wins over a row. The shipped `default` profile is the operator's starting choice and other users may change it.
+
 ### Planning ladder
 
 A **planning ladder** is the retry budget a planning route uses when a plan fails the decompose checks: `touch_up_max` touch-up passes (defaults to 1), `replan_max` replans (defaults to 1), then escalation to the next planner in the rule after `escalate_after_attempts` failed attempts at one planner (defaults to 2). A named ladder is chosen by a rule's `ladder` field; the built-in `default` ladder is used when none is named. When every planner and budget is used up, the ladder stops with a failed plan and its full attempt record. The defaults are the operator's choice and other users may change them.
