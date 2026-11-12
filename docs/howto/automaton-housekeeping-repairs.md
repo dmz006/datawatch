@@ -112,8 +112,32 @@ left alone. Its undo hint: pause or cancel the started Automaton from the Automa
 page; nothing else was changed. The lane fill rules themselves are in
 [automation-lane-fill.md](automation-lane-fill.md).
 
+The `leftovers` group also has three release repairs for what a **finished**
+Automaton leaves behind, run in `on` and only reported in `report`. They are
+written and tested but, like the rest of the pass, nothing in the daemon builds or
+starts them yet, so they act on nothing today:
+
+- **Lease release.** Releases the capacity lease a finished Automaton still holds.
+- **Worktree release.** Removes the worktree a finished Automaton still holds.
+- **Tmux name release.** Releases the tmux session name a finished Automaton
+  still holds.
+
+Each acts on one leftover at a time, and only when the safe-to-delete check
+passes for that Automaton: it has reached a final state, it holds no uncommitted
+work, it has no commits that have not landed, and no session is running in it.
+Just before releasing, the repair reads those facts again, so a leftover that
+changed in the meantime is left alone. When any fact fails, or the check cannot be
+answered, the repair refuses as an unsafe finding (recorded as skipped, one alert)
+and nothing is released. It can only release one lease, remove one worktree or
+release one tmux name: it never kills, ends or signals a session, never merges or
+ships, never changes a model or backend, and never touches a security workflow.
+Its undo hints: a released lease can be taken again by starting the Automaton from
+the Automata page; a removed worktree held no work, so running the Automaton again
+recreates it; a released tmux name is free and the next session start picks it up.
+
 The review start, lease re-adoption, placement re-run and worktree pruning rows in
-the table are not written yet.
+the table are not written yet. The new release repairs cover finished Automata
+only; the `LEASE` and `WORKTREE` rows below describe running ones.
 
 **Operator review before relying on this page.** Check these against the
 shipped code before you turn any group to `on`:
@@ -129,6 +153,12 @@ shipped code before you turn any group to `on`:
 - The three task chain repairs run fixed commands (`make sync-docs`, `git clean -f -- <one path>`) in
   the Automaton worktree. Confirm you accept those commands, and that a final-gate failure
   naming `internal/server/web/docs` as stale is a reliable signal, before turning `task_chain` to `on`.
+- The three leftover release repairs delete a worktree and release a lease and a
+  tmux name of a finished Automaton. Confirm you accept that, and that "no
+  uncommitted work, no unlanded commits and no live session" is a strong enough
+  test for you, before turning `leftovers` to `on`. The `leftovers` group also
+  holds the older disk cleanup sweep, so `on` switches both. The release repairs
+  have no setting of their own and are not started by the daemon yet.
 - The lane fill start repair starts a real Automaton on an idle lane. Confirm you
   accept that it starts work without you, that it follows capacity, the inflight
   caps and the usage guard as described, and that it is separate from the lane
@@ -190,7 +220,7 @@ and the repairs of a group act only in `on`. The settings live under
 | Task chain | `autonomous.housekeeping_repairs.task_chain` | `NEW failed task`, `BACKLOG` |
 | Advance and judge | `autonomous.housekeeping_repairs.advance_judge` | `STUCK`, `MERGE WAIT`, `JUDGE BLOCKED` |
 | Lane fill | `autonomous.housekeeping_repairs.lane_fill` | `IDLE lanes`, `LEASE`, `PLACEMENT` |
-| Leftovers | `autonomous.housekeeping_repairs.leftovers` | `WORKTREE` |
+| Leftovers | `autonomous.housekeeping_repairs.leftovers` | `WORKTREE`, and the leftover lease, worktree and tmux name of a finished Automaton |
 
 | Mode | What it does |
 |---|---|
@@ -246,8 +276,10 @@ for each shipped repair:
 - `lane_fill`: set the lane count back with the lane count control; the bounds
   are `supervisor_loop.lane_count.min` and `.max`. For the lane fill start, pause or
   cancel the started Automaton from the Automata page.
-- `leftovers`: nothing to undo; the sweep only refreshes status and raises the
-  disk alert.
+- `leftovers`: the disk cleanup sweep has nothing to undo; it only refreshes
+  status and raises the disk alert. For the release repairs, start the Automaton
+  again from the Automata page to take a lease again or recreate a worktree; a
+  released tmux name is simply free to reuse.
 
 No surface reads the record yet: it is reachable only through the decision log.
 The finding itself keeps its first-seen time and is read through the supervisor
