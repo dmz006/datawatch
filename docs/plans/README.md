@@ -136,7 +136,7 @@ advances it without hand sequencing.
 | 25 | BL459 datawatch-community skills catalog — research complete, build the catalog's proposed skills | research complete (`docs/catalog/skills-catalog.md`, `skill-specs.md`); easy, high-benefit — pulled forward from v11.0.0 (PRD `275ae17c`, draft) | - |
 | 26 | BL434 Splash animation on every full-screen refresh | approved, not started (PRD `88fdf815`) | - |
 | 27 | BL435 Retry with already-correct output must not fail on empty diff | blocked (PRD `191d0c95`); likely fixed by the v9.5.2 retry gate: verify and close | - |
-| 28 | BL436 Per-turn chunked output capture (design) | approved, not started (PRD `01bcf5cb`) | - |
+| 28 | [BL436 Per-turn chunked output capture / turn-chunked session history](2026-10-14-turn-chunked-session-history.md) (design) | needs_review (design pass complete; PRD `01bcf5cb`) | - |
 | 29 | BL442 PWA service worker force-navigates controlled windows | needs review (PRD `39f7af28`) | - |
 | 30 | [BL433](2026-10-14-pwa-performance-audit.md) PWA performance audit under load | blocked (PRD `049f4713`) | - |
 | 31 | BL392 Cross-repo GitHub configuration hardening audit | mostly done | - |
