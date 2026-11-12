@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, uncommitted, worktree, commit, hold, discard, retry, ignore, DATAWATCH_COMPLETE, marker file, merge ready, policy, scope]
+  topics: [autonomous, automation, automaton, uncommitted, worktree, commit, hold, discard, retry, ignore, marker, DATAWATCH_COMPLETE, marker file, merge ready, policy, scope]
 exec_params: []
 exec_steps:
   - tool: autonomous_uncommitted_work
@@ -123,6 +123,14 @@ the check treats it as follows:
   real file is listed.
 - **Only exact root-level names.** A file called `DATAWATCH_COMPLETE` inside a
   subfolder is ordinary work and is counted like any other file.
+- **Open questions that list only marker files are answered for you.** The
+  daemon answers them `ignore` itself and adds a line to the Automaton's
+  decision log saying why: the only listed files were the daemon's own marker
+  files.
+
+What this never does: nothing is committed, no session is stopped, and only the
+daemon's own marker files are ever skipped or removed. A file the worker wrote
+that is not a marker still raises the question.
 
 ### The check before an Automaton is reported finished
 
@@ -266,13 +274,14 @@ question that lists any real file is left alone for you to answer. The sweep
 never removes a file and never touches a session, and running it again changes
 nothing.
 
-### What the three answers do
+### What the answers do
 
 | Answer | On a held task | On a held Automaton (whole worktree) |
 |---|---|---|
 | `commit` | Looks at the worktree again, stages and commits **exactly** the listed files that are still uncommitted (the outside-the-declared-files ones too, because you chose it), then marks the task complete with its post-verify revision. If files are still uncommitted after that, the task is held again under the current policy | Commits the listed files that are still uncommitted, clears the hold and lets the Automaton roll up again, which checks the worktree once more |
 | `discard` | Restores the listed tracked files to the branch's last commit (index and worktree) and deletes the listed untracked files, then sends the task back to run again with its attempt history kept | Does the same for the listed files, clears the hold and lets the Automaton roll up again |
 | `retry` | Touches no file. Sends the task back to run again, with its attempt history kept | Touches no file. Clears the hold and lets the Automaton roll up again, which holds it again if files remain |
+| `ignore` | Touches no file. Clears the hold and lets the task run on; the daemon uses it for questions that list only marker files | Touches no file. Clears the hold and lets the Automaton roll up again; the daemon uses it for questions that list only marker files |
 
 When the answer is acted on, the Automaton runs on by itself: a running
 Automaton is woken, and one that had gone `blocked` on the worktree check goes
