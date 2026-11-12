@@ -3099,12 +3099,19 @@ function _projectsSetShowEmpty(on) {
 // _projectsHashParse returns the project named by a #projects hash ('' for
 // Overview), or null when the hash is not a projects route.
 function _projectsHashParse(hash) {
-  const m = /^#projects(?:\/(.+))?$/.exec(String(hash || ''));
+  const m = /^#projects(?:\/([^/]+))?(?:\/[^/]+)?$/.exec(String(hash || ''));
   if (!m) return null;
   try { return m[1] ? decodeURIComponent(m[1]) : _PROJECTS_OVERVIEW; } catch (_) { return null; }
 }
-function _projectsHashBuild(name) {
-  return name ? '#projects/' + encodeURIComponent(name) : '#projects';
+// _projectsHashSubtab returns the sub-tab named by #projects/<name>/<subtab>,
+// or '' when the hash names none or an unknown one.
+function _projectsHashSubtab(hash) {
+  const m = /^#projects\/[^/]+\/([^/]+)$/.exec(String(hash || ''));
+  return m && _projectsSubtabValid(m[1]) ? m[1] : '';
+}
+function _projectsHashBuild(name, subtab) {
+  if (!name) return '#projects';
+  return '#projects/' + encodeURIComponent(name) + (subtab && subtab !== 'overview' ? '/' + subtab : '');
 }
 function _projectsCurrentHash() {
   return typeof location !== 'undefined' ? location.hash : '';
@@ -3398,34 +3405,88 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
   };
 
-  let body = '';
+  let overviewBody = '';
+  let arcsBody = '';
+  let unassignedBody = '';
+  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
   if (rollErr) {
     events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
-    body = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
+    overviewBody = loadingLine;
+    arcsBody = loadingLine;
+    unassignedBody = loadingLine;
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
-    body += _projectRollupHTML(roll, arcs);
+    overviewBody = _projectRollupHTML(roll, arcs);
     if (!arcs.length) {
       events.push(t('projects_event_no_arcs'));
-      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
-    } else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
+    } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
-    if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
+    if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
     else {
       events.push(t('projects_event_no_unassigned'));
-      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
+      if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
   }
-  body += _projectGanttHTML(hist);
-  body += _projectHistoryHTML(hist);
-  body += _projectLinksHTML(p);
 
+  const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
   const evs = events.length
-    ? `<div id="projectEvents" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escHtml(t('projects_page_events'))}</div>${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`
+    ? `<div id="projectEvents" style="margin-top:14px;padding-top:8px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escHtml(t('projects_page_events'))}</div>${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`
     : '';
+  const hasEvents = events.length > 0;
+  const active = _projectsActiveSubtab(hasEvents);
+  const bodies = {
+    overview: head + overviewBody,
+    arcs: arcsBody,
+    gantt: _projectGanttHTML(hist),
+    unassigned: unassignedBody,
+    history: _projectHistoryHTML(hist),
+    policy: _projectLinksHTML(p),
+    events: evs + _projectEventStreamHTML(L.events, L.eventsError),
+  };
+  const strip = _projectsSubtabStripHTML(active, hasEvents);
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
-    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${head}${body}${evs}</div></div>`;
+    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${strip}<div id="projectsSubtabBody" role="tabpanel" data-projects-subtab-body="${active}">${bodies[active]}</div></div></div>`;
+}
+
+// ── Projects sub-tab strip ──────────────────────────────────────────────────
+// The selected project page shows one sub-tab body at a time. The choice is
+// remembered per browser; an unknown value means overview, and events falls
+// back to overview while there are no events to show.
+const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
+const _PROJECTS_SUBTABS = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+const _PROJECTS_SUBTAB_LABELS = {
+  overview: 'projects_subtab_overview', arcs: 'projects_subtab_arcs', gantt: 'projects_subtab_gantt',
+  unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
+  policy: 'projects_subtab_policy', events: 'projects_subtab_events',
+};
+function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(v) >= 0; }
+function _projectsRememberSubtab(v) {
+  try { localStorage.setItem(_PROJECTS_SUBTAB_KEY, v || ''); } catch (_) { /* not remembered */ }
+}
+function _projectsRecallSubtab() {
+  try { const v = localStorage.getItem(_PROJECTS_SUBTAB_KEY) || ''; return _projectsSubtabValid(v) ? v : 'overview'; } catch (_) { return 'overview'; }
+}
+function _projectsActiveSubtab(hasEvents) {
+  const v = _projectsSubtabValid(_projectsState.subtab) ? _projectsState.subtab : _projectsRecallSubtab();
+  return (v === 'events' && !hasEvents) ? 'overview' : v;
+}
+function _projectsSubtabStripHTML(active, hasEvents) {
+  const tabs = _PROJECTS_SUBTABS.filter(k => k !== 'events' || hasEvents);
+  return `<div class="projects-subtabs" role="tablist" aria-label="${escHtml(t('projects_subtabs_label'))}">` +
+    tabs.map(k => `<button type="button" role="tab" id="projectsSubtab_${k}" data-projects-subtab="${k}" aria-selected="${k === active ? 'true' : 'false'}" class="projects-subtab${k === active ? ' active' : ''}" onclick="selectProjectsSubtab('${k}')">${escHtml(t(_PROJECTS_SUBTAB_LABELS[k]))}</button>`).join('') + `</div>`;
+}
+function selectProjectsSubtab(k) {
+  if (!_projectsSubtabValid(k)) k = 'overview';
+  _projectsState.subtab = k;
+  _projectsRememberSubtab(k);
+  try {
+    if (_projectsState.selected) {
+      history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, k));
+    }
+  } catch (_) { /* history blocked */ }
+  _projectsPaint();
 }
 
 // ── Project roll-up section: progress bars, cost in points, throughput ──────
@@ -3595,10 +3656,9 @@ function _projectEventStreamHTML(ev, err) {
 // the selected project. A reply held for another project is not shown.
 function _projectLinksHTML(p) {
   const L = _projectsLinks.name === p.name ? _projectsLinks : { policy: null, policyError: '', merge: null, mergeError: '', events: null, eventsError: '' };
-  return `<div id="projectLinks" style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">` +
+  return `<div id="projectLinks" style="margin-top:12px;">` +
     _projectPolicyEffectiveHTML(L.policy, L.policyError) +
-    _projectMergePipelineHTML(L.merge, L.mergeError) +
-    _projectEventStreamHTML(L.events, L.eventsError) + `</div>`;
+    _projectMergePipelineHTML(L.merge, L.mergeError) + `</div>`;
 }
 
 // _projectArcDocsHTML lists an arc's plan and design document links and its
@@ -3907,6 +3967,9 @@ function _projectsLoadSelected() {
 function renderProjectsView() {
   _projectsState.selected = (() => {
     const fromHash = _projectsHashParse(_projectsCurrentHash());
+    // A projects address opens Overview unless it names a sub-tab; no address
+    // at all keeps the remembered sub-tab.
+    if (fromHash !== null) _projectsState.subtab = _projectsHashSubtab(_projectsCurrentHash()) || 'overview';
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   _projectsPaint();
@@ -3954,7 +4017,7 @@ function selectProjectsView(name) {
   _projectsState.selected = name || _PROJECTS_OVERVIEW;
   _projectsRememberLast(_projectsState.selected);
   try {
-    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected));
+    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true)));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
   return _projectsLoadSelected().then(() => {
