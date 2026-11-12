@@ -318,7 +318,7 @@ jobs:
             ${{ matrix.name == 'agent-base' && 'ghcr.io/dmz006/datawatch/agent-base:latest' || '' }}
           push: true
       - name: Install Trivy
-        run: bash scripts/ci-install-trivy.sh v0.73.0 /usr/local/bin
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy table)
         # Print human-readable table to the job log (non-blocking pass).
         run: |
@@ -448,7 +448,7 @@ jobs:
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
           push: true
       - name: Install Trivy
-        run: bash scripts/ci-install-trivy.sh v0.73.0 /usr/local/bin
+        run: bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
       - name: Scan ${{ matrix.name }} — HIGH/CRITICAL (Trivy table)
         run: |
           trivy image \

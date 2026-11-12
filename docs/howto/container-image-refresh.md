@@ -70,16 +70,81 @@ PATH and exercises the success, the persistent-failure, and the
 missing-argument paths, asserting the error text, the exit code and the state
 left behind.
 
-**Migration status:** all eight "Install Trivy" steps now call the hardened
-installer, so the guarantees above hold in every workflow: two in
-`release.yaml` (`v0.73.0`), two in `containers.yaml` (`v0.70.0`) and four in
-`image-refresh.yaml` (the workflow's `TRIVY_VERSION`, `v0.73.0`). None of them
-fetches the installer from `main` any more.
+**One pin, one place.** The Trivy version is pinned in a single file,
+`scripts/trivy-version.txt`, which holds one `vX.Y.Z` tag (currently
+`v0.73.0`). Every workflow that installs Trivy reads that file and passes the
+tag to the installer:
 
-The pins were not changed by the migration. `containers.yaml` still pins
-`v0.70.0` while `release.yaml` and `image-refresh.yaml` pin `v0.73.0`, so a
-pin change that updates only one workflow would leave the others behind.
-Unifying the pin is a separate decision for the operator.
+```bash
+bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin
+```
+
+No workflow carries a `TRIVY_VERSION:` value or a literal tag of its own, so
+`release.yaml`, `containers.yaml` and `image-refresh.yaml` can no longer drift
+apart.
+
+**Why `v0.73.0`.** The three workflows used to disagree: release and
+image-refresh pinned `v0.73.0` and the container build pinned `v0.70.0`. All
+three scan the same shipped images, so the newer tag was chosen: a scan result
+that differs by workflow only because of the scanner version is noise. The
+kind smoke workflow installs helm the same way: pinned, with a retrying
+download (see [Helm in the kind smoke workflow](#helm-in-the-kind-smoke-workflow)).
+
+**To bump Trivy,** edit `scripts/trivy-version.txt` only. A scan that begins
+failing or passing after the bump is the new Trivy's doing, not drift.
+
+**The guard.** `bash scripts/check-trivy-version-single.sh` fails when the file
+is missing or does not hold exactly one `vX.Y.Z` line, when a workflow carries
+a `TRIVY_VERSION:` value or passes a literal tag to `ci-install-trivy.sh`, or
+when a workflow calls the installer without reading the version file. Its
+coverage is `bash scripts/tests/check-trivy-version-single_test.sh`, which runs
+it against fixture trees.
+
+## Helm in the kind smoke workflow
+
+The "Install kind + kubectl + helm" step of `.github/workflows/kind-smoke.yaml`
+used to pipe the moving `get-helm-3` script into `bash`. It now follows the
+Trivy pattern:
+
+```bash
+sudo bash scripts/ci-install-helm.sh "$(cat scripts/helm-version.txt)" /usr/local/bin
+```
+
+- **One pin.** The Helm version is the single `vX.Y.Z` tag in
+  `scripts/helm-version.txt` (currently `v3.17.3`). To bump Helm, edit that
+  file only; the workflow holds no literal tag.
+- **Pinned download.** `scripts/ci-install-helm.sh <tag> <install-dir>` fetches
+  `https://get.helm.sh/helm-<tag>-linux-amd64.tar.gz` for that exact tag.
+- **Retries.** 5 attempts, 10 s apart, on any error, with a 20 s connect and a
+  120 s total timeout.
+- **No pipe-to-shell.** The archive goes to a temp file first, then only
+  `linux-amd64/helm` is unpacked and installed into the install directory
+  (mode 0755). Temp files are removed on exit.
+- **Fails loudly.** A persistent download failure exits non-zero with curl's
+  status and the URL on stderr (`error: failed to download helm archive (curl
+  exit status N): <url>`), so the step goes red. Missing arguments exit 2 with
+  a usage line.
+
+Coverage: `bash scripts/tests/ci-install-helm_test.sh` (fake curl, no network).
+
+The helm script does not verify an archive checksum, and the version guard
+covers only the Trivy pin. The kind and kubectl downloads in the same step are
+separate: kind is pinned to `v0.24.0`; kubectl follows `stable.txt`.
+
+## Why versions are pinned
+
+For CI maintainers: the scanner and helm versions are deliberately fixed, so
+changing either is a deliberate version change made in one file, never a side
+effect of a moving download.
+
+- A new Trivy release can change scan results, and a blocking release job can
+  turn red because of it. With a pin, that happens when you bump the file,
+  where you can see and review it, not on an arbitrary day.
+- Helm is pinned for the same reason: a new helm release must not silently
+  change what the kind smoke install does.
+- Pinning the scanner does **not** freeze its vulnerability database. The
+  database is refreshed on every run regardless of the pin, so new advisories
+  still show up without a version change.
 
 ## Running it by hand
 

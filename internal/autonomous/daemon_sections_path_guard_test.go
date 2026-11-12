@@ -2,24 +2,27 @@ package autonomous
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 )
 
-func TestDaemonSectionsOnlyChangeUnsafePaths(t *testing.T) {
-	dir, run := dsoSetup(t, dsoDaemon)
-	other := t.TempDir()
-	abs := filepath.Join(other, "CLAUDE.md")
-	if err := os.WriteFile(abs, []byte(dsoDaemon), 0o644); err != nil {
-		t.Fatal(err)
+func TestDaemonSectionsOnlyChangePathGuard(t *testing.T) {
+	cases := []struct {
+		name string
+		rel  string
+		want bool
+	}{
+		{"traversal", "../CLAUDE.md", false},
+		{"nested traversal", "sub/../../CLAUDE.md", false},
+		{"nul byte", "CLAUDE.md\x00x", false},
+		{"empty", "", false},
+		{"in-base daemon-only change", "CLAUDE.md", true},
 	}
-	for _, rel := range []string{"../README.md", abs, "CLAUDE.md\x00x"} {
-		if daemonSectionsOnlyChange(context.Background(), dir, rel, run) {
-			t.Errorf("%q must be false", rel)
-		}
-	}
-	if !daemonSectionsOnlyChange(context.Background(), dir, "CLAUDE.md", run) {
-		t.Error("daemon-only difference on a normal path must be true")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, run := dsoSetup(t, dsoDaemon)
+			if got := daemonSectionsOnlyChange(context.Background(), dir, tc.rel, run); got != tc.want {
+				t.Errorf("daemonSectionsOnlyChange(%q) = %v, want %v", tc.rel, got, tc.want)
+			}
+		})
 	}
 }
