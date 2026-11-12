@@ -42,7 +42,7 @@ function textOf(html) {
   return s.replace(/&#\d+;|&#x[0-9a-f]+;/gi, '').replace(/\s+/g, ' ').trim();
 }
 
-test('GENERAL_CONFIG_FIELDS carries a self-config section with the three BL412 keys', () => {
+test('GENERAL_CONFIG_FIELDS carries a self-config section with the BL412 keys and the sensitive writes switch', () => {
   const sandbox = loadApp();
   const sec = vm.runInContext(
     '(() => { const s = GENERAL_CONFIG_FIELDS.find(x => x.id === "selfconfig"); return s ? { sectionKey: s.sectionKey, fields: s.fields } : null; })()', sandbox);
@@ -54,6 +54,7 @@ test('GENERAL_CONFIG_FIELDS carries a self-config section with the three BL412 k
     'mcp.allow_self_config',
     'mcp.self_config_audit_path',
     'mcp.self_config_audit_denied',
+    'mcp.allow_sensitive_writes',
   ]);
   const byKey = {};
   for (const f of parsed.fields) byKey[f.key] = f;
