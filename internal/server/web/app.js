@@ -3741,6 +3741,7 @@ function _projectsLoad() {
     _projectsState.list = Array.isArray(list) ? list : [];
     _projectsState.error = '';
   }).catch(err => {
+    if (!_projectsActive()) return;
     _projectsState.list = _projectsState.list || [];
     _projectsState.error = (err && err.message) || String(err);
   });
@@ -45551,7 +45552,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // A stored 'projects' view or a #projects hash restores into the Automata
     // Projects sub-tab; navigate maps the old view name onto it.
-    if (!_initView && _projectsHashParse(_projectsCurrentHash()) !== null) _initView = 'projects';
+    // A projects hash wins over a stored 'autonomous' view (Projects visits
+    // persist 'autonomous') as well as over no stored view.
+    if ((!_initView || _initView === 'autonomous') && _projectsHashParse(_projectsCurrentHash()) !== null) _initView = 'projects';
     navigate(_initView || 'sessions', _initSession || undefined);
 
     // A saved link to the Automation list or one Automation lands on the
