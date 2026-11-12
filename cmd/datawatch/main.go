@@ -12690,7 +12690,7 @@ func newSessionCmd() *cobra.Command {
 		Use:     "new [task]",
 		Aliases: []string{"start"},
 		Short:   "Start a new AI coding session",
-		Args:  cobra.MinimumNArgs(1),
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
