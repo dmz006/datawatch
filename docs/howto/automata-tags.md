@@ -419,6 +419,14 @@ listed as **federated** for every kind that can be sent to a peer.
   axes it carried before, including role, kind, stage and Automaton.
 - An axis you have turned off (see [The ten axes](#the-ten-axes)) is left out
   of every row.
+- **Sessions started before this change** keep the tags they had. To bring
+  them up to the full set, preview with `datawatch autonomous tags sweep
+  --dry-run`, then run `datawatch autonomous tags sweep`.
+
+**For the operator to review:** the table reflects the start paths in the
+current code. Confirm that the Council and Eval rows (no Automaton axes) and
+the Supervisor row (no `automaton`, `automation` or `stage`) match what you
+expect before the next release.
 
 ### Filtering by a tag or an axis
 
