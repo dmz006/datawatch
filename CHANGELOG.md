@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **One Trivy pin, and a pinned, retrying helm install.** Every workflow that installs Trivy (`release.yaml`, `containers.yaml`, `image-refresh.yaml`) now reads the tag from `scripts/trivy-version.txt` (`v0.73.0`) and passes it to `scripts/ci-install-trivy.sh`; no workflow carries its own tag. `kind-smoke.yaml` installs helm with `scripts/ci-install-helm.sh` and the tag in `scripts/helm-version.txt` (`v3.17.3`): a pinned archive from `get.helm.sh`, five retries, loud failure, no pipe-to-shell. `scripts/check-trivy-version-single.sh` guards the Trivy pin. The container build's Trivy moves from `v0.70.0` to `v0.73.0`, so its scan can report different findings than before.
+- **The upstream-watch job reads the pin from the version file and no longer checks the installer for drift.** The scanner-pin check compares `scripts/trivy-version.txt` with the latest `aquasecurity/trivy` release. The installer-from-`main` drift check is retired because the installer is no longer fetched from `main`. Docs: `docs/howto/container-image-refresh.md`, `docs/operations.md`, the Trivy and Helm version pin entries in `docs/datawatch-definitions.md`.
+- **Migration:** none for operators. The helm archive checksum is not verified and the version guard does not cover the helm pin; the operator should review both.
+
 ## v9.135.0 — Self-config is a built-in capability group
 
 ### Added

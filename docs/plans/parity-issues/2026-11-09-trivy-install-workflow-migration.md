@@ -1,5 +1,12 @@
 # [draft] Migrate every workflow "Install Trivy" step to scripts/ci-install-trivy.sh
 
+> **Status update (2026-11-12): resolved in the repository.** All eight Trivy steps now call
+> `scripts/ci-install-trivy.sh` with the tag read from `scripts/trivy-version.txt`, and the kind
+> smoke workflow installs helm through `scripts/ci-install-helm.sh` with the tag in
+> `scripts/helm-version.txt`. The text below is the original 2026-11-09 draft and describes the
+> state before that change. See `docs/howto/container-image-refresh.md`.
+
+
 Draft 2026-11-09 for a datawatch repository CI issue. This work (the hardened
 Trivy installer `scripts/ci-install-trivy.sh`, its bash test
 `scripts/tests/ci-install-trivy_test.sh`, and the docs set in
