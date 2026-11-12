@@ -237,11 +237,11 @@ func TestNodeAllowsConsumer(t *testing.T) {
 		c    string
 		want bool
 	}{
-		{Permissions{}, "council", true},                                                    // empty allow = all
-		{Permissions{AllowedConsumers: []string{"council"}}, "council", true},               // explicit allow
-		{Permissions{AllowedConsumers: []string{"council"}}, "ask", false},                  // not in allow
-		{Permissions{AllowedConsumers: []string{"*"}}, "anything", true},                    // wildcard
-		{Permissions{DeniedConsumers: []string{"council"}}, "council", false},               // denied wins
+		{Permissions{}, "council", true},                                                               // empty allow = all
+		{Permissions{AllowedConsumers: []string{"council"}}, "council", true},                          // explicit allow
+		{Permissions{AllowedConsumers: []string{"council"}}, "ask", false},                             // not in allow
+		{Permissions{AllowedConsumers: []string{"*"}}, "anything", true},                               // wildcard
+		{Permissions{DeniedConsumers: []string{"council"}}, "council", false},                          // denied wins
 		{Permissions{AllowedConsumers: []string{"*"}, DeniedConsumers: []string{"ask"}}, "ask", false}, // denied wins over allow-all
 	}
 	for i, tc := range cases {
