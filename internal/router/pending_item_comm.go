@@ -172,3 +172,9 @@ func (r *Router) replyPendingItemsRefresh(args []string) {
 	}
 	r.reply("autonomous pending-items-refresh", text)
 }
+
+// isPendingItemConfigKey reports whether key is one of the nine pending item
+// settings, so configure can check the value before it reaches the daemon.
+func isPendingItemConfigKey(key string) bool {
+	return strings.HasPrefix(key, "autonomous.automation.pending_item_")
+}

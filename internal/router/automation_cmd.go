@@ -27,7 +27,7 @@ import (
 
 const (
 	automationUsage = "usage: automation activate <id> | list | get <id> | status <id> | pause <id> [reason] | resume <id> [reason] | " +
-		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <prd-id> [urgent] <reason> | " +
+		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <automaton-id|pending_item=<item-id>> [urgent] <reason> | " +
 		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
 		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
 		"set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>] | " +
@@ -39,7 +39,7 @@ const (
 		"in-flight=true cancels members running now, in-flight=false lets them finish.\n" +
 		"examples:\n  automation cancel ab12 in-flight=true\n  automation cancel ab12 in-flight=false"
 	automationSkipUsage    = "usage: automation skip <id> <member-id> [on_complete|on_blocked|on_failed]"
-	automationInsertUsage  = "usage: automation insert <id> <prd-id> [urgent] <reason...>. A reason is required."
+	automationInsertUsage  = "usage: automation insert <id> <automaton-id|pending_item=<item-id>> [urgent] <reason...>. A reason is required. pending_item=<id> inserts a pending item (work with no Automaton yet) that holds the Automation until one is attached."
 	automationRemoveUsage  = "usage: automation remove <id> <member-id>"
 	automationApproveUsage = "usage: automation approve <id> <member-id>"
 	automationSetLLMUsage  = "usage: automation set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] " +
@@ -162,8 +162,16 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			r.send(automationInsertUsage)
 			return
 		}
+		member := map[string]any{"prd_id": args[2]}
+		if item, ok := strings.CutPrefix(args[2], "pending_item="); ok {
+			if strings.TrimSpace(item) == "" {
+				r.send(automationInsertUsage)
+				return
+			}
+			member = map[string]any{"pending_item_id": item}
+		}
 		r.automationControl("insert", args[1], "insert_member", "member inserted", map[string]any{
-			"member": map[string]any{"prd_id": args[2]},
+			"member": member,
 			"urgent": urgent,
 			"reason": reason,
 		})
