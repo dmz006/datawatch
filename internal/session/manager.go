@@ -2679,6 +2679,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			return nil, fmt.Errorf("save subprocess session: %w", err)
 		}
 		m.notifySessionCreated(sess)
+		// Hold the session as a live runner before its goroutine starts, so
+		// there is no window where it runs but is not registered.
+		// runSubprocess releases it when it returns.
+		m.RegisterRunner(sess.FullID)
 		go m.runSubprocess(sess)
 		m.notifySessionStart(sess)
 		return sess, nil
@@ -4131,6 +4135,9 @@ func (m *Manager) subprocessEnv(sess *Session) []string {
 }
 
 func (m *Manager) runSubprocess(sess *Session) {
+	// The caller registered the runner before starting this goroutine; it is
+	// held for exactly as long as this function runs.
+	defer m.ReleaseRunner(sess.FullID)
 	f, err := os.OpenFile(sess.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		m.subprocessFinish(sess, fmt.Errorf("open log: %w", err))
