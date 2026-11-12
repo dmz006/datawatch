@@ -20,6 +20,9 @@ LLM_ONLY=(
     README          # not a howto, just an index
     v7-compute-migration  # narrative migration doc (alpha.15) — explains what auto-migration did, no operator action steps
     dashboard       # PWA-only view; navigation not callable from MCP — reference/conceptual doc
+    automata-cost       # PWA-only cost cards on the Automata view; no MCP-callable steps
+    automata-resources  # PWA-only resource cards on the Automata view; no MCP-callable steps
+    list-tiles-and-grouping  # PWA-only Sessions page layout; no MCP-callable steps
     compute-routing     # reference doc explaining routing modes; configuration is via compute node CRUD (covered by compute-nodes howto)
     federation-cbac     # conceptual reference for CBAC model; federation CRUD steps are in federated-observer howto
     container-image-refresh  # operator/maintainer reference for a CI workflow; no MCP-callable steps

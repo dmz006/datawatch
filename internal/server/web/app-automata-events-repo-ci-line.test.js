@@ -48,5 +48,5 @@ test('renderAutonomousView does not start the repo CI status poll', () => {
 
 test('the Events sub-tab still sits in the bar after the line is removed', () => {
   const tabs = [...subTabBarSource().matchAll(/data-tab="([a-z]+)"/g)].map(m => m[1]);
-  assert.deepEqual(tabs, ['automation', 'automata', 'events', 'templates']);
+  assert.deepEqual(tabs, ['projects', 'automation', 'automata', 'events', 'templates']);
 });

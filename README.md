@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.146.1 (2026-11-12).** A shared relative-path guard now protects the uncommitted-work check, the daemon-only-change checks, the task-commit file list and the cleanup Fix permissions action. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.147.0 (2026-11-12).** Projects is now the first sub-tab of Automata, to the left of Automation, and the top-level Projects button is gone; old Projects links and saved views land on the sub-tab. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

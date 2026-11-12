@@ -64,6 +64,34 @@ or `git commit -a` in a tree that also holds someone else's work in
 progress. The diff looks fine to the verifier because it's real content;
 it's just not this task's content.
 
+## How the checker runs git
+
+The check reads your repository with git, and a repository can carry
+its own git configuration (`.git/config`) that names programs git
+should start. To make sure that reading a project never runs one of
+them, every git call the drift checker and the undeclared-edit check
+make is hardened:
+
+| Option | What it stops |
+|---|---|
+| `-c core.fsmonitor=false` | A file-system monitor program named by the repository's `core.fsmonitor` |
+| `-c core.hooksPath=` | A hooks directory named by the repository's `core.hooksPath` |
+| `--no-optional-locks` | git taking optional locks (such as refreshing the index) in your tree |
+| `--no-ext-diff` (on `git diff` only) | An external diff program named by the repository or its attributes |
+
+The calls are read-only (`git diff` and `git log`). The check also
+refuses to run for a project folder that is empty, relative or starts
+with a dash (it would be read as a git option): the call fails with
+`invalid git directory` and git is not started, so that task gets no
+finding from the check.
+
+There is nothing to configure: the hardening has no setting and no
+per-Automaton override, and what the check flags, and what
+`drift_mode` and `undeclared_edit_mode` do with a finding, are
+unchanged. If a project relied on a custom `core.fsmonitor` or a diff
+program to change what the check sees, the check no longer follows it;
+it reads plain git state.
+
 ## What is and isn't flagged
 
 | Situation | Flagged? | Blocks (drift_mode: block)? |
@@ -353,6 +381,7 @@ direct-mode Automaton, list every file a task should touch in its
 ## See also
 
 - [guardrail-library.md](guardrail-library.md): guardrail profiles, per-Automaton overrides, resolution order
+- [operations.md](../operations.md#undeclared-edit-mode-autonomousundeclared_edit_mode): the undeclared-edit setting and how the checker runs git
 - [ci-watch-guardrail.md](ci-watch-guardrail.md): the completion guardrail that watches CI for what an Automaton pushed
 - [autonomous-recovery.md](autonomous-recovery.md): resetting and re-running tasks on a Blocked Automaton
 - [mcp.md](../mcp.md): MCP tool reference

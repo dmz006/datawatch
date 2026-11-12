@@ -42,6 +42,15 @@ const verifyPIDStartSkew = 3 * time.Second
 // times. It is 100 on every common Linux build.
 const verifyClockTicksPerSecond = 100
 
+// maxProcStartTicks bounds the start-time tick count read from a stat line so
+// the conversion to time.Duration cannot overflow. 2^50 ticks at 100 Hz is far
+// beyond any real uptime.
+const maxProcStartTicks = 1 << 50
+
+// procStatPathFmt is the per-pid stat path; a variable so tests can point it
+// at synthetic files.
+var procStatPathFmt = "/proc/%d/stat"
+
 // verifyWaitPollInterval is how often a waiter re-reads an alive record.
 var verifyWaitPollInterval = 500 * time.Millisecond
 
@@ -103,7 +112,7 @@ func verifyPIDMatchesRecord(pid int, startedAt time.Time) bool {
 // pid from /proc. ok is false when /proc is unavailable or unparseable (for
 // example on a non-Linux host), which makes the pid untrusted.
 func procStartAndState(pid int) (time.Time, byte, bool) {
-	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)) // #nosec G304 -- numeric pid
+	stat, err := os.ReadFile(fmt.Sprintf(procStatPathFmt, pid)) // #nosec G304 -- numeric pid
 	if err != nil {
 		return time.Time{}, 0, false
 	}
@@ -120,6 +129,9 @@ func procStartAndState(pid int) (time.Time, byte, bool) {
 	}
 	ticks, err := strconv.ParseUint(fields[19], 10, 64)
 	if err != nil {
+		return time.Time{}, 0, false
+	}
+	if ticks > maxProcStartTicks {
 		return time.Time{}, 0, false
 	}
 	boot, ok := bootTime()

@@ -205,7 +205,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.146.1"
+var Version = "9.147.0"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -1255,7 +1255,7 @@ func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 }
 
 // SetRestartFunc wires the daemon self-restart function.
-func (s *Server) SetRestartFunc(fn func())             { s.restartFn = fn }
+func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
 
 // SetRestartFuncForce wires the force-aware restart function (the restart
 // guard). It takes precedence over SetRestartFunc's function for /api/restart.
