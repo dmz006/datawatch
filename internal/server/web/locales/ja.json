@@ -4848,5 +4848,11 @@
   "branch_refresh_override_default": "デーモン設定を使う",
   "branch_refresh_override_on": "常に更新する",
   "branch_refresh_override_off": "更新しない",
-  "branch_refresh_override_saved": "ブランチ更新の上書きを保存しました"
+  "branch_refresh_override_saved": "ブランチ更新の上書きを保存しました",
+  "compute_observed_peers_title": "Observed peers with no node",
+  "compute_observed_peers_hint": "These peers report in but have no compute node. Adding one needs an address you enter.",
+  "compute_observed_peer_add": "Add as a compute node",
+  "compute_observed_peer_add_tip": "Open the add form with this peer name filled in. You type the address; nothing is created until you save.",
+  "compute_unanswered_title": "Auto-created nodes that never answered",
+  "compute_unanswered_hint": "For review only. Nothing here is changed or removed automatically."
 }
