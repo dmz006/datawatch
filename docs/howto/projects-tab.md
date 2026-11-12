@@ -243,6 +243,17 @@ datawatch projects arcs core-api --set a1b2c3d4:1:done,e5f6a7b8:2:active,c9d0e1f
 Set the weekly share and retention only as a record of intent until the matching
 behaviour ships; the page will show the value you set.
 
+### The `project` field on Automata and Automations
+
+Automaton and Automation reads (REST list and detail) carry a read-only `project`
+field. It is the registered project alias the record belongs to: the explicit
+project profile when it names a registered alias, otherwise the longest registered
+alias directory that contains the record's project directory. It is worked out on
+every read from the aliases you register with `projects upsert`; nothing is stored,
+so registering or removing an alias changes the field on the next read. When no
+alias matches, the field is left out. See
+[Derived project alias](../datawatch-definitions.md#derived-project-alias).
+
 ### Arc states
 
 | State | Meaning on the page |
@@ -415,6 +426,11 @@ the lane defaults. Use REST, MCP or the CLI for those.
   and the Projects link open the sub-tab, so bookmarks and the Settings help
   links stay valid. This page keeps its file name (`projects-tab.md`) for the
   same reason; rename it only if you also redirect the links that point here.
+- **Plan records.** The registry rows and findings of `docs/plans/` now have a
+  record store and a read-only importer, but no REST, MCP, CLI, comm or web app
+  surface yet, so this page does not list them. Decide which surface comes first
+  and where a records view belongs before it is built; see
+  [operations.md](../operations.md#plan-records-store-and-import).
 - **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
   order shipped. Confirm it is the order you want before the next release.
 
