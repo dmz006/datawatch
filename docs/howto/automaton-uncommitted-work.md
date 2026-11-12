@@ -314,11 +314,16 @@ files. A file path that would leave the worktree is refused.
 shared relative-path guard before it is joined onto the worktree directory: the
 path must be non-empty, free of NUL bytes, relative, and still inside the
 directory after cleaning. An absolute path, a `..` escape (including `a/../../x`)
-and a path that cleans to `.` are skipped, never read or committed. The same
-guard covers the check that tells a daemon-only change (the daemon's own marked
-blocks, or the lines it appends to an ignore file) from a worker's edit, and the
-list of files a task commit may stage. Valid in-tree paths behave as before, so
-nothing changes for a normal run.
+and a path that cleans to `.` are never read by the daemon's own checks. The
+same guard is applied directly at each of the three places that join a path
+onto the worktree: the check that tells the daemon's ignore-file lines from a
+worker's edit, the check that tells the daemon's own marked blocks from a
+worker's edit, and the list of files a task commit may stage. In the two
+daemon-change checks a path that fails the guard is counted as a worker's
+change (never read, never treated as daemon-only). In the task commit a path
+that fails the guard is handed to git unchanged, so git refuses it and the
+error is reported instead of the path being quietly dropped. Valid in-tree
+paths behave as before, so nothing changes for a normal run.
 
 **Where.** On the Housekeeping sub-tab each listed worktree has a **Commit**
 button. It opens a window showing the diff from

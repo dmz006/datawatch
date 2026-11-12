@@ -5,6 +5,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.146.4 — One Trivy version, pinned helm install, retire the installer-drift watch
+
+### Changed
+
+- **One Trivy pin for every workflow.** The release, container build and image-refresh workflows now read the Trivy tag from `scripts/trivy-version.txt` (`v0.73.0`) and hand it to `scripts/ci-install-trivy.sh`; no workflow carries its own tag any more. `scripts/check-trivy-version-single.sh` guards the pin and runs in CI. The container build's Trivy moves from `v0.70.0` to `v0.73.0`, so its scan can report different findings than before.
+- **The upstream-watch job reads the pin from the version file.** The scanner-pin check compares `scripts/trivy-version.txt` with the latest `aquasecurity/trivy` release, and the installer-drift check is retired because the installer is no longer fetched from `main`. Docs: `docs/howto/container-image-refresh.md`, `docs/operations.md`, and the Trivy and Helm version pin entries in `docs/datawatch-definitions.md`.
+- **Migration:** none for operators. **For the operator to review:** the helm archive checksum is not verified, and the version guard does not cover the helm pin.
+
+### Fixed
+
+- **The kind smoke workflow installs helm from a pinned, retried download instead of a pipe-to-shell.** `scripts/ci-install-helm.sh` fetches the archive for the tag in `scripts/helm-version.txt` (`v3.17.3`) from `get.helm.sh`, retries five times and fails loudly, so a transient download error no longer breaks the smoke run silently or pulls whatever helm is newest.
+
+## v9.146.3 — Five open code scanner alerts addressed with inline path guards and a tick bound
+
+### Security
+
+- **Five open code scanner alerts are addressed with inline path guards and a bound on a start-time conversion.** The path checks in the cleanup **Fix permissions** action, the task-commit file list, the uncommitted-work check and the daemon-only-change check now sit inline at the point where the path is used, in the form the scanner recognises: a path with a NUL byte or a non-local form (absolute, or one that escapes upward with `..`) is refused before any file-system call. The process start time read for a recorded verification script is bounded before it is converted to a duration, so a huge value in a stat line cannot overflow; a start time that cannot be read, or is implausibly large, makes the recorded process untrusted, so a recycled process id is never waited on as if it were the script. Behavior for valid input is unchanged. Whether the scanner alerts close is only known after the next scanner run on main. Migration: none.
+  - **For the operator to review:** a path the guards reject is still skipped as before, and a recorded verification run whose start time cannot be read now runs from the start instead of being waited on. See [uncommitted work](docs/howto/automaton-uncommitted-work.md), [worktree cleanup](docs/howto/automaton-worktree-cleanup.md) and [restarting with work running](docs/howto/restart-with-work-running.md).
+
+## v9.146.2 — Drift checker git calls hardened against repository-configured programs
+
+### Security
+
+- **The file drift check and the undeclared-edit check no longer start programs named by a repository's own git configuration.** Every git call these checks make now passes `-c core.fsmonitor=false`, `-c core.hooksPath=` and `--no-optional-locks`, and `git diff` also gets `--no-ext-diff`, so a file-system monitor, a hooks directory or an external diff program set in a project's `.git/config` or attributes is never run by the check. A project folder that is empty, relative or starts with a dash is refused with an `invalid git directory` error and git is not run; that task gets no finding from the check. The calls stay read-only, and `drift_mode`, `undeclared_edit_mode` and what is flagged are unchanged. There is no new setting. Migration: none.
+  - **For the operator to review:** a project that relied on a custom `core.fsmonitor` or diff program to change what the check sees now gets plain git state. See [howto/file-drift-guardrail.md](docs/howto/file-drift-guardrail.md#how-the-checker-runs-git).
+
 ## v9.146.1 — Path handling in the Automata package is hardened
 
 ### Security

@@ -8,18 +8,11 @@ Checks:
      (go.dev, GitHub releases, the Kubernetes stable feed, npm/PyPI/RubyGems
      /crates.io registry JSON APIs — source chosen from how the Dockerfile
      actually downloads the tool).
-  2. Scanner pin: TRIVY_VERSION in .github/workflows/*.y*ml vs the latest
+  2. Scanner pin: the tag in scripts/trivy-version.txt vs the latest
      aquasecurity/trivy release.
-  3. Scanner installer: a standing note for any workflow that still fetches
-     the Trivy installer from the moving `main` branch (none do since the
-     workflows moved to scripts/ci-install-trivy.sh, which fetches the pinned
-     tag, so the note is not emitted), and a finding when the installer text
-     at `main` differs (sha256) from the one at the pinned tag. That drift
-     check is unchanged and no longer guards anything the workflows fetch.
-     Monitoring only — the workflows are never edited by this script.
-  4. Advisory-only: OSV (api.osv.dev/v1/query) for every pin whose package
+  3. Advisory-only: OSV (api.osv.dev/v1/query) for every pin whose package
      can be named; tools OSV cannot name go under "Not checked".
-  5. Any feed failure (HTTP error, timeout, bad JSON) is recorded under
+  4. Any feed failure (HTTP error, timeout, bad JSON) is recorded under
      "Not checked" with the URL and never aborts the other checks.
 
 Usage:
@@ -54,9 +47,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GO_DL_FEED = "https://go.dev/dl/?mode=json"
 K8S_STABLE = "https://dl.k8s.io/release/stable.txt"
 OSV_QUERY = "https://api.osv.dev/v1/query"
-TRIVY_MAIN_INSTALLER = (
-    "https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh"
-)
 
 # ── Pin -> upstream source table ───────────────────────────────────────
 # Derived from how each Dockerfile actually downloads the tool (the
@@ -367,42 +357,22 @@ def parse_dockerfile_args(text):
     return pins
 
 
-def trivy_pins_in_workflows(workflow_dir):
-    """[(relpath, trivy_version)] for every workflow that pins TRIVY_VERSION
-    as `TRIVY_VERSION: vX.Y.Z`."""
-    pins = []
-    if not os.path.isdir(workflow_dir):
-        return pins
-    for fn in sorted(os.listdir(workflow_dir)):
-        if not (fn.endswith(".yaml") or fn.endswith(".yml")):
-            continue
-        rel = os.path.join(workflow_dir, fn)
-        with open(rel, encoding="utf-8") as f:
-            for line in f:
-                m = re.match(r"\s*TRIVY_VERSION\s*:\s*(v?[\w.]+)\s*$", line)
-                if m:
-                    pins.append((os.path.relpath(rel, os.path.dirname(os.path.dirname(workflow_dir))), m.group(1)))
-    return pins
+TRIVY_VERSION_FILE = os.path.join("scripts", "trivy-version.txt")
 
 
-def find_installer_refs(workflow_dir, needle=TRIVY_MAIN_INSTALLER):
-    """[(relpath, [line numbers]) for workflow lines that fetch the Trivy
-    installer from the moving `main` branch."""
-    refs = []
-    if not os.path.isdir(workflow_dir):
-        return refs
-    for fn in sorted(os.listdir(workflow_dir)):
-        if not (fn.endswith(".yaml") or fn.endswith(".yml")):
-            continue
-        rel = os.path.join(workflow_dir, fn)
-        hits = []
-        with open(rel, encoding="utf-8") as f:
-            for i, line in enumerate(f, start=1):
-                if needle in line:
-                    hits.append(i)
-        if hits:
-            refs.append((os.path.relpath(rel, os.path.dirname(os.path.dirname(workflow_dir))), hits))
-    return refs
+def trivy_pin_from_version_file(repo_root):
+    """[(relpath, trivy_version)] from scripts/trivy-version.txt under the
+    repo root (the single place the Trivy tag is pinned). Empty when the file
+    is missing or holds no tag."""
+    path = os.path.join(repo_root, TRIVY_VERSION_FILE)
+    if not os.path.isfile(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        value = f.read().strip()
+    if not re.fullmatch(r"v?[\w.]+", value):
+        return []
+    return [(TRIVY_VERSION_FILE.replace(os.sep, "/"), value)]
+
 
 
 # ── Latest-version lookups (each does at most one feed call) ───────────
@@ -682,10 +652,9 @@ def check_pins(repo_root, not_checked):
 
 
 def check_trivy(repo_root, not_checked):
-    """Checks 2 + 3. Returns (findings, standing)."""
+    """Check 2. Returns (findings, standing)."""
     findings, standing = [], []
-    workflow_dir = os.path.join(repo_root, ".github", "workflows")
-    for rel, value in trivy_pins_in_workflows(workflow_dir):
+    for rel, value in trivy_pin_from_version_file(repo_root):
         try:
             latest, feed = latest_from_source(TRIVY_LATEST)
         except FeedError as err:
@@ -696,7 +665,7 @@ def check_trivy(repo_root, not_checked):
             findings.append({
                 "kind": "stale_pin",
                 "arg": "TRIVY_VERSION",
-                "dockerfile": rel,  # it's a workflow, report says so below
+                "dockerfile": rel,  # the version file path is the reported location
                 "package": "Trivy",
                 "pinned": value,
                 "latest": latest,
@@ -705,48 +674,6 @@ def check_trivy(repo_root, not_checked):
                 "feed": feed,
                 "coupled": [],
             })
-        # Check 3b: installer at `main` vs installer at the pinned tag.
-        main_installer = TRIVY_MAIN_INSTALLER
-        tag = value if value.startswith("v") else f"v{value}"
-        pin_installer = (
-            f"https://raw.githubusercontent.com/aquasecurity/trivy/{tag}/contrib/install.sh"
-        )
-        try:
-            sha_main = hashlib.sha256(fetch(main_installer).encode("utf-8")).hexdigest()
-            sha_pin = hashlib.sha256(fetch(pin_installer).encode("utf-8")).hexdigest()
-        except FeedError as err:
-            not_checked.append({"url": err.url, "detail": err.reason})
-            continue
-        if sha_main != sha_pin:
-            findings.append({
-                "kind": "advisory",
-                "osv_id": "trivy-installer-drift",
-                "summary": (
-                    "Trivy installer at `main` differs (sha256 "
-                    f"{sha_main[:12]}...) from the one at pinned tag {tag} "
-                    f"({sha_pin[:12]}...) — monitoring only"
-                ),
-                "fixed": None,
-                "pinned": value,
-                "package": "Trivy installer",
-                "workflow": rel,
-                "arg": None,
-                "dockerfile": None,
-                "name": "trivy-installer",
-                "tool": "Trivy installer drift (main vs pinned tag)",
-            })
-    # Check 3a: standing note for every workflow pulling the installer from
-    # the moving `main` branch.
-    refs = find_installer_refs(workflow_dir)
-    if refs:
-        total = sum(len(h) for _, h in refs)
-        per = ", ".join(f"{r} ({len(h)} line{'s' if len(h) != 1 else ''}, L{h[0] if len(h) == 1 else f'{h[0]}-{h[-1]}'})"
-                        for r, h in refs)
-        standing.append(
-            f"Trivy installer fetched from the moving `main` branch in "
-            f"{len(refs)} workflow file(s), {total} line(s) total: {per}. "
-            "Monitoring only — not edited by this script."
-        )
     return findings, standing
 
 

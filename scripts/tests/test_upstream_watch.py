@@ -89,6 +89,14 @@ def make_worktree(root, dockerfiles=None, workflows=None, dockerfile_dev=None):
             f.write(dockerfile_dev)
 
 
+def make_trivy_version(root, text):
+    """Write scripts/trivy-version.txt under `root`."""
+    d = os.path.join(root, "scripts")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "trivy-version.txt"), "w", encoding="utf-8") as f:
+        f.write(text)
+
+
 def run_check_pins(root, dockerfiles, feed):
     """Build `dockerfiles` under a tempdir and run up.check_pins with the
     fake feed. Returns (findings, unmapped, checked, not_checked)."""
@@ -223,25 +231,22 @@ class UnmappedPinsTest(unittest.TestCase):
 
 # ── (5) Trivy scanner pin vs latest release ─────────────────────────────
 class TrivyPinTest(unittest.TestCase):
-    TRIVY_DOCKERFILE = "env:\n  TRIVY_VERSION: v0.48.3\n"
+    TRIVY_PIN = "v0.48.3\n"
 
-    def _trivy_feed(self, latest_tag, installer_main, installer_pin):
+    def _trivy_feed(self, latest_tag):
         return FakeFeed({
             TRIVY_LATEST_URL: json.dumps({"tag_name": latest_tag}),
-            up.TRIVY_MAIN_INSTALLER: installer_main,
-            f"https://raw.githubusercontent.com/aquasecurity/trivy/"
-            f"v0.48.3/contrib/install.sh": installer_pin,
         })
 
     def test_stale_trivy_pin_compared_to_latest_release(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        make_worktree(tmp.name, workflows={"trivy.yml": self.TRIVY_DOCKERFILE})
+        make_trivy_version(tmp.name, self.TRIVY_PIN)
         not_checked = []
-        with patch_feed(self._trivy_feed("v0.50.0", "echo main", "echo main")):
+        with patch_feed(self._trivy_feed("v0.50.0")):
             findings, standing = up.check_trivy(tmp.name, not_checked)
         self.assertEqual(not_checked, [])
-        self.assertEqual(standing, [])  # no installer ref in this workflow
+        self.assertEqual(standing, [])
         self.assertEqual(len(findings), 1)
         f = findings[0]
         self.assertEqual(f["kind"], "stale_pin")
@@ -249,19 +254,15 @@ class TrivyPinTest(unittest.TestCase):
         self.assertEqual(f["pinned"], "v0.48.3")
         self.assertEqual(f["latest"], "v0.50.0")
         self.assertEqual(f["bump"], "minor")
-        self.assertIn(".github/workflows/trivy.yml", f["dockerfile"])
+        self.assertEqual(f["dockerfile"], "scripts/trivy-version.txt")
         self.assertTrue(f["human_only"])
 
     def test_up_to_date_trivy_pin_not_reported(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        make_worktree(tmp.name, workflows={
-            "trivy.yml": "env:\n  TRIVY_VERSION: v0.50.0\n"})
+        make_trivy_version(tmp.name, "v0.50.0\n")
         feed = FakeFeed({
             TRIVY_LATEST_URL: json.dumps({"tag_name": "v0.50.0"}),
-            up.TRIVY_MAIN_INSTALLER: "echo installer",
-            f"https://raw.githubusercontent.com/aquasecurity/trivy/"
-            f"v0.50.0/contrib/install.sh": "echo installer",
         })
         not_checked = []
         with patch_feed(feed):
@@ -269,79 +270,6 @@ class TrivyPinTest(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual(not_checked, [])
         self.assertEqual(standing, [])
-
-
-# ── (6) Trivy installer refs + sha256 drift main vs pinned tag ──────────
-class InstallerCheckTest(unittest.TestCase):
-    def _tmp_tree(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        make_worktree(tmp.name, workflows={
-            "trivy.yml": "env:\n  TRIVY_VERSION: v0.48.3\n"})
-        return tmp.name
-
-    def test_ref_listed_with_file_and_line_count(self):
-        root = self._tmp_tree()
-        wf_dir = os.path.join(root, ".github", "workflows")
-        # two ref lines in one workflow + a non-workflow file (ignored)
-        with open(os.path.join(wf_dir, "ci.yml"), "w", encoding="utf-8") as f:
-            f.write("  - run: curl -fsSL " + up.TRIVY_MAIN_INSTALLER + " | sh\n"
-                    "  - run: curl -fsSL " + up.TRIVY_MAIN_INSTALLER + " | sh\n")
-        with open(os.path.join(wf_dir, "notes.txt"), "w", encoding="utf-8") as f:
-            f.write(up.TRIVY_MAIN_INSTALLER + "\n")  # not a workflow
-
-        refs = up.find_installer_refs(wf_dir)
-        self.assertEqual(len(refs), 1)
-        self.assertEqual(refs[0][0], ".github/workflows/ci.yml")  # relative to the repo root
-        self.assertEqual(refs[0][1], [1, 2])
-
-        feed = self._trivy_feed()
-        not_checked = []
-        with patch_feed(feed):
-            findings, standing = up.check_trivy(root, not_checked)
-        self.assertEqual(len(standing), 1)
-        note = standing[0]
-        self.assertIn("1 workflow file(s), 2 line(s) total", note)
-        self.assertIn(".github/workflows/ci.yml", note)
-        self.assertIn("L1-2", note)
-        self.assertIn("not edited by this script", note)
-
-    def _trivy_feed(self):
-        return FakeFeed({
-            TRIVY_LATEST_URL: json.dumps({"tag_name": "v0.50.0"}),
-            up.TRIVY_MAIN_INSTALLER: "echo installer-main",
-            "https://raw.githubusercontent.com/aquasecurity/trivy/"
-            "v0.48.3/contrib/install.sh": "echo installer-pinned",
-        })
-
-    def test_sha256_drift_between_main_and_pinned_tag_is_a_finding(self):
-        root = self._tmp_tree()
-        feed = self._trivy_feed()  # installer texts differ
-        not_checked = []
-        with patch_feed(feed):
-            findings, _ = up.check_trivy(root, not_checked)
-        self.assertEqual(not_checked, [])
-        drift = [f for f in findings
-                 if f.get("osv_id") == "trivy-installer-drift"]
-        self.assertEqual(len(drift), 1)
-        self.assertEqual(drift[0]["kind"], "advisory")
-        self.assertIn("sha256", drift[0]["summary"])
-        self.assertIn("v0.48.3", drift[0]["summary"])
-
-    def test_equal_installer_text_produces_no_drift_finding(self):
-        root = self._tmp_tree()
-        feed = FakeFeed({
-            TRIVY_LATEST_URL: json.dumps({"tag_name": "v0.50.0"}),
-            up.TRIVY_MAIN_INSTALLER: "echo same",
-            "https://raw.githubusercontent.com/aquasecurity/trivy/"
-            "v0.48.3/contrib/install.sh": "echo same",
-        })
-        not_checked = []
-        with patch_feed(feed):
-            findings, _ = up.check_trivy(root, not_checked)
-        self.assertEqual(not_checked, [])
-        self.assertEqual([f for f in findings
-                          if f.get("osv_id") == "trivy-installer-drift"], [])
 
 
 # ── (7) OSV advisories for a pinned version ─────────────────────────────
@@ -432,14 +360,12 @@ class ReportShapeTest(unittest.TestCase):
             tmp.name,
             dockerfiles={"Dockerfile.a":
                          "FROM golang:1.24\nARG GO_VERSION=1.24.2\n"},
-            workflows={"trivy.yml": "env:\n  TRIVY_VERSION: v0.48.3\n"})
+            workflows={"ci.yml": "name: ci\n"})
+        make_trivy_version(tmp.name, "v0.48.3\n")
         feed = FakeFeed({
             up.GO_DL_FEED: go_feed("1.25.0"),
             up.OSV_QUERY: json.dumps({"vulns": []}),
             TRIVY_LATEST_URL: json.dumps({"tag_name": "v0.50.0"}),
-            up.TRIVY_MAIN_INSTALLER: "echo installer",
-            "https://raw.githubusercontent.com/aquasecurity/trivy/"
-            "v0.48.3/contrib/install.sh": "echo installer",
         })
         with patch_feed(feed):
             md, jdoc = up.run_watch(tmp.name)
@@ -482,21 +408,16 @@ class CliOfflineEndToEndTest(unittest.TestCase):
                          "ARG GO_VERSION=1.24.2\n"
                          "ARG GOPLS_VERSION=0.20.1\n"},
             workflows={"ci.yml": (
-                "env:\n"
-                "  TRIVY_VERSION: v0.48.3\n"
                 "steps:\n"
                 "  - run: |\n"
                 "      curl -fsSL "
                 "https://raw.githubusercontent.com/aquasecurity/trivy"
                 "/main/contrib/install.sh | sh\n")})
+        make_trivy_version(self.root, "v0.48.3\n")
         fixtures = {
             up.GO_DL_FEED: go_feed("1.25.0", "1.26.0rc1"),
             up.OSV_QUERY: json.dumps({"vulns": []}),
             TRIVY_LATEST_URL: json.dumps({"tag_name": "v0.50.0"}),
-            up.TRIVY_MAIN_INSTALLER: "installer from main",
-            # differs from main -> drift finding
-            "https://raw.githubusercontent.com/aquasecurity/trivy/"
-            "v0.48.3/contrib/install.sh": "installer from pinned tag",
         }
         self.fixtures_path = os.path.join(self.root, "fixtures.json")
         with open(self.fixtures_path, "w", encoding="utf-8") as f:
@@ -513,7 +434,7 @@ class CliOfflineEndToEndTest(unittest.TestCase):
         with contextlib.redirect_stdout(out):  # keep the summary off test stdout
             rc = up.main(argv)
         self.assertEqual(rc, 0)
-        self.assertIn("upstream-watch: 3 finding(s)", out.getvalue())
+        self.assertIn("upstream-watch: 2 finding(s)", out.getvalue())
         # both reports written, and the fixture map was the only feed
         self.assertTrue(os.path.isfile(self.md_path))
         self.assertTrue(os.path.isfile(self.json_path))
@@ -523,13 +444,11 @@ class CliOfflineEndToEndTest(unittest.TestCase):
             jdoc = json.load(f)
         self.assertEqual(md.splitlines()[0], "<!-- upstream-watch -->")
         self.assertEqual(jdoc["findings_count"], len(jdoc["findings"]))
-        # GO stale + Trivy stale + installer drift = exactly 3 findings
-        self.assertEqual(jdoc["findings_count"], 3)
+        # GO stale + Trivy stale = exactly 2 findings
+        self.assertEqual(jdoc["findings_count"], 2)
         self.assertTrue(any(f.get("bump") == "minor" and
                             f.get("arg") == "GO_VERSION" for f in jdoc["findings"]))
         self.assertTrue(any(f.get("arg") == "TRIVY_VERSION"
-                            for f in jdoc["findings"]))
-        self.assertTrue(any(f.get("osv_id") == "trivy-installer-drift"
                             for f in jdoc["findings"]))
         # GOPLS_VERSION has no release feed -> reported under unmapped
         self.assertTrue(any(u["arg"] == "GOPLS_VERSION" for u in jdoc["unmapped"]))

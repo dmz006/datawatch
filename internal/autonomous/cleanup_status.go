@@ -607,8 +607,29 @@ func FixCleanupPermissions(base string, paths []string) (int, error) {
 	changed := 0
 	var errs []string
 	for _, orig := range paths {
-		p, ok := lexicalInsideBase(orig, cleanBase, realBase)
-		if !ok {
+		// Containment check, inline and purely lexical: no filesystem call
+		// happens on the requested path before it passes.
+		if orig == "" || strings.ContainsRune(orig, 0) {
+			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
+			continue
+		}
+		candidate := filepath.Clean(orig)
+		roots := []string{cleanBase}
+		if filepath.IsAbs(candidate) {
+			roots = append(roots, realBase)
+		} else {
+			candidate = filepath.Join(cleanBase, candidate)
+		}
+		p := ""
+		for _, root := range roots {
+			rel, rerr := filepath.Rel(root, candidate)
+			if rerr != nil || rel == "." || !filepath.IsLocal(rel) {
+				continue
+			}
+			p = candidate
+			break
+		}
+		if p == "" {
 			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
 			continue
 		}
@@ -657,30 +678,4 @@ func FixCleanupPermissions(base string, paths []string) (int, error) {
 		return changed, fmt.Errorf("fix permissions: %s", strings.Join(errs, "; "))
 	}
 	return changed, nil
-}
-
-// lexicalInsideBase decides, without touching the filesystem, whether p
-// names a path strictly inside the base. An absolute path must sit inside
-// either the cleaned base or its resolved form; a relative path is joined
-// to the base first. A path with a NUL byte is refused. It returns the
-// cleaned absolute path to act on.
-func lexicalInsideBase(p, cleanBase, realBase string) (string, bool) {
-	if p == "" || strings.ContainsRune(p, 0) {
-		return "", false
-	}
-	inside := func(path, root string) bool {
-		return path != root && strings.HasPrefix(path, root+string(filepath.Separator))
-	}
-	if filepath.IsAbs(p) {
-		c := filepath.Clean(p)
-		if inside(c, cleanBase) || inside(c, realBase) {
-			return c, true
-		}
-		return "", false
-	}
-	c := filepath.Join(cleanBase, p)
-	if inside(c, cleanBase) {
-		return c, true
-	}
-	return "", false
 }

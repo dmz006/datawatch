@@ -228,7 +228,7 @@ This section is for the operator: what happens to an Automaton's running tasks w
 
 **What the audit left as an operator choice, and how this tree resolves it.** `docs/plans/restart-matrix-findings.md` recorded one open choice — daemon-run verification scripts — and one case where part of the work is redone (the in-flight verifier). Both are resolved in this tree; the matrix states and the release-smoke skips below still record the pre-fix measurement, so until they are re-run on this tree treat the rows as fixed in code, not yet matrix-verified:
 
-- **Verification scripts, including final-gate scripts.** They no longer run as a direct child of the daemon with no record. They run detached and keep a durable run record — pid and start time, output, exit code, and a delivered flag, stored under the data dir (`verify-runs`). A restart does not re-run them: at boot the daemon waits on the run while its process is alive, consumes its exit code once if it ended while the daemon was down, and runs the script from the start only where no usable record is left. An undelivered run left by an earlier attempt is retired first, so the script is never delivered twice. A script that is slow or has effects that cannot be repeated can now survive a restart.
+- **Verification scripts, including final-gate scripts.** They no longer run as a direct child of the daemon with no record. They run detached and keep a durable run record — pid and start time, output, exit code, and a delivered flag, stored under the data dir (`verify-runs`). A restart does not re-run them: at boot the daemon waits on the run while its process is alive, consumes its exit code once if it ended while the daemon was down, and runs the script from the start only where no usable record is left. An undelivered run left by an earlier attempt is retired first, so the script is never delivered twice. A script that is slow or has effects that cannot be repeated can now survive a restart. A recorded process is trusted only when its start time read from the process table matches the record; an unreadable or implausibly large start time makes it untrusted, so a recycled pid is never waited on as if it were the script.
 - **The in-flight verifier.** A task verifying through a live verifier session keeps its worker, retry count and session count — and the daemon now adopts the verifier: it attaches a fresh waiter to the live verdict session. If that session ended while the daemon was down and left a verdict, that verdict is the outcome (a pass completes the task, a fail goes to the normal retry path). A second verifier runs only where neither the live session nor a leftover verdict is usable.
 - **Guardrail judgment in flight.** Same shape: the daemon attaches to the live judgment and consumes a verdict file it left, and re-judges once only if neither is usable, without ending the already-verified work beside it.
 
@@ -2613,12 +2613,35 @@ The hardened installer is `scripts/ci-install-trivy.sh <tag> <install-dir>`:
 Coverage: `bash scripts/tests/ci-install-trivy_test.sh` (fake curl; success,
 persistent-failure and usage-error paths).
 
-**Migration status:** all eight "Install Trivy" steps in `release.yaml` (2),
-`containers.yaml` (2) and `image-refresh.yaml` (4) now run
-`bash scripts/ci-install-trivy.sh "<pinned tag>" /usr/local/bin`; none fetches
-the installer from `main` any more. The pins were left as they were:
-`containers.yaml` uses `v0.70.0`, while `release.yaml` and `image-refresh.yaml`
-use `v0.73.0`. Unifying them is an operator decision. Full write-up in
+**Single pin.** The Trivy version lives only in `scripts/trivy-version.txt`
+(one `vX.Y.Z` tag, currently `v0.73.0`). The eight "Install Trivy" steps in
+`release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) run
+`bash scripts/ci-install-trivy.sh "$(cat scripts/trivy-version.txt)" /usr/local/bin`;
+no workflow holds a `TRIVY_VERSION:` value or a literal tag. To bump Trivy,
+edit that one file. The tag is `v0.73.0`, the newer of the two values the
+workflows used to carry (the container build had `v0.70.0`): the three
+workflows scan the same shipped images, so they now share one scanner version.
+The vulnerability database is refreshed on every run regardless of the pin;
+a new Trivy release can change scan results and turn a blocking release job
+red, which is why a bump is a deliberate edit.
+
+**Helm in the kind smoke workflow.** `kind-smoke.yaml` no longer pipes the
+moving `get-helm-3` script into `bash`. It runs
+`sudo bash scripts/ci-install-helm.sh "$(cat scripts/helm-version.txt)" /usr/local/bin`.
+The Helm tag is pinned in `scripts/helm-version.txt` (currently `v3.17.3`); the
+script downloads that release archive from `get.helm.sh` to a temp file (5
+retries, 10 s apart, 20 s connect and 120 s total timeouts), unpacks only
+`linux-amd64/helm`, and on a persistent failure exits non-zero naming curl's
+status and the URL. Coverage: `bash scripts/tests/ci-install-helm_test.sh`. The
+Helm pin is separate from the Trivy pin and `check-trivy-version-single.sh` does
+not cover it; the archive checksum is not verified.
+
+`bash scripts/check-trivy-version-single.sh` enforces this (bad or missing
+version file, a literal pin in a workflow, an installer caller that never reads
+the file); its coverage is
+`bash scripts/tests/check-trivy-version-single_test.sh`.
+
+The guard runs in `make lint` and `ci.yaml`. Full write-up in
 [howto/container-image-refresh.md](howto/container-image-refresh.md)
 (§ "How CI installs Trivy").
 
@@ -4731,6 +4754,8 @@ anything; it decides only what *happens* to the task:
 Only `off`, `warn` and `block` are accepted. `PUT /api/config` and
 `PUT /api/autonomous/config` reject anything else with HTTP 400; a bad value
 that is stored another way (hand-edited YAML) resolves to `warn`, never `off`.
+
+**How the checks run git.** The file drift check and this check run git read-only (`diff`, `log`) with `-c core.fsmonitor=false`, `-c core.hooksPath=` and `--no-optional-locks`, and `git diff` also gets `--no-ext-diff`, so a program that a project's own git configuration names (a file-system monitor, a hooks directory or an external diff program) is never started by the check. A project folder that is empty, relative or starts with a dash is refused (`invalid git directory`) and git is not run; that task gets no finding from the check. There is no setting for this and the modes above are unchanged. Operator review: a project that relied on a custom `core.fsmonitor` or diff program to change what the check sees now gets plain git state. See [howto/file-drift-guardrail.md](howto/file-drift-guardrail.md#how-the-checker-runs-git).
 
 ### Reading and writing it
 

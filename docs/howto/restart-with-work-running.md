@@ -179,6 +179,12 @@ At boot the daemon does not re-run it:
 The script's timeout is enforced from its recorded start time, so a script
 that outlives the daemon still ends on time even across the restart.
 
+A run is only waited on while its process is genuinely the script: the daemon
+checks the process table for the same start time as the record. If that start
+time cannot be read, or is implausibly large, the process is not trusted and
+the run is handled as one whose process is gone (never as a live one), so a
+recycled process id is not mistaken for the script.
+
 What changed versus the recorded audit: the restart-matrix findings
 ([`restart-matrix-findings.md`](../plans/restart-matrix-findings.md)) report
 verification scripts and final-gate scripts as "daemon children, rerun from
