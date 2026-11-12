@@ -137,7 +137,11 @@ datawatch alerts --mark-all-read
      alerts** (N). The heading above the list counts the alerts in
      the selected tab (e.g. "5 alerts in 3 active sessions"), and it
      matches the `all` filter chip because both read the same total.
-   - Filter chips: all / prompts / errors / warn / info
+   - Filter chips: all / prompts / errors / warn / info — each
+     chip carries its own count (e.g. `all ×7  prompts ×2  errors
+     ×1  warn ×1  info ×3`), and the chip counts count the alerts
+     in the currently selected tab, so switching tabs changes the
+     numbers (the `all` chip always matches the heading)
    - Search bar (searches title + body)
    - Sort toggle: by-session (sessions waiting for input shown first)
      or chronological (newest-first flat list)
