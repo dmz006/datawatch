@@ -3770,7 +3770,9 @@ paths:
         and a block waits for operator action again.
         The stored verdict is reused instead only when the head commit and the
         rules text the judge reads are both unchanged since it was made (and
-        the judge verdict cache is on). The reply `message` and the
+        the judge verdict cache is on). The reply `message` (carried by the
+        compact reply, `?view=compact`; the default full reply is the bare
+        Automaton with no message) and the
         `guardrail_rejudge` decision (naming the acting `actor`) then say
         plainly that the stored verdict was reused and why, and no new verdict
         is added; otherwise they say a new review ran on the named commit. The

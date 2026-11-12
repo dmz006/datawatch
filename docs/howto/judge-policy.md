@@ -447,13 +447,26 @@ How you act on it:
   still has incomplete tasks, is refused (naming the first such task). The
   re-judgment is a fresh completion review when the branch head or the rules
   text has changed since the stored verdict; it replays the stored verdict only
-  when both are unchanged and the verdict cache is on.
-- **A held review (`timed_out`, `needs_review`) is not a re-judge target** —
-  the re-judge endpoint applies only to blocked Automata. Resolve it through
+  when both are unchanged and the verdict cache is on. The compact reply
+  (`?view=compact`, which the MCP tool and the web app use) carries a
+  `message` that says which it was: `a new review ran on commit <sha>`, or
+  `the stored verdict was reused` with the reason. The web app shows it in the
+  notice after Retry or Reroute.
+- **A rules-review hold is a re-judge target once new commits land.** An
+  Automaton in `needs_review` because the completion review's retries were
+  spent, or because auto-fix was turned off, accepts a rejudge as long as
+  all its tasks are completed and the branch head has moved since the held
+  verdict. The review then runs fresh on the new head (a held review never
+  replays the stored verdict). With the head unchanged the rejudge is refused
+  before any judge runs, with the error that new commits are needed; commit
+  the fix on the Automaton's branch and try again.
+- **Any other held review (`timed_out`, or `needs_review` for another
+  reason) is not a re-judge target** — the re-judge endpoint refuses it,
+  naming the status. Resolve it through
   [How to resolve a hold](#how-to-resolve-a-hold): fix the capacity or the
   settings, cancel, reset the held task, and run the Automaton again. The
   PWA badge's Retry / Reroute buttons submit to the re-judge endpoint, so on
-  a held review they are refused; the cancel → reset → run path is what works.
+  such a hold they are refused; the cancel → reset → run path is what works.
 
 ## The per-commit verdict cache
 

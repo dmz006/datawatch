@@ -835,7 +835,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   autonomous_prd_rejudge(id="a1b2c3d4")
   ```
 
-  Returns the write reply described above (a small summary, not the whole Automaton); the guardrail verdict (when a new review ran) and the `guardrail_rejudge` Decision (with `judged_commit_sha` and `verdict_reused`) are in the Automaton's decision log, readable with `autonomous_prd_get`. The REST body `actor` (default `operator`) is fixed to `operator` here, as with the other PRD write tools.
+  Returns the write reply described above (a small summary, not the whole Automaton) with a `message` that says whether a new review ran on the named commit or the stored verdict was reused; the guardrail verdict (when a new review ran) and the `guardrail_rejudge` Decision (with `judged_commit_sha` and `verdict_reused`) are in the Automaton's decision log, readable with `autonomous_prd_get`. The REST body `actor` (default `operator`) is fixed to `operator` here, as with the other PRD write tools.
 
   **How the verdict is chosen (branch head aware).** The rejudge compares the branch head that the stored verdict was judged on with the current head:
 

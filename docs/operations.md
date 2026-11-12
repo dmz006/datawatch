@@ -970,7 +970,7 @@ In outcomes 2 and 3 the Automaton is `needs_review`, not `blocked` and not runni
 When the completion review has blocked an Automaton, or holds it in `needs_review` after the retries were spent (or with auto-fix turned off), and the fix is already in the work, you do not need to cancel the Automaton, add a task and reset it. Re-run the review on the new work instead:
 
 1. **Commit the fix on the Automaton's branch.** The rejudge looks at the branch head, so the fix must be a new commit on the branch the Automaton works on. Uncommitted changes in the working tree are not seen.
-2. **Run the rejudge.** Use the MCP tool `autonomous_prd_rejudge(id="<automaton id>")`, or the REST call `POST /api/autonomous/prds/<id>/rejudge`. No body is needed; the actor is recorded as the operator.
+2. **Run the rejudge.** Use the MCP tool `autonomous_prd_rejudge(id="<automaton id>")`, or the REST call `POST /api/autonomous/prds/<id>/rejudge?view=compact`. No body is needed; the actor is recorded as the operator. A rejudge is a fresh completion review of the current head commit, not a lookup of the old answer. The compact reply's `message` says which happened: `a new review ran on commit <sha>`, or `the stored verdict was reused` because the head commit and the rules text are unchanged since it was made. The web app's Retry and Reroute buttons show that message in the notice.
 3. **Read the result.**
    - `pass` — the blocked reason is cleared and the Automaton completes.
    - `block` — the Automaton stays `blocked` (or held) with the reason set from the new verdict. Read the findings, fix what they name, commit, and rejudge again.
