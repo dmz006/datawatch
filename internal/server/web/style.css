@@ -617,6 +617,11 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  /* FAB clearance for every long page (Sessions list, Automata, Projects,
+     Alerts, Observer, Dashboard, Settings, detail views all scroll in
+     this one box): keep the last card/card-rows clear of the fixed
+     56px start-session button and its 16px gap. */
+  padding-bottom: calc(56px + var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
 }
 .view.view-full {
   bottom: var(--keyboard-h, 0px);
@@ -1289,7 +1294,9 @@ body {
     background: var(--bg);
     border-top: 1px solid var(--border);
     border-radius: 14px 14px 0 0;
-    padding: 12px 16px 20px 16px;
+    /* Bottom padding keeps the last filters clear of the start-session
+       FAB zone on a phone (FAB itself is hidden while this opens). */
+    padding: 12px 16px calc(56px + var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px)) 16px;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
   }
   .tag-filter-sheet.is-open { display: flex; }
@@ -3018,6 +3025,36 @@ a.prd-file-chip-dl:hover { opacity: 1; }
 /* While the select bar is visible, dim/hide the new-session FAB so it
    doesn't compete for the same touchable region. */
 body:has(.select-bar-fixed) .new-session-fab { display: none; }
+
+/* FAB sheet/modal audit — floating start-session button was covering the
+   last rows of sheets (e.g. the Status chips and below in the Sessions
+   Filters sheet) and could sit on the bottom-right of open modals. While
+   any of these overlays is in the DOM, hide the FAB so it can never cover
+   their rows or steal a tap. Audited overlays (grep `position:fixed`,
+   the full fixed-element list):
+     .sessions-sheet-backdrop  — Sessions Filters sheet (bottom sheet on phone)
+     .confirm-modal-overlay    — shared modal overlay (new-session modal #newSessionModal,
+                                 file viewer, remote PWA viewer, confirm + generic modals)
+     .new-session-modal        — full-screen create-session slide-over
+     .observer-snapshot-modal  — observer peer snapshot modal
+     .voice-recording-overlay — mic recording popup
+     .backend-config-overlay  — backend config popup
+     .update-progress-overlay — self-update progress card
+     .automation-drawer       — Automata member / triage side drawer
+     .dboard-add-panel        — dashboard add-card panel
+     .tag-filter-sheet.is-open — tag filter sheet (phone)
+   (`.prd-edit-menu` and `.lifecycle-overflow-menu` are transient right-
+   click / hover flyouts, not sheets or modals — left out on purpose.) */
+body:has(.sessions-sheet-backdrop) .new-session-fab,
+body:has(.confirm-modal-overlay) .new-session-fab,
+body:has(.new-session-modal) .new-session-fab,
+body:has(.observer-snapshot-modal) .new-session-fab,
+body:has(.voice-recording-overlay) .new-session-fab,
+body:has(.backend-config-overlay) .new-session-fab,
+body:has(.update-progress-overlay) .new-session-fab,
+body:has(.automation-drawer) .new-session-fab,
+body:has(.dboard-add-panel) .new-session-fab,
+body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .select-bar-btn {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -7791,7 +7828,13 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .sessions-sheet { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: min(560px, 92vw); max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
 .sessions-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .sessions-sheet-close { background: transparent; border: 0; color: var(--text2); font-size: 16px; cursor: pointer; padding: 4px 8px; }
-.sessions-sheet-body { overflow-y: auto; padding: 4px 0 12px; }
+.sessions-sheet-body {
+  overflow-y: auto;
+  /* Bottom padding so the last section (Status chips and below) stays out
+     of the start-session FAB zone when the sheet docks beside the bottom
+     nav on a phone. */
+  padding: 4px 0 calc(56px + var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+}
 .sessions-sheet-sec { padding: 6px 0; }
 .sessions-sheet-sec h4 { margin: 6px 14px 2px; font-size: 11px; text-transform: uppercase; color: var(--text2); }
 .sessions-sheet-sub { margin: 6px 14px 2px; font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; }

@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The floating start-session button no longer covers open sheets and modals.** While a sheet or modal is open (the Sessions Filters sheet, the new-session modal, confirm and detail modals, the peer snapshot, the mic popup, the backend config, the update progress card, the Automata side drawer, the dashboard add-card panel, the phone tag filter) the button is hidden, so its row and the last chips of the sheet are fully visible and tappable. Long pages (Sessions list, Automata, Projects, Alerts, Observer, Dashboard, Settings, detail views) get extra padding under the last card so nothing hides behind the button; the button itself keeps its size and position on pages without an open sheet.
+
 ### Changed
 
 - **The phone/PWA server selector is now one header dropdown instead of a per-view chip row.** The fixed app header carries a single native dropdown on every page (the three-finger swipe sheet and the toolbar "back to this server" indicator are unchanged): **All servers**, this server (labelled with the daemon's hostname, never the word "Local"), and one entry per enabled peer. Unreachable peers stay listed and selectable with an "(unreachable)" hint. Choosing an entry re-renders the page you are on in place; the Observer and Settings views keep showing the single server whose data they last rendered while **All servers** is active. The five locales gained the dropdown labels.
