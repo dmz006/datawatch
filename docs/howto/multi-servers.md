@@ -23,13 +23,13 @@ them — or select "All" to see aggregated data from every server at once.
 
 ## What it is
 
-Five surfaces added in v7.2.0:
+Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and is now the one header dropdown in the fixed app header (this change):
 
 | Surface | What was added |
 |---------|---------------|
-| PWA Settings → Comms → Servers | Add / edit / delete / test remote server connections |
+| PWA Settings → Comms → **Remote Servers** card | Add / edit / delete / test remote server connections |
 | PWA header dropdown | One server selector in the fixed app header, present on every page |
-| REST | `POST/GET/PUT/DELETE /api/servers/{name}`, `POST /api/servers/{name}/test` |
+| REST | `GET/POST /api/servers`, `GET/PUT/DELETE /api/servers/{name}`, `POST /api/servers/{name}/test` |
 | MCP | `server_list`, `server_add`, `server_delete`, `server_test` tools |
 | CLI | `datawatch server {list,add,delete,test}` |
 
