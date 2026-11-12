@@ -9419,8 +9419,13 @@ paths:
         (done/total), cost in usage points and throughput. Automata of this
         project that no arc holds are in `unassigned`; `total` sums everything.
         Costs are points from the billing profile's point calibration, never
-        API dollars. Throughput counts Automata (completed, last updated in the
-        window) and tasks (completed, completed in the window) per day.
+        API dollars. Throughput counts Automata finished in the window and tasks
+        finished in the window, per day. An Automaton is finished when it is
+        completed, when it is cancelled or archived and its work branch is already
+        on the project's default branch, or when it carries a shipped record; its
+        finish time is the merge or ship time when known, else its last update. A
+        task counts from its own completion time, whatever the Automaton's final
+        status, and never twice.
       operationId: projectsRollup
       tags: [Singletons]
       parameters:

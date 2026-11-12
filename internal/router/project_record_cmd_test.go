@@ -162,6 +162,7 @@ func TestFormatProjectProgress(t *testing.T) {
 		"Progress for project acme (7-day window)",
 		"total: 3 automata, tasks 4/13, points 3.5",
 		"throughput: 1 automata, 2 tasks finished (0.14 automata/day, 0.29 tasks/day)",
+		"finished means completed, or cancelled or archived with its work branch on the default branch, or shipped",
 		"arc auto-1 [active]: 2 automata, tasks 4/10",
 		"unassigned: 1 automata, tasks 0/3",
 	} {

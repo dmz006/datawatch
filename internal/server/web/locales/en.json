@@ -955,6 +955,7 @@
   "projects_rollup_points_unpriced": "Not priced: the backends are not on a bundled plan",
   "projects_rollup_throughput_label": "Throughput, last %1$s days",
   "projects_rollup_throughput_value": "%1$s Automata finished (%2$s per day) · %3$s tasks finished (%4$s per day)",
+  "projects_rollup_throughput_help": "An Automaton counts as finished when it is completed, when it is cancelled or archived and its work is already on the project's default branch, or when it carries a shipped record. A task counts when it was completed in the window, whatever the Automaton's final status.",
   "projects_history_heading": "History",
   "projects_gantt_heading": "Gantt",
   "projects_gantt_window_label": "Window",

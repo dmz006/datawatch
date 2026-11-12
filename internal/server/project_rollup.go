@@ -20,11 +20,21 @@
 // plan has no point figure and reads as 0; points_priced says whether any
 // Automaton was priced.
 //
-// Throughput: an Automaton counts as finished when its status is completed and
-// its last update falls in the window (an Automaton has no completion
-// timestamp of its own, so UpdatedAt is the closest record). A task counts
-// when it is completed and its CompletedAt falls in the window. Both are
-// divided by the window length in days.
+// Membership: an Automaton belongs to the project by its explicit project link
+// first (rollupInput.Linked, which also maps a worktree to its repository),
+// then by the arc that holds it, and by directory only as a last fallback.
+//
+// Throughput: an Automaton counts as finished when it is completed, or when it
+// is cancelled or archived and its work branch is already on the project's
+// default branch (the read-only merge proof the merged-member decision uses),
+// or when it carries a shipped record (a merge commit). The supervisor and the
+// daemon cancel and archive an Automaton right after its work is merged, so a
+// status of completed alone would read shipped work as zero. The finish time is
+// the merge or ship time when known, else the last update, and it must fall in
+// the window. A cancelled Automaton whose branch is not merged is not counted.
+// A task counts from its own CompletedAt when it is completed and that time
+// falls in the window, for every Automaton of the project whatever its final
+// status, and never twice. Both are divided by the window length in days.
 //
 // Query: window=<days> (1–365, default 7) sets the throughput window and the
 // cost window. Reads require CapAutonomousRead, as the other project reads do.
@@ -32,11 +42,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
@@ -113,6 +125,18 @@ type rollupInput struct {
 	Points     map[string]float64
 	WindowDays int
 	Now        time.Time
+	// Linked reports whether the Automaton is explicitly linked to this
+	// project, including a worktree-based Automaton mapped to its repository.
+	// It is checked before the arc and the directory. Nil means no link.
+	Linked func(p *autonomous.PRD) bool
+	// Merged is the read-only merge proof: whether the Automaton's work branch
+	// is already on the project's default branch and, when known, when it
+	// landed (zero time = unknown). It is asked only for a cancelled or
+	// archived Automaton with no shipped record. Nil means not merged.
+	Merged func(p *autonomous.PRD) (merged bool, at time.Time)
+
+	// seenTasks keeps a task from being counted twice in the throughput.
+	seenTasks map[string]bool
 }
 
 // parseRollupWindow reads the window query value. Empty means the default.
@@ -129,6 +153,7 @@ func parseRollupWindow(raw string) (int, error) {
 
 // buildProjectRollup groups the project's Automata by arc and sums them.
 func buildProjectRollup(in rollupInput) projectRollup {
+	in.seenTasks = map[string]bool{}
 	since := in.Now.Add(-time.Duration(in.WindowDays) * 24 * time.Hour)
 	inWindow := func(t *time.Time) bool {
 		return t != nil && !t.Before(since) && !t.After(in.Now)
@@ -171,22 +196,27 @@ func buildProjectRollup(in rollupInput) projectRollup {
 	out.Unassigned = rollupGroup{Automata: []rollupAutomaton{}}
 
 	cleanDir := filepath.Clean(in.Dir)
+	seenPRD := map[string]bool{}
 	for _, p := range in.PRDs {
-		if p == nil || p.IsTemplate {
+		if p == nil || p.IsTemplate || seenPRD[p.ID] {
 			continue
 		}
 		auto := p.AutomationID
 		if auto == "" {
 			auto = memberOf[p.ID]
 		}
+		linked := in.Linked != nil && in.Linked(p)
 		var g *rollupGroup
 		if i, ok := arcIndex[auto]; ok && auto != "" {
 			g = &out.Arcs[i]
+		} else if linked {
+			g = &out.Unassigned
 		} else if p.ProjectDir != "" && filepath.Clean(p.ProjectDir) == cleanDir {
 			g = &out.Unassigned
 		} else {
 			continue
 		}
+		seenPRD[p.ID] = true
 		g.Automata = append(g.Automata, rollupAutomatonFor(p, auto, in, inWindow, g))
 	}
 
@@ -216,19 +246,17 @@ func buildProjectRollup(in rollupInput) projectRollup {
 func rollupAutomatonFor(p *autonomous.PRD, auto string, in rollupInput, inWindow func(*time.Time) bool, g *rollupGroup) rollupAutomaton {
 	ra := rollupAutomaton{
 		ID: p.ID, Title: p.Title, Status: string(p.Status),
-		AutomationID: auto, Finished: p.Status == autonomous.PRDCompleted,
-		SessionIDs: []string{},
+		AutomationID: auto, SessionIDs: []string{},
 	}
 	if in.SessionIDs != nil {
 		if ids := in.SessionIDs(p.ID); ids != nil {
 			ra.SessionIDs = ids
 		}
 	}
-	if ra.Finished && !p.UpdatedAt.IsZero() {
-		updated := p.UpdatedAt
-		if inWindow(&updated) {
-			g.Throughput.AutomataFinished++
-		}
+	finished, finishedAt := rollupFinished(p, in)
+	ra.Finished = finished
+	if finished && !finishedAt.IsZero() && inWindow(&finishedAt) {
+		g.Throughput.AutomataFinished++
 	}
 	for _, st := range p.Story {
 		for _, t := range st.Tasks {
@@ -237,7 +265,9 @@ func rollupAutomatonFor(p *autonomous.PRD, auto string, in rollupInput, inWindow
 			if t.Status == autonomous.TaskCompleted {
 				ra.Tasks.Done++
 				g.Tasks.Done++
-				if inWindow(t.CompletedAt) {
+				key := p.ID + "/" + t.ID
+				if inWindow(t.CompletedAt) && !in.seenTasks[key] {
+					in.seenTasks[key] = true
 					g.Throughput.TasksFinished++
 				}
 			}
@@ -247,6 +277,34 @@ func rollupAutomatonFor(p *autonomous.PRD, auto string, in rollupInput, inWindow
 		ra.Points = pts
 	}
 	return ra
+}
+
+// rollupFinished decides whether an Automaton counts as finished and when it
+// finished: completed; or cancelled or archived with its branch already on the
+// default branch; or carrying a shipped record. The time is the merge or ship
+// time when known, else the last update.
+func rollupFinished(p *autonomous.PRD, in rollupInput) (bool, time.Time) {
+	at := func(known time.Time) time.Time {
+		if !known.IsZero() {
+			return known
+		}
+		return p.UpdatedAt
+	}
+	var shipAt time.Time
+	if p.MergedAt != nil {
+		shipAt = *p.MergedAt
+	}
+	switch {
+	case p.IsShipped():
+		return true, at(shipAt)
+	case p.Status == autonomous.PRDCompleted:
+		return true, at(shipAt)
+	case (p.Status == autonomous.PRDCancelled || p.Status == autonomous.PRDArchived) && in.Merged != nil:
+		if merged, mergedAt := in.Merged(p); merged {
+			return true, at(mergedAt)
+		}
+	}
+	return false, time.Time{}
 }
 
 // finishGroup sums the points and turns the window counts into per-day rates.
@@ -284,6 +342,50 @@ func (s *Server) costRollupPoints(mgr *autonomous.Manager, now time.Time, window
 		}
 	}
 	return points
+}
+
+// rollupLinkedFn reports an Automaton as linked to the project when it works
+// in a git worktree of the project's repository: its directory sits under the
+// daemon's worktree base and the project's directory is the configured base
+// repository. This maps a worktree to its repository; the directory of a
+// worktree never equals the project's directory.
+func (s *Server) rollupLinkedFn(mgr *autonomous.Manager, projectDir string) func(*autonomous.PRD) bool {
+	cfg := mgr.Config()
+	repo := filepath.Clean(cfg.WorktreeBaseRepo)
+	if cfg.WorktreeBaseRepo == "" || filepath.Clean(projectDir) != repo {
+		return nil
+	}
+	return func(p *autonomous.PRD) bool {
+		return p.Git.Branch != "" && p.ProjectDir != "" && filepath.Clean(p.ProjectDir) != repo
+	}
+}
+
+// rollupMergedFn is the read-only merge proof the merged-member decision uses:
+// the Automaton's branch against the default branch of the base repository.
+// When it is merged, the time is the commit date of the proving commit.
+func (s *Server) rollupMergedFn(mgr *autonomous.Manager) func(*autonomous.PRD) (bool, time.Time) {
+	cfg := mgr.Config()
+	git := autonomous.NewMergeGitRunner()
+	return func(p *autonomous.PRD) (bool, time.Time) {
+		if p.Git.Branch == "" || cfg.WorktreeBaseRepo == "" {
+			return false, time.Time{}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		proof := autonomous.MergedMemberProof(ctx, git, cfg.WorktreeBaseRepo, p.Git.Branch)
+		if !proof.Merged {
+			return false, time.Time{}
+		}
+		out, err := git.Run(ctx, cfg.WorktreeBaseRepo, "log", "-1", "--format=%cI", proof.Commit)
+		if err != nil {
+			return true, time.Time{}
+		}
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(out))
+		if err != nil {
+			return true, time.Time{}
+		}
+		return true, at
+	}
 }
 
 // handleProjectRollup serves GET /api/projects/{name}/rollup.
@@ -327,6 +429,8 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 		Points:      s.costRollupPoints(mgr, now, windowDays),
 		WindowDays:  windowDays,
 		Now:         now,
+		Linked:      s.rollupLinkedFn(mgr, entry.Dir),
+		Merged:      s.rollupMergedFn(mgr),
 	})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

@@ -277,6 +277,7 @@ func formatProjectProgress(name, rawBody string) string {
 		fmt.Sprintf("  throughput: %d automata, %d tasks finished (%.2f automata/day, %.2f tasks/day)",
 			v.Total.Throughput.AutomataFinished, v.Total.Throughput.TasksFinished,
 			v.Total.Throughput.AutomataPerDay, v.Total.Throughput.TasksPerDay),
+		"  finished means completed, or cancelled or archived with its work branch on the default branch, or shipped; a task counts from its own completion time",
 	}
 	for _, a := range v.Arcs {
 		state := a.State

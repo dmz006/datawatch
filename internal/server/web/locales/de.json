@@ -990,6 +990,7 @@
   "projects_rollup_points_unpriced": "Nicht bepreist: Die Backends sind nicht in einem Paket enthalten",
   "projects_rollup_throughput_label": "Durchsatz, letzte %1$s Tage",
   "projects_rollup_throughput_value": "%1$s abgeschlossen (%2$s pro Tag) · %3$s Aufgaben abgeschlossen (%4$s pro Tag)",
+  "projects_rollup_throughput_help": "Ein Automat gilt als abgeschlossen, wenn er fertig ist, wenn er abgebrochen oder archiviert wurde und seine Arbeit bereits im Standard-Branch des Projekts liegt, oder wenn er einen Auslieferungseintrag hat. Eine Aufgabe zählt, wenn sie im Zeitraum abgeschlossen wurde, unabhängig vom Endstatus des Automaten.",
   "projects_history_heading": "Verlauf",
   "projects_gantt_heading": "Gantt-Diagramm",
   "projects_gantt_window_label": "Zeitraum",

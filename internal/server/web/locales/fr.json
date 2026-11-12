@@ -990,6 +990,7 @@
   "projects_rollup_points_unpriced": "Non chiffré : les backends ne sont pas inclus dans une offre groupée",
   "projects_rollup_throughput_label": "Débit, %1$s derniers jours",
   "projects_rollup_throughput_value": "%1$s terminés (%2$s par jour) · %3$s tâches terminées (%4$s par jour)",
+  "projects_rollup_throughput_help": "Un automate compte comme terminé lorsqu'il est achevé, lorsqu'il est annulé ou archivé et que son travail est déjà sur la branche par défaut du projet, ou lorsqu'il porte un enregistrement de livraison. Une tâche compte si elle a été terminée dans la période, quel que soit l'état final de l'automate.",
   "projects_history_heading": "Historique",
   "projects_gantt_heading": "Diagramme de Gantt",
   "projects_gantt_window_label": "Période",

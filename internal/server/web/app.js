@@ -3677,6 +3677,7 @@ function _projectRollupHTML(roll, arcs) {
     ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
     ${line(t('projects_rollup_points_label'), pointsVal)}
     ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
+    <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>
   </div>`;
 }
 

@@ -990,6 +990,7 @@
   "projects_rollup_points_unpriced": "Sin precio: los backends no están en un plan incluido",
   "projects_rollup_throughput_label": "Rendimiento, últimos %1$s días",
   "projects_rollup_throughput_value": "%1$s completados (%2$s por día) · %3$s tareas completadas (%4$s por día)",
+  "projects_rollup_throughput_help": "Un autómata cuenta como terminado cuando está completado, cuando fue cancelado o archivado y su trabajo ya está en la rama predeterminada del proyecto, o cuando tiene un registro de entrega. Una tarea cuenta si se completó en el periodo, sea cual sea el estado final del autómata.",
   "projects_history_heading": "Historial",
   "projects_gantt_heading": "Diagrama de Gantt",
   "projects_gantt_window_label": "Periodo",
