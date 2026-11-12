@@ -236,6 +236,12 @@ type Node struct {
 	// certificate is self-signed.
 	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
 
+	// VerifyTLS makes model pulls to this node verify its HTTPS certificate
+	// against the system roots. Default false = pulls skip verification (the
+	// node is operator-registered on a private network). Independent of the
+	// probe settings above.
+	VerifyTLS bool `yaml:"verify_tls" json:"verify_tls"`
+
 	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the
 	// system roots when the daemon probes this node's HTTPS endpoints. Use it
 	// for a node whose certificate is signed by a private CA. Default empty =

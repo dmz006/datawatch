@@ -119,7 +119,11 @@ func (l *ModelLoader) Ensure(ctx context.Context, node *compute.Node, model stri
 			wait(fmt.Sprintf("pulling %s onto node %s", target, node.Name))
 		}
 		pullCtx, cancel := context.WithTimeout(ctx, bound)
-		pullErr := PullModel(pullCtx, client, node.Address, target, func(p PullProgress) {
+		pullClient := client
+		if l.Client == nil {
+			pullClient = compute.PullHTTPClient(node)
+		}
+		pullErr := PullModel(pullCtx, pullClient, node.Address, target, func(p PullProgress) {
 			if wait == nil {
 				return
 			}
@@ -134,6 +138,7 @@ func (l *ModelLoader) Ensure(ctx context.Context, node *compute.Node, model stri
 		})
 		cancel()
 		if pullErr != nil {
+			pullErr = compute.WrapPullError(node, pullErr)
 			return loadFailure(node, target, fmt.Errorf("pull: %w", pullErr))
 		}
 	}
