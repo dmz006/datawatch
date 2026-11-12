@@ -365,6 +365,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/projects/", api.handleProjects)                                    // BL27 (with name)
 	apiMux.HandleFunc("GET /api/projects/{name}/rollup", api.handleProjectRollup)              // project roll-up: arcs, Automata, tasks, points, throughput
 	apiMux.HandleFunc("GET /api/projects/{name}/history", api.handleProjectHistory)            // project history: finished/archived Automata, daily progress, Gantt rows
+	apiMux.HandleFunc("GET /api/projects/{name}/timeline", api.handleProjectTimeline)          // project timeline: first/last per arc, Automaton and task, one level at a time
 	apiMux.HandleFunc("/api/sessions/stale", api.handleSessionsStale)                          // BL40
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)                                     // BL30
 	apiMux.HandleFunc("/api/usage-backoff", api.handleUsageBackoff)                            // BL428 Phase 4
