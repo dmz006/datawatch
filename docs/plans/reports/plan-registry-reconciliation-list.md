@@ -1,3 +1,37 @@
+# Plan registry reconciliation — list of plan files (count: 118)
+
+The first step of the reconciliation of the plan files in `docs/plans/`
+against the plans registry in [../README.md](../README.md) (PRD `c56d0001`,
+written 2026-11-11), so that every real plan has a registry row. Each entry
+below is a file name in `docs/plans/` — from this folder it resolves as
+`../<entry>` (for example,
+`../2026-10-13-ci-watch-live-verification.md`). The entries are in the order
+the batch reports classify them.
+
+## Classification coverage
+
+| entries | report |
+|---|---|
+| 1 to 20 of 118 | [batch 01](plan-registry-reconciliation-batch-01.md) |
+| 21 to 40 of 118 | [batch 02](plan-registry-reconciliation-batch-02.md) |
+| 41 to 60 of 118 | [batch 03](plan-registry-reconciliation-batch-03.md) |
+
+## Still to review (operator)
+
+- Entries 61 to 118 (58 files) are not classified in the batch reports yet;
+  they need further batch passes or a manual reconciliation decision per file.
+- Three class-`b` files have proposed registry rows that are still **not** in
+  the registry (checked 2026-11-11); the operator must accept or reject each
+  proposal before it is added to [../README.md](../README.md):
+  - `2026-10-13-ci-watch-live-verification.md` — proposal in
+    [batch 01](plan-registry-reconciliation-batch-01.md)
+  - `2026-10-14-verification-llm-override-live.md` — proposal in
+    [batch 01](plan-registry-reconciliation-batch-01.md)
+  - `2026-10-26-autonomous-triage-mobile-parity-note.md` — proposal in
+    [batch 02](plan-registry-reconciliation-batch-02.md)
+
+## List
+
 count: 118
 
 - 2026-10-13-ci-watch-live-verification.md

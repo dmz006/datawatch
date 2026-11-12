@@ -1,6 +1,10 @@
 # Plan registry reconciliation — batch 03 (entries 41 to 60 of 118)
 
-This batch covers `docs/plans/2026-10-29-operator-question-step2-gate-report.md` through `docs/plans/2026-10-30-test-tmp-cleanliness-report.md` in `docs/plans/reports/plan-registry-reconciliation-list.md`. Every file is checked against the registry in `docs/plans/README.md` (row numbers are that registry's own). One row per file; class is exactly one letter, `a` to `d`, as defined in the batch task: `a` for a file whose subject already has a registry row (the row is named), `b` for a plan or decision with no registry row (a proposed row is given in the registry's style), `c` for a file that is not a plan or decision (the reason is given), `d` for unclear (the question the operator must answer is given).
+This batch covers `docs/plans/2026-10-29-operator-question-step2-gate-report.md` through `docs/plans/2026-10-30-test-tmp-cleanliness-report.md` (entries 41 to 60 of [plan-registry-reconciliation-list.md](plan-registry-reconciliation-list.md)). Every file is checked against the registry in `docs/plans/README.md` (row numbers are that registry's own; each row's first column is that number). One row per file; class is exactly one letter, `a` to `d`, as defined in the batch task: `a` for a file whose subject already has a registry row (the row is named), `b` for a plan or decision with no registry row (a proposed row is given in the registry's style), `c` for a file that is not a plan or decision (the reason is given), `d` for unclear (the question the operator must answer is given).
+
+Note: this batch contains no class-`b`, `c` or `d` rows — all twenty files
+(41 to 60) are class `a`, so there is nothing in this batch for the operator
+to propose, dismiss or answer.
 
 | file | class | evidence | proposed row |
 |---|---|---|---|

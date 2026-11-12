@@ -1,12 +1,18 @@
 # Plan registry reconciliation — batch 01 (entries 1 to 20 of 118)
 
-Entries 1 to 20 of `docs/plans/reports/plan-registry-reconciliation-list.md`,
+Entries 1 to 20 of [plan-registry-reconciliation-list.md](plan-registry-reconciliation-list.md),
 checked against the registry in `docs/plans/README.md`. Class a means the
 subject of the file already has a registry row (the row is named); class b
 means a real plan or shipped feature with no registry row (a proposed row is
 given, in the registry's "description | status" shape with the pipe escaped);
 class c means the file is not a plan (the reason is given). "Row N" refers to
-the Nth row of `docs/plans/README.md`.
+the registry's own N row, whose first column is that number.
+
+Operator review: the two class-`b` proposed rows in this batch
+(`2026-10-13-ci-watch-live-verification.md`,
+`2026-10-14-verification-llm-override-live.md`) are still not in the registry
+(checked 2026-11-11); accept or reject each proposal before it is added to
+`docs/plans/README.md`.
 
 | file | class | evidence | proposed row |
 |---|---|---|---|

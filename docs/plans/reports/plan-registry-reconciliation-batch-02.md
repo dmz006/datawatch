@@ -1,12 +1,20 @@
 # Plan registry reconciliation — batch 02 (entries 21 to 40 of 118)
 
-Entries 21 to 40 of `docs/plans/reports/plan-registry-reconciliation-list.md`,
+Entries 21 to 40 of [plan-registry-reconciliation-list.md](plan-registry-reconciliation-list.md),
 checked against the registry in `docs/plans/README.md`. Class a means the
 subject of the file already has a registry row (the row is named); class b
 means a real plan or shipped feature with no registry row (a proposed row is
 given, in the registry's "description | status" shape with the pipe escaped);
 class c means the file is not a plan (the reason is given). "Row N" refers to
-the Nth row of `docs/plans/README.md`.
+the registry's own N row, whose first column is that number.
+
+Operator review: the one class-`b` proposed row in this batch
+(`2026-10-26-autonomous-triage-mobile-parity-note.md`) is still not in the
+registry (checked 2026-11-11); accept or reject it before it is added to
+`docs/plans/README.md`. The class-`a` row for
+`2026-10-26-autonomous-triage-read-route.md` is a judgment call that leans on
+that proposed row rather than an existing one; confirm it when deciding on the
+proposal.
 
 | file | class | evidence | proposed row |
 |---|---|---|---|
