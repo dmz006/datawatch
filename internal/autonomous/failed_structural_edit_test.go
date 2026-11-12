@@ -97,7 +97,9 @@ func TestStructuralEditsRefusedOutsideSet(t *testing.T) {
 		if _, err := m.AddTask(prd.ID, "story-1", "x", "y", "op", nil); err == nil {
 			t.Errorf("%s: AddTask accepted", st)
 		}
-		if _, err := m.RemoveTask(prd.ID, "story-1", "task-1b", "op"); err == nil {
+		// A running Automaton accepts removal of a task that is not running
+		// and not queued; see remove_cancelled_task_running_test.go.
+		if _, err := m.RemoveTask(prd.ID, "story-1", "task-1b", "op"); err == nil && st != PRDRunning {
 			t.Errorf("%s: RemoveTask accepted", st)
 		}
 		if _, err := m.EditStory(prd.ID, "story-1", "t", "", "op"); err == nil {

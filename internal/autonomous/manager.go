@@ -5133,6 +5133,18 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 	return updated, nil
 }
 
+// taskRemovableWhileRunning reports whether a task may be removed while its
+// Automaton is running: it must not be running, queued, waiting or live.
+func taskRemovableWhileRunning(t *Task) bool {
+	switch t.Status {
+	case TaskCancelled, TaskCompleted, TaskFailed, TaskBlocked:
+		return true
+	case TaskPending:
+		return t.SessionID == ""
+	}
+	return false
+}
+
 // RemoveTask deletes one task from a story (structural edit — distinct
 // from CancelTask, which stops a task that's already running/queued
 // without removing it from the PRD).
@@ -5141,14 +5153,67 @@ func (m *Manager) RemoveTask(prdID, storyID, taskID, actor string) (*PRD, error)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if !statusAcceptsStructuralEdits(prd.Status) {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept structural edits", prdID, prd.Status)
+	running := prd.Status == PRDRunning
+	if !running && !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept structural edits (a running Automaton accepts removal of a task that is not running and not queued)", prdID, prd.Status)
+	}
+	if running {
+		var refuse error
+		m.store.WithLock(func() {
+			for si := range prd.Story {
+				if prd.Story[si].ID != storyID {
+					continue
+				}
+				for ti := range prd.Story[si].Tasks {
+					t := &prd.Story[si].Tasks[ti]
+					if t.ID == taskID && !taskRemovableWhileRunning(t) {
+						refuse = fmt.Errorf("task %q is %q; while the Automaton is running only a task that is not running and not queued (cancelled, completed, failed, blocked, or never started) can be removed", taskID, t.Status)
+					}
+				}
+			}
+		})
+		if refuse != nil {
+			return nil, refuse
+		}
 	}
 	if err := m.store.RemoveTask(prdID, storyID, taskID); err != nil {
 		return nil, err
 	}
 	prd, _ = m.store.GetPRD(prdID)
 	m.store.WithLock(func() {
+		if running {
+			// Nothing may wait forever on the deleted task, and the story
+			// status follows the same rollup the executor uses.
+			for si := range prd.Story {
+				for ti := range prd.Story[si].Tasks {
+					t := &prd.Story[si].Tasks[ti]
+					kept := t.DependsOn[:0]
+					for _, d := range t.DependsOn {
+						if d != taskID {
+							kept = append(kept, d)
+						}
+					}
+					t.DependsOn = kept
+				}
+			}
+			for si := range prd.Story {
+				st := &prd.Story[si]
+				if st.ID != storyID {
+					continue
+				}
+				allTerminal := true
+				for _, t := range st.Tasks {
+					if !isTaskTerminal(t.Status) {
+						allTerminal = false
+					}
+				}
+				// Re-fire/stuck-running detection advances the Automaton; the
+				// story status is only recomputed once every task is terminal.
+				if allTerminal {
+					st.Status = storyRollupStatus(st)
+				}
+			}
+		}
 		prd.Decisions = append(prd.Decisions, Decision{
 			At: time.Now(), Kind: "remove_task", Actor: actor,
 			Note: fmt.Sprintf("story=%s task=%s", storyID, taskID),
