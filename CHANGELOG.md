@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.148.1 — Repair a failed Automaton in place and grace-period archiving of cancelled Automata
+
+### Fixed
+
+- **A failed Automaton can be repaired in place.** A failed Automaton now accepts the same structural edits as one that needs review: add a task, remove a task, edit a task, repair dependencies and ask for a revision. Task specs that already completed stay immutable.
+- **A cancelled Automaton is no longer archived the moment it is cancelled.** The early-archive race in cancel is fixed: the cancelled record is kept until `autonomous.archive_grace_minutes` has passed, so it can still be repaired or reset in that time.
+- **Cancel reports what it did.** The cancel reply states how many sessions were ended and how many were live.
+
+### Added
+
+- **`autonomous.archive_grace_minutes` (default 60).** How many minutes a cancelled Automaton is kept before the supervisor loop archives it. `0` archives at once, as before. The setting is on every surface: the config file, `GET` and `PUT /api/config`, the MCP config tools, the CLI, the chat commands and Settings in the web page, in all five languages.
+- Docs: the recovery how-to, the operations setting table and the definitions entry describe repairing a failed Automaton and the archive grace period.
+
 ## v9.148.0 — Arc dashboard view
 
 ### Added
