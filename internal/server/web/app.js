@@ -4533,8 +4533,9 @@ function renderSessionsView() {
 // The mode is per-device (localStorage, try/catch because storage can be
 // blocked) and defaults by viewport when the device has never chosen one:
 // phone widths open as the list, everything wider opens as tiles. `compact`
-// is the dense two-row grid; the normal tile grid still follows the width-based
-// mode on resizes via _tileSyncModes, while compact keeps its density there.
+// is the same tile grid as tiles (full tile markup, multi-column) drawn at a
+// smaller size; the normal tile grid still follows the width-based mode on
+// resizes via _tileSyncModes, while compact stays a tile grid there.
 // Tags, filter and search apply before rendering, so they work in every mode.
 // _stx: t() with an English fallback — t() returns the key itself on a miss, so
 // the fallback applies when the key is absent from every bundle.
@@ -5400,12 +5401,14 @@ function renderSessionTile(sess, nowMs) {
 }
 window.renderSessionTile = renderSessionTile;
 
-// Both density variants draw through the same grid; compact is a fixed dense
-// row mode while tiles follows the width-based mode (and keeps following it
-// on resizes, see _tileSyncModes).
+// Both variants draw the same full tile markup in the same multi-column grid;
+// compact is the same tile grid at a smaller size (the session-tile-grid-compact
+// class scales it in CSS) and is pinned to data-tile-mode="tile" so it never
+// becomes the compact or line row layout. Tiles follows the width-based mode
+// (and keeps following it on resizes, see _tileSyncModes).
 function renderSessionTileGrid(innerHTML, mode) {
   const compact = (mode === 'compact');
-  const gridMode = compact ? 'compact' : _tileRowMode(_tileViewportWidth());
+  const gridMode = compact ? 'tile' : _tileRowMode(_tileViewportWidth());
   return `<div class="work-tile-grid session-tile-grid${compact ? ' session-tile-grid-compact' : ''}" data-tile-mode="${gridMode}">${innerHTML}</div>`;
 }
 window.renderSessionTileGrid = renderSessionTileGrid;
@@ -56752,7 +56755,7 @@ function _tileGridHTML(innerHTML, scope) {
 
 // _tileSyncModes re-applies the row mode to every grid on screen after a
 // resize, so the layout follows the window without a re-render. A session
-// grid the operator pinned to `compact` keeps its density there.
+// compact-size tile grid is skipped, so it is never rewritten to compact or line.
 function _tileSyncModes() {
   const mode = _tileRowMode(_tileViewportWidth());
   document.querySelectorAll('.work-tile-grid').forEach(el => {
