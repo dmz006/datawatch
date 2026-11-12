@@ -499,6 +499,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Automata event log read: merged watch, retry, check, maintenance and error
 	// events, newest first, with kind/project/q filters and cursor paging.
 	apiMux.HandleFunc("/api/autonomous/event-log", api.handleAutomataEventLog)
+	// Branch refresh numbers: setting, results by Automaton, stopped count.
+	apiMux.HandleFunc("/api/autonomous/branch-refresh/stats", api.handleBranchRefreshStats)
 	// BL427 phase 5 — receiving endpoint for peer-forwarded lifecycle events.
 	apiMux.HandleFunc(autonomous.ForwardedEventsPath, api.handleAutonomousForwardedEvents)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)

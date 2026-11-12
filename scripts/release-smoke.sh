@@ -6942,6 +6942,63 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "Branch refresh (autonomous.branch_refresh_*)"
+BR_STATS=$(curl "${curl_args[@]}" "$BASE/api/autonomous/branch-refresh/stats" 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert isinstance(d["enabled"], bool) and d["behind_limit"] >= 1
+nums = [d[k] for k in ("tracked", "clean", "conflict", "skipped", "error", "stopped", "override_on", "override_off")]
+assert all(isinstance(n, int) and n >= 0 for n in nums), d
+assert d["clean"] + d["conflict"] + d["skipped"] + d["error"] <= d["tracked"], d
+assert d["stopped"] <= d["tracked"], d
+print("ok")' 2>/dev/null || echo "")
+if [[ "$BR_STATS" == "ok" ]]; then
+  ok "branch refresh: GET /api/autonomous/branch-refresh/stats returns the setting, the limit and consistent counts"
+else
+  ko "branch refresh: GET /api/autonomous/branch-refresh/stats did not return the expected numbers"
+fi
+BR_405=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/branch-refresh/stats" 2>/dev/null || echo "000")
+if [[ "$BR_405" == "405" ]]; then
+  ok "branch refresh: POST to the stats route answers HTTP 405"
+else
+  ko "branch refresh: POST to the stats route answered HTTP $BR_405, expected 405"
+fi
+BR_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d '{"enabled":"yes"}' "$BASE/api/autonomous/prds/smoke-no-such-automaton/branch-refresh" 2>/dev/null || echo "000")
+if [[ "$BR_BAD" == "400" ]]; then
+  ok "branch refresh: an override that is not true, false or null is refused with HTTP 400"
+else
+  ko "branch refresh: override 'yes' answered HTTP $BR_BAD, expected 400"
+fi
+BR_404=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d '{"enabled":true}' "$BASE/api/autonomous/prds/smoke-no-such-automaton/branch-refresh" 2>/dev/null || echo "000")
+if [[ "$BR_404" == "404" ]]; then
+  ok "branch refresh: setting the override of an unknown Automaton answers HTTP 404"
+else
+  ko "branch refresh: override on an unknown Automaton answered HTTP $BR_404, expected 404"
+fi
+BR_CFG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c '
+import json, sys
+a = json.load(sys.stdin)["autonomous"]
+assert isinstance(a["branch_refresh_enabled"], bool) and isinstance(a["branch_refresh_behind_limit"], int)
+print("ok")' 2>/dev/null || echo "")
+if [[ "$BR_CFG" == "ok" ]]; then
+  ok "branch refresh: GET /api/config lists both branch refresh keys"
+else
+  ko "branch refresh: GET /api/config does not list both branch refresh keys"
+fi
+# Comm path over the real route; 'REST loopback not configured' is the isolated-env caveat (a SKIP).
+BR_TM=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d '{"text":"autonomous branch-refresh-stats"}' "$BASE/api/test/message" 2>/dev/null || true)
+if echo "$BR_TM" | python3 -c 'import json,sys; assert "loopback" in " ".join(json.load(sys.stdin).get("responses") or []).lower()' 2>/dev/null; then
+  skip "branch refresh: comm path needs the REST loopback (isolated environment)"
+elif echo "$BR_TM" | python3 -c '
+import json, sys
+j = "\n".join(json.load(sys.stdin).get("responses") or [])
+assert "branch refresh:" in j and "stopped by a conflict:" in j, j[:200]' 2>/dev/null; then
+  ok "branch refresh: chat 'autonomous branch-refresh-stats' replies with the numbers"
+else
+  ko "branch refresh: chat 'autonomous branch-refresh-stats' did not reply with the numbers"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

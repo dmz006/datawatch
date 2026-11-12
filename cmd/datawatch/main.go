@@ -9167,6 +9167,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SafeDeleteLastMS = sd.LastDurationMs
 				s.SafeDeleteSlowReports = sd.SlowReports
 				s.SafeDeleteRefreshFailures = sd.RefreshFailures
+				// Branch refresh results (branch refresh stats).
+				br := amgrRef.BranchRefreshStats()
+				s.BranchRefreshClean = br.Clean
+				s.BranchRefreshConflict = br.Conflict
+				s.BranchRefreshError = br.Error
+				s.BranchRefreshStopped = br.Stopped
 				// Host load check status (off/alert/reap): mode, last load
 				// reading vs threshold, breach state, orphans reaped.
 				if hl := st.HostLoad; hl != nil {
@@ -9265,6 +9271,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			updateBurnGuardMetrics(s)
 			updateTraceMetrics(s)
 			updateSupervisorLoopMetrics(s)
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("clean").Set(float64(s.BranchRefreshClean))
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("conflict").Set(float64(s.BranchRefreshConflict))
+			metricsPkg.BranchRefreshAutomata.WithLabelValues("error").Set(float64(s.BranchRefreshError))
+			metricsPkg.BranchRefreshStopped.Set(float64(s.BranchRefreshStopped))
 			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()

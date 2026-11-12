@@ -26,3 +26,17 @@ test('settings fields cover both config keys', () => {
   assert.equal(f[0].type, 'toggle');
   assert.equal(f[1].type, 'number');
 });
+
+test('panel shows whether refreshing is stopped by a conflict', () => {
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
+  const sandbox = buildSandbox();
+  sandbox.t = (k) => en[k] || k;
+  sandbox.escHtml = (s) => String(s);
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox);
+  const stopped = sandbox.window.branchRefreshPanelHtml({ id: 'p1', branch_refresh: { last_result: 'conflict', commits_behind: 6, stopped: true } });
+  assert.match(stopped, /branch-refresh-state[^>]*>.*Refreshing.*Stopped by a conflict/s);
+  const active = sandbox.window.branchRefreshPanelHtml({ id: 'p1', branch_refresh: { last_result: 'clean', commits_behind: 5 } });
+  assert.match(active, /branch-refresh-state[^>]*>.*Refreshing.*Active/s);
+  assert.doesNotMatch(active, /Stopped by a conflict/);
+});

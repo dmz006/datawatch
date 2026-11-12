@@ -5,7 +5,8 @@
 // number input) for the Autonomous settings list.
 //
 // Automaton page: branchRefreshPanelHtml(prd) shows the last refresh time, the
-// commits behind main, the last result and the per-Automaton override select.
+// commits behind main, the last result, whether refreshing is stopped by a
+// conflict and the per-Automaton override select.
 // The select posts to POST /api/autonomous/prds/{id}/branch-refresh with
 // enabled true, false or null (null clears the override). Every value is escaped.
 
@@ -41,6 +42,8 @@ window.branchRefreshPanelHtml = function(prd) {
   const when = br && br.last_refresh_at ? (typeof timeAgo === 'function' ? timeAgo(br.last_refresh_at) : String(br.last_refresh_at)) : t('branch_refresh_never');
   const behind = br ? String(Math.max(0, Number(br.commits_behind) || 0)) : '—';
   const result = br ? window.branchRefreshResultLabel(br.last_result) : t('branch_refresh_result_none');
+  const stopped = !!(br && br.stopped);
+  const state = t(stopped ? 'branch_refresh_state_stopped' : 'branch_refresh_state_active');
   const sel = window.branchRefreshOverrideValue(prd);
   const opt = (v, key) => `<option value="${v}"${sel === v ? ' selected' : ''}>${escHtml(t(key))}</option>`;
   const row = (k, v, cls) => `<div class="branch-refresh-${cls}" style="display:flex;gap:6px;font-size:12px;"><span style="color:var(--text2);">${escHtml(t(k))}</span><span>${escHtml(v)}</span></div>`;
@@ -49,6 +52,7 @@ window.branchRefreshPanelHtml = function(prd) {
     row('branch_refresh_last_refresh', when, 'last') +
     row('branch_refresh_commits_behind', behind, 'behind') +
     row('branch_refresh_last_result', result, 'result') +
+    row('branch_refresh_state_label', state, 'state') +
     `<div style="margin-top:4px;"><label class="wizard-label" for="branchRefreshOverride">${escHtml(t('branch_refresh_override_label'))}</label>` +
     `<select id="branchRefreshOverride" class="form-select" onchange="branchRefreshSetOverride('${escHtml(String(prd.id))}', this.value)">` +
     opt('', 'branch_refresh_override_default') + opt('on', 'branch_refresh_override_on') + opt('off', 'branch_refresh_override_off') +

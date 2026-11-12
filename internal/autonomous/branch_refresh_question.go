@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -82,8 +83,13 @@ func RaiseBranchRefreshQuestion(raiser BranchRefreshQuestionRaiser, prdID, base 
 
 // ApplyBranchRefreshAnswer applies the chosen option to the Automaton:
 // retry later clears Stopped; leave alone and resolve by hand keep it
-// stopped (resolve by hand until the operator resets it).
+// stopped (resolve by hand until the operator resets it by setting the
+// Automaton's branch refresh override again).
 func (m *Manager) ApplyBranchRefreshAnswer(prdID, optionID string) error {
+	return m.applyBranchRefreshAnswer(prdID, optionID, "", "")
+}
+
+func (m *Manager) applyBranchRefreshAnswer(prdID, optionID, questionID, answerID string) error {
 	var stopped bool
 	var note string
 	switch optionID {
@@ -108,7 +114,29 @@ func (m *Manager) ApplyBranchRefreshAnswer(prdID, optionID string) error {
 	prd.BranchRefresh = &st
 	prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "branch_refresh", Actor: "operator", Note: note,
+		QuestionID: questionID, AnswerID: answerID,
 	}))
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
+}
+
+// onBranchRefreshAnswer is the question store's route to the Automaton: an
+// answered branch refresh conflict question applies the chosen option (see
+// ApplyBranchRefreshAnswer). It reports whether the change was a branch
+// refresh question answer, so the caller does not hand it to the other
+// handlers. An answer that names no listed option, or an Automaton that is
+// gone, is logged and changes nothing: the Automaton stays stopped.
+func (m *Manager) onBranchRefreshAnswer(c QuestionChange) bool {
+	q := c.Question
+	if c.Kind != QuestionChangeAnswered || c.Answer == nil ||
+		q.AskedBy != BranchRefreshQuestionAsker || q.AskerKind != QuestionAskerSystem {
+		return false
+	}
+	if q.PRDID == "" {
+		return true
+	}
+	if err := m.applyBranchRefreshAnswer(q.PRDID, c.Answer.ChosenOptionID, q.ID, c.Answer.ID); err != nil {
+		log.Printf("[autonomous] prd=%s branch refresh answer to question %s: %v", q.PRDID, q.ID, err)
+	}
+	return true
 }
