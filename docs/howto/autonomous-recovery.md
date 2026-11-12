@@ -135,6 +135,13 @@ any task:
   once the genuine work is done.
 - It never resets anything: no task goes back to pending, no story reopens.
 
+A rejudge is a fresh completion review, not a lookup of the old answer. When
+a review runs, the daemon looks at the current head commit of the Automaton,
+starts a judge session on the configured judge backends, and records the new
+verdict with its own time and the commit it judged. That verdict replaces the
+blocked state: a pass completes the Automaton and a block updates its blocked
+reason, as set out under the outcomes below.
+
 A rejudge is a fresh completion review whenever anything it judged has
 changed. The review is anchored to the real head of the Automaton's own
 working tree (the commit the judge actually reads), not only to the last
@@ -195,6 +202,21 @@ new verdict on the new commit and clears the stale blocking review record.
 With the head and the rules text unchanged the stored block is reused as
 above: the Automaton stays held, the judge is not asked and a single
 `guardrail_reuse` entry is recorded.
+
+**Telling a fixed Automaton from a still-broken one.** Read the latest
+verdict in the Automaton's verdict list (`autonomous_prd_get`, or the
+Automaton's detail page) and compare two things on it: the commit it judged
+and the time it was made.
+
+- If the judged commit is the current head of the Automaton's branch and the
+  time is after your fix, the verdict is about the fixed work. A `pass` or
+  `warn` there means the Automaton is fixed; a `block` there means it is still
+  broken, and its issues say what to change.
+- If the judged commit is older than your fix, or the time is before it, you
+  are reading a stored verdict, not a judgment of the fix. Look for
+  `verdict_reused` true on the latest `guardrail_rejudge` entry, then commit
+  the fix on the Automaton branch (or change the rules text the judge reads)
+  and rejudge again.
 
 Outcome, in every case written to the Automaton's decision log (attributed
 to the acting operator) **before** any status change:

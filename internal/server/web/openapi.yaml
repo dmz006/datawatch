@@ -3758,15 +3758,24 @@ paths:
     post:
       summary: Re-run the rules-review completion guardrail for a blocked Automaton
       description: |
-        Re-runs the PRD-completion "rules-review" judgment for a PRDBlocked
-        Automaton whose work is fully done — every task in every story at
-        `task_completed` — without resetting or editing any task. The verdict
-        and a `guardrail_rejudge` decision (naming the acting `actor`)
-        are recorded on the Automaton's decision log; a pass unblocks the
-        Automaton (status `prd_completed`), a block keeps it `prd_blocked`
-        with its blocked reason set from the verdict. No tasks are retried
-        afterwards — a pass ends the Automaton and a block waits for operator
-        action again.
+        Runs a fresh completion review for a PRDBlocked Automaton whose work
+        is fully done — every task in every story at `task_completed` —
+        without resetting or editing any task. The review reads the current
+        head commit of the Automaton's working tree, starts a judge session on
+        the configured judge backends, and records a new verdict with its own
+        time and the commit it judged. That verdict replaces the blocked
+        state: a pass unblocks the Automaton (status `prd_completed`), a block
+        keeps it `prd_blocked` with its blocked reason set from the new
+        verdict. No tasks are retried afterwards — a pass ends the Automaton
+        and a block waits for operator action again.
+        The stored verdict is reused instead only when the head commit and the
+        rules text the judge reads are both unchanged since it was made (and
+        the judge verdict cache is on). The reply `message` and the
+        `guardrail_rejudge` decision (naming the acting `actor`) then say
+        plainly that the stored verdict was reused and why, and no new verdict
+        is added; otherwise they say a new review ran on the named commit. The
+        decision carries `judged_commit_sha` and `verdict_reused` either way.
+        There is one verdict per review that ran, never a duplicate copy.
         `backend` is the reroute of the review state whose `action` is
         `reroute`: it names the judge backend the re-judgment runs on, beating
         the resolved tier (pinned, and even making the run possible when no
@@ -3788,7 +3797,7 @@ paths:
                 actor: {type: string, description: "Who asked; recorded on the guardrail_rejudge decision. Default the operator."}
                 backend: {type: string, description: "Optional judge backend reroute (the review state action `reroute`); empty = the resolved tier"}
       responses:
-        "200": {description: "Rejudge complete; the guardrail verdict and outcome are in the Automaton's decision log"}
+        "200": {description: "Rejudge complete. The reply message says whether a new review ran on the head commit (the new verdict and outcome are in the Automaton's decision log) or the stored verdict was reused because the head commit and the rules text are unchanged since it was made (no new review ran, no verdict added)"}
         "400": {description: "Refused: unknown Automaton, not PRDBlocked, a task not completed (the message names the first offending task and its status), or no verdict was produced — each refusal says why"}
         "403": {description: "Federated peer lacks the autonomous write capability"}
         "405": {description: "POST-only action"}
