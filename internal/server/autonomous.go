@@ -1859,7 +1859,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "rejudge", "automaton", id, map[string]any{"actor": req.Actor, "backend": req.Backend}) // GH#201 Phase 4
 		prd, _ := updated.(*autonomous.PRD)
-		s.writeAutonomousResult(w, r, prd, "", "", "rejudge complete; the guardrail verdict and outcome are in the PRD's decision log")
+		s.writeAutonomousResult(w, r, prd, "", "", rejudgeResultMessage(prd))
 	case "repair_depends_on":
 		// v8.36.6 — one-time repair for PRDs whose SetStories call predates
 		// the v8.36.5 title->ID DependsOn fix (see Store.RepairDependsOn).
@@ -5345,4 +5345,30 @@ func (s *Server) handleAutonomousPlanningScorecard(w http.ResponseWriter, r *htt
 		"gate":      summary,
 		"report":    text,
 	})
+}
+
+// rejudgeDefaultMessage is the rejudge reply when the PRD or its rejudge
+// Decision is not available to describe what happened.
+const rejudgeDefaultMessage = "rejudge complete; the guardrail verdict and outcome are in the PRD's decision log"
+
+// rejudgeResultMessage words the rejudge reply from the last
+// "guardrail_rejudge" Decision of the returned PRD: it says whether the
+// stored verdict was reused (head commit and rules text unchanged) or a
+// new review ran, and names the commit. A missing PRD or Decision gives
+// the default text.
+func rejudgeResultMessage(prd *autonomous.PRD) string {
+	if prd == nil {
+		return rejudgeDefaultMessage
+	}
+	for i := len(prd.Decisions) - 1; i >= 0; i-- {
+		d := prd.Decisions[i]
+		if d.Kind != "guardrail_rejudge" {
+			continue
+		}
+		if d.VerdictReused {
+			return fmt.Sprintf("rejudge complete; the stored verdict was reused because the head commit %s and the rules text are unchanged since it was made; no new review ran", d.JudgedCommitSHA)
+		}
+		return fmt.Sprintf("rejudge complete; a new review ran on commit %s; the verdict and outcome are in the decision log", d.JudgedCommitSHA)
+	}
+	return rejudgeDefaultMessage
 }
