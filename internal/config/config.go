@@ -2213,6 +2213,16 @@ type MCPConfig struct {
 	// Prompts controls the MCP prompts surface (BL302 S4).
 	Prompts MCPPromptsConfig `yaml:"prompts" json:"prompts"`
 
+	// ResourceSubscriptions lets an MCP client subscribe to the lifecycle
+	// events resource (datawatch://events/lifecycle) with resources/subscribe
+	// and receive notifications/resources/updated when a matching event
+	// fires. It uses the same event filter and event kinds as a persisted
+	// subscription. Default false: the server then does not advertise
+	// subscribe and refuses resources/subscribe, exactly as before.
+	// Changing it needs a daemon restart (the capability is advertised once,
+	// at startup).
+	ResourceSubscriptions bool `yaml:"resource_subscriptions" json:"resource_subscriptions"`
+
 	// SSEEnabled starts an HTTP/SSE MCP server for remote AI clients in addition
 	// to the stdio transport used by local IDE clients (Cursor, Claude Desktop).
 	SSEEnabled bool `yaml:"sse_enabled"`

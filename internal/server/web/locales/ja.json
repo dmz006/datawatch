@@ -1960,6 +1960,8 @@
   "prd_settings_priority_hint": "Used when tasks wait for free capacity.",
   "settings_reserved_interactive": "Slots reserved for interactive sessions",
   "settings_mcp_public_url": "SSE public URL (reverse proxy)",
+  "settings_mcp_resource_subscriptions": "リソース購読 (ライフサイクルイベント)",
+  "settings_mcp_resource_subscriptions_help": "ON: MCP クライアントがライフサイクルイベントのリソース (datawatch://events/lifecycle) を購読でき、条件に合うオートマタのイベントが起きると、購読と同じフィルターとイベント種別でリソース更新通知を受け取ります。OFF (既定): 購読は提供されません。デーモンの再起動が必要です。",
   "settings_acknowledge_unauthenticated": "Acknowledge unauthenticated listeners",
   "settings_acknowledge_unauthenticated_help": "Silences the startup warning for listeners reachable without authentication; changes no listener.",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",

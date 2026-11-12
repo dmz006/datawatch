@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **MCP resource subscriptions for lifecycle events, off by default.** The new setting `mcp.resource_subscriptions` (default `false`; restart to apply) lets an MCP client call `resources/subscribe` on `datawatch://events/lifecycle?kinds=…&level=…` and receive `notifications/resources/updated` when a matching Automata event fires. The filter, the event kinds and the delivery gate are the same ones a persisted subscription uses, and the subscription is one more consumer of the existing dispatcher: nothing is stored and no sink or subscription format changes. With the setting off the server advertises and behaves exactly as before. Set it in the `mcp:` block, Settings → General → MCP Server, `PUT /api/config`, `datawatch config set`, comm `configure` or `config_set`; see [docs/mcp.md](docs/mcp.md#resource-subscriptions).
+
 ## v9.136.0 — Supervisor wake settings
 
 ### Added

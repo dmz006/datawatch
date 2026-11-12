@@ -9656,6 +9656,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 	if cfg.MCP.Resources.Enabled {
 		mcpSrv.RegisterResources()
 	}
+	// mcp.resource_subscriptions — lifecycle events resource subscribers ride
+	// the same dispatcher as persisted subscriptions (no-op when off).
+	if autonomousMgrRef != nil {
+		mcpSrv.SetLifecycleBus(autonomousMgrRef)
+	}
 
 	// BL302 S4 — register MCP prompts when prompts enabled.
 	// Stats counters are nil here (the prompt server nil-guards them); the

@@ -18883,6 +18883,7 @@ const COMMS_CONFIG_FIELDS = [
     { key: 'mcp.sse_host', label: 'SSE bind interface', type: 'interface_select' },
     { key: 'mcp.sse_port', label: 'SSE port', type: 'number' },
     { key: 'mcp.public_url', label: 'SSE public URL (reverse proxy)', labelKey: 'settings_mcp_public_url', type: 'text', placeholder: 'https://proxy-host.example.net:8081' },
+    { key: 'mcp.resource_subscriptions', label: 'Resource subscriptions (lifecycle events)', labelKey: 'settings_mcp_resource_subscriptions', helpKey: 'settings_mcp_resource_subscriptions_help', helpDocs: 'mcp.md#resource-subscriptions', type: 'toggle' },
     { key: 'mcp.tls_enabled', label: 'TLS enabled', type: 'toggle' },
     { key: 'mcp.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
     { key: 'mcp.tls_cert', label: 'TLS cert path', type: 'text' },

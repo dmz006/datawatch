@@ -481,6 +481,13 @@ mcp:
   # URL lives in your operator config and is not committed). Trailing slash is ignored.
   # Empty = advertise <scheme>://<first sse_host>:<sse_port>.
   public_url: ""
+  # Let an MCP client subscribe to the lifecycle events resource
+  # (datawatch://events/lifecycle) with resources/subscribe and receive
+  # notifications/resources/updated when a matching event fires. It uses
+  # the same event filter and event kinds as a persisted subscription and
+  # stores nothing. Default false: the server does not advertise subscribe
+  # and behaves as before. Needs a daemon restart to change.
+  resource_subscriptions: false
   # Bearer token for SSE connections. Empty falls back to server.token
   # (SEC-002) — MCP SSE is open only when BOTH this and server.token
   # are empty.
