@@ -50,7 +50,56 @@ pipe-pane`. The LLM runs inside that tmux session.
 States: `Running` (LLM processing), `WaitingInput` (paused, awaiting
 your reply), `RateLimited` (auto-resumes), `Complete` / `Failed` /
 `Killed` (terminal — sticky). See `channel-state-engine.md` for the
-state-decision logic.
+state-decision logic. A record whose process has vanished without ever
+reaching a terminal state is a *gone* record; see
+[Gone session records](#gone-session-records).
+
+## Gone session records
+
+A session record can be left in `running` (or another non-final state)
+after whatever drove it has vanished. datawatch judges that with one shared
+rule instead of one signal per caller. A record is:
+
+- **ended** — already `complete`, `failed` or `killed`; nothing more happens.
+- **foreign** — recorded by another host; this daemon never finalises or
+  re-labels it.
+- **live** — something still drives it: its terminal pane exists, its backend
+  launch is still running, the daemon holds a runner for it (subprocess
+  sessions are registered when they start and when they are re-attached after
+  a restart), its recorded subprocess still runs the task, or the daemon's own
+  report path ends it (a virtual backend, or a session bound to an agent).
+- **gone** — not final, and none of those signs is present.
+
+A **gone** record is finalised from the end of its `output.log`. If the last
+non-empty line (colour codes stripped) begins with `DATAWATCH_COMPLETE:`, the
+record becomes `complete`. Otherwise it becomes `killed`: no marker, a marker
+followed by more output, or an empty or missing log all read as the process
+vanishing before it finished. The record also gets two fields in
+`state.json` and the session JSON:
+
+| Field | Value |
+|---|---|
+| `ended_at` | When the record was finalised. |
+| `end_note` | `process gone, finalised` |
+
+Both fields are absent on every session that was not finalised this way. To
+see how any other session ended, read the daemon journal and the session's
+`timeline.md`, as before.
+
+**What to check.** `datawatch sessions get <id> | jq '.state, .ended_at, .end_note'`
+shows whether a record was finalised this way. A `killed` record with the end
+note means the output did not end with a completion line; read
+`output.log` before restarting it (`restart:<id>` spawns a fresh session seeded
+from the prior one).
+
+**Status today.** The registry, the judgement, the final-state rule and the
+two fields are in place, and subprocess sessions are registered as runners.
+Nothing yet calls the judgement or the final-state rule on its own: no sweep,
+daemon start or API finalises a record with it, so you will not see `ended_at`
+or `end_note` on a record yet, and a restart still treats a missing terminal
+pane as described in
+[operations — Restart safety](../operations.md#restart-safety). Chat-mode and
+other non-pane sessions are not registered as runners yet.
 
 ## How a worker pane is capped
 

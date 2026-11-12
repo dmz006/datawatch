@@ -328,6 +328,20 @@ Detects when Claude has exited but the shell is still running inside the tmux pa
 
 ---
 
+### Gone session records
+
+**Live (judged liveness)** — the one shared answer to "is this session record still live?". It replaces re-deriving the answer from a single signal. A record is judged `ended` (already `complete`, `failed` or `killed`), `foreign` (belongs to another host, so this daemon never finalises or re-labels it), `live` (something still drives it: its terminal pane exists, its backend launch is still running, the daemon holds a runner for it, its recorded subprocess still runs the session's task, or the daemon's own report path ends it, as for a virtual backend or a session bound to an agent) or `gone` (not in a final state and none of those signs is present). Any one sign is enough to be `live`. A terminal-pane listing that fails for a reason other than "no server running" is never read as every pane being gone. This is a different thing from the zombie check above: the zombie check asks whether the model process still runs inside a pane that exists, while this judgement asks whether anything at all still drives a record that is not in a final state.
+
+**Runner registry** — the daemon's in-memory list of the sessions it drives itself with a goroutine or process because they have no terminal pane. A subprocess session is added when it starts and removed when its process returns; a subprocess re-attached after a daemon restart is added again until its watcher finishes. It is not persisted, so after a restart it holds only what this daemon is driving now. Today only subprocess sessions are registered; chat-mode and other non-pane sessions are not yet.
+
+**Gone final state** — what a `gone` record is finalised as. The tail of its output log is read and terminal escape sequences are stripped. If the last non-empty line begins with `DATAWATCH_COMPLETE:` the record becomes `complete`; otherwise (no marker, a marker followed by more output, or an empty or missing log) it becomes `killed`. The record also gets `ended_at` and `end_note`.
+
+**`ended_at` / `end_note`** — the only two session fields about how a record ended: the time the record was finalised because its process was gone, and the short note `process gone, finalised`. Both are left out of the session JSON for every session that was not finalised this way, and a record already in a final state keeps its state and gets neither. Who or what ended a session is still recorded in the daemon journal and the session's `timeline.md`, not in a session field.
+
+**Status today:** the registry, the judgement, the final-state rule and the two fields are in place, and the registry is wired in for subprocess sessions. No sweep, boot path or API calls the judgement or the final-state rule yet, so no existing record is finalised by it and none carries `ended_at` or `end_note`. Detail: [operations.md — Gone session records and the shared live judgement](operations.md#restart-safety) and [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#gone-session-records).
+
+---
+
 ### Session exit hooks
 
 Automatically restart or notify when a session goes zombie or terminates abnormally.
