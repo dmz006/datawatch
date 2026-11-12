@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The phone/PWA server selector is now one header dropdown instead of a per-view chip row.** The fixed app header carries a single native dropdown on every page (the three-finger swipe sheet and the toolbar "back to this server" indicator are unchanged): **All servers**, this server (labelled with the daemon's hostname, never the word "Local"), and one entry per enabled peer. Unreachable peers stay listed and selectable with an "(unreachable)" hint. Choosing an entry re-renders the page you are on in place; the Observer and Settings views keep showing the single server whose data they last rendered while **All servers** is active. The five locales gained the dropdown labels.
+- Docs: the multi-servers how-to ("Switch between servers (header dropdown)"), the operations manual's multi-machine section, the definitions entry, the Sessions how-to toolbar description and the docs index now describe the header dropdown; the released versions' changelog entries keep their original wording as dated records.
+
 ## v9.157.0 — Projects view sub-tabs
 
 ### Added
