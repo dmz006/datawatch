@@ -66,3 +66,12 @@ func (s *Server) handleAutonomousEventKinds(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSONOK(w, buildEventKindsResponse())
 }
+
+// AutonomousEventKindsHandler serves the event kinds route as a standalone
+// handler, so other packages (the MCP proxy tests) can drive the real handler
+// without the full daemon.
+func (s *Server) AutonomousEventKindsHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/autonomous/event-kinds", s.handleAutonomousEventKinds)
+	return mux
+}
