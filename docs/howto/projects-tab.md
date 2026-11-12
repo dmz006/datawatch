@@ -178,11 +178,27 @@ Choose **Projects**, then `core-api`. From the top:
 | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Effective policy | Read-only summary of the project's policy, with a link to the policy panel in Settings |
 | Merge pipeline | Read-only, with a link to the merge pipeline settings |
-| Events | The event stream filtered to this project, and a note for each section that is empty or off |
+| Events | The event stream filtered to this project. It is hidden while it has nothing to show, and it lists notes for empty sections (no arcs, no unassigned Automata) and a missing weekly share, but only when the project has an arc or an unassigned Automaton that needs one |
 
 A row links to its Automaton view, and a session link opens the session. The
 **Overview** choice in the picker is the cross-project in-flight view, not a
 project.
+
+#### The show-empty checkbox
+
+**Show empty lines and sections**, the checkbox next to the project picker, is
+off by default. While it is off the page draws only what has content: empty
+header fields (an unset owner, repository, target or lane default), the
+"none recorded" lines under an arc (plan documents, design documents, issues),
+an empty Arcs or Unassigned Automata section, an empty merge pipeline and an
+empty event stream are left out. Tick it to see every line and section, with
+"none recorded" or "no arcs" shown where there is nothing yet. The choice is
+remembered per viewer in the browser, not by the daemon, so it has no REST,
+MCP, CLI, chat or configuration form, and a browser that blocks storage starts
+hidden each time. Nothing is lost while it is off: a section that needs
+attention still appears, and a missing weekly share is reported in the page's
+Events list whenever the project has an arc or an unassigned Automaton that
+needs one.
 
 ### 7. Read the history and the Gantt
 

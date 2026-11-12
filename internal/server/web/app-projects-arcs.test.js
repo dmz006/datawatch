@@ -77,16 +77,22 @@ test('the header shows every set field; the description is escaped', () => {
   assert.doesNotMatch(html, /is not set\./, 'a complete header has no unset-field Events entries');
 });
 
-test('an unset header field is left out and becomes an Events entry', () => {
+test('only a missing weekly share becomes an Events entry; other unset fields are just hidden', () => {
   const { sb } = loadView();
   const html = sb._projectPageHTML({ name: 'bare', dir: '/w/bare' }, ROLLUP, '');
   assert.doesNotMatch(html, /Owner:<\/span>/);
   assert.doesNotMatch(html, /Weekly share:<\/span>/);
   assert.match(html, /id="projectEvents"/);
-  assert.match(html, /Owner is not set\./);
-  assert.match(html, /Repository is not set\./);
+  assert.doesNotMatch(html, /Owner is not set\./);
+  assert.doesNotMatch(html, /Repository is not set\./);
+  assert.doesNotMatch(html, /Description is not set\./);
   assert.match(html, /Weekly share is not set\./);
-  assert.match(html, /Description is not set\./);
+});
+
+test('a missing weekly share is silent when there is no arc or unassigned Automaton', () => {
+  const { sb } = loadView();
+  const html = sb._projectPageHTML({ name: 'bare', dir: '/w/bare' }, { arcs: [], unassigned: { automata: [] }, total: {} }, '');
+  assert.doesNotMatch(html, /Weekly share is not set\./);
 });
 
 test('a weekly share of zero is a set value, not an unset one', () => {

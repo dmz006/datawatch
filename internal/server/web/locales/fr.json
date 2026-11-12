@@ -935,6 +935,8 @@
   "projects_links_arc_designs": "Documents de conception",
   "projects_links_arc_issues": "Tickets datawatch-app",
   "projects_links_none": "aucun enregistré",
+  "projects_show_empty": "Afficher les lignes et sections vides",
+  "projects_show_empty_help": "Les champs vides, les lignes « aucun enregistré » et le flux d'événements vide sont masqués par défaut. Cette option les affiche.",
   "projects_links_loading": "Chargement…",
   "projects_links_failed": "Impossible de charger :",
   "projects_page_priority": "Priorité",

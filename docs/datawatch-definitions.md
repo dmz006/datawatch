@@ -2577,7 +2577,9 @@ The settings below are the six keys of the block. Each is set on every surface (
 
 ### Projects tab
 
-**Projects tab** — the top-level web app tab that shows one registered project as a whole: its arcs, the Automata and sessions under each arc, progress and cost in points, a Gantt of recent work, the finished history, the effective policy and merge pipeline, and the project's events. It is read-only; the project record is changed through REST, MCP, the CLI or the comm channel. Overview in the picker is the cross-project in-flight view. See [howto/projects-tab.md](howto/projects-tab.md).
+**Projects tab** — the top-level web app tab that shows one registered project as a whole: its arcs, the Automata and sessions under each arc, progress and cost in points, a Gantt of recent work, the finished history, the effective policy and merge pipeline, and the project's events. It is read-only; the project record is changed through REST, MCP, the CLI or the comm channel. Overview in the picker is the cross-project in-flight view. Empty fields, empty sections and an empty event stream are hidden by default; the **Show empty lines and sections** checkbox shows them, remembered per browser (see *Show empty lines* below). See [howto/projects-tab.md](howto/projects-tab.md).
+
+**Show empty lines (Projects tab)** — a per-browser checkbox on the Projects tab, off by default. Off hides empty header fields, the "none recorded" arc document lines, empty Arcs and Unassigned Automata sections, an empty merge pipeline and an empty event stream; on draws them. It is stored in the browser (`cs_projects_show_empty`), not on the daemon, so it has no REST, MCP, CLI, chat or config form. See [howto/projects-tab.md](howto/projects-tab.md#empty-lines-are-hidden-by-default).
 
 **Project (alias)** — a name mapped to an absolute directory, with an optional default backend and description. Sessions, Automata and the policy refer to a project by this name. Registering one creates an alias; deleting one does not touch the directory.
 

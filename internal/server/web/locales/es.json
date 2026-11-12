@@ -935,6 +935,8 @@
   "projects_links_arc_designs": "Documentos de diseño",
   "projects_links_arc_issues": "Incidencias de datawatch-app",
   "projects_links_none": "no registrado",
+  "projects_show_empty": "Mostrar líneas y secciones vacías",
+  "projects_show_empty_help": "Los campos vacíos, las líneas «no registrado» y el flujo de eventos vacío están ocultos de forma predeterminada. Esto los muestra.",
   "projects_links_loading": "Cargando…",
   "projects_links_failed": "No se pudo cargar:",
   "projects_page_priority": "Prioridad",

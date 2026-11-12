@@ -3056,6 +3056,7 @@ function navigate(view, sessionId, fromPopstate) {
 // so a link reopens the same choice. Storage and history can be blocked
 // (private windows), so each touch is wrapped and the view still renders.
 const _PROJECTS_LAST_KEY = 'cs_projects_last';
+const _PROJECTS_SHOW_EMPTY_KEY = 'cs_projects_show_empty';
 const _PROJECTS_OVERVIEW = '';
 // rollup is the roll-up of the project named by rollupFor; rollupError is its
 // load failure. The page paints the roll-up only for the selected project.
@@ -3077,6 +3078,14 @@ function _projectsRememberLast(name) {
 }
 function _projectsRecallLast() {
   try { return localStorage.getItem(_PROJECTS_LAST_KEY) || ''; } catch (_) { return ''; }
+}
+// _projectsShowEmpty is the viewer's remembered show-empty preference: true only
+// when the stored value is '1'. It is a viewer preference, not a daemon setting.
+function _projectsShowEmpty() {
+  try { return localStorage.getItem(_PROJECTS_SHOW_EMPTY_KEY) === '1'; } catch (_) { return false; }
+}
+function _projectsSetShowEmpty(on) {
+  try { localStorage.setItem(_PROJECTS_SHOW_EMPTY_KEY, on ? '1' : '0'); } catch (_) { /* not remembered */ }
 }
 // _projectsHashParse returns the project named by a #projects hash ('' for
 // Overview), or null when the hash is not a projects route.
@@ -3131,7 +3140,17 @@ function _projectsPickerHTML(list, selected, err) {
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
       <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
       <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+      <label for="projectsShowEmpty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);white-space:nowrap;">
+        <input type="checkbox" id="projectsShowEmpty" ${_projectsShowEmpty() ? 'checked' : ''} title="${escHtml(t('projects_show_empty_help') || '')}" onchange="toggleProjectsShowEmpty(this.checked)">
+        ${escHtml(t('projects_show_empty') || 'Show empty')}
+      </label>
     </div>`;
+}
+
+// toggleProjectsShowEmpty remembers the viewer's show-empty choice and repaints.
+function toggleProjectsShowEmpty(checked) {
+  _projectsSetShowEmpty(!!checked);
+  _projectsPaint();
 }
 
 // The project page: the header fields, the ordered arcs with the Automata and
@@ -3144,9 +3163,20 @@ function _projectsPickerHTML(list, selected, err) {
 function _projectPageHTML(p, roll, rollErr, hist) {
   if (!p) return '</div>';
   const events = [];
-  const unset = key => { events.push(t('projects_event_unset', [t(key)])); return ''; };
+  // Only a missing weekly share matters, and only when the project has an arc
+  // or an unassigned Automaton that needs a share. Other empty fields are hidden
+  // and produce no Events entry.
+  const needsShare = !!roll && !rollErr && (
+    (Array.isArray(roll.arcs) && roll.arcs.length > 0) ||
+    (roll.unassigned && Array.isArray(roll.unassigned.automata) && roll.unassigned.automata.length > 0));
+  const unset = key => {
+    if (key === 'projects_page_weekly_share' && needsShare) events.push(t('projects_event_unset', [t(key)]));
+    return '';
+  };
   const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
-  const field = (key, val) => (val === undefined || val === null || val === '') ? unset(key) : row(key, val);
+  const showEmpty = _projectsShowEmpty();
+  const emptyRow = key => (showEmpty ? row(key, t('projects_links_none')) : '');
+  const field = (key, val) => (val === undefined || val === null || val === '') ? (unset(key), emptyRow(key)) : row(key, val);
   const pts = n => (Number(n) > 0 ? ` · ${Math.round(Number(n) * 10) / 10} ${escHtml(t('projects_page_points'))}` : '');
 
   const tgt = p.target || {};
@@ -3154,7 +3184,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const laneVal = [ld.lane, ld.backend, ld.model].filter(Boolean).join(' · ');
   const share = (p.weekly_share === undefined || p.weekly_share === null) ? '' : p.weekly_share + '%';
   const head = [
-    p.description ? `<div style="margin:4px 0 8px;font-size:14px;line-height:1.5;">${escHtml(p.description)}</div>` : unset('projects_field_description'),
+    p.description ? `<div style="margin:4px 0 8px;font-size:14px;line-height:1.5;">${escHtml(p.description)}</div>` : (unset('projects_field_description'), emptyRow('projects_field_description')),
     field('projects_field_dir', p.dir),
     field('projects_field_backend', p.default_backend),
     field('projects_page_owner', p.owner),
@@ -3206,11 +3236,16 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
     body += _projectRollupHTML(roll, arcs);
-    if (!arcs.length) events.push(t('projects_event_no_arcs'));
-    else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+    if (!arcs.length) {
+      events.push(t('projects_event_no_arcs'));
+      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
+    } else body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     if (un.length) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
-    else events.push(t('projects_event_no_unassigned'));
+    else {
+      events.push(t('projects_event_no_unassigned'));
+      if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
+    }
   }
   body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
@@ -3289,11 +3324,19 @@ function _projectPolicyEffectiveHTML(pl, err) {
   } else {
     const pol = pl.policy && typeof pl.policy === 'object' ? pl.policy : {};
     const keys = Object.keys(pol);
-    inner = keys.length ? keys.map(k => {
+    const showEmpty = _projectsShowEmpty();
+    const optional = ['weekly_share_percent', 'branch_retention_days', 'major_trigger'];
+    const shown = keys.filter(k => {
       const e = pol[k] || {};
-      const val = (e.value === undefined || e.value === null) ? '' : (typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value));
+      const none = e.value === undefined || e.value === null || e.value === '';
+      return showEmpty || !(none && optional.includes(k));
+    });
+    inner = shown.length ? shown.map(k => {
+      const e = pol[k] || {};
+      let val = (e.value === undefined || e.value === null) ? '' : (typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value));
+      if (val === '' && optional.includes(k)) val = t('projects_links_none');
       return `<div class="project-policy-row" style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(k)}:</span> ${escHtml(val)} <span style="color:var(--text2);font-size:12px;">(${escHtml(e.source || '')})</span></div>`;
-    }).join('') : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>`;
+    }).join('') : (showEmpty ? `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_policy_empty'))}</div>` : '');
   }
   return `<div class="project-policy-effective" style="margin-top:10px;">${head}${link}${inner}</div>`;
 }
@@ -3315,6 +3358,7 @@ function _projectMergePipelineHTML(mp, err) {
     const polEntry = MERGE_PIPELINE_POLICIES.find(([v]) => v === mp.conflict_policy);
     const polLabel = polEntry ? t(polEntry[1]) : (mp.conflict_policy || '');
     const steps = mp.definition && Array.isArray(mp.definition.steps) ? mp.definition.steps : [];
+    if (!steps.length && !mp.source && !mp.reason && !mp.file_error && !mp.conflict_policy && !_projectsShowEmpty()) return '';
     inner = `<div style="font-size:13px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t('merge_pipeline_source_label'))}:</span> ${escHtml(src)}</div>` +
       (mp.reason ? `<div style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_reason', [mp.reason]))}</div>` : '') +
       (mp.file_error ? `<div style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_file_error', [mp.file_error]))}</div>` : '') +
@@ -3339,6 +3383,7 @@ function _projectEventStreamHTML(ev, err) {
     inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
   } else {
     const items = Array.isArray(ev.events) ? ev.events : [];
+    if (!items.length && !ev.dropped && !_projectsShowEmpty()) return '';
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
@@ -3377,7 +3422,8 @@ function _projectArcDocsHTML(p, arc) {
     if (/^\d+$/.test(s)) return escHtml('datawatch-app #' + s);
     return link(s);
   };
-  const line = (key, items, fmt) => `<div style="font-size:12px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ` +
+  const showEmpty = _projectsShowEmpty();
+  const line = (key, items, fmt) => (!items.length && !showEmpty) ? '' : `<div style="font-size:12px;margin:2px 0;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ` +
     (items.length ? items.map(fmt).join(', ') : `<span style="color:var(--text2);">${escHtml(t('projects_links_none'))}</span>`) + `</div>`;
   return `<div class="project-arc-docs" style="margin:4px 0 6px 12px;">` +
     line('projects_links_arc_plans', list(rec.plan_docs), link) +

@@ -900,6 +900,8 @@
   "projects_links_arc_designs": "Design documents",
   "projects_links_arc_issues": "datawatch-app issues",
   "projects_links_none": "none recorded",
+  "projects_show_empty": "Show empty lines and sections",
+  "projects_show_empty_help": "Empty fields, the none-recorded lines and the empty event stream are hidden by default. This shows them.",
   "projects_links_loading": "Loading…",
   "projects_links_failed": "Could not load:",
   "projects_page_priority": "Priority",
