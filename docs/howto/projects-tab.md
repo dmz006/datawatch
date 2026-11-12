@@ -303,7 +303,32 @@ datawatch projects timeline core-api --focus <arc-id>                 # one arc,
 - Templates are left out. Reading needs the autonomous read capability, and the
   answer is 503 while Automata are disabled.
 
-The timeline is a pure read. It has no configuration key and stores nothing.
+The timeline is a pure read. It has no configuration key and stores nothing. It
+never signals, stops or ends a session or an Automaton.
+
+**Which Automata belong to an arc, and to the project.** The explicit project link
+on the Automaton comes first. Matching by project directory is only a fallback,
+used when an Automaton carries no explicit link. An Automaton that no arc holds
+sits in the `unassigned` group.
+
+The same read is available over REST, MCP and chat:
+
+```bash
+curl -s "$DATAWATCH/api/projects/core-api/timeline?level=arcs&limit=50"   # REST
+# MCP: project_timeline {name: core-api, level: arcs}
+# Chat: project timeline core-api level=arcs
+```
+
+Example chat reply (a running arc reads `now`):
+
+```
+core-api timeline (arcs, 2 of 2)
+arc   Core API 2.0     2026-10-02 09:14 → now      active
+arc   Docs refresh     2026-10-20 11:02 → 2026-11-03 16:40   done
+```
+
+REST and MCP return the same rows as JSON (`rows`, with `has_more` and
+`next_cursor` when there is another page).
 
 #### Focus on one Automation
 
