@@ -3263,6 +3263,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   }
   body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
+  body += _planRecordsSlotHtml(p);
   body += _projectLinksHTML(p);
 
   const evs = events.length
@@ -3715,11 +3716,520 @@ function projectsHistoryMore() {
 
 // _projectsLoadSelected reads the roll-up, then the first history page, for the
 // selected project, repainting after each so the arcs show before the history.
+// ── Plan records on the project page ─────────────────────────────────────────
+// A Records section on the Projects tab project page: the registry rows and
+// findings that datawatch keeps for the selected project (GET
+// /api/plan-records/...). Two views (Registry rows, Findings), a state filter,
+// a search box that calls /api/plan-records/search, a detail panel with an edit
+// form, a create form and an Import button that shows the dry-run preview
+// (counts and every conflict with its resolution) and writes only after the
+// operator confirms. While autonomous.plan_records.enabled is off the server
+// answers not found and the section draws nothing. Every record value is
+// escaped. No timer is stored on a DOM node: the search box debounce uses the
+// one window-level timer window._planRecordsSearchTimer.
+const _PLAN_RECORD_STATES = {
+  registry_row: ['open', 'planned', 'in_progress', 'blocked', 'shipped', 'done', 'deferred', 'cancelled'],
+  finding: ['open', 'triaged', 'fixed', 'wontfix', 'duplicate'],
+};
+const _PLAN_RECORDS_PAGE = 50;
+
+function _planRecordsFresh(project) {
+  return {
+    project: project || '',
+    status: 'idle',      // idle | loading | ready | error | disabled
+    kind: 'registry_row',
+    stateFilter: '',
+    q: '',
+    recs: [],
+    total: 0,
+    error: '',
+    seq: 0,
+    view: 'list',        // list | detail | create | import
+    selected: null,
+    draft: null,         // what the operator typed in the open form, kept while an error shows
+    formError: '',
+    candidates: [],
+    busy: false,
+    notice: '',
+    importPhase: 'idle', // idle | previewing | preview | applying | done | failed
+    preview: null,
+    importError: '',
+    importDone: null,
+  };
+}
+let _planRecords = _planRecordsFresh('');
+
+function _planRecordsRoute(kind) { return kind === 'finding' ? 'findings' : 'registry-rows'; }
+
+// _planRecordsParseError reads the JSON error body the routes answer with.
+function _planRecordsParseError(err) {
+  const raw = String((err && err.message) || err || '');
+  try {
+    const j = JSON.parse(raw);
+    if (j && typeof j === 'object') {
+      return { message: String(j.error || raw), candidates: Array.isArray(j.candidates) ? j.candidates : [] };
+    }
+  } catch (_) { /* plain text */ }
+  return { message: raw, candidates: [] };
+}
+
+// _planRecordsHidden is true for the two answers that mean the feature is not
+// there for this operator: turned off (404) and not wired (503).
+function _planRecordsHidden(err) {
+  const raw = String((err && err.message) || err || '');
+  return /plan records are turned off|plan records are not available/i.test(raw);
+}
+
+function _planRecordsStateLabel(state) {
+  const key = 'plan_records_state_' + String(state || '');
+  const v = t(key);
+  return v === key ? String(state || '') : v;
+}
+
+function _planRecordsDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
+}
+
+// planRecordRowHtml draws one record in the list: the title first, the id
+// second, then the state chip, the dates and the linked Automaton.
+function planRecordRowHtml(r) {
+  const rec = r || {};
+  const kind = rec.kind === 'finding' ? 'finding' : 'registry_row';
+  const stateChip = `<span class="plan-record-state plan-record-state-${escHtml(String(rec.state || '').replace(/[^a-z_]/g, ''))}" style="font-size:11px;padding:2px 8px;border-radius:8px;border:1px solid var(--border);">${escHtml(_planRecordsStateLabel(rec.state))}</span>`;
+  const review = rec.needs_review
+    ? `<span class="plan-record-review" title="${escHtml(rec.review_reason || '')}" style="font-size:11px;padding:2px 8px;border-radius:8px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid #f59e0b;">${escHtml(t('plan_records_needs_review'))}</span>`
+    : '';
+  const legacy = rec.legacy_number ? `<span style="color:var(--text2);font-size:12px;">${escHtml(t('plan_records_legacy_row', [rec.legacy_number]))}</span>` : '';
+  const linkedId = kind === 'finding' ? rec.raised_by : rec.shipped_by;
+  const linkedKey = kind === 'finding' ? 'plan_records_linked_raised_by' : 'plan_records_linked_shipped_by';
+  const linked = linkedId
+    ? `<span class="plan-record-linked" style="font-size:12px;color:var(--text2);">${escHtml(t(linkedKey))}: <a href="#" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(String(linkedId))});event.stopPropagation();return false;`)}">${escHtml(linkedId)}</a></span>`
+    : '';
+  const dates = `<span style="font-size:12px;color:var(--text2);">${escHtml(t('plan_records_updated', [_planRecordsDate(rec.updated_at)]))}</span>`;
+  const open = `planRecordsOpen(${JSON.stringify(String(rec.uid || rec.id || ''))})`;
+  return `<div class="plan-record-row" data-record-id="${escHtml(rec.id || '')}" data-record-uid="${escHtml(rec.uid || '')}" style="border-top:1px solid var(--border);padding:6px 0;cursor:pointer;" onclick="${escHtml(open)}">
+    <div style="display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;">
+      <strong class="plan-record-title" style="font-size:14px;overflow-wrap:anywhere;">${escHtml(rec.title || '')}</strong>
+      <code class="plan-record-id" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(rec.id || '')}</code>
+      ${stateChip}${review}${legacy}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:2px;">${dates}${linked}</div>
+  </div>`;
+}
+
+function _planRecordsStateOptions(kind, current, withAll) {
+  const all = withAll ? `<option value="" ${current ? '' : 'selected'}>${escHtml(t('plan_records_filter_state_all'))}</option>` : '';
+  return all + (_PLAN_RECORD_STATES[kind] || []).map(s => `<option value="${escHtml(s)}" ${s === current ? 'selected' : ''}>${escHtml(_planRecordsStateLabel(s))}</option>`).join('');
+}
+
+function _planRecordsFormErrorHtml(v) {
+  if (!v.formError) return '';
+  const cands = Array.isArray(v.candidates) && v.candidates.length
+    ? `<div style="margin-top:4px;">${escHtml(t('plan_records_error_ambiguous'))}<ul style="margin:2px 0 0 16px;">${v.candidates.map(c => `<li><strong>${escHtml(c.title || '')}</strong> <code>${escHtml(c.id || '')}</code></li>`).join('')}</ul></div>`
+    : '';
+  return `<div id="planRecordFormError" class="plan-record-form-error" role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(v.formError)}${cands}</div>`;
+}
+
+function _planRecordsLinkField(kind, rec) {
+  const isFinding = kind === 'finding';
+  const key = isFinding ? 'plan_records_field_raised_by' : 'plan_records_field_shipped_by';
+  const val = isFinding ? (rec.raised_by || '') : (rec.shipped_by || '');
+  return `<label class="plan-record-field" style="display:block;margin:6px 0;font-size:13px;">${escHtml(t(key))}
+    <input id="planRecordLinked" class="form-input" type="text" value="${escHtml(val)}" style="width:100%;font-size:13px;"></label>`;
+}
+
+// planRecordDetailHtml is the detail panel: every field of one record with the
+// edit form, and the server's error shown in place under the form.
+function planRecordDetailHtml(v) {
+  const rec = v.selected || {};
+  const kind = rec.kind === 'finding' ? 'finding' : 'registry_row';
+  // The inputs show the saved record, or what was typed when a save was refused.
+  const d = v.draft || null;
+  const shown = d ? Object.assign({}, rec, { title: d.title, state: d.state, body: d.body, [kind === 'finding' ? 'raised_by' : 'shipped_by']: d.linked }) : rec;
+  const aliases = Array.isArray(rec.aliases) && rec.aliases.length
+    ? `<div style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_field_aliases'))}: ${rec.aliases.map(a => `<code>${escHtml(a)}</code>`).join(' ')}</div>`
+    : '';
+  const legacy = (rec.legacy_number || rec.legacy_source)
+    ? `<div style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_field_legacy'))}: ${rec.legacy_number ? escHtml(t('plan_records_legacy_row', [rec.legacy_number])) : ''} ${rec.legacy_source ? `<code>${escHtml(rec.legacy_source)}</code>` : ''}</div>`
+    : '';
+  const review = rec.needs_review
+    ? `<div class="plan-record-review-note" style="font-size:12px;color:#f59e0b;margin:4px 0;">${escHtml(t('plan_records_needs_review'))}${rec.review_reason ? ': ' + escHtml(rec.review_reason) : ''}</div>`
+    : '';
+  const links = Array.isArray(rec.links) && rec.links.length
+    ? `<div style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_field_links'))}: ${rec.links.map(l => `<code>${escHtml((l && l.kind) || '')}:${escHtml((l && l.ref) || '')}</code>`).join(' ')}</div>`
+    : '';
+  const dates = [
+    t('plan_records_created', [_planRecordsDate(rec.created_at)]),
+    t('plan_records_updated', [_planRecordsDate(rec.updated_at)]),
+    rec.closed_at ? t('plan_records_closed', [_planRecordsDate(rec.closed_at)]) : '',
+  ].filter(Boolean).map(escHtml).join(' · ');
+  return `<div class="plan-record-detail" data-record-uid="${escHtml(rec.uid || '')}" style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:8px;">
+    <div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;">
+      <button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsBack()">← ${escHtml(t('plan_records_back'))}</button>
+      <strong style="font-size:15px;overflow-wrap:anywhere;">${escHtml(rec.title || '')}</strong>
+      <code style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(rec.id || '')}</code>
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin:6px 0;">${escHtml(t('plan_records_detail_next'))}</div>
+    <label class="plan-record-field" style="display:block;margin:6px 0;font-size:13px;">${escHtml(t('plan_records_field_title'))}
+      <input id="planRecordTitle" class="form-input" type="text" value="${escHtml(shown.title || '')}" style="width:100%;font-size:13px;"></label>
+    <label class="plan-record-field" style="display:block;margin:6px 0;font-size:13px;">${escHtml(t('plan_records_field_state'))}
+      <select id="planRecordState" class="form-select" style="font-size:13px;">${_planRecordsStateOptions(kind, shown.state, false)}</select></label>
+    <label class="plan-record-field" style="display:block;margin:6px 0;font-size:13px;">${escHtml(t('plan_records_field_project'))}
+      <input id="planRecordProject" class="form-input" type="text" value="${escHtml(rec.project || '')}" readonly style="width:100%;font-size:13px;opacity:0.7;">
+      <span style="font-size:11px;color:var(--text2);">${escHtml(t('plan_records_project_fixed_note'))}</span></label>
+    ${_planRecordsLinkField(kind, shown)}
+    <label class="plan-record-field" style="display:block;margin:6px 0;font-size:13px;">${escHtml(t('plan_records_field_body'))}
+      <textarea id="planRecordBody" class="form-input" rows="8" style="width:100%;font-size:13px;">${escHtml(shown.body || '')}</textarea></label>
+    ${aliases}${legacy}${links}${review}
+    ${_planRecordsFormErrorHtml(v)}
+    ${v.notice ? `<div class="plan-record-notice" style="color:var(--success,#22c55e);font-size:13px;margin:6px 0;">${escHtml(v.notice)}</div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" class="btn-primary" ${v.busy ? 'disabled' : ''} onclick="planRecordsSave()">${escHtml(t('plan_records_save'))}</button>
+      <button type="button" class="btn-secondary" onclick="planRecordsBack()">${escHtml(t('plan_records_cancel'))}</button>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-top:8px;">${dates}</div>
+  </div>`;
+}
+
+// planRecordCreateHtml is the create form for the current view's kind.
+function planRecordCreateHtml(v) {
+  const kind = v.kind === 'finding' ? 'finding' : 'registry_row';
+  const titleKey = kind === 'finding' ? 'plan_records_create_finding' : 'plan_records_create_registry';
+  const d = v.draft || { title: '', state: 'open', body: '', linked: '' };
+  return `<div class="plan-record-create" style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:8px;">
+    <strong style="font-size:14px;">${escHtml(t(titleKey))}</strong>
+    <div style="font-size:12px;color:var(--text2);margin:6px 0;">${escHtml(t('plan_records_create_purpose', [v.project]))}</div>
+    <label class="plan-record-field" style="display:block;margin:6px 0;font-size:13px;">${escHtml(t('plan_records_field_title'))}
+      <input id="planRecordTitle" class="form-input" type="text" value="${escHtml(d.title)}" style="width:100%;font-size:13px;"></label>
+    <label class="plan-record-field" style="display:block;margin:6px 0;font-size:13px;">${escHtml(t('plan_records_field_state'))}
+      <select id="planRecordState" class="form-select" style="font-size:13px;">${_planRecordsStateOptions(kind, d.state, false)}</select></label>
+    ${_planRecordsLinkField(kind, { raised_by: d.linked, shipped_by: d.linked })}
+    <label class="plan-record-field" style="display:block;margin:6px 0;font-size:13px;">${escHtml(t('plan_records_field_body'))}
+      <textarea id="planRecordBody" class="form-input" rows="6" style="width:100%;font-size:13px;">${escHtml(d.body)}</textarea></label>
+    ${_planRecordsFormErrorHtml(v)}
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" class="btn-primary" ${v.busy ? 'disabled' : ''} onclick="planRecordsCreate()">${escHtml(t('plan_records_create_submit'))}</button>
+      <button type="button" class="btn-secondary" onclick="planRecordsBack()">${escHtml(t('plan_records_cancel'))}</button>
+    </div>
+  </div>`;
+}
+
+// planRecordImportHtml is the import panel. The first button only previews
+// (dry run); the records are written only by the Apply button, which appears
+// with the preview and uses the conflict policy the server is configured with.
+function planRecordImportHtml(v) {
+  const head = `<strong style="font-size:14px;">${escHtml(t('plan_records_import_title'))}</strong>
+    <div style="font-size:12px;color:var(--text2);margin:6px 0;">${escHtml(t('plan_records_import_purpose', [v.project]))}</div>`;
+  const cancel = `<button type="button" class="btn-secondary" onclick="planRecordsBack()">${escHtml(t('plan_records_cancel'))}</button>`;
+  let body = '';
+  const ph = v.importPhase;
+  if (ph === 'previewing' || ph === 'applying') {
+    body = `<div class="plan-record-import-busy" style="color:var(--text2);font-size:13px;">${escHtml(t(ph === 'previewing' ? 'plan_records_import_previewing' : 'plan_records_import_applying'))}</div>`;
+  } else if (ph === 'preview' && v.preview) {
+    const res = v.preview.result || v.preview;
+    const c = res.counts || {};
+    const policy = String(res.policy || '');
+    const conflicts = Array.isArray(res.conflicts) ? res.conflicts : [];
+    const unparse = Array.isArray(res.unparseable) ? res.unparseable : [];
+    const reasonText = rs => { const k = 'plan_records_import_reason_' + rs; const x = t(k); return x === k ? String(rs || '') : x; };
+    const actionText = a => { const k = 'plan_records_import_action_' + a; const x = t(k); return x === k ? String(a || '') : x; };
+    const rows = conflicts.length
+      ? `<ul class="plan-record-import-conflicts" style="margin:4px 0 0 16px;padding:0;font-size:12px;">${conflicts.map(cf => `<li style="margin:3px 0;overflow-wrap:anywhere;"><strong>${escHtml(cf.title || '')}</strong> <span style="color:var(--text2);">(${escHtml(cf.source || '')})</span> — ${escHtml(reasonText(cf.reason))}${cf.with ? ' (' + escHtml(cf.with) + ')' : ''} → <em>${escHtml(actionText(cf.action))}</em>${cf.new_title ? ': <strong>' + escHtml(cf.new_title) + '</strong>' : ''}${cf.note ? ' <span style="color:var(--text2);">' + escHtml(cf.note) + '</span>' : ''}</li>`).join('')}</ul>`
+      : `<div style="font-size:12px;color:var(--text2);">${escHtml(t('plan_records_import_no_conflicts'))}</div>`;
+    const bad = unparse.length
+      ? `<div style="margin-top:6px;font-size:12px;"><strong>${escHtml(t('plan_records_import_unparseable'))}</strong><ul style="margin:2px 0 0 16px;padding:0;">${unparse.map(u => `<li style="overflow-wrap:anywhere;">${escHtml(u.source || '')}: ${escHtml(u.reason || '')}</li>`).join('')}</ul></div>`
+      : '';
+    body = `<div class="plan-record-import-preview">
+      <div style="font-size:12px;color:var(--text2);">${escHtml(t('plan_records_import_dry_note'))}</div>
+      <div class="plan-record-import-counts" style="font-size:13px;margin:6px 0;">${escHtml(t('plan_records_import_counts', [c.create || 0, c.unchanged || 0, c.changed || 0, c.conflicts || 0, c.skipped || 0]))}</div>
+      <div style="font-size:12px;color:var(--text2);">${escHtml(t('plan_records_import_policy', [policy]))}</div>
+      <div style="margin-top:6px;font-size:13px;font-weight:600;">${escHtml(t('plan_records_import_conflicts'))}</div>${rows}${bad}
+      <div style="font-size:12px;color:var(--text2);margin-top:8px;">${escHtml(t('plan_records_import_confirm_note', [policy]))}</div>
+      <div style="display:flex;gap:8px;margin-top:6px;"><button type="button" class="btn-primary plan-record-import-apply" onclick="planRecordsImportApply()">${escHtml(t('plan_records_import_apply'))}</button>${cancel}</div>
+    </div>`;
+  } else if (ph === 'done' && v.importDone) {
+    const c = (v.importDone.result || v.importDone).counts || {};
+    body = `<div class="plan-record-import-done" style="font-size:13px;margin:6px 0;">${escHtml(t('plan_records_import_done', [c.create || 0, c.unchanged || 0, c.conflicts || 0, c.skipped || 0]))}</div><div style="margin-top:6px;">${cancel}</div>`;
+  } else if (ph === 'failed') {
+    body = `<div class="plan-record-import-error" role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(t('plan_records_import_failed', [v.importError]))}</div>
+      <div style="display:flex;gap:8px;margin-top:6px;"><button type="button" class="btn-primary" onclick="planRecordsImportPreview()">${escHtml(t('plan_records_import_preview_btn'))}</button>${cancel}</div>`;
+  } else {
+    body = `<div style="display:flex;gap:8px;margin-top:6px;"><button type="button" class="btn-primary plan-record-import-preview-btn" onclick="planRecordsImportPreview()">${escHtml(t('plan_records_import_preview_btn'))}</button>${cancel}</div>`;
+  }
+  return `<div class="plan-record-import" style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:8px;">${head}${body}</div>`;
+}
+
+function planRecordListHtml(v) {
+  const kind = v.kind === 'finding' ? 'finding' : 'registry_row';
+  if (v.status === 'error') {
+    return `<div class="plan-records-error" role="alert" style="color:var(--error);font-size:13px;margin-top:8px;overflow-wrap:anywhere;">${escHtml(t('plan_records_load_failed', [v.error]))}</div>`;
+  }
+  const recs = Array.isArray(v.recs) ? v.recs : [];
+  if (!recs.length) {
+    const key = v.q ? 'plan_records_empty_search' : (kind === 'finding' ? 'plan_records_empty_findings' : 'plan_records_empty_registry');
+    return `<div class="plan-records-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(key))}</div>`;
+  }
+  const countKey = kind === 'finding' ? 'plan_records_status_findings' : 'plan_records_status_registry_rows';
+  const more = recs.length < v.total
+    ? `<div style="margin-top:6px;"><button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsMore()">${escHtml(t('plan_records_load_more'))}</button></div>`
+    : '';
+  return `<div class="plan-records-count" style="font-size:12px;color:var(--text2);margin-top:8px;">${escHtml(t(countKey, [v.total, recs.length]))}</div>${recs.map(planRecordRowHtml).join('')}${more}`;
+}
+
+function planRecordsBodyHtml(v) {
+  if (v.view === 'detail' && v.selected) return planRecordDetailHtml(v);
+  if (v.view === 'create') return planRecordCreateHtml(v);
+  if (v.view === 'import') return planRecordImportHtml(v);
+  return planRecordListHtml(v);
+}
+
+// planRecordsSectionHtml is the whole Records section for one state object
+// (see _planRecordsFresh). It is empty until the first answer has come, and
+// stays empty while the feature is off or not wired.
+function planRecordsSectionHtml(v) {
+  if (!v || (v.status !== 'ready' && v.status !== 'error')) return '';
+  const kind = v.kind === 'finding' ? 'finding' : 'registry_row';
+  const tab = (k, key) => `<button type="button" class="automata-filter-badge plan-records-view${k === kind ? ' active' : ''}" data-kind="${k}" aria-pressed="${k === kind}" onclick="planRecordsSetKind('${k}')">${escHtml(t(key))}</button>`;
+  const controls = v.view === 'list'
+    ? `<div class="plan-records-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
+        <select id="planRecordsStateFilter" class="form-select" aria-label="${escHtml(t('plan_records_filter_state'))}" style="font-size:12px;" onchange="planRecordsSetState(this.value)">${_planRecordsStateOptions(kind, v.stateFilter, true)}</select>
+        <input id="planRecordsSearch" type="search" class="form-input" aria-label="${escHtml(t('plan_records_search_label'))}" placeholder="${escHtml(t('plan_records_search_placeholder'))}" value="${escHtml(v.q || '')}" oninput="planRecordsSearchInput(this.value)" style="flex:1;min-width:120px;font-size:12px;">
+        <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsNew()">＋ ${escHtml(t('plan_records_new'))}</button>
+        <button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsImportOpen()">${escHtml(t('plan_records_import'))}</button>
+      </div>`
+    : '';
+  return `<div class="plan-records-card" data-project="${escHtml(v.project)}" style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">
+    <div class="cap-title plan-records-title" style="font-weight:600;font-size:13px;">${escHtml(t('plan_records_title'))}</div>
+    <div class="plan-records-purpose" style="font-size:12px;color:var(--text2);margin:2px 0 6px;">${escHtml(t('plan_records_purpose'))}</div>
+    <div class="automata-badge-group" style="display:flex;gap:6px;">${tab('registry_row', 'plan_records_view_registry')}${tab('finding', 'plan_records_view_findings')}</div>
+    ${controls}
+    <div id="planRecordsBody">${planRecordsBodyHtml(v)}</div>
+  </div>`;
+}
+window.planRecordsSectionHtml = planRecordsSectionHtml;
+window.planRecordRowHtml = planRecordRowHtml;
+window.planRecordDetailHtml = planRecordDetailHtml;
+window.planRecordImportHtml = planRecordImportHtml;
+window.planRecordCreateHtml = planRecordCreateHtml;
+
+function _planRecordsSlotHtml(p) {
+  const inner = _planRecords.project === (p && p.name) ? planRecordsSectionHtml(_planRecords) : '';
+  return `<div id="planRecordsSlot">${inner}</div>`;
+}
+
+function _planRecordsPaint() {
+  if (!_projectsActive()) return;
+  const el = document.getElementById('planRecordsSlot');
+  if (el) el.innerHTML = planRecordsSectionHtml(_planRecords);
+}
+function _planRecordsPaintBody() {
+  const el = document.getElementById('planRecordsBody');
+  if (el) el.innerHTML = planRecordsBodyHtml(_planRecords);
+  else _planRecordsPaint();
+}
+
+// _planRecordsLoad reads the selected kind for the selected project: the list
+// route, or the search route when the search box has text. more=true appends
+// the next page. A 404 or 503 means the feature is off: the section hides.
+function _planRecordsLoad(more) {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  if (_planRecords.project !== name) _planRecords = _planRecordsFresh(name);
+  const st = _planRecords;
+  const seq = ++st.seq;
+  const q = (st.q || '').trim();
+  if (!more && st.status === 'idle') st.status = 'loading';
+  const params = ['project=' + encodeURIComponent(name), 'limit=' + _PLAN_RECORDS_PAGE, 'offset=' + (more ? st.recs.length : 0)];
+  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  let url;
+  if (q) { params.unshift('q=' + encodeURIComponent(q), 'kind=' + st.kind); url = '/api/plan-records/search?'; }
+  else url = '/api/plan-records/' + _planRecordsRoute(st.kind) + '?';
+  return apiFetch(url + params.join('&')).then(r => {
+    if (_planRecords !== st || seq !== st.seq) return;
+    const list = q
+      ? (r && Array.isArray(r.hits) ? r.hits.map(h => h && h.record).filter(Boolean) : null)
+      : (r && Array.isArray(r.records) ? r.records : null);
+    if (list === null) { st.status = 'disabled'; _planRecordsPaint(); return; }
+    st.recs = more ? st.recs.concat(list) : list;
+    st.total = Number(r.total) || st.recs.length;
+    st.status = 'ready';
+    st.error = '';
+    _planRecordsPaint();
+  }).catch(err => {
+    if (_planRecords !== st || seq !== st.seq) return;
+    if (_planRecordsHidden(err)) { st.status = 'disabled'; st.recs = []; _planRecordsPaint(); return; }
+    st.status = 'error';
+    st.error = _planRecordsParseError(err).message;
+    _planRecordsPaint();
+  });
+}
+
+window.planRecordsSetKind = function(kind) {
+  const st = _planRecords;
+  if (kind !== 'registry_row' && kind !== 'finding') return;
+  if (st.kind === kind && st.view === 'list') return;
+  st.kind = kind; st.stateFilter = ''; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
+  st.formError = ''; st.candidates = []; st.notice = '';
+  _planRecordsPaint();
+  return _planRecordsLoad(false);
+};
+window.planRecordsSetState = function(state) {
+  _planRecords.stateFilter = String(state || '');
+  return _planRecordsLoad(false);
+};
+// planRecordsSearchInput waits for a pause in typing, then calls the search
+// route. The one timer lives on window, not on a DOM node.
+window.planRecordsSearchInput = function(val) {
+  _planRecords.q = String(val || '');
+  clearTimeout(window._planRecordsSearchTimer);
+  window._planRecordsSearchTimer = setTimeout(() => { _planRecordsLoad(false); }, 250);
+};
+window.planRecordsMore = function() { return _planRecordsLoad(true); };
+window.planRecordsBack = function() {
+  const st = _planRecords;
+  const reload = st.importPhase === 'done';
+  st.view = 'list'; st.selected = null; st.draft = null; st.formError = ''; st.candidates = []; st.notice = '';
+  st.importPhase = 'idle'; st.preview = null; st.importError = ''; st.importDone = null;
+  _planRecordsPaint();
+  if (reload) return _planRecordsLoad(false);
+};
+window.planRecordsOpen = function(ref) {
+  const st = _planRecords;
+  const rec = st.recs.find(r => r && (r.uid === ref || r.id === ref));
+  if (!rec) return;
+  st.selected = rec; st.draft = null; st.view = 'detail'; st.formError = ''; st.candidates = []; st.notice = '';
+  _planRecordsPaint();
+};
+window.planRecordsNew = function() {
+  const st = _planRecords;
+  st.view = 'create'; st.draft = null; st.formError = ''; st.candidates = []; st.notice = '';
+  _planRecordsPaint();
+};
+
+function _planRecordsField(id) {
+  const el = document.getElementById(id);
+  return el ? String(el.value || '') : '';
+}
+
+// planRecordsSave sends the changed fields of the open record. A 409 (the
+// title is taken, or the reference is ambiguous) shows the server's message
+// under the form and keeps what was typed.
+window.planRecordsSave = function() {
+  const st = _planRecords;
+  const rec = st.selected;
+  if (!rec || st.busy) return;
+  const title = _planRecordsField('planRecordTitle').trim();
+  if (!title) {
+    st.draft = { title: '', state: _planRecordsField('planRecordState'), body: _planRecordsField('planRecordBody'), linked: _planRecordsField('planRecordLinked') };
+    st.formError = t('plan_records_title_required'); st.candidates = []; _planRecordsPaintBody(); return;
+  }
+  const body = {};
+  if (title !== rec.title) body.title = title;
+  const newState = _planRecordsField('planRecordState');
+  if (newState && newState !== rec.state) body.state = newState;
+  const text = _planRecordsField('planRecordBody');
+  if (text !== (rec.body || '')) body.body = text;
+  const linkedKey = rec.kind === 'finding' ? 'raised_by' : 'shipped_by';
+  const linked = _planRecordsField('planRecordLinked').trim();
+  if (linked !== (rec[linkedKey] || '')) body[linkedKey] = linked;
+  st.draft = { title, state: newState, body: text, linked };
+  if (!Object.keys(body).length) { st.draft = null; st.formError = ''; st.notice = t('plan_records_nothing_changed'); _planRecordsPaintBody(); return; }
+  st.busy = true; st.formError = ''; st.candidates = []; st.notice = '';
+  const url = '/api/plan-records/' + _planRecordsRoute(rec.kind) + '/' + encodeURIComponent(rec.uid || rec.id);
+  return apiFetch(url, { method: 'PUT', body: JSON.stringify(body) }).then(r => {
+    st.busy = false;
+    st.draft = null;
+    const next = r && r.record;
+    if (next) {
+      st.selected = next;
+      const i = st.recs.findIndex(x => x && x.uid === next.uid);
+      if (i >= 0) st.recs[i] = next;
+    }
+    st.notice = t('plan_records_saved');
+    _planRecordsPaintBody();
+  }).catch(err => {
+    st.busy = false;
+    const e = _planRecordsParseError(err);
+    st.formError = e.message; st.candidates = e.candidates;
+    _planRecordsPaintBody();
+  });
+};
+
+window.planRecordsCreate = function() {
+  const st = _planRecords;
+  if (st.busy) return;
+  const title = _planRecordsField('planRecordTitle').trim();
+  st.draft = { title, state: _planRecordsField('planRecordState') || 'open', body: _planRecordsField('planRecordBody'), linked: _planRecordsField('planRecordLinked') };
+  if (!title) { st.formError = t('plan_records_title_required'); st.candidates = []; _planRecordsPaintBody(); return; }
+  const body = { project: st.project, title, state: _planRecordsField('planRecordState') || 'open', body: _planRecordsField('planRecordBody') };
+  const linked = _planRecordsField('planRecordLinked').trim();
+  if (linked) body[st.kind === 'finding' ? 'raised_by' : 'shipped_by'] = linked;
+  st.busy = true; st.formError = ''; st.candidates = [];
+  return apiFetch('/api/plan-records/' + _planRecordsRoute(st.kind), { method: 'POST', body: JSON.stringify(body) }).then(r => {
+    st.busy = false;
+    st.draft = null;
+    const rec = r && r.record;
+    st.view = 'list';
+    st.notice = '';
+    if (rec) showToast(t('plan_records_created_toast', [rec.title || rec.id]), 'success', 2500);
+    _planRecordsPaint();
+    return _planRecordsLoad(false);
+  }).catch(err => {
+    st.busy = false;
+    const e = _planRecordsParseError(err);
+    st.formError = e.message; st.candidates = e.candidates;
+    _planRecordsPaintBody();
+  });
+};
+
+window.planRecordsImportOpen = function() {
+  const st = _planRecords;
+  st.view = 'import'; st.importPhase = 'idle'; st.preview = null; st.importError = ''; st.importDone = null;
+  _planRecordsPaint();
+};
+// planRecordsImportPreview is a dry run: it reads the archive and returns the
+// counts and every conflict with its resolution. Nothing is written.
+window.planRecordsImportPreview = function() {
+  const st = _planRecords;
+  st.importPhase = 'previewing'; st.importError = '';
+  _planRecordsPaintBody();
+  return apiFetch('/api/plan-records/import?dry_run=true', { method: 'POST', body: JSON.stringify({ project: st.project }) }).then(r => {
+    if (_planRecords !== st) return;
+    st.preview = r; st.importPhase = 'preview';
+    _planRecordsPaintBody();
+  }).catch(err => {
+    if (_planRecords !== st) return;
+    st.importPhase = 'failed'; st.importError = _planRecordsParseError(err).message;
+    _planRecordsPaintBody();
+  });
+};
+// planRecordsImportApply is the operator's confirmation of the preview. It
+// sends no conflict policy, so the server applies the configured one.
+window.planRecordsImportApply = function() {
+  const st = _planRecords;
+  if (st.importPhase !== 'preview') return;
+  st.importPhase = 'applying';
+  _planRecordsPaintBody();
+  return apiFetch('/api/plan-records/import', { method: 'POST', body: JSON.stringify({ project: st.project }) }).then(r => {
+    if (_planRecords !== st) return;
+    st.importDone = r; st.importPhase = 'done';
+    _planRecordsPaintBody();
+  }).catch(err => {
+    if (_planRecords !== st) return;
+    st.importPhase = 'failed'; st.importError = _planRecordsParseError(err).message;
+    _planRecordsPaintBody();
+  });
+};
+
 function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
     if (!_projectsActive()) return null;
     _projectsPaint();
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null));
+    const records = _planRecordsLoad(false);
+    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => records);
   });
 }
 
@@ -11144,6 +11654,10 @@ const DOCS_LINKS_BY_KEY = {
   // first, with the folder watch status line; the settings rows control its
   // folder and the document status line it reports.
   decision_record_card_title: DOCS_DEFINITIONS + '#decision-records-in-the-pwa',
+  // Plan records (Projects tab, Records section) and their three settings.
+  settings_automata_plan_records_enabled: 'howto/plan-records.md',
+  settings_automata_plan_records_write_through: 'howto/plan-records.md',
+  settings_automata_plan_records_import_conflict_policy: 'howto/plan-records.md',
   settings_protected_paths_group: DOCS_DEFINITIONS + '#protected-paths',
   settings_protected_paths: DOCS_DEFINITIONS + '#protected-paths',
   settings_protected_paths_action: DOCS_DEFINITIONS + '#protected-paths-action',
@@ -20571,6 +21085,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.decisions.doc_status_mode', label: 'Decision record document status line (off, report or on, default report)', labelKey: 'settings_automata_decisions_doc_status_mode', docsKey: 'settings_automata_decisions_doc_status_mode', type: 'select', options: ['off', 'report', 'on'], default: 'report', },
     { key: 'autonomous.decisions.doc_status_pattern', label: 'Decision record status line pattern (regular expression, default ^Confirmed:.*$)', labelKey: 'settings_automata_decisions_doc_status_pattern', docsKey: 'settings_automata_decisions_doc_status_pattern', type: 'text', placeholder: '^Confirmed:.*$', default: '^Confirmed:.*$', },
     { key: 'autonomous.decisions.doc_status_template', label: 'Decision record status line text ({choice}, {choice_label}, {quote}, {actor}, {date}, {decision_id})', labelKey: 'settings_automata_decisions_doc_status_template', docsKey: 'settings_automata_decisions_doc_status_template', type: 'text', placeholder: 'Confirmed: {choice} - "{quote}" ({actor}, {date})', default: 'Confirmed: {choice} - "{quote}" ({actor}, {date})', },
+    // Plan records: the registry rows and findings datawatch keeps per project.
+    { key: 'autonomous.plan_records.enabled', label: 'Plan records (on by default)', labelKey: 'settings_automata_plan_records_enabled', helpKey: 'settings_automata_plan_records_enabled_help', docsKey: 'settings_automata_plan_records_enabled', type: 'toggle', },
+    { key: 'autonomous.plan_records.write_through', label: 'Write plan record changes back to the plans files (off by default)', labelKey: 'settings_automata_plan_records_write_through', helpKey: 'settings_automata_plan_records_write_through_help', docsKey: 'settings_automata_plan_records_write_through', type: 'toggle', },
+    { key: 'autonomous.plan_records.import_conflict_policy', label: 'Plan record import conflict policy (suffix, rename or skip, default suffix)', labelKey: 'settings_automata_plan_records_import_conflict_policy', helpKey: 'settings_automata_plan_records_import_conflict_policy_help', docsKey: 'settings_automata_plan_records_import_conflict_policy', type: 'select', options: ['suffix', 'rename', 'skip'], default: 'suffix', },
     { key: 'autonomous.decisions.follow_ups', label: 'Decision record follow-ups (JSON list of name, kind and target; kind is start_template or open_automaton; empty = none)', labelKey: 'settings_automata_decisions_follow_ups', docsKey: 'settings_automata_decisions_follow_ups', type: 'textarea', },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
@@ -27632,6 +28150,27 @@ function renderCurrentPosition(prd) {
   return '';
 }
 
+// ── Derived project label ────────────────────────────────────────────────────
+// Every Automaton and Automation read carries a read-only `project`: the
+// registered project alias the record sits under (left out when none matches).
+// A card shows it as a small chip; a detail panel shows it as a line, with the
+// same "(none)" wording the progress groups use when there is no project.
+function planProjectChipHtml(item) {
+  const name = item && typeof item.project === 'string' ? item.project.trim() : '';
+  if (!name) return '';
+  return `<span class="plan-project-chip" title="${escHtml(t('plan_records_project_chip_tip'))}" style="font-size:11px;padding:2px 8px;border-radius:8px;border:1px solid var(--border);color:var(--text2);overflow-wrap:anywhere;">${escHtml(name)}</span>`;
+}
+function planProjectNoneText() {
+  const v = t('progress_group_none');
+  return v && v !== 'progress_group_none' ? v : '(none)';
+}
+function planProjectValueHtml(item) {
+  const name = item && typeof item.project === 'string' ? item.project.trim() : '';
+  return name ? escHtml(name) : `<span style="color:var(--text2);">${escHtml(planProjectNoneText())}</span>`;
+}
+window.planProjectChipHtml = planProjectChipHtml;
+window.planProjectValueHtml = planProjectValueHtml;
+
 function renderAutomataCard(prd, alsoInHtml) {
   const id = prd.id || '';
   const title = prd.title || '(no title)';
@@ -27721,7 +28260,7 @@ function renderAutomataCard(prd, alsoInHtml) {
     statusHtml: (shippedChipHtml(prd) || statusPill(status)) + renderPrdPushState(prd),
     title: title,
     checkHtml: checkboxCell,
-    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${parentLink}${pinMark}${watchMark}`,
+    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
     backend: [prd.backend, prd.model].filter(Boolean).join(' · '),
     progress: counts,
     progressLabel: t('work_tile_progress', [counts.done, counts.total]),
@@ -36967,6 +37506,7 @@ function _renderDetailOverview(prd) {
       ${prd.effort    ? `<dt>${escHtml(t('automata_detail_effort'))}</dt><dd>${escHtml(String(prd.effort))}</dd>` : ''}
       ${prd.model     ? `<dt>${escHtml(t('automata_detail_model'))}</dt><dd>${escHtml(prd.model)}</dd>` : ''}
       ${prd.project_dir ? `<dt>${escHtml(t('automata_detail_project'))}</dt><dd>${escHtml(prd.project_dir)}</dd>` : ''}
+      <dt>${escHtml(t('plan_records_project_label'))}</dt><dd class="prd-detail-project">${planProjectValueHtml(prd)}</dd>
       ${prd.depth     ? `<dt>${escHtml(t('automata_detail_depth'))}</dt><dd>${prd.depth}</dd>` : ''}
       ${prd.guided_mode ? `<dt>${escHtml(t('automata_detail_guided_mode'))}</dt><dd>✓</dd>` : ''}
       ${prd.write_dirs && prd.write_dirs.length ? `<dt>${escHtml(t('automata_detail_writable_dirs')||'Writable dirs')}</dt><dd>${escHtml(prd.write_dirs.join(', '))}</dd>` : ''}
@@ -39963,7 +40503,7 @@ function buildAutomationCardHTML(automation, ctx) {
     onOpen: open,
     statusClass,
     statusHtml: shippedChipHtml(a) || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
-    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)) + automationMilestoneBadgeHtml(a),
+    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)) + automationMilestoneBadgeHtml(a) + planProjectChipHtml(a),
     title: a.name,
     titleClass: 'automation-card-title',
     progress: { done, total },
@@ -40664,7 +41204,7 @@ function buildAutomationDetailHTML(automation, ctx) {
       <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a) || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
       ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}
-    </div>${desc}${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
+    </div>${desc}<div class="automation-detail-project" style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_project_label'))}: ${planProjectValueHtml(a)}</div>${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
     <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
@@ -52280,9 +52820,11 @@ function _tagBrowseFilter(items, f, tree) {
   const o = f || {};
   const tagIds = (o.tagIds || []).filter(id => tree.byId[id]);
   const backends = o.backends || [];
+  const projects = o.projects || [];
   const statuses = o.statuses || [];
   return (items || []).filter(it => {
     if (backends.length && !backends.includes(it.backend || '')) return false;
+    if (projects.length && !projects.includes(it.project || '')) return false;
     if (statuses.length && !statuses.includes(it.status || 'draft')) return false;
     return _tagBrowseMatches(_tagBrowseItemSet(it, tree), tagIds, o.mode);
   });
@@ -52462,7 +53004,7 @@ function _tagBrowseRootOpen(rootCount) {
 // and the viewer's override decide it). cfg holds the autonomous.tags settings the
 // browser reads from GET /api/config.
 function _tagBrowseLoad(scope) {
-  const sc = { view: 'list', attn: false, sel: [], mode: '', backends: new Set() };
+  const sc = { view: 'list', attn: false, sel: [], mode: '', backends: new Set(), projects: new Set() };
   try {
     const v = JSON.parse(localStorage.getItem('cs_tag_browse_' + scope) || 'null');
     if (v && typeof v === 'object') {
@@ -52567,12 +53109,12 @@ function _tagFacetBase(scope) {
 function _tagBrowseItems(scope, base) {
   const sc = _tagBrowse[scope];
   const statuses = scope === 'automata' ? [..._automataState.statusFilter] : [];
-  return _tagBrowseFilter(base, { tagIds: sc.sel, mode: _tagBrowseMode(scope), backends: [...sc.backends], statuses }, _tagBrowseTree(_tagsState.list));
+  return _tagBrowseFilter(base, { tagIds: sc.sel, mode: _tagBrowseMode(scope), backends: [...sc.backends], projects: [...sc.projects], statuses }, _tagBrowseTree(_tagsState.list));
 }
 
 function _tagBrowseActiveCount(scope) {
   const sc = _tagBrowse[scope];
-  let n = sc.sel.length + sc.backends.size;
+  let n = sc.sel.length + sc.backends.size + (sc.projects ? sc.projects.size : 0);
   if (scope === 'automata') n += _automataState.statusFilter.size + _automataState.typeFilter.size;
   return n;
 }
@@ -53048,14 +53590,14 @@ function _tagFacetsHTML(scope, tagsOpen) {
   const shipSel = _shippedState.enabled ? shippedFilterSelection(statusSel) : 'all';
   const stOnly = statusSel.filter(s => s !== 'shipped' && s !== 'unshipped');
   const gated = all.filter(it => shippedRecordMatches(it, shipSel, true));
-  const tagCounts = _tagBrowseCounts(_tagBrowseFilter(gated, { backends: [...sc.backends], statuses: stOnly }, tree), tree);
+  const tagCounts = _tagBrowseCounts(_tagBrowseFilter(gated, { backends: [...sc.backends], projects: [...sc.projects], statuses: stOnly }, tree), tree);
   const rows = _tagMultiRowsHTML(scope, tagCounts);
   const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
   const tagGroup = `<div class="tag-facet-group"><details class="tag-multi"${tagsOpen ? ' open' : ''}><summary class="tag-multi-summary">${escHtml(t('tag_browse_filter_tags'))}${sc.sel.length ? ` (${sc.sel.length})` : ''}</summary><div class="tag-multi-list">${rows || `<div class="tag-multi-empty">${escHtml(t('tag_picker_empty'))}</div>`}</div></details><button type="button" class="tag-mode-btn" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('${escJsAttr(scope)}')">${escHtml(modeLabel)}</button></div>`;
   let backendGroup = '';
   if (scope === 'automata') {
     const names = [...new Set(all.map(p => p.backend || '').filter(Boolean))].sort();
-    const counts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, statuses: stOnly }, tree), 'backend');
+    const counts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, projects: [...sc.projects], statuses: stOnly }, tree), 'backend');
     if (names.length) {
       backendGroup = `<div class="automata-badge-group tag-facet-backends">${names.map(n => {
         const on = sc.backends.has(n);
@@ -53063,7 +53605,21 @@ function _tagFacetsHTML(scope, tagsOpen) {
       }).join('')}</div>`;
     }
   }
-  let statusCounts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends] }, tree), 'status');
+  // Project chips (both lists): the derived project alias the daemon puts on
+  // every Automaton and Automation that sits under a registered project.
+  // Nothing is drawn while no listed item carries a project.
+  let projectGroup = '';
+  {
+    const names = [...new Set(all.map(p => p.project || '').filter(Boolean))].sort();
+    const counts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends], statuses: stOnly }, tree), 'project');
+    if (names.length) {
+      projectGroup = `<div class="automata-badge-group tag-facet-projects" role="group" aria-label="${escHtml(t('plan_records_project_filter'))}">${names.map(n => {
+        const on = sc.projects.has(n);
+        return `<button type="button" class="automata-filter-badge project-chip${on ? ' active' : ''}" aria-pressed="${on}" title="${escHtml(t('plan_records_project_chip_tip'))}" onclick="tagBrowseToggleProject('${escJsAttr(scope)}','${escJsAttr(n)}')">${escHtml(n)} <span class="tag-facet-count">${counts[n] || 0}</span></button>`;
+      }).join('')}</div>`;
+    }
+  }
+  let statusCounts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends], projects: [...sc.projects] }, tree), 'status');
   // count_separately: shipped records pull out of their stored-status
   // counts and group under the "shipped" badge, so shipped and cancelled
   // stay side by side (the Go state-counts rule).
@@ -53100,7 +53656,7 @@ function _tagFacetsHTML(scope, tagsOpen) {
     const shippedBadge = _shippedState.enabled ? badge('shipped', t('shipped_chip'), 'toggleAutomationStatusFilter') : '';
     statusBadges = _AUTOMATION_STATUSES.map(s => badge(s, t('automation_status_' + s), 'toggleAutomationStatusFilter')).join('') + shippedBadge;
   }
-  return tagGroup + backendGroup + `<div class="automata-badge-group tag-facet-statuses">${statusBadges}</div>`;
+  return tagGroup + backendGroup + projectGroup + `<div class="automata-badge-group tag-facet-statuses">${statusBadges}</div>`;
 }
 
 function _tagFilterPhoneHTML(scope) {
@@ -53229,6 +53785,13 @@ window.tagBrowseToggleBackend = function(scope, name) {
   if (set.has(name)) set.delete(name); else set.add(name);
   _tagBrowseRepaint(scope);
 };
+// tagBrowseToggleProject turns one project chip on or off (session only, like
+// the backend chips) and redraws the list.
+window.tagBrowseToggleProject = function(scope, name) {
+  const set = _tagBrowse[scope].projects;
+  if (set.has(name)) set.delete(name); else set.add(name);
+  _tagBrowseRepaint(scope);
+};
 // tagBrowseClear drops every facet of a scope. The Automata status and type filters
 // go too, and the status filter is refetched because the server applies it.
 window.tagBrowseClear = function(scope) {
@@ -53236,6 +53799,7 @@ window.tagBrowseClear = function(scope) {
   const hadStatus = scope === 'automata' && _automataState.statusFilter.size > 0;
   sc.sel = [];
   sc.backends.clear();
+  sc.projects.clear();
   if (scope === 'automata') {
     _automataState.statusFilter.clear();
     _automataState.typeFilter.clear();
