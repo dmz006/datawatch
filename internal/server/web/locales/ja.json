@@ -5345,6 +5345,6 @@
   "automation_focus_button": "フォーカス",
   "projects_gantt_focus_title": "フォーカス: %1$s",
   "projects_gantt_focus_back": "戻る",
-  "projects_gantt_focus_empty": "このオートメーションにはまだオートマトンもタスクもありません。計画済みです。",
+  "automation_gantt_focus_empty": "このオートメーションにはまだオートマトンもタスクもありません。計画済みです。",
   "projects_gantt_focus_range_text": "最初のタスク %1$s – 最後のタスク %2$s"
 }
