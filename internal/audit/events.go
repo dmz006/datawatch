@@ -17,6 +17,11 @@ const (
 	// ActionUsageBackoffPatternsRechecked — an operator recorded the current
 	// rate-limit pattern fingerprint as rechecked. Details: patterns_version.
 	ActionUsageBackoffPatternsRechecked = "autonomous_usage_backoff_patterns_rechecked"
+	// ActionUsageBackoffRestored — at daemon start an unexpired back-off flag
+	// was read back from disk and reinstalled, so the Automata that wait on
+	// that backend keep waiting after the restart. Subject: the backend.
+	// Details: backend, until (RFC 3339), source.
+	ActionUsageBackoffRestored = "autonomous_usage_backoff_restored"
 
 	// ActionResourceCeilingKill — a run was stopped for using more memory than
 	// its ceiling, or started with no ceiling because the host has neither a

@@ -129,7 +129,7 @@ func TestQuestionAudit_NamesAndCEF(t *testing.T) {
 		"autonomous_file_drift_detected", "config_deprecated_key",
 		"automation_create", "automation_update", "automation_delete",
 		ActionUsageBackoffSet, ActionUsageBackoffCleared,
-		ActionUsageBackoffAutoCleared, ActionUsageBackoffPatternsRechecked,
+		ActionUsageBackoffAutoCleared, ActionUsageBackoffPatternsRechecked, ActionUsageBackoffRestored,
 		ActionBudgetCeilingWait, ActionBudgetWindowResumed,
 		ActionAutomationBudgetBreach, ActionAutomationBudgetResumed,
 		ActionCapacityWait, ActionCapacityAdmitted, ActionBudgetWindowRollover,

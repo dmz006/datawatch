@@ -6329,10 +6329,33 @@ external, tree lock) and the time the wait ends, when known. The PWA Capacity
 card shows pools with limits and holders, back-off flags, and budget spend
 bars; its allocation share is an estimate and never blocks anything.
 
-**Reading the history.** Eight actions record the capacity and budget
+**Back-off flags across a restart.** Usage back-off flags are saved to
+`<data_dir>/autonomous/backoff.json` (mode 0600) on every set, clear and
+expiry and once more on shutdown, and reinstalled at daemon start before the
+boot-resume pass, so a restart does not release work into a limit that is still
+in force. Expired flags are dropped; a corrupt file is logged and ignored. Each
+restored flag writes a boot-resume entry (`backoff_restored`), a warning alert
+(**Back-off restored after restart**) and an `autonomous_usage_backoff_restored`
+audit event. Restoring never ends or signals a session. Deleting the file while
+the daemon is stopped forgets all flags; clear a single flag with
+`datawatch usage-backoff clear <backend>` instead.
+
+**Still to review (operator).** The restore is unit-tested and wired into the
+start and shutdown paths, but not yet confirmed on a live daemon: set a flag
+(`datawatch usage-backoff set claude-code 30`), restart with
+`systemctl --user restart datawatch`, and check that `datawatch usage-backoff
+status` still lists it, that the alert and the `backoff_restored` boot-resume
+entry appear, and that a queued task for that backend shows a `backoff:` wait
+and no running session was touched. Also confirm that a hard kill (no shutdown
+flush) still restores the last flag written by a set or clear, and decide
+whether a flag restored with an unknown reset time should keep its original
+window or restart the maximum wait.
+
+**Reading the history.** Nine actions record the capacity and budget
 machinery: `autonomous_capacity_wait`, `autonomous_capacity_admitted`,
 `autonomous_usage_backoff_set`, `autonomous_usage_backoff_cleared`,
-`autonomous_usage_backoff_auto_cleared`, `autonomous_budget_ceiling_wait`,
+`autonomous_usage_backoff_auto_cleared`, `autonomous_usage_backoff_restored`,
+`autonomous_budget_ceiling_wait`,
 `autonomous_budget_window_resumed` and `autonomous_budget_window_rollover`.
 Each is written once per change, not once per poll. All four surfaces take
 the same filters (`actor`, `action`, `subject`, `session_id`, `since`,
