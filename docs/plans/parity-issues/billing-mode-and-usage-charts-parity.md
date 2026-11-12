@@ -52,8 +52,8 @@ on the usage page**).
   resolved value onto every entry that has none. A cost report row reads the
   same before and after; an entry that already has a value is never touched;
   a second load changes nothing.
-- **Web settings row.** Settings → Compute → LLM edit form, in the budget
-  group under **Billing group**: a **Billing mode** select with the options
+- **Web settings row.** Settings → Compute → LLM edit form, in the **Budget**
+  section directly after the free-text **Billing group** field: a **Billing mode** select with the options
   `—` (blank, nothing stored), `api`, `allowance` and `local`, and a **?**
   help link to the cost report how-to whose text is `billing_mode_help`.
   Saving a blank value omits the field so the daemon resolves it again.
@@ -337,3 +337,29 @@ values are read from the bundles at the same key. Placeholders `%1$s`, `%2$s`,
 ## Filing record
 
 - Filed: — (pending; issue number / URL once opened)
+
+## Operator review before filing
+
+Checked against the code on 2026-11-12: the 73 locale keys and their English
+text match the five bundles key for key; the route, CLI, comm and MCP names,
+limits and error codes match the code. These still need the operator:
+
+1. **File the issue.** This draft is not filed. Open it on `dmz006/datawatch-app`,
+   then fill the release number under *Parent release* and the *Filing record*
+   above, and link the issue from the parity table in `docs/parity-status.md` if
+   that table tracks it.
+2. **`unit_labels` is not drawn on the web yet.** The usage cards do not read it,
+   so the optional last expected-behavior item has no web reference to copy.
+   Decide whether the web cards get it before the apps do.
+3. **Two stale links outside this story.** `docs/howto/v7-compute-migration.md`
+   still links `compute-mode.md`, which does not exist (the page is
+   `compute-nodes.md`). The same bad links in `docs/howto/llm-registry.md` were
+   fixed here; that file was not in scope.
+4. **Tracker IDs in `docs/cursor-mcp.md`.** The tools table carries older ids
+   (for example on the exit hook and result store rows). That file is not a
+   surface the internal-refs check covers, so they were left alone.
+5. **Howto-coverage check fails on two other howtos.** `scripts/check-howto-coverage.sh`
+   reports `docs/howto/automata-events.md` and `docs/howto/merge-shadow.md` as
+   having no `exec_steps:` and not being on the LLM-only list. Neither is part
+   of this change; the release smoke will block until they are given steps or
+   listed.

@@ -124,7 +124,7 @@ for the full migration table and verification steps.
 
 - `datawatch start` — daemon up (v7.0.0).
 - For `ollama` / `openwebui` / `opencode` kinds: at least one Compute
-  Node registered. See [`compute-mode.md`](compute-mode.md).
+  Node registered. See [`compute-nodes.md`](compute-nodes.md).
 - For `claude` kind: an Anthropic API key (literal or `${secret:name}`
   reference — see [`secrets-manager.md`](secrets-manager.md)).
 - For session-backend kinds (`claude-code`, `aider`, …): the relevant
@@ -772,8 +772,9 @@ tmux process.
 
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/v7-compute-migration](v7-compute-migration.md)
-- [howto/compute-mode](compute-mode.md)
+- [howto/compute-nodes](compute-nodes.md)
+- [howto/cost-report](cost-report.md) — billing mode and the usage charts
 - [howto/secrets-manager](secrets-manager.md)
 - [howto/council-mode](council-mode.md)
 - [howto/chat-and-llm-quickstart](chat-and-llm-quickstart.md)
-- [api/llms](../api/llms.md)
+- [api/openapi.yaml](../api/openapi.yaml) — the `/api/llms` routes
