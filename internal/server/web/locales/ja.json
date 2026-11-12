@@ -993,6 +993,7 @@
   "nav_alerts": "アラート",
   "nav_automata": "オートマタ",
   "nav_projects": "プロジェクト",
+  "nav_projects_short": "プロジェクト",
   "projects_overview": "概要",
   "projects_picker_label": "プロジェクト",
   "projects_none": "プロジェクトはまだありません。下のフォームで最初のプロジェクトを追加してください。",

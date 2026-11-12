@@ -742,23 +742,29 @@ body {
    would overflow, the action buttons wrap onto a second row when they do not
    fit beside them, and every tab and action button keeps a 40 px tap target. */
 @media (max-width: 600px), (pointer: coarse) {
-  .automata-tabs-bar {
-    flex-wrap: wrap;
-    overflow: visible;
+  .automata-tabs-bar,
+  .projects-tabs-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     box-sizing: border-box;
     max-width: 100%;
-    row-gap: 4px;
   }
-  .automata-tabs-bar .output-tab {
-    flex: 0 1 auto;
-    min-width: 0;
+  .automata-tabs-bar::-webkit-scrollbar,
+  .projects-tabs-bar::-webkit-scrollbar { display: none; }
+  .automata-tabs-bar .output-tab,
+  .projects-tabs-bar .output-tab {
+    flex: 0 0 auto;
     min-height: 40px;
-    padding: 6px 8px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 6px 10px;
+    white-space: nowrap;
     box-sizing: border-box;
   }
-  .automata-tabs-bar > div:empty { flex: 1 1 0; min-width: 0; }
+  /* The spacer collapses so the action buttons sit in the same scrolling row. */
+  .automata-tabs-bar > div:empty { flex: 0 0 4px; min-width: 0; }
   .automata-tabs-bar .automata-action-btn {
     min-width: 40px;
     min-height: 40px;
@@ -766,8 +772,30 @@ body {
   }
   .automata-tabs-bar .btn-primary {
     min-height: 40px;
+    flex: 0 0 auto;
     box-sizing: border-box;
   }
+  /* Edge fade: shown only on the side that still hides tabs (classes are set
+     by _tabStripFade), so the reader sees more tabs exist. */
+  .automata-tabs-bar.tabs-more-right,
+  .automation-subtabs.tabs-more-right,
+  .projects-tabs-bar.tabs-more-right {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .automata-tabs-bar.tabs-more-left,
+  .automation-subtabs.tabs-more-left,
+  .projects-tabs-bar.tabs-more-left {
+    -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  }
+  .automata-tabs-bar.tabs-more-left.tabs-more-right,
+  .automation-subtabs.tabs-more-left.tabs-more-right,
+  .projects-tabs-bar.tabs-more-left.tabs-more-right {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  }
+  .header-title { font-size: 14px; letter-spacing: -0.2px; }
 }
 
 /* Second row of sub-tabs — sits directly below the first sub-tab bar and

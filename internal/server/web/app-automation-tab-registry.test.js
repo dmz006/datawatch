@@ -245,13 +245,15 @@ test('strip behaviour: switching tabs calls _automationSubtabsReveal on the acti
   const btn = makeStubElement();
   btn.scrollIntoView = opts => calls.push(opts);
   const queried = [];
-  sb.document.querySelector = sel => { queried.push(sel); return sel === '.automation-subtabs .output-tab.active' ? btn : null; };
+  const strip = makeStubElement();
+  strip.querySelector = sel => { queried.push(sel); return sel === '.output-tab.active' ? btn : null; };
+  sb.document.querySelector = sel => (sel === '.automation-subtabs' ? strip : null);
   sb.renderAutonomousView();
   assert.equal(calls.length, 1, 'the first render reveals the active button once');
   sb.switchAutomationSubtab('progress');
   assert.equal(calls.length, 2, 'switching reveals again');
   assert.deepEqual({ ...calls[1] }, { block: 'nearest', inline: 'center', behavior: 'smooth' });
-  assert.ok(queried.includes('.automation-subtabs .output-tab.active'), 'the active button is the one queried');
+  assert.ok(queried.includes('.output-tab.active'), 'the active button is the one queried');
   sb.switchAutomationSubtab('bogus');
   assert.equal(calls.length, 2, 'an unknown id does not reveal');
   assert.equal(typeof sb._automationSubtabsReveal, 'function');
