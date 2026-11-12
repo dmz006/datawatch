@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.162.2 — Usage back-off flags survive a daemon restart
+
+### Fixed
+
+- **Usage back-off flags survive a daemon restart.** A back-off flag (rate-limit, operator or burn-guard) is now saved to the daemon data folder and reinstalled at daemon start, with expired flags dropped, so a restart no longer clears a pause and lets work run against a backend that is out of quota. Boot-time resume starts no new sessions for a paused backend, and sessions already alive are never ended or signalled. The restore is recorded in the decision log, an alert and an audit event.
+
+### Documentation
+
+- **Usage back-off how-to.** A new how-to, `usage-backoff`, explains the back-off flag (rate-limit, operator and burn-guard flags; backend, until, reason, source), how to set, check and clear one on MCP, REST, the CLI and the comm channel, that flags are saved to the daemon data folder and restored at start with expired ones dropped, that boot-time resume starts no new sessions for a backed-off backend while sessions already alive are never ended or signalled, and where the restore shows (decision log, alert, audit).
+- **Back-off review checklist.** The usage back-off how-to gains a short *What to review after a restart* section: compare restored `until` times with the usage page, clear stale flags by hand, and re-check burn-guard flags after a config change.
+- **Back-off flags across a restart.** The capacity how-to, operations guide, glossary, restart how-tos and audit lists now describe the saved back-off flag: it is written to disk, reinstalled at daemon start, recorded as a boot-resume entry, an alert and a restored audit event, and never touches a running session. Operator review notes are in `docs/operations.md`.
+
 ## v9.162.1 — Cancelled tasks are skipped, not blocking
 
 ### Fixed

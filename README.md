@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.162.1 (2026-11-12).** A cancelled task is a skipped outcome, so an Automaton with only completed and cancelled tasks goes to the completion review, a stuck Automaton blocked only by cancelled tasks advances, and a task that is not running can be removed while the Automaton runs. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.162.2 (2026-11-12).** Usage back-off flags are saved and reloaded across a daemon restart, and boot-time resume starts no sessions for a paused backend. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
