@@ -25,6 +25,18 @@ filter) needs to send something to the running backend. The PWA's
 yellow "Input Required" banner + the chat-channel notification fan
 out from this transition.
 
+`state` is the true state of the session. A record is not left in `running`
+(or another non-final state) once its terminal session and process are gone.
+
+Two optional fields in the session JSON say a record was finalised:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ended_at` | RFC 3339 time | When the record was finalised because its process was gone. |
+| `end_note` | string | Always `process gone, finalised`. |
+
+Both fields are omitted on every session that was not finalised this way.
+
 A record whose process is gone is finalised as `complete` (its output
 ends with a `DATAWATCH_COMPLETE:` line) or `killed` (anything else).
 Only such a record carries `ended_at` (RFC 3339 time it was finalised)

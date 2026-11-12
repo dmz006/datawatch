@@ -54,6 +54,54 @@ state-decision logic. A record whose process has vanished without ever
 reaching a terminal state is a *gone* record; see
 [Gone session records](#gone-session-records).
 
+## Sessions that are really running
+
+**Why a list could be wrong.** A session record is a saved file, and it only
+changes when something updates it. If the process behind a session ended
+without telling datawatch (the terminal was closed, the machine lost power, a
+tool killed the process, or the daemon was down at the time), the record kept
+saying `running`. The session list then showed sessions as running that had
+nothing running behind them.
+
+**What a live session is.** A session is live when something still drives it:
+a terminal session or process exists for it, or the daemon holds a runner for
+it. A session in `running`, `waiting_input`, `stalled` or `rate_limited` with
+none of those is not really running. Sessions recorded by another host are not
+judged here; that host's daemon owns them.
+
+**What the finaliser does.** The finaliser looks at every record that is not in
+a final state. If its terminal session and process are gone, the record is
+set to `killed`, or to `complete` when its output ends with the completion
+marker. It gets an end time (`ended_at`) and the note `process gone,
+finalised` (`end_note`). The record and its output are kept, so you can read
+what happened. Records that are live, belong to another host or are already in
+a final state are left alone.
+
+**When it runs.** Once when the daemon starts, then every
+`session.finalise_interval_minutes` minutes (default 10). Setting it to `0`
+turns the scheduled runs off; the start-up run still happens. A change applies
+without a restart.
+
+**Worked example.** A laptop sleeps mid-session and the terminal is closed.
+Next morning the session list still says `running`. Within ten minutes of the
+daemon's next run, or at once on start-up, the record changes:
+
+```bash
+datawatch sessions get a3f2 | jq '.state, .ended_at, .end_note'
+# "killed"
+# "2026-11-12T07:41:09Z"
+# "process gone, finalised"
+```
+
+Read the session's output before you restart it. To run the check more often,
+every 2 minutes:
+
+```bash
+datawatch config set session.finalise_interval_minutes 2
+```
+
+The details of how a record is judged and what each run covers follow below.
+
 ## Gone session records
 
 A session record can be left in `running` (or another non-final state)
