@@ -19,7 +19,8 @@ var terminalControlRe = regexp.MustCompile(
 // RunnerEvidenceFromLog builds evidence from the session output log at
 // logPath. It keeps the last forty non-empty lines with terminal control
 // sequences and carriage returns removed, and takes the exit status from the
-// last line starting with the pi exit marker. A missing or unreadable file
+// last "DATAWATCH_PI_FAILED: pi exited with status N" line the pi wrapper
+// prints (parsed by ParsePiPromptExitStatus). A missing or unreadable file
 // yields evidence carrying only node and model.
 func RunnerEvidenceFromLog(logPath, node, model string) RunnerEvidence {
 	ev := RunnerEvidence{Node: node, Model: model}
