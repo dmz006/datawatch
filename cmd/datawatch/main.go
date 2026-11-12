@@ -4607,6 +4607,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			RequestWatch:                     acfgIn.RequestWatch.Clone(),
 			PlanningBackend:                  acfgIn.PlanningBackend,
 			PlanningRouting:                  acfgIn.PlanningRouting,
+			TaskRouting:                      acfgIn.TaskRouting.Clone(),
 			VerificationBackend:              acfgIn.VerificationBackend,
 			ExecutionBackend:                 acfgIn.ExecutionBackend,
 			FirstAttempt:                     autonomouspkg.CloneFirstAttempt(acfgIn.FirstAttempt),
