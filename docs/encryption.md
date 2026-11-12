@@ -53,6 +53,7 @@ auto-enables secure mode without needing the `--secure` flag.
 | `discussions/<id>/wal.jsonl` | Per-line `ENC:<b64>` | Each JSONL line encrypted independently |
 | `sessions/<id>/output.log` | `DWLOG1` | Streaming block encryption via FIFO |
 | `sessions/<id>/session.json` | `DWDAT2` | Session tracking record |
+| `plan-records/<kind>/<uid>.json` | JSON envelope with a `DWDAT2` sealed payload | Plan records (registry rows and findings). Only `kind`, `project`, `state`, `id`, `uid`, `legacy_number`, `created_at`, `updated_at` and `closed_at` stay readable so records can be filtered without the key; the title, notes, aliases, links, Automaton ids, review fields, legacy source and shipped version exist only inside the sealed payload. Without `--secure` the files are plain JSON |
 | `daemon-app.log` | `DWLOG1` | Application log after key derivation |
 
 ### Separately encrypted (independent of `--secure`)

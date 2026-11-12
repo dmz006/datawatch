@@ -68,6 +68,46 @@ Each created or changed record writes one `plan_record_created` or
 `plan_record_updated` audit event; a real import writes one
 `plan_record_imported` summary event.
 
+## Creating and changing records
+
+A new record needs a `kind`, a registered `project` alias and a `title`. The
+daemon gives it its own id (never the old row number) and a uid, sets the
+dates, and starts it in state `open`. A title already used in the same project
+is refused; the same title in another project is fine. Project, kind and
+`legacy_number` cannot be changed afterwards. Renaming a record keeps the old
+title as an older title that still finds it.
+
+```sh
+# CLI: a registry row, then a finding
+datawatch plan-record create --kind registry-row --project datawatch \
+  --title "Plan records in the registry" --state planned --body "Keep rows in datawatch."
+datawatch plan-record create --kind finding --project datawatch \
+  --title "Import skipped a row" --raised-by <automaton-id>
+
+# CLI: change by title, id or row number; flags you leave out are untouched
+datawatch plan-record update "Plan records in the registry" --state in_progress
+datawatch plan-record update "row 412" --title "Plan records, step one" --state shipped
+```
+
+On REST send the same fields as JSON: `POST /api/plan-records/registry-rows`
+with `{"project":"datawatch","title":"...","state":"planned"}`, then
+`PUT /api/plan-records/registry-rows/{ref}` with only the fields to change.
+Over MCP use `plan_record_create` and `plan_record_update`
+(`{"kind":"registry-row","ref":"row 412","state":"shipped"}`). In chat send
+`autonomous plan-record create <json>` or `autonomous plan-record update <ref>
+<json>`. In the web app use **New record** or open a record in the detail
+panel.
+
+## Finding a record
+
+Use whatever you remember. `datawatch plan-record get "row 412"`,
+`get plan-records-in-the-registry` (an id), `get "Plan records in"` (a title
+prefix) and `get "Old title"` (an older title) all reach the same record when
+the match is unique. When two projects use the same title, add `--project`
+(`project` on the other surfaces) to choose. `datawatch plan-record search
+<words>` looks through titles, older titles and notes, with title hits first,
+and `list` filters by `project`, `state` or `legacy_number`.
+
 ## Importing the old files
 
 The import reads the numbered rows of `docs/plans/README.md` and the findings
@@ -113,6 +153,15 @@ instead and never touches the README:
 - With write-through off (the default), or when no record store is wired, the
   hook behaves exactly as before.
 
+**The supervisor.** With write-through on, a supervisor or any other Automaton
+that needs to add or change a row does it through the `plan_record_*` tools:
+`plan_record_search` or `plan_record_get` to find the row by title, id or
+`row <n>`, then `plan_record_update` (or `plan_record_create` when there is
+none) to set the state, the notes and `shipped_by`. It does not edit
+`docs/plans/README.md`. With write-through off, the README stays the place to
+edit and the tools are only for reading and for records you keep on purpose.
+Only the operator turns the setting on or off.
+
 Write-through changes only the registry-row hook. It does not write record
 changes back into the plans files, and the files are not updated when a record
 is edited by hand.
@@ -135,8 +184,13 @@ are in **Settings → Automata**.
 One JSON file per record under `<data dir>/plan-records/<kind>/<uid>.json`,
 written through a temporary file and an atomic rename; the index is rebuilt
 from the files when the store opens. With secure mode on, each record is
-sealed; only `kind`, `project`, `state`, `id`, `uid`, `legacy_number` and the
-dates are readable without the key.
+sealed with the same file sealing the other per-record data files use.
+Exactly these fields stay readable without the key, so records can still be
+filtered: `kind`, `project`, `state`, `id`, `uid`, `legacy_number`, and the
+dates `created_at`, `updated_at` and `closed_at`. Everything else (title,
+notes, older titles, links, Automaton ids, review fields, legacy source and
+shipped version) is only inside the sealed payload. Without secure mode the
+files are plain JSON. See [encryption](../encryption.md).
 
 ## Turning it off, and rollback
 

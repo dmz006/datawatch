@@ -67,7 +67,7 @@ Give it a goal. It splits the goal into steps, runs them, checks each result, an
 - Points the planner and workers at your project's rules and context files; set the file names under Settings, *Rules and context*, with `datawatch autonomous rules-context`, or with `GET`/`PUT /api/autonomous/rules-context` ([how-to](docs/howto/automata-rules-and-context.md))
 - Sets how small each worker, verifier and judge session starts with worker session profiles: which MCP servers, tools, skills, starting context, model and effort a session gets, set per role, task kind, task, Automaton, project or globally; the start-up size and profile name are recorded per attempt and shown in the cost report, stats and usage advice ([how-to](docs/howto/worker-session-profiles.md))
 
-More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md)
+More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [plan records](docs/howto/plan-records.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md)
 
 ### See what agents did
 
