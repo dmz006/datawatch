@@ -902,6 +902,17 @@ paths:
         `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset
         key reads as 30 and an explicit `0` turns triage alerts off; a negative or
         non-integer value is rejected with 400),
+        `autonomous.automation.pending_item_policy` (hold|skip, default hold),
+        `autonomous.automation.pending_item_auto_resume` (true|false, default true),
+        `autonomous.automation.pending_item_source.path` (a file path; empty = no file
+        registry), `autonomous.automation.pending_item_source.id_pattern` (a regular
+        expression, default `^\S+$`), `autonomous.automation.pending_item_source.id_column`
+        and `.title_column` and `.state_column` (a header name or a 1-based column
+        number; defaults `1`, `2` and empty), `autonomous.automation.pending_item_source.done_values`
+        (a list of words, comma-separated here; default done, closed, shipped) and
+        `autonomous.automation.pending_item_source.on_missing_row` (keep|drop, default
+        keep); a bad pending item value rejects the whole PUT with 400 naming the allowed
+        words and nothing is written,
         `autonomous.progress.lanes` (whole number >= 0, default 0 = 5),
         `autonomous.progress.inactive_gap_hours` (number >= 0, default 0 = 3),
         `autonomous.progress.backlog_path` (string, default docs/plans/README.md; a
@@ -1612,6 +1623,159 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
+
+  /api/autonomous/pending-items:
+    get:
+      summary: Automaton pending items
+      description: |
+        The pending item registry. A pending item is a named piece of work that has
+        no Automaton yet; an Automation can carry it as a member and holds at it
+        until an Automaton is attached. The reply holds `policy` (hold|skip) and
+        `auto_resume` in effect (`autonomous.automation.pending_item_policy` and
+        `autonomous.automation.pending_item_auto_resume`), `source` (the file
+        registry settings in effect; `configured` is false while no path is set),
+        `last_refresh` (when the file registry was last read, with the counts, or
+        the error), `items` (every item with the Automations that carry it) and
+        `held` (every Automation waiting on a waiting item right now, with since
+        when and why). `items` and `held` are empty lists, never null. The optional
+        `state` filter keeps the items in one state; an unknown word is refused with
+        400. The optional `automation_id` filter keeps the items one Automation
+        carries and its holds. Read-only; a federated peer needs the autonomous
+        read capability.
+      operationId: autonomousPendingItems
+      tags: [Autonomous]
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema: {type: string, enum: [waiting, attached, done]}
+          description: Keep only the items in this state.
+        - name: automation_id
+          in: query
+          required: false
+          schema: {type: string}
+          description: Keep only the items this Automation carries as members, and only its holds. An id that matches nothing reads empty lists.
+      responses:
+        "200":
+          description: The pending item registry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingItemsReply"
+        "400": {description: "400: state must be waiting, attached or done"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed; GET and POST are served}
+        "503": {description: Autonomous is disabled, or the pending item registry is unavailable}
+    post:
+      summary: Record a waiting pending item
+      description: |
+        Records a new pending item in the waiting state. The daemon generates the
+        id (8 hex characters). `title` must not be blank. `ref` is an optional
+        outside label, free text. The reply is the new item. Any other
+        method is a 405. A federated peer needs the autonomous write capability.
+      operationId: autonomousPendingItemCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: {type: string, description: "The name of the work; must not be blank"}
+                ref: {type: string, description: "Optional outside label for the item, for example the id it has in a file registry"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+      responses:
+        "201":
+          description: The new item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingItem"
+        "400": {description: "400: the title is blank, or the body is not valid JSON"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed; GET and POST are served}
+        "503": {description: Autonomous is disabled, or the pending item registry is unavailable}
+
+  /api/autonomous/pending-items/{id}/attach:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Pending item ID (8 hex characters)"}
+    post:
+      summary: Attach an Automaton to a pending item
+      description: |
+        Attaches an Automaton to a waiting pending item. Every Automation member
+        that waits on the item is converted in place into an ordinary Automaton
+        member for that Automaton (same position, edges and status; the member keeps
+        the item id as a note of where it came from), and a held insert for the item
+        is converted the same way. The item moves from waiting to attached. An
+        Automation that was blocked on the member resumes when
+        `autonomous.automation.pending_item_auto_resume` is on; when it is off the
+        Automation stays blocked and `notes` says so. The Automaton must exist, must
+        not be a template or a child of another Automaton, and must not already
+        belong to an Automation. A federated peer needs the autonomous write
+        capability.
+      operationId: autonomousPendingItemAttach
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [automaton_id]
+              properties:
+                automaton_id: {type: string, description: "The Automaton to attach"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+      responses:
+        "200":
+          description: What the attach did
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingItemAttachResult"
+        "400": {description: "400: automaton_id is missing, or the Automaton cannot be attached (a template, a child, or already in an Automation)"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: "404: the pending item or the Automaton does not exist"}
+        "405": {description: Method not allowed; only POST is served}
+        "409": {description: "409: the item is not waiting (attaching twice is refused)"}
+        "503": {description: Autonomous is disabled, or the pending item registry is unavailable}
+
+  /api/autonomous/pending-items/refresh:
+    post:
+      summary: Read the pending item file registry now
+      description: |
+        Reads the file registry (`autonomous.automation.pending_item_source.path`)
+        now instead of waiting for the next daemon start. A new row becomes a waiting
+        item with source file; a row whose title changed updates the title; a row
+        whose state is one of the done values moves the item to done; an item whose
+        row disappeared follows `pending_item_source.on_missing_row` (keep leaves it,
+        drop removes it while it is still waiting and belongs to no Automation). The
+        daemon only reads the file, it never writes to it. The body is ignored. With
+        no registry path set the reply says `configured` is false and nothing
+        changes. A file that cannot be read is reported in `error` and leaves the
+        registry as it was. Reading an unchanged file changes nothing. A federated
+        peer needs the autonomous write capability.
+      operationId: autonomousPendingItemsRefresh
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: What the read did
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingItemRefreshResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed; only POST is served}
+        "503": {description: Autonomous is disabled, or the pending item registry is unavailable}
 
   /api/autonomous/progress:
     get:
@@ -2610,6 +2774,13 @@ paths:
         `uncommitted_work_policy` (hold|warn|off, default hold) and
         `uncommitted_work_scope` (task_files|worktree, default task_files);
         a key that was never set is omitted and reads its default.
+        The `automation` object also carries the nine pending item settings:
+        `pending_item_policy` (hold|skip, default hold), `pending_item_auto_resume`
+        (true|false, default true) and the `pending_item_source` object with `path`
+        (default empty = no file registry), `id_pattern` (default `^\S+$`),
+        `id_column` (default `1`), `title_column` (default `2`), `state_column`
+        (default empty = none), `done_values` (default done, closed, shipped) and
+        `on_missing_row` (keep|drop, default keep).
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses:
@@ -2665,6 +2836,43 @@ paths:
                         enum: [task_files, worktree]
                         default: task_files
                         description: "Which files the per-task check covers: task_files only the files the task declared, worktree every file in the Automaton worktree (autonomous.automation.uncommitted_work_scope)."
+                      pending_item_policy:
+                        type: string
+                        enum: [hold, skip]
+                        default: hold
+                        description: "What an Automation does when it reaches a pending item that is still waiting for an Automaton: hold waits at the member, skip passes over it (autonomous.automation.pending_item_policy)."
+                      pending_item_auto_resume:
+                        type: boolean
+                        default: true
+                        description: "Whether an attach resumes an Automation that was blocked on the item (autonomous.automation.pending_item_auto_resume)."
+                      pending_item_source:
+                        type: object
+                        description: "The pending item file registry settings (autonomous.automation.pending_item_source.*). An unset key reads its default. A bad value rejects the whole PUT with 400 naming the allowed words."
+                        properties:
+                          path:
+                            type: string
+                            description: "The file registry to read; empty (the default) means no file registry (autonomous.automation.pending_item_source.path)."
+                          id_pattern:
+                            type: string
+                            description: "Go regular expression an id cell must match to count as an item; default ^\\S+$ (autonomous.automation.pending_item_source.id_pattern). An invalid expression is rejected."
+                          id_column:
+                            type: string
+                            description: "The id column: a header name (matched without regard to case) or a 1-based column number; default 1 (autonomous.automation.pending_item_source.id_column)."
+                          title_column:
+                            type: string
+                            description: "The title column: a header name (matched without regard to case) or a 1-based column number; default 2 (autonomous.automation.pending_item_source.title_column)."
+                          state_column:
+                            type: string
+                            description: "The state column: a header name (matched without regard to case) or a 1-based column number; empty (the default) means the table has none (autonomous.automation.pending_item_source.state_column)."
+                          done_values:
+                            type: array
+                            items: {type: string}
+                            description: "State words that mean the item is done, compared without regard to case; default done, closed, shipped (autonomous.automation.pending_item_source.done_values)."
+                          on_missing_row:
+                            type: string
+                            enum: [keep, drop]
+                            default: keep
+                            description: "What happens to a file item whose row is gone: keep leaves it, drop removes it while it is still waiting (autonomous.automation.pending_item_source.on_missing_row); default keep."
     put:
       summary: Replace autonomous config
       description: |
@@ -2713,6 +2921,18 @@ paths:
         `autonomous.automation.uncommitted_work_policy` and
         `autonomous.automation.uncommitted_work_scope`. A change takes effect
         without a restart.
+        The pending item settings under `automation` are strict in the same way:
+        `pending_item_policy` must be hold or skip, `pending_item_auto_resume` a
+        boolean, and `pending_item_source` an object whose `id_pattern` is a valid
+        regular expression, whose `id_column`, `title_column` and `state_column` are
+        a header name or a 1-based column number, whose `done_values` is a list of
+        words and whose `on_missing_row` is keep or drop; any other value rejects the
+        whole PUT with 400 and a message naming the allowed words. `PUT /api/config`
+        accepts them as `autonomous.automation.pending_item_policy`,
+        `autonomous.automation.pending_item_auto_resume` and
+        `autonomous.automation.pending_item_source.path`, `.id_pattern`, `.id_column`,
+        `.title_column`, `.state_column`, `.done_values` and `.on_missing_row`. They are
+        read live: a change applies to the next hold or attach with no restart.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -2756,6 +2976,43 @@ paths:
                       type: string
                       enum: [task_files, worktree]
                       description: "The uncommitted-work scope (autonomous.automation.uncommitted_work_scope). Any other value rejects the PUT with 400 naming task_files and worktree."
+                    pending_item_policy:
+                      type: string
+                      enum: [hold, skip]
+                      default: hold
+                      description: "What an Automation does when it reaches a pending item that is still waiting for an Automaton: hold waits at the member, skip passes over it (autonomous.automation.pending_item_policy). Any other value rejects the PUT with 400 naming the allowed words."
+                    pending_item_auto_resume:
+                      type: boolean
+                      default: true
+                      description: "Whether an attach resumes an Automation that was blocked on the item (autonomous.automation.pending_item_auto_resume). A value that is not true or false rejects the PUT with 400."
+                    pending_item_source:
+                      type: object
+                      description: "The pending item file registry settings (autonomous.automation.pending_item_source.*). An unset key reads its default. A bad value rejects the whole PUT with 400 naming the allowed words."
+                      properties:
+                        path:
+                          type: string
+                          description: "The file registry to read; empty (the default) means no file registry (autonomous.automation.pending_item_source.path)."
+                        id_pattern:
+                          type: string
+                          description: "Go regular expression an id cell must match to count as an item; default ^\\S+$ (autonomous.automation.pending_item_source.id_pattern). An invalid expression is rejected."
+                        id_column:
+                          type: string
+                          description: "The id column: a header name (matched without regard to case) or a 1-based column number; default 1 (autonomous.automation.pending_item_source.id_column)."
+                        title_column:
+                          type: string
+                          description: "The title column: a header name (matched without regard to case) or a 1-based column number; default 2 (autonomous.automation.pending_item_source.title_column)."
+                        state_column:
+                          type: string
+                          description: "The state column: a header name (matched without regard to case) or a 1-based column number; empty (the default) means the table has none (autonomous.automation.pending_item_source.state_column)."
+                        done_values:
+                          type: array
+                          items: {type: string}
+                          description: "State words that mean the item is done, compared without regard to case; default done, closed, shipped (autonomous.automation.pending_item_source.done_values)."
+                        on_missing_row:
+                          type: string
+                          enum: [keep, drop]
+                          default: keep
+                          description: "What happens to a file item whose row is gone: keep leaves it, drop removes it while it is still waiting (autonomous.automation.pending_item_source.on_missing_row); default keep."
                 scope_lint:
                   type: string
                   enum: [off, warn, enforce]
@@ -3953,7 +4210,10 @@ paths:
     post:
       summary: Insert an Automaton member
       description: |
-        Inserts an Automaton as a new member. On a draft it lands in the graph at once; on a
+        Inserts a new member: an Automaton (`member.prd_id`) or a pending item
+        (`member.pending_item_id`, or `pending_item_id` at the top level), exactly one of the two.
+        A pending item member holds the Automation at the cursor until an Automaton is attached
+        (`POST /api/autonomous/pending-items/{id}/attach`). On a draft it lands in the graph at once; on a
         running Automation it is held as a pending insert until an operator approves it
         (`approve_insert`). `reason` is required. Only one urgent insert may be pending
         at a time. An urgent insert takes the next slot and must leave `after` empty.
@@ -3965,19 +4225,21 @@ paths:
           application/json:
             schema:
               type: object
-              required: [expected_version, reason, member]
+              required: [expected_version, reason]
               properties:
-        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
-        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
-        reason: {type: string, description: "Why (audit log)"}
-        member:
-          type: object
-          required: [prd_id]
-          properties:
-            prd_id: {type: string, description: "The member Automaton to insert"}
-            name: {type: string, description: "Optional display name"}
-        urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
-        after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
+                expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+                reason: {type: string, description: "Why (audit log)"}
+                member:
+                  type: object
+                  description: "The member to insert: an Automaton (prd_id) or a pending item (pending_item_id), exactly one of the two"
+                  properties:
+                    prd_id: {type: string, description: "The member Automaton to insert"}
+                    pending_item_id: {type: string, description: "The pending item to insert (an id from GET /api/autonomous/pending-items). The item must be waiting and not a member of another Automation. The member waits at the cursor until an Automaton is attached"}
+                    name: {type: string, description: "Optional display name"}
+                pending_item_id: {type: string, description: "The top-level form of member.pending_item_id"}
+                urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
+                after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
       responses:
         "200":
           description: The Automation after the insert (the pending insert is on the record when it was held)
@@ -3985,7 +4247,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Automation"
-        "400": {description: "reason or member.prd_id missing, or an invalid position"}
+        "400": {description: "reason missing, neither or both of member.prd_id and member.pending_item_id given, or an invalid position"}
         "404": {description: Automation not found}
         "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -6667,6 +6929,132 @@ components:
         reason: {type: string, description: Why the hold was raised}
         question_id: {type: string, description: The operator question that waits for an answer (commit, discard or retry); absent when no question store was wired}
         held_at: {type: string, format: date-time, description: When the hold was raised}
+    PendingItem:
+      type: object
+      description: |-
+        A named piece of work that has no Automaton yet, as POST
+        /api/autonomous/pending-items returns it.
+      required: [id, title, state, source, automations]
+      properties:
+        id: {type: string, description: "Eight hex characters, generated by the daemon"}
+        ref: {type: string, description: "Optional outside label; free text. Empty when none"}
+        title: {type: string, description: The name of the work}
+        state: {type: string, enum: [waiting, attached, done], description: "waiting: no Automaton yet; attached: an Automaton is attached; done: the work is finished (final)"}
+        source: {type: string, enum: [internal, file], description: "internal: recorded through the daemon; file: copied in from the file registry"}
+        automaton_id: {type: string, description: "The attached Automaton; empty until an attach"}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        attached_at: {type: string, format: date-time, description: "When an Automaton was attached; absent before"}
+        done_at: {type: string, format: date-time, description: "When the item became done; absent before"}
+        automations:
+          type: array
+          items: {$ref: "#/components/schemas/PendingItemAutomationRef"}
+          description: The Automations that carry the item as a member; an empty list, never null
+    PendingItemAutomationRef:
+      type: object
+      description: One Automation that carries a pending item as a member.
+      required: [automation_id, name, member_id, held]
+      properties:
+        automation_id: {type: string}
+        name: {type: string, description: The Automation name}
+        member_id: {type: string, description: The member that carries the item}
+        held: {type: boolean, description: "True when the Automation is blocked and this member holds its cursor"}
+    PendingItemHeld:
+      type: object
+      description: One Automation waiting on a waiting pending item right now.
+      required: [automation_id, name, member_id, item_id, since, reason]
+      properties:
+        automation_id: {type: string}
+        name: {type: string, description: The Automation name}
+        member_id: {type: string, description: The member that holds the cursor}
+        item_id: {type: string, description: The waiting pending item}
+        title: {type: string, description: The item title}
+        ref: {type: string, description: The item ref; empty when none}
+        since: {type: string, format: date-time, description: When the Automation began waiting}
+        reason: {type: string, description: Why the Automation is blocked}
+    PendingItemSource:
+      type: object
+      description: The file registry settings in effect. Every unset key reads its default.
+      required: [configured, path, id_pattern, id_column, title_column, state_column, done_values, on_missing_row]
+      properties:
+        configured: {type: boolean, description: "False while no registry path is set"}
+        path: {type: string, description: "autonomous.automation.pending_item_source.path; empty means no file registry"}
+        id_pattern: {type: string, description: "autonomous.automation.pending_item_source.id_pattern; default ^\\S+$"}
+        id_column: {type: string, description: "autonomous.automation.pending_item_source.id_column: a header name or a 1-based column number; default 1"}
+        title_column: {type: string, description: "autonomous.automation.pending_item_source.title_column: a header name or a 1-based column number; default 2"}
+        state_column: {type: string, description: "autonomous.automation.pending_item_source.state_column: a header name or a 1-based column number; empty means the table has none"}
+        done_values: {type: array, items: {type: string}, description: "autonomous.automation.pending_item_source.done_values; default done, closed, shipped"}
+        on_missing_row: {type: string, enum: [keep, drop], description: "autonomous.automation.pending_item_source.on_missing_row; default keep"}
+    PendingItemLastRefresh:
+      type: object
+      description: The last read of the file registry. Without a read yet, only `configured` is set.
+      required: [configured, rows, added, updated, done, dropped, kept, skipped, error]
+      properties:
+        configured: {type: boolean}
+        at: {type: string, format: date-time, nullable: true, description: When the registry was last read; null before the first read}
+        rows: {type: integer, description: Rows read from the file}
+        added: {type: integer, description: New waiting items created}
+        updated: {type: integer, description: Items whose title changed}
+        done: {type: integer, description: Items moved to done}
+        dropped: {type: integer, description: Waiting file items removed (on_missing_row drop)}
+        kept: {type: integer, description: Items whose row vanished and that were left in the registry}
+        skipped: {type: integer, description: "Rows not used: the id does not match the pattern, no title, or a duplicate id"}
+        error: {type: string, description: "Why the file could not be read; empty on success"}
+    PendingItemsReply:
+      type: object
+      description: |-
+        The pending item registry, as GET /api/autonomous/pending-items returns it.
+        `items` and `held` are empty lists, never null.
+      required: [policy, auto_resume, source, last_refresh, items, held]
+      properties:
+        policy: {type: string, enum: [hold, skip], description: "What an Automation does at a waiting item (autonomous.automation.pending_item_policy; default hold)"}
+        auto_resume: {type: boolean, description: "Whether an attach resumes a blocked Automation (autonomous.automation.pending_item_auto_resume; default true)"}
+        source: {$ref: "#/components/schemas/PendingItemSource"}
+        last_refresh: {$ref: "#/components/schemas/PendingItemLastRefresh"}
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/PendingItem"}
+        held:
+          type: array
+          items: {$ref: "#/components/schemas/PendingItemHeld"}
+    PendingItemAttachConversion:
+      type: object
+      description: What an attach converted in one Automation.
+      required: [automation_id]
+      properties:
+        automation_id: {type: string}
+        member_ids: {type: array, items: {type: string}, description: Pending item members that are now Automaton members}
+        pending_insert_ids: {type: array, items: {type: string}, description: Held inserts that now carry the Automaton}
+    PendingItemAttachResult:
+      type: object
+      description: What an attach did. `converted_automations` and `resumed_automations` are empty lists, never null.
+      required: [item, converted_automations, resumed_automations]
+      properties:
+        item:
+          allOf:
+            - $ref: "#/components/schemas/PendingItem"
+          description: The item after the attach (state attached)
+        converted_automations:
+          type: array
+          items: {$ref: "#/components/schemas/PendingItemAttachConversion"}
+        resumed_automations: {type: array, items: {type: string}, description: The Automations the attach resumed}
+        notes: {type: array, items: {type: string}, description: "Automations left blocked, and why (for example auto-resume is off)"}
+    PendingItemRefreshResult:
+      type: object
+      description: What a read of the file registry did.
+      required: [configured, at, rows, added, updated, done, dropped, kept, skipped]
+      properties:
+        configured: {type: boolean, description: "False when no registry path is set; nothing was read or changed"}
+        path: {type: string, description: The file that was read}
+        at: {type: string, format: date-time}
+        rows: {type: integer, description: Rows read from the file}
+        added: {type: integer, description: New waiting items created}
+        updated: {type: integer, description: Items whose title changed}
+        done: {type: integer, description: Items moved to done}
+        dropped: {type: integer, description: Waiting file items removed (on_missing_row drop)}
+        kept: {type: integer, description: Items whose row vanished and that were left in the registry}
+        skipped: {type: integer, description: "Rows not used: the id does not match the pattern, no title, or a duplicate id"}
+        error: {type: string, description: "Why the file could not be read; absent on success"}
     CleanupPassStatus:
       type: object
       description: |-
@@ -7907,7 +8295,8 @@ components:
       description: "One member of an Automation: a member Automaton, a nested Automation, or a fork/join control node, each with an outcome edge per result. Fork/join and nested members carry the kind fields below; Automaton members carry prd_id."
       properties:
         id: {type: string, description: "Stable member ID (8-hex, or operator-supplied)"}
-        kind: {type: string, enum: [prd, automation, fork, join], description: "Member kind; omitted means prd"}
+        kind: {type: string, enum: [prd, automation, fork, join, pending_item], description: "Member kind; omitted means an Automaton member. pending_item waits for an Automaton to be attached"}
+        pending_item_id: {type: string, description: "kind pending_item: the pending item this member waits on. An attached member keeps it as a note of where it came from"}
         prd_id: {type: string, description: "The member Automaton ID; Automaton members only"}
         automation_id: {type: string, description: "kind automation: the nested child Automation ID"}
         fork_members: {type: array, items: {type: string}, description: "kind fork: the branch member IDs started together (at least 2)"}
@@ -7926,7 +8315,7 @@ components:
         edge_taken: {type: string, description: "Edge followed at last finish: on_complete | on_blocked | on_failed | skip"}
         budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
         estimated_cost_usd: {type: number, description: "Declared expected cost of a prd member's Automaton; checked against the ceiling before it starts"}
-      required: [id, prd_id, status]
+      required: [id, status]
 
     BudgetPolicy:
       type: object
