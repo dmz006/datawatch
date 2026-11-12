@@ -1286,6 +1286,14 @@ const LIST_CACHE_MAX = 512 * 1024;
 // A list is "out of date" once its data is this old; the stale marker is
 // also up while the last refresh failed. No per-second age counter.
 const LIST_STALE_MS = 5 * 60 * 1000;
+// ageDisplay: "stale-only" mode (used by the Alerts list): the stale marker
+// is gated on this threshold instead of LIST_STALE_MS. A fixed interval,
+// deliberately independent of the loader's pollMs — the caller that uses it
+// polls every 30 s, and a poll-based threshold would flag 30 s old data as
+// stale while its own refresh is due. Two minutes keeps the marker honest
+// (stale while refreshes are failing, or nothing has landed for a long
+// stretch) and quiet while periodic refreshes keep landing on time.
+const LIST_STALE_ONLY_MS = 2 * 60 * 1000;
 const _listLoaders = {};
 function _listCacheRead(key) {
   try {
@@ -1316,7 +1324,8 @@ function listLoader(opts) {
   const cached = _listCacheRead(key);
   if (cached) { st.data = cached.data; st.hasData = true; st.at = cached.t; st.fromCache = true; }
   const target = () => (typeof opts.el === 'string') ? document.getElementById(opts.el) : opts.el;
-  const isStale = () => st.hasData && (st.error !== '' || (now() - st.at) > LIST_STALE_MS);
+  const staleOnly = opts.ageDisplay === 'stale-only';
+  const isStale = () => st.hasData && (st.error !== '' || (now() - st.at) > (staleOnly ? LIST_STALE_ONLY_MS : LIST_STALE_MS));
   function html() {
     let h = '';
     if (st.error) {
@@ -45499,7 +45508,7 @@ function _alertsBuildHtml(result) {
         <button onclick="setAlertsSort('${filt.sort === 'session' ? 'chrono' : 'session'}')" title="${escHtml(t('alert_sort_tip')||'Toggle sort: by session ↔ chronological')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">${filt.sort === 'session' ? '⏷ ' + (t('alert_sort_session')||'by session') : '🕒 ' + (t('alert_sort_chrono')||'chronological')}</button>
         <button onclick="dismissAlertsAll()" title="${escHtml(t('alert_dismiss_all_tip')||'Dismiss all alerts (server-side acked already)')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">✕</button>
         <button onclick="muteAlertDock()" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">🔕</button>
-        <button onclick="renderAlertsView()" title="${escHtml(t('alerts_refresh_btn')||'Refresh')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">↻</button>
+        <button onclick="alertsRefresh()" title="${escHtml(t('alerts_refresh_btn')||'Refresh')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">↻</button>
       </span>
     </div>`;
 
@@ -45622,10 +45631,23 @@ function _alertsLoader(server) {
   if (cur) return cur;
   return listLoader({
     key: lkey, el: 'alertsList', pollMs: 30000,
+    // Alerts polls every 30 s, so the stale marker runs on the fixed
+    // stale-only window (2 min), not on the 5 min LIST_STALE_MS default,
+    // and there is no "Last updated N s ago" line for this list.
+    ageDisplay: 'stale-only',
     fetch: _alertsFetch, render: _alertsBuildHtml,
     active: () => !!document.getElementById('alertsList'),
   });
 }
+// Refresh button (Alerts topBar): refetch through the cached alerts loader
+// so the repaint stays in place — cached rows paint at once, the fetch runs
+// behind them — instead of rebuilding the whole view, which would drop
+// scroll position and input focus.
+window.alertsRefresh = function() {
+  const ctl = window._listLoaders && window._listLoaders['alerts:' + (state.activeServer || 'local')];
+  if (ctl) { ctl.load(); return; }
+  renderAlertsView(); // no loader yet (view still building): the full path creates it and loads
+};
 function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
