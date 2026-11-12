@@ -679,29 +679,3 @@ func FixCleanupPermissions(base string, paths []string) (int, error) {
 	}
 	return changed, nil
 }
-
-// lexicalInsideBase decides, without touching the filesystem, whether p
-// names a path strictly inside the base. An absolute path must sit inside
-// either the cleaned base or its resolved form; a relative path is joined
-// to the base first. A path with a NUL byte is refused. It returns the
-// cleaned absolute path to act on.
-func lexicalInsideBase(p, cleanBase, realBase string) (string, bool) {
-	if p == "" || strings.ContainsRune(p, 0) {
-		return "", false
-	}
-	inside := func(path, root string) bool {
-		return path != root && strings.HasPrefix(path, root+string(filepath.Separator))
-	}
-	if filepath.IsAbs(p) {
-		c := filepath.Clean(p)
-		if inside(c, cleanBase) || inside(c, realBase) {
-			return c, true
-		}
-		return "", false
-	}
-	c := filepath.Join(cleanBase, p)
-	if inside(c, cleanBase) {
-		return c, true
-	}
-	return "", false
-}
