@@ -156,7 +156,7 @@ repository can verify them. Check each once after the change lands:
 5. **Mobile apps.** The Android and iPhone settings group, Events row and
    alert are not built yet. They are tracked in
    [the datawatch-app parity issue draft](../plans/parity-issues/weekly-dependency-update-settings.md),
-   which is not yet filed; until it ships, change the settings from the PWA,
+   filed as https://github.com/dmz006/datawatch-app/issues/458; until it ships, change the settings from the PWA,
    chat, the CLI or the API.
 
 ## See also

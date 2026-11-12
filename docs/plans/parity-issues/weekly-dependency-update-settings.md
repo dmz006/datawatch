@@ -1,8 +1,8 @@
 # The weekly dependency update settings, Events row and alert are missing from the Android and iPhone apps
 
-**Filed:** not yet. To be filed by the supervisor at merge; the operator checklist in
-`docs/howto/automation-dependency-update.md` lists this as an open item until the
-issue number is recorded under "Filing record".
+**Filed:** https://github.com/dmz006/datawatch-app/issues/458 at merge (datawatch v9.151.0). The operator checklist in
+`docs/howto/automation-dependency-update.md` lists the mobile apps as open until the
+issue ships. Filing record below.
 
 ## Affected area
 
@@ -98,8 +98,8 @@ Capability parity with the PWA; each app uses its own idiomatic controls.
 
 ## Filing record
 
-Not yet filed. The supervisor files this against the mobile app repository at
-merge and records the issue number and URL here. Drafted 2026-11-11 from the
+Filed at merge as https://github.com/dmz006/datawatch-app/issues/458 (datawatch v9.151.0) against the mobile app repository;
+the issue number is recorded here. Drafted 2026-11-11 from the
 current tree: internal/config/dependency_update.go, the settings rows in
 internal/server/web/app.js, the locale keys, internal/mcp/dependency_update_tools.go
 and docs/howto/automation-dependency-update.md.
