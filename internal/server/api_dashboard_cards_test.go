@@ -173,6 +173,9 @@ func TestDashLayoutSystemCardsRestoredAfterRemoval(t *testing.T) {
 	if n, _ := countID(cards, "gantt"); n != 1 {
 		t.Errorf("restored gantt not persisted: %d times in file, want 1", n)
 	}
+	if n, _ := countID(cards, "timeline"); n != 1 {
+		t.Errorf("restored timeline not persisted: %d times in file, want 1", n)
+	}
 }
 
 // The unguarded card-append path: POSTing a card whose id is already in

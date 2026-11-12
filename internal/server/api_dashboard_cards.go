@@ -56,6 +56,7 @@ func defaultDashCards() []dashCard {
 		{ID: "events", CS: 2, RS: 2, System: true},
 		{ID: "sparklines", CS: 2, RS: 1, System: true},
 		{ID: "gantt", CS: 12, RS: 1, System: true},
+		{ID: "timeline", CS: 12, RS: 1, System: true},
 		{ID: "heatmap", CS: 3, RS: 1, System: true},
 		{ID: "guardrails", CS: 3, RS: 1, System: true},
 		{ID: "ekg", CS: 6, RS: 2, System: true},

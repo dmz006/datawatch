@@ -24214,6 +24214,7 @@ function switchAutomataDetailTab(tab) {
       let html = '';
       if (tab === 'overview') html = _renderDetailOverview(prd);
       else if (tab === 'stories') html = _renderDetailStories(prd);
+      else if (tab === 'timeline') html = _renderDetailTimelineTab(prd);
       else if (tab === 'decisions') html = _renderDetailDecisionsTab(prd);
       else if (tab === 'memory') html = _renderDetailMemoryTab(prd); // GH#192 D77a
       else if (tab === 'subscriptions') html = _renderDetailSubscriptionsTab(prd);
@@ -24227,6 +24228,7 @@ function switchAutomataDetailTab(tab) {
       }
       if (tab === 'memory') _loadPRDMemoryTab(prd); // GH#192 D77a
       if (tab === 'subscriptions') _loadPRDSubscriptionsTab(prd);
+      if (tab === 'timeline') _loadPRDTimelineTab(prd);
     }
     return;
   }
@@ -24580,6 +24582,7 @@ function _renderDetailContent(prd) {
   let tabBody = '';
   if (tab === 'overview') tabBody = _renderDetailOverview(prd);
   else if (tab === 'stories') tabBody = _renderDetailStories(prd);
+  else if (tab === 'timeline') tabBody = _renderDetailTimelineTab(prd);
   else if (tab === 'decisions') tabBody = _renderDetailDecisionsTab(prd);
   else if (tab === 'memory') tabBody = _renderDetailMemoryTab(prd); // GH#192 D77a
   else if (tab === 'subscriptions') tabBody = _renderDetailSubscriptionsTab(prd);
@@ -24650,6 +24653,7 @@ function _renderDetailContent(prd) {
   if (tab === 'scan') loadPRDScanResult(id);
   if (tab === 'memory') _loadPRDMemoryTab(prd); // GH#192 D77a
   if (tab === 'subscriptions') _loadPRDSubscriptionsTab(prd);
+  if (tab === 'timeline') _loadPRDTimelineTab(prd);
   // GATE alpha.36 (operator 2026-05-10): inline active-session card
   // (#290). When the PRD is in an active state, surface the spawned
   // session(s) + hook status under "Next" hint, before the toolbar.
@@ -28230,6 +28234,419 @@ window._loadPRDSessionResources = function(prd) {
   window._prdSessionResInterval = setInterval(refresh, 5000);
 };
 
+// ── Automaton Timeline card (Gantt) ────────────────────────────────────────────
+// Dashboard card `timeline` (id registered next to the session gantt card:
+// DASH_CARD_DEFS / DASH_DEFAULT_LAYOUT here, Go defaultDashCards in
+// internal/server/api_dashboard_cards.go, MCP dashboard_card_add ids in
+// internal/mcp/dashboard.go). Shows every project's active Automata stacked
+// as SVG Gantt charts: stages as bands, members as bars, blocked/waiting
+// spans hatched, a solid today marker and a dashed projected-finish marker.
+// Data: GET /api/autonomous/timeline (timeline_handler.go →
+// internal/autonomous/timeline.go): {today, projects:[{project, automata:[]}],
+// counts:{...}}; automaton.stages[].members[] carry start/end (end null =
+// still running) and intervals[] {kind:'blocked'|'waiting', start, end|null,
+// reason}; automaton.status is the task vocabulary (planning/decomposing/
+// running/paused/blocked …).
+// The card section below (up to the detail-tab marker) is TIMING-FREE: the
+// dashboard's own rAF loop fetches (every ~30 s) and repaints it, exactly
+// like the other cards — a card that owns its own tick would double-fetch
+// and race the loop. The per-Automaton detail tab is the second section
+// below it; the detail view lives outside the dashboard loop, so that is
+// the one place a self-terminating poll lives.
+
+const TL_ACTIVE_KINDS = ['automaton', 'automation'];
+
+// A timestamp is any JS Date, epoch ms, or RFC3339/ISO string; anything
+// else is "not recorded" (null). Mirrors the Go side, which leaves End
+// null for an interval that is still open.
+function _tlMs(v) {
+  if (v == null) return null;
+  if (v instanceof Date) { const x = v.getTime(); return isFinite(x) ? x : null; }
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  if (typeof v === 'string') { const x = Date.parse(v); return isFinite(x) ? x : null; }
+  return null;
+}
+window._tlMs = _tlMs;
+
+// UTC labels keep the Gantt deterministic no matter where the operator is:
+// "2026-10-23 12:00".
+function _tlTimeLabel(ms) {
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, '0');
+  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate())
+    + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+}
+window._tlTimeLabel = _tlTimeLabel;
+
+// timelineGanttSvg — pure: one Automaton → an SVG Gantt. Stages are full-
+// width bands (title left, status right); each member is a bar placed by
+// its recorded start/end (an open end stretches to today when today is in
+// the domain, otherwise to the domain edge). Blocked/waiting intervals are
+// hatched overlays. A solid line marks today, a dashed line the projected
+// finish. No timers, no DOM writes — the surrounding card/tab owns state.
+window.timelineGanttSvg = function(automaton, opts) {
+  automaton = automaton || {};
+  opts = opts || {};
+  const uid = String(opts.uid || 'a').replace(/[^a-zA-Z0-9_-]/g, '') || 'a';
+  const stages = (Array.isArray(automaton.stages) ? automaton.stages : []).filter(s => s && typeof s === 'object');
+  if (stages.length === 0) {
+    return `<div class="timeline-no-stages" role="status" style="color:var(--text2,#8b8b96);font-size:11px;padding:4px 0;">${escHtml(t('timeline_gantt_no_stages'))}</div>`;
+  }
+  const today = _tlMs(opts.today);
+  const projected = _tlMs(automaton.projected_finish);
+
+  // Domain: every recorded timestamp plus today and the projection, so the
+  // markers always land inside the chart.
+  const pts = [];
+  const pushPt = v => { const m = _tlMs(v); if (m != null) pts.push(m); };
+  pushPt(automaton.start); pushPt(automaton.end);
+  (Array.isArray(automaton.intervals) ? automaton.intervals : []).forEach(i => { pushPt(i && i.start); pushPt(i && i.end); });
+  stages.forEach(s => {
+    pushPt(s.start); pushPt(s.end);
+    (Array.isArray(s.members) ? s.members : []).forEach(m => {
+      pushPt(m && m.start); pushPt(m && m.end);
+      (Array.isArray(m && m.intervals) ? m.intervals : []).forEach(i => { pushPt(i && i.start); pushPt(i && i.end); });
+    });
+  });
+  if (today != null) pts.push(today);
+  if (projected != null) pts.push(projected);
+  if (pts.length === 0) { const n0 = Date.now(); pts.push(n0 - 86400000, n0 + 86400000); }
+  let d0 = Math.min.apply(null, pts), d1 = Math.max.apply(null, pts);
+  if (d1 <= d0) d1 = d0 + 3600000;
+  const pad = (d1 - d0) * 0.03;
+  d0 -= pad; d1 += pad;
+
+  const W = 720, LEFT = 8, RIGHT = 8, AXIS = 18, ROW_HEAD = 16, BAR_H = 10, BAR_GAP = 4, BAND_GAP = 6;
+  const X = ms => LEFT + (Math.max(d0, Math.min(d1, ms)) - d0) / (d1 - d0) * (W - LEFT - RIGHT);
+
+  // Row geometry: stage head + one row per member.
+  const bands = [];
+  let y = AXIS + 2;
+  stages.forEach(s => {
+    const members = (Array.isArray(s.members) ? s.members : []).filter(m => m && typeof m === 'object');
+    const headH = ROW_HEAD;
+    const bodyH = members.length ? members.length * (BAR_H + BAR_GAP) : 0;
+    bands.push({ s, members, y0: y, headH, bodyH, h: headH + bodyH });
+    y += headH + bodyH + BAND_GAP;
+  });
+  const H = y - BAND_GAP + 4;
+
+  const pat = (name, color) => `<pattern id="tlh-${uid}-${name}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="none"/><line x1="0" y1="0" x2="0" y2="6" stroke="${color}" stroke-width="2"/></pattern>`;
+  const defs = `<defs>${pat('blocked', 'var(--danger,#ef4444)')}${pat('waiting', 'var(--accent2,#60a5fa)')}</defs>`;
+
+  let ticks = '';
+  for (let i = 0; i <= 4; i++) {
+    const ms = d0 + (d1 - d0) * i / 4;
+    ticks += `<line x1="${X(ms).toFixed(1)}" y1="${AXIS}" x2="${X(ms).toFixed(1)}" y2="${H.toFixed(1)}" stroke="var(--border,#3a3a44)" stroke-opacity="0.35"/>`
+      + `<text x="${X(ms).toFixed(1)}" y="${AXIS - 5}" text-anchor="${i === 0 ? 'start' : (i === 4 ? 'end' : 'middle')}" style="font-size:8px;fill:var(--text2,#8b8b96);">${_tlTimeLabel(ms)}</text>`;
+  }
+
+  const memberFill = st => {
+    if (st === 'done' || st === 'completed' || st === 'succeeded' || st === 'passed') return 'var(--success,#10b981)';
+    if (st === 'running' || st === 'in_progress' || st === 'active' || st === 'verifying') return 'var(--accent,#6366f1)';
+    return 'var(--bg2,#2a2a33)';
+  };
+
+  let bars = '';
+  bands.forEach(band => {
+    const s = band.s;
+    bars += `<rect x="${LEFT}" y="${band.y0.toFixed(1)}" width="${W - LEFT - RIGHT}" height="${band.h.toFixed(1)}" rx="3" fill="var(--bg2,#1e1e24)" fill-opacity="0.4" stroke="var(--border,#3a3a44)" stroke-opacity="0.6"/>`
+      + `<text x="${LEFT + 4}" y="${(band.y0 + 11).toFixed(1)}" style="font-size:9px;font-weight:600;fill:var(--text,#e5e5ea);">${escHtml(s.title || s.id || '')}</text>`;
+    if (s.status) {
+      bars += `<text x="${(W - RIGHT - 4).toFixed(1)}" y="${(band.y0 + 11).toFixed(1)}" text-anchor="end" style="font-size:8px;fill:var(--text2,#8b8b96);">${escHtml(String(s.status))}</text>`;
+    }
+    let my = band.y0 + band.headH + 2;
+    band.members.forEach(m => {
+      const m0 = _tlMs(m.start) != null ? _tlMs(m.start) : (_tlMs(s.start) != null ? _tlMs(s.start) : d0);
+      const mEnd = _tlMs(m.end);
+      let m1 = mEnd != null ? mEnd : (today != null && today > m0 ? today : d1);
+      if (m1 <= m0) m1 = m0 + 60000;
+      const x0 = X(m0), x1 = Math.max(X(m1), x0 + 2);
+      bars += `<rect x="${x0.toFixed(1)}" y="${my.toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${BAR_H}" rx="2" fill="${memberFill(m.status)}" fill-opacity="0.85" stroke="var(--border,#3a3a44)" stroke-opacity="0.5"><title>${escHtml((m.title || m.id || '') + ' · ' + (m.status || ''))}</title></rect>`
+        + `<text x="${(x1 + 3).toFixed(1)}" y="${(my + 8).toFixed(1)}" class="timeline-member" style="font-size:8px;fill:var(--text2,#8b8b96);">${escHtml(m.title || m.id || '')}</text>`;
+      // Blocked/waiting spans: hatched overlay on the member row.
+      (Array.isArray(m.intervals) ? m.intervals : []).forEach(iv => {
+        if (!iv || (iv.kind !== 'blocked' && iv.kind !== 'waiting')) return;
+        const i0 = _tlMs(iv.start) != null ? _tlMs(iv.start) : m0;
+        let i1 = _tlMs(iv.end) != null ? _tlMs(iv.end) : (today != null && today > i0 ? today : m1);
+        if (i1 <= i0) i1 = i0 + 60000;
+        const ix0 = X(i0), ix1 = Math.max(X(i1), ix0 + 1);
+        const patName = iv.kind === 'blocked' ? 'blocked' : 'waiting';
+        const base = iv.kind === 'blocked' ? 'var(--danger,#ef4444)' : 'var(--accent2,#60a5fa)';
+        bars += `<rect x="${ix0.toFixed(1)}" y="${my.toFixed(1)}" width="${(ix1 - ix0).toFixed(1)}" height="${BAR_H}" rx="2" fill="${base}" fill-opacity="0.25"/>`
+          + `<rect x="${ix0.toFixed(1)}" y="${my.toFixed(1)}" width="${(ix1 - ix0).toFixed(1)}" height="${BAR_H}" rx="2" fill="url(#tlh-${uid}-${patName})" data-timeline-interval="${escHtml(iv.kind)}"><title>${escHtml((iv.kind === 'blocked' ? t('timeline_gantt_blocked') : t('timeline_gantt_waiting')) + (iv.reason ? ' — ' + iv.reason : ''))}</title></rect>`;
+      });
+      my += BAR_H + BAR_GAP;
+    });
+  });
+
+  let markers = '';
+  if (today != null) {
+    const tx = X(today);
+    markers += `<line x1="${tx.toFixed(1)}" y1="${AXIS}" x2="${tx.toFixed(1)}" y2="${H.toFixed(1)}" stroke="var(--warning,#f59e0b)" stroke-width="1.5"/>`
+      + `<text x="${(tx + 2).toFixed(1)}" y="${(AXIS + 8).toFixed(1)}" class="timeline-today" style="font-size:8px;font-weight:600;fill:var(--warning,#f59e0b);">${escHtml(t('timeline_gantt_today'))}</text>`;
+  }
+  if (projected != null) {
+    const px = X(projected);
+    markers += `<line x1="${px.toFixed(1)}" y1="${AXIS}" x2="${px.toFixed(1)}" y2="${H.toFixed(1)}" stroke="var(--success,#10b981)" stroke-width="1.5" stroke-dasharray="4 3"/>`
+      + `<text x="${(px + 2).toFixed(1)}" y="${(AXIS + 16).toFixed(1)}" class="timeline-projected" style="font-size:8px;font-weight:600;fill:var(--success,#10b981);">${escHtml(t('timeline_gantt_projected'))}</text>`;
+  }
+
+  return `<svg class="timeline-gantt" data-timeline-uid="${escHtml(uid)}" viewBox="0 0 ${W} ${H.toFixed(1)}" style="width:100%;height:auto;display:block;max-height:300px;" role="img" aria-label="${escHtml((automaton.title || automaton.id || 'Automaton') + ' — ' + t('timeline_card_title'))}">${defs}${ticks}${bars}${markers}</svg>`;
+};
+
+// timelineAutomatonBlock — one stacked row: plain title, status chip,
+// kind, then its Gantt. Ids only appear in data-* attributes (never in
+// inline handlers); the title text is escaped.
+const TL_STATUS_KEYS = {
+  planning: 'timeline_card_status_planning',
+  decomposing: 'timeline_card_status_decomposing',
+  running: 'timeline_card_status_running',
+  paused: 'timeline_card_status_paused',
+  blocked: 'timeline_card_status_blocked',
+};
+function _tlStatusChip(status) {
+  if (!status) return '';
+  const color = status === 'blocked' ? 'var(--danger,#ef4444)' : (status === 'paused' ? 'var(--warning,#f59e0b)' : 'var(--text2,#8b8b96)');
+  const label = TL_STATUS_KEYS[status] ? t(TL_STATUS_KEYS[status]) : status;
+  return `<span class="timeline-chip" data-status="${escHtml(status)}" style="border:1px solid ${color};color:${color};border-radius:8px;padding:0 6px;font-size:10px;">${escHtml(label)}</span>`;
+}
+window._tlStatusChip = _tlStatusChip;
+
+window.timelineAutomatonBlock = function(automaton, opts) {
+  automaton = automaton || {};
+  opts = opts || {};
+  const status = String(automaton.status || '');
+  const uid = 'card-' + String(automaton.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '');
+  return `<div class="timeline-automaton" data-automaton-id="${escHtml(String(automaton.id || ''))}" data-automaton-status="${escHtml(status)}" style="margin:4px 0 10px;">
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <span style="font-weight:600;font-size:11px;">${escHtml(automaton.title || automaton.id || '')}</span>
+      ${_tlStatusChip(status)}
+      <span style="color:var(--text2,#8b8b96);font-size:10px;">${escHtml(String(automaton.kind || ''))}</span>
+    </div>
+    ${window.timelineGanttSvg(automaton, { uid, today: opts.today })}
+  </div>`;
+};
+
+// Filtering: every filter is optional; an empty filter matches everything.
+// Options are drawn from the full (unfiltered) dataset so the operator can
+// always discover what to filter on.
+function _tlVisible(data, f) {
+  f = f || {};
+  const projects = (data && Array.isArray(data.projects)) ? data.projects : [];
+  const out = [];
+  projects.forEach(p => {
+    if (!p || !Array.isArray(p.automata)) return;
+    p.automata.forEach(a => {
+      if (!a || typeof a !== 'object') return;
+      if (f.project && (a.project || '') !== f.project) return;
+      if (f.automation && (a.title || '') !== f.automation) return;
+      if (f.kind && (a.kind || '') !== f.kind) return;
+      if (f.tag && !(Array.isArray(a.tags) ? a.tags : []).includes(f.tag)) return;
+      const stages = Array.isArray(a.stages) ? a.stages : [];
+      if (f.stage && !stages.some(s => s && (s.title === f.stage || s.id === f.stage))) return;
+      out.push(a);
+    });
+  });
+  return out;
+}
+function _tlUnique(data, pick) {
+  const out = [];
+  ((data && data.projects) || []).forEach(p => {
+    (p && p.automata || []).forEach(a => {
+      if (!a || typeof a !== 'object') return;
+      const v = pick(a);
+      if (v && out.indexOf(v) === -1) out.push(v);
+    });
+  });
+  return out.sort();
+}
+function _tlStageOptions(data) {
+  const out = [];
+  ((data && data.projects) || []).forEach(p => {
+    (p && p.automata || []).forEach(a => {
+      (a && a.stages || []).forEach(s => { if (s && s.title && out.indexOf(s.title) === -1) out.push(s.title); });
+    });
+  });
+  return out.sort();
+}
+function _tlTagOptions(data) {
+  const out = [];
+  ((data && data.projects) || []).forEach(p => {
+    (p && p.automata || []).forEach(a => {
+      (a && a.tags || []).forEach(tg => { if (tg && out.indexOf(tg) === -1) out.push(tg); });
+    });
+  });
+  return out.sort();
+}
+
+window._timelineCardState = {
+  status: 'loading', data: null, error: '', fetchedAt: 0, attemptedAt: 0,
+  inflight: null, filters: { project: '', automation: '', stage: '', kind: '', tag: '' },
+};
+const TL_MIN_REFETCH_MS = 5000;
+
+// loadTimelineCard — cache + one shared inflight (the dashboard loop calls
+// this; a tick while a fetch is in flight reuses it). Pure Promise flow:
+// no timers of its own.
+window.loadTimelineCard = function(force) {
+  const st = window._timelineCardState;
+  st.attemptedAt = Date.now();
+  if (st.inflight) return st.inflight;
+  const fresh = st.data && st.fetchedAt && (Date.now() - st.fetchedAt) < TL_MIN_REFETCH_MS;
+  if (fresh && !force) return Promise.resolve(st);
+  st.status = 'loading';
+  const q = [];
+  if (st.filters.project) q.push('project=' + encodeURIComponent(st.filters.project));
+  if (st.filters.automation) q.push('automaton=' + encodeURIComponent(st.filters.automation));
+  if (st.filters.stage) q.push('stage=' + encodeURIComponent(st.filters.stage));
+  if (st.filters.kind) q.push('kind=' + encodeURIComponent(st.filters.kind));
+  if (st.filters.tag) q.push('tag=' + encodeURIComponent(st.filters.tag));
+  const url = '/api/autonomous/timeline' + (q.length ? '?' + q.join('&') : '');
+  st.inflight = apiFetch(url).then(d => {
+    st.data = (d && typeof d === 'object') ? d : null;
+    st.error = '';
+    st.fetchedAt = Date.now();
+    st.status = 'ok';
+    return st;
+  }).catch(err => {
+    st.error = String((err && err.message) || err);
+    st.status = st.data ? 'stale' : 'failed';
+    return st;
+  }).finally(() => {
+    st.inflight = null;
+    if (typeof paintTimelineCard === 'function') paintTimelineCard();
+  });
+  return st.inflight;
+};
+
+// paintTimelineCard — repainting is the caller's job (the loop calls it
+// every tick); this just writes the current state into the card element.
+function paintTimelineCard() {
+  const el = typeof document !== 'undefined' ? document.getElementById('dashTimelineCard') : null;
+  if (!el) return;
+  el.innerHTML = window.timelineCardHtml(window._timelineCardState);
+}
+window.paintTimelineCard = paintTimelineCard;
+
+// _dashRenderTimeline — per-tick hook wired into _dashLoop: first render
+// kicks the (cached) fetch, then every tick repaints from the state.
+function _dashRenderTimeline() {
+  const el = typeof document !== 'undefined' ? document.getElementById('dashTimelineCard') : null;
+  if (!el) return; // card not on the operator's board
+  if (!window._timelineCardState.data && !window._timelineCardState.inflight && !window._timelineCardState.error) {
+    window.loadTimelineCard(false);
+  }
+  paintTimelineCard();
+}
+window._dashRenderTimeline = _dashRenderTimeline;
+
+// _timelineCardFilter — invoked from the card's selects (data attribute +
+// event attribute, no user data in inline JS). Changes apply immediately.
+window._timelineCardFilter = function(which, value) {
+  const st = window._timelineCardState;
+  if (!st.filters[which]) return;
+  st.filters[which] = String(value || '');
+  window.loadTimelineCard(true);
+};
+
+function _tlSelect(which, value, options) {
+  const opts = ['<option value="">' + escHtml(t('timeline_card_kind_all')) + '</option>'].concat(
+    (options || []).map(o => `<option value="${escHtml(o)}"${o === value ? ' selected' : ''}>${escHtml(o)}</option>`)
+  ).join('');
+  return `<select class="timeline-card-filter" data-tl-filter="${which}" onchange="window._timelineCardFilter(this.dataset.tlFilter, this.value)" style="font-size:11px;padding:1px 4px;border:1px solid var(--border,#3a3a44);border-radius:6px;background:var(--bg1,#16161c);color:var(--text,#e5e5ea);">${opts}</select>`;
+}
+
+// timelineCardHtml — pure: (state, filters) → HTML. State: status
+// 'loading'|'ok'|'stale'|'failed', data, error, fetchedAt.
+window.timelineCardHtml = function(state) {
+  state = state || {};
+  const f = state.filters || {};
+  const automata = _tlVisible(state.data, f);
+  const projects = automata.map(a => a.project || '').filter(p => p).filter((p, i, all) => all.indexOf(p) === i);
+  const rows = projects.map(p => `<div class="timeline-card-project" data-project="${escHtml(p)}">
+    <div style="font-size:10px;font-weight:600;color:var(--text2,#8b8b96);margin:6px 0 2px;">${escHtml(p)}</div>
+    ${automata.filter(a => (a.project || '') === p).map(a => window.timelineAutomatonBlock(a, { today: state.data && state.data.today })).join('')}
+  </div>`).join('');
+
+  let body;
+  if (state.status === 'failed') {
+    body = `<div role="alert" style="color:var(--danger,#ef4444);font-size:11px;">${escHtml(t('timeline_card_error'))}${state.error ? ' — ' + escHtml(state.error) : ''}</div>`;
+  } else if (automata.length === 0) {
+    body = `<div role="status" style="color:var(--text2,#8b8b96);font-size:11px;">${escHtml(t('timeline_card_empty'))}</div>`;
+  } else {
+    body = `<div class="timeline-card-summary" role="status" style="font-size:11px;color:var(--text2,#8b8b96);margin-bottom:4px;">${escHtml(t('timeline_card_summary', [automata.length, projects.length]))}</div>${rows}`;
+  }
+
+  const fbar = `<div class="timeline-card-filters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+    ${_tlSelect('project', f.project, _tlUnique(state.data, a => a.project))}
+    ${_tlSelect('automation', f.automation, _tlUnique(state.data, a => a.title))}
+    ${_tlSelect('stage', f.stage, _tlStageOptions(state.data))}
+    ${_tlSelect('kind', f.kind, TL_ACTIVE_KINDS)}
+    ${_tlSelect('tag', f.tag, _tlTagOptions(state.data))}
+  </div>`;
+
+  return `<div class="timeline-card" data-timeline-status="${escHtml(state.status || 'loading')}" style="font-size:11px;">
+    ${fbar}
+    ${body}
+  </div>`;
+};
+
+// ── Timeline tab (Automaton detail view) ──────────────────────────────────────
+// The "Timeline" tab of the Automaton detail page: the full Gantt of ONE
+// Automaton (all of its stages), its today + projected-finish markers, and
+// its blocked/waiting spans — the same pure renderers as the card. The
+// detail view lives outside the dashboard rAF loop, so while this tab is
+// shown it owns one self-terminating 5 s poll (same shape as the PRD
+// session-resources poll above); switching tabs or leaving the detail
+// (_backToAutomataList) clears it. It is the only code in this file with a
+// Timeline poll.
+window._renderDetailTimelineTab = function(prd) {
+  const id = String((prd && prd.id) || '');
+  return `<div class="timeline-tab" data-prd="${escHtml(id)}" data-timeline-tab="1">
+    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+      <span style="font-size:12px;font-weight:600;">${escHtml(t('timeline_gantt_title'))}</span>
+      <span class="timeline-tab-status" role="status" style="font-size:11px;color:var(--text2,#8b8b96);">${escHtml(t('timeline_loading'))}</span>
+    </div>
+    <div id="timelineTabBody" class="timeline-tab-body" style="font-size:11px;">${escHtml(t('timeline_loading'))}</div>
+  </div>`;
+};
+
+window._loadPRDTimelineTab = function(prd) {
+  prd = prd || {};
+  const stop = function() {
+    if (window._prdTimelineInterval) { clearInterval(window._prdTimelineInterval); window._prdTimelineInterval = null; }
+    window._prdTimelineInflight = null;
+  };
+  // Never let a poll outlive the tab: any other tab (switchAutomataDetailTab
+  // re-invokes this on entry) or leaving the detail clears it first.
+  stop();
+  const refresh = function() {
+    if (window._prdTimelineInflight) return;
+    const q = '/api/autonomous/timeline?automaton=' + encodeURIComponent(prd.id || '');
+    window._prdTimelineInflight = apiFetch(q).then(d => {
+      const found = ((d && d.projects) || []).reduce((acc, p) => {
+        (p && p.automata || []).forEach(x => { if (x && x.id === prd.id) acc.push(x); });
+        return acc;
+      }, []);
+      const el = document.getElementById('timelineTabBody');
+      const stat = typeof document.querySelector === 'function' ? document.querySelector('.timeline-tab-status') : null;
+      const one = found[0];
+      if (el) el.innerHTML = one
+        ? window.timelineGanttSvg(one, { uid: 'tab-' + String(prd.id).replace(/[^a-zA-Z0-9_-]/g, ''), today: d && d.today })
+        : `<div role="status" style="color:var(--text2,#8b8b96);">${escHtml(t('timeline_gantt_no_stages'))}</div>`;
+      if (stat) stat.textContent = '';
+      return one;
+    }).catch(() => {
+      const el = document.getElementById('timelineTabBody');
+      if (el) el.innerHTML = `<div role="alert" style="color:var(--danger,#ef4444);">${escHtml(t('timeline_error'))}</div>`;
+      return null;
+    }).finally(() => { window._prdTimelineInflight = null; });
+  };
+  refresh();
+  window._prdTimelineInterval = setInterval(refresh, 5000);
+};
+
 // ── Plan-coverage gate (PRD view) ─────────────────────────────────────────────
 // Server-side (autonomous/plan_coverage*.go) gates approval on the
 // per-PRD plan requirement coverage report in prd.plan_coverage and
@@ -28571,6 +28988,7 @@ function _renderDetailTabStrip(prd, currentTab) {
   const tabs = [
     ['overview',  t('prd_tab_overview')  || 'Overview', true],
     ['stories',   t('prd_tab_stories')   || 'Stories',  true],
+    ['timeline',  t('prd_tab_timeline')  || 'Timeline', true],
     ['decisions', t('prd_tab_decisions') || 'Decisions', true],
     ['memory',    t('prd_tab_memory')    || 'Memory',    true], // GH#192 D77a
     ['subscriptions', t('lifecycle_sub_tab') || 'Subscriptions', true],
@@ -29504,6 +29922,8 @@ function _backToAutomataList() {
   // which handles ALL the header/nav state in one place.
   _automataDetailId = null;
   _automataDetailBreadcrumb = [];
+  // A Timeline tab poll (if any) must not outlive the detail view.
+  if (window._prdTimelineInterval) { clearInterval(window._prdTimelineInterval); window._prdTimelineInterval = null; }
   history.pushState({ prdDetail: null }, '', '');
   // Reset header back-button + restore the headerSearchBtn that the
   // detail view hid; navigate() does the rest (title, identity btn,
@@ -37478,6 +37898,7 @@ function _dashLoop(ts) {
     _dashRenderBurnRate();
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
+    _dashRenderTimeline();
     _dashRenderWebSearchUsage();
     _dashRenderConsole();
     _dashRenderIntegrationStatus();
@@ -37499,6 +37920,13 @@ function _dashLoop(ts) {
   if (_dash._frameCount % 150 === 0 && !_dash._prdsFetching) {
     _dash._prdsFetching = true;
     _dashFetchPRDs().then(() => { _dash._prdsLastFetch = Date.now(); _dashClearFedError('prds'); }).catch(e => _dashSetFedError('prds', e)).finally(() => { _dash._prdsFetching = false; });
+  }
+
+  // Automaton timeline card: fetch every ~30s while the card is on the
+  // board; the per-tick render below repaints from the cached state.
+  if (_dash._frameCount % 900 === 0 && !_dash._timelineFetching) {
+    _dash._timelineFetching = true;
+    window.loadTimelineCard(false).finally(() => { _dash._timelineFetching = false; });
   }
 
   // Fetch cost every ~30s
@@ -38030,6 +38458,14 @@ const DASH_CARD_DEFS = [
     body: () => '<canvas id="dashSparkCanvas" style="width:100%;height:100%;display:block;"></canvas>' },
   { id: 'gantt',      label: 'Timeline · 6h',  icon: '≡',  defaultCs: 12,
     body: () => '<div style="height:100%;overflow-y:auto;overflow-x:hidden;"><svg id="dashGanttSvg" style="display:block;width:100%;"></svg></div>' },
+  // Per-Automaton timeline: every project's active Automata stacked as SVG
+  // Gantt charts (stages as bands, members as bars, blocked/waiting
+  // hatched, today + projected-finish markers). Data:
+  // GET /api/autonomous/timeline — see the section that defines
+  // window.timelineCardHtml below. System card (mirrors the Go
+  // defaultDashCards entry with the same id); filter bar in the card.
+  { id: 'timeline',   label: 'Automaton Timeline', icon: '⧖',  defaultCs: 12,
+    body: () => '<div id="dashTimelineCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
   { id: 'heatmap',    label: '30-Day Activity', icon: '🔥', defaultCs: 3,
     body: () => `<div style="position:relative;width:100%;height:100%;">
       <canvas id="dashHeatmapCanvas" style="width:100%;height:100%;display:block;"></canvas>
@@ -38065,6 +38501,7 @@ const DASH_DEFAULT_LAYOUT = [
   { id: 'events',       cs: 2,  rs: 2 },
   { id: 'sparklines',   cs: 2,  rs: 1 },
   { id: 'gantt',        cs: 12, rs: 1 },
+  { id: 'timeline',     cs: 12, rs: 1 },
   { id: 'heatmap',      cs: 3,  rs: 1 },
   { id: 'ekg',          cs: 6,  rs: 2 },
   { id: 'cost-report',  cs: 6,  rs: 1 },
