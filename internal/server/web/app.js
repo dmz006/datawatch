@@ -4647,6 +4647,19 @@ function _sessionsTagPlacement(sess, tagPrefix) {
   return tags.length ? tags[0] : SESSIONS_GROUP_UNGROUPED;
 }
 
+// _sessionsProjectName returns the project named by the session's `project:`
+// placement system tag (entries may be strings or {name} objects), or ''.
+function _sessionsProjectName(sess) {
+  const tags = (sess && Array.isArray(sess.system_tags)) ? sess.system_tags : [];
+  for (let i = 0; i < tags.length; i++) {
+    const t = tags[i];
+    const raw = (t && typeof t === 'object') ? t.name : t;
+    const n = _placementTagName(raw);
+    if (n && _placementAxisOf(n) === 'project') return n.slice('project:'.length).trim();
+  }
+  return '';
+}
+
 function _sessionsGroupKeyFor(sess, by) {
   const s = sess || {};
   switch (by.axis) {
@@ -4656,7 +4669,10 @@ function _sessionsGroupKeyFor(sess, by) {
       return (typeof s.hostname === 'string' && s.hostname) ? s.hostname
         : ((typeof s.server === 'string' && s.server) ? s.server : SESSIONS_GROUP_UNGROUPED);
     case 'project':
-      return (typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED;
+      // Same order as the server: the project named by the `project:`
+      // placement tag, else the working folder, else ungrouped.
+      return _sessionsProjectName(s)
+        || ((typeof s.project_dir === 'string' && s.project_dir) ? s.project_dir : SESSIONS_GROUP_UNGROUPED);
     case 'tag':
       return _sessionsTagPlacement(s, by.tagPrefix);
     case 'automaton':

@@ -486,3 +486,28 @@ test('all i18n keys used by the grouping UI exist in en.json', (t) => {
     + 'sessions_view_delete sessions_view_new sessions_view_ok sessions_view_name_ph').split(' ');
   used.forEach(k => assert.equal(typeof en[k], 'string', k + ' present'));
 });
+
+// ── project axis: placement tag, then working folder, then ungrouped ─────
+test('project axis: project: system tag, else project_dir, else ungrouped', () => {
+  const sbx = freshSandbox();
+  const by = { axis: 'project' };
+  // Automaton task session in a worktree, tagged with its project.
+  assert.equal(sbx._sessionsGroupKeyFor({
+    prd_id: 'prd-A', project_dir: '/home/x/.datawatch/prd-worktrees/wt',
+    system_tags: ['project:datawatch'],
+  }, by), 'datawatch');
+  // Object-shaped system tag entries work too.
+  assert.equal(sbx._sessionsGroupKeyFor({
+    project_dir: '/p/alpha', system_tags: [{ name: 'project:datawatch' }],
+  }, by), 'datawatch');
+  // Non-project placement tags are ignored; folder is used.
+  assert.equal(sbx._sessionsGroupKeyFor({
+    project_dir: '/p/alpha', system_tags: ['compute:gpu-1'],
+  }, by), '/p/alpha');
+  // Plain session with only a working folder.
+  assert.equal(sbx._sessionsGroupKeyFor({ project_dir: '/p/beta' }, by), '/p/beta');
+  // Neither: ungrouped, and the header reads Ungrouped.
+  assert.equal(sbx._sessionsGroupKeyFor({}, by), 'ungrouped');
+  assert.equal(sbx._sessionsGroupKeyFor({ system_tags: [] }, by), 'ungrouped');
+  assert.equal(sbx._sessionsGroupLabel('datawatch', by), 'datawatch');
+});
