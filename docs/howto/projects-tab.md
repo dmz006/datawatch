@@ -287,7 +287,32 @@ The mobile apps are not covered by this change and need a parity check.
 
 A row links to its Automaton view, and a session link opens the session. The
 **Overview** choice in the project picker is the cross-project in-flight view,
-not a project, and it has no page sub-tabs.
+not a project, and it has no project page sub-tabs. It has its own strip of
+in-flight sub-tabs instead (see [The Overview sub-tabs](#the-overview-sub-tabs)).
+
+#### The Overview sub-tabs
+
+With **Overview** chosen in the picker, the page shows the cross-project in-flight
+sub-tabs of the Automation view (Inbox, Automations, Resources, Progress and cost,
+and Housekeeping) in a strip under the picker. The strip uses the
+same look as the project page sub-tabs (the strip labelled Project sections), not
+the look of the Automation view's own second row, and every sub-tab in it responds
+to a click or tap.
+
+- **Choosing one shows its body.** The sub-tab you choose is marked selected and its
+  body replaces the previous one; the picker stays above the strip.
+- **The Inbox badge stays live.** The count on the Inbox sub-tab is updated in place
+  and still counts every project's items under Overview (see
+  [What the Inbox counts](automation-tab.md#what-the-inbox-counts)).
+- **Remembered.** The choice is kept in the same browser value as the project page
+  sub-tabs (`cs_projects_subtab`) and is restored when you open Overview again,
+  including after a refresh. A remembered value that is not an Overview sub-tab
+  (for example a project page sub-tab such as Plans) is ignored and Inbox opens, and
+  a browser that blocks storage opens the default sub-tab each time.
+- **Not addressable.** There is no `#projects/<subtab>` address for an Overview
+  sub-tab; the address stays `#projects`.
+- **No daemon side.** It is a display rule of the web app: no setting, and no REST,
+  MCP, CLI, chat or configuration form.
 
 #### The page sub-tabs
 
@@ -645,6 +670,7 @@ reference is [project-automation-policy](project-automation-policy.md).
 |---|---|
 | Open the sub-tab | Bottom navigation **Automata**, then the **Projects** sub-tab (first, left of **Automation**); the old Projects link and `#projects` land here |
 | Pick a project | **Project** picker at the top (the same Overview picker as before); **Overview** is the cross-project view |
+| Switch between the Overview sub-tabs (Inbox, Automations, ...) | With **Overview** picked, the strip under the picker; the choice is remembered in this browser |
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
 | Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `plans` (the old `arcs` still works), `records`, `gantt`, `unassigned`, `history`, `policy` or `events`; no sub-tab in the address opens **Overview** |
 | Switch between Overview, Plans, Records, Gantt, Unassigned, History, Policy and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
@@ -816,6 +842,15 @@ the lane defaults. Use REST, MCP or the CLI for those.
   project has notes (empty sections, a missing weekly share, a failed roll-up). The
   event stream filtered to the project sits under those notes, so with no notes the
   stream has no page sub-tab to show it. Confirm that is intended.
+- **Overview sub-tab strip look and memory.** Under **Overview** the in-flight
+  sub-tabs now use the Projects strip look and share the one remembered value
+  (`cs_projects_subtab`) with the project page sub-tabs. The two sets of names do
+  not overlap, so a choice made in one place is ignored in the other and that side
+  opens its default sub-tab (Overview sub-tab: Inbox; project page sub-tab:
+  Overview), and picking in one place overwrites what the other remembered. The
+  Overview choice is read once per page load. Confirm that sharing one value is
+  acceptable (the alternative is a second browser value) and that the Overview
+  strip should have no address of its own.
 - **Remembered page sub-tab is global.** The remembered page sub-tab is one value
   per browser, not per project, so it carries over when you open another project.
 - **Screenshots and translations.** This page has no screenshots of the old single
