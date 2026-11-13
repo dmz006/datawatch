@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.7 — Automata list and get: notes off standard output
+
+### Fixed
+
+- **`datawatch autonomous list` and `get` print one JSON document on standard output.** The plain-text notes they add (for example a "planning failed" line for an Automaton, or a skipped-tag note) went to standard output after the JSON, so a script that parsed the output failed. The notes now go to standard error, and a test guards that standard output holds exactly one JSON document. The planning failures how-to, the API reference and the glossary describe the split.
+
 ## v9.172.6 — Soupsieve CVE accepted for the aider image
 
 ### Security
