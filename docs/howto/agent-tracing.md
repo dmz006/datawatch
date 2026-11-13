@@ -44,7 +44,7 @@ Settings → Tracing, or over the API.
 tracing:
   mode: summary        # off | summary | full
   arg_cap_bytes: 512   # 0 = default
-  retention_days: 0    # 0 = keep forever (default); a positive number of days prunes by age
+  retention_days: 0   # 0 = keep while the session exists
   backends:            # a backend not listed is on
     aider: false
 ```
@@ -63,7 +63,7 @@ tracing:
 |---------|---------|---------|
 | `tracing.mode` | `summary` | Detail level, above. |
 | `tracing.arg_cap_bytes` | `512` | Upper bound, in bytes, of a stored argument or outcome text. Range 0 to 1048576. A longer value ends with `...[truncated]`. |
-| `tracing.retention_days` | `0` | How long events are kept, in days. `0` (the default) keeps them forever — no age-based pruning; a positive number has the daemon prune once a day. Range 0 to 3650. |
+| `tracing.retention_days` | `0` | Age-based pruning, in days. A trace is kept as long as its session exists; `0` (the default) never prunes by age. A value above 0 prunes traces older than that many days even while the session exists, applied at the next daily prune. A negative value or one above 3650 is refused. |
 | `tracing.backends` | all on | Map of backend name to `true` or `false`. Turning one off stops tracing for that backend only. Mode `off` overrides it. |
 
 A value outside its range, an unknown mode or an empty backend name is rejected
@@ -175,21 +175,20 @@ sensitive text.
 
 ## 8. Retention
 
-The default is `tracing.retention_days: 0`: events are kept **forever**
-and pruning is a no-op. If an operator sets a positive value, the daemon runs
-a prune pass once a day (every 24 hours while it runs): events older than
-`tracing.retention_days` are removed. A session
-whose events have all expired is removed; a session with newer events is
-rewritten without the old ones. Lowering the value applies at the next prune;
-raising it never brings back what was pruned. Trace files are plain files, one per
-session, under the data directory's `trace/` folder.
+A trace is kept as long as its session exists. This is the rule for the
+default, `tracing.retention_days: 0`: it never prunes by age, so a trace lives
+and dies with its session. Deleting a session deletes its trace file and its
+index entries too — including when the session is removed by Automaton cleanup
+of sessions.
 
-Deleting a session also drops its trace, matched on the exact session id —
-sessions whose ids only share a prefix keep theirs. Ending, killing or
-archiving a session never does; its trace stays until retention or deletion
-removes it. Every delete path that removes a session (REST, MCP, CLI and the
-Automaton cleanup callback) removes the trace; a trace-store error is logged
-and never fails the session deletion.
+A value above 0 adds age-based pruning: traces older than that many days are
+removed even while the session still exists, applied at the next daily prune
+(every 24 hours while the daemon runs). Lowering the value applies at the next
+prune; raising it never brings back what was pruned. A negative value or one
+above 3650 is refused when the config loads or when you set it.
+
+An archived or ended session that is not deleted keeps its trace. Trace files
+are plain files, one per session, under the data directory's `trace/` folder.
 
 ## 9. Troubleshooting
 
