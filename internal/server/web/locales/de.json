@@ -5040,6 +5040,7 @@
   "sessions_view_tiles": "Kacheln",
   "sessions_view_compact": "Kompakt",
   "sessions_view_toggle": "Sitzungsansicht",
+  "sessions_view_dropdown": "Sitzungsansicht",
   "sessions_tile_stop": "Stopp",
   "sessions_tile_restart": "Neustart",
   "sessions_tile_delete": "Löschen",

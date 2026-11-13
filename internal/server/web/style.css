@@ -7799,12 +7799,9 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 /* ── Sessions view modes: list / tiles / compact ─────────────────────────
    The tile + compact variants are the shared .work-tile-grid (drawn by the
    same renderWorkTile as the Automata/Automation cards); these rules only
-   wrap the mode toggle, the per-state summary bar and the Show-more page
-   control that the sessions view adds around the grid. */
-.sessions-mode-toggle { display: flex; gap: 4px; padding: 6px 14px 2px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
-.sessions-mode-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
-.sessions-mode-btn:hover { color: var(--text); border-color: var(--accent2); }
-.sessions-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+   wrap the per-state summary bar and the Show-more page control that the
+   sessions view adds around the grid. (The view-mode control itself is the
+   native select in the one-line toolbar — .sessions-view-select below.) */
 .sessions-show-more { text-align: center; padding: 10px 0 14px; }
 .session-tile-grid { margin: 4px 0; --session-tile-pad: 10px; }
 .session-tile-grid .work-tile { padding: var(--session-tile-pad); }
@@ -7824,7 +7821,7 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .session-tile-grid-compact .work-tile-tags > * { padding-top: 0; padding-bottom: 0; line-height: 1.3; }
 .session-tile-grid-compact .work-tile-progress { height: 3px; }
 @media (prefers-reduced-motion: reduce) {
-  .sessions-mode-btn { transition: none; }
+  .sessions-fold-all { transition: none; }
 }
 
 /* ── Sessions: group axes, Automaton → story nesting, saved views ──── */
@@ -8024,27 +8021,32 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 @keyframes sessionsSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .sessions-sheet { animation: none !important; } }
 
-/* ── Sessions top row: search box, filters slot, mode buttons ── */
-.sessions-topbar { display: block; }
-.sessions-search-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px 2px; }
+/* ── Sessions one-line toolbar: one row, never wraps at any width ──────
+   [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode]
+   — display:flex without flex-wrap at every width; the search row is the
+   only flexible member (flex:1, min-width:0) so it absorbs the slack while
+   the four fixed controls keep a usable size (bounded max-widths +
+   shrinking select text). The search + active-filter count stay on their
+   own row below the toolbar. */
+.sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.sessions-topbar .sessions-server-select { flex: 0 0 auto; min-width: 84px; max-width: 40%; font-size: 12px; }
+.sessions-topbar .sessions-search-row { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; }
 .sessions-search-row .session-filter-wrap { flex: 1; min-width: 0; }
-.sessions-search-row .session-filter-input { padding: 6px 28px 6px 10px; font-size: 13px; }
+.sessions-topbar .sessions-search-row .session-filter-input { padding: 5px 26px 5px 8px; font-size: 12px; }
+.sessions-topbar .sessions-fold-all { flex: 0 0 auto; font-size: 14px; line-height: 1; padding: 2px 7px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text2); cursor: pointer; }
+.sessions-topbar .sessions-fold-all:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-topbar .sessions-fold-all[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sessions-topbar .sessions-view-select { flex: 0 0 auto; max-width: 34%; font-size: 12px; }
 .session-filter-clear[hidden] { display: none; }
 .sessions-filters-slot:empty { display: none; }
-.sessions-search-count { padding: 2px 14px 4px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.sessions-search-count { padding: 4px 12px 6px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
-  .sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-  .sessions-search-row { flex: 1 1 auto; min-width: 0; padding: 0; }
-  .sessions-search-row .session-filter-input { padding: 4px 24px 4px 8px; font-size: 12px; }
-  .sessions-topbar .sessions-mode-toggle { flex: 0 0 auto; padding: 0; border-bottom: 0; gap: 2px; }
-  .sessions-topbar .sessions-mode-btn { font-size: 0; padding: 3px 7px; }
-  .sessions-topbar .sessions-mode-btn::before { content: attr(data-icon); font-size: 14px; line-height: 1; }
+  .sessions-topbar { gap: 4px; padding: 4px 8px; }
+  .sessions-topbar .sessions-server-select { min-width: 64px; max-width: 34%; }
+  .sessions-topbar .sessions-view-select { max-width: 30%; }
 }
 
-/* ── Sessions: fold-all control and phone tag collapse ── */
-.sessions-fold-row { display: flex; justify-content: flex-end; padding: 2px 12px; }
-.sessions-fold-all { font-size: 12px; padding: 3px 10px; }
 .sessions-group-header, .automaton-header, .story-header { min-height: 40px; box-sizing: border-box; }
 .session-card-tags { display: contents; }
 .session-tags-more-chip { font-size: 10px; padding: 1px 7px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg3); color: var(--text2); cursor: pointer; font-weight: 600; }

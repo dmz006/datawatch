@@ -5040,6 +5040,7 @@
   "sessions_view_tiles": "タイル",
   "sessions_view_compact": "コンパクト",
   "sessions_view_toggle": "セッション表示モード",
+  "sessions_view_dropdown": "セッション表示モード",
   "sessions_tile_stop": "停止",
   "sessions_tile_restart": "再起動",
   "sessions_tile_delete": "削除",
