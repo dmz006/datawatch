@@ -44,7 +44,7 @@ Settings → Tracing, or over the API.
 tracing:
   mode: summary        # off | summary | full
   arg_cap_bytes: 512   # 0 = default
-  retention_days: 14   # 0 = default
+  retention_days: 0    # 0 = keep forever (default); a positive number of days prunes by age
   backends:            # a backend not listed is on
     aider: false
 ```
@@ -175,7 +175,9 @@ sensitive text.
 
 ## 8. Retention
 
-Events older than `tracing.retention_days` (default 14) are pruned. A session
+The default is `tracing.retention_days: 0`: events are kept **forever** and
+pruning is a no-op. If an operator sets a positive value, events older than
+`tracing.retention_days` are pruned. A session
 whose events have all expired is removed; a session with newer events is
 rewritten without the old ones. Lowering the value applies at the next prune;
 raising it never brings back what was pruned. Trace files are plain files, one per

@@ -428,12 +428,18 @@ func (st *Store) Index() []IndexEntry {
 
 // Prune drops events older than tracing.retention_days (relative to the
 // injected clock), removes sessions left empty, and returns the number of
-// events removed.
+// events removed. When tracing.retention_days is 0 (the default) events
+// are kept forever: Prune touches nothing, reads nothing, writes nothing,
+// leaves the index untouched and returns (0, nil).
 func (st *Store) Prune() (removed int, err error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	defer func() { st.pruned += uint64(removed) }()
 	days := st.settings.WithDefaults().RetentionDays
+	if days == 0 {
+		// 0 = keep forever: no reads, no writes, no index changes.
+		return 0, nil
+	}
 	cutoff := st.now().Add(-time.Duration(days) * 24 * time.Hour)
 	sessions := make([]string, 0, len(st.index))
 	for s := range st.index {
@@ -480,6 +486,38 @@ func (st *Store) Prune() (removed int, err error) {
 		}
 	}
 	return removed, nil
+}
+
+// DeleteSession removes one session from the trace store by its exact
+// session id: its trace file (a missing file is fine), its index entry
+// and its seen-set entry. Unknown ids are a no-op (nil). A session id
+// that is empty, is a path component, or would resolve outside the trace
+// directory is refused.
+func (st *Store) DeleteSession(sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || sessionID == "." || sessionID == ".." ||
+		strings.ContainsAny(sessionID, `/\\`) {
+		return fmt.Errorf("trace store: invalid session id %q", sessionID)
+	}
+	path := st.sessionPath(sessionID)
+	// Defense in depth behind the id check: the escaped path must still
+	// resolve inside the trace directory.
+	rel, err := filepath.Rel(st.dir, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("trace store: session id %q escapes the trace directory", sessionID)
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if _, ok := st.index[sessionID]; !ok {
+		return nil // unknown session: nothing to delete
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	delete(st.index, sessionID)
+	delete(st.seen, sessionID)
+	return st.saveIndex()
 }
 
 func (st *Store) rewrite(path string, evs []Event) error {
