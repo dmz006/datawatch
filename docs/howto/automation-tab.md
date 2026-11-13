@@ -32,7 +32,7 @@ to its tab without changing the other tabs.
 
 | Sub-tab | What is on it |
 |---|---|
-| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting; see [What the Inbox counts](#what-the-inbox-counts). |
+| **Inbox** | What waits on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. The count badge on the tab counts only what awaits your action — it never counts the read-only cards; see [What the Inbox counts](#what-the-inbox-counts). |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages appear here when they ship. A **Focus** button in the header of an Automation's page opens its timeline (see [projects-tab.md](projects-tab.md#focus-on-one-automation)). |
 | **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
 | **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
@@ -102,24 +102,41 @@ blocked, paused, draft, completed, cancelled) and then by name.
 
 ### What the Inbox counts
 
-The badge on the Inbox tab and the lists under it always agree, because both are cut
-by the same scope. The scope follows the **Project** picker on the Projects sub-tab:
+The badge on the Inbox tab counts only what awaits your action, and the lists under
+it are cut by the same rule, so the badge and the cards always agree.
+
+**What counts toward the badge.**
+
+- **Triage records** — only the ones whose card carries an action button (**Retry**,
+  **Resolve review**, **Cancel**). The **merge blocked** card is read-only: its
+  next action (commit or discard the worktree's edits, after which the merge is
+  retried automatically) is text on the card, not a button, so those records do
+  not count.
+- **Open questions** — every open question in the list.
+- **Held questions** — only the open held entries. In shadow mode the would-be
+  holds still render beneath them, but they never count.
+- **Never counted** — the security failure report and the supervisor watch findings
+  are read-only cards. They still render (the watch findings on the Events tab),
+  but they add nothing to the badge.
+
+**The badge also follows the scope.** The scope follows the **Project** picker on
+the Projects sub-tab:
 
 - **Overview, or any other sub-tab.** Nothing is cut. The badge counts everything
-  waiting on you in every project, and its tooltip and screen-reader label read
-  *N waiting on you across all projects*.
+  waiting on you to act in every project, and its tooltip and screen-reader label
+  read *N waiting on you to act across all projects*.
 - **One project selected on the Projects sub-tab.** The badge and each card (open
-  questions, held questions, Triage, security failure report and the supervisor
-  watch findings) keep only the items that belong to that project, and the label
-  reads *N waiting on you*. Changing the picker, or the `#projects` address,
-  recounts from the data already loaded; nothing is fetched again.
+  questions, held questions, Triage and the security failure report) keep only the
+  items that belong to that project, and the label reads *N waiting on you to
+  act*. Changing the picker, or the `#projects` address, recounts from the data
+  already loaded; nothing is fetched again.
 
 An item belongs to a project by its link first: a `project:<name>` system tag on the
 item, or on the Automaton the item names. Only when no such tag exists is the
 directory used: the item's own project directory, the Automaton's, or, for a
 security failure, the repository name matched against the project directory's name.
 An item with neither a link nor a directory belongs to no project, so it shows only
-in Overview. If a selected project has nothing waiting, the badge is hidden.
+in Overview. If a selected project has nothing waiting on you, the badge is hidden.
 
 This is a display rule of the web app only. REST, MCP, the CLI and the comm channel
 still return every item, unfiltered.
@@ -191,7 +208,8 @@ never blanks the cards.
 - **Inbox:** the needs-attention card above, the open questions (see
   [Questions](#questions-rest-only-for-now)), the held-question card and the
   security failure card. The supervisor watch card is in the Events tab. The badge on the tab
-  counts what is waiting on you.
+  counts only what is waiting on you to act — the read-only cards (the security
+  failure report, the merge-blocked card) still render but never add to it.
 - **Resources:** the three usage cards in a row (weekly allowance, pace line,
   burn per day), the capacity and queue card (the pools and their usage, any
   usage back-off, budgets, and the Automata waiting for capacity), the lane fill
