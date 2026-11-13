@@ -42120,6 +42120,12 @@ window.scrollToPRD = function(id) {
 };
 
 function renderAutonomousView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Automata: NOT
+  // applied. The page's search and filter controls exist only inside the ⊞
+  // toggled filter bar (a sheet whose logic stays unchanged), so there is
+  // no always-visible page-level search/filter line to put on one
+  // non-wrapping line under the header. The tabs + action-button strip
+  // stays the page header's controls and the filter bar stays toggle-driven.
   const view = document.getElementById('view');
   if (!view) return;
   const st = _automataState;
@@ -48514,6 +48520,15 @@ function _alertsBuildHtml(result) {
     return `<button onclick="setAlertsFilter('${key}')" style="background:${bg};color:${fg};border:1px solid ${color};border-radius:10px;padding:3px 10px;font-size:12px;margin-right:4px;cursor:pointer;">${escHtml(label)} ×${n}</button>`;
   };
 
+  // One-line toolbar rule (the Sessions toolbar pattern) — Alerts: NOT
+  // applied. The page already has a server select (the shared header
+  // dropdown) plus its always-visible search/filter controls, but those
+  // controls need more room than a phone-width non-wrapping line allows:
+  // the five labelled filter chips, the search input, the labelled sort
+  // toggle, the dismiss/mute/refresh buttons and the server select
+  // together exceed the phone viewport. Per the rule the page stays
+  // unchanged — chips, search, sort and the three icon buttons keep their
+  // layout, filter logic, ids and handlers.
   const topBar = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
       <span style="font-weight:700;font-size:14px;min-width:0;overflow-wrap:anywhere;" title="${escHtml(t('alerts_heading_tip') || 'Alerts in this tab (matches the All chip)')}">🔔 ${escHtml(t(headingKey, headingVars))}</span>
@@ -54987,6 +55002,14 @@ function _dashFetchCost() {
 }
 
 function renderDashboardView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Dashboard: NOT
+  // applied. The stat bar is already one non-wrapping flex line under the
+  // header carrying the placement filter select and the icon-sized
+  // Help/+Card/Edit buttons; there is no text search input, and the stat
+  // counters, the labelled tag filter chips and the placement select
+  // together need more room than a phone-width non-wrapping line allows,
+  // so no toolbar line is added or re-merged and the placement/tag filter
+  // logic stays unchanged.
   if (state.activeView !== 'dashboard') return;
   const viewEl = document.getElementById('view');
   if (!viewEl) return;
@@ -55562,6 +55585,12 @@ window._dashToggleGanttRow = function(prdId) {
 // reverses v6.7.2 — operator clarification: "I liked the observer tab,
 // monitor was supposed to move there and observer get a card at the bottom."
 function renderObserverView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Observer: NOT
+  // applied. It is a scrolling settings page with no page-level
+  // search/filter under its header — its only search + filter controls
+  // (the Memory Browser input with its role/since selects and the
+  // Search/List/Export buttons) are section-scoped to that section and
+  // stay where they are.
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = `<div class="view-content">
