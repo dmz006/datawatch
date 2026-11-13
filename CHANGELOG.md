@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.6 — Soupsieve CVE accepted for the aider image
+
+### Security
+
+- **CVE-2026-126190 (soupsieve 2.10, HIGH) in the aider image is accepted for 30 days.** It is a denial of service that needs an attacker to control a CSS selector passed to soupsieve; aider scrapes pages with beautifulsoup4 but its own code never calls select, so no selector reaches it. The fix (soupsieve 4.0.0) needs Python 3.11.5 or newer and the image has Python 3.11.2, so it cannot be installed yet. It clears when the aider venv moves to a newer Python, which is a separate follow-up; the entry expires 2026-12-13.
+
 ## v9.172.5 — Sessions deep-dive how-to corrections
 
 ### Fixed

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.172.5 (2026-11-13).** The Sessions deep-dive how-to now describes the Fold all icon and the search count the way the web app shows them. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.172.6 (2026-11-13).** A HIGH soupsieve denial-of-service finding in the aider image is accepted for 30 days; aider never passes a selector to it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
