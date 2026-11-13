@@ -207,6 +207,19 @@ reproduced by the same spec. Reword the named phrases first.
 the draft has no stories and a non-retryable failure, and that the grace has
 passed.
 
+## Operator review
+
+Things this change leaves for you to decide or confirm:
+
+- The planning housekeeping group is `report` by default. Decide whether to set
+  it to `on`, which lets the daemon reword a spec without asking you.
+- The Android and iPhone apps do not yet show the **Planning failed** block or
+  the spec check; parity is tracked in datawatch-app.
+- The spec check never blocks. If your process needs a hard stop on a private
+  address or a worktree path, that is not provided.
+- The release-number self-correction rewrites the stored plan, not your spec.
+  Read the `auto_correct` line on the decision log the first few times.
+
 ## Related
 
 - [Decompose lint](automaton-decompose-lint.md): the rule pack, the planner's never-put list and section 6a

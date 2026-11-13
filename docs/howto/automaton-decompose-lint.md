@@ -666,13 +666,17 @@ never changes a spec without your answer (the release-number correction
 works on the stored plan, not on your spec); and it never raises the
 alert or question for a failure that is still within its retry budget.
 
-> **Operator review:** this section describes the planning failure record,
-> alert, question and spec lint as shipped in the daemon. They are not yet
-> shown on the PWA, REST, MCP, CLI or comm channel as a dedicated view —
-> the alert goes to the ordinary alert channels and the question appears in
-> the question list. The locale keys the surfaces will need are named in the
-> daemon (`PlanningFailureLocaleKeys`). Confirm before relying on a
-> dedicated surface.
+> **Operator review:** the planning failure record is shown on the web
+> detail view (a **Planning failed** block), the web list (a badge), REST,
+> MCP, the CLI and chat, and the spec check is shown on create and revise on
+> the same surfaces; see
+> [automata-planning-failures.md](automata-planning-failures.md). Still for
+> you to confirm: (1) the planning housekeeping group ships in `report`
+> mode, so nothing is reworded for you until you set it to `on`; (2) the
+> Android and iPhone apps do not show the planning failure block or the
+> spec check yet (tracked in datawatch-app); (3) the spec check is a
+> warning only, so a create with findings still succeeds and the Automaton
+> can still fail to plan later.
 
 ## 7. Reading the findings and the standard-task list — every surface
 
