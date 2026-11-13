@@ -451,6 +451,8 @@ func PlanRecordToolNames() []string {
 		"plan_record_search",
 		"plan_record_import",
 		"plan_create",
+		"plan_rename",
+		"plan_edit",
 		"plan_reorder",
 		"plan_reorder_automata",
 		"plan_attach",
@@ -462,7 +464,7 @@ func PlanRecordToolNames() []string {
 // ----- plans: create, reorder, attach, detach -------------------------------
 //
 // These proxy the plans write routes (internal/server/plans_write_api.go):
-// POST /api/plans, PUT /api/plans/order, PUT /api/plans/{ref}/automata/order,
+// POST /api/plans, PATCH /api/plans/{ref}, PUT /api/plans/order, PUT /api/plans/{ref}/automata/order,
 // POST /api/plans/{ref}/attach and POST /api/plans/{ref}/detach.
 
 // plansBase is the REST collection the plan tools proxy.
@@ -522,6 +524,59 @@ func (s *Server) handlePlanCreate(_ context.Context, req mcpsdk.CallToolRequest)
 		body["goal"] = g
 	}
 	out, err := s.proxyJSON(http.MethodPost, plansBase, body)
+	if err != nil {
+		return toolError(op, err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolPlanRename() mcpsdk.Tool {
+	return mcpsdk.NewTool("plan_rename",
+		mcpsdk.WithDescription("Rename a plan. The new title is one line of at most 100 characters and must not be used by another record in the plan's project; a taken title is refused with the plan that holds it, and nothing changes. The old title stays as an alias, so older references still resolve, and the plan's title is then kept as written: a later plans migration does not overwrite it. Renaming a plan to the title it already has changes nothing. Returns the stored plan, title first."),
+		mcpsdk.WithString("plan", mcpsdk.Required(), mcpsdk.Description("A plan id or title")),
+		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("The new title: one line, at most 100 characters, unique within the project")),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+	)
+}
+
+func (s *Server) handlePlanRename(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	const op = "plan_rename"
+	plan, bad := planRefArg(op, req)
+	if bad != nil {
+		return bad, nil
+	}
+	title := strings.TrimSpace(req.GetString("title", ""))
+	if title == "" {
+		return toolErrorf(op, "title is required: the plan's new title"), nil
+	}
+	out, err := s.proxyJSON(http.MethodPatch, plansBase+"/"+url.PathEscape(plan), map[string]any{"title": title})
+	if err != nil {
+		return toolError(op, err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolPlanEdit() mcpsdk.Tool {
+	return mcpsdk.NewTool("plan_edit",
+		mcpsdk.WithDescription("Edit a plan's goal, the sentence that says what the plan is for. The goal is trimmed and held to 2000 characters; pass an empty string to clear it. Setting the goal the plan already has changes nothing. To change the plan's title use plan_rename. Returns the stored plan, title first, and its goal."),
+		mcpsdk.WithString("plan", mcpsdk.Required(), mcpsdk.Description("A plan id or title")),
+		mcpsdk.WithString("goal", mcpsdk.Required(), mcpsdk.Description("The new goal; an empty string clears it")),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+	)
+}
+
+func (s *Server) handlePlanEdit(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	const op = "plan_edit"
+	plan, bad := planRefArg(op, req)
+	if bad != nil {
+		return bad, nil
+	}
+	raw, present := req.GetArguments()["goal"]
+	goal, isText := raw.(string)
+	if !present || !isText {
+		return toolErrorf(op, "goal is required: the plan's new goal, or an empty string to clear it"), nil
+	}
+	out, err := s.proxyJSON(http.MethodPatch, plansBase+"/"+url.PathEscape(plan), map[string]any{"goal": strings.TrimSpace(goal)})
 	if err != nil {
 		return toolError(op, err), nil
 	}

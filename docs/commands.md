@@ -1661,6 +1661,8 @@ Order and link plans (the registry records of what you are working on).
 |---|---|
 | `list <project> [--limit N] [--json]` | The project's plans in priority order, then the backlog |
 | `create <project> <title> [--goal TEXT]` | Create a plan; it goes last in the plan order. A taken title is refused |
+| `rename <plan> <new title>` | Give a plan a new title: one line, at most 100 characters, not used by another record in the project (a clash is refused and names the plan that has it). The old title keeps working as an older title |
+| `edit <plan> --goal TEXT` | Set the plan's goal (at most 2000 characters); `--goal ""` clears it |
 | `reorder <plan> [<plan>...]` | The plans you list take positions 1 to n; the rest follow in their old order. An unknown or repeated plan fails the call and changes nothing |
 | `reorder-automata <plan> <automaton> [<automaton>...]` | Set the run order of a plan's Automata; name every Automaton of the plan once |
 | `attach <plan> (--automaton ID \| --automation ID \| --finding REF)` | Link one item to a plan. A link held by another plan is refused and the holder is named |
@@ -1668,7 +1670,7 @@ Order and link plans (the registry records of what you are working on).
 | `migrate [--apply]` | Build plans from the older project plan list (arcs) and registry rows; see below |
 | `rollup [--project P] [--dry-run] [--json]` | Derive each plan's status from its linked Automata and Automations and write it. `--dry-run` shows what would change and writes nothing. A status set by hand is kept and listed; `list` marks it `(by hand)` |
 
-Same calls on REST (`POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach|detach`), MCP (`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`) and chat (`autonomous plan list <project>`, `plan new <project> <title...>`, `plan move <project> <plan> <position>`, `plan move <plan> automaton <id> <position>`, `plan attach|detach <plan> automaton|automation|finding <id>`, `plan rollup [dry-run] [project=P]`; `arcs` still works in place of `plan`). `rollup` is `GET /api/plans/rollup?dry_run=true` (preview) and `POST /api/plans/rollup` (apply) on REST and `plan_rollup` in MCP. See [howto/plan-records](howto/plan-records.md#ordering-and-linking-plans).
+Same calls on REST (`POST /api/plans`, `PATCH /api/plans/{ref}`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach|detach`), MCP (`plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`) and chat (`autonomous plan list <project>`, `plan new <project> <title...>`, `plan rename <plan> <new title...>`, `plan edit <plan> goal <text...>`, `plan move <project> <plan> <position>`, `plan move <plan> automaton <id> <position>`, `plan attach|detach <plan> automaton|automation|finding <id>`, `plan rollup [dry-run] [project=P]`; `arcs` still works in place of `plan`). `rollup` is `GET /api/plans/rollup?dry_run=true` (preview) and `POST /api/plans/rollup` (apply) on REST and `plan_rollup` in MCP. See [howto/plan-records](howto/plan-records.md#ordering-and-linking-plans).
 
 ### `datawatch cooldown <subcommand>`
 

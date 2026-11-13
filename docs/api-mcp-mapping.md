@@ -161,6 +161,7 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/plan-records/browse` | — | Not in MCP | all registry rows and findings with plan and Automaton links; `q`, `kind`, `state`, `project`; paged |
 | `GET /api/projects/{name}/arcs` | — | Not in MCP | deprecated alias of the roll-up plans, with plans added |
 | `POST /api/plans` | `plan_create` | Complete | body `{project, title, goal?}`; the plan goes last in the plan order; a taken title is 409 |
+| `PATCH /api/plans/{ref}` | `plan_rename`, `plan_edit` | Complete | body `{title?, goal?}` (at least one; an empty `goal` clears it); `plan_rename` sends `title`, `plan_edit` sends `goal`; a title is one line of at most 100 characters (400), a taken title is 409 naming the other record; needs `autonomous:write` |
 | `PUT /api/plans/order` | `plan_reorder` | Complete | body `{plans[]}`; the listed plans take positions 1 to n, the rest follow in their old order; a missing or repeated plan fails the whole call |
 | `PUT /api/plans/{ref}/automata/order` | `plan_reorder_automata` | Complete | body `{automata[]}` naming every Automaton of the plan once; the answer is the run view whose next marker skips blocked and held Automata |
 | `POST /api/plans/{ref}/attach` | `plan_attach` | Complete | body `{kind: automaton\|automation\|finding, id}`; the id is checked first (404 when unknown); an item linked or attached elsewhere is 409 naming the holder |

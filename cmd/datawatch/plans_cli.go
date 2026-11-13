@@ -112,6 +112,8 @@ func newPlansCmd() *cobra.Command {
 
   datawatch plans list <project> [--limit N] [--json]
   datawatch plans create <project> <title> [--goal TEXT]
+  datawatch plans rename <plan> <new title>
+  datawatch plans edit <plan> --goal TEXT
   datawatch plans reorder <plan> [<plan>...]
   datawatch plans reorder-automata <plan> <automaton> [<automaton>...]
   datawatch plans attach <plan> (--automaton ID | --automation ID | --finding REF)
@@ -119,7 +121,10 @@ func newPlansCmd() *cobra.Command {
   datawatch plans migrate [--apply] [--json]
   datawatch plans rollup [--project P] [--dry-run] [--json]
 
-A plan is named by its id or its title. Reorder lists the plans first, in the
+A plan is named by its id or its title. rename gives a plan a new title: one
+line, at most 100 characters, not used by another record in the project (the
+reply names the plan that holds it). The old title keeps working as an alias.
+edit --goal sets the plan's goal; --goal "" clears it. Reorder lists the plans first, in the
 order they should have; the rest keep their order after them. reorder-automata
 must list every Automaton of the plan once. The reply shows what runs next:
 blocked and held Automata are skipped. An Automaton, Automation or finding that
@@ -141,7 +146,7 @@ nothing. Without --project every project is rolled up.
 When the daemon reports 404, plan records are turned off: set
 autonomous.plan_records.enabled to true in the daemon config.`,
 	}
-	cmd.AddCommand(newPlansListCmd(), newPlansCreateCmd(), newPlansReorderCmd(),
+	cmd.AddCommand(newPlansListCmd(), newPlansCreateCmd(), newPlansRenameCmd(), newPlansEditCmd(), newPlansReorderCmd(),
 		newPlansReorderAutomataCmd(), newPlansAttachCmd(), newPlansDetachCmd(), newPlansMigrateCmd(), newPlansRollupCmd())
 	return cmd
 }
@@ -385,6 +390,70 @@ func newPlansCreateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&goal, "goal", "", "What the plan is for")
+	return cmd
+}
+
+// ----- rename and edit -----------------------------------------------------
+
+// planEditReply is the answer of PATCH /api/plans/{ref}.
+type planEditReply struct {
+	Plan struct {
+		Title string `json:"title"`
+		ID    string `json:"id"`
+	} `json:"plan"`
+	Goal string `json:"goal"`
+}
+
+func newPlansRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <plan> <new title>",
+		Short: "Rename a plan (one line, at most 100 characters, unique in the project)",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			title := strings.TrimSpace(strings.Join(args[1:], " "))
+			out, err := daemonJSONBody(http.MethodPatch, "/api/plans/"+url.PathEscape(args[0]), map[string]any{"title": title})
+			if err != nil {
+				return err
+			}
+			var res planEditReply
+			if json.Unmarshal(out, &res) != nil || res.Plan.ID == "" {
+				planRecordPrintJSON(cmd.OutOrStdout(), out)
+				return nil
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Renamed plan %s to %s\n", res.Plan.ID, oneLineText(res.Plan.Title))
+			return nil
+		},
+	}
+}
+
+func newPlansEditCmd() *cobra.Command {
+	var goal string
+	cmd := &cobra.Command{
+		Use:   "edit <plan> --goal TEXT",
+		Short: "Edit a plan's goal (an empty --goal clears it)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("goal") {
+				return fmt.Errorf("--goal is required: the plan's new goal, or \"\" to clear it")
+			}
+			out, err := daemonJSONBody(http.MethodPatch, "/api/plans/"+url.PathEscape(args[0]), map[string]any{"goal": goal})
+			if err != nil {
+				return err
+			}
+			var res planEditReply
+			if json.Unmarshal(out, &res) != nil || res.Plan.ID == "" {
+				planRecordPrintJSON(cmd.OutOrStdout(), out)
+				return nil
+			}
+			if strings.TrimSpace(res.Goal) == "" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Cleared the goal of plan %s  [%s]\n", oneLineText(res.Plan.Title), res.Plan.ID)
+				return nil
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Set the goal of plan %s  [%s]: %s\n", oneLineText(res.Plan.Title), res.Plan.ID, oneLineText(res.Goal))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&goal, "goal", "", "The plan's new goal; an empty value clears it")
 	return cmd
 }
 

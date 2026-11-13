@@ -5742,5 +5742,20 @@
   "task_routing_export_failed": "エクスポートに失敗しました: %1$s",
   "task_routing_imported": "プロファイルをインポートしました",
   "task_routing_detail_row": "行 %1$s",
-  "task_routing_detail_reason": "行なし: %1$s"
+  "task_routing_detail_reason": "行なし: %1$s",
+  "plans_browser_by_hand": "手動で設定",
+  "plans_browser_by_hand_hint": "このステータスは手動で設定されたため、プランのオートマタからの集計では変更されません。",
+  "plans_edit_status_label": "ステータス",
+  "plans_edit_rename": "名前を変更",
+  "plans_edit_goal": "目標を編集",
+  "plans_edit_rename_label": "このプランの新しいタイトル",
+  "plans_edit_goal_label": "このプランの目標",
+  "plans_edit_save": "保存",
+  "plans_edit_saving": "保存中…",
+  "plans_edit_cancel": "キャンセル",
+  "plans_edit_counter": "%1$s / %2$s 文字",
+  "plans_edit_title_required": "プランにはタイトルが必要です。",
+  "plans_edit_title_one_line": "プランのタイトルは1行です。",
+  "plans_edit_title_too_long": "プランのタイトルは最大%1$s文字です。",
+  "plans_edit_goal_too_long": "目標は最大%1$s文字です。"
 }

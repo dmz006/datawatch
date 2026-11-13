@@ -444,6 +444,7 @@ pipeline_status
 plan_attach
 plan_create
 plan_detach
+plan_edit
 plan_migrate
 plan_record_create
 plan_record_get
@@ -451,6 +452,7 @@ plan_record_import
 plan_record_list
 plan_record_search
 plan_record_update
+plan_rename
 plan_reorder
 plan_reorder_automata
 plan_rollup

@@ -16,6 +16,7 @@ func plansWriteMux(s *Server) *http.ServeMux {
 	mux.HandleFunc("GET /api/plans/rollup", s.handlePlansRollupGet)
 	mux.HandleFunc("POST /api/plans/rollup", s.handlePlansRollupPost)
 	mux.HandleFunc("POST /api/plans", s.handlePlanCreate)
+	mux.HandleFunc("PATCH /api/plans/{ref}", s.handlePlanEdit)
 	mux.HandleFunc("PUT /api/plans/order", s.handlePlansOrder)
 	mux.HandleFunc("PUT /api/plans/{ref}/automata/order", s.handlePlanAutomataOrder)
 	mux.HandleFunc("POST /api/plans/{ref}/attach", s.handlePlanAttach)

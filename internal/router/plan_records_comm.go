@@ -33,6 +33,11 @@
 //	autonomous plan attach <plan> automaton|automation|finding <id>
 //	autonomous plan detach <plan> automaton|automation|finding <id>
 //		link or unlink one; a link held elsewhere is refused and named.
+//	autonomous plan rename <plan> <new title…>
+//		give a plan a new title: one line, at most 100 characters, not used by
+//		another record in the project (the refusal names the plan that has it).
+//	autonomous plan edit <plan> goal <text…>
+//		set a plan's goal. Name the plan by its id or a one-word title.
 //	autonomous plan rollup [dry-run] [project=P]
 //		derive each plan's status from the work linked to it and write it. With
 //		dry-run it only reports what would change. A status set by hand is kept.
@@ -57,7 +62,7 @@ const (
 	planRecordsUsage = "usage: autonomous plan-records [registry-row|finding] [project=P] [state=S] | plan-record get <ref> | plan-record create <json> | plan-record update <ref> <json> | plan-record search <text> | plan-record import [dry-run] [project=P] [source=registry|findings|all] [policy=suffix|rename|skip]"
 
 	// planVerbUsage is the usage line for the plan verbs.
-	planVerbUsage = "usage: autonomous plan list <project> | plan new <project> <title...> | plan move <project> <plan> <position> | plan move <plan> automaton <id> <position> | plan attach <plan> automaton|automation|finding <id> | plan detach <plan> automaton|automation|finding <id> | plan rollup [dry-run] [project=P]  (arcs works in place of plan)"
+	planVerbUsage = "usage: autonomous plan list <project> | plan new <project> <title...> | plan move <project> <plan> <position> | plan move <plan> automaton <id> <position> | plan attach <plan> automaton|automation|finding <id> | plan detach <plan> automaton|automation|finding <id> | plan rename <plan> <new title...> | plan edit <plan> goal <text...> | plan rollup [dry-run] [project=P]  (arcs works in place of plan)"
 
 	// planRecordsMaxLines is the most lines one list or search reply carries.
 	planRecordsMaxLines = 10
@@ -607,11 +612,86 @@ func (r *Router) handlePlanVerb(args []string) {
 		r.planMove(rest)
 	case "attach", "detach":
 		r.planLink(sub, rest)
+	case "rename":
+		r.planRename(rest)
+	case "edit":
+		r.planEdit(rest)
 	case "rollup", "roll-up":
 		r.planRollup(rest)
 	default:
 		r.reply("autonomous plan failed", planVerbUsage)
 	}
+}
+
+// planEditFailure turns the loopback's "HTTP 409: {"error":"…"}" into the
+// message alone, so a refused rename reads as a sentence that names the plan
+// holding the title.
+func planEditFailure(err error) string {
+	msg := err.Error()
+	if i := strings.Index(msg, "{"); i >= 0 {
+		var body struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal([]byte(msg[i:]), &body) == nil && strings.TrimSpace(body.Error) != "" {
+			return body.Error
+		}
+	}
+	return msg
+}
+
+// planEditWire is the answer of PATCH /api/plans/{ref}.
+type planEditWire struct {
+	Plan struct {
+		Title string `json:"title"`
+		ID    string `json:"id"`
+	} `json:"plan"`
+	Goal string `json:"goal"`
+}
+
+// planRename answers "autonomous plan rename <plan> <new title…>".
+func (r *Router) planRename(args []string) {
+	if len(args) < 2 {
+		r.reply("autonomous plan failed", planVerbUsage)
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{"title": strings.Join(args[1:], " ")})
+	out, err := r.commJSON(http.MethodPatch, "/api/plans/"+url.PathEscape(args[0]), string(raw))
+	if err != nil {
+		r.reply("autonomous plan rename failed", planEditFailure(err))
+		return
+	}
+	var res planEditWire
+	if json.Unmarshal([]byte(out), &res) != nil || res.Plan.ID == "" {
+		r.reply("autonomous plan rename", "renamed")
+		return
+	}
+	r.reply("autonomous plan rename", fmt.Sprintf("Renamed plan %s to %s", res.Plan.ID, strings.Join(strings.Fields(res.Plan.Title), " ")))
+}
+
+// planEdit answers "autonomous plan edit <plan> goal <text…>". The goal is the
+// only field a plan edit sets; clearing it is a REST, CLI, MCP or PWA action
+// (an empty chat goal is refused so a stray message cannot wipe one).
+func (r *Router) planEdit(args []string) {
+	if len(args) < 2 || !strings.EqualFold(args[1], "goal") {
+		r.reply("autonomous plan failed", planVerbUsage)
+		return
+	}
+	if len(args) < 3 {
+		r.reply("autonomous plan edit failed", "give the goal text after the word goal; to clear a goal use the PWA, the CLI (--goal \"\"), REST or MCP")
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{"goal": strings.Join(args[2:], " ")})
+	out, err := r.commJSON(http.MethodPatch, "/api/plans/"+url.PathEscape(args[0]), string(raw))
+	if err != nil {
+		r.reply("autonomous plan edit failed", planEditFailure(err))
+		return
+	}
+	var res planEditWire
+	if json.Unmarshal([]byte(out), &res) != nil || res.Plan.ID == "" {
+		r.reply("autonomous plan edit", "goal updated")
+		return
+	}
+	r.reply("autonomous plan edit", fmt.Sprintf("Set the goal of plan %s [%s]: %s", strings.Join(strings.Fields(res.Plan.Title), " "), res.Plan.ID, strings.Join(strings.Fields(res.Goal), " ")))
 }
 
 func (r *Router) planFetchList(project string) (planWireList, error) {

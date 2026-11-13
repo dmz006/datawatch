@@ -5742,5 +5742,20 @@
   "records_tab_empty": "No registry row or finding matches.",
   "records_tab_status": "%1$s records; %2$s shown.",
   "records_tab_plan": "Plan",
-  "records_tab_automata": "Automata"
+  "records_tab_automata": "Automata",
+  "plans_browser_by_hand": "set by hand",
+  "plans_browser_by_hand_hint": "This status was set by hand, so the roll-up from the plan's Automata keeps it.",
+  "plans_edit_status_label": "Status",
+  "plans_edit_rename": "Rename",
+  "plans_edit_goal": "Edit goal",
+  "plans_edit_rename_label": "New title for this plan",
+  "plans_edit_goal_label": "Goal of this plan",
+  "plans_edit_save": "Save",
+  "plans_edit_saving": "Saving…",
+  "plans_edit_cancel": "Cancel",
+  "plans_edit_counter": "%1$s of %2$s characters",
+  "plans_edit_title_required": "A plan needs a title.",
+  "plans_edit_title_one_line": "A plan title is one line.",
+  "plans_edit_title_too_long": "A plan title is at most %1$s characters.",
+  "plans_edit_goal_too_long": "A goal is at most %1$s characters."
 }
