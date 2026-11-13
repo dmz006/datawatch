@@ -60,3 +60,16 @@ Total: 0 fails across all runs.
 - No version bump.
 - No hosting CLI invoked.
 - User-visible text uses Automaton and Automata.
+
+## Flagged for operator review
+
+- `CHANGELOG.md` `[Unreleased]` carries no entry for the trace-retention change
+  (default 0 = keep while the session exists, session delete removes the trace).
+  The story's docs scope did not include `CHANGELOG.md`; the release commit
+  should carry it.
+- `tracing.retention_days: 0` now means traces are kept **forever** by default
+  (previously the 14-day default applied). An operator who wants bounded disk
+  growth should set a positive `tracing.retention_days` explicitly.
+- Gated verifications still pending a live environment are unchanged: the
+  testing-tracker rows for the trace feature remain `Validated = No` (Go unit
+  level only), per `docs/testing-tracker.md`.
