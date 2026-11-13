@@ -306,8 +306,9 @@ to a click or tap.
   [What the Inbox counts](automation-tab.md#what-the-inbox-counts)).
 - **Remembered.** The choice is kept in the same browser value as the project page
   sub-tabs (`cs_projects_subtab`) and is restored when you open Overview again,
-  including after a refresh. A remembered value that is not an Overview sub-tab is
-  ignored, and a browser that blocks storage opens the default sub-tab each time.
+  including after a refresh. A remembered value that is not an Overview sub-tab
+  (for example a project page sub-tab such as Plans) is ignored and Inbox opens, and
+  a browser that blocks storage opens the default sub-tab each time.
 - **Not addressable.** There is no `#projects/<subtab>` address for an Overview
   sub-tab; the address stays `#projects`.
 - **No daemon side.** It is a display rule of the web app: no setting, and no REST,
@@ -843,9 +844,13 @@ the lane defaults. Use REST, MCP or the CLI for those.
   stream has no page sub-tab to show it. Confirm that is intended.
 - **Overview sub-tab strip look and memory.** Under **Overview** the in-flight
   sub-tabs now use the Projects strip look and share the one remembered value
-  (`cs_projects_subtab`) with the project page sub-tabs, so a choice made in one
-  place can be restored in the other when it is a valid name there. Confirm that
-  sharing, and that the Overview strip should have no address of its own.
+  (`cs_projects_subtab`) with the project page sub-tabs. The two sets of names do
+  not overlap, so a choice made in one place is ignored in the other and that side
+  opens its default sub-tab (Overview sub-tab: Inbox; project page sub-tab:
+  Overview), and picking in one place overwrites what the other remembered. The
+  Overview choice is read once per page load. Confirm that sharing one value is
+  acceptable (the alternative is a second browser value) and that the Overview
+  strip should have no address of its own.
 - **Remembered page sub-tab is global.** The remembered page sub-tab is one value
   per browser, not per project, so it carries over when you open another project.
 - **Screenshots and translations.** This page has no screenshots of the old single
