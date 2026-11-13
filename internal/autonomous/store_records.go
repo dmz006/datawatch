@@ -162,9 +162,11 @@ func recordName(id string) string {
 func (s *Store) markPRDDirtyLocked(id string) {
 	if _, ok := s.prds[id]; !ok {
 		s.rec.allDirty = true
+		s.rebuildSummaryLocked()
 		return
 	}
 	s.rec.dirty[id] = struct{}{}
+	s.refreshSummaryLocked(id)
 }
 
 // persistPRD marks the given PRDs dirty and writes them. Callers hold s.mu.
@@ -182,6 +184,7 @@ func (s *Store) persistDeleted(ids ...string) error {
 		delete(s.rec.dirty, id)
 		delete(s.rec.hashes, id)
 		s.rec.deleted[id] = struct{}{}
+		s.refreshSummaryLocked(id)
 	}
 	return s.flushPRDsLocked()
 }
@@ -489,6 +492,7 @@ func (s *Store) adoptPRD(p *PRD) {
 			s.tasks[st.Tasks[j].ID] = &st.Tasks[j]
 		}
 	}
+	s.refreshSummaryLocked(p.ID)
 }
 
 // loadPRDs fills s.prds from the record layout or the old prds.jsonl and
