@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.164.0 (2026-11-12).** The daemon now repairs basic stuck Automata states: task chains, advance and judge, lane fill and leftovers, each group off, report or on (default report), readable on REST, MCP, the CLI, chat and the web. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.165.0 (2026-11-12).** Automaton tasks now get the right LLM by task type from an editable routing table with named profiles, a dry run and every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

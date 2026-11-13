@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.165.0 — Task-type routing table for Automaton tasks
+
+### Added
+
+- **A task-type routing table for Automaton tasks.** An editable table maps each task type (for example code, test, docs, review, mechanical) to a worker backend and model and a verification backend and model, with an optional effort and a second choice. The planner and add-task classify each new task by type and apply the active profile to that task's own LLM and verification LLM. The shipped defaults route mechanical types to `pi-prompt` with the Qwen model and code types to `claude-code` with Sonnet; no row names Opus or Fable unless an operator adds one, and an unknown backend or model is refused when the table is saved.
+- **A hand-set LLM is never overwritten.** A model set on a task, a story or the Automaton always wins over the table, and switching the active profile changes only tasks created afterwards.
+- **Named profiles.** Save the table as a profile, switch the active profile, delete one, and export or import a profile as JSON to move it between servers. The decision log records which row decided each task's LLM, or why no row did.
+- **A dry run.** Preview what a profile would assign to each task of a draft Automaton; nothing is written, logged or run.
+- **Every surface.** `GET`/`PUT /api/autonomous/task-routing` and its profile, export, import, per-Automaton and dry-run routes, the `task_routing_*` MCP tools, `datawatch autonomous task-routing`, the `autonomous task-routing` chat verb and a Task routing section in Settings, Automata. The routing settings read and write through `PUT /api/config`, MCP `config_set`, the chat `configure` verb, `datawatch config set` and Settings.
+
+### Documentation
+
+- A how-to, `docs/howto/automata-task-routing.md`, plus the config reference, MCP and Cursor MCP references, the API to MCP mapping, the operations guide and the glossary.
+
 ## v9.164.0 — Daemon repairs of basic stuck states
 
 ### Added
