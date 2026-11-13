@@ -6632,7 +6632,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"retry_resume_max_context_tokens":       s.cfg.Autonomous.RetryResumeMaxContextTokens,
 			// Between-task branch refresh: off by default; the behind limit's
 			// 0 reads as 5 (config.AutonomousConfig.BranchRefreshLimit).
-			"branch_refresh_enabled":      s.cfg.Autonomous.BranchRefreshEnabled,
+			"branch_refresh_enabled": s.cfg.Autonomous.BranchRefreshEnabled,
 			// One-time project link backfill at start: false = dry-run report
 			// only, true = apply once, then a done marker stops re-runs.
 			"project_link_backfill_apply": s.cfg.Autonomous.ProjectLinkBackfillApply,
