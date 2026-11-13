@@ -21,6 +21,7 @@ func housekeepingRepairsSettingsForDisplay(h config.HousekeepingRepairsConfig) m
 		"advance_judge": e.AdvanceJudge,
 		"lane_fill":     e.LaneFill,
 		"leftovers":     e.Leftovers,
+		"planning":      e.Planning,
 		"grace_seconds": e.GraceSecondsOrDefault(),
 	}
 }

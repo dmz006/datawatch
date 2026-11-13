@@ -2670,6 +2670,11 @@ autonomous:
     # Leftover state of finished work (lease, worktree, tmux name): released only
     # when the safe-to-delete check passes. off, report or on. Default: report.
     leftovers: report
+    # Draft Automata with no stories whose planning failed for a reason retrying
+    # will not change: when every spec lint finding is one the daemon can reword,
+    # re-plan it the way the planning question's fix answer does; otherwise it is
+    # reported once with an alert and left alone. off, report or on. Default: report.
+    planning: report
     # Seconds a stuck state must persist before it is reported or repaired.
     # Whole number, 0 or more; 0 means no grace. Default: 300.
     grace_seconds: 300

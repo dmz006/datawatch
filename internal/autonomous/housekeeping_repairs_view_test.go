@@ -23,8 +23,8 @@ func (f viewFakeRepair) UndoHint(RepairFinding) string { return "set the task ba
 func TestHousekeepingRepairsView_NilReadsReport(t *testing.T) {
 	var r *Repairer
 	v := r.View()
-	if len(v.Groups) != 4 {
-		t.Fatalf("groups = %d, want 4", len(v.Groups))
+	if len(v.Groups) != 5 {
+		t.Fatalf("groups = %d, want 5", len(v.Groups))
 	}
 	for _, g := range v.Groups {
 		if g.Mode != config.HousekeepingModeReport {
@@ -66,11 +66,11 @@ func TestHousekeepingRepairsView_SplitsWouldAndDid(t *testing.T) {
 
 func TestManagerHousekeepingRepairsView(t *testing.T) {
 	m := &Manager{}
-	if got := m.HousekeepingRepairsView(); len(got.Groups) != 4 {
+	if got := m.HousekeepingRepairsView(); len(got.Groups) != 5 {
 		t.Errorf("no repairer: groups = %d", len(got.Groups))
 	}
 	m.SetHousekeepingRepairer(NewRepairer(RepairerHooks{}))
-	if got := m.HousekeepingRepairsView(); len(got.Groups) != 4 {
+	if got := m.HousekeepingRepairsView(); len(got.Groups) != 5 {
 		t.Errorf("repairer: groups = %d", len(got.Groups))
 	}
 }

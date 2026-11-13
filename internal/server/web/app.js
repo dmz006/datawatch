@@ -23725,6 +23725,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.housekeeping_repairs.task_chain', label: 'Task chain repairs', labelKey: 'settings_housekeeping_task_chain', helpKey: 'settings_housekeeping_task_chain_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.advance_judge', label: 'Judged Automaton advance repairs', labelKey: 'settings_housekeeping_advance_judge', helpKey: 'settings_housekeeping_advance_judge_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.housekeeping_repairs.planning', label: 'Planning repairs', labelKey: 'settings_housekeeping_planning', helpKey: 'settings_housekeeping_planning_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Platform context — the toggle and the project note. Reads GET /api/config and writes
     // through PUT /api/config (platform_context.enabled, platform_context.note).
@@ -37839,8 +37840,8 @@ function _automationUnlandedWorkLoader() {
 // housekeepingRepairsCardHtml(data) draws GET /api/autonomous/housekeeping-repairs:
 // { grace_seconds, groups: [{group, mode, would, did, failed, skipped_unsafe}] }.
 // Each group shows its mode, what it would do (report mode) and what it did.
-const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers'];
-const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers' };
+const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers', 'planning'];
+const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers', planning: 'housekeeping_repairs_group_planning' };
 const HOUSEKEEPING_MODE_LABELS = { off: 'housekeeping_repairs_mode_off', report: 'housekeeping_repairs_mode_report', on: 'housekeeping_repairs_mode_on' };
 function _housekeepingRecs(list) {
   return (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');
