@@ -65,7 +65,9 @@ func (m *Manager) runScriptGateTask(ctx context.Context, prd *PRD, t *Task) (han
 	lastExit := 0
 	runChecks := func() (interrupted, signalled bool) {
 		for i, c := range checks {
-			res := runGateCheckFn(runCtx, c, dir, remainingGateTime(runCtx, timeout))
+			gateCtx, done := m.trackGate(runCtx, prd.ID, t.ID, describeGateCheck(c))
+			res := runGateCheckFn(gateCtx, c, dir, remainingGateTime(runCtx, timeout))
+			done()
 			if res.Interrupted {
 				// The daemon is stopping, not the gate failing: the gate keeps
 				// running and the next attempt re-attaches to its record.

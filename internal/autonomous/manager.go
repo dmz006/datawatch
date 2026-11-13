@@ -1692,6 +1692,9 @@ type Manager struct {
 	// the door of executeOne, so a restart drain lets running tasks finish
 	// without new ones starting. See restart_policy.go.
 	launchDraining atomic.Bool
+	// runningGates is the set of final gate checks running now; see
+	// running_gates.go.
+	runningGates runningGateRegistry
 	// worktreeDirtyFn — the worktree guard's uncommitted-changes check.
 	worktreeDirtyFn func(dir string) (bool, error)
 	// sessionLastOutputFn — when set, the boot-resume age gate counts a live

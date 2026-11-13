@@ -73,6 +73,12 @@ type RestartInterruption struct {
 	VerifyingTaskCnt int                 `json:"verifying_task_count"`
 	RunningJudgeCnt  int                 `json:"running_judge_count"`
 	NeedsForce       bool                `json:"needs_force"`
+
+	// RunningGates are the final gate checks running now. A gate survives a
+	// restart in its own session, but the daemon waits for it first (up to
+	// autonomous.gate_drain_minutes). Always present; empty when none.
+	RunningGates   []RunningGate `json:"running_gates"`
+	RunningGateCnt int           `json:"running_gate_count"`
 }
 
 // Quiet reports whether no task is running.
@@ -90,6 +96,7 @@ func BuildRestartInterruption(prds []*PRD, sessions []SessionInfo, judges []Judg
 	out := RestartInterruption{
 		RunningTasks: []InterruptedTask{}, LiveSessions: []string{},
 		PlanningAutomata: []PlanningAutomaton{}, VerifyingTasks: []VerifyingTask{}, RunningJudges: []RunningJudge{},
+		RunningGates: []RunningGate{},
 	}
 	alive := map[string]bool{}
 	for _, si := range sessions {
@@ -241,6 +248,8 @@ func (m *Manager) RestartInterruptions() RestartInterruption {
 	out.QuietTimeoutSec = config.NormalizeRestartQuietTimeoutSeconds(cfg.RestartQuietTimeoutSeconds)
 	out.OnTimeout = config.NormalizeRestartOnTimeout(cfg.RestartOnTimeout)
 	out.LaunchDraining = m.launchDraining.Load()
+	out.RunningGates = m.RunningGates()
+	out.RunningGateCnt = len(out.RunningGates)
 	return out
 }
 
@@ -415,6 +424,12 @@ func RestartInterruptionText(r RestartInterruption) string {
 	for _, id := range r.LiveSessions {
 		s += "  session " + id + "\n"
 	}
+	if r.RunningGateCnt > 0 {
+		s += fmt.Sprintf("%d gate(s) running; a restart waits for them (autonomous.gate_drain_minutes):\n", r.RunningGateCnt)
+		for _, g := range r.RunningGates {
+			s += "  " + RunningGateLine(g) + "\n"
+		}
+	}
 	return s
 }
 
@@ -430,4 +445,13 @@ func ParseRestartInterruption(b []byte) (RestartInterruption, error) {
 		return RestartInterruption{}, fmt.Errorf("reading the restart interruption report: %w", err)
 	}
 	return r, nil
+}
+
+// RunningGateLine renders one running gate for the restart reports.
+func RunningGateLine(g RunningGate) string {
+	line := fmt.Sprintf("gate %s on Automaton %s task %s", g.Check, g.PRDID, g.TaskID)
+	if g.PID > 0 {
+		line += fmt.Sprintf(" pid %d", g.PID)
+	}
+	return line
 }
