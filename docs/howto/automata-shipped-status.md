@@ -46,10 +46,14 @@ branch, and in which release?** A PRD can complete before anything merges;
 a cancelled Automaton can still have its work merged. Shipped is the answer,
 and it is independent:
 
-- **shipped is not a status.** Recording shipped state never touches the
-  stored status, and the status never implies shipped. A cancelled Automaton
-  whose branch merged stays `cancelled` in the store and counts as
-  **shipped** in the shipped view. Both statements are true at once.
+- **shipped is not a status, and it has no label of its own.** Recording
+  shipped state never touches the stored status. Wherever a status is shown,
+  a record that carries shipped state reads **Completed** — the work
+  finished, so it is never shown as Cancelled. A cancelled Automaton whose
+  branch merged stays `cancelled` in the store (until the
+  [Completed migration](automata-completed-migration.md) moves it) and
+  displays and counts as **Completed**. Release, merge time and merge commit
+  stay available as detail fields.
 - A record **is shipped** when it carries a non-empty **merge commit**
   (`merge_commit`). That field is the whole test.
 - Each record keeps four shipped fields with the story of how the work
@@ -68,13 +72,25 @@ and it is independent:
 
 ## 2. How shipped shows up
 
-While `autonomous.shipped.enabled` and `count_separately` hold, shipped
-records are drawn out of their status bucket and counted as a **shipped**
-bucket of their own — across the counts, the list views and every read
-surface. A cancelled-and-shipped Automaton is `cancelled` in the store and
-`shipped` in the shipped view. Turn `count_separately` off and a
-shipped-yet-cancelled record folds back into `cancelled`; the shipped fields
-stay on the record and only the display changes.
+While `autonomous.shipped.enabled` holds, a record that carries shipped state
+displays as **Completed** and counts in the **completed** bucket together
+with the records whose stored status is `completed` — across the counts, the
+list views, the web app chip and every read surface. There is **no second
+"shipped" bucket**, no "Shipped" chip text and no Shipped filter badge. A
+cancelled-and-shipped Automaton is `cancelled` in the store and `completed`
+in every view. Turn `enabled` off and every record folds back into its
+stored status; the shipped fields stay on the record and only the display
+changes.
+
+In the web app the chip on a shipped record reads **Completed** (the same
+label as the Completed status, in every language); hovering it shows the
+release, merge time and merge commit when the record has a merge commit.
+The Automata and Automations filter bars carry no Shipped badge: shipped
+records are inside the **Completed** badge and its count. The detail views'
+separate shipped line is gone — the release detail rides on the chip hover
+and on the record's `merged_in_release`, `merged_at`, `merge_commit` and
+`shipped_source` fields, which a read returns only for a record that
+carries a merge commit.
 
 ## 3. Configuration
 
@@ -86,7 +102,7 @@ autonomous:
     enabled: true            # master switch for shipped-state recording and display (default)
     show_chip: true          # render the shipped chip on shipped items (default)
     filter_default: all      # the shipped-state views open on: all (default) | shipped | unshipped
-    count_separately: true   # shipped items count in their own bucket (default)
+    count_separately: true   # kept for compatibility; no longer creates a separate Shipped bucket (default)
     backfill_on_start: false # run the release backfill at daemon startup (default off)
 ```
 
@@ -95,6 +111,10 @@ blank `filter_default` reads as `all`. Set a key with `PUT /api/config`
 (body `{"autonomous.shipped.filter_default": "shipped"}`) or through the MCP
 `config_set` tool (key `autonomous.shipped.filter_default`). They are
 daemon-wide: there is no per-Automaton override.
+
+`count_separately` is still accepted and still validated, but it no longer
+changes anything: shipped records always count under Completed while
+`enabled` holds, and there is no separate Shipped bucket to turn on or off.
 
 You do not need to set any of them: everything ships on except
 `backfill_on_start`, which is off so a daemon start never writes records by
@@ -176,14 +196,16 @@ $ datawatch autonomous shipped counts
 ```
 GET /api/autonomous/shipped/counts
 → {
-    "prds":        {"completed": 4, "cancelled": 1, "shipped": 3},
-    "automations": {"completed": 1, "shipped": 2},
+    "prds":        {"completed": 7, "cancelled": 1},
+    "automations": {"completed": 3},
     "settings":    {"enabled": true, "show_chip": true,
                     "filter_default": "all", "count_separately": true}
   }
 ```
 
-MCP: `autonomous_shipped_counts`. Comm:
+Shipped records are inside `completed` (here 4 stored-completed PRDs plus 3
+that carry a shipped record); no `shipped` key is returned. MCP:
+`autonomous_shipped_counts`. Comm:
 
 ```
 autonomous shipped-counts
@@ -193,10 +215,12 @@ autonomous shipped-counts
 
 - **PRDs** — `GET /api/autonomous/prds?shipped=true|false` (an explicit
   value wins; absent it, `autonomous.shipped.filter_default` decides).
-  `status=…` may include `shipped` as one of the statuses, which selects the
-  shipped bucket on the *status* axis. CLI: `datawatch autonomous list
+  `status=…` matches the **displayed** status, so `status=completed` includes
+  a cancelled record whose work landed, and `status=cancelled` does not.
+  `status=shipped` is still accepted as a legacy alias that selects the
+  records carrying shipped state. CLI: `datawatch autonomous list
   --shipped true`. MCP: `autonomous_prd_list` with `shipped: "true"` /
-  `"false"` (or `status: "shipped,…"`).
+  `"false"` (or the legacy `status: "shipped,…"`).
 - **Automations** — `GET /api/automations?shipped=true|false` applies the
   same selection to Automation records. CLI:
   `datawatch automation list --shipped true`. MCP: `automation_list` with
@@ -209,10 +233,11 @@ without shipped state simply lacks them.
 
 The server fills a **system Shipped card** — present in the factory dashboard
 layout, re-added if removed, cannot be deleted — with the live per-status
-counts and the in-force settings: `GET /api/dashboard/cards/shipped` (or the
+counts (shipped work counted under `completed`) and the in-force settings: `GET /api/dashboard/cards/shipped` (or the
 `data` field of the `shipped` entry in `GET /api/dashboard/cards` / `PUT /api/dashboard/cards`).
-Today the PWA renders no shipped card (no dashboard-card definition, no
-chip, no filter), so that endpoint is the surface an operator reads it on;
+The web app shows the Completed chip and the Completed badge counts, but
+renders no card for this payload, so that endpoint is the surface an
+operator reads it on;
 the companion-app work that closes the PWA/Android/iOS gap is tracked in
 the parity issue [`plans/2026-11-01-shipped-status-parity-issue.md`](../plans/2026-11-01-shipped-status-parity-issue.md).
 
@@ -282,9 +307,11 @@ pass to run at every daemon start.
 
 ## 7. What shipped does not do
 
-- It does not change a stored status, ever — recording and backfill both
-  leave it alone (the separate [Completed migration](automata-completed-migration.md) is what moves a merged cancelled record to `completed`), in either direction (a shipped completed stays
-  `completed`; a shipped cancelled stays `cancelled`).
+- It does not change a stored status — recording and backfill both leave it
+  alone (a shipped completed stays `completed`; a shipped cancelled stays
+  `cancelled` in the store, though every view shows it as Completed). The
+  separate [Completed migration](automata-completed-migration.md) is what
+  moves a merged cancelled record's stored status to `completed`.
 - It does not push, merge or move any branch: it records facts about
   merges that happened.
 - It is not a per-record override: the settings are daemon-wide.
@@ -297,5 +324,5 @@ pass to run at every daemon start.
 - [Autonomous planning](autonomous-planning.md) — the Automaton lifecycle the shipped state sits alongside
 - [Automation chains](automation-chains.md) — the Automation records the shipped state covers
 - [`config` reference: the `autonomous.shipped` block](../config-reference.yaml)
-- [The shipped status definition](../datawatch-definitions.md)
+- [The shipped status definition](../datawatch-definitions.md#shipped)
 - [Implementation notes](../implementation.md)

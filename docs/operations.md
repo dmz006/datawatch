@@ -1028,7 +1028,7 @@ In outcomes 2 and 3 the Automaton is `needs_review`, not `blocked` and not runni
 
 ### Cancelled Automata whose work already merged
 
-An Automaton cancelled after its branch merged reads `cancelled` although its work landed. Run `datawatch autonomous completed-migrate --dry-run`, read each reason, then run it for real (`--limit N` to go in steps, `--id <id>` for one record). Records without a shipped record or a merge proof stay cancelled. A real run is refused (409) while a final gate runs; no session is touched and the completion time is the merge time, not now. There is no setting and no automatic run, and no surface to undo it. See [howto/automata-completed-migration.md](howto/automata-completed-migration.md).
+An Automaton cancelled after its branch merged shows as **Completed** in every count, list and chip once it carries a shipped record (there is no separate Shipped label or bucket), but its stored status stays `cancelled` until migrated; a record with no shipped record still reads Cancelled. Run `datawatch autonomous completed-migrate --dry-run`, read each reason, then run it for real (`--limit N` to go in steps, `--id <id>` for one record). Records without a shipped record or a merge proof stay cancelled. A real run is refused (409) while a final gate runs; no session is touched and the completion time is the merge time, not now. There is no setting and no automatic run, and no surface to undo it. See [howto/automata-completed-migration.md](howto/automata-completed-migration.md).
 
 ### Blocked or needs-review Automaton: fix, commit, rejudge
 
