@@ -1931,6 +1931,10 @@ type Manager struct {
 	decisionStore   *QuestionStore
 	decisionGateCfg func() config.AutonomousQuestionsConfig
 
+	// planningFailure holds the planning failure alert and question state
+	// (planning_failure.go); its zero value is ready to use.
+	planningFailure planningFailureState
+
 	// branchRefreshGitRunner replaces the production git runner of the
 	// between-task branch refresh (branch_refresh.go); nil uses git.
 	// Guarded by mu.
