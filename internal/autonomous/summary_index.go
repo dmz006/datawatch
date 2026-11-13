@@ -71,6 +71,16 @@ type SummaryEntry struct {
 	VerifierSessionIDs  []string `json:"verifier_session_ids,omitempty"`
 	JudgeSessionIDs     []string `json:"judge_session_ids,omitempty"`
 	DecomposeSessionIDs []string `json:"decompose_session_ids,omitempty"`
+
+	// NotifyEvents and GuardrailProfile are the inputs of the effective
+	// notify-events tier, so a list row can resolve it without the record.
+	NotifyEvents     []string `json:"notify_events,omitempty"`
+	GuardrailProfile string   `json:"guardrail_profile,omitempty"`
+
+	// Row is the list row of the Automaton, built once per record change.
+	// It is never edited in place: a read copies the value and fills the
+	// read-time fields (project, inherited tags, display state) on the copy.
+	Row SummaryRow `json:"-"`
 }
 
 // SummaryTask is the timing of one task: enough for throughput and span
@@ -204,6 +214,9 @@ func buildSummaryEntry(p *PRD) SummaryEntry {
 	}
 	e.MergedAt = copyTimePtr(p.MergedAt)
 	e.ApprovedAt = copyTimePtr(p.ApprovedAt)
+	e.NotifyEvents = cloneSummaryStrings(p.NotifyEvents)
+	e.GuardrailProfile = p.GuardrailProfile
+	e.Row = buildIndexedSummaryRow(p)
 	var workers, verifiers, judges, decompose, all idSet
 	for _, v := range p.Verdicts {
 		judges.add(v.JudgeSessionID)
@@ -254,6 +267,45 @@ func buildSummaryEntry(p *PRD) SummaryEntry {
 	return e
 }
 
+// buildIndexedSummaryRow builds the list row kept on an entry. The row holds
+// no per-story breakdown, and every pointer or slice it shares with the record
+// is copied so a later change to the record never reaches a stored row.
+func buildIndexedSummaryRow(p *PRD) SummaryRow {
+	row := BuildSummaryRow(p)
+	row.SummaryView.Stories = nil
+	row.Tags = cloneSummaryStrings(row.Tags)
+	if row.Tags == nil {
+		row.Tags = []string{}
+	}
+	row.SystemTags = cloneSummaryStrings(row.SystemTags)
+	row.MergedAt = copyTimePtr(row.MergedAt)
+	if row.CIWatch != nil {
+		c := *row.CIWatch
+		row.CIWatch = &c
+	}
+	if row.RulesReviewOutcome != nil {
+		c := *row.RulesReviewOutcome
+		row.RulesReviewOutcome = &c
+	}
+	if row.UncommittedWork != nil {
+		c := *row.UncommittedWork
+		row.UncommittedWork = &c
+	}
+	row.NotifyEventsEffective = nil
+	return row
+}
+
+// IndexRow returns the entry's list row with its task counts copied, so the
+// caller may fill read-time fields without touching the index.
+func (e SummaryEntry) IndexRow() SummaryRow {
+	r := e.Row
+	r.TaskStatusCounts = make(map[string]int, len(e.Row.TaskStatusCounts))
+	for k, v := range e.Row.TaskStatusCounts {
+		r.TaskStatusCounts[k] = v
+	}
+	return r
+}
+
 func (e SummaryEntry) clone() SummaryEntry {
 	c := e
 	c.TaskStatusCounts = make(map[string]int, len(e.TaskStatusCounts))
@@ -267,6 +319,7 @@ func (e SummaryEntry) clone() SummaryEntry {
 	c.VerifierSessionIDs = cloneSummaryStrings(e.VerifierSessionIDs)
 	c.JudgeSessionIDs = cloneSummaryStrings(e.JudgeSessionIDs)
 	c.DecomposeSessionIDs = cloneSummaryStrings(e.DecomposeSessionIDs)
+	c.NotifyEvents = cloneSummaryStrings(e.NotifyEvents)
 	c.MergedAt = copyTimePtr(e.MergedAt)
 	c.ApprovedAt = copyTimePtr(e.ApprovedAt)
 	return c

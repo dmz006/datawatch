@@ -5165,7 +5165,13 @@ paths:
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
-      responses: {"200": {description: OK}, "404": {description: Unknown tag}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 50}, description: "Page size. Summary form: at most 500. With full=true: at most 100, so one call cannot write hundreds of megabytes"}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "Opaque next_cursor from the previous page; a bad cursor is a 400"}
+        - {name: full, in: query, required: false, schema: {type: boolean, default: false}, description: "Heavy form. true returns whole Automaton records (stories and tasks) instead of summary rows. With a limit or cursor it is one filtered, capped page of records ({prds,total,next_cursor}); with neither it returns every record, kept for compatibility, and can be hundreds of megabytes. The default summary list is built from the summary index alone and never reads a record"}
+      responses:
+        "200": {description: "OK. The summary list answers 304 to a matching If-None-Match without building any row; its ETag changes when any Automaton changes"}
+        "304": {description: Not modified}
+        "404": {description: Unknown tag}
     post:
       summary: Create a draft PRD
       operationId: autonomousPRDCreate
@@ -5208,6 +5214,49 @@ paths:
                         reason: {type: string, description: "One sentence of operator copy"}
                         read_hint: {type: string, description: "How to read the underlying item"}
       "400": {description: "No spec, a lane preference outside the vocabulary, or a spec carrying the capped-view truncation marker (a copy from a capped view)"}
+  /api/autonomous/prds/{id}/tasks:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: One page of an Automaton's task rows
+      description: "Reads only that Automaton. Rows carry id, title, status, story, timestamps, session ids and a short error; never the spec or history. It is never part of the list. Requires the autonomous read capability."
+      operationId: autonomousPRDTasks
+      tags: [Autonomous]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "Opaque next_cursor from the previous page"}
+        - {name: story, in: query, required: false, schema: {type: string}, description: "Only tasks of this story id"}
+        - {name: status, in: query, required: false, schema: {type: string}, description: "Comma-separated task statuses"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prd_id: {type: string}
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        story: {type: string}
+                        story_title: {type: string}
+                        created_at: {type: string, format: date-time}
+                        updated_at: {type: string, format: date-time}
+                        started_at: {type: string, format: date-time}
+                        completed_at: {type: string, format: date-time}
+                        session_id: {type: string}
+                        verifier_session_id: {type: string}
+                        judge_session_ids: {type: array, items: {type: string}}
+                        error: {type: string, description: "Shortened to 240 characters"}
+                  total: {type: integer, description: "Tasks matching the filters, ignoring the cursor"}
+                  next_cursor: {type: string}
+        "400": {description: Bad limit or cursor}
+        "404": {description: Unknown Automaton}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
