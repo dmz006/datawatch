@@ -16,6 +16,9 @@ func TestMainBuildsForReleaseTargets(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compiles the daemon; skipped in -short")
 	}
+	if os.Getenv("DW_RUN_CROSS_BUILD") != "1" {
+		t.Skip("opt-in slow check (cross-compiles the daemon); set DW_RUN_CROSS_BUILD=1 or run `make test-cross-build`")
+	}
 	targets := []struct{ goos, goarch string }{
 		{"windows", "amd64"},
 		{"windows", "arm64"},

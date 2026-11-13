@@ -75,7 +75,13 @@ var watchedLeakPrefixes = []string{
 // DW_LEAK_GUARD_FULL=1 (set by `make test-tmp-guard`) the list is
 // `go list ./...` minus ./internal/session/, i.e. every other package in the
 // repo.
+//
+// The test is an opt-in slow check: it skips unless DW_RUN_TMP_GUARD=1, which
+// `make test-tmp-guard` sets.
 func TestNoNewTmpLeakEntries(t *testing.T) {
+	if os.Getenv("DW_RUN_TMP_GUARD") != "1" {
+		t.Skip("opt-in slow check (nested go test runs); set DW_RUN_TMP_GUARD=1 or run `make test-tmp-guard`")
+	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("skipping temp-leak guard: go toolchain not found on PATH: %v", err)
 	}
