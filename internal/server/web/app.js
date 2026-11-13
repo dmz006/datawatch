@@ -44914,8 +44914,9 @@ window.openQuestion = function(id) {
 //     report carries (the route defaults to shadow when unset),
 //   • the held entries: the Automaton's title and id, the held task and
 //     its held-state id, the one-line reason, the recommended option
-//     when the record carries one, the forced default-of-hold line,
-//     the detail link and the answer button — the existing answer
+//     when the record carries one, the default (the entry's own value
+//     when present, the forced default-of-hold line otherwise), the
+//     detail link and the answer button — the existing answer
 //     control (window.openQuestion(id)), rendered through the guarded
 //     inline call the queue rows use,
 //   • in shadow only, beneath the held list: the would-be questions —
@@ -44953,8 +44954,11 @@ window.heldQuestionModeBadgeHtml = function(mode) {
 window.heldQuestionDetailLinkHtml = function(entry) {
   const e = (entry && typeof entry === 'object') ? entry : {};
   // The report (internal/server/held_questions.go) names the Automaton
-  // via automaton_id — that is the id renderPRDDetailView takes.
-  const prdId = String(e.automaton_id == null ? '' : e.automaton_id);
+  // via prd_id — that is the id renderPRDDetailView takes. The old
+  // automaton_id name is accepted as a fallback for entries carried by
+  // an older bundle.
+  const rawPrd = (e.prd_id != null && String(e.prd_id) !== '') ? e.prd_id : e.automaton_id;
+  const prdId = String(rawPrd == null ? '' : rawPrd);
   if (!prdId) return '';
   const task = String(e.task_id == null ? '' : e.task_id);
   const label = task ? t('held_question_open_task') : t('held_question_open_automaton');
@@ -44963,19 +44967,35 @@ window.heldQuestionDetailLinkHtml = function(entry) {
 
 // heldQuestionRowHtml is one held (or would-be) entry: the Automaton's
 // title, its id chip, the held task chip, the held-state chip, the
-// one-line reason, the recommended option and the forced
-// default-of-hold when the record carries them, and finally the
-// controls line — the detail link and the answer button (the guarded
-// hand-off to window.openQuestion, the existing answer control).
+// question text clamped to three lines (the full text lives in the
+// details the row opens), the one-line reason, the recommended option
+// and the default when the record carries them, and finally the
+// controls line — the detail link and, for open entries, the answer
+// button (the guarded hand-off to window.openQuestion, the existing
+// answer control).
+//
+// The report (internal/server/held_questions.go) names the Automaton
+// via title/prd_id and carries the question's own text; the old
+// automaton_title/automaton_id names are accepted as fallbacks.
+//
+// An open row opens the full details when clicked anywhere that is not
+// a button or a link — the guarded hand-off to window.openQuestion,
+// the same call the Answer button makes — so a button or link click
+// never double-opens. A shadow row is read-only: no answer button, no
+// row click, only the detail link.
 window.heldQuestionRowHtml = function(entry, isShadow) {
   const e = (entry && typeof entry === 'object') ? entry : {};
   const question = String(e.question_id == null ? '' : e.question_id);
-  const title = String(e.automaton_title == null ? '' : e.automaton_title);
-  const automaton = String(e.automaton_id == null ? '' : e.automaton_id);
+  const rawTitle = (e.title != null && String(e.title) !== '') ? e.title : e.automaton_title;
+  const title = String(rawTitle == null ? '' : rawTitle);
+  const rawPrd = (e.prd_id != null && String(e.prd_id) !== '') ? e.prd_id : e.automaton_id;
+  const automaton = String(rawPrd == null ? '' : rawPrd);
+  const text = String(e.text == null ? '' : e.text);
   const task = String(e.task_id == null ? '' : e.task_id);
   const state = String(e.state == null ? '' : e.state);
   const reason = String(e.reason == null ? '' : e.reason);
   const rec = String(e.recommended_option == null ? '' : e.recommended_option);
+  const def = String(e.default == null ? '' : e.default);
   const chip = (cls, text) => `<span class="held-question-chip ${cls}" style="font-size:10px;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:0 5px;white-space:nowrap;">${escHtml(text)}</span>`;
   const chips = [
     question ? chip('held-question-id', question) : '',
@@ -44985,14 +45005,23 @@ window.heldQuestionRowHtml = function(entry, isShadow) {
   ].filter(Boolean).join('');
   const line1 = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;">
     <span class="held-question-title" style="font-weight:600;overflow-wrap:anywhere;">${escHtml(title)}</span>${chips}</div>`;
+  // The question's own text is the main line: clamped to three lines
+  // here; the details the row opens show it in full.
+  const textLine = text
+    ? `<div class="held-question-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(text)}</div>`
+    : '';
   const reasonLine = reason
     ? `<div class="held-question-reason" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(reason)}</div>`
     : '';
   const recLine = rec
     ? `<div class="held-question-recommended" style="font-size:12px;color:var(--text);">${escHtml(t('held_question_recommended', [rec]))}</div>`
     : '';
-  const defLine = `<div class="held-question-default" style="font-size:12px;color:var(--text2);">${escHtml(t('held_question_default_hold'))}</div>`;
-  const answerBtn = question
+  // The default is shown explicitly: the entry's own default value when
+  // the record carries one, the forced default-of-hold line otherwise.
+  const defLine = def
+    ? `<div class="held-question-default" style="font-size:12px;color:var(--text2);">${escHtml(t('held_question_default_value', [def]))}</div>`
+    : `<div class="held-question-default" style="font-size:12px;color:var(--text2);">${escHtml(t('held_question_default_hold'))}</div>`;
+  const answerBtn = (question && !isShadow)
     ? `<button type="button" class="held-question-answer btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')">${escHtml(t('held_question_answer'))}</button>`
     : '';
   const controls = [window.heldQuestionDetailLinkHtml(e), answerBtn].filter(Boolean).join('<span style="color:var(--border);">·</span>');
@@ -45000,8 +45029,14 @@ window.heldQuestionRowHtml = function(entry, isShadow) {
   // line; an open entry is a real hold, and the line names where to change
   // or view it (the Settings page under Automata, a navigation link only).
   const changeLine = isShadow ? '' : `<div class="held-question-change" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_question_held_change'))} <a href="javascript:void(0)" class="held-question-settings-link" onclick="if (typeof window.openAutomataSettings === 'function') window.openAutomataSettings()" style="color:var(--accent,#2f6feb);text-decoration:none;">${escHtml(t('nav_settings'))}</a></div>`;
-  return `<div class="held-question-row" style="padding:6px 0;border-top:1px solid var(--border);" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}">`
-    + line1 + reasonLine + recLine + defLine + changeLine
+  // Open rows open the details on a click anywhere that is not a button
+  // or a link (buttons and links keep their own action; the handler
+  // bails out when the click lands on one, so nothing double-opens).
+  const rowOpen = (question && !isShadow)
+    ? ` onclick="if (event.target && (event.target.closest('button') || event.target.closest('a'))) return; if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')" style="padding:6px 0;border-top:1px solid var(--border);cursor:pointer;"`
+    : ` style="padding:6px 0;border-top:1px solid var(--border);"`;
+  return `<div class="held-question-row"${rowOpen} data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}">`
+    + line1 + textLine + reasonLine + recLine + defLine + changeLine
     + `<div style="margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${controls}</div></div>`;
 };
 
