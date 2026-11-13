@@ -148,7 +148,12 @@ func triageDetailsBlock(rec *TriageRecord) string {
 		b.WriteString("Task error: " + rec.Error + "\n")
 	}
 	if rec.BlockedReason != "" {
-		b.WriteString("Blocked reason: " + rec.BlockedReason + "\n")
+		line := "Blocked reason: " + rec.BlockedReason
+		if rec.ReasonSource != "" && rec.ReasonSource != triageReasonSourceBlockedReason {
+			// the reason was derived from the Automaton's facts; say so
+			line = "Blocked reason (" + rec.ReasonSource + "): " + rec.BlockedReason
+		}
+		b.WriteString(line + "\n")
 	}
 	if rec.SessionEndReason != "" {
 		b.WriteString("Session end reason: " + rec.SessionEndReason + "\n")

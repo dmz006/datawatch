@@ -148,6 +148,194 @@ func TestTriageBuilderBlockedReasonFallback(t *testing.T) {
 	}
 }
 
+// TestTriageBlockedReasonDerivation verifies that a blocked record carries a
+// real reason: the Automaton's own block reason wins unchanged (source
+// "blocked_reason"), and when the Automaton recorded none of its own the
+// record derives one from the facts on the Automaton, most specific
+// first — the block verdict or blocked Decision's note (source "verdict"),
+// the task's error text or why its session ended (source "task_error"), a
+// task held for operator review (source "task_review") — with source
+// "none" and no text when nothing is recorded. A failed record never
+// sets the field: its reason is the Error text.
+func TestTriageBlockedReasonDerivation(t *testing.T) {
+	clearAutomatonReason := func(m *Manager, prd *PRD) {
+		prd.BlockedReason = ""
+		if err := m.Store().SavePRD(prd); err != nil {
+			t.Fatalf("SavePRD: %v", err)
+		}
+	}
+	cases := []struct {
+		name       string
+		status     PRDStatus
+		setup      func(m *Manager, prd *PRD)
+		wantReason string
+		wantSource string
+		json       string // substring that must appear in the marshaled record
+		notjson    string // substring that must not
+	}{
+		{
+			name: "automaton-set reason wins",
+			status: PRDBlocked,
+			setup: func(m *Manager, prd *PRD) {
+				prd.Verdicts = []GuardrailVerdict{{
+					Guardrail: "security", Outcome: "block",
+					Summary: "leak", JudgeSessionID: "judge-1",
+				}}
+				if err := m.Store().SavePRD(prd); err != nil {
+					t.Fatalf("SavePRD: %v", err)
+				}
+				setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
+					ID: "t1", Title: "do the work", Status: TaskBlocked,
+					Error: "capacity lease refused", UpdatedAt: time.Now(),
+				})
+			},
+			wantReason: "guardrail blocked it",
+			wantSource: "blocked_reason",
+			json:       `"reason_source":"blocked_reason"`,
+		},
+		{
+			name:   "derived from the latest block verdict",
+			status: PRDBlocked,
+			setup: func(m *Manager, prd *PRD) {
+				clearAutomatonReason(m, prd)
+				prd2, _ := m.Store().GetPRD(prd.ID)
+				prd2.Verdicts = []GuardrailVerdict{
+					{Guardrail: "security", Outcome: "warn", Summary: "noise"},
+					{Guardrail: "security", Outcome: "block", Summary: "leak", JudgeSessionID: "judge-1"},
+				}
+				_ = m.Store().SavePRD(prd2)
+				setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
+					ID: "t1", Title: "do the work", Status: TaskBlocked,
+					Error: "capacity lease refused", UpdatedAt: time.Now(),
+				})
+			},
+			wantReason: "guardrail security returned block (judge-1) - leak",
+			wantSource: "verdict",
+			json:       `"reason_source":"verdict"`,
+		},
+		{
+			name:   "derived from the latest blocked Decision note",
+			status: PRDBlocked,
+			setup: func(m *Manager, prd *PRD) {
+				clearAutomatonReason(m, prd)
+				prd2, _ := m.Store().GetPRD(prd.ID)
+				prd2.Decisions = append(prd2.Decisions, Decision{
+					At: time.Now(), Kind: "blocked",
+					Actor: "autonomous", Note: "token budget exhausted",
+				})
+				_ = m.Store().SavePRD(prd2)
+			},
+			wantReason: "token budget exhausted",
+			wantSource: "verdict",
+		},
+		{
+			name:   "derived from the blocked task's error",
+			status: PRDBlocked,
+			setup: func(m *Manager, prd *PRD) {
+				clearAutomatonReason(m, prd)
+				setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
+					ID: "t1", Title: "do the work", Status: TaskBlocked,
+					Error: "capacity lease refused", UpdatedAt: time.Now(),
+				})
+			},
+			wantReason: "capacity lease refused",
+			wantSource: "task_error",
+		},
+		{
+			name:   "derived from the task's session end reason",
+			status: PRDBlocked,
+			setup: func(m *Manager, prd *PRD) {
+				clearAutomatonReason(m, prd)
+				setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
+					ID: "t1", Title: "do the work", Status: TaskFailed,
+					SessionEndReason: "operator reset the task", UpdatedAt: time.Now(),
+				})
+			},
+			wantReason: "operator reset the task",
+			wantSource: "task_error",
+		},
+		{
+			name:   "derived from a task held for review",
+			status: PRDBlocked,
+			setup: func(m *Manager, prd *PRD) {
+				clearAutomatonReason(m, prd)
+				setBlockedTask(t, m, prd.ID, "s1", "t9", Task{
+					ID: "t9", Title: "the broken piece", Status: TaskReviewNeeded,
+					UpdatedAt: time.Now(),
+				})
+			},
+			wantReason: "task the broken piece (id t9) is held, waiting for the operator to retry or cancel it",
+			wantSource: "task_review",
+		},
+		{
+			name:   "a held task with an error reports the error",
+			status: PRDBlocked,
+			setup: func(m *Manager, prd *PRD) {
+				clearAutomatonReason(m, prd)
+				setBlockedTask(t, m, prd.ID, "s1", "t9", Task{
+					ID: "t9", Title: "the broken piece", Status: TaskReviewNeeded,
+					Error: "no disk", UpdatedAt: time.Now(),
+				})
+			},
+			wantReason: "no disk",
+			wantSource: "task_error",
+		},
+		{
+			name:   "no facts on the automaton at all",
+			status: PRDBlocked,
+			setup: func(m *Manager, prd *PRD) {
+				clearAutomatonReason(m, prd)
+			},
+			wantReason: "",
+			wantSource: "none",
+			json:       `"reason_source":"none"`,
+			notjson:    `"blocked_reason"`,
+		},
+		{
+			name:     "a failed record never sets the field",
+			status:   PRDFailed,
+			setup:    func(m *Manager, prd *PRD) { clearAutomatonReason(m, prd) },
+			wantReason: "",
+			wantSource: "",
+			notjson:    `"reason_source"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, prd := triageSetup(t, tc.status)
+			if tc.setup != nil {
+				tc.setup(m, prd)
+			}
+			updated, ok := m.Store().GetPRD(prd.ID)
+			if !ok {
+				t.Fatalf("GetPRD: not found")
+			}
+			rec := m.BuildTriageRecordFor(updated)
+			if rec == nil {
+				t.Fatalf("BuildTriageRecordFor returned nil for a %s PRD", tc.status)
+			}
+			if rec.BlockedReason != tc.wantReason {
+				t.Errorf("BlockedReason = %q, want %q", rec.BlockedReason, tc.wantReason)
+			}
+			if rec.ReasonSource != tc.wantSource {
+				t.Errorf("ReasonSource = %q, want %q", rec.ReasonSource, tc.wantSource)
+			}
+			if tc.json != "" || tc.notjson != "" {
+				b, err := json.Marshal(rec)
+				if err != nil {
+					t.Fatalf("json.Marshal: %v", err)
+				}
+				if tc.json != "" && !strings.Contains(string(b), tc.json) {
+					t.Errorf("JSON %s missing %q", b, tc.json)
+				}
+				if tc.notjson != "" && strings.Contains(string(b), tc.notjson) {
+					t.Errorf("JSON %s must not contain %q", b, tc.notjson)
+				}
+			}
+		})
+	}
+}
+
 func TestTriageEndReasonFromTaskField(t *testing.T) {
 	m, prd := triageSetup(t, PRDBlocked)
 	tk := setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
