@@ -7994,3 +7994,25 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .session-card-tags:not(.open) { display: inline-flex; flex-wrap: nowrap; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; }
   .session-card-tags:not(.open) .tag-chip { white-space: nowrap; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* Task routing: Settings card table and the Automaton detail routing column. */
+.task-routing-table-wrap { max-width: 100%; overflow-x: auto; }
+.task-routing-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.task-routing-table th, .task-routing-table td { padding: 3px 4px; text-align: left; vertical-align: top; }
+.task-routing-select { font-size: 12px; max-width: 100%; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; }
+.task-routing-row-invalid { outline: 1px solid var(--error); }
+.task-routing-row-error { color: var(--error); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+.task-routing-preview-wrap { max-width: 100%; overflow-x: auto; }
+.prd-task-routing-col { font-size: 10px; color: var(--text2); max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prd-task-routing-line { display: none; font-size: 11px; color: var(--text2); padding: 0 8px 4px 28px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .task-routing-table thead { display: none; }
+  .task-routing-table, .task-routing-table tbody, .task-routing-table tr, .task-routing-table th, .task-routing-table td { display: block; width: 100%; box-sizing: border-box; }
+  .task-routing-table tr { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; padding: 4px; }
+  .task-routing-table td::before { content: attr(data-label); display: block; font-size: 10px; color: var(--text2); }
+  .task-routing-select { width: 100%; margin-bottom: 2px; }
+}
+@media (max-width: 520px) {
+  .prd-task-routing-col { display: none; }
+  .prd-task-routing-line { display: block; }
+}

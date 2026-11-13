@@ -14300,6 +14300,13 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_task_routing', t('task_routing_title'))}
+          <div id="settings-sec-automata_task_routing" style="${secContent('automata_task_routing')}">
+            <div id="automataTaskRoutingPanel" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
+
         <!-- BL221 parity — Type Registry card (Settings → Automata) -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_type_registry', t('automata_type_registry_title')||'Type Registry', 'architecture.md')}
@@ -14424,6 +14431,7 @@ function renderSettingsView() {
   loadWorkloadRolesPanel();
   loadAutomataTagRegistryPanel();
   if (document.getElementById('automataPlanningRoutingPanel')) loadAutomataPlanningRoutingPanel();
+  if (document.getElementById('automataTaskRoutingPanel')) loadAutomataTaskRoutingPanel();
   loadOrchestratorPanel();
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
@@ -19462,10 +19470,11 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.modelRoutingPinBadgeHtml(task)}${window.uncommittedWorkChipHtml(task)}${window.protectedPathsChipHtml(task)}${window.requestWatchChipHtml(task.model_request)}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${readOnlyBadge}${mergeStateBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
+      ${llmBadge}${window.taskRoutingDetailChipHtml(window.taskRoutingForTask(prd.id, taskID))}${taskKindBadge}${smokeVkBadge}${projDirBadge}${readOnlyBadge}${mergeStateBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
+    ${window.taskRoutingDetailLineHtml(window.taskRoutingForTask(prd.id, taskID))}
     ${taskMergeBlockedLineHtml(task)}
     ${expandedBody}
   </div>`;
@@ -31735,6 +31744,7 @@ function _renderDetailContent(prd) {
   window._fileChipBaseDir = prd.project_dir || '';
   _automataDetailPRD = prd;  // cache for in-place tab switching
   const id = prd.id || '';
+  window.taskRoutingEnsure(id, () => { if (_automataDetailId === id && _automataDetailPRD && _automataDetailPRD.id === id) _renderDetailContent(_automataDetailPRD); });
   const title = prd.title || '(no title)';
   const status = prd.status || 'draft';
   const type = prd.type || '';
@@ -58323,6 +58333,380 @@ window.planningRoutingRunTest = function() {
   return apiFetch('/api/autonomous/planning-routing/test', { method: 'POST', body: JSON.stringify(body) })
     .then(d => { const el = document.getElementById('prtResult'); if (el) el.innerHTML = window.planningRoutingDecisionHtml(d); })
     .catch(e => { const el = document.getElementById('prtResult'); if (el) el.innerHTML = `<div style="color:var(--error);font-size:12px;">${escHtml(t('planning_routing_test_failed', [String((e && e.message) || e)]))}</div>`; });
+};
+
+// ── Task routing card (Settings → Automata) ─────────────────────────────────
+// Edits the task-type routing table: the enable toggle, the active profile
+// (switching never changes running tasks), save/delete/export/import of
+// profiles, one editable row per task type (worker, verification, effort,
+// second choice) and a preview that asks the dry run what the active profile
+// would assign to a draft Automaton. Backend and model fields are selects fed
+// by the LLM registry. Server validation errors are shown inline on the row
+// they name. Every string goes through t() with a task_routing_ key.
+let _taskRoutingView = null;
+let _taskRoutingDraft = null;
+let _taskRoutingCtx = { backends: [], modelsByBackend: {}, drafts: [] };
+let _taskRoutingProblems = [];
+
+const _TR_ROW_FIELDS = ['worker_backend', 'worker_model', 'verification_backend', 'verification_model', 'effort'];
+const _TR_EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+function _trClone(o) { return JSON.parse(JSON.stringify(o || {})); }
+
+// taskRoutingErrorParts splits an apiFetch error into a message and the list
+// of problems the server named (the body is {"error":..., "problems":[...]}).
+window.taskRoutingErrorParts = function(e) {
+  const raw = String((e && e.message) || e || '');
+  try {
+    const b = JSON.parse(raw);
+    if (b && typeof b === 'object') {
+      return { message: String(b.error || raw), problems: Array.isArray(b.problems) ? b.problems.map(String) : [] };
+    }
+  } catch (_) { /* plain text */ }
+  return { message: raw, problems: [] };
+};
+
+// _trProblemsFor returns the problems that name this task type's row.
+function _trProblemsFor(type, problems) {
+  const needle = 'row ' + JSON.stringify(type) + ':';
+  return (problems || []).filter(p => String(p).indexOf(needle) >= 0);
+}
+
+function _trOptions(values, current, blankKey) {
+  const seen = new Set();
+  const opts = [`<option value=""${current ? '' : ' selected'}>${escHtml(t(blankKey))}</option>`];
+  const add = v => {
+    if (!v || seen.has(v)) return;
+    seen.add(v);
+    opts.push(`<option value="${escHtml(v)}"${v === current ? ' selected' : ''}>${escHtml(v)}</option>`);
+  };
+  (values || []).forEach(add);
+  add(current); // a value the registry no longer lists stays visible, so the error can name it
+  return opts.join('');
+}
+
+function _trSelect(type, field, value, values, blankKey, labelKey) {
+  return `<select class="task-routing-select" data-type="${escHtml(type)}" data-field="${escHtml(field)}" aria-label="${escHtml(t(labelKey))}" ` +
+    `onchange="taskRoutingEditField(this.getAttribute('data-type'),this.getAttribute('data-field'),this.value)">` +
+    _trOptions(values, value, blankKey) + `</select>`;
+}
+
+function _trModelsFor(ctx, backend) {
+  return (ctx.modelsByBackend && ctx.modelsByBackend[backend]) || [];
+}
+
+window.taskRoutingRowHtml = function(type, row, ctx, problems) {
+  row = row || {};
+  ctx = ctx || {};
+  const sc = row.second_choice || {};
+  const cell = (labelKey, inner) => `<td class="task-routing-cell" data-label="${escHtml(t(labelKey))}">${inner}</td>`;
+  const errs = _trProblemsFor(type, problems);
+  const errHtml = errs.length
+    ? `<div class="task-routing-row-error" role="alert">${errs.map(p => escHtml(String(p).replace(/^task_routing: profile "[^"]*" row "[^"]*": /, ''))).join('<br>')}</div>` : '';
+  return `<tr class="task-routing-row${errs.length ? ' task-routing-row-invalid' : ''}" data-type="${escHtml(type)}">` +
+    `<th scope="row" class="task-routing-type" data-label="${escHtml(t('task_routing_col_type'))}">${escHtml(type)}${errHtml}</th>` +
+    cell('task_routing_col_worker_backend', _trSelect(type, 'worker_backend', row.worker_backend || '', ctx.backends, 'task_routing_inherit', 'task_routing_col_worker_backend')) +
+    cell('task_routing_col_worker_model', _trSelect(type, 'worker_model', row.worker_model || '', _trModelsFor(ctx, row.worker_backend), 'task_routing_default_model', 'task_routing_col_worker_model')) +
+    cell('task_routing_col_verification_backend', _trSelect(type, 'verification_backend', row.verification_backend || '', ctx.backends, 'task_routing_follow_policy', 'task_routing_col_verification_backend')) +
+    cell('task_routing_col_verification_model', _trSelect(type, 'verification_model', row.verification_model || '', _trModelsFor(ctx, row.verification_backend), 'task_routing_default_model', 'task_routing_col_verification_model')) +
+    cell('task_routing_col_effort', _trSelect(type, 'effort', row.effort || '', _TR_EFFORTS.filter(Boolean), 'task_routing_default_effort', 'task_routing_col_effort')) +
+    cell('task_routing_col_second_choice',
+      _trSelect(type, 'second_backend', sc.backend || '', ctx.backends, 'task_routing_no_second', 'task_routing_col_second_choice') +
+      _trSelect(type, 'second_model', sc.model || '', _trModelsFor(ctx, sc.backend), 'task_routing_default_model', 'task_routing_col_second_choice')) +
+    cell('task_routing_col_premium', `<input type="checkbox" class="task-routing-premium" data-type="${escHtml(type)}" ${row.allow_premium_model ? 'checked' : ''} ` +
+      `aria-label="${escHtml(t('task_routing_col_premium'))}" onchange="taskRoutingEditField(this.getAttribute('data-type'),'allow_premium_model',this.checked)">`) +
+    `</tr>`;
+};
+
+window.taskRoutingTableHtml = function(types, rows, ctx, problems) {
+  const th = k => `<th scope="col">${escHtml(t(k))}</th>`;
+  return `<div class="task-routing-table-wrap"><table class="task-routing-table">` +
+    `<thead><tr>${th('task_routing_col_type')}${th('task_routing_col_worker_backend')}${th('task_routing_col_worker_model')}` +
+    `${th('task_routing_col_verification_backend')}${th('task_routing_col_verification_model')}${th('task_routing_col_effort')}` +
+    `${th('task_routing_col_second_choice')}${th('task_routing_col_premium')}</tr></thead><tbody>` +
+    (types || []).map(ty => window.taskRoutingRowHtml(ty, (rows || {})[ty], ctx, problems)).join('') +
+    `</tbody></table></div>`;
+};
+
+window.taskRoutingProfileBarHtml = function(view) {
+  const v = view || {};
+  const names = Object.keys(v.profiles || {}).sort();
+  const opts = names.map(n => `<option value="${escHtml(n)}"${n === v.active_profile ? ' selected' : ''}>${escHtml(n)}</option>`).join('');
+  const btn = (cls, key, fn) => `<button class="btn-secondary ${cls}" style="font-size:12px;" onclick="${fn}">${escHtml(t(key))}</button>`;
+  const inp = 'font-size:12px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);min-width:0;';
+  return `<div class="task-routing-profile-bar" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0;">` +
+    `<label style="font-size:12px;">${escHtml(t('task_routing_profile'))} ` +
+    `<select id="trProfile" class="task-routing-profile-select" style="${inp}" onchange="taskRoutingSwitchProfile(this.value)">${opts}</select></label>` +
+    `<input id="trProfileName" type="text" placeholder="${escHtml(t('task_routing_profile_name'))}" aria-label="${escHtml(t('task_routing_profile_name'))}" style="${inp}flex:1;min-width:90px;">` +
+    btn('task-routing-save-profile', 'task_routing_save_profile', 'taskRoutingSaveProfileAs()') +
+    btn('task-routing-delete-profile', 'task_routing_delete_profile', 'taskRoutingDeleteProfile()') +
+    btn('task-routing-export', 'task_routing_export', 'taskRoutingExport()') +
+    btn('task-routing-import', 'task_routing_import', "document.getElementById('trImportFile').click()") +
+    `<input id="trImportFile" type="file" accept="application/json,.json" style="display:none" onchange="taskRoutingImportFile(this)">` +
+    `</div>` +
+    `<div class="task-routing-switch-note" style="font-size:11px;color:var(--text2);">${escHtml(t('task_routing_switch_note'))}</div>`;
+};
+
+window.taskRoutingPreviewHtml = function(resp) {
+  const entries = (resp && Array.isArray(resp.entries)) ? resp.entries : [];
+  if (!entries.length) return `<div class="task-routing-preview-empty" style="font-size:12px;color:var(--text2);">${escHtml(t('task_routing_preview_empty'))}</div>`;
+  const llm = r => r ? [r.worker_backend, r.worker_model].filter(Boolean).join(':') : '';
+  const rows = entries.map(e => {
+    const res = e.result || {};
+    const verdict = e.would_apply
+      ? escHtml(llm(res) || t('task_routing_none')) + (e.second_choice_used ? ' ' + escHtml(t('task_routing_second_used')) : '')
+      : escHtml(e.reason || t('task_routing_none'));
+    return `<tr class="task-routing-preview-row" data-task="${escHtml(e.task_id || '')}">` +
+      `<td>${escHtml(e.title || e.task_id || '')}</td><td>${escHtml(e.task_type || '')}</td>` +
+      `<td>${escHtml(e.row || t('task_routing_none'))}</td><td>${verdict}</td></tr>`;
+  }).join('');
+  const th = k => `<th scope="col" style="text-align:left;padding:2px 6px;">${escHtml(t(k))}</th>`;
+  return `<div class="task-routing-preview-wrap"><table class="task-routing-preview" style="font-size:12px;border-collapse:collapse;width:100%;">` +
+    `<thead><tr>${th('task_routing_preview_task')}${th('task_routing_col_type')}${th('task_routing_preview_row')}${th('task_routing_preview_assign')}</tr></thead>` +
+    `<tbody>${rows}</tbody></table></div>`;
+};
+
+window.taskRoutingPreviewFormHtml = function(drafts) {
+  const list = Array.isArray(drafts) ? drafts : [];
+  const opts = list.map(d => `<option value="${escHtml(d.id)}">${escHtml(d.title || d.id)}</option>`).join('');
+  const inp = 'font-size:12px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);min-width:0;';
+  return `<div class="task-routing-preview-form" style="margin-top:10px;"><div style="font-weight:600;">${escHtml(t('task_routing_preview_title'))}</div>` +
+    `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0;">` +
+    `<select id="trPreviewAutomaton" aria-label="${escHtml(t('task_routing_preview_pick'))}" style="${inp}flex:1;min-width:140px;max-width:100%;">` +
+    `<option value="">${escHtml(t('task_routing_preview_pick'))}</option>${opts}</select>` +
+    `<button class="btn-secondary task-routing-preview-run" style="font-size:12px;" onclick="taskRoutingPreview()">${escHtml(t('task_routing_preview_run'))}</button></div>` +
+    `<div id="trPreviewResult" aria-live="polite"></div></div>`;
+};
+
+window.taskRoutingCardHtml = function(view, ctx, draft, problems) {
+  const v = (view && typeof view === 'object') ? view : {};
+  const c = ctx || {};
+  const val = v.validation || {};
+  const all = (problems && problems.length ? problems : (val.valid === false ? (val.problems || []) : []));
+  const rows = draft || (v.profiles || {})[v.active_profile] || {};
+  const general = all.filter(p => String(p).indexOf(' row ') < 0);
+  return `<div class="task-routing-card" style="min-width:0;">` +
+    `<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">${escHtml(t('task_routing_desc'))}</div>` +
+    `<label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="trEnabled" ${v.enabled ? 'checked' : ''} onchange="taskRoutingToggle()"> ${escHtml(t('task_routing_enabled'))}</label>` +
+    (general.length ? `<div class="task-routing-invalid" role="alert" style="color:var(--error);font-size:12px;">${general.map(p => escHtml(String(p))).join('<br>')}</div>` : '') +
+    window.taskRoutingProfileBarHtml(v) +
+    window.taskRoutingTableHtml(v.task_types || Object.keys(rows).sort(), rows, c, all) +
+    `<div style="margin-top:6px;"><button class="btn-secondary task-routing-save" style="font-size:12px;" onclick="taskRoutingSaveTable()">${escHtml(t('task_routing_save'))}</button></div>` +
+    window.taskRoutingPreviewFormHtml(c.drafts) + `</div>`;
+};
+
+function _trRender() {
+  const el = document.getElementById('automataTaskRoutingPanel');
+  if (el && _taskRoutingView) el.innerHTML = window.taskRoutingCardHtml(_taskRoutingView, _taskRoutingCtx, _taskRoutingDraft, _taskRoutingProblems);
+}
+
+// _trLoadContext reads the LLM registry (names and models) and the draft
+// Automata the preview can pick from. Any failure leaves that list empty.
+function _trLoadContext() {
+  return Promise.all([
+    apiFetch('/api/llms').catch(() => null),
+    apiFetch('/api/llm/claude/models').catch(() => null),
+    apiFetch('/api/ollama/models').catch(() => null),
+    apiFetch('/api/autonomous/prds').catch(() => null),
+  ]).then(([res, claude, ollama, prds]) => {
+    const llms = (res && Array.isArray(res.llms)) ? res.llms : (Array.isArray(res) ? res : []);
+    const claudeModels = claude ? [].concat((claude.aliases || []).map(a => a.value), (claude.full_names || []).map(a => a.value)).filter(Boolean) : [];
+    const ollamaModels = Array.isArray(ollama) ? ollama.map(String) : [];
+    const backends = [];
+    const byBackend = {};
+    llms.filter(l => l && l.name && !l.disabled && l.kind !== 'shell').forEach(l => {
+      backends.push(l.name);
+      let ms = l.model ? [l.model] : [];
+      if (l.kind === 'claude-code') ms = ms.concat(claudeModels);
+      if (l.kind === 'ollama') ms = ms.concat(ollamaModels);
+      byBackend[l.name] = Array.from(new Set(ms));
+    });
+    const list = Array.isArray(prds) ? prds : (prds && Array.isArray(prds.prds) ? prds.prds : []);
+    const drafts = list.filter(p => p && p.status === 'draft' && !p.is_template).map(p => ({ id: p.id, title: p.title || p.id }));
+    _taskRoutingCtx = { backends: backends.sort(), modelsByBackend: byBackend, drafts };
+  });
+}
+
+function loadAutomataTaskRoutingPanel() {
+  const panel = document.getElementById('automataTaskRoutingPanel');
+  if (!panel) return Promise.resolve();
+  return Promise.all([apiFetch('/api/autonomous/task-routing'), _trLoadContext()]).then(([view]) => {
+    _taskRoutingView = view;
+    _taskRoutingDraft = _trClone((view.profiles || {})[view.active_profile]);
+    _taskRoutingProblems = [];
+    _trRender();
+  }).catch(e => {
+    const el = document.getElementById('automataTaskRoutingPanel');
+    if (el) el.innerHTML = `<div class="task-routing-failed" style="color:var(--error);">${escHtml(t('task_routing_failed', [window.taskRoutingErrorParts(e).message]))}</div>`;
+  });
+}
+
+// _trFail shows a failed write: the toast, and the named problems inline.
+function _trFail(e) {
+  const p = window.taskRoutingErrorParts(e);
+  _taskRoutingProblems = p.problems.length ? p.problems : [p.message];
+  showToast(t('task_routing_save_failed', [p.message]), 'error', 4000);
+  _trRender();
+}
+
+function _trWholeTable(extra) {
+  const cur = _taskRoutingView || {};
+  return Object.assign({ enabled: !!cur.enabled, active_profile: cur.active_profile || '', profiles: _trClone(cur.profiles) }, extra || {});
+}
+
+function _trPut(table, okKey) {
+  return apiFetch('/api/autonomous/task-routing', { method: 'PUT', body: JSON.stringify(table) })
+    .then(() => { showToast(t(okKey || 'task_routing_saved'), 'success', 2000); return loadAutomataTaskRoutingPanel(); })
+    .catch(_trFail);
+}
+
+window.taskRoutingToggle = function() {
+  const en = document.getElementById('trEnabled');
+  return _trPut(_trWholeTable({ enabled: !!(en && en.checked) }));
+};
+
+window.taskRoutingEditField = function(type, field, value) {
+  if (!_taskRoutingDraft) return;
+  const row = _taskRoutingDraft[type] = _taskRoutingDraft[type] || {};
+  if (field === 'allow_premium_model') {
+    if (value) row.allow_premium_model = true; else delete row.allow_premium_model;
+    return;
+  }
+  if (field === 'second_backend' || field === 'second_model') {
+    const sc = row.second_choice = row.second_choice || {};
+    sc[field === 'second_backend' ? 'backend' : 'model'] = value || '';
+    if (!sc.backend && !sc.model) delete row.second_choice;
+  } else if (_TR_ROW_FIELDS.indexOf(field) >= 0) {
+    if (value) row[field] = value; else delete row[field];
+  }
+  // A backend change re-lists its models; the chosen model is cleared so a
+  // stale pairing cannot be saved by accident.
+  if (field === 'worker_backend') delete row.worker_model;
+  if (field === 'verification_backend') delete row.verification_model;
+  if (field === 'second_backend' && row.second_choice) delete row.second_choice.model;
+  _trRender();
+};
+
+window.taskRoutingSaveTable = function() {
+  const cur = _taskRoutingView || {};
+  const profiles = _trClone(cur.profiles);
+  profiles[cur.active_profile] = _trClone(_taskRoutingDraft);
+  return _trPut(_trWholeTable({ profiles }));
+};
+
+window.taskRoutingSwitchProfile = function(name) {
+  return apiFetch('/api/autonomous/task-routing/active-profile', { method: 'PUT', body: JSON.stringify({ name }) })
+    .then(() => { showToast(t('task_routing_switched', [String(name)]), 'success', 2500); return loadAutomataTaskRoutingPanel(); })
+    .catch(e => { _trFail(e); return loadAutomataTaskRoutingPanel(); });
+};
+
+window.taskRoutingSaveProfileAs = function() {
+  const inp = document.getElementById('trProfileName');
+  const name = inp ? String(inp.value || '').trim() : '';
+  if (!name) { showToast(t('task_routing_profile_name_required'), 'error', 3000); return Promise.resolve(); }
+  return apiFetch('/api/autonomous/task-routing/profiles', { method: 'POST', body: JSON.stringify({ name, rows: _trClone(_taskRoutingDraft) }) })
+    .then(() => { showToast(t('task_routing_profile_saved', [name]), 'success', 2500); return loadAutomataTaskRoutingPanel(); })
+    .catch(_trFail);
+};
+
+window.taskRoutingDeleteProfile = function() {
+  const cur = _taskRoutingView || {};
+  const name = cur.active_profile;
+  if (!name) return Promise.resolve();
+  const run = () => apiFetch('/api/autonomous/task-routing/profiles/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(() => { showToast(t('task_routing_profile_deleted', [name]), 'success', 2500); return loadAutomataTaskRoutingPanel(); })
+    .catch(_trFail);
+  if (typeof showConfirmModal === 'function') { showConfirmModal(t('task_routing_delete_confirm', [name]), run); return Promise.resolve(); }
+  return run();
+};
+
+window.taskRoutingExport = function() {
+  const cur = _taskRoutingView || {};
+  const name = cur.active_profile;
+  if (!name) return Promise.resolve();
+  return apiFetch('/api/autonomous/task-routing/profiles/' + encodeURIComponent(name) + '/export')
+    .then(doc => {
+      const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'task-routing-' + String(name).replace(/[^A-Za-z0-9._-]+/g, '_') + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    })
+    .catch(e => showToast(t('task_routing_export_failed', [window.taskRoutingErrorParts(e).message]), 'error', 4000));
+};
+
+window.taskRoutingImportFile = function(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return Promise.resolve();
+  return file.text().then(text => {
+    // overwrite stays off: a clash with an existing profile is reported, never silent.
+    return apiFetch('/api/autonomous/task-routing/profiles/import', { method: 'POST', body: text });
+  }).then(() => { showToast(t('task_routing_imported'), 'success', 2500); input.value = ''; return loadAutomataTaskRoutingPanel(); })
+    .catch(e => { if (input) input.value = ''; _trFail(e); });
+};
+
+window.taskRoutingPreview = function() {
+  const sel = document.getElementById('trPreviewAutomaton');
+  const id = sel ? String(sel.value || '') : '';
+  const out = document.getElementById('trPreviewResult');
+  if (!id) { if (out) out.innerHTML = `<div style="font-size:12px;color:var(--text2);">${escHtml(t('task_routing_preview_pick'))}</div>`; return Promise.resolve(); }
+  const cur = _taskRoutingView || {};
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/task-routing/dry-run', { method: 'POST', body: JSON.stringify({ profile: cur.active_profile || '' }) })
+    .then(d => { const el = document.getElementById('trPreviewResult'); if (el) el.innerHTML = window.taskRoutingPreviewHtml(d); })
+    .catch(e => { const el = document.getElementById('trPreviewResult'); if (el) el.innerHTML = `<div style="color:var(--error);font-size:12px;">${escHtml(t('task_routing_preview_failed', [window.taskRoutingErrorParts(e).message]))}</div>`; });
+};
+
+// ── Automaton detail: task routing column ────────────────────────────────────
+// One read per Automaton (cached for a short while, never polled by a timer).
+// A task shows its task type and the row that decided its LLM, or the reason
+// none did. The wide-screen chip sits in the task header; on phones it is
+// hidden and the same text shows as a line under the task title.
+window._taskRoutingByAutomaton = window._taskRoutingByAutomaton || {};
+window._taskRoutingInflight = window._taskRoutingInflight || {};
+
+window.taskRoutingDetailText = function(view) {
+  if (!view || !view.task_type) return '';
+  const decided = view.row
+    ? t('task_routing_detail_row', [String(view.row)])
+    : t('task_routing_detail_reason', [String(view.reason || t('task_routing_none'))]);
+  return String(view.task_type) + ' · ' + decided;
+};
+
+window.taskRoutingDetailChipHtml = function(view) {
+  const txt = window.taskRoutingDetailText(view);
+  return txt ? `<span class="prd-task-routing-col" title="${escHtml(txt)}">${escHtml(txt)}</span>` : '';
+};
+
+window.taskRoutingDetailLineHtml = function(view) {
+  const txt = window.taskRoutingDetailText(view);
+  return txt ? `<div class="prd-task-routing-line">${escHtml(txt)}</div>` : '';
+};
+
+window.taskRoutingForTask = function(prdID, taskID) {
+  const e = window._taskRoutingByAutomaton[prdID];
+  return e && e.byTask ? e.byTask[taskID] : undefined;
+};
+
+window.taskRoutingEnsure = function(prdID, rerender) {
+  if (!prdID || window._taskRoutingInflight[prdID]) return Promise.resolve();
+  const have = window._taskRoutingByAutomaton[prdID];
+  if (have && Date.now() - have.at < 15000) return Promise.resolve();
+  window._taskRoutingInflight[prdID] = true;
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/task-routing')
+    .then(d => {
+      const byTask = {};
+      ((d && d.tasks) || []).forEach(v => { if (v && v.task_id) byTask[v.task_id] = v; });
+      const sig = JSON.stringify(byTask);
+      const changed = !have || have.sig !== sig;
+      window._taskRoutingByAutomaton[prdID] = { at: Date.now(), byTask, sig };
+      if (changed && typeof rerender === 'function') rerender();
+    })
+    .catch(() => { window._taskRoutingByAutomaton[prdID] = { at: Date.now(), byTask: {}, sig: '' }; })
+    .then(() => { delete window._taskRoutingInflight[prdID]; });
 };
 
 // ── Tag registry settings panel ──────────────────────────────────────────────
