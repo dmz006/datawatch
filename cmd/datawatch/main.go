@@ -4671,6 +4671,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			RestartPolicy:                    acfgIn.RestartPolicy,
 			RestartQuietTimeoutSeconds:       acfgIn.RestartQuietTimeoutSeconds,
 			RestartOnTimeout:                 acfgIn.RestartOnTimeout,
+			GateDrainMinutes:                 acfgIn.GateDrainMinutes,
 			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,

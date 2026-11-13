@@ -268,6 +268,10 @@ type Config struct {
 	// round-trip as 0.
 	ScriptGateTimeoutSeconds int    `json:"script_gate_timeout_seconds"`
 	ProjectGateCommand       string `json:"project_gate_command,omitempty"`
+	// GateDrainMinutes mirrors autonomous.gate_drain_minutes in config: the
+	// minutes a graceful restart waits for running final gates. No omitempty:
+	// an explicit 0 (do not wait) must round-trip as 0.
+	GateDrainMinutes int `json:"gate_drain_minutes"`
 	// JudgeStrongBackend mirrors autonomous.judge_strong_backend in config:
 	// the strong judge backend a large diff is routed to first, empty = the
 	// last entry of judge_policy (see config.JudgeSizeStrongFirst). No
@@ -1105,6 +1109,7 @@ func DefaultConfig() Config {
 		MaxConcurrentTasks:       1,
 		MaxEnginesPerNode:        1,
 		ScriptGateTimeoutSeconds: config.DefaultScriptGateTimeoutSeconds,
+		GateDrainMinutes:         config.DefaultGateDrainMinutes,
 		GateDisagreement:         "warn",
 		FailureEscalation:        defaultFailureEscalationPolicy(),
 		AutoFixRetries:           1,
