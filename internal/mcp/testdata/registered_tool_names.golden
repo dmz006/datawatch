@@ -587,6 +587,16 @@ tailscale_acl_push
 tailscale_auth_key
 tailscale_nodes
 tailscale_status
+task_routing_automaton
+task_routing_dry_run
+task_routing_get
+task_routing_profile_activate
+task_routing_profile_delete
+task_routing_profile_export
+task_routing_profile_import
+task_routing_profile_list
+task_routing_profile_save
+task_routing_set
 telemetry_get
 telemetry_list
 template_delete
