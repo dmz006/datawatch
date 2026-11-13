@@ -211,7 +211,14 @@ type ProgressSource interface {
 // source is the only place records come from, so tests pass a fake.
 func CollectProgress(src ProgressSource, backlog []BacklogRow, windows []InactiveWindow, opts ProgressOptions) ProgressMetrics {
 	var prds []*PRD
-	if src != nil {
+	if es, ok := src.(interface{ ProgressEntries() []SummaryEntry }); ok && src != nil {
+		// The summary index answers the progress counts: no full record is read.
+		entries := es.ProgressEntries()
+		prds = make([]*PRD, 0, len(entries))
+		for _, e := range entries {
+			prds = append(prds, e.ProgressRecord())
+		}
+	} else if src != nil {
 		prds = src.ListPRDs()
 	}
 	if len(opts.Projects) > 0 && opts.Automations == nil {

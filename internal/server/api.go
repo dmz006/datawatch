@@ -581,6 +581,8 @@ type Server struct {
 	// progressNow is the clock the progress routes read; nil means time.Now.
 	// Tests set it to a fixed time.
 	progressNow func() time.Time
+	// rollup holds the project roll-up cache, points memo and merge proof cache.
+	rollup rollupState
 	// timelineNow is the clock the timeline route reads; nil means time.Now.
 	// Tests set it to a fixed time.
 	timelineNow func() time.Time

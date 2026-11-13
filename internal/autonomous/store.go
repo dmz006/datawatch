@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,6 +29,9 @@ type Store struct {
 	prds map[string]*PRD
 	// sumIdx and rev back the summary index (summary_index.go); both are
 	// guarded by mu.
+	// listCalls counts ListPRDs calls, so a test can prove a read stayed on
+	// the summary index.
+	listCalls atomic.Uint64
 	sumIdx    map[string]SummaryEntry
 	rev       uint64
 	stories   map[string]*Story // keyed by Story.ID
@@ -387,8 +391,13 @@ func deepCopyValue(dst, src reflect.Value) {
 	}
 }
 
+// ListPRDCalls reports how many times ListPRDs has been called. A read that
+// the summary index answers must leave it unchanged.
+func (s *Store) ListPRDCalls() uint64 { return s.listCalls.Load() }
+
 // ListPRDs returns all PRDs newest-first.
 func (s *Store) ListPRDs() []*PRD {
+	s.listCalls.Add(1)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]*PRD, 0, len(s.prds))

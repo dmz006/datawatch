@@ -209,3 +209,25 @@ func (s *Store) UpdatePRDFieldsForIndexTest(id, title string) error {
 	_, err := s.UpdatePRDFields(id, title, "")
 	return err
 }
+
+// The entry's session ids are the ids Manager.PRDSessionIDs returns, in the
+// same order, once the live decompose lookup is added.
+func TestSummaryIndexSessionIDsMatchPRDSessionIDs(t *testing.T) {
+	f := newCostManager(t)
+	prd := newCostPRD(t, f.m, "s-task", "s-verify", "s-judge")
+	f.m.SetDecomposeSessionsFn(func(id string) []string { return []string{"s-decomp"} })
+	e, ok := f.m.Store().SummaryEntry(prd.ID)
+	if !ok {
+		t.Fatal("no entry")
+	}
+	want := f.m.PRDSessionIDs(prd.ID)
+	got := append(append([]string(nil), e.SessionIDs...), f.m.DecomposeSessionIDs(prd.ID)...)
+	if len(got) != len(want) {
+		t.Fatalf("entry+decompose = %v, PRDSessionIDs = %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order differs at %d: %v vs %v", i, got, want)
+		}
+	}
+}

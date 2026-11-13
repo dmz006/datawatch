@@ -33,7 +33,7 @@ func memberIn(list []rollupAutomaton, id string) bool {
 
 func memberRollup(project, dir string, projects map[string]string, prds []*autonomous.PRD, autos []*autonomous.Automation) projectRollup {
 	return buildProjectRollup(rollupInput{
-		Project: project, Dir: dir, Projects: projects, PRDs: prds, Automations: autos,
+		Project: project, Dir: dir, Projects: projects, Entries: summaryOf(prds), Automations: autos,
 		WindowDays: 7, Now: rollupNow,
 	})
 }
@@ -130,7 +130,7 @@ func TestMembershipLinkOverridesDirectory_History(t *testing.T) {
 	projects, prds := linkOverrideFixture()
 	ids := func(project string) []string {
 		out := buildProjectHistory(historyInput{
-			Project: project, Dir: projects[project], Projects: projects, PRDs: prds,
+			Project: project, Dir: projects[project], Projects: projects, Entries: summaryOf(prds),
 			Limit: 50, Now: historyNow,
 		})
 		var r []string
@@ -231,7 +231,7 @@ func TestRollupMembership_UnassignedHoldsOnlyAutomataNoArcHolds(t *testing.T) {
 	got := buildProjectRollup(rollupInput{
 		Project: "acme", Dir: projects["acme"], Projects: projects,
 		Arcs:        []config.ProjectArc{{AutomationID: "auto-arc"}},
-		PRDs:        []*autonomous.PRD{held, heldByMember, free},
+		Entries:     summaryOf([]*autonomous.PRD{held, heldByMember, free}),
 		Automations: []*autonomous.Automation{{ID: "auto-arc", Members: []autonomous.AutomationMember{{PRDID: "held-member"}}}},
 		WindowDays:  7, Now: rollupNow,
 	})
@@ -253,7 +253,7 @@ func TestMembershipByProjectGrouping_CostAndProgressFollowResolver(t *testing.T)
 	points := map[string]float64{"moved": 3, "plain": 2, "orphan": 5}
 
 	// Cost: points by project follow the same membership as the roll-up.
-	in := rollupInput{Projects: projects, PRDs: prds, Points: points, WindowDays: 7, Now: rollupNow}
+	in := rollupInput{Projects: projects, Entries: summaryOf(prds), Points: points, WindowDays: 7, Now: rollupNow}
 	in.Project, in.Dir = "alpha", projects["alpha"]
 	a := buildProjectRollup(in)
 	in.Project, in.Dir = "beta", projects["beta"]
