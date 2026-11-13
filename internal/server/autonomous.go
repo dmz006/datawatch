@@ -2007,6 +2007,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "cancel_task", "automaton", id, map[string]any{"task_id": req.TaskID, "reason": req.Reason}) // GH#201 Phase 4
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
+	case "tasks":
+		s.handlePRDTasks(w, r)
 	case "children":
 		// BL191 Q4 (v5.9.0) — list child PRDs spawned from this PRD's
 		// SpawnPRD tasks. Empty list when none — same shape as the

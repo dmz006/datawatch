@@ -2723,3 +2723,16 @@ func (a *API) ProjectLinkBackfill(apply bool) ProjectLinkBackfillReport {
 func (a *API) LatestProjectLinkBackfill() (ProjectLinkBackfillReport, bool) {
 	return a.M.LatestProjectLinkBackfill()
 }
+
+// SummaryIndexEntries returns the summary index (no record is read). The
+// server list handlers use it to answer a list without building any record.
+func (a *API) SummaryIndexEntries() []SummaryEntry { return a.M.Store().SummaryEntries() }
+
+// SummaryIndexRevision is the index revision; it moves on every change.
+func (a *API) SummaryIndexRevision() uint64 { return a.M.Store().Revision() }
+
+// NotifyEffectiveForEntry resolves the effective notify-events tier of one
+// indexed Automaton, the same answer ListPRDs gives for its record.
+func (a *API) NotifyEffectiveForEntry(e SummaryEntry) NotifyEventSet {
+	return a.M.ResolveNotifyEvents(&PRD{NotifyEvents: e.NotifyEvents, GuardrailProfile: e.GuardrailProfile})
+}

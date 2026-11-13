@@ -117,6 +117,23 @@ curl -sS "$DW/api/autonomous/prds?limit=50&active=1"
 curl -sS "$DW/api/autonomous/prds?limit=50&cursor=$NEXT"
 ```
 
+## How the Automata list is built, and the heavy form
+
+The default Automata list (and `view=summary`) is built from the in-memory
+summary index alone: each row is read from the index entry, the filters
+(`status`, `active`, `q`, tags, `project`, `shipped`), the cursor and the limit
+run on entries, and no record is read. The ETag includes the index revision, so
+an unchanged list answers `304` before any row is built.
+
+`full=true` is the heavy form: whole records with their stories and tasks. Pass
+`limit` (and optionally `cursor` and the same filters) to get one capped page of
+records, at most 100 per call. `full=true` with no `limit` still returns every
+record for compatibility and can be hundreds of megabytes; prefer the paged form.
+
+Tasks are never part of the list. `GET /api/autonomous/prds/{id}/tasks` returns
+one page of that Automaton's task rows (`limit`, `cursor`, `story`, `status`),
+reading only that Automaton; an unknown Automaton is a 404.
+
 ## Getting the full record
 
 | Want | Endpoint |
