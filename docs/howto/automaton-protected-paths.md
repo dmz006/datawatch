@@ -421,7 +421,8 @@ fixed rule (see
 [the no-checkpoints rule](automata-rules-and-context.md#the-no-checkpoints-rule)):
 the Checkpoints and progress-note sections of `AGENT.md`, `CLAUDE.md` and any
 configured rules file are written only by the human operator and by the
-supervisor, and a worker that needs a progress note writes it to
+supervisor, a worker must not copy those files' Checkpoints section into its
+work or its notes, and a worker that needs a progress note writes it to
 `CHECKPOINT.md` at the root of its working directory instead. `CHECKPOINT.md`
 is one of the daemon's own marker files, not work: new worktrees ignore it and
 the uncommitted-work checks skip it (see
@@ -481,7 +482,9 @@ What this changes for you:
   [checkpoint-entry revert](#the-checkpoint-entry-revert);
 - the Checkpoints sections of `AGENT.md` and `CLAUDE.md` are yours and the
   supervisor's. Workers that add, edit or remove entries there are disobeying
-  their prompt, and the daemon writes only what it strips back out again;
+  their prompt, and the gate's only write to those files is writing the file
+  back with the worker's added entry lines removed (its original bytes minus
+  those lines) — it never adds or rewrites anything else;
 - a **real** change to a protected file is still held exactly as before, and
   the rules review still reads the rules from the base commit. A change that
   mixes the worker's entry with any other edit is not stripped — it is held
