@@ -8074,3 +8074,40 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .prd-task-routing-col { display: none; }
   .prd-task-routing-line { display: block; }
 }
+
+/* ── Cache-first cards (Projects page, Automata list tasks) ──────────────────
+   Each card carries its own state on data-state: loading (skeleton), refreshing
+   (cache-rendered content while the background fetch runs), error (its own row
+   with Retry) or ready. The refreshing marker is always in the markup and shows
+   only while the card is refreshing. */
+.pc-card { position: relative; min-width: 0; }
+.pc-refreshing {
+  display: none; font-size: 11px; color: var(--text2); margin-bottom: 2px;
+}
+.pc-card[data-state="refreshing"] > .pc-refreshing { display: block; }
+.pc-card[data-state="refreshing"] > .pc-body { opacity: 0.75; }
+.pc-skeleton { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+.pc-skeleton-label { font-size: 12px; color: var(--text2); }
+.pc-skeleton-bar {
+  display: block; height: 14px; width: 100%; border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg2) 25%, var(--bg3) 50%, var(--bg2) 75%);
+  background-size: 200% 100%;
+  animation: list-skel-shimmer 1.4s linear infinite;
+}
+.pc-skeleton-bar.short { width: 60%; }
+.pc-error {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  padding: 8px 12px; margin: 4px 0; border-radius: var(--radius-sm);
+  border: 1px solid var(--error); color: var(--error); background: var(--bg2);
+}
+.pc-error-msg { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.pc-retry { flex: 0 0 auto; }
+.automaton-tasks { margin-top: 6px; font-size: 12px; }
+.automaton-tasks-row { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 2px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.automaton-tasks-more { margin-top: 6px; }
+@media (max-width: 520px) {
+  .pc-error { padding: 6px 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-skeleton-bar { animation: none; }
+}

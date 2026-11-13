@@ -101,6 +101,39 @@ carries a truncation marker is refused (400) because it is a copy, not the
 original. The complete output text is one more request away through the
 outputs route described in the paging guide.
 
+## Opening the tab and the Projects page from the cache
+
+Both pages draw from this browser's saved copy first and refresh behind it, so
+they show something in the first moment instead of waiting on the network.
+
+- **What is kept.** The last good first page of the Automata list, and for each
+  project the last good roll-up (for the one-week window), the project list
+  included. Each copy is stored with the version tag the server sent (its
+  `ETag`). Nothing is stored beyond what the page already showed.
+- **What you see.** A cache-drawn row or card carries a small **Refreshing…**
+  line until the background request settles. It is never shown as current
+  while it is still being checked. The page then asks the server again with
+  `If-None-Match`; when nothing changed the answer is a short "not modified"
+  and nothing is redrawn. When something changed, only the rows or cards
+  whose content differs are redrawn, so an open row or a scrolled Gantt keeps
+  its place.
+- **Cards fail on their own.** On a project page the arc cards, Automata
+  without an arc, Automata without a project, totals, throughput, Gantt and
+  Plan each have a skeleton while they load and their own red error line with
+  a **Retry** button when they fail. A slow or failed card never holds the
+  others back; they all start at once. The Automata list does the same for its
+  rows.
+- **Tasks are paged.** Expanding an Automaton on the Gantt, and opening one in
+  the Automata list, read that Automaton's tasks 50 at a time from
+  `GET /api/autonomous/prds/{id}/tasks`, with a **Load more** control. The
+  list and the roll-up views never ask for full records.
+- **When the copy is dropped.** Changing the selected project drops the cached
+  roll-up of the project you left, and a sign-in change (a new token, or the
+  server answering 401) drops every saved copy. If the browser blocks storage,
+  both pages still work; they simply load on each visit.
+
+There is no setting for this.
+
 ## Finished Automata and the archive
 
 A completed, shipped or cancelled Automaton keeps a lot it no longer needs at

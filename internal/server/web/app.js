@@ -1239,7 +1239,8 @@ window._apiPath = _apiPath;
 // forbids a body on 204, so the body can never arrive and r.json() throws
 // "Failed to execute 'json' on 'Response": Unexpected end of JSON input".
 function apiFetch(path, opts = {}) {
-  const token = localStorage.getItem('cs_token') || '';
+  let token = '';
+  try { token = localStorage.getItem('cs_token') || ''; } catch (_) { /* a blocked store means no stored token */ }
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (token) headers['Authorization'] = 'Bearer ' + token;
   // Route through proxy when a specific remote server is selected
@@ -1260,10 +1261,91 @@ function apiFetch(path, opts = {}) {
       // actually proxied to a remote; a LOCAL 401/403 isn't a "this peer
       // lacks a capability" situation and keeps the original generic
       // handling.
+      // An auth reset (a local 401) drops the cached roll-ups and first pages.
+      if (r.status === 401 && !isRemote && typeof _cfDrop === 'function') _cfDrop();
       if (isRemote && (r.status === 401 || r.status === 403 || r.status === 502)) return _fedFetchError(r);
       return r.text().then(t => Promise.reject(new Error(t || r.statusText)));
     });
 }
+
+// ── Cache-first layer (Projects and Automata pages) ─────────────────────────
+// The last good roll-up of a project (per window) and the first page of the
+// Automata list are kept in memory and in localStorage, each tagged with the
+// ETag the server returned (or the body's own revision). A page opens from this
+// cache at once, marks the card "refreshing", then refetches in the background
+// with If-None-Match and repaints only the cards whose data changed. Storage is
+// a convenience: every access is wrapped, and the page renders without it.
+// The cache is dropped on a project change and on an auth reset.
+const CF_PREFIX = 'cs_cf_';
+const CF_MAX = 512 * 1024;
+const _cfMem = new Map();
+// Keys touched this session, so a drop also reaches entries a storage that
+// cannot enumerate would miss.
+const _cfKnown = new Set();
+function _cfKey(kind, name) {
+  return CF_PREFIX + (state.activeServer || 'local') + '_' + kind + (name ? '_' + name : '');
+}
+function _cfGet(key) {
+  if (_cfMem.has(key)) return _cfMem.get(key);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== 'object' || !('data' in o)) return null;
+    _cfMem.set(key, o); _cfKnown.add(key);
+    return o;
+  } catch (e) { return null; }
+}
+function _cfPut(key, tag, data) {
+  const o = { tag: tag || '', data, at: Date.now() };
+  _cfMem.set(key, o); _cfKnown.add(key);
+  try {
+    const s = JSON.stringify(o);
+    if (s.length > CF_MAX) localStorage.removeItem(key); else localStorage.setItem(key, s);
+  } catch (e) { /* storage is optional */ }
+  return o;
+}
+// _cfDrop forgets every cache entry whose key starts with the prefix (all
+// entries when none is given), in memory and in storage.
+function _cfDrop(prefix) {
+  const p = prefix || CF_PREFIX;
+  Array.from(_cfMem.keys()).forEach(k => { if (k.indexOf(p) === 0) _cfMem.delete(k); });
+  const gone = [];
+  _cfKnown.forEach(k => { if (k.indexOf(p) === 0) gone.push(k); });
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf(p) === 0 && gone.indexOf(k) < 0) gone.push(k);
+    }
+  } catch (e) { /* storage may not enumerate */ }
+  gone.forEach(k => { _cfKnown.delete(k); try { localStorage.removeItem(k); } catch (e) { /* storage is optional */ } });
+}
+function _cfDropProject(name) { if (name) _cfDrop(_cfKey('rollup', name + '@')); }
+// A signature of a card's data: equal signatures mean no repaint.
+function _cfSig(v) { try { return JSON.stringify(v); } catch (e) { return String(Math.random()); } }
+// _cfFetch reads a JSON route as {data, tag, unchanged}. It sends
+// If-None-Match when a tag is held for the key; a 304 answers with the held
+// data and unchanged=true. The tag is the ETag header, else the body's
+// revision field. A failure rejects with the server's text.
+function _cfFetch(path, key, o) {
+  const held = key ? _cfGet(key) : null;
+  let token = '';
+  try { token = localStorage.getItem('cs_token') || ''; } catch (_) { /* a blocked store means no stored token */ }
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  if (held && held.tag) headers['If-None-Match'] = held.tag;
+  return fetch(_apiPath(path), Object.assign({}, o || {}, { headers })).then(r => {
+    if (r.status === 304 && held) return { data: held.data, tag: held.tag, unchanged: true };
+    if (!r.ok) return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
+    const hdr = r.headers && typeof r.headers.get === 'function' ? (r.headers.get('ETag') || '') : '';
+    return r.json().then(data => {
+      const rev = data && typeof data === 'object' && !Array.isArray(data) && data.revision != null ? String(data.revision) : '';
+      const tag = hdr || rev;
+      return { data, tag, unchanged: !!(held && tag && held.tag === tag) };
+    });
+  });
+}
+window._cfDrop = _cfDrop;
 
 // ── listLoader: shared load-state helper for list views ─────────────────────
 // listLoader({key, url, render, el, pollMs, timeoutMs, metaExtra}) owns the whole
@@ -1326,6 +1408,14 @@ function listLoader(opts) {
   const target = () => (typeof opts.el === 'string') ? document.getElementById(opts.el) : opts.el;
   const staleOnly = opts.ageDisplay === 'stale-only';
   const isStale = () => st.hasData && (st.error !== '' || (now() - st.at) > (staleOnly ? LIST_STALE_ONLY_MS : LIST_STALE_MS));
+  // The meta badges: cached, refreshing, stale. Shared by html() and patch hooks.
+  function metaHtml() {
+    let meta = '';
+    if (st.fromCache) meta += `<span class="list-state-cached">${escHtml(t('cached'))}</span> `;
+    if (st.loading) meta += `<span class="list-state-refreshing">${escHtml(t('loading'))}</span> `;
+    if (isStale()) meta += `<span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
+    return meta.trim();
+  }
   function html() {
     let h = '';
     if (st.error) {
@@ -1338,11 +1428,7 @@ function listLoader(opts) {
         '<div class="list-skel-row"></div><div class="list-skel-row"></div><div class="list-skel-row"></div></div>';
     }
     if (st.hasData) {
-      let meta = '';
-      if (st.fromCache) meta += `<span class="list-state-cached">${escHtml(t('cached'))}</span> `;
-      if (st.loading) meta += `<span class="list-state-refreshing">${escHtml(t('loading'))}</span> `;
-      if (isStale()) meta += `<span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
-      meta = meta.trim();
+      const meta = metaHtml();
       let extra = '';
       if (typeof opts.metaExtra === 'function') {
         // A throwing or non-string metaExtra must never break the paint;
@@ -1356,8 +1442,8 @@ function listLoader(opts) {
         // the split; without metaExtra the meta row is plain, and with
         // neither meta spans nor extra the meta row is omitted entirely.
         h += `<div class="list-state-meta list-state-meta-row"><span class="list-state-meta-main">${meta}</span>${extra}</div>` + body;
-      } else if (meta) {
-        h += `<div class="list-state-meta">${meta}</div>` + body;
+      } else if (meta || opts.metaId) {
+        h += `<div class="list-state-meta"${opts.metaId ? ` id="${escHtml(opts.metaId)}"` : ''}>${meta}</div>` + body;
       } else {
         h += body;
       }
@@ -1367,8 +1453,20 @@ function listLoader(opts) {
   function paint() {
     const el = target();
     if (!el || (opts.active && !opts.active())) return;
+    // A loader with a patch hook repaints only what changed once it has
+    // painted data: the hook returns true when it handled the update.
+    if (opts.patch && st.painted && st.hasData && !st.error) {
+      let handled = false;
+      try { handled = !!opts.patch(el, st.paintedData, st.data, ctl); } catch (e) { handled = false; }
+      if (handled) {
+        st.paintedData = st.data;
+        if (opts.afterPaint) opts.afterPaint(el, null, st.data);
+        return;
+      }
+    }
     const keep = opts.beforePaint ? opts.beforePaint(el) : null;
     el.innerHTML = html();
+    st.painted = st.hasData && !st.error; st.paintedData = st.data;
     if (opts.afterPaint) opts.afterPaint(el, keep, st.data);
   }
   function schedule() {
@@ -1383,6 +1481,7 @@ function listLoader(opts) {
   const ctl = {
     state: st,
     html,
+    metaHtml,
     paint,
     isStale,
     load() {
@@ -3089,7 +3188,9 @@ const _PROJECTS_SECTION_KEY_PREFIX = 'cs_projects_section_collapsed_';
 // hist is the paged history of the project named by hist.name: items so far,
 // next is the cursor for the following page ('' when none), error is its load
 // failure. histBusy guards a Load more click against a second request.
-let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false, subtab: '' };
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', rollupStatus: '', cardHtml: {}, cardShape: '', hist: null, histBusy: false, subtab: '' };
+// The roll-up window the page asks for (days; the server default).
+const _PROJECTS_ROLLUP_WINDOW = 7;
 const _PROJECTS_HISTORY_PAGE = 20;
 // _projectsLinks holds the read-only replies for the selected project (name):
 // its effective policy, its merge pipeline and its event stream. A reply for a
@@ -3185,6 +3286,39 @@ function _projectsActive() {
   return state.activeView === 'autonomous' && _automataState.tab === 'projects';
 }
 
+// ── Per-card load state ─────────────────────────────────────────────────────
+// Every card of the project page (arc cards, unassigned, without a project,
+// totals, throughput, events) is a .pc-card of its own with a state: loading
+// (a skeleton), refreshing (cache-rendered content while the background fetch
+// runs), error (its own message and a Retry) or ready. The state sits on the
+// wrapper as data-state; the content sits in the body so a refresh replaces a
+// card's body only when its markup changed. Gantt, Plan and history keep their
+// own fetches and show the same skeleton and error rows in their own blocks.
+let _pcardSink = null;
+function _pcardSkeleton(label) {
+  return `<div class="pc-skeleton" role="status" aria-label="${escHtml(label || t('loading'))}"><span class="pc-skeleton-label">${escHtml(label || t('loading'))}</span><span class="pc-skeleton-bar"></span><span class="pc-skeleton-bar short"></span></div>`;
+}
+function _pcardError(id, msg, label) {
+  return `<div class="pc-error" role="alert"><span class="pc-error-msg">${escHtml((label || t('projects_card_failed')) + ' ' + msg)}</span>` +
+    `<button type="button" class="btn-secondary pc-retry" onclick="${escHtml('projectsCardRetry(' + JSON.stringify(id) + ')')}">${escHtml(t('retry'))}</button></div>`;
+}
+// _pcard wraps one card. status is loading | refreshing | error | ready; err is
+// the failure text for the error state; inner is the ready content.
+function _pcard(id, status, inner, err, loadLabel) {
+  let body = inner;
+  if (status === 'loading') body = _pcardSkeleton(loadLabel);
+  else if (status === 'error') body = _pcardError(id, err || '');
+  if (_pcardSink) _pcardSink.push({ id, status, inner: body });
+  const eid = escHtml(id);
+  return `<div class="pc-card" id="pcard_${eid}" data-card="${eid}" data-state="${status}"><span class="pc-refreshing" id="pcard_${eid}_mark">${escHtml(t('projects_card_refreshing'))}</span><div class="pc-body" id="pcard_${eid}_body">${body}</div></div>`;
+}
+// The state every roll-up card shares: one roll-up feeds them all.
+function _projectsRollupCardState(roll, rollErr) {
+  if (rollErr) return 'error';
+  if (!roll) return 'loading';
+  return _projectsState.rollupStatus === 'refreshing' ? 'refreshing' : 'ready';
+}
+
 function _projectsPaint() {
   _projectsGanttStopDrag();
   _projectsFocus = null; // painting the project page leaves the focus page
@@ -3212,7 +3346,11 @@ function _projectsPaint() {
     const p = list.find(x => x.name === selected);
     const forSel = _projectsState.rollupFor === selected;
     const hist = _projectsState.hist && _projectsState.hist.name === selected ? _projectsState.hist : null;
-    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist);
+    _pcardSink = [];
+    let pageHtml;
+    try { pageHtml = _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist); }
+    finally { _projectsState.cardHtml = {}; (_pcardSink || []).forEach(c => { _projectsState.cardHtml[c.id] = c.inner; }); _projectsState.cardShape = (_pcardSink && _pcardSink.shape) || ''; _pcardSink = null; }
+    view.innerHTML = _projectsPickerHTML(list, selected, err) + pageHtml;
   }
   _tabStripsRevealAll();
 }
@@ -3448,6 +3586,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       <span style="color:var(--text2);font-size:12px;"> ${escHtml(a.status || '')}${pts(a.points)}</span>${links}</div>`;
   };
   const automataList = list => list.map(automatonHTML).join('');
+  const cardState = _projectsRollupCardState(roll, rollErr);
   const arcHTML = arc => {
     const state = arc.state || 'planned';
     const stateKey = { planned: 'projects_page_arc_state_planned', active: 'projects_page_arc_state_active', done: 'projects_page_arc_state_done' }[state];
@@ -3462,46 +3601,51 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       <span style="font-size:12px;color:var(--text2);">${pts(arc.points)}</span>
     </summary>`;
     const docs = _projectArcDocsHTML(p, arc);
+    const cid = 'arc_' + arc.automation_id;
     if (!automata.length) {
       events.push(t('projects_event_arc_empty', [arc.automation_id]));
-      return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
+      return _pcard(cid, cardState, `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`);
     }
-    return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
+    return _pcard(cid, cardState, `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`);
   };
 
   let overviewBody = '';
   let arcsBody = '';
   let unassignedBody = '';
-  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
   if (rollErr) {
     events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
+    overviewBody = _pcard('totals', 'error', '', rollErr) + _pcard('throughput', 'error', '', rollErr);
+    arcsBody = _pcard('arcs', 'error', '', rollErr);
+    unassignedBody = _pcard('unassigned', 'error', '', rollErr);
   } else if (!roll) {
-    overviewBody = loadingLine;
-    arcsBody = loadingLine;
-    unassignedBody = loadingLine;
+    const wait = t('projects_page_loading');
+    overviewBody = _pcard('totals', 'loading', '', '', wait) + _pcard('throughput', 'loading', '', '', wait);
+    arcsBody = _pcard('arcs', 'loading', '', '', wait);
+    unassignedBody = _pcard('unassigned', 'loading', '', '', wait);
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
-    overviewBody = _projectRollupHTML(roll, arcs);
+    overviewBody = _projectRollupHTML(roll, arcs, cardState);
     if (!arcs.length) {
       events.push(t('projects_event_no_arcs'));
-      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
+      if (showEmpty) arcsBody = _pcard('arcs', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`);
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
-    if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
+    if (un.length) unassignedBody = _pcard('unassigned', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`);
     else {
       events.push(t('projects_event_no_unassigned'));
-      if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
+      if (showEmpty) unassignedBody = _pcard('unassigned', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`);
     }
     const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
-    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${automataList(wp)}</div>`;
+    if (wp.length) unassignedBody += _pcard('without_project', cardState, `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${automataList(wp)}</div>`);
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
   const evs = events.length
-    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
+    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), _pcard('events', 'ready', `<div id="projectEvents">${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`))
     : '';
   const hasEvents = events.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
+  if (_pcardSink) _pcardSink.shape = active + '|' + hasEvents;
   const bodies = {
     overview: head + overviewBody + _planRecordsSlotHtml(p),
     arcs: arcsBody,
@@ -3765,7 +3909,8 @@ function _projectBarHTML(done, total, label) {
 // progress bar, its cost in points, and the throughput over the window. A
 // roll-up without a total (older replies) is summed from its arcs and the
 // unassigned group.
-function _projectRollupHTML(roll, arcs) {
+function _projectRollupHTML(roll, arcs, cardState) {
+  cardState = cardState || 'ready';
   const groups = arcs.concat([roll.unassigned || {}]);
   let tot = roll.total && roll.total.tasks ? roll.total : null;
   if (!tot) {
@@ -3794,11 +3939,13 @@ function _projectRollupHTML(roll, arcs) {
     Number(th.tasks_finished) || 0, perDay(th.tasks_per_day),
   ]);
   const line = (label, val) => `<div style="margin:3px 0;font-size:13px;"><span style="color:var(--text2);">${escHtml(label)}:</span> ${escHtml(val)}</div>`;
+  const totalsCard = _pcard('totals', cardState, `${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
+    ${line(t('projects_rollup_points_label'), pointsVal)}`);
+  const throughputCard = _pcard('throughput', cardState, `${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
+    <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>`);
   return _projectsSectionCard('progress', escHtml(t('projects_rollup_heading')), `<div class="project-rollup">
-    ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
-    ${line(t('projects_rollup_points_label'), pointsVal)}
-    ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
-    <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>
+    ${totalsCard}
+    ${throughputCard}
   </div>`);
 }
 
@@ -4227,10 +4374,10 @@ function _projectGanttHTML(hist, bare) {
 function _projectGanttInnerHTML(g, ui) {
   ui = ui || _PROJECTS_GANTT_UI;
   if (!g || (g.loading && !g.rows.length && !g.error)) {
-    return `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
+    return `<div class="pc-card" data-card="gantt" data-state="loading">${_pcardSkeleton(t('projects_gantt_loading'))}</div>`;
   }
   if (g.error && !g.rows.length) {
-    return `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_history_failed') + ' ' + g.error)}</div>`;
+    return `<div class="pc-card" data-card="gantt" data-state="error">${_pcardError('gantt', g.error, t('projects_history_failed'))}</div>`;
   }
   const now = Date.now();
   const range = _projectsGanttCurrent(g, now);
@@ -4308,15 +4455,35 @@ function _projectsGanttRepaint() {
 // an object with a rows array reads as no rows.
 function _projectsGanttBody(r) {
   const b = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+  if (Array.isArray(b.tasks) && !Array.isArray(b.rows)) return { rows: _projectsGanttTaskRows(b.tasks), next: b.next_cursor || '', edges: [] };
   return { rows: (Array.isArray(b.rows) ? b.rows : []).filter(x => x && typeof x === 'object'), next: b.next_cursor || '', edges: _projectsGanttCleanEdges(b.edges) };
 }
 
+// _projectsGanttTaskRows maps one page of GET /api/autonomous/prds/{id}/tasks
+// to Gantt task rows: a started task spans start to finish, a task still
+// running draws to now and a task that has not started has no bar.
+function _projectsGanttTaskRows(tasks) {
+  const st = { in_progress: 'running', verifying: 'running', pending: 'waiting', queued: 'waiting', waiting_capacity: 'waiting', waiting_decision: 'waiting' };
+  return (Array.isArray(tasks) ? tasks : []).filter(x => x && typeof x === 'object' && x.id).map(x => {
+    const status = st[x.status] || x.status || '';
+    const running = status === 'running';
+    const first = x.started_at || null;
+    const last = running ? null : (x.completed_at || (first ? x.updated_at : null) || null);
+    return { kind: 'task', id: x.id, title: x.title || x.id, state: status, status, first, last, start: first, end: last, running, has_children: false, children_count: 0 };
+  });
+}
+
 function _projectsGanttUrl(name, key, row, cursor) {
+  // An Automaton's tasks come from its own paged task route, never the whole record.
+  if (key && key !== _PROJECTS_GANTT_NONE_KEY && row && row.kind === 'automaton') {
+    let tq = '?limit=' + _PROJECTS_GANTT_PAGE;
+    if (cursor) tq += '&cursor=' + encodeURIComponent(cursor);
+    return '/api/autonomous/prds/' + encodeURIComponent(row.id) + '/tasks' + tq;
+  }
   let q = '?limit=' + _PROJECTS_GANTT_PAGE;
   if (!key) q += '&level=arcs';
   else if (key === _PROJECTS_GANTT_NONE_KEY) q += '&level=automata&parent=none';
   else if (row && row.kind === 'arc') q += '&level=automata&parent=' + encodeURIComponent(row.id);
-  else if (row && row.kind === 'automaton') q += '&level=tasks&automaton=' + encodeURIComponent(row.id);
   if (cursor) q += '&cursor=' + encodeURIComponent(cursor);
   return '/api/projects/' + encodeURIComponent(name) + '/timeline' + q;
 }
@@ -4995,14 +5162,22 @@ window.planRecordImportHtml = planRecordImportHtml;
 window.planRecordCreateHtml = planRecordCreateHtml;
 
 function _planRecordsSlotHtml(p) {
-  const inner = _planRecords.project === (p && p.name) ? planRecordsSectionHtml(_planRecords) : '';
-  return `<div id="planRecordsSlot">${inner}</div>`;
+  return `<div id="planRecordsSlot">${_planRecordsSlotInner(p && p.name)}</div>`;
+}
+// The Plan card has its own state: a skeleton while its first read runs and an
+// error row with Retry when it fails; the other cards never wait for it.
+function _planRecordsSlotInner(name) {
+  const st = _planRecords;
+  if (st.project !== name) return '';
+  if (st.status === 'loading') return `<div class="pc-card" data-card="plan" data-state="loading">${_pcardSkeleton(t('projects_card_plan_loading'))}</div>`;
+  if (st.status === 'error' && st.view === 'list' && !(st.recs || []).length) return `<div class="pc-card" data-card="plan" data-state="error">${_pcardError('plan', st.error || '', t('projects_card_plan_failed'))}</div>`;
+  return planRecordsSectionHtml(st);
 }
 
 function _planRecordsPaint() {
   if (!_projectsActive()) return;
   const el = document.getElementById('planRecordsSlot');
-  if (el) el.innerHTML = planRecordsSectionHtml(_planRecords);
+  if (el) el.innerHTML = _planRecordsSlotInner(_planRecords.project);
 }
 function _planRecordsPaintBody() {
   const el = document.getElementById('planRecordsBody');
@@ -5204,15 +5379,88 @@ window.planRecordsImportApply = function() {
   });
 };
 
+// _projectsLoadSelected starts every card's fetch at once: the roll-up, the
+// Gantt, Plan, history and links each settle on their own, and one slow or
+// failed fetch never holds the others back. The roll-up repaints only the
+// cards whose data changed.
 function _projectsLoadSelected() {
-  return _projectsLoadRollup().then(() => {
-    if (!_projectsActive()) return null;
-    _projectsPaint();
-    const gantt = _projectsLoadGantt();
-    const records = _planRecordsLoad(false);
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records]));
+  const roll = _projectsLoadRollup().then(() => { if (_projectsActive()) _projectsSyncCards(); });
+  const gantt = _projectsLoadGantt();
+  const records = _planRecordsLoad(false);
+  const hist = _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => {
+    // History, policy and events are not roll-up cards: repaint when one is open.
+    if (_projectsActive() && ['history', 'policy', 'events'].indexOf(_projectsActiveSubtab(true)) >= 0) _projectsPaint();
   });
+  return Promise.all([roll, gantt, records, hist]);
 }
+
+// _projectsSeedFromCache fills the project list and the selected project's
+// roll-up from the cache so the first paint has content. The roll-up card is
+// marked refreshing until the background fetch settles. It returns true when
+// the selected project's roll-up came from the cache.
+function _projectsSeedFromCache() {
+  if (!Array.isArray(_projectsState.list)) {
+    const c = _cfGet(_cfKey('projects'));
+    if (c && Array.isArray(c.data)) _projectsState.list = c.data;
+  }
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return false;
+  if (_projectsState.rollupFor === name && _projectsState.rollup) return false;
+  const c = _cfGet(_cfKey('rollup', name + '@' + _PROJECTS_ROLLUP_WINDOW));
+  if (!c || !c.data || typeof c.data !== 'object' || Array.isArray(c.data)) return false;
+  _projectsState.rollup = c.data;
+  _projectsState.rollupFor = name;
+  _projectsState.rollupError = '';
+  _projectsState.rollupStatus = 'refreshing';
+  return true;
+}
+
+// _projectsSyncCards repaints after a background refresh. It renders the page
+// once into a sink, then updates each card's state and replaces the body of
+// only those cards whose markup changed. A change of shape (another card set,
+// another sub-tab, a new Events tab) or a card that is not on the page repaints
+// the whole page instead.
+function _projectsSyncCards() {
+  const view = typeof document !== 'undefined' ? document.getElementById('automataPanel') : null;
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
+  const sel = _projectsState.selected;
+  const p = list && list.find(x => x.name === sel);
+  if (!view || !p || sel === _PROJECTS_OVERVIEW) { _projectsPaint(); return 0; }
+  const forSel = _projectsState.rollupFor === sel;
+  const hist = _projectsState.hist && _projectsState.hist.name === sel ? _projectsState.hist : null;
+  _pcardSink = [];
+  let cards, shape;
+  try { _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist); }
+  finally { cards = _pcardSink || []; shape = cards.shape || ''; _pcardSink = null; }
+  const prev = _projectsState.cardHtml || {};
+  const same = shape === _projectsState.cardShape && cards.length === Object.keys(prev).length && cards.every(c => c.id in prev);
+  if (!same) { _projectsPaint(); return -1; }
+  let painted = 0;
+  cards.forEach(c => {
+    const w = document.getElementById('pcard_' + c.id);
+    if (w) w.setAttribute('data-state', c.status);
+    if (prev[c.id] === c.inner) return;
+    const body = document.getElementById('pcard_' + c.id + '_body');
+    if (body) { body.innerHTML = c.inner; painted++; }
+    prev[c.id] = c.inner;
+  });
+  _projectsState.cardHtml = prev;
+  _projectsState.cardsPainted = (_projectsState.cardsPainted || 0) + painted;
+  return painted;
+}
+
+// projectsCardRetry re-runs the fetch behind one card; the other cards keep
+// what they show.
+window.projectsCardRetry = function(id) {
+  if (String(id).indexOf('prdtasks:') === 0) { prdPanelTasksRetry(String(id).slice(9)); return; }
+  if (id === 'gantt') { _projectsLoadGantt(); _projectsGanttRepaint(); return; }
+  if (id === 'plan') { _planRecordsLoad(false); return; }
+  if (id === 'history') { _projectsLoadHistory(false).then(() => { if (_projectsActive()) _projectsPaint(); }); return; }
+  _projectsState.rollupStatus = 'loading'; _projectsState.rollupError = '';
+  if (!_projectsState.rollup) { _projectsPaint(); }
+  _projectsLoadRollup().then(() => { if (_projectsActive()) _projectsSyncCards(); });
+};
 
 function renderProjectsView() {
   _projectsState.selected = (() => {
@@ -5223,10 +5471,15 @@ function renderProjectsView() {
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
+  // First paint from the cache; the fetches below refresh it in the background.
+  _projectsSeedFromCache();
   _projectsPaint();
-  return _projectsLoad().then(() => (_projectsActive() ? _projectsLoadSelected() : null)).then(() => {
-    // Paint again only while the Projects tab is still the active view.
-    if (_projectsActive()) _projectsPaint();
+  return _projectsLoad().then(() => {
+    if (!_projectsActive()) return null;
+    // With nothing cached the list has just arrived: paint the cards' skeletons
+    // now, before the roll-up and the other fetches settle.
+    if (!(_projectsState.rollup && _projectsState.rollupFor === _projectsState.selected)) _projectsPaint();
+    return _projectsLoadSelected();
   });
 }
 
@@ -5235,6 +5488,7 @@ function _projectsLoad() {
     if (!_projectsActive()) return;
     _projectsState.list = Array.isArray(list) ? list : [];
     _projectsState.error = '';
+    if (Array.isArray(list)) _cfPut(_cfKey('projects'), '', list);
   }).catch(err => {
     if (!_projectsActive()) return;
     _projectsState.list = _projectsState.list || [];
@@ -5249,32 +5503,47 @@ function _projectsLoadRollup() {
   const name = _projectsState.selected;
   const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
   if (!known) return Promise.resolve();
-  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/rollup').then(r => {
+  const key = _cfKey('rollup', name + '@' + _PROJECTS_ROLLUP_WINDOW);
+  const showing = _projectsState.rollupFor === name && !!_projectsState.rollup && !_projectsState.rollupError;
+  _projectsState.rollupStatus = showing ? 'refreshing' : 'loading';
+  if (!showing) { _projectsState.rollupError = ''; }
+  return _cfFetch('/api/projects/' + encodeURIComponent(name) + '/rollup', key).then(res => {
     if (_projectsState.selected !== name) return;
+    const r = res.data;
+    if (!res.unchanged || !showing) _cfPut(key, res.tag, r);
     _projectsState.rollup = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
     _projectsState.rollupFor = name;
     _projectsState.rollupError = '';
+    _projectsState.rollupStatus = 'ready';
   }).catch(err => {
     if (_projectsState.selected !== name) return;
     _projectsState.rollup = null;
     _projectsState.rollupFor = name;
     _projectsState.rollupError = (err && err.message) || String(err);
+    _projectsState.rollupStatus = 'error';
   });
 }
 
 // selectProjectsView is the picker's change handler. It remembers the choice
 // and mirrors it in the hash without adding a history entry.
 function selectProjectsView(name) {
-  _projectsState.selected = name || _PROJECTS_OVERVIEW;
+  const next = name || _PROJECTS_OVERVIEW;
+  if (next !== _projectsState.selected) {
+    // A project change drops what the page shows for the project left: its
+    // roll-up and card state, and its cached roll-up.
+    _cfDropProject(_projectsState.selected);
+    _projectsState.rollup = null; _projectsState.rollupFor = ''; _projectsState.rollupError = '';
+    _projectsState.rollupStatus = ''; _projectsState.cardHtml = {}; _projectsState.cardShape = '';
+  }
+  _projectsState.selected = next;
+  _projectsSeedFromCache();
   _projectsRememberLast(_projectsState.selected);
   if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   try {
     history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true)));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
-  return _projectsLoadSelected().then(() => {
-    if (_projectsActive()) _projectsPaint();
-  });
+  return _projectsLoadSelected();
 }
 
 // Handle Android/browser back button via popstate
@@ -19273,17 +19542,26 @@ function _prdPanelQuery(cursor, limit) {
   if (f.status) q.push('status=' + encodeURIComponent(f.status));
   return '/api/autonomous/prds?' + q.join('&');
 }
+// The first page is cached (memory and storage) with the ETag the server
+// returned and refetched with If-None-Match; a 304 keeps the held page. A
+// refresh that asks for more than the first page is read unconditionally and
+// never replaces the cached first page. The list is always the summary form;
+// the full-records form is never requested.
 function _prdPanelFetch(url, o) {
   const key = _prdPanelFilters().status;
   if (key !== _prdPanelState.filterKey) { _prdPanelState.filterKey = key; _prdPanelState.loaded = 0; }
   const limit = Math.min(Math.max(_prdPanelState.loaded, PRD_PANEL_PAGE), PRD_PANEL_RELOAD_MAX);
+  const firstPage = limit === PRD_PANEL_PAGE;
+  const ckey = firstPage ? _cfKey('automata_first', key || 'all') : '';
   return Promise.all([
-    apiFetch(_prdPanelQuery('', limit), o),
+    _cfFetch(_prdPanelQuery('', limit), ckey, o),
     apiFetch('/api/llms', o).catch(() => null),
-  ]).then(([data, llms]) => {
+  ]).then(([res, llms]) => {
+    const data = res.data;
     if (llms) state._prdBackends = (llms.llms || []).filter(l => !l.disabled);
     const prds = (data && data.prds) || [];
     _prdPanelState.loaded = prds.length;
+    if (ckey && !res.unchanged) _cfPut(ckey, res.tag, data);
     return { prds, total: (data && data.total) || prds.length, next: (data && data.next_cursor) || '' };
   });
 }
@@ -19315,12 +19593,48 @@ function _prdPanelBodyHtml(prd, storiesHtml) {
     `<button type="button" class="btn-secondary list-state-retry" onclick="${escHtml('prdPanelLoadDetail(' + JSON.stringify(id) + ',true)')}">${escHtml(t('retry'))}</button></div>`;
   if (e && e.prd) {
     const kids = e.children ? `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children</summary><div id="prd-children-${escHtml(id)}" style="font-size:10px;color:var(--text2);padding:2px 0;">${e.children}</div></details>` : `<div id="prd-children-${escHtml(id)}"></div>`;
-    return (e.error ? failed(e.error) : '') + storiesHtml() + kids;
+    return (e.error ? failed(e.error) : '') + storiesHtml() + _prdPanelTasksHtml(id) + kids;
   }
   if (e && e.error) return failed(e.error);
   if (e && e.loading) return `<div class="list-state-skeleton" role="status"><span class="list-state-loading-label">${escHtml(t('loading'))}</span></div>`;
   return `<span style="color:var(--text2);font-size:12px;">${escHtml(t('automata_open_to_load') || 'Open to load stories and tasks')}</span>`;
 }
+// ── Automaton detail: paged tasks ───────────────────────────────────────────
+// The opened Automaton lists its tasks from GET /api/autonomous/prds/{id}/tasks,
+// one page at a time with a Load more control; a failed page shows its own error
+// with Retry and never touches the rest of the row.
+const PRD_TASKS_PAGE = 50;
+function _prdPanelTasksHtml(id) {
+  const e = _prdPanelState.detail[id];
+  const tk = e && e.tasks;
+  if (!tk) return '';
+  let h = `<div class="automaton-tasks" data-automaton-tasks="${escHtml(id)}"><div style="font-weight:600;">${escHtml(t('automaton_tasks_heading'))}</div>`;
+  h += tk.rows.map(r => `<div class="automaton-tasks-row"><code>${escHtml(r.id)}</code><span>${escHtml(r.status || '')}</span><span>${escHtml(r.title || '')}</span></div>`).join('');
+  if (tk.loading) h += _pcardSkeleton(t('automaton_tasks_loading'));
+  if (tk.error) h += _pcardError('prdtasks:' + id, tk.error, t('automaton_tasks_failed'));
+  if (tk.next && !tk.loading) h += `<button type="button" class="btn-secondary automaton-tasks-more" onclick="${escHtml('prdPanelTasksMore(' + JSON.stringify(id) + ')')}">${escHtml(t('automaton_tasks_load_more', [tk.rows.length, tk.total]))}</button>`;
+  return h + '</div>';
+}
+function _prdPanelLoadTasks(id, more) {
+  const e = _prdPanelState.detail[id];
+  if (!e) return Promise.resolve();
+  const tk = e.tasks = more && e.tasks ? e.tasks : { rows: [], next: '', total: 0, loading: false, error: '' };
+  if (tk.loading) return Promise.resolve();
+  tk.loading = true; tk.error = '';
+  _prdPanelRepaint();
+  let url = '/api/autonomous/prds/' + encodeURIComponent(id) + '/tasks?limit=' + PRD_TASKS_PAGE;
+  if (more && tk.next) url += '&cursor=' + encodeURIComponent(tk.next);
+  return apiFetch(url).then(r => {
+    const rows = (r && Array.isArray(r.tasks)) ? r.tasks : [];
+    tk.rows = (more ? tk.rows : []).concat(rows);
+    tk.next = (r && r.next_cursor) || '';
+    tk.total = (r && r.total) || tk.rows.length;
+  }).catch(err => {
+    tk.error = (err && err.message) || String(err);
+  }).then(() => { tk.loading = false; _prdPanelRepaint(); });
+}
+window.prdPanelTasksMore = function(id) { return _prdPanelLoadTasks(id, true); };
+window.prdPanelTasksRetry = function(id) { const tk = (_prdPanelState.detail[id] || {}).tasks; return _prdPanelLoadTasks(id, !!(tk && tk.rows.length)); };
 function _prdPanelRepaint() {
   const ctl = window._listLoaders && window._listLoaders.prdpanel;
   if (ctl) ctl.paint();
@@ -19344,6 +19658,7 @@ function _prdPanelLoadDetail(id, force) {
     e.error = (err && err.message) || String(err);
   }).then(() => {
     e.loading = false;
+    if (!e.error) _prdPanelLoadTasks(id, false);
     _prdPanelRepaint();
     if (e.error || !st.open.has(id) || typeof window.loadPRDChildren !== 'function') return e.prd;
     return Promise.resolve(window.loadPRDChildren(id)).then(html => { e.children = html || ''; return e.prd; });
@@ -19380,11 +19695,62 @@ function _prdPanelLoadMoreHtml(d) {
   return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="prdPanelLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="prdPanelLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
     (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
 }
+// Each Automaton row is a card of its own (.pc-card): its state is refreshing
+// while the list is cache-rendered or being refetched, and its body is replaced
+// by a refresh only when that row's markup changed.
+function _prdPanelRowState() {
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  const st = ctl && ctl.state;
+  return st && (st.loading || st.fromCache) ? 'refreshing' : 'ready';
+}
+function _prdPanelRowInner(p) {
+  return renderPRDRow(_prdPanelMerged(p), { panel: true });
+}
+function _prdPanelRowCard(p, status, inner) {
+  const eid = escHtml(p.id);
+  return `<div class="pc-card prd-pc" id="prdRow_${eid}" data-card="${eid}" data-state="${status}"><span class="pc-refreshing" id="prdRow_${eid}_mark">${escHtml(t('projects_card_refreshing'))}</span><div class="pc-body" id="prdRow_${eid}_body">${inner}</div></div>`;
+}
 function _prdPanelRender(d) {
   const rows = _prdPanelVisible(d);
   const more = _prdPanelLoadMoreHtml(d);
+  const ps = _prdPanelState;
+  ps.paintedIds = rows.map(p => p.id);
+  ps.moreHtml = more;
+  ps.rowHtml = {};
   if (rows.length === 0) return `<em style="color:var(--text2);">${t('prd_list_empty')||'No Automata match.'}</em>` + more;
-  return rows.map(p => renderPRDRow(_prdPanelMerged(p), { panel: true })).join('') + more;
+  const status = _prdPanelRowState();
+  return rows.map(p => {
+    const inner = _prdPanelRowInner(p);
+    ps.rowHtml[p.id] = inner;
+    return _prdPanelRowCard(p, status, inner);
+  }).join('') + more;
+}
+// _prdPanelPatch is the list loader's repaint hook: with the same rows in the
+// same order it updates the meta badges and each row's state and replaces the
+// body of only the rows whose markup changed. It returns false (full repaint)
+// when the row set, the empty state or Load more changed.
+function _prdPanelPatch(el, from, to, ctl) {
+  const ps = _prdPanelState;
+  const meta = document.getElementById('prdPanelMeta');
+  if (!meta || !ps.paintedIds) return false;
+  const rows = _prdPanelVisible(to);
+  const ids = rows.map(p => p.id);
+  if (ids.join('\u0001') !== ps.paintedIds.join('\u0001')) return false;
+  if (_prdPanelLoadMoreHtml(to) !== ps.moreHtml) return false;
+  const status = _prdPanelRowState();
+  rows.forEach(p => {
+    const w = document.getElementById('prdRow_' + p.id);
+    if (w) w.setAttribute('data-state', status);
+    const inner = _prdPanelRowInner(p);
+    if (inner === ps.rowHtml[p.id]) return;
+    const body = document.getElementById('prdRow_' + p.id + '_body');
+    if (!body) return;
+    body.innerHTML = inner;
+    ps.rowHtml[p.id] = inner;
+    ps.rowsPainted = (ps.rowsPainted || 0) + 1;
+  });
+  meta.innerHTML = ctl.metaHtml();
+  return true;
 }
 // Rows that are open need their detail; a moved revision refetches it.
 function _prdPanelAfterPaint(el, keep, d) {
@@ -19397,6 +19763,8 @@ function _prdPanelLoader() {
   if (cur) return cur;
   return listLoader({
     key: 'prdpanel', el: 'prdPanel', pollMs: PRD_PANEL_POLL_MS,
+    metaId: 'prdPanelMeta',
+    patch: _prdPanelPatch,
     fetch: _prdPanelFetch,
     active: _prdPanelActive,
     render: _prdPanelRender,
@@ -28875,6 +29243,7 @@ function saveToken() {
   const token = input.value.trim();
   state.token = token;
   localStorage.setItem('cs_token', token);
+  _cfDrop();
   showToast('Token saved. Reconnecting…', 'success', 2000);
   disconnect();
   setTimeout(connect, 500);
@@ -28904,6 +29273,7 @@ window.splashSaveToken = function() {
   if (!tok) return;
   state.token = tok;
   localStorage.setItem('cs_token', tok);
+  _cfDrop();
   if (window._splashStopFn) window._splashStopFn();
   const splash = document.getElementById('splash');
   if (splash) {

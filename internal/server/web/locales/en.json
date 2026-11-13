@@ -5644,5 +5644,14 @@
   "automaton_project_saved": "Project link saved",
   "automaton_project_error": "Could not set the project",
   "projects_page_without_project": "Automata without a project",
-  "projects_page_without_project_hint": "Set a project link from the Automaton detail to place one here."
+  "projects_page_without_project_hint": "Set a project link from the Automaton detail to place one here.",
+  "projects_card_failed": "Could not load this card:",
+  "projects_card_refreshing": "Refreshing…",
+  "projects_card_plan_loading": "Loading the plan…",
+  "projects_card_plan_failed": "Could not load the plan:",
+  "automata_list_refreshing": "Refreshing the Automata list…",
+  "automaton_tasks_heading": "Tasks",
+  "automaton_tasks_loading": "Loading the Automaton's tasks…",
+  "automaton_tasks_failed": "Could not load the Automaton's tasks:",
+  "automaton_tasks_load_more": "Load more tasks (%1$s of %2$s)"
 }
