@@ -88,7 +88,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	tr := cfg.Tracing.WithDefaults()
 	fieldi(&b, "mode", tr.Mode, "Trace detail: off (no tracing), summary (default) or full")
 	fieldi(&b, "arg_cap_bytes", tr.ArgCapBytes, "Maximum bytes of a tool-call argument summary stored per event (default 512)")
-	fieldi(&b, "retention_days", tr.RetentionDays, "Days trace events are kept (default 14)")
+	fieldi(&b, "retention_days", tr.RetentionDays, "Days trace events are kept (0 = keep forever; the default; max 3650)")
 	b.WriteString("  # Per-backend switches, e.g. {pi: false}; a backend not listed is traced.\n")
 	if len(tr.Backends) > 0 {
 		b.WriteString("  backends:\n")

@@ -63,7 +63,7 @@ func TestTracingInAnnotatedTemplate(t *testing.T) {
 	c := &Config{}
 	c.Tracing = trace.Settings{Mode: "full", Backends: map[string]bool{"pi": false}}
 	out := GenerateAnnotatedConfig(c)
-	for _, want := range []string{"tracing:", "mode: full", "arg_cap_bytes: 512", "retention_days: 14", "pi: false"} {
+	for _, want := range []string{"tracing:", "mode: full", "arg_cap_bytes: 512", "retention_days: 0", "pi: false"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("template missing %q", want)
 		}
