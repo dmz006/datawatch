@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.163.0 (2026-11-12).** The Sessions Filters sheet lists nodes and peers by real name, every chip leads with a name instead of an id, Status and Backend chips are multi-select, there is one Group by dropdown with a new Model node grouping, tiles and cards show Runs on and Model on, and an open control is no longer redrawn. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.163.1 (2026-11-12).** The header server dropdown now remembers its choice per browser, and a removed peer falls back to All servers. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.163.1 — Remember the header server dropdown choice per browser
+
+### Added
+
+- Docs: the multi-servers how-to ("Switch between servers (header dropdown)") now describes the remembered choice and the stale-peer fallback.
+
+### Changed
+
+- **The header server dropdown now remembers its choice per browser.** The entry chosen in the fixed header's server dropdown (**All servers**, this server, or a named peer) is saved on this device (the PWA's local storage), so reloading the page or coming back later opens the same entry already selected — the boot round of data fetches runs against it, with no second refresh. A saved peer name is validated against the current server list at boot: if that peer has since been removed or disabled, the PWA starts on **All servers** instead (and keeps that, so a stale choice does not survive the next reload). With local storage blocked the choice still works for the open page but is not kept. No new endpoint or setting.
+
 ## v9.163.0 — Sessions Filters sheet: names, multi-select chips, one grouping control
 
 ### Added
