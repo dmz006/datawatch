@@ -71,7 +71,7 @@ func TestProjectRecordUnknownVerbStillRejected(t *testing.T) {
 	if !strings.Contains(out, `Unknown project verb "frobnicate"`) {
 		t.Errorf("unknown verb not reported:\n%s", out)
 	}
-	if !strings.Contains(out, "project show|arcs|progress|timeline <project-name>") {
+	if !strings.Contains(out, "project show|plans|progress|timeline <project-name>") {
 		t.Errorf("usage does not list record verbs:\n%s", out)
 	}
 }
@@ -88,7 +88,7 @@ func TestProjectRecordUsageWithoutName(t *testing.T) {
 	})
 	for _, want := range []string{
 		"Usage: project show <project-name>",
-		"Usage: project arcs <project-name>",
+		"Usage: project plans <project-name>",
 		"Usage: project progress <project-name>",
 		"Usage: project set <project-name> <field> <value>",
 		`unknown field "nope"`,
@@ -125,7 +125,7 @@ func TestFormatProjectShow(t *testing.T) {
 		"-",
 		"weekly_share:",
 		"20",
-		"arcs:",
+		"plans:",
 		"2",
 		"target:",
 		"v1.0",
@@ -142,7 +142,7 @@ func TestFormatProjectShow(t *testing.T) {
 func TestFormatProjectArcs(t *testing.T) {
 	out := formatProjectArcs("acme", projectRecordBody)
 	for _, want := range []string{
-		"Arcs for project acme (2):",
+		"Plans for project acme (2):",
 		"1. auto-1 priority=1 state=active",
 		"2. auto-2 priority=2 state=planned",
 	} {
@@ -150,7 +150,7 @@ func TestFormatProjectArcs(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
-	if got := formatProjectArcs("bare", `{"name":"bare"}`); got != "No arcs for project bare." {
+	if got := formatProjectArcs("bare", `{"name":"bare"}`); got != "No plans for project bare." {
 		t.Errorf("empty arcs: %q", got)
 	}
 	if got := formatProjectArcs("acme", "nope"); got != "nope" {
@@ -165,7 +165,7 @@ func TestFormatProjectProgress(t *testing.T) {
 		"total: 3 automata, tasks 4/13, points 3.5",
 		"throughput: 1 automata, 2 tasks finished (0.14 automata/day, 0.29 tasks/day)",
 		"finished means completed, or cancelled or archived with its work branch on the default branch, or shipped",
-		"arc auto-1 [active]: 2 automata, tasks 4/10",
+		"plan auto-1 [active]: 2 automata, tasks 4/10",
 		"unassigned: 1 automata, tasks 0/3",
 	} {
 		if !strings.Contains(out, want) {

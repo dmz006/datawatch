@@ -3168,7 +3168,7 @@ function _projectsHashParse(hash) {
 // or '' when the hash names none or an unknown one.
 function _projectsHashSubtab(hash) {
   const m = /^#projects\/[^/]+\/([^/]+)$/.exec(String(hash || ''));
-  return m && _projectsSubtabValid(m[1]) ? m[1] : '';
+  return m && _projectsSubtabValid(m[1]) ? _projectsSubtabCanon(m[1]) : '';
 }
 function _projectsHashBuild(name, subtab) {
   if (!name) return '#projects';
@@ -3463,7 +3463,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     </summary>`;
     const docs = _projectArcDocsHTML(p, arc);
     if (!automata.length) {
-      events.push(t('projects_event_arc_empty', [arc.automation_id]));
+      events.push(t('projects_event_plan_empty', [arc.automation_id]));
       return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
     }
     return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
@@ -3472,7 +3472,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   let overviewBody = '';
   let arcsBody = '';
   let unassignedBody = '';
-  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
+  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading_plans'))}</div>`;
   if (rollErr) {
     events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
@@ -3483,9 +3483,9 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
     overviewBody = _projectRollupHTML(roll, arcs);
     if (!arcs.length) {
-      events.push(t('projects_event_no_arcs'));
-      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
-    } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+      events.push(t('projects_event_no_plans'));
+      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
+    } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
     else {
@@ -3504,7 +3504,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const active = _projectsActiveSubtab(hasEvents);
   const bodies = {
     overview: head + overviewBody + _planRecordsSlotHtml(p),
-    arcs: arcsBody,
+    plans: arcsBody,
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
     history: _projectHistoryHTML(hist, true),
@@ -3521,21 +3521,24 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 // remembered per browser; an unknown value means overview, and events falls
 // back to overview while there are no events to show.
 const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
-const _PROJECTS_SUBTABS = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+const _PROJECTS_SUBTABS = ['overview', 'plans', 'gantt', 'unassigned', 'history', 'policy', 'events'];
 const _PROJECTS_SUBTAB_LABELS = {
-  overview: 'projects_subtab_overview', arcs: 'projects_subtab_arcs', gantt: 'projects_subtab_gantt',
+  overview: 'projects_subtab_overview', plans: 'projects_subtab_plans', gantt: 'projects_subtab_gantt',
   unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
   policy: 'projects_subtab_policy', events: 'projects_subtab_events',
 };
-function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(v) >= 0; }
+// 'arcs' is the old name of the Plans sub-tab; the #arcs deep link and a value
+// remembered by an older version still land on Plans.
+function _projectsSubtabCanon(v) { return v === 'arcs' ? 'plans' : v; }
+function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(_projectsSubtabCanon(v)) >= 0; }
 function _projectsRememberSubtab(v) {
   try { localStorage.setItem(_PROJECTS_SUBTAB_KEY, v || ''); } catch (_) { /* not remembered */ }
 }
 function _projectsRecallSubtab() {
-  try { const v = localStorage.getItem(_PROJECTS_SUBTAB_KEY) || ''; return _projectsSubtabValid(v) ? v : 'overview'; } catch (_) { return 'overview'; }
+  try { const v = _projectsSubtabCanon(localStorage.getItem(_PROJECTS_SUBTAB_KEY) || ''); return _projectsSubtabValid(v) ? v : 'overview'; } catch (_) { return 'overview'; }
 }
 function _projectsActiveSubtab(hasEvents) {
-  const v = _projectsSubtabValid(_projectsState.subtab) ? _projectsState.subtab : _projectsRecallSubtab();
+  const v = _projectsSubtabValid(_projectsState.subtab) ? _projectsSubtabCanon(_projectsState.subtab) : _projectsRecallSubtab();
   return (v === 'events' && !hasEvents) ? 'overview' : v;
 }
 function _projectsSubtabStripHTML(active, hasEvents) {
@@ -3544,6 +3547,8 @@ function _projectsSubtabStripHTML(active, hasEvents) {
     tabs.map(k => `<button type="button" role="tab" id="projectsSubtab_${k}" data-projects-subtab="${k}" aria-selected="${k === active ? 'true' : 'false'}" aria-controls="projectsSubtabBody" class="projects-subtab${k === active ? ' active' : ''}" onclick="selectProjectsSubtab('${k}')">${escHtml(t(_PROJECTS_SUBTAB_LABELS[k]))}</button>`).join('') + `</div>`;
 }
 function selectProjectsSubtab(k) {
+  k = _projectsSubtabCanon(k);
+  k = _projectsSubtabCanon(k);
   if (!_projectsSubtabValid(k)) k = 'overview';
   _projectsState.subtab = k;
   _projectsRememberSubtab(k);
@@ -4267,7 +4272,7 @@ function _projectGanttInnerHTML(g, ui) {
       return;
     }
     const r = it.row;
-    const label = r.kind === 'unassigned' ? t('projects_gantt_no_arc') : (r.title || r.id || '');
+    const label = r.kind === 'unassigned' ? t('projects_gantt_no_plan') : (r.title || r.id || '');
     const sp = _projectsGanttSpan(r, now);
     const toggle = it.expandable
       ? `<button type="button" class="project-gantt-toggle" aria-expanded="${it.expanded ? 'true' : 'false'}" aria-label="${escHtml(t(it.expanded ? 'projects_gantt_collapse' : 'projects_gantt_expand', [label]))}" onclick="${escHtml(`${ui.toggle}(${JSON.stringify(it.key)})`)}">${it.expanded ? '▾' : '▸'}</button>`
@@ -53434,7 +53439,7 @@ const DASH_CARD_HELP_ANCHORS = {
   'review-backlog': 'review-backlog-card',
   'defects-per-day': 'defects-per-day-card',
   'cost-report': 'cost-report-card',
-  'arc-view': 'arc-card',
+  'arc-view': 'plan-card',
   'timeline': 'automaton-timeline-card',
   'usage-allowance': 'weekly-allowance-card',
   'usage-pace': 'pace-line-card',

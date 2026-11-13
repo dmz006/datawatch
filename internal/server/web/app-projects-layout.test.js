@@ -135,7 +135,7 @@ test('the sub-tab strip puts Gantt before Unassigned, and Unassigned before Hist
 // ---- collapse memory (cards only where a sub-tab holds more than one block) ----
 
 const CARD_TABS = { overview: ['progress'], policy: ['policy', 'merge'], events: ['events', 'stream'] };
-const BARE_TABS = ['arcs', 'gantt', 'unassigned', 'history'];
+const BARE_TABS = ['plans', 'gantt', 'unassigned', 'history'];
 
 test('multi-block sub-tabs draw cards with a toggle; single-block sub-tabs draw none', () => {
   const { sb } = load({ showEmpty: true });
@@ -254,7 +254,7 @@ test('the Projects view paints the cards through the real render path', async ()
 
 test('no control hides or moves a card', () => {
   const { sb } = load({ showEmpty: true });
-  for (const sub of ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events']) {
+  for (const sub of ['overview', 'plans', 'gantt', 'unassigned', 'history', 'policy', 'events']) {
     const html = page(sb, ROLLUP, sub);
     assert.doesNotMatch(html, /draggable/i);
     assert.doesNotMatch(html, /ondrag|ondrop/i);

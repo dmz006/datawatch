@@ -1804,7 +1804,7 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_record_update` | Change a record; a field you leave out is left alone and a rename keeps the old title | `PUT /api/plan-records/{kind}/{ref}` |
 | `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
 | `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
-| `plan_migrate` | Build plans from project arcs and registry rows; previews unless `apply` is `true` | `POST /api/plans/migrate` |
+| `plan_migrate` | Build plans from the older project plan lists (arcs) and registry rows; previews unless `apply` is `true` | `POST /api/plans/migrate` |
 | `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`) | `POST /api/plans` |
 | `plan_reorder` | Set the plan priority order (`plans`: ids or titles, first plan first) | `PUT /api/plans/order` |
 | `plan_reorder_automata` | Set the order of a plan's Automata (`plan`, `automata`: every Automaton once); the answer shows what runs next, skipping blocked and held | `PUT /api/plans/{ref}/automata/order` |
@@ -1813,7 +1813,7 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 
 `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
 `plan_detach` need `autonomous:write` when called by a federated peer.
-`project_set_arcs` stays as a deprecated alias for the older arcs list.
+`project_set_arcs` stays as a deprecated alias for the older plan list (arcs).
 
 **Parameters.** `kind` is `registry-row` or `finding` (required on create, list,
 get and update). `ref` is an id, a uid, `row <n>`, an exact title, an older
@@ -2315,7 +2315,7 @@ read tools `config:read`, the write tools `config:write`.
 
 ---
 
-## Project record, arcs and the Projects sub-tab
+## Project record, plans and the Projects sub-tab
 
 The seven project tools read and write the project record behind the web app's
 Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
@@ -2326,14 +2326,14 @@ Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 |---|---|---|
 | `project_list` | read | none |
 | `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted record field keeps its stored value) |
-| `project_set_arcs` | write (deprecated; plans replace arcs, see `plan_migrate`) | `name`, `arcs` (required, an array; order is the arc order; `[]` clears) |
+| `project_set_arcs` | write (deprecated old name and plan list; the registry plan records replace it, see `plan_migrate`) | `name`, `arcs` (required, an array; order is the plan order; `[]` clears) |
 | `project_rollup` | read | `name` (required), `window` (days, 1 to 365, default 7) |
 | `project_history` | read | `name` (required), `limit`, `cursor` |
-| `project_timeline` | read | Returns start, end, status and release per row, `depends_on` on task rows and `edges` (chain between Automata) on Automata-level and focus replies, unchanged from the daemon. Arguments: `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (arc id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one arc id or `none`, unpaged), `limit`, `cursor` |
+| `project_timeline` | read | Returns start, end, status and release per row, `depends_on` on task rows and `edges` (chain between Automata) on Automata-level and focus replies, unchanged from the daemon. Arguments: `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (plan id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one plan id or `none`, unpaged), `limit`, `cursor` |
 | `project_policy_effective` | read | `name` (required), `automaton` (optional top tier) |
 | `project_alias_delete` | write | `name` (required); the directory is not touched |
 
-Arc objects are `{"automation_id": "<id>", "priority": <int>, "state": "planned" | "active" | "done"}`.
+Plan objects are `{"automation_id": "<id>", "priority": <int>, "state": "planned" | "active" | "done"}`.
 `automation_id` is required and must be unique within the project; an empty state means `planned`.
 
 `project_rollup`, `project_history` and `project_timeline` need the autonomous read capability and the
@@ -2342,7 +2342,7 @@ usage points, never API dollars. `weekly_share`, `branch_retention_days` and
 `major_trigger` are stored and shown; the scheduler, the worktree cleanup and the
 release decision do not read the project's own values yet (see the howto).
 
-Set the arcs of the `core-api` project:
+Set the plans of the `core-api` project:
 
 ```json
 {

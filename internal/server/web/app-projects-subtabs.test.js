@@ -2,7 +2,7 @@
 // phone layout, picker placement, routes, the Gantt cap and the Policy tab.
 //
 // A selected project's page shows one body at a time under a strip of
-// sub-tab buttons: Overview, Arcs, Gantt, Unassigned, History, Policy, Events.
+// sub-tab buttons: Overview, Plans, Gantt, Unassigned, History, Policy, Events.
 // Events is only offered while the page has something to say.
 
 const test = require('node:test');
@@ -12,7 +12,7 @@ const fs = require('fs');
 const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('./testutil_browser_stub');
 
 const APP = path.join(__dirname, 'app.js');
-const ORDER = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+const ORDER = ['overview', 'plans', 'gantt', 'unassigned', 'history', 'policy', 'events'];
 const KEY = 'cs_projects_subtab';
 const DAY = 86400000;
 
@@ -92,7 +92,7 @@ function row(kind, autoId, id, title, startAgo, endAgo) {
   return r;
 }
 
-test('the sub-tab buttons are overview, arcs, gantt, unassigned, history, policy, events in that order', async () => {
+test('the sub-tab buttons are overview, plans, gantt, unassigned, history, policy, events in that order', async () => {
   const { sb, out } = await open({ rollup: ROLLUP_EVENTS });
   assert.deepEqual(JSON.parse(run(sb, 'JSON.stringify(_PROJECTS_SUBTABS)')), ORDER);
   assert.deepEqual(buttons(out.view), ORDER);
@@ -124,8 +124,8 @@ test('a localStorage that throws does not break rendering', async () => {
   assert.equal(sb._projectsActiveSubtab(false), 'overview');
   assert.deepEqual(buttons(out.view).slice(0, 6), ORDER.slice(0, 6), 'the strip still renders');
   assert.equal(activeBody(out.view), 'overview');
-  assert.doesNotThrow(() => sb.selectProjectsSubtab('arcs'));
-  assert.equal(activeBody(out.view), 'arcs', 'the choice still applies for this page');
+  assert.doesNotThrow(() => sb.selectProjectsSubtab('plans'));
+  assert.equal(activeBody(out.view), 'plans', 'the choice still applies for this page');
 });
 
 test('Events is hidden while empty and a stored events choice falls back to Overview', async () => {
@@ -207,4 +207,15 @@ test('the Policy sub-tab holds the effective policy and the merge pipeline, with
   assert.equal((body.match(/class="project-settings-link"/g) || []).length, 2, 'a Settings link for each section');
   assert.doesNotMatch(body, /<input|<select|<textarea|<form|<button/i, 'no edit controls');
   assert.doesNotMatch(body, /onchange=|onsubmit=/);
+});
+
+test('the old #arcs deep link and a stored arcs choice open the Plans sub-tab', async () => {
+  const deep = await open({ hash: '#projects/acme/arcs' });
+  assert.equal(run(deep.sb, '_projectsState.subtab'), 'plans', 'the deep link maps to Plans');
+  assert.match(deep.out.view, /id="projectsSubtab_plans"[^>]*aria-selected="true"/);
+  assert.equal(run(deep.sb, "_projectsHashSubtab('#projects/acme/arcs')"), 'plans');
+  const stored = await open({ hash: '', storage: makeStorage({ [KEY]: 'arcs' }) });
+  assert.equal(run(stored.sb, '_projectsActiveSubtab(false)'), 'plans', 'an older remembered value maps to Plans');
+  assert.doesNotThrow(() => stored.sb.selectProjectsSubtab('arcs'));
+  assert.equal(run(stored.sb, '_projectsState.subtab'), 'plans');
 });

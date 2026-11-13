@@ -270,7 +270,7 @@ func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 		mcpsdk.WithString("repository", mcpsdk.Description("Optional project record: repository (e.g. owner/name or URL). Omit to keep; empty clears.")),
 		mcpsdk.WithString("default_branch", mcpsdk.Description("Optional project record: default git branch. Omit to keep; empty clears.")),
 		mcpsdk.WithArray("arcs",
-			mcpsdk.Description("Optional ordered arc list, replacing the stored one: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned|active|done\"}]. Array position is the arc order. Omit to keep; [] clears."),
+			mcpsdk.Description("Optional ordered plan list, replacing the stored one: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned|active|done\"}]. Array position is the plan order. Omit to keep; [] clears."),
 			mcpsdk.Items(map[string]any{"type": "object"})),
 		mcpsdk.WithObject("target",
 			mcpsdk.Description("Optional outcome the project works toward: {\"name\":\"...\",\"definition_of_done\":\"...\"}. Omit to keep the stored value.")),
@@ -459,7 +459,7 @@ func arcsArg(decoded any) ([]any, error) {
 func (s *Server) toolProjectRollup() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_rollup",
 		mcpsdk.WithDescription(
-			"Project roll-up: arcs in order with their Automata, task progress, cost in points and throughput over a window of days. Automata that no arc holds are in unassigned when they belong to the project, and Automata without a project are in without_project (not counted in total). An Automaton counts as finished when it is completed, when it is cancelled or archived and its work branch is already on the default branch, or when it carries a shipped record; a task counts from its own completion time in the window, whatever the Automaton status. Read-only."),
+			"Project roll-up: plans in order with their Automata, task progress, cost in points and throughput over a window of days. Automata that no plan holds are in unassigned when they belong to the project, and Automata without a project are in without_project (not counted in total). An Automaton counts as finished when it is completed, when it is cancelled or archived and its work branch is already on the default branch, or when it carries a shipped record; a task counts from its own completion time in the window, whatever the Automaton status. Read-only."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
 		mcpsdk.WithNumber("window", mcpsdk.Description("Throughput window in days (1–365, default 7).")),
 	)
@@ -523,12 +523,12 @@ func (s *Server) handleProjectHistory(_ context.Context, req mcpsdk.CallToolRequ
 func (s *Server) toolProjectTimeline() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_timeline",
 		mcpsdk.WithDescription(
-			"Project timeline: start, end, status (completed, running, waiting, blocked, failed or cancelled) and release of each arc, Automaton and task, one level at a time (arcs by default). Task rows carry depends_on; Automaton levels and focus replies carry edges, the chain between Automata. Rows still running have no end. Fields are returned unchanged from the daemon. Paged with limit and the cursor from the previous page. Read-only."),
+			"Project timeline: start, end, status (completed, running, waiting, blocked, failed or cancelled) and release of each plan, Automaton and task, one level at a time (level arcs, the plans, by default). Task rows carry depends_on; Automaton levels and focus replies carry edges, the chain between Automata. Rows still running have no end. Fields are returned unchanged from the daemon. Paged with limit and the cursor from the previous page. Read-only."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
-		mcpsdk.WithString("level", mcpsdk.Description("Which rows to return: arcs (default), automata or tasks.")),
-		mcpsdk.WithString("parent", mcpsdk.Description("With level automata: the arc id whose Automata to list, or none for Automata no arc holds.")),
+		mcpsdk.WithString("level", mcpsdk.Description("Which rows to return: arcs (the plans, default), automata or tasks.")),
+		mcpsdk.WithString("parent", mcpsdk.Description("With level automata: the plan id whose Automata to list, or none for Automata no plan holds.")),
 		mcpsdk.WithString("automaton", mcpsdk.Description("With level tasks: the Automaton id whose tasks to list.")),
-		mcpsdk.WithString("focus", mcpsdk.Description("One arc id (or none): returns that arc's Automata and their tasks in a single unpaged reply.")),
+		mcpsdk.WithString("focus", mcpsdk.Description("One plan id (or none): returns that plan's Automata and their tasks in a single unpaged reply.")),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("Maximum rows per page (the daemon's default applies when omitted).")),
 		mcpsdk.WithString("cursor", mcpsdk.Description("Opaque cursor from the previous page's next_cursor. Omit for the first page.")),
 	)
@@ -563,11 +563,11 @@ func (s *Server) handleProjectTimeline(_ context.Context, req mcpsdk.CallToolReq
 func (s *Server) toolProjectSetArcs() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_set_arcs",
 		mcpsdk.WithDescription(
-			"Deprecated alias: plans replace arcs, so prefer plan_create, plan_attach and plan_reorder. Replace a project's ordered arc list. The array order is the arc order. Each arc is {automation_id, priority?, state? (planned|active|done)}. Sending [] clears the list. Returns the project record."),
+			"Deprecated alias: plans replace arcs, so prefer plan_create, plan_attach and plan_reorder. Replace a project's ordered plan list. The array order is the plan order. Each plan entry is {automation_id, priority?, state? (planned|active|done)}. Sending [] clears the list. Returns the project record."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
 		mcpsdk.WithArray("arcs",
 			mcpsdk.Required(),
-			mcpsdk.Description("Ordered arcs: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned\"}]."),
+			mcpsdk.Description("Ordered plans: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned\"}]."),
 			mcpsdk.Items(map[string]any{"type": "object"})),
 	)
 }

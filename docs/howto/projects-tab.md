@@ -8,7 +8,7 @@ exec_steps:
     args: {}
     read_only: true
   - tool: project_rollup
-    description: Read one project's roll-up. Arcs in order with their Automata, task progress, cost in points and throughput over the window. Read-only
+    description: Read one project's roll-up. Plans in order with their Automata, task progress, cost in points and throughput over the window. Read-only
     args: {name: core-api, window: 7}
     read_only: true
   - tool: project_history
@@ -16,7 +16,7 @@ exec_steps:
     args: {name: core-api, limit: 20}
     read_only: true
   - tool: project_timeline
-    description: Read when each arc, Automaton and task of one project started and finished, one level at a time (arcs by default). Work still running has no last time. Read-only
+    description: Read when each plan, Automaton and task of one project started and finished, one level at a time (plans by default). Work still running has no last time. Read-only
     args: {name: core-api, level: arcs}
     read_only: true
   - tool: project_policy_effective
@@ -27,7 +27,7 @@ exec_steps:
     description: Set the record fields of a project. Pass the whole record you want to keep; an absent record field keeps its stored value. Owner, repository and default branch are set here with the target, lane defaults and weekly share
     args: {name: core-api, dir: /srv/projects/core-api, owner: platform-team, target: {name: "Core API 2.0", definition_of_done: "All v1 endpoints served by v2 and the v1 routes removed"}, lane_defaults: {lane: gpu, backend: claude-code, model: qwen3.8:27b}, weekly_share: 40, branch_retention_days: 14}
   - tool: project_set_arcs
-    description: Deprecated, plans replace arcs (see plan_migrate). Replace the ordered arc list of a project. The array order is the arc order; each arc has an automation id, a priority and a state (planned, active or done). Sending an empty list clears the arcs
+    description: Deprecated old name and plan list (arcs); the registry plan records replace it (see plan_migrate). Replace the ordered plan list of a project. The array order is the plan order; each plan has an automation id, a priority and a state (planned, active or done). Sending an empty list clears the plans
     args: {name: core-api, arcs: [{automation_id: a1b2c3d4, priority: 1, state: active}, {automation_id: e5f6a7b8, priority: 2, state: planned}]}
   - tool: autonomous_prd_set_project
     description: Set or clear the explicit project link of an Automaton. The project must be a configured project name; an empty project clears the link. Only the Automaton record changes and the change is written to its decision log
@@ -41,8 +41,8 @@ exec_steps:
 # How-to: the Projects sub-tab
 
 The **Projects** sub-tab is where you look at one project as a whole. It gathers the
-project's arcs (the ordered Automations the project works through), the Automata
-and sessions under each arc, progress in points, an expandable Gantt timeline with a focus view per Automation, the
+project's plans (the ordered Automations the project works through), the Automata
+and sessions under each plan, progress in points, an expandable Gantt timeline with a focus view per Automation, the
 finished history, the policy and merge pipeline that apply to it, and the events
 that belong to it. Use it to answer "where does this project stand, what is next,
 and what did it cost" without opening each Automation.
@@ -53,7 +53,7 @@ Projects is the first sub-tab of the **Automata** view, to the left of
 
 Once you pick a project, its page is split into its own strip of **page
 sub-tabs** (labelled **Project sections** for screen readers), and only one body
-shows at a time: **Overview**, **Arcs**, **Gantt**, **Unassigned**, **History**,
+shows at a time: **Overview**, **Plans**, **Gantt**, **Unassigned**, **History**,
 **Policy** and, when there is something to show, **Events**. They are the
 sub-tabs of one project's page, not of the Automata view; this guide says "page
 sub-tab" for them and "sub-tab" for **Projects** itself. See
@@ -63,7 +63,7 @@ The sub-tab shows what the daemon holds and links to the Settings entries where
 you change things. It also has a **Manage projects** block where you add, edit and
 remove a project (its name, directory, description and default backend) without
 leaving the page; see [Manage projects in the web app](#manage-projects-in-the-web-app).
-The rest of the project record (owner, target, arcs, lane defaults, weekly share,
+The rest of the project record (owner, target, plans, lane defaults, weekly share,
 branch retention, major trigger) is changed from the CLI, REST, MCP and the comm
 channel, as shown below.
 
@@ -71,15 +71,15 @@ Three words are used in this guide, and only these three:
 
 - **Automaton**: one unit of autonomous work.
 - **Automata**: more than one Automaton.
-- **Automation**: a named chain of Automata, run in order. An arc *is* an Automation.
-- **Plan**: the registry record of what you are working on. Arcs are deprecated in favor of plans: `datawatch plans migrate` builds plans from the arcs and
-  registry rows, and the arcs routes keep answering meanwhile. See [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows).
+- **Automation**: a named chain of Automata, run in order. A plan *is* an Automation.
+- **Plan**: the registry record of what you are working on. The older project plan list (arcs) is deprecated in favor of these records: `datawatch plans migrate` builds plans from that list and
+  registry rows, and the plans routes keep answering meanwhile. See [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows).
 
 ```
 Project  "core-api"
- ├─ Arc 1  priority 1  active   ── Automation a1b2c3d4 ── Automata ── sessions
- ├─ Arc 2  priority 2  planned  ── Automation e5f6a7b8 ── Automata ── sessions
- └─ Unassigned Automata (of this project, held by no arc)
+ ├─ Plan 1 priority 1  active   ── Automation a1b2c3d4 ── Automata ── sessions
+ ├─ Plan 2 priority 2  planned  ── Automation e5f6a7b8 ── Automata ── sessions
+ └─ Unassigned Automata (of this project, held by no plan)
 ```
 
 ## Base requirements
@@ -125,7 +125,7 @@ Project  "core-api"
    [What the Inbox counts](automation-tab.md#what-the-inbox-counts)).
 
 3. **Fill in the record.** Set the owner, the target and the lane defaults, then
-   the arcs. Each step is shown in the walkthrough.
+   the plans. Each step is shown in the walkthrough.
 
 ## Manage projects in the web app
 
@@ -145,7 +145,7 @@ change, its message is shown above the form and nothing is changed. Removing the
 project you are viewing returns the picker to **Overview**.
 
 Editing sends the project's whole record back with only these three fields
-changed, so its policy, arcs, owner, target and other record fields keep their
+changed, so its policy, plans, owner, target and other record fields keep their
 stored values. The block is the web form of `POST /api/projects` and
 `DELETE /api/projects/{name}`; the same actions are on the CLI, MCP and comm
 channel below.
@@ -165,7 +165,7 @@ datawatch projects get core-api
 ```
 
 You see the directory, the default backend, the stored policy, the record fields
-that are set and the arcs. Nothing is written.
+that are set and the plans. Nothing is written.
 
 ### 2. Set the record fields
 
@@ -182,11 +182,11 @@ Expected output: the daemon's JSON answer `{"status":"ok","name":"core-api"}`.
 `--target` sets the target **name**. The **definition of done** and the **lane
 defaults** have no CLI flag yet; set them with REST or MCP (step 5).
 
-### 3. Replace the arc list
+### 3. Replace the plan list
 
-> Deprecated: plans replace arcs. Run `datawatch plans migrate` to preview plans built from the arcs; see [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows). This step keeps working until you retire the arcs.
+> Deprecated: this older plan list (arcs) is replaced by the registry plan records. Run `datawatch plans migrate` to preview plans built from it; see [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows). This step keeps working until you retire the older plan list.
 
-An arc is an Automation in the project's order. `--set` takes `id:priority:state`
+A plan is an Automation in the project's order. `--set` takes `id:priority:state`
 entries, comma-separated. The state is `planned`, `active` or `done`; an empty
 state means `planned`. The lower priority runs first on the page.
 
@@ -196,7 +196,7 @@ datawatch projects arcs core-api
 ```
 
 The first command replaces the whole list; it does not add to it. The second
-prints the stored arcs in order. Send `--set` with an empty value to clear them.
+prints the stored plans in order. Send `--set` with an empty value to clear them.
 
 ### 4. Read the roll-up
 
@@ -204,8 +204,8 @@ prints the stored arcs in order. Send `--set` with an empty value to clear them.
 datawatch projects show core-api
 ```
 
-`show` prints the record followed by the roll-up: arcs in order, the Automata
-under each arc with their task progress, cost in points and throughput over the
+`show` prints the record followed by the roll-up: plans in order, the Automata
+under each plan with their task progress, cost in points and throughput over the
 last seven days. Ask for another window through REST or MCP (`window`, 1 to 365
 days).
 
@@ -245,14 +245,14 @@ are spread across them, one page sub-tab at a time.
 | Page sub-tab | Blocks on it | What they show |
 |---|---|---|
 | Overview | Header, Progress | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share; then tasks and Automata done, cost in points and throughput over the last seven days |
-| Arcs | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
-| Gantt | Gantt | One expandable timeline. It opens with one row per arc and a bar from the arc's first to its last task, coloured by its status (Completed, Running, Waiting, Blocked, Failed or Cancelled); work still running is drawn to now and reads "now". Hover or focus a bar for its status, dates and, for a shipped Automaton, its release. Click a row's arrow to open the Automata under the arc, and an Automaton's arrow to open its tasks; an arc with no activity yet reads **Planned** with no bar. Automata that no arc holds sit in the **Automata with no arc** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; **All time** fits the rows that are showing, expanded Automata and tasks included, with a 2 percent margin at each end, and the mouse wheel zooms and a drag pans the chart. Rows you open later are ordered by completion, then running and waiting work by start, with a task or Automaton below the ones it depends on. **Edges** draws thin arrows between the rows that are showing: from the end of a task to the start of each task that waits for it, and from an Automaton to the Automata that follow it. Hover a bar, or tab to it, to light its own edges and dim the rest. **Edges** turns the arrows off, and **All edges** (shown while they are on) lifts the cap of 120 drawn edges, beyond which only the edges of the hovered bar show. The choice is remembered in this browser only. Each arc row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
-| Unassigned | Unassigned Automata, Automata without a project | Automata of this project that no arc holds. Below them, Automata with no project link and no directory match are listed once in a separate `without_project` group, the same whichever project you open and not counted in any total (see [Which Automata belong to a project](#which-automata-belong-to-a-project)), with a hint to set a link from the Automaton detail |
+| Plans | Plans | Each plan with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click a plan to open the Automata and sessions under it. An **active** plan opens by default |
+| Gantt | Gantt | One expandable timeline. It opens with one row per plan and a bar from the plan's first to its last task, coloured by its status (Completed, Running, Waiting, Blocked, Failed or Cancelled); work still running is drawn to now and reads "now". Hover or focus a bar for its status, dates and, for a shipped Automaton, its release. Click a row's arrow to open the Automata under the plan, and an Automaton's arrow to open its tasks; a plan with no activity yet reads **Planned** with no bar. Automata that no plan holds sit in the **Automata with no plan** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; **All time** fits the rows that are showing, expanded Automata and tasks included, with a 2 percent margin at each end, and the mouse wheel zooms and a drag pans the chart. Rows you open later are ordered by completion, then running and waiting work by start, with a task or Automaton below the ones it depends on. **Edges** draws thin arrows between the rows that are showing: from the end of a task to the start of each task that waits for it, and from an Automaton to the Automata that follow it. Hover a bar, or tab to it, to light its own edges and dim the rest. **Edges** turns the arrows off, and **All edges** (shown while they are on) lifts the cap of 120 drawn edges, beyond which only the edges of the hovered bar show. The choice is remembered in this browser only. Each plan row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
+| Unassigned | Unassigned Automata, Automata without a project | Automata of this project that no plan holds. Below them, Automata with no project link and no directory match are listed once in a separate `without_project` group, the same whichever project you open and not counted in any total (see [Which Automata belong to a project](#which-automata-belong-to-a-project)), with a hint to set a link from the Automaton detail |
 | History | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Policy | Effective policy, Merge pipeline | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section; then the read-only merge pipeline, with an **Open settings** link at the Merge pipeline group |
-| Events | Notes, event stream | Notes for empty sections (no arcs, no unassigned Automata), an Automaton with no sessions, a failed roll-up and a missing weekly share, with the event stream filtered to this project below them. This page sub-tab is not in the strip while the project has no notes |
+| Events | Notes, event stream | Notes for empty sections (no plans, no unassigned Automata), an Automaton with no sessions, a failed roll-up and a missing weekly share, with the event stream filtered to this project below them. This page sub-tab is not in the strip while the project has no notes |
 
-A page sub-tab that holds one block (Arcs, Gantt, Unassigned, History) shows
+A page sub-tab that holds one block (Plans, Gantt, Unassigned, History) shows
 that block directly, with no card around it. A page sub-tab that holds more than
 one block (Progress on Overview, Effective policy and Merge pipeline on Policy,
 Notes and the event stream on Events) draws those blocks as collapsible cards
@@ -284,7 +284,7 @@ not a project, and it has no page sub-tabs.
 
 #### The page sub-tabs
 
-- **Seven in a fixed order.** Overview, Arcs, Gantt, Unassigned, History, Policy
+- **Seven in a fixed order.** Overview, Plans, Gantt, Unassigned, History, Policy
   and Events, left to right.
 - **One body at a time.** Choose a page sub-tab to show its body; the others are
   not drawn. The strip scrolls sideways on a phone, so every sub-tab stays
@@ -320,15 +320,15 @@ not a project, and it has no page sub-tabs.
 **Show empty lines and sections**, the checkbox next to the project picker, is
 off by default. While it is off the page draws only what has content: empty
 header fields (an unset owner, repository, target or lane default), the
-"none recorded" lines under an arc (plan documents, design documents, issues),
-an empty Arcs or Unassigned Automata section, an empty merge pipeline and an
+"none recorded" lines under a plan (plan documents, design documents, issues),
+an empty Plans or Unassigned Automata section, an empty merge pipeline and an
 empty event stream are left out. Tick it to see every line and section, with
-"none recorded" or "no arcs" shown where there is nothing yet. The choice is
+"none recorded" or "no plans" shown where there is nothing yet. The choice is
 remembered per viewer in the browser, not by the daemon, so it has no REST,
 MCP, CLI, chat or configuration form, and a browser that blocks storage starts
 hidden each time. Nothing is lost while it is off: a section that needs
 attention still appears, and a missing weekly share is reported in the page's
-Events list whenever the project has an arc or an unassigned Automaton that
+Events list whenever the project has a plan or an unassigned Automaton that
 needs one.
 
 ### 7. Read the history and the Gantt
@@ -344,9 +344,9 @@ timeline below.
 
 #### The project timeline
 
-The timeline read answers "when did each arc, Automaton and task of this project
+The timeline read answers "when did each plan, Automaton and task of this project
 start and finish" without fetching every task up front. It returns one level at a
-time. Ask for the arcs first, then ask only for the rows you open:
+time. Ask for the plans first, then ask only for the rows you open:
 
 ```bash
 datawatch projects timeline core-api                                  # arcs
@@ -355,24 +355,24 @@ datawatch projects timeline core-api --level tasks --automaton <automaton-id>
 datawatch projects timeline core-api --focus <arc-id>                 # one arc, everything under it
 ```
 
-- **Arcs** (the default): one row per arc, spanning the earliest start to the
+- **Plans** (the default): one row per plan, spanning the earliest start to the
   latest finish of its Automata and their tasks. A row of kind `unassigned`
-  holds Automata that no arc holds (matched by project directory only as a
+  holds Automata that no plan holds (matched by project directory only as a
   fallback). `--parent none` lists those Automata.
-- **Automata**: the Automata under one arc. **Tasks**: the tasks of one
+- **Automata**: the Automata under one plan. **Tasks**: the tasks of one
   Automaton.
-- **Focus**: one arc's Automata and all their tasks in a single reply. It is not
+- **Focus**: one plan's Automata and all their tasks in a single reply. It is not
   paged.
 - Each row has `first` and `last`. Work still running has `last` empty and
-  `running` true, so a client draws it to now. An arc with no Automata or no
+  `running` true, so a client draws it to now. A plan with no Automata or no
   recorded times has both empty. `has_children` and `children_count` say
   whether a row can be opened.
 - Each row also has `start` (the same as `first`), `end` (empty while running),
   `status` (completed, running, waiting, blocked, failed or cancelled; a shipped
   Automaton reads completed and its release is in `release`) and, on task rows,
   `depends_on`. An Automaton spans its created time to its completion time; a
-  task spans its start to its completion; an arc spans the earliest Automaton
-  start to the latest Automaton end. Rows inside an arc are ordered by
+  task spans its start to its completion; a plan spans the earliest Automaton
+  start to the latest Automaton end. Rows inside a plan are ordered by
   completion, then adjusted so a dependency sits above its dependent. Automata-level and
   focus replies also carry `edges`, a list of `{from, to, kind: "chain"}` taken
   from the Automation's member order and its on-complete, on-blocked and
@@ -385,9 +385,9 @@ datawatch projects timeline core-api --focus <arc-id>                 # one arc,
 The timeline is a pure read. It has no configuration key and stores nothing. It
 never signals, stops or ends a session or an Automaton.
 
-**Which Automata belong to an arc, and to the project.** The explicit project link
+**Which Automata belong to a plan, and to the project.** The explicit project link
 on the Automaton comes first. Matching by project directory is only a fallback,
-used when an Automaton carries no explicit link. An Automaton that no arc holds
+used when an Automaton carries no explicit link. An Automaton that no plan holds
 sits in the `unassigned` group.
 
 The same read is available over REST, MCP and chat:
@@ -398,7 +398,7 @@ curl -s "$DATAWATCH/api/projects/core-api/timeline?level=arcs&limit=50"   # REST
 # Chat: project timeline core-api level=arcs
 ```
 
-Example chat reply (a running arc reads `now`):
+Example chat reply (a running plan reads `now`):
 
 ```
 core-api timeline (arcs, 2 of 2)
@@ -422,9 +422,9 @@ Automation page when you came from its header. From the Automation page the Focu
 button looks the Automation up in each project in turn and skips projects that do not
 hold it. The page only reads; it stores nothing and sends no write.
 
-### 8. Move work through the arcs
+### 8. Move work through the plans
 
-When an arc starts, mark it active; when it is finished, mark it done. Replacing
+When a plan starts, mark it active; when it is finished, mark it done. Replacing
 the list is the only way to change the state, so send the whole list:
 
 ```bash
@@ -433,7 +433,7 @@ datawatch projects arcs core-api --set a1b2c3d4:1:done,e5f6a7b8:2:active,c9d0e1f
 
 ### Which Automata belong to a project
 
-Every roll-up decides membership the same way: the project's page, its arcs, the
+Every roll-up decides membership the same way: the project's page, its plans, the
 Gantt rows, the History list, the daily progress snapshots, the cost and progress
 grouping and the project filter in **Events**. An Automaton is placed in the
 first project that matches, in this order:
@@ -450,7 +450,7 @@ first project that matches, in this order:
 A link always wins over a directory match, so an Automaton linked to `core-api`
 is never counted under another project because it ran in that project's folder.
 A link naming a project that is not configured is ignored and the next step
-applies. An Automaton an arc holds stays in that arc's project's roll-up as
+applies. An Automaton a plan holds stays in that plan's project's roll-up as
 before. An Automaton that resolves to another project is never in this one.
 Template Automata are never counted.
 
@@ -533,7 +533,7 @@ with `datawatch config set autonomous.project_link_backfill_apply true`.
 | `target.name` | CLI `set --target`, REST, MCP | The outcome the project works toward | Shown on the page |
 | `target.definition_of_done` | REST, MCP | When the target counts as reached | Shown on the page |
 | `lane_defaults` | REST, MCP | Lane, backend and model new work starts with | Shown on the page; not yet used to place new Automata |
-| `arcs` | `projects arcs`, REST `PUT .../arcs`, MCP `project_set_arcs` | The ordered Automations. Array position is the order; `priority` and `state` are stored as sent | Drives the order of the arcs on the page and the roll-up |
+| `arcs` | `projects arcs`, REST `PUT .../arcs`, MCP `project_set_arcs` | The ordered Automations. Array position is the order; `priority` and `state` are stored as sent | Drives the order of the plans on the page and the roll-up |
 | `weekly_share` | CLI `set --weekly-share`, REST, MCP | Percent of the weekly usage budget the project should get (0 to 100) | **Stored and shown only.** No scheduler reads it yet |
 | `branch_retention_days` | CLI `set --branch-retention-days`, REST, MCP | Days to keep finished Automaton branches | **Stored and shown only.** The worktree cleanup uses its own retention setting; see [automaton-worktree-cleanup](automaton-worktree-cleanup.md) |
 | `major_trigger` | CLI `set --major-trigger`, REST, MCP | `manual`, `milestone` or `never` | **Stored and shown only.** The release decision reads the merge pipeline's major trigger, set per project with the merge pipeline settings; see [merge-pipeline](merge-pipeline.md) |
@@ -561,7 +561,7 @@ record, or preview and apply an import of the old plans files. Records are never
 deleted; closing one is a state change. Full guide:
 [plan-records.md](plan-records.md).
 
-### Arc states
+### Plan states
 
 | State | Meaning on the page |
 |---|---|
@@ -569,7 +569,7 @@ deleted; closing one is a state change. Full guide:
 | `active` | In progress. Opened by default |
 | `done` | Finished. Its Automata stay visible under it |
 
-An arc with no Automata yet shows "Arc has no Automata yet" in Events.
+A plan with no Automata yet shows "Plan has no Automata yet" in Events.
 
 ### Defaults and inheritance
 
@@ -604,11 +604,11 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Pick a project | **Project** picker at the top (the same Overview picker as before); **Overview** is the cross-project view |
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
 | Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `arcs`, `gantt`, `unassigned`, `history`, `policy` or `events`; no sub-tab in the address opens **Overview** |
-| Switch between Overview, Arcs, Gantt, Unassigned, History, Policy and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
+| Switch between Overview, Plans, Gantt, Unassigned, History, Policy and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
 | Change the range of the Gantt | Gantt header: **All time**, 90, 30 or 7 days; wheel to zoom, drag to pan |
 | Show or hide dependency edges | Gantt header **Edges** (on by default; also on the Focus page); **All edges** shows every drawn edge instead of the first 120; hover or tab to a bar to highlight its edges |
-| Expand or collapse a Gantt row | The arrow at the left of an arc, an Automaton or the **Automata with no arc** group; **Load more** pages a long level |
-| Focus on one Automation | **Focus** on an arc's Gantt row or card, or in the header of the Automation page; **Back** returns |
+| Expand or collapse a Gantt row | The arrow at the left of a plan, an Automaton or the **Automata with no plan** group; **Load more** pages a long level |
+| Focus on one Automation | **Focus** on a plan's Gantt row or card, or in the header of the Automation page; **Back** returns |
 | Page through history | **Load more** at the foot of History |
 | Change policy | **Settings → Automata → Project policy** (the **Open settings** link on the **Policy** page sub-tab opens the Automata tab, expands that section and scrolls to it) |
 | Change the merge pipeline | **Settings → Automata**, the **Merge pipeline** group of the Automata settings card (the **Open settings** link on the **Policy** page sub-tab opens the Automata tab, expands that card and scrolls to it) |
@@ -616,7 +616,7 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Edit a project's directory, description or default backend | **Manage projects**, **Edit** on the project's row, then **Save changes** |
 | Remove a project | **Manage projects**, **Remove** on the project's row, then confirm. Only the record goes; sessions keep running |
 
-The block edits the directory, description and default backend only. Arcs,
+The block edits the directory, description and default backend only. Plans,
 target, lane defaults, owner and the numeric record fields are changed with the
 surfaces below.
 
@@ -627,14 +627,14 @@ surfaces below.
 | `GET /api/projects` | List every project alias with its record |
 | `GET /api/projects/{name}` | One project's record |
 | `POST /api/projects` | Create or update an alias; absent record fields keep their stored value; invalid values return 400 and nothing is saved |
-| `PUT /api/projects/{name}/arcs` | Replace the ordered arcs (a bare array or `{"arcs": [...]}`); 404 for an unknown project |
-| `GET /api/projects/{name}/rollup?window=7` | Roll-up: arcs in order, Automata, tasks, points, throughput; `window` 1 to 365 days |
+| `PUT /api/projects/{name}/arcs` | Replace the ordered plans (a bare array or `{"arcs": [...]}`); 404 for an unknown project |
+| `GET /api/projects/{name}/rollup?window=7` | Roll-up: plans in order, Automata, tasks, points, throughput; `window` 1 to 365 days |
 | `GET /api/projects/{name}/history?limit=50&cursor=…` | History page and Gantt rows |
-| `GET /api/projects/{name}/timeline?level=arcs\|automata\|tasks&parent=…&automaton=…&focus=…&limit=50&cursor=…` | One level of the project timeline: start, end, status and release per arc, Automaton and task, `depends_on` on tasks and `edges` between Automata; 400 for a bad level, limit, cursor or a missing `automaton`; 404 for an unknown project, arc or Automaton |
+| `GET /api/projects/{name}/timeline?level=arcs\|automata\|tasks&parent=…&automaton=…&focus=…&limit=50&cursor=…` | One level of the project timeline: start, end, status and release per plan, Automaton and task, `depends_on` on tasks and `edges` between Automata; 400 for a bad level, limit, cursor or a missing `automaton`; 404 for an unknown project, plan or Automaton |
 | `GET /api/projects/{name}/policy/effective?automaton=<id>` | Effective policy with the tier of each setting |
 | `DELETE /api/projects/{name}` | Remove the alias; the directory is not touched |
 
-Example, replace the arcs:
+Example, replace the plans:
 
 ```bash
 curl -s -X PUT http://localhost:8080/api/projects/core-api/arcs -H 'Content-Type: application/json' -d '[
@@ -658,14 +658,14 @@ capability; a federated peer is checked against the same two.
 |---|---|---|
 | `project_list` | none | List the aliases and their records |
 | `project_upsert` | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` | Create or update; omit a field to keep it |
-| `project_set_arcs` | `name`, `arcs` (required) | Replace the arcs; `[]` clears them |
+| `project_set_arcs` | `name`, `arcs` (required) | Replace the plans; `[]` clears them |
 | `project_rollup` | `name`; `window` | The roll-up |
 | `project_history` | `name`; `limit`, `cursor` | One history page |
-| `project_timeline` | `name`; `level`, `parent`, `automaton`, `focus`, `limit`, `cursor` | One level of the project timeline (arcs by default) |
+| `project_timeline` | `name`; `level`, `parent`, `automaton`, `focus`, `limit`, `cursor` | One level of the project timeline (plans by default) |
 | `project_policy_effective` | `name`; `automaton` | Effective policy with tiers |
 | `project_alias_delete` | `name` | Remove the alias |
 
-Example call, set the arcs:
+Example call, set the plans:
 
 ```json
 {
@@ -689,8 +689,8 @@ Example call, set the arcs:
 | `datawatch projects upsert <name> --dir <abs> [--backend …] [--description …]` | Create or update an alias (replaces the policy; see the note in Setup) |
 | `datawatch projects show <name> [--window N]` | Record plus roll-up |
 | `datawatch projects set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags you pass |
-| `datawatch projects arcs <name>` | Print the arcs in order |
-| `datawatch projects arcs <name> --set id:priority:state,…` | Replace the arcs; `--set ""` clears them |
+| `datawatch projects arcs <name>` | Print the plans in order |
+| `datawatch projects arcs <name> --set id:priority:state,…` | Replace the plans; `--set ""` clears them |
 | `datawatch projects history <name> [--limit N] [--cursor …]` | History page |
 | `datawatch projects timeline <name> [--level arcs\|automata\|tasks] [--parent <arc>\|none] [--automaton <id>] [--focus <arc>\|none] [--limit N] [--cursor …]` | One level of the project timeline |
 | `datawatch projects policy …` | Policy verbs; see [project-automation-policy](project-automation-policy.md) |
@@ -705,13 +705,13 @@ Send these from Signal, Telegram or another connected channel:
 | Command | Purpose |
 |---|---|
 | `project show <name>` | Record fields, one per line; `-` for unset |
-| `project arcs <name>` | Arcs in order |
-| `project progress <name>` | Roll-up: tasks, points and throughput per arc |
+| `project arcs <name>` | Plans in order |
+| `project progress <name>` | Roll-up: tasks, points and throughput per plan |
 | `project timeline <name> [level=arcs\|automata\|tasks] [parent=<arc>\|none] [automaton=<id>] [focus=<arc>\|none] [limit=<n>] [cursor=<c>]` | One line per row: kind, title, start and end (`now` while running), then `[status]`, `depends on …` and `release …` when present; Automaton chain edges follow as `from -> to (chain)` lines; says how to continue when more rows exist |
 | `project set <name> <field> <value>` | Set one field: `owner`, `repository`, `default_branch`, `description`, `default_backend`, `major_trigger`, `weekly_share`, `branch_retention_days` |
 | `project policy <name> [automaton]` | Effective policy (see [project-automation-policy](project-automation-policy.md)) |
 
-The comm channel does not replace arcs, set the target, the definition of done or
+The comm channel does not replace plans, set the target, the definition of done or
 the lane defaults. Use REST, MCP or the CLI for those.
 
 ## Troubleshooting
@@ -725,14 +725,14 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | A block I used to see on the project page is missing | The page now shows one page sub-tab at a time. Find the block in the table under step 6 (for example the Gantt is on **Gantt** and the policy and merge pipeline are on **Policy**) |
 | There is no **Events** page sub-tab | It is left out of the strip while the project has no notes. An `#projects/<name>/events` address or a remembered **Events** choice opens **Overview** in that case |
 | The page opens a page sub-tab I did not pick | The last choice is remembered in this browser. Choose **Overview**, or open `#projects/<name>`, which always opens **Overview** |
-| An arc shows no Automata | Its Automation has no member Automata yet, or the Automata are of another project |
+| A plan shows no Automata | Its Automation has no member Automata yet, or the Automata are of another project |
 | An Automaton is missing from a project's page, or appears under a different one | Membership follows the order in [Which Automata belong to a project](#which-automata-belong-to-a-project). Its own link or its Automation's link beats its directory. Look for it under **Automata without a project** if nothing placed it, then set its link as in [Link an Automaton to a project](#link-an-automaton-to-a-project) |
 | The backfill report lists an Automaton as skipped | It matched no datawatch source (Automation, parent or directory), or no project that is the datawatch project is configured. Link it by hand, or add the project first |
-| `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each arc needs a unique id; an arc whose state is not `planned`, `active` or `done` is refused |
+| `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each plan needs a unique id; a plan whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
 | `set --branch-retention-days -1` is refused | Retention cannot be negative |
 | Policy disappeared after an `upsert` | `upsert` writes the policy it is sent, which is none; set the policy again with `datawatch projects policy set`, or use `set` and `arcs` for later changes |
-| Plan documents, design documents or issues show "none recorded" | The arc record has no fields for them yet, so the page cannot show them. The arc section shows what the record holds |
+| Plan documents, design documents or issues show "none recorded" | The plan record has no fields for them yet, so the page cannot show them. The plan section shows what the record holds |
 
 ## Limits in this release
 
@@ -742,7 +742,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - Lane defaults are recorded for new work but do not yet decide where an Automaton
   runs.
 - The **Manage projects** block changes only the name, directory, description
-  and default backend. Arcs, target, lane defaults, owner and the numeric record
+  and default backend. Plans, target, lane defaults, owner and the numeric record
   fields go through REST, MCP, the CLI or the comm channel.
 
 ## For the operator to review
@@ -764,7 +764,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - **Sub-tab order.** Projects, Automation, Automata, Events, Templates is the
   order shipped. Confirm it is the order you want before the next release.
 - **Page sub-tab order and grouping.** Inside a project the strip reads Overview,
-  Arcs, Gantt, Unassigned, History, Policy, Events (the 2026-11-12 decision "b - sub
+  Plans, Gantt, Unassigned, History, Policy, Events (the 2026-11-12 decision "b - sub
   tabs", "the order is good"). The strip is not in the order the old single page
   listed its blocks (Gantt used to follow Unassigned). Header and Progress share
   **Overview**, and Effective policy and Merge pipeline share **Policy**; confirm
@@ -783,9 +783,9 @@ the lane defaults. Use REST, MCP or the CLI for those.
   button that went to Project policy. This page now describes the **Manage
   projects** form as the place to start, and the button is no longer listed.
   Confirm that is the intended behavior in the shipped web app.
-- **Edit keeps the record.** The page says editing keeps the policy, arcs, owner,
+- **Edit keeps the record.** The page says editing keeps the policy, plans, owner,
   target and other record fields. That follows the shipped form's behavior as
-  documented in the change; confirm it on a project that has a policy and arcs.
+  documented in the change; confirm it on a project that has a policy and plans.
 
 - **Gantt edges and ordering (2026-11-12).** The Gantt now draws dependency edges, an
   **Edges** toggle and a hover highlight, fits **All time** to the visible rows, and orders

@@ -68,7 +68,7 @@ the *group* setting:
 | Group | One row per | Use it to see |
 |---|---|---|
 | `project` | project | where the work sits across your projects |
-| `automation` | Automation (an arc of work) | how far along each arc is |
+| `automation` | Automation (a plan of work) | how far along each plan is |
 | `automaton` | Automaton | the same counts one Automaton at a time |
 
 Each row carries the same figures as the overall totals: Automata, done,

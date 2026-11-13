@@ -135,7 +135,7 @@ test('an arc with no Automata is not expanded and its line goes to Events', () =
   const html = pageAllSubtabs(sb, FULL, roll, '');
   assert.match(html, /data-automation="auto-empty"/);
   assert.doesNotMatch(html, /project-automaton/);
-  assert.match(html, /Arc auto-empty has no Automata yet\./);
+  assert.match(html, /Plan auto-empty has no Automata yet\./);
 });
 
 test('an Automaton with no sessions goes to Events, not an empty list', () => {
@@ -150,8 +150,8 @@ test('an Automaton with no sessions goes to Events, not an empty list', () => {
 test('no arcs and no unassigned Automata both say so in Events', () => {
   const { sb } = loadView();
   const html = pageAllSubtabs(sb, FULL, { arcs: [], unassigned: { automata: [] } }, '');
-  assert.doesNotMatch(html, /Arcs<\/div>/);
-  assert.match(html, /No arcs are planned for this project\./);
+  assert.doesNotMatch(html, /Plans<\/div>/);
+  assert.match(html, /No plans are planned for this project\./);
   assert.match(html, /No unassigned Automata\./);
 });
 
@@ -167,8 +167,8 @@ test('unassigned Automata are shown when present', () => {
 test('while the roll-up loads, the page shows a loading line and no arc or Events text', () => {
   const { sb } = loadView();
   const html = pageAllSubtabs(sb, FULL, null, '');
-  assert.match(html, /Loading arcs…/);
-  assert.doesNotMatch(html, /No arcs are planned/);
+  assert.match(html, /Loading plans…/);
+  assert.doesNotMatch(html, /No plans are planned/);
   assert.doesNotMatch(html, /id="projectEvents"/);
 });
 
@@ -176,7 +176,7 @@ test('a roll-up failure is an Events entry with the escaped error', () => {
   const { sb } = loadView();
   const html = pageAllSubtabs(sb, FULL, null, '<b>down</b>');
   assert.match(html, /Could not load the roll-up: &lt;b&gt;down&lt;\/b&gt;/);
-  assert.doesNotMatch(html, /Loading arcs…/);
+  assert.doesNotMatch(html, /Loading plans…/);
 });
 
 test('the Projects view reads the selected project roll-up and paints the arcs', async () => {

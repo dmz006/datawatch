@@ -2168,14 +2168,14 @@ paths:
         "503": {description: Plan records are not available}
   /api/plans/migrate:
     post:
-      summary: Build plans from project arcs and registry rows
+      summary: Build plans from the older project plan lists and registry rows
       description: |
-        Turns every project arc into a plan linked to its Automation, every registry
+        Turns every entry of a project's older plan list (arcs) into a plan linked to its Automation, every registry
         row that names an Automaton or Automation into a plan linked to it, and every
         open row that names none into a backlog plan ordered by its old row number.
         The default is a dry run: the answer lists what would be created and linked
         and nothing is written. `{"apply": true}` writes. A plan or link that already
-        exists is never changed, so a second apply changes nothing. No arc, row or
+        exists is never changed, so a second apply changes nothing. No older plan-list entry, row or
         config key is deleted. Needs the autonomous write capability when called by a
         federated peer. An apply is recorded in the audit log.
       operationId: plansMigrate
@@ -10394,7 +10394,7 @@ paths:
                 default_branch: {type: string, description: "Project record: default git branch"}
                 arcs:
                   type: array
-                  description: "Project record: the ordered arc list. Absent keeps it; [] clears it"
+                  description: "Project record: the ordered plan list (key arcs, deprecated name). Absent keeps it; [] clears it"
                   items: {type: object}
                 target:
                   type: object
@@ -10417,18 +10417,18 @@ paths:
           content: {"text/plain": {schema: {type: string}}}
   /api/projects/{name}/rollup:
     get:
-      summary: Project roll-up of arcs, Automata, task progress, points and throughput
+      summary: Project roll-up of plans, Automata, task progress, points and throughput
       description: |
-        Groups the project's Automata by the arc whose Automation holds them.
-        Each arc reports its Automata with their session ids, task progress
+        Groups the project's Automata by the plan whose Automation holds them.
+        Each plan reports its Automata with their session ids, task progress
         (done/total), cost in usage points and throughput. Automata of this
-        project that no arc holds are in `unassigned`. An Automaton is placed in a
+        project that no plan holds are in `unassigned`. An Automaton is placed in a
         project by its own project link, then the project of the Automation holding
         it, then its parent Automaton's project, then its directory; one resolved to
         another project is never in this project. Automata without a project (no
-        link and no directory match, in no arc) are in `without_project`, which is
+        link and no directory match, in no plan) are in `without_project`, which is
         the same whichever project is asked for and is not part of `total`;
-        `total` sums the arcs and `unassigned`.
+        `total` sums the plans and `unassigned`.
         Costs are points from the billing profile's point calibration, never
         API dollars. Throughput counts Automata finished in the window and tasks
         finished in the window, per day. An Automaton is finished when it is
@@ -10546,7 +10546,7 @@ paths:
       summary: Read one project alias and its record
       description: |
         Returns the project's directory, default backend, description, policy and
-        the optional record fields (owner, repository, default branch, arcs, target,
+        the optional record fields (owner, repository, default branch, plan list (arcs), target,
         lane defaults, weekly share, branch retention and major trigger).
       operationId: projectsGet
       tags: [Singletons]
@@ -10596,12 +10596,12 @@ paths:
         "404": {description: Unknown project}
         "503": {description: Automata not available}
     put:
-      summary: Replace a project's ordered arc list
+      summary: Replace a project's ordered plan list (deprecated route name)
       description: |
-        Body is a JSON array of arcs, or an object `{"arcs": [...]}`. Array position
-        is the arc order. Each arc has `automation_id` (required, unique within the
+        Body is a JSON array of plan entries, or an object `{"arcs": [...]}` (the key keeps its old name). Array position
+        is the plan order. Each entry has `automation_id` (required, unique within the
         project), `priority` (integer) and `state` (`planned`, `active` or `done`;
-        empty means planned). An empty list clears the arcs. Returns the project
+        empty means planned). An empty list clears the plan list. Returns the project
         record.
       operationId: projectsSetArcs
       tags: [Singletons]
@@ -10627,7 +10627,7 @@ paths:
                       type: array
                       items: {type: object}
       responses:
-        "200": {description: The project record with the new arcs}
+        "200": {description: The project record with the new plan list}
         "400": {description: Empty body, malformed JSON, duplicate or missing automation_id, or an unknown state; the message names the problem}
         "404": {description: Unknown project}
         "413": {description: Body larger than 1 MiB}
@@ -14440,7 +14440,7 @@ components:
         id: {type: string, description: "Automation ID (8-hex)"}
         name: {type: string}
         description: {type: string}
-        milestone: {type: boolean, description: "true marks the Automation as a milestone arc: when it completes, its release step is raised to major under the project's major_trigger setting"}
+        milestone: {type: boolean, description: "true marks the Automation as a milestone plan: when it completes, its release step is raised to major under the project's major_trigger setting"}
         status: {type: string, enum: [draft, active, paused, completed, blocked, cancelled]}
         entry_member_id: {type: string, description: "Member the Automation starts at"}
         current_member_id: {type: string, description: "Member the cursor is on for a linear Automation; see active_cursors for fork/join"}
@@ -14628,7 +14628,7 @@ components:
       properties:
         name: {type: string}
         description: {type: string}
-        milestone: {type: boolean, description: "Optional. true marks the Automation as a milestone arc. On create omitted means false; on update omitted keeps the stored value."}
+        milestone: {type: boolean, description: "Optional. true marks the Automation as a milestone plan. On create omitted means false; on update omitted keeps the stored value."}
         entry_member_id: {type: string, description: "Entry member ID; when omitted, the first members entry is the entry"}
         members:
           type: array

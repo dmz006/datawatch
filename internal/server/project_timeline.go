@@ -624,7 +624,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		} else if mem.arcs[in.Focus] {
 			list = byArc[in.Focus]
 		} else {
-			return out, &timelineError{http.StatusNotFound, "arc not found"}
+			return out, &timelineError{http.StatusNotFound, "plan not found"}
 		}
 		byID := map[string]*autonomous.PRD{}
 		for _, p := range list {
@@ -691,7 +691,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		case mem.arcs[in.Parent]:
 			list = byArc[in.Parent]
 		default:
-			return out, &timelineError{http.StatusNotFound, "arc not found"}
+			return out, &timelineError{http.StatusNotFound, "plan not found"}
 		}
 		rows, out.Edges = timelineOrderedAutomata(list, timelineAutomationsFor(in.Parent, mem.arcs, in.Automations))
 	case level == timelineLevelTasks:
@@ -711,7 +711,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		}
 		rows = timelineOrderedTasks(found)
 	default:
-		return out, &timelineError{http.StatusBadRequest, "level must be arcs, automata or tasks"}
+		return out, &timelineError{http.StatusBadRequest, "level must be arcs (the plans), automata or tasks"}
 	}
 
 	out.Total = len(rows)
@@ -769,7 +769,7 @@ func (s *Server) handleProjectTimeline(w http.ResponseWriter, r *http.Request) {
 	switch level {
 	case "", timelineLevelArcs, timelineLevelAutomata, timelineLevelTasks:
 	default:
-		http.Error(w, "level must be arcs, automata or tasks", http.StatusBadRequest)
+		http.Error(w, "level must be arcs (the plans), automata or tasks", http.StatusBadRequest)
 		return
 	}
 	limit, err := parseHistoryLimit(q.Get("limit"))
