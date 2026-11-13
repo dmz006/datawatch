@@ -3115,7 +3115,7 @@ A **task routing profile** is a named table that maps each task type to a row: w
 
 ### Active profile
 
-The **active profile** is the one task routing profile whose rows are read for tasks created from now on (`autonomous.task_routing.active_profile`). It cannot be deleted while it is active. Switching it changes nothing on tasks that already exist and never touches a running session.
+The **active profile** is the one task routing profile whose rows are read for tasks created from now on (`autonomous.task_routing.active_profile`). It cannot be deleted while it is active. Switching it changes nothing on tasks that already exist, rewrites no task and never touches a running session; only tasks created afterwards, or tasks the router itself routed that have not started and are re-routed by a re-decompose, take the new profile's rows. Hand-set task, story and Automaton LLMs are never overwritten.
 
 ### Second choice
 
