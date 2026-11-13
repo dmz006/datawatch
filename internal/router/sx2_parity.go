@@ -649,7 +649,7 @@ func (r *Router) handleAutonomousCompletedMigrateVerb(args []string) {
 		case "dry_run", "dry-run":
 			if strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "on") {
 				q.Set("dry_run", "true")
-			} else if !(strings.EqualFold(v, "false") || v == "0" || strings.EqualFold(v, "off")) {
+			} else if !strings.EqualFold(v, "false") && v != "0" && !strings.EqualFold(v, "off") {
 				r.reply(title+" failed", completedMigrateUsage)
 				return
 			}
