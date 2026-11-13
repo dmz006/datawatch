@@ -3255,6 +3255,10 @@ The **Records** page sub-tab (third in the Projects page, after Overview and Pla
 
 A **plan record** of kind `plan` is the registry record of what you are working on. It has a title, a goal, a state and an `order`, and it links down to Automations and Automata and holds the findings attached to it. A plan with no Automaton yet is in the *backlog*. See [howto/plan-records.md](howto/plan-records.md#plans-links-and-order).
 
+### Plan rename and goal edit
+
+A plan can be **renamed** and its **goal edited** with `PATCH /api/plans/{ref}` (MCP `plan_rename` and `plan_edit`, CLI `datawatch plans rename` and `edit --goal`, chat `autonomous plan rename` and `plan edit <plan> goal`, and **Rename** / **Edit goal** in the Plans browser). A title is one line of at most 100 characters and unique in the project (a clash is a 409 naming the other record); the old title stays as an alias and the plan's title is then kept as written, so a later plans migration does not overwrite it. A goal is at most 2000 characters and an empty goal clears it (not from chat). Neither changes the plan's status or `set_by_hand`. Each writes a `plan_renamed` or `plan_goal_edited` audit event. See [howto/plan-records.md](howto/plan-records.md#renaming-a-plan-and-editing-its-goal).
+
 ### Plan links
 
 **Plan links** are the ids a plan keeps in `automations`, `automata` and `findings`. A link is never overwritten: attaching an Automaton or Automation that another plan already holds, or a finding attached elsewhere, is refused and names the holder. Detach it first.
