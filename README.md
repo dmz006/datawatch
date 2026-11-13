@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.172.3 (2026-11-13). Plans migration: plans made from registry rows are titled from the row's real title, and the preview reports how many titles were derived and how many fell back.** Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.172.4 (2026-11-13). Plans migration: a registry row with no title of its own takes the title of the Automaton it names, and the preview counts those separately.** Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.4 — Plans migration: untitled rows take the linked Automaton's title
+
+### Fixed
+
+- **Registry rows with no title of their own now take the title of the Automaton they name.** After v9.172.3 about 70 rows still became `Plan: (untitled row N)` and plans are never renamed afterwards. A row with no usable title now takes the title of the Automaton (or Automation) it names, on one line, at most 100 characters with `Plan: ` included; only a row with neither is still named `(untitled row N)`. The preview line now ends `titles derived N, from linked Automaton K, fell back M` on the CLI, chat and REST (`titles_from_linked`), and the MCP text, both OpenAPI files and the Plans how-to say so.
+
+
 ## v9.172.3 — Plans migration uses the real row title
 
 ### Fixed

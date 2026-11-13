@@ -118,8 +118,11 @@ type MigrateReport struct {
 	// TitlesDerived and TitlesFellBack count the plans made from registry
 	// rows: titles found in the row, and rows with no title that were named
 	// "(untitled row N)". A plan that already exists is counted in neither.
-	TitlesDerived  int `json:"titles_derived"`
-	TitlesFellBack int `json:"titles_fell_back"`
+	// TitlesFromLinked counts plans titled from the Automaton or Automation
+	// the row names, because the row had no title of its own.
+	TitlesDerived    int `json:"titles_derived"`
+	TitlesFromLinked int `json:"titles_from_linked"`
+	TitlesFellBack   int `json:"titles_fell_back"`
 }
 
 // Counts is the size of each list.
@@ -127,7 +130,7 @@ func (r MigrateReport) Counts() map[string]int {
 	return map[string]int{
 		"would_create": len(r.WouldCreate), "would_link": len(r.WouldLink),
 		"skipped_existing": len(r.SkippedExisting), "conflicts": len(r.Conflicts),
-		"titles_derived": r.TitlesDerived, "titles_fell_back": r.TitlesFellBack,
+		"titles_derived": r.TitlesDerived, "titles_from_linked": r.TitlesFromLinked, "titles_fell_back": r.TitlesFellBack,
 	}
 }
 
@@ -248,6 +251,8 @@ func (m *migrator) add(list *[]MigrateItem, it MigrateItem) {
 		switch it.TitleSource {
 		case TitleDerived:
 			m.rep.TitlesDerived++
+		case TitleFromLinked:
+			m.rep.TitlesFromLinked++
 		case TitleFellBack:
 			m.rep.TitlesFellBack++
 		}
@@ -401,6 +406,14 @@ func (m *migrator) rows() {
 		marker := "row:" + r.UID
 		plan, hasPlan := m.markers[marker]
 		title, titleSource := migratedRowTitle(r)
+		if titleSource == TitleFellBack {
+			for _, ref := range refs {
+				if t := linkedPlanTitle(ref.info.Title); t != "" {
+					title, titleSource = t, TitleFromLinked
+					break
+				}
+			}
+		}
 		it := MigrateItem{
 			Source: migrateSourceRow, SourceRef: r.ID, Title: title, Project: r.Project,
 			Order: clampOrder(r.LegacyNumber), TitleSource: titleSource,

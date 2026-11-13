@@ -67,7 +67,7 @@ func TestMigrateRowTitlesCountedAndKeepStatus(t *testing.T) {
 	bad2.Links = []Link{{Kind: "automaton", Ref: "cccc3333"}}
 	mustCreate(t, s, bad2)
 	resolve := func(id string) (MigrateRef, bool) {
-		return MigrateRef{Kind: "automaton", Title: "x"}, true
+		return MigrateRef{Kind: "automaton"}, true // an Automaton with no title
 	}
 	prev, err := Migrate(MigrateOptions{Store: s, Resolve: resolve})
 	if err != nil || prev.TitlesDerived != 1 || prev.TitlesFellBack != 2 {
@@ -98,5 +98,58 @@ func TestMigrateRowTitlesCountedAndKeepStatus(t *testing.T) {
 	}
 	if q, _ := s.PlanOf("bbbb2222"); q.Title != "Hand renamed" {
 		t.Fatalf("plan was renamed to %q", q.Title)
+	}
+}
+
+func TestMigrateUntitledRowsTakeLinkedTitle(t *testing.T) {
+	s, _, _, _ := newTestStore(t, nil)
+	mk := func(title string, n int, state State, ids ...string) {
+		r := row(title)
+		r.LegacyNumber, r.State = n, state
+		for _, id := range ids {
+			r.Links = append(r.Links, Link{Kind: "automaton", Ref: id})
+		}
+		mustCreate(t, s, r)
+	}
+	mk("done: 3a shipped in 9.5.85 (PRD b3ca0001)", 13, StateDone, "b3ca0001")
+	mk("done, shipped in 9.5.92 (PRD 332c0001)", 15, StateDone, "332c0001")
+	mk("PRD d1160001 (Claude); operator decisions Q1 and Q7 recorded", 20, StateOpen, "d1160001")
+	mk("done, shipped in 9.5.1 (PRD eeee5555)", 21, StateDone, "eeee5555") // linked, no title
+	mk("Real row title", 22, StateOpen, "ffff6666")
+	titles := map[string]string{
+		"b3ca0001": "Per-LLM budget\nwith a second line",
+		"332c0001": strings.Repeat("long ", 40),
+		"d1160001": "Webhook sink",
+		"ffff6666": "Linked name not used",
+	}
+	resolve := func(id string) (MigrateRef, bool) {
+		return MigrateRef{Kind: "automaton", Title: titles[id]}, true
+	}
+	rep, err := Migrate(MigrateOptions{Store: s, Apply: true, Resolve: resolve})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.TitlesDerived != 1 || rep.TitlesFromLinked != 3 || rep.TitlesFellBack != 1 {
+		t.Fatalf("counts = %+v", rep.Counts())
+	}
+	want := map[string]string{
+		"b3ca0001": "Plan: Per-LLM budget with a second line",
+		"d1160001": "Plan: Webhook sink",
+		"eeee5555": "Plan: (untitled row 21)",
+		"ffff6666": "Plan: Real row title",
+	}
+	for id, w := range want {
+		if p, ok := s.PlanOf(id); !ok || p.Title != w {
+			t.Fatalf("plan of %s = %q (%v), want %q", id, p.Title, ok, w)
+		}
+	}
+	p, _ := s.PlanOf("332c0001")
+	if n := utf8.RuneCountInString(p.Title); n > 100 || !strings.HasPrefix(p.Title, "Plan: long long") || p.State != StateDone {
+		t.Fatalf("long linked title = %q (%d) state %s", p.Title, n, p.State)
+	}
+	n := s.Len()
+	again, _ := Migrate(MigrateOptions{Store: s, Apply: true, Resolve: resolve})
+	if s.Len() != n || again.TitlesFromLinked != 0 || again.TitlesFellBack != 0 || len(again.WouldCreate) != 0 {
+		t.Fatalf("second apply: %+v", again.Counts())
 	}
 }

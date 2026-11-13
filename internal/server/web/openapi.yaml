@@ -2179,8 +2179,9 @@ paths:
         config key is deleted. Needs the autonomous write capability when called by a
         federated peer. An apply is recorded in the audit log. A plan made from a row is
         titled from the row's own title text, without leading status words, on one line and
-        at most 100 characters; a row with no real title becomes "Plan: (untitled row N)".
-        The counts include `titles_derived` and `titles_fell_back` for the plans this run makes.
+        at most 100 characters; a row with no real title takes the title of the Automaton or Automation it names, and
+        only a row with neither becomes "Plan: (untitled row N)". The counts include `titles_derived`,
+        `titles_from_linked` and `titles_fell_back` for the plans this run makes.
       operationId: plansMigrate
       tags: [Autonomous]
       requestBody:

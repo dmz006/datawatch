@@ -11,6 +11,9 @@ const (
 	// TitleDerived means the title was found in the row's title or
 	// description text.
 	TitleDerived = "derived"
+	// TitleFromLinked means the row had no title, so the plan takes the title
+	// of the Automaton or Automation the row names.
+	TitleFromLinked = "linked"
 	// TitleFellBack means the row held no real title, so the plan is named
 	// after the row's key and marked untitled.
 	TitleFellBack = "fallback"
@@ -99,4 +102,15 @@ func migratedRowTitle(r Record) (title, source string) {
 		key = fmt.Sprintf("%d", r.LegacyNumber)
 	}
 	return fmt.Sprintf("%s(untitled row %s)", migratedTitlePrefix, key), TitleFellBack
+}
+
+// linkedPlanTitle makes a plan title from the title of an Automaton or
+// Automation: one line, at most 100 characters, "Plan: " included. It is ""
+// when that title is empty.
+func linkedPlanTitle(t string) string {
+	t = strings.Join(strings.Fields(t), " ")
+	if t == "" {
+		return ""
+	}
+	return clipRunes(migratedTitlePrefix+t, maxMigratedTitleRunes)
 }

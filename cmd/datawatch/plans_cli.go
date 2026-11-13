@@ -31,13 +31,14 @@ import (
 type cliPlansMigrate struct {
 	Note   string `json:"note"`
 	Result struct {
-		Applied         bool                `json:"applied"`
-		WouldCreate     []cliPlansMigrateIt `json:"would_create"`
-		WouldLink       []cliPlansMigrateIt `json:"would_link"`
-		SkippedExisting []cliPlansMigrateIt `json:"skipped_existing"`
-		Conflicts       []cliPlansMigrateIt `json:"conflicts"`
-		TitlesDerived   int                 `json:"titles_derived"`
-		TitlesFellBack  int                 `json:"titles_fell_back"`
+		Applied          bool                `json:"applied"`
+		WouldCreate      []cliPlansMigrateIt `json:"would_create"`
+		WouldLink        []cliPlansMigrateIt `json:"would_link"`
+		SkippedExisting  []cliPlansMigrateIt `json:"skipped_existing"`
+		Conflicts        []cliPlansMigrateIt `json:"conflicts"`
+		TitlesDerived    int                 `json:"titles_derived"`
+		TitlesFromLinked int                 `json:"titles_from_linked"`
+		TitlesFellBack   int                 `json:"titles_fell_back"`
 	} `json:"result"`
 }
 
@@ -61,9 +62,9 @@ func renderPlansMigrate(w io.Writer, body []byte) error {
 	if r.Applied {
 		head, verbCreate, verbLink = "Migration", "created", "linked"
 	}
-	_, _ = fmt.Fprintf(w, "%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, fell back %d\n", head,
+	_, _ = fmt.Fprintf(w, "%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, from linked Automaton %d, fell back %d\n", head,
 		verbCreate, len(r.WouldCreate), verbLink, len(r.WouldLink), len(r.SkippedExisting), len(r.Conflicts),
-		r.TitlesDerived, r.TitlesFellBack)
+		r.TitlesDerived, r.TitlesFromLinked, r.TitlesFellBack)
 	line := func(prefix string, it cliPlansMigrateIt) {
 		s := fmt.Sprintf("  %s: %s (%s", prefix, oneLineText(it.Title), it.Source)
 		if it.Project != "" {

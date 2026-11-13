@@ -313,16 +313,20 @@ the first one that reads like a name:
   `Plan: Fix the retry check`.
 - The title is one line and at most 100 characters, `Plan: ` included.
 - Text that is only a status note, or starts with a PRD id or a version, is not
-  a title. If nothing in the row is a title, the plan is named from the row
+  a title. If nothing in the row is a title but the row names an Automaton (or
+  an Automation), the plan takes that one's own title, on one line, at most 100
+  characters with `Plan: ` included. Only a row with neither is named from its
   number: `Plan: (untitled row 15)`. Rename it afterwards in the Plans browser
   or with `datawatch plan-record update`.
 - The row's status is kept as the plan's status; a done row becomes a finished
   plan.
 
-The preview line ends with two counts, `titles derived N, fell back M`: how
-many of the plans this run makes got a title from their row, and how many were
-named `(untitled row N)`. A plan that already exists is never renamed, and it
-is counted in neither, so after an apply both counts read 0.
+The preview line ends with three counts, `titles derived N, from linked
+Automaton K, fell back M`: how many of the plans this run makes got a title from
+their row, how many took the title of the Automaton or Automation the row
+names, and how many were named `(untitled row N)`. A plan that already exists
+is never renamed, and it is counted in none of them, so after an apply all
+three read 0.
 
 ## Reading plans
 

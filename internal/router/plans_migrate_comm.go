@@ -20,13 +20,14 @@ const planMigrateUsage = "usage: autonomous plan-migrate [apply]"
 type planMigrateWire struct {
 	Note   string `json:"note"`
 	Result struct {
-		Applied         bool              `json:"applied"`
-		WouldCreate     []planMigrateItem `json:"would_create"`
-		WouldLink       []planMigrateItem `json:"would_link"`
-		SkippedExisting []planMigrateItem `json:"skipped_existing"`
-		Conflicts       []planMigrateItem `json:"conflicts"`
-		TitlesDerived   int               `json:"titles_derived"`
-		TitlesFellBack  int               `json:"titles_fell_back"`
+		Applied          bool              `json:"applied"`
+		WouldCreate      []planMigrateItem `json:"would_create"`
+		WouldLink        []planMigrateItem `json:"would_link"`
+		SkippedExisting  []planMigrateItem `json:"skipped_existing"`
+		Conflicts        []planMigrateItem `json:"conflicts"`
+		TitlesDerived    int               `json:"titles_derived"`
+		TitlesFromLinked int               `json:"titles_from_linked"`
+		TitlesFellBack   int               `json:"titles_fell_back"`
 	} `json:"result"`
 }
 
@@ -71,9 +72,9 @@ func planMigrateText(body string) string {
 	if rs.Applied {
 		head, create, link = "Migration", "created", "linked"
 	}
-	lines := []string{fmt.Sprintf("%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, fell back %d", head,
+	lines := []string{fmt.Sprintf("%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, from linked Automaton %d, fell back %d", head,
 		create, len(rs.WouldCreate), link, len(rs.WouldLink), len(rs.SkippedExisting), len(rs.Conflicts),
-		rs.TitlesDerived, rs.TitlesFellBack)}
+		rs.TitlesDerived, rs.TitlesFromLinked, rs.TitlesFellBack)}
 	for i, c := range rs.Conflicts {
 		if i >= planRecordsMaxLines {
 			lines = append(lines, fmt.Sprintf("… and %d more conflicts", len(rs.Conflicts)-i))
