@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.163.2 (2026-11-12).** The Projects Gantt now spans each Automaton from created to completed, each arc from its members' earliest start to latest completion, and draws dependency edges. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.163.3 (2026-11-12).** The session detail page is now a full-height column: the terminal pane takes the free height and the Commands and Send message row sits fixed at the bottom with no blank band under it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
