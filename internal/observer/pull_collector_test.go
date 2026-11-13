@@ -142,6 +142,30 @@ func waitForFetch(t *testing.T, ch <-chan struct{}, what string) {
 	}
 }
 
+// waitForLast polls c.Last(name) until ok(st) holds and returns the stored
+// state. fakePullFetcher signals its channel as soon as Fetch returns, but
+// PullCollector records the result only after that, so a test that reads Last
+// straight after waitForFetch can race the store. The poll is bounded by a
+// deadline and never loops unconditionally.
+func waitForLast(t *testing.T, c *PullCollector, name string, ok func(PullState) bool, what string) PullState {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var st PullState
+	var found bool
+	for time.Now().Before(deadline) {
+		st, found = c.Last(name)
+		if found && ok(st) {
+			return st
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	st, found = c.Last(name)
+	if !found || !ok(st) {
+		t.Fatalf("timed out waiting for %s; last state = (%+v, found=%v)", what, st, found)
+	}
+	return st
+}
+
 func testSnapshot() *StatsResponse {
 	return &StatsResponse{V: 2, Host: Host{Name: "peer"}}
 }
@@ -178,13 +202,9 @@ func TestObserverPullCollector_SuccessClearsStale(t *testing.T) {
 
 	// First fetch fails → stale with reason error.
 	waitForFetch(t, ch, "first failed fetch of a")
-	st, ok := c.Last("a")
-	if !ok {
-		t.Fatal("Last(a) = not found, want found")
-	}
-	if !st.Stale || st.StaleReason != ReasonError {
-		t.Fatalf("after failure: Stale=%v Reason=%q, want true/%q", st.Stale, st.StaleReason, ReasonError)
-	}
+	st := waitForLast(t, c, "a", func(st PullState) bool {
+		return st.Stale && st.StaleReason == ReasonError
+	}, "first failed state of a")
 	if st.LastAttemptAt != clock.Now() {
 		t.Fatalf("LastAttemptAt = %v, want %v", st.LastAttemptAt, clock.Now())
 	}
@@ -193,19 +213,14 @@ func TestObserverPullCollector_SuccessClearsStale(t *testing.T) {
 	}
 
 	// Second fetch succeeds → stale cleared, reason reset, snapshot kept.
+	// The first (failed) state is already stored, so wait for the new state:
+	// success recorded and staleness cleared.
 	clock.advance(time.Hour)
 	reg.tickAll()
 	waitForFetch(t, ch, "second successful fetch of a")
-	st, ok = c.Last("a")
-	if !ok {
-		t.Fatal("Last(a) = not found, want found")
-	}
-	if st.Stale {
-		t.Fatal("Stale = true after success, want false")
-	}
-	if st.StaleReason != ReasonNone {
-		t.Fatalf("StaleReason = %q after success, want %q", st.StaleReason, ReasonNone)
-	}
+	st = waitForLast(t, c, "a", func(st PullState) bool {
+		return !st.Stale && st.StaleReason == ReasonNone && !st.LastSuccessAt.IsZero()
+	}, "second successful state of a")
 	if !st.LastSuccessAt.Equal(clock.Now()) {
 		t.Fatalf("LastSuccessAt = %v, want %v", st.LastSuccessAt, clock.Now())
 	}
@@ -227,16 +242,9 @@ func TestObserverPullCollector_ErrorSetsStaleWithReasonError(t *testing.T) {
 	c.SetTargets([]PullTarget{{Name: "a", Interval: time.Hour, Timeout: time.Hour, Enabled: true}})
 	waitForFetch(t, ch, "failing fetch of a")
 
-	st, ok := c.Last("a")
-	if !ok {
-		t.Fatal("Last(a) = not found, want found")
-	}
-	if !st.Stale {
-		t.Fatal("Stale = false after error, want true")
-	}
-	if st.StaleReason != ReasonError {
-		t.Fatalf("StaleReason = %q, want %q", st.StaleReason, ReasonError)
-	}
+	st := waitForLast(t, c, "a", func(st PullState) bool {
+		return st.Stale && st.StaleReason == ReasonError
+	}, "stale state of a after error")
 	if st.LastSuccessAt != (time.Time{}) {
 		t.Fatalf("LastSuccessAt = %v, want zero", st.LastSuccessAt)
 	}
@@ -258,13 +266,9 @@ func TestObserverPullCollector_TimeoutSetsReasonTimeout(t *testing.T) {
 	c.SetTargets([]PullTarget{{Name: "a", Interval: time.Hour, Timeout: time.Hour, Enabled: true}})
 	waitForFetch(t, ch, "timed-out fetch of a")
 
-	st, ok := c.Last("a")
-	if !ok {
-		t.Fatal("Last(a) = not found, want found")
-	}
-	if !st.Stale || st.StaleReason != ReasonTimeout {
-		t.Fatalf("Stale=%v Reason=%q, want true/%q", st.Stale, st.StaleReason, ReasonTimeout)
-	}
+	waitForLast(t, c, "a", func(st PullState) bool {
+		return st.Stale && st.StaleReason == ReasonTimeout
+	}, "stale state of a after timeout")
 }
 
 func TestObserverPullCollector_BlockedPeerDoesNotDelayAnother(t *testing.T) {
@@ -294,13 +298,9 @@ func TestObserverPullCollector_BlockedPeerDoesNotDelayAnother(t *testing.T) {
 	// fast completes while slow is still blocked in its fetch — a blocked
 	// peer must never delay another peer.
 	waitForFetch(t, fastCh, "fast fetch while slow is blocked")
-	st, ok := c.Last("fast")
-	if !ok || st.LastSnapshot == nil {
-		t.Fatalf("fast state = (%+v, %v), want completed fetch with snapshot", st, ok)
-	}
-	if st.Stale {
-		t.Fatalf("fast Stale = true, want false")
-	}
+	waitForLast(t, c, "fast", func(st PullState) bool {
+		return st.LastSnapshot != nil && !st.Stale
+	}, "recorded state of fast")
 	if st, ok := c.Last("slow"); ok && st.LastSnapshot != nil {
 		t.Fatalf("slow completed unexpectedly: %+v", st)
 	}
@@ -308,13 +308,9 @@ func TestObserverPullCollector_BlockedPeerDoesNotDelayAnother(t *testing.T) {
 	// Release slow: it then records a failure of its own.
 	close(release)
 	waitForFetch(t, slowCh, "slow fetch after release")
-	st, ok = c.Last("slow")
-	if !ok {
-		t.Fatal("Last(slow) = not found, want found")
-	}
-	if !st.Stale || st.StaleReason != ReasonError {
-		t.Fatalf("slow Stale=%v Reason=%q, want true/%q", st.Stale, st.StaleReason, ReasonError)
-	}
+	waitForLast(t, c, "slow", func(st PullState) bool {
+		return st.Stale && st.StaleReason == ReasonError
+	}, "recorded stale state of slow")
 	c.Stop()
 }
 
@@ -439,10 +435,9 @@ func TestObserverPullCollector_ErrorReasonMapping(t *testing.T) {
 			c.SetTargets([]PullTarget{{Name: "a", Interval: time.Hour, Timeout: time.Hour, Enabled: true}})
 			waitForFetch(t, ch, "fetch of a")
 
-			st, ok := c.Last("a")
-			if !ok {
-				t.Fatal("Last(a) = not found, want found")
-			}
+			st := waitForLast(t, c, "a", func(st PullState) bool {
+				return st.Stale && st.StaleReason == tc.want
+			}, "recorded stale state of a")
 			if !st.Stale {
 				t.Fatal("Stale = false, want true")
 			}
@@ -469,7 +464,9 @@ func TestObserverPullCollector_SnapshotSortedByName(t *testing.T) {
 		{Name: "a", Interval: time.Hour, Timeout: time.Hour, Enabled: true},
 	})
 	waitForFetch(t, chA, "first fetch of a")
+	waitForLast(t, c, "a", func(st PullState) bool { return st.LastSnapshot != nil }, "recorded state of a")
 	waitForFetch(t, chB, "first fetch of b")
+	waitForLast(t, c, "b", func(st PullState) bool { return st.LastSnapshot != nil }, "recorded state of b")
 
 	snap := c.Snapshot()
 	if len(snap) != 2 {
