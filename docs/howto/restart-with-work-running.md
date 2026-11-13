@@ -195,6 +195,12 @@ on a live gate, or takes a finished result once. A daemon that is only stopping
 never turns a gate into a failure: the gate keeps running and the next attempt
 picks it up.
 
+The gate runs in its own session, so it is not a child of the daemon. On start
+the daemon looks for the record of the same check in the same project and
+re-attaches to the live gate by the saved process id and start time, or, when
+the gate ended while the daemon was down, reads the gate's result file once. It
+starts a new run only when no usable record is left.
+
 The shipped systemd unit (`install/systemd/datawatch.service`) sets
 `KillMode=process`, so a `systemctl stop` or `restart` ends only the daemon and
 leaves the gate (and any verifier) running in the unit's control group. If you
@@ -245,6 +251,11 @@ waits for the gates running at that moment before the daemon exits.
   (see [Verifying, judging, and verification scripts](#verifying-judging-and-verification-scripts)).
   The log line gives how many gates it waited for and how many were still
   running.
+- **What a restart interrupted.** The restart refusal that the CLI
+  (`datawatch restart`) prints, and the report from
+  `datawatch autonomous restart-interruptions`, list the running gates under
+  "running gates". A gate still running when the wait ends is left running and
+  is re-attached at the next start.
 - **The REST answer.** `POST /api/restart` returns `gates_waited` (gates this
   restart waits for) and `gates_interrupted` (gates left running at once because
   the wait is off).
