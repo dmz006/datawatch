@@ -3893,7 +3893,9 @@ function _projectsGanttKey(row) {
 }
 
 // _projectsGanttSpan returns { a, b, running } in ms for a timeline row, or null
-// when the row has nothing to draw (planned). Running work draws to now.
+// when the row has nothing to draw (planned). Running work with no end draws to
+// now; a bar never outgrows the row's own start..end, and a non-running row
+// never reaches now.
 function _projectsGanttSpan(r, now) {
   if (!r) return null;
   // span = start..end; first and last stand in on a reply without the new fields.
@@ -3904,7 +3906,8 @@ function _projectsGanttSpan(r, now) {
   const running = !!r.running || r.status === 'running';
   if (isNaN(f) && isNaN(l) && !running) return null;
   const a = isNaN(f) ? (isNaN(l) ? now : l) : f;
-  const b = running ? now : (isNaN(l) ? a : l);
+  let b = running ? Math.max(a, now) : (isNaN(l) ? a : l);
+  if (!isNaN(l) && b > l) b = l;
   return { a: Math.min(a, b), b: Math.max(a, b), running };
 }
 
@@ -3912,9 +3915,14 @@ function _projectsGanttSpan(r, now) {
 // range, as a fraction of the visible range (2 percent).
 const _PROJECTS_GANTT_MARGIN = 0.02;
 
-// _projectsGanttStatusKey maps a row status to the literal i18n key of its word:
-// Completed, Running, Waiting, Blocked, Failed, Cancelled. Empty when unknown.
-function _projectsGanttStatusKey(status) {
+// _projectsGanttStatusKey maps a row to the literal i18n key of its status
+// word: Completed, Running, Waiting, Blocked, Failed, Cancelled. A row whose
+// release field is set and whose status is cancelled is shipped work and reads
+// as completed. A bare status string still maps. Empty when unknown.
+function _projectsGanttStatusKey(row) {
+  const r = (row && typeof row === 'object' && !Array.isArray(row)) ? row : { status: row };
+  let status = r.status || '';
+  if (status === 'cancelled' && r.release) status = 'completed';
   return ({ completed: 'projects_gantt_status_completed', running: 'projects_gantt_status_running', waiting: 'projects_gantt_status_waiting', blocked: 'projects_gantt_status_blocked', failed: 'projects_gantt_status_failed', cancelled: 'projects_gantt_status_cancelled' })[status] || '';
 }
 
@@ -4280,7 +4288,7 @@ function _projectGanttInnerHTML(g, ui) {
     } else {
       const x1 = pct(sp.a), x2 = pct(sp.b);
       const dates = [new Date(sp.a).toLocaleDateString(), sp.running ? t('projects_gantt_running') : new Date(sp.b).toLocaleDateString()].join(' – ');
-      const stKey = _projectsGanttStatusKey(r.status);
+      const stKey = _projectsGanttStatusKey(r);
       const tip = `${label} · ${stKey ? t(stKey) : (r.state || '')} · ${dates}${r.release ? ' · ' + t('projects_gantt_release_detail', [r.release]) : ''}`;
       track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" tabindex="0" data-id="${escHtml(r.id || '')}" onmouseenter="${ui.edge}(this,1)" onmouseleave="${ui.edge}(this,0)" onfocus="${ui.edge}(this,1)" onblur="${ui.edge}(this,0)" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
         + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
