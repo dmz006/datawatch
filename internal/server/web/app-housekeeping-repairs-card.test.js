@@ -32,3 +32,11 @@ test('no tracker ids in the new strings', () => {
     if (/^(settings_housekeeping_|housekeeping_repairs_)/.test(k)) assert.ok(!/\b(BL|GH)\d+/.test(v), `${l}: ${k}`);
   }
 });
+
+test('card draws the intermittent test failure rows from the same view', () => {
+  for (const s of ['_housekeepingIntermittentHtml(d.intermittent_defects)', 'housekeeping-intermittent-row',
+    "'housekeeping_repairs_intermittent_line'", "'housekeeping_repairs_intermittent_none'"]) assert.ok(src.includes(s), s);
+  for (const k of ['title', 'purpose', 'line', 'first_lines', 'none']) {
+    for (const [l, j] of locales) assert.ok(j['housekeeping_repairs_intermittent_' + k], `${l}: ${k}`);
+  }
+});

@@ -3140,7 +3140,10 @@ paths:
         first. Read-only: it repairs nothing, raises no alert and cannot change a
         mode; a group's mode changes only through the existing config set paths
         (`autonomous.housekeeping_repairs.<group>`). Needs the autonomous read
-        capability when called by a federated peer.
+        capability when called by a federated peer. It also lists, under
+        `intermittent_defects`, the defect records of tests that failed on the
+        first run of an Automaton's merge check and passed on the rerun
+        (`test`, `message`, `first_lines`, `date`, `commit`), newest first.
       operationId: autonomousHousekeepingRepairs
       tags: [Autonomous]
       responses:
@@ -12528,6 +12531,19 @@ components:
               did: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
               failed: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
               skipped_unsafe: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
+        intermittent_defects:
+          type: array
+          description: Defect records of tests that failed on the first run of an Automaton's merge check and passed on the rerun, newest first
+          items:
+            type: object
+            properties:
+              key: {type: string, description: Stable identity; the same test at the same commit is one record}
+              test: {type: string, description: The failing test name}
+              message: {type: string, description: The failure message}
+              first_lines: {type: string, description: The first lines of the first run's output}
+              date: {type: string, description: The day the record was made, YYYY-MM-DD}
+              commit: {type: string, description: The commit under test}
+              automaton_id: {type: string}
     HousekeepingRepairRecord:
       type: object
       properties:

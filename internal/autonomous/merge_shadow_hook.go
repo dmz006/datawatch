@@ -101,6 +101,7 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 		}
 		log.Printf("[autonomous] merge shadow: automaton %s: plan stored (release %s, %d conflict(s), %d blocking finding(s))",
 			prd.ID, plan.ReleaseSize, len(plan.Conflicts), blocking)
+		m.raiseIntermittentDefectAlerts(plan.IntermittentDefects)
 	}()
 	return done
 }
