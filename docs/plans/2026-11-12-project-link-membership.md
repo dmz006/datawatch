@@ -79,3 +79,12 @@ The Android and iPhone apps need the Project field and the group, and must ignor
 | PWA | Touched | Project field in Automaton settings; group on the project page |
 | Android | Excluded from this change | Mobile parity is tracked in the datawatch-app repository |
 | iPhone | Excluded from this change | Mobile parity is tracked in the datawatch-app repository |
+
+## Operator review
+
+Items the operator must still confirm:
+
+- **Backfill apply.** The start-up backfill is a dry run (`autonomous.project_link_backfill_apply` is `false`). Read the report (`datawatch autonomous project-link-backfill`) and apply it, or set the field to `true`, only after the listed links look right. Applied links are never changed by a later run.
+- **Automata without a project.** The group is outside every project's total. Totals can look lower than before until each Automaton in the group is linked or the backfill is applied.
+- **Mobile parity.** The Android and iPhone apps are not updated here (Phase 7); confirm the datawatch-app issue is filed.
+- **Live check.** The PWA Project field and the group on the project page have web tests but no recorded live confirmation on the running daemon.
