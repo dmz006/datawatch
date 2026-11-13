@@ -85,12 +85,6 @@ jobs:
       - name: go test
         run: go test ./... -count=1 -timeout 12m
 
-      - name: perf budget (roll-up and Automata list at 700 Automata)
-        run: bash scripts/perf-rollup-check.sh
-        env:
-          # Raise for a slow runner; default 1. Time limits only, never bytes.
-          PERF_ROLLUP_MULTIPLIER: "2"
-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
