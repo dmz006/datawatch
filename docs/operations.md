@@ -710,7 +710,7 @@ tasks in any status, stay locked.
 
 The usage calculator advises how many lanes the weekly provider allowance can
 carry. It never stops or slows a lane. Keys live under `usage.calculator.`;
-`usage.calculator.variant` (kept for compatibility; the PWA now always draws the three usage cards),
+`usage.calculator.variant` (kept for compatibility; the PWA now always draws the one usage calculator card with its three graphs),
 `policy`, `safety_points` (default 5), `cost_per_task_points`, `baseline_per_24h`,
 `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone` (a zone name, never a
 fixed offset) and `keeper` (the federation peer that keeps the shared
@@ -720,7 +720,7 @@ readings). Settings apply without a restart.
 |--------|-----|
 | **YAML config** | `usage.calculator.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.calculator.<key> <value>`; `datawatch usage advice` |
-| **Web UI** | The usage page (one verdict sentence and three fixed-size cards: weekly allowance, pace line, burn per day), the same cards on the Resources sub-tab and as dashboard cards; every setting is in Settings → General → Automata |
+| **Web UI** | The usage page (one card: a verdict sentence and three fixed-size graphs — weekly allowance, pace line, burn per day), the same three graphs on the Resources sub-tab and as dashboard cards; every setting is in Settings → General → Automata |
 | **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
 | **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
 
@@ -757,7 +757,7 @@ its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which
 |--------|-----|
 | **YAML config** | `usage.burn_guard.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.burn_guard.<key> <value>`; `datawatch usage burn-guard status|run|config`; `datawatch automation set-effort-ceiling <id> docs=low` |
-| **Web UI** | Settings > Usage burn guard; the burn guard card on the usage page and the Monitor tab |
+| **Web UI** | Settings → General → Automata → Usage burn guard (the burn guard card on the usage page is read-only and links there); the **Burn guard** stat card on the usage page and in the Monitor panel |
 | **REST API** | `PUT /api/config` with `{"usage.burn_guard.<key>": value}`; `GET /api/usage/burn-guard`, `GET`/`PUT /api/usage/burn-guard/config`, `POST /api/usage/burn-guard/run` |
 | **MCP** | `burn_guard_*` tools; `automation_set_effort_ceiling` |
 | **Comm channel** | `configure usage.burn_guard.<key>=<value>`; `usage burn-guard`; `automation set-effort-ceiling` |
@@ -7984,7 +7984,7 @@ report never sums dollars and points: each row and the report body carry
 `claude-code` allowance. The usage advice payload carries one unit label key per
 backend (`unit_labels`, keyed by LLM name; `usage_unit_dollars` and
 `usage_unit_points` are locale keys in all five locales, `none` has no label); the
-web usage cards do not read it yet. See
+the web usage calculator card and the three dashboard graph cards do not read it yet. See
 [howto/llm-registry.md](howto/llm-registry.md#what-the-billing-mode-changes),
 [howto/cost-report.md](howto/cost-report.md#dollars-and-points-are-never-added-together),
 [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards) and

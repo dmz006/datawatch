@@ -5048,7 +5048,7 @@ usage:
   #   Comm channel  `configure usage.burn_guard.<key>=<value>`
   #   MCP           burn_guard_config_set (or the generic config_set tool)
   #   CLI           `datawatch usage burn-guard config <key>=<value>`
-  #   Web UI        Settings > Usage burn guard, and the burn guard card
+  #   Web UI        Settings → General → Automata → Usage burn guard (the read-only burn guard card on the usage page links here)
   # An invalid value is a 400 and changes nothing.
   burn_guard:
     # Turn the guard on. Default true.
