@@ -205,6 +205,18 @@ under each arc with their task progress, cost in points and throughput over the
 last seven days. Ask for another window through REST or MCP (`window`, 1 to 365
 days).
 
+The roll-up is read from a short in-memory summary of each Automaton, not from
+the full records, so how long it takes to open does not grow with the amount of
+spec and task text an Automaton holds. The finished roll-up is also kept per
+project and window, so a second read of the same project does no work. Any
+change to an Automaton (a task finishing, a status change, an edit) rebuilds it
+on the next read, and so does a change to the project's directory or arcs or to
+the Automation list. Nothing is configured for this: there is no setting to turn
+it on or off, and the answer is the same as before. `generated_at` in the
+response is the time the roll-up was last built, so a repeat read can show an
+earlier time than now while nothing has changed. The timeline, History and
+daily progress counts are read from the same summary.
+
 Throughput counts an Automaton as finished when it is completed, when it is
 cancelled or archived and its work branch is already on the project's default
 branch, or when it carries a shipped record. Its finish time is the merge or ship
@@ -341,8 +353,9 @@ timeline below.
 #### The project timeline
 
 The timeline read answers "when did each arc, Automaton and task of this project
-start and finish" without fetching every task up front. It returns one level at a
-time. Ask for the arcs first, then ask only for the rows you open:
+start and finish" without fetching every task up front. It is read from the
+Automaton summary, so it stays quick however much text the Automata hold. It
+returns one level at a time. Ask for the arcs first, then ask only for the rows you open:
 
 ```bash
 datawatch projects timeline core-api                                  # arcs
@@ -717,6 +730,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | The Projects sub-tab says "No projects yet" | No alias is registered. Use the **Manage projects** form on the page, or run `datawatch projects upsert` (step 1) |
 | **Add project** says "Enter a project name." or "Enter the project directory." | Both fields are required. The directory must be an absolute path |
 | A save or remove shows an error above the form | The daemon refused the change and nothing was saved; read the message, fix the field and try again |
+| `generated_at` in the roll-up is earlier than now | Expected. The roll-up is kept until an Automaton, the project's configuration or the Automation list changes; `generated_at` is when it was built. Change something and read again to see a new time |
 | Roll-up shows "Could not load the roll-up" | The autonomous store is off or the alias is unknown. Check the daemon with `datawatch projects get <name>` |
 | A block I used to see on the project page is missing | The page now shows one page sub-tab at a time. Find the block in the table under step 6 (for example the Gantt is on **Gantt** and the policy and merge pipeline are on **Policy**) |
 | There is no **Events** page sub-tab | It is left out of the strip while the project has no notes. An `#projects/<name>/events` address or a remembered **Events** choice opens **Overview** in that case |
