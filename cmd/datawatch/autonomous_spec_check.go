@@ -30,6 +30,6 @@ func daemonJSONWithSpecCheck(method, path string, body any) error {
 	} else {
 		fmt.Println("ok")
 	}
-	printSpecCheck(os.Stdout, resp)
+	printSpecCheck(os.Stderr, resp)
 	return nil
 }

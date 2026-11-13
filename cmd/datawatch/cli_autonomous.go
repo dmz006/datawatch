@@ -881,7 +881,7 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 				if _, err := daemonJSONBody(http.MethodPut, "/api/config", planningPatch); err != nil {
 					return err
 				}
-				fmt.Printf("autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
+				fmt.Fprintf(os.Stderr, "autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
 				if len(body) == 0 {
 					return nil
 				}
@@ -939,7 +939,7 @@ records that carry a shipped record; --shipped true keeps
 only PRDs that carry shipped state, --shipped false only ones that do
 not; with neither set the server's autonomous.shipped.filter_default
 view applies (all / shipped / unshipped).`,
-		RunE: func(*cobra.Command, []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
 			q, err := prdListQuery(status, shipped)
 			if err != nil {
 				return err
@@ -953,10 +953,12 @@ view applies (all / shipped / unshipped).`,
 				return err
 			}
 			if len(body) > 0 {
-				prettyPrint(body)
+				prettyPrintTo(c.OutOrStdout(), body)
 			}
+			// Plain-text notes go to standard error so standard output stays pure JSON.
+			note := c.ErrOrStderr()
 			for _, line := range autonomous.PlanningFailureListLines(body) {
-				fmt.Println("planning failed: " + line)
+				_, _ = fmt.Fprintln(note, "planning failed: "+line)
 			}
 			return nil
 		},
@@ -1077,12 +1079,13 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out := c.OutOrStdout()
 			if len(body) > 0 {
-				prettyPrint(body)
+				prettyPrintTo(c.OutOrStdout(), body)
 			}
+			// Plain-text notes go to standard error so standard output stays pure JSON.
+			out := c.ErrOrStderr()
 			for _, block := range rulesReviewOutcomeBlocks(body) {
-				fmt.Print(block)
+				_, _ = fmt.Fprint(out, block)
 			}
 			for _, line := range autonomous.PlanningFailureLines(body) {
 				_, _ = fmt.Fprintln(out, line)
@@ -1091,7 +1094,7 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdReviewLine(body); line != "" {
-				fmt.Println(line)
+				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdParallelLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
