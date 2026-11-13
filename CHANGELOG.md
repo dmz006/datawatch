@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Sending a message to a session is now documented as wait, Enter, verify.** The Sessions deep-dive how-to gains section 5h ("How a sent message is submitted"), the operations guide gains "Message submission to a session", and the glossary gains a "Message submission" entry, all describing the post-change delivery in `internal/session/paste_submit.go`: the daemon waits up to 1.5 s for the pasted placeholder or text, presses Enter once, and for pasted, multi-line or long input re-sends Enter at most twice while the text is still unsent. The `schedule_settle_ms` comments, `datawatch session send` and the sessions API page point to it. No new setting, endpoint or field.
+
 ## v9.172.5 — Sessions deep-dive how-to corrections
 
 ### Fixed
