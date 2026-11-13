@@ -300,6 +300,8 @@ permission, like the planning routing routes.
 - **Switching the active profile only affects tasks created afterwards.** Tasks already created keep what they were given; re-run decompose or edit the task to change them.
 - **The mobile apps do not show routing yet.** The Settings card and the per-task column are in the web app only; mobile parity is tracked separately.
 - **A config write that is skipped is not an error code.** `PUT /api/config` answers 200 and lists what it did not store in `skipped`, `skipped_reason` and `skipped_problems`. A script that checks only the status code will miss a refused routing block; read `skipped`, or use the dedicated routing routes, which return 400.
+- **The routing strings are translated in all five locales.** The Settings card and the per-task column read from the English, German, Spanish, French and Japanese files; a missing key would show the key name, so check each language after an upgrade.
+- **The browser story and the release smoke section have not been run against a live daemon.** `scripts/test-stories/TS-854.sh` (the Settings routing editor) and the task-routing section of `scripts/release-smoke.sh` need the sandbox daemon; run both before a release that touches routing.
 - **Docs and the live daemon can differ.** If a tool or command named here is missing on your daemon, it is older than this change; update it before relying on this guide.
 
 See also: [Automata planning routing](automata-planning-routing.md),
