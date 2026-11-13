@@ -25,6 +25,7 @@ const heldReportOnBody = `{
       "automation_id": "bot-scribe",
       "title": "Scribe Bot",
       "reason": "spec step 4 is ambiguous",
+      "text": "Automaton \"Scribe Bot\" (prd-7) is awaiting the operator's decision. Its work is at task t_9. Why it is held: spec step 4 is ambiguous.",
       "recommended_option": "escalate",
       "default": "escalate"
     },
@@ -152,6 +153,7 @@ func TestQuestionHeldList(t *testing.T) {
 		"bot-scribe (Scribe Bot)",
 		"task t_9",
 		"why: spec step 4 is ambiguous",
+		"ask: Automaton \"Scribe Bot\" (prd-7) is awaiting the operator's decision. Its work is at task t_9. Why it is held: spec step 4 is ambiguous.",
 		"recommended: escalate (forced default)",
 		"q_held_2",
 		"held: blocked",

@@ -2272,6 +2272,43 @@ paths:
         "405": {description: Only GET is allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/held-questions:
+    get:
+      summary: Held-question report
+      description: |
+        The held-question report: the mode in effect (`mode`: off, shadow or on;
+        unset reads shadow) and the held state ids it covers (`states`; the five
+        held states by default), the open held questions raised in on mode
+        (`open`) and the shadow entries the daemon logged while in shadow mode
+        (`shadow`). Each open entry names the held question (`question_id`,
+        `state`), the Automaton and task it waits on (`prd_id`, `task_id`,
+        `automation_id`, `title`), why it is held (`reason`), the question's own
+        text (`text`, capped), the recommended option and the forced default, and
+        when it was raised (`created_at`). Each shadow entry names the Automaton,
+        the held state, the option it would recommend and when the note landed.
+        Filters: `prd_id` (one Automaton), `state` (one of the held state ids —
+        an unknown id is a 400 naming the allowed values). Both lists are
+        always arrays, never null. Read-only; needs the autonomous read
+        capability when called by a federated peer.
+      operationId: autonomousHeldQuestions
+      tags: [Autonomous]
+      parameters:
+        - {name: prd_id, in: query, required: false, description: Only this Automaton's held questions and shadow entries, schema: {type: string}}
+        - {name: state, in: query, required: false, description: "Only one held state: blocked, review_held, revision_requested, awaiting_decision or pending_insert", schema: {type: string, enum: [blocked, review_held, revision_requested, awaiting_decision, pending_insert]}}
+      responses:
+        "200":
+          description: Held-question report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeldQuestionsReport"
+        "400": {description: state is not one of the held state ids}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Only GET is allowed}
+        "503": {description: Autonomous is disabled or the operator questions switch is off}
+
   /api/autonomous/checks:
     get:
       summary: Checks policy and findings
@@ -12342,6 +12379,55 @@ components:
           type: array
           description: Watch records, newest first; empty when nothing matches
           items: {$ref: "#/components/schemas/RepoCIWatchRecord"}
+    HeldQuestionsReport:
+      type: object
+      description: >-
+        The held-question report, as GET /api/autonomous/held-questions returns
+        it. `open` is the open held questions raised in on mode (newest store
+        order); `shadow` is the shadow-mode notes the daemon logged. Both are
+        always arrays, never null.
+      required: [mode, states, open, shadow]
+      properties:
+        mode: {type: string, enum: [off, shadow, on], description: The held-question mode in effect; unset reads shadow}
+        states:
+          type: array
+          description: The held state ids the mode covers; all five by default
+          items: {type: string, enum: [blocked, review_held, revision_requested, awaiting_decision, pending_insert]}
+        open:
+          type: array
+          description: The open held questions raised in on mode; empty when none match
+          items: {$ref: "#/components/schemas/HeldQuestionOpenEntry"}
+        shadow:
+          type: array
+          description: The shadow entries the daemon logged in shadow mode; empty when none match
+          items: {$ref: "#/components/schemas/HeldQuestionShadowEntry"}
+    HeldQuestionOpenEntry:
+      type: object
+      description: One open held question, as GET /api/autonomous/held-questions reports it.
+      required: [question_id]
+      properties:
+        question_id: {type: string, description: The held question's id (answer it with the operator question surfaces)}
+        state: {type: string, description: The held state the question holds in}
+        prd_id: {type: string, description: The held Automaton's id}
+        task_id: {type: string, description: The held task's id; absent for an Automaton-level hold}
+        automation_id: {type: string, description: The owning Automation's id}
+        title: {type: string, description: The Automaton's title (its prd_id when it has none)}
+        reason: {type: string, description: The Automaton's own reason for being held}
+        text: {type: string, description: "The held question's own text (what is being asked), capped; absent when the record has none"}
+        recommended_option: {type: string, description: The table's recommended option}
+        default: {type: string, description: The option forced when no answer arrives (hold, which acts on nothing)}
+        created_at: {type: string, format: date-time, description: When the question was raised}
+        system_tags: {type: array, items: {type: string}, description: The placement-derived tag set the Automaton carries}
+    HeldQuestionShadowEntry:
+      type: object
+      description: One shadow-mode note the daemon logged for a hold it would have raised.
+      required: [prd_id, state, at]
+      properties:
+        prd_id: {type: string, description: The Automaton the note belongs to}
+        state: {type: string, description: The held state it names}
+        recommended_option: {type: string, description: The option it would recommend}
+        at: {type: string, format: date-time, description: When the note landed}
+        system_tags: {type: array, items: {type: string}, description: The placement-derived tag set the Automaton carries}
     CleanupStatus:
       type: object
       description: The automation cleanup status, as GET /api/autonomous/cleanup returns it
