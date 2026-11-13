@@ -217,9 +217,9 @@ func TestSendInputEnter_MultiChunk_EnterAfterLastChunk(t *testing.T) {
 	f.PaneScript["s"] = []string{siePlaceholder, sieWorking}
 
 	paths := []string{
-		"/home/dmz/.datawatch/attachments/a1b2/screenshot-1.png",
-		"/home/dmz/.datawatch/attachments/a1b2/trace-log.txt",
-		"/home/dmz/.datawatch/attachments/a1b2/design-notes.pdf",
+		"/home/<user>/.datawatch/attachments/a1b2/screenshot-1.png",
+		"/home/<user>/.datawatch/attachments/a1b2/trace-log.txt",
+		"/home/<user>/.datawatch/attachments/a1b2/design-notes.pdf",
 	}
 	var b strings.Builder
 	b.WriteString("Please review the attachments and the notes below.\n")
