@@ -234,3 +234,35 @@ func assertDaemonTaskRefusal(t *testing.T, res *mcpsdk.CallToolResult, err error
 		t.Errorf("refusal message %q does not name %q", msg, wantKey)
 	}
 }
+
+func TestAutonomousConfigGateDrainSetWritesOnePut(t *testing.T) {
+	calls := 0
+	var body map[string]any
+	s := daemonTaskKeysServer(t, &calls, &body)
+	res, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"gate_drain_minutes": float64(0),
+	}))
+	if err != nil || res.IsError {
+		t.Fatalf("set: err=%v res=%+v", err, res)
+	}
+	if calls != 1 || body["autonomous.gate_drain_minutes"] != float64(0) {
+		t.Fatalf("calls=%d body=%v", calls, body)
+	}
+}
+
+func TestAutonomousConfigGateDrainRefusals(t *testing.T) {
+	for _, v := range []any{float64(-3), 1.5, "ten"} {
+		calls := 0
+		var body map[string]any
+		s := daemonTaskKeysServer(t, &calls, &body)
+		res, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"gate_drain_minutes": v}))
+		assertDaemonTaskRefusal(t, res, err, calls, "gate_drain_minutes")
+	}
+}
+
+func TestAutonomousConfigGateDrainGetMerged(t *testing.T) {
+	merged, err := mergeDaemonTaskSettings([]byte(`{"enabled":true}`), map[string]json.RawMessage{"gate_drain_minutes": json.RawMessage(`10`)})
+	if err != nil || !strings.Contains(string(merged), `"gate_drain_minutes":10`) {
+		t.Fatalf("merged=%s err=%v", merged, err)
+	}
+}

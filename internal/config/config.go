@@ -4008,6 +4008,13 @@ type AutonomousConfig struct {
 	// script_gate.go.
 	ScriptGateTimeoutSeconds int `yaml:"script_gate_timeout_seconds" json:"script_gate_timeout_seconds"`
 
+	// GateDrainMinutes is how many minutes a graceful restart waits for
+	// running final gates before it exits. Default DefaultGateDrainMinutes
+	// (10). 0 means do not wait; a negative value is refused at load time.
+	// No omitempty, so an explicit 0 survives a round trip. See
+	// EffectiveGateDrain in gate_drain.go.
+	GateDrainMinutes int `yaml:"gate_drain_minutes" json:"gate_drain_minutes"`
+
 	// ProjectGateCommand is the project's own build-and-test command the
 	// gate runs (autonomous.project_gate_command). Empty means unset. It is
 	// not tied to any language. Trimmed, at most 1024 bytes, no NUL or
@@ -8026,6 +8033,7 @@ func DefaultConfig() *Config {
 		Autonomous: AutonomousConfig{
 			ReleasePath:                              "direct_push",
 			ScriptGateTimeoutSeconds:                 DefaultScriptGateTimeoutSeconds,
+			GateDrainMinutes:                         DefaultGateDrainMinutes,
 			AutoFixRetries:                           1,
 			MaxConcurrentTasks:                       1,
 			UsageBackoff:                             UsageBackoffPauseBackend,
@@ -8769,6 +8777,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := validateScriptGateTimeout(cfg.Autonomous.ScriptGateTimeoutSeconds); err != nil {
+		return err
+	}
+	if err := validateGateDrainMinutes(cfg.Autonomous.GateDrainMinutes); err != nil {
 		return err
 	}
 	if err := ValidateProjectGateCommand("autonomous", cfg.Autonomous.ProjectGateCommand); err != nil {

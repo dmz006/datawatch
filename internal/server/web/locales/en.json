@@ -4823,6 +4823,8 @@
   "settings_daemon_task_template_version_bump_left_to_merge": "Version bump left to merge",
   "settings_daemon_script_gate_timeout": "Script gate time cap (seconds, 0 = no cap, default 900)",
   "settings_daemon_script_gate_timeout_help": "The longest one script gate run may take before it is stopped. 0 means no cap. The default is 900 seconds. A negative or fractional value is refused.",
+  "settings_daemon_gate_drain": "Restart wait for final gates (minutes, 0 = do not wait, default 10)",
+  "settings_daemon_gate_drain_help": "How long a graceful restart waits for running final gates before it exits. 0 means do not wait. The default is 10 minutes. A negative or fractional value is refused.",
   "settings_daemon_project_gate_command": "Project gate command (one line of shell text, empty = unset)",
   "settings_daemon_project_gate_command_help": "The project own build and test command, run by the gate as one line of shell text. Empty leaves it unset. A value with a line break or over 1024 bytes is refused.",
   "settings_daemon_task_help_link_label": "Help: daemon task modes",

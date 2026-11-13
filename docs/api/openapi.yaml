@@ -1029,6 +1029,9 @@ paths:
         and a bad value rejects the whole PUT with 400),
         `autonomous.script_gate_timeout_seconds` (whole seconds >= 0, default 900; the time cap
         on one script gate run, where 0 means no cap; a negative value is rejected with 400),
+        `autonomous.gate_drain_minutes` (whole minutes >= 0, default 10; how long a graceful
+        restart waits for running final gates before it exits, where 0 means do not wait; a
+        negative or non-whole value is rejected with 400),
         `autonomous.project_gate_command` (one line of shell text, at most 1024 bytes, default
         unset; the build-and-test command the script gate runs; a line break or NUL byte is
         rejected with 400; a project's `projects.<name>.policy.project_gate_command` overrides it,
