@@ -56,9 +56,16 @@ type GateResult struct {
 	Passed   bool
 	ExitCode int
 	TimedOut bool
-	Output   string
-	Reason   string
+	// Interrupted is true when the caller's context ended while a durable gate
+	// was still running. The gate keeps running and is re-attached later; the
+	// result is not a verdict.
+	Interrupted bool
+	Output      string
+	Reason      string
 }
+
+// gateSignalKilledReason is the failure reason of a gate ended by a signal.
+const gateSignalKilledReason = "gate was killed by a signal"
 
 // RunScriptGate runs check with projectDir as the working directory. A
 // timeout of 0 means no cap. On timeout the whole process group is killed,
@@ -74,6 +81,10 @@ func RunScriptGate(ctx context.Context, check GateCheck, projectDir string, time
 		runCtx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
+
+	if res, ok := runGateDurable(runCtx, check, argv, projectDir, timeout); ok {
+		return res
+	}
 
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...) // #nosec G204 -- argv built by gateArgv from validated input
 	cmd.Dir = projectDir
@@ -104,7 +115,7 @@ func RunScriptGate(ctx context.Context, check GateCheck, projectDir string, time
 	if errors.As(runErr, &exitErr) {
 		res.ExitCode = exitErr.ExitCode()
 		if res.ExitCode < 0 {
-			res.Reason = "gate was killed by a signal"
+			res.Reason = gateSignalKilledReason
 		} else {
 			res.Reason = fmt.Sprintf("gate exited with code %d", res.ExitCode)
 		}

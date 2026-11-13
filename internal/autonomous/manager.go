@@ -271,6 +271,10 @@ type Config struct {
 	// round-trip as 0.
 	ScriptGateTimeoutSeconds int    `json:"script_gate_timeout_seconds"`
 	ProjectGateCommand       string `json:"project_gate_command,omitempty"`
+	// GateDrainMinutes mirrors autonomous.gate_drain_minutes in config: the
+	// minutes a graceful restart waits for running final gates. No omitempty:
+	// an explicit 0 (do not wait) must round-trip as 0.
+	GateDrainMinutes int `json:"gate_drain_minutes"`
 	// JudgeStrongBackend mirrors autonomous.judge_strong_backend in config:
 	// the strong judge backend a large diff is routed to first, empty = the
 	// last entry of judge_policy (see config.JudgeSizeStrongFirst). No
@@ -1108,6 +1112,7 @@ func DefaultConfig() Config {
 		MaxConcurrentTasks:       1,
 		MaxEnginesPerNode:        1,
 		ScriptGateTimeoutSeconds: config.DefaultScriptGateTimeoutSeconds,
+		GateDrainMinutes:         config.DefaultGateDrainMinutes,
 		GateDisagreement:         "warn",
 		FailureEscalation:        defaultFailureEscalationPolicy(),
 		AutoFixRetries:           1,
@@ -1695,6 +1700,9 @@ type Manager struct {
 	// the door of executeOne, so a restart drain lets running tasks finish
 	// without new ones starting. See restart_policy.go.
 	launchDraining atomic.Bool
+	// runningGates is the set of final gate checks running now; see
+	// running_gates.go.
+	runningGates runningGateRegistry
 	// worktreeDirtyFn — the worktree guard's uncommitted-changes check.
 	worktreeDirtyFn func(dir string) (bool, error)
 	// sessionLastOutputFn — when set, the boot-resume age gate counts a live
@@ -1985,6 +1993,10 @@ type Manager struct {
 	// genArt — change-record and generated-artefact wiring
 	// (generated_artefacts.go). The zero value is dormant.
 	genArt generatedArtefactState
+
+	// startedAt is when this Manager (the daemon) was constructed; the gate
+	// path uses it to tell a restart-killed gate from a real failure.
+	startedAt time.Time
 
 	// taskCommit — commits a task's leftover files when the uncommitted-work
 	// check rescues them. nil means DefaultTaskCommit; tests inject a fake.
@@ -2735,6 +2747,21 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
 			prevStatus := t.Status
+			if t.Kind == TaskKindFinalGate && (prevStatus == TaskInProgress || prevStatus == TaskVerifying || prevStatus == TaskRunningTests) && m.holdFinalGateForRecord(prd, t) {
+				// The final gate outlived the daemon (or finished while it was
+				// down): put the task back to pending without a failure or a
+				// retry. The gate run re-attaches to its record and takes its
+				// result once, so the gate is neither failed nor restarted.
+				m.releaseCapacity(t.ID)
+				m.store.WithLock(func() {
+					t.Status = TaskPending
+					t.Error = ""
+					t.UpdatedAt = time.Now()
+				})
+				reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+				log.Printf("[autonomous] boot-resume: prd=%s final gate task %s keeps its running gate: the run re-attaches to its record, no failure, no retry counted", prd.ID, t.ID)
+				continue
+			}
 			switch t.Status {
 			case TaskWaitingCapacity:
 				// Waiter died with the prior daemon; it holds no session.
@@ -3139,6 +3166,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	copy(types, builtinTypes)
 	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m := &Manager{
+		startedAt:              time.Now().UTC(),
 		cfg:                    cfg,
 		store:                  st,
 		automations:            automs,

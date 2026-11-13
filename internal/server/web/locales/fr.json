@@ -4823,6 +4823,8 @@
   "settings_daemon_task_template_version_bump_left_to_merge": "Montée de version laissée à la fusion",
   "settings_daemon_script_gate_timeout": "Délai du portail de scripts (secondes, 0 = sans limite, défaut 900)",
   "settings_daemon_script_gate_timeout_help": "Durée maximale d’une exécution du portail de scripts avant son arrêt. 0 signifie sans limite. La valeur par défaut est 900 secondes. Les valeurs négatives ou fractionnaires sont refusées.",
+  "settings_daemon_gate_drain": "Attente du redémarrage pour les portails finaux (minutes, 0 = ne pas attendre, défaut 10)",
+  "settings_daemon_gate_drain_help": "Durée pendant laquelle un redémarrage propre attend les portails finaux en cours avant de quitter. 0 signifie ne pas attendre. La valeur par défaut est 10 minutes. Les valeurs négatives ou fractionnaires sont refusées.",
   "settings_daemon_project_gate_command": "Commande du portail du projet (une ligne de texte shell, vide = non défini)",
   "settings_daemon_project_gate_command_help": "La commande de build et de test propre au projet, que le portail exécute en une ligne de texte shell. Vide la laisse non définie. Une valeur contenant un saut de ligne ou dépassant 1024 octets est refusée.",
   "settings_daemon_task_help_link_label": "Aide : modes de tâche du daemon",

@@ -185,6 +185,37 @@ At boot the daemon does not re-run it:
 The script's timeout is enforced from its recorded start time, so a script
 that outlives the daemon still ends on time even across the restart.
 
+**A final gate survives a stop of the daemon.** The final gate (the script or
+command that runs the whole verification at the end of an Automaton) keeps its
+own run record, one per check and project directory, in the same run root as
+the verification scripts. A final gate task that was running when the daemon
+went down is not failed and does not use a retry: at boot it is put back to
+`pending` with no failure, and its gate run re-attaches to the record — it waits
+on a live gate, or takes a finished result once. A daemon that is only stopping
+never turns a gate into a failure: the gate keeps running and the next attempt
+picks it up.
+
+The gate runs in its own session, so it is not a child of the daemon. On start
+the daemon looks for the record of the same check in the same project and
+re-attaches to the live gate by the saved process id and start time, or, when
+the gate ended while the daemon was down, reads the gate's result file once. It
+starts a new run only when no usable record is left.
+
+The shipped systemd unit (`install/systemd/datawatch.service`) sets
+`KillMode=process`, so a `systemctl stop` or `restart` ends only the daemon and
+leaves the gate (and any verifier) running in the unit's control group. If you
+run your own unit file, add the same line, or the service manager ends the gate
+with the daemon.
+
+**One retry for a gate killed by a signal after a restart.** If a final gate is
+still killed by a signal and the daemon started less than five minutes before
+the kill, the Automaton reruns the gate once. This retry is outside the task's
+retry budget and counts no attempt; the task records that it was used
+(`gate_restart_retry_used`), the decision log names the daemon restart as the
+cause, and the gate report notes the retry. A second signal kill, a kill more
+than five minutes after the daemon started, a timeout and a nonzero exit code
+are real failures and go through the normal failure path.
+
 A run is only waited on while its process is genuinely the script: the daemon
 checks the process table for the same start time as the record. If that start
 time cannot be read, or is implausibly large, the process is not trusted and
@@ -204,12 +235,45 @@ and review before relying on them (the *Still to review (operator)* notes in
 
 The read-only report is `GET /api/autonomous/restart-interruptions` (also the `restart_interruptions` MCP tool, `datawatch autonomous restart-interruptions`, and the chat verb `autonomous restart-interruptions`): the same lists it names in the refusal, plus `needs_force`, which is set while any of them is in flight. A non-forced restart is refused while `needs_force` is set, and every refusal below reuses the report as is.
 
+## Waiting for running final gates
+
+A final gate can run for many minutes. A graceful restart or stop therefore
+waits for the gates running at that moment before the daemon exits.
+
+- **What is waited for.** The final gate checks running now. The interruption
+  report lists them as `running_gates` (check, Automaton, task, process id) and
+  `running_gate_count`; both are always present, the list empty when none.
+- **How long.** Up to `autonomous.gate_drain_minutes` (default `10`; `0` = do
+  not wait; a negative value is refused). The daemon polls until the last gate
+  ends, and holds new gates back while it waits.
+- **When the wait runs out.** The daemon exits anyway. Nothing is signalled or
+  killed: the unfinished gates keep running and re-attach at the next start
+  (see [Verifying, judging, and verification scripts](#verifying-judging-and-verification-scripts)).
+  The log line gives how many gates it waited for and how many were still
+  running.
+- **What a restart interrupted.** The restart refusal that the CLI
+  (`datawatch restart`) prints, and the report from
+  `datawatch autonomous restart-interruptions`, list the running gates under
+  "running gates". A gate still running when the wait ends is left running and
+  is re-attached at the next start.
+- **The REST answer.** `POST /api/restart` returns `gates_waited` (gates this
+  restart waits for) and `gates_interrupted` (gates left running at once because
+  the wait is off).
+- **Setting it.** YAML `autonomous.gate_drain_minutes`; CLI
+  `datawatch autonomous config-set '{"gate_drain_minutes":20}'`; REST
+  `PUT /api/config` with `{"autonomous.gate_drain_minutes": 20}`; MCP
+  `autonomous_config_set`; comm channel `configure autonomous.gate_drain_minutes=20`;
+  and the PWA Settings **Automata** tab daemon task settings.
+
+The wait is separate from `autonomous.restart_policy`, which decides when a
+restart starts; this wait happens just before exit.
+
 ## Forcing a restart past running work
 
 A restart that would interrupt running Automata work is refused unless it is
 forced. The refusal names what would be interrupted: the planning Automata,
-the verifying tasks, the running judges, the running tasks and the live
-sessions, with their ids and the restart policy in force. Nothing is stopped.
+the verifying tasks, the running judges, the running tasks, the running final
+gates and the live sessions, with their ids and the restart policy in force. Nothing is stopped.
 
 | Surface | Refused without force | Force |
 |---------|-----------------------|-------|

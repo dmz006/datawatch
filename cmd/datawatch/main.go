@@ -2057,6 +2057,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("\nShutting down... (signal=%v)\n", sig)
 		recordShutdownCause(sig)
 		flushBackoff(autonomousBackoff)
+		runStopGateDrain()
 		if cfg.Session.KillSessionsOnExit {
 			fmt.Println("Killing active sessions...")
 			if err := mgr.EndAllSessions(session.EndReason{Caller: endCallerShutdown, Reason: shutdownEndReason(sig)}); err != nil {
@@ -2719,6 +2720,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return autonomousMgrRef
 	}
 	liveRestartSettings := func() restartPolicySettings { return restartSettingsFrom(cfg.Autonomous) }
+	// The stop path waits for running gates the same way a restart does.
+	stopDrain := func() {
+		drainGatesBeforeExit(context.Background(), liveRestartManager(), autonomouspkg.RealClock(), func(f string, a ...any) { fmt.Printf(f+"\n", a...) })
+	}
+	stopGateDrain.Store(&stopDrain)
 
 	// Placement tags on every started session (scheduled and comm-channel
 	// starts included): the session manager is the tag sink, the live
@@ -4672,6 +4678,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			RestartPolicy:                    acfgIn.RestartPolicy,
 			RestartQuietTimeoutSeconds:       acfgIn.RestartQuietTimeoutSeconds,
 			RestartOnTimeout:                 acfgIn.RestartOnTimeout,
+			GateDrainMinutes:                 acfgIn.GateDrainMinutes,
 			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,

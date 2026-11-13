@@ -6903,6 +6903,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// second default and an unset command stays empty, both via the
 			// Effective* accessors.
 			"script_gate_timeout_seconds": s.cfg.Autonomous.ScriptGateTimeoutSeconds,
+			"gate_drain_minutes":          config.NormalizeGateDrainMinutes(s.cfg.Autonomous.GateDrainMinutes),
 			"project_gate_command":        s.cfg.Autonomous.ProjectGateCommand,
 			// Decision record keys: effective values (the shipped defaults when a
 			// key is absent).
@@ -7910,6 +7911,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.script_gate_timeout_seconds"]; ok {
 		if _, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr != nil {
 			http.Error(w, "autonomous.script_gate_timeout_seconds: must be a whole number of seconds >= 0 (0 = no cap)", http.StatusBadRequest)
+			return
+		}
+	}
+	// The gate drain wait (autonomous.gate_drain_minutes) is a whole number
+	// of minutes >= 0 (0 = do not wait). A negative or non-whole value
+	// rejects the whole PUT by the same rule the config file load uses.
+	if v, ok := patch["autonomous.gate_drain_minutes"]; ok {
+		if _, verr := config.ParseGateDrainMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -10392,6 +10402,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.script_gate_timeout_seconds":
 			if n, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr == nil {
 				cfg.Autonomous.ScriptGateTimeoutSeconds = n
+			}
+		// The gate drain wait in whole minutes (0 = do not wait). Validated
+		// in handlePutConfig by config.ParseGateDrainMinutes.
+		case "autonomous.gate_drain_minutes":
+			if n, verr := config.ParseGateDrainMinutes(v); verr == nil {
+				cfg.Autonomous.GateDrainMinutes = n
 			}
 		// The project gate command: a single line of shell text (empty =
 		// unset). Validated in handlePutConfig by the shared load-time rule;
@@ -14626,6 +14642,16 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 	if hasRep {
 		// What this restart interrupts, counted before the restart policy runs.
 		resp["interrupts"] = rep
+		// The wait for running gates happens after this answer, in the restart
+		// function. Report what it will wait for, or leave running at once.
+		waited, left := 0, 0
+		if s.cfg != nil && config.NormalizeGateDrainMinutes(s.cfg.Autonomous.GateDrainMinutes) > 0 {
+			waited = rep.RunningGateCnt
+		} else {
+			left = rep.RunningGateCnt
+		}
+		resp["gates_waited"] = waited
+		resp["gates_interrupted"] = left
 	}
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	s.hub.Broadcast(MsgNotification, map[string]string{"message": "Daemon restarting…"})

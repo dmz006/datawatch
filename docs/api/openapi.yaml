@@ -1029,6 +1029,9 @@ paths:
         and a bad value rejects the whole PUT with 400),
         `autonomous.script_gate_timeout_seconds` (whole seconds >= 0, default 900; the time cap
         on one script gate run, where 0 means no cap; a negative value is rejected with 400),
+        `autonomous.gate_drain_minutes` (whole minutes >= 0, default 10; how long a graceful
+        restart waits for running final gates before it exits, where 0 means do not wait; a
+        negative or non-whole value is rejected with 400),
         `autonomous.project_gate_command` (one line of shell text, at most 1024 bytes, default
         unset; the build-and-test command the script gate runs; a line break or NUL byte is
         rejected with 400; a project's `projects.<name>.policy.project_gate_command` overrides it,
@@ -2548,7 +2551,10 @@ paths:
         restart policy (`autonomous.restart_policy`:
         `immediate`, `wait_quiet` or `drain`, with `restart_quiet_timeout_seconds`
         and `restart_on_timeout`). `launch_draining` is true while a drain holds
-        new tasks back. Read-only; needs the autonomous read capability when
+        new tasks back. `running_gates` lists the final gate checks running now
+        (`check`, `prd_id`, `task_id`, `pid`) and `running_gate_count` counts
+        them; both are always present, the list empty when none. A restart or
+        stop waits for them up to `autonomous.gate_drain_minutes`. Read-only; needs the autonomous read capability when
         called by a federated peer.
       operationId: autonomousRestartInterruptions
       tags: [Autonomous]
@@ -7570,9 +7576,30 @@ paths:
   /api/restart:
     post:
       summary: Restart the daemon (re-exec). Returns before the old process exits.
+      description: |
+        Before the old process exits, the daemon waits up to
+        `autonomous.gate_drain_minutes` (0 = do not wait) for running final gates
+        to finish, and holds new gates back while it waits. A gate that is still
+        running when the wait ends keeps running; nothing is signalled or killed.
+        The answer carries the `interrupts` report (including `running_gates` and
+        `running_gate_count`), `gates_waited` (the gates this restart waits for;
+        0 when the wait is off or none is running) and `gates_interrupted` (the
+        gates left running at once because the wait is off; the final count is
+        logged when the wait ends).
       operationId: restart
       tags: [Operations]
-      responses: {"200": {description: "{status: restarting}"}}
+      responses:
+        "200":
+          description: Restarting
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+                  interrupts: {type: object}
+                  gates_waited: {type: integer}
+                  gates_interrupted: {type: integer}
 
   # Result store (BL360)
   /api/result-store:

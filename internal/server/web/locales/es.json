@@ -4823,6 +4823,8 @@
   "settings_daemon_task_template_version_bump_left_to_merge": "Subida de versión dejada al merge",
   "settings_daemon_script_gate_timeout": "Límite de tiempo del gate de scripts (segundos, 0 = sin límite, por defecto 900)",
   "settings_daemon_script_gate_timeout_help": "El tiempo máximo que puede durar una ejecución del gate de scripts antes de detenerla. 0 significa sin límite. El valor por defecto es 900 segundos. Los valores negativos o fraccionarios se rechazan.",
+  "settings_daemon_gate_drain": "Espera del reinicio por gates finales (minutos, 0 = no esperar, por defecto 10)",
+  "settings_daemon_gate_drain_help": "Cuánto espera un reinicio ordenado a los gates finales en ejecución antes de salir. 0 significa no esperar. El valor por defecto es 10 minutos. Los valores negativos o fraccionarios se rechazan.",
   "settings_daemon_project_gate_command": "Comando del gate del proyecto (una línea de texto de shell, vacío = sin definir)",
   "settings_daemon_project_gate_command_help": "El comando de compilación y prueba del propio proyecto, que el gate ejecuta como una línea de texto de shell. Vacío lo deja sin definir. Un valor con salto de línea o de más de 1024 bytes se rechaza.",
   "settings_daemon_task_help_link_label": "Ayuda: modos de tarea del daemon",

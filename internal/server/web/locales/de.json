@@ -4823,6 +4823,8 @@
   "settings_daemon_task_template_version_bump_left_to_merge": "Versionserhöhung dem Merge überlassen",
   "settings_daemon_script_gate_timeout": "Zeitlimit des Skript-Gates (Sekunden, 0 = kein Limit, Standard 900)",
   "settings_daemon_script_gate_timeout_help": "Die längste Zeit, die ein Lauf des Skript-Gates dauern darf, bevor er beendet wird. 0 bedeutet kein Limit. Der Standard ist 900 Sekunden. Negative oder gebrochene Werte werden abgelehnt.",
+  "settings_daemon_gate_drain": "Neustart-Wartezeit für finale Gates (Minuten, 0 = nicht warten, Standard 10)",
+  "settings_daemon_gate_drain_help": "Wie lange ein geordneter Neustart auf laufende finale Gates wartet, bevor er beendet wird. 0 bedeutet nicht warten. Der Standard ist 10 Minuten. Negative oder gebrochene Werte werden abgelehnt.",
   "settings_daemon_project_gate_command": "Projekt-Gate-Befehl (eine Zeile Shelltext, leer = nicht gesetzt)",
   "settings_daemon_project_gate_command_help": "Der eigene Build- und Testbefehl des Projekts, den das Gate als eine Zeile Shelltext ausführt. Leer lässt ihn ungesetzt. Ein Wert mit Zeilenumbruch oder über 1024 Byte wird abgelehnt.",
   "settings_daemon_task_help_link_label": "Hilfe: Aufgabenmodi des Daemons",

@@ -4823,6 +4823,8 @@
   "settings_daemon_task_template_version_bump_left_to_merge": "マージに任せるバージョン更新",
   "settings_daemon_script_gate_timeout": "スクリプトゲートの時間上限（秒、0 = 上限なし、既定 900）",
   "settings_daemon_script_gate_timeout_help": "スクリプトゲートの 1 回の実行が停止されるまでの最長時間です。0 は上限なしを意味します。既定値は 900 秒です。負の値や小数は拒否されます。",
+  "settings_daemon_gate_drain": "再起動時の最終ゲート待機（分、0 = 待機しない、既定 10）",
+  "settings_daemon_gate_drain_help": "正常な再起動が、実行中の最終ゲートを待ってから終了するまでの時間です。0 は待機しないことを意味します。既定値は 10 分です。負の値や小数は拒否されます。",
   "settings_daemon_project_gate_command": "プロジェクトゲートのコマンド（1 行のシェルテキスト、空 = 未設定）",
   "settings_daemon_project_gate_command_help": "ゲートが 1 行のシェルテキストとして実行する、プロジェクト自身のビルド・テストコマンドです。空にすると未設定のままになります。改行を含む値や 1024 バイトを超える値は拒否されます。",
   "settings_daemon_task_help_link_label": "ヘルプ：デーモンのタスクモード",

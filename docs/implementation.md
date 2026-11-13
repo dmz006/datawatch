@@ -609,6 +609,14 @@ text is never flagged in any mode. A failed Automaton accepts a spec edit
 `autonomous_config_set`, comm `configure`, CLI `autonomous config-set`, and the PWA
 Settings → Automate → Task scope lint select. See `docs/operations.md`.
 
+### Gate drain (`autonomous.gate_drain_minutes`)
+
+Minutes a graceful restart or stop waits for running final gates before the daemon exits. Default 10; 0 = do not wait; a negative value is rejected on every write path. Parsing lives in `internal/config/gate_drain.go`; the wait and the `running_gates` report are in `internal/autonomous/restart_policy.go` and `internal/autonomous/running_gates.go`. The wait is bounded and signals nothing: unfinished gates keep running and re-attach at the next start. See [howto/restart-with-work-running.md](howto/restart-with-work-running.md#waiting-for-running-final-gates).
+
+### Durable gate record, gate registry and restart retry
+
+A final gate runs through the same detached wrapper and run root as verification scripts, with one record per check and project directory (`internal/autonomous/script_gate_record.go`: process id and start time, output and exit files, delivered flag). A restarted daemon re-attaches to the live run, delivers a finished result once, or starts a new run. The Manager keeps a registry of running gates (`internal/autonomous/running_gates.go`) that feeds `running_gates` in the restart report and the exit-time wait. A gate killed by a signal within five minutes of the daemon start is rerun once (`gateRestartRetryDue` in `internal/autonomous/script_gate_task.go`), outside the retry budget, marked by `Task.GateRestartRetryUsed` and recorded in the decision log. See [howto/restart-with-work-running.md](howto/restart-with-work-running.md#verifying-judging-and-verification-scripts). Scenario tests with fakes (temp project, release-file gate script, fake clock, no daemon or service manager) are in `internal/autonomous/gate_restart_scenarios_test.go`: `TestGateSurvivesRestart`, `TestGateDrainWaitsAndTimesOut`, `TestGateRestartRetryOnce`, `TestGateKilledLongAfterRestartIsFailure`.
+
 ### Planning restart policy (`autonomous.planning_restart_policy`)
 
 What a daemon restart does to an Automaton still in planning. `reattach` (default, and
