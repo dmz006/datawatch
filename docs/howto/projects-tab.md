@@ -72,6 +72,8 @@ Three words are used in this guide, and only these three:
 - **Automaton**: one unit of autonomous work.
 - **Automata**: more than one Automaton.
 - **Automation**: a named chain of Automata, run in order. An arc *is* an Automation.
+- **Plan**: the registry record of what you are working on. Arcs are deprecated in favor of plans: `datawatch plans migrate` builds plans from the arcs and
+  registry rows, and the arcs routes keep answering meanwhile. See [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows).
 
 ```
 Project  "core-api"
