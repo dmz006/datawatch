@@ -236,9 +236,7 @@ given it a second time, just like the rules block. Only worker prompts get
 it: the planning prompt decompose uses does not carry it, and a prompt that
 gets no rules block (a task with no project directory) gets no rule either.
 
-It is an instruction, not a wall. If a worker edits the rules file anyway,
-[protected paths](automaton-protected-paths.md) still hold a task that changes
-one, and the rules review reads the rules from the base commit.
+It is an instruction, not a wall. If a worker appends its entry to the rules file anyway and that entry is the file's entire change since the base commit, the [protected paths](automaton-protected-paths.md) gate strips the entry out of the file and records a `protected_paths_checkpoint_reverted` decision without holding the task ([the checkpoint-entry revert](automaton-protected-paths.md#the-checkpoint-entry-revert)); a change that goes beyond the entry is still held, and the rules review reads the rules from the base commit either way.
 
 ## Troubleshooting
 
