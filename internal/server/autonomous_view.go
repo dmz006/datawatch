@@ -246,6 +246,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 		if detail == "summary" {
 			view := autonomous.BuildSummaryView(p)
 			view.Project = autonomous.ProjectAliasOfPRD(p, s.projectAliasMap())
+			view.PlanningFailure = s.planningFailureOf(p)
 			s.fillInheritedTags(&view)
 			writeJSONOK(w, s.withAutomatonCost(view, id))
 			return
@@ -253,12 +254,13 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 		view := autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap))
 		view = autonomous.FilterTasksView(view, tagSel)
 		view.Project = autonomous.ProjectAliasOfPRD(p, s.projectAliasMap())
+		view.PlanningFailure = s.planningFailureOf(p)
 		s.fillInheritedTags(&view.SummaryView)
 		s.attachTaskObservations(&view)
 		writeJSONOK(w, s.withAutomatonCost(view, id))
 	default:
 		if textCap <= 0 {
-			writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPRDProject(s.prdWithObservations(prd, id), prd), id), id)))
+			writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPlanningFailure(s.withPRDProject(s.prdWithObservations(prd, id), prd), prd), id), id)))
 			return
 		}
 		p, err := toPRD(prd)
@@ -267,8 +269,50 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		capped := autonomous.CapPRDText(p, textCap)
-		writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPRDProject(s.prdWithObservations(capped, capped.ID), capped), capped.ID), capped.ID)))
+		writeJSONOK(w, s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPlanningFailure(s.withPRDProject(s.prdWithObservations(capped, capped.ID), capped), capped), capped.ID), capped.ID)))
 	}
+}
+
+// planningFailureViewer is the optional autonomous-manager surface that
+// reads the planning failure view of an Automaton. AutonomousAPI fakes that
+// lack it simply show no planning failure.
+type planningFailureViewer interface {
+	PlanningFailureView(prd *autonomous.PRD) *autonomous.PlanningFailure
+}
+
+// planningFailureOf returns the planning failure of prd, or nil.
+func (s *Server) planningFailureOf(prd *autonomous.PRD) *autonomous.PlanningFailure {
+	if prd == nil || s.autonomousMgr == nil {
+		return nil
+	}
+	v, ok := s.autonomousMgr.(planningFailureViewer)
+	if !ok {
+		return nil
+	}
+	return v.PlanningFailureView(prd)
+}
+
+// withPlanningFailure adds the planning_failure object to a full Automaton
+// body. The key is omitted when the Automaton has no planning failure.
+func (s *Server) withPlanningFailure(payload any, prd any) any {
+	p, err := toPRD(prd)
+	if err != nil || p == nil {
+		return payload
+	}
+	pf := s.planningFailureOf(p)
+	if pf == nil {
+		return payload
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return payload
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil || doc == nil {
+		return payload
+	}
+	doc["planning_failure"] = pf
+	return doc
 }
 
 // prdIDOf returns the id of an Automaton record, or "" when it has none.

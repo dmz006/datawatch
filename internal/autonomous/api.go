@@ -849,6 +849,12 @@ func (a *API) TasksForSelection(prd *PRD, sel ObjectTagSelection) TasksView {
 	return FilterTasksView(BuildTasksView(prd), sel)
 }
 
+// PlanningFailureView returns the planning failure of prd for the read
+// surfaces, or nil when the last planning attempt did not fail.
+func (a *API) PlanningFailureView(prd *PRD) *PlanningFailure {
+	return a.M.PlanningFailureView(prd)
+}
+
 func (a *API) ListPRDs() []any {
 	return a.M.PRDsWithNotifyEffective(a.M.Store().ListPRDs())
 }

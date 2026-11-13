@@ -5630,5 +5630,18 @@
   "spec_check_severity_warning": "warning",
   "spec_check_severity_error": "error",
   "spec_check_fixable": "The daemon can fix this wording itself.",
-  "spec_check_suggestion": "Suggested rewording"
+  "spec_check_suggestion": "Suggested rewording",
+  "planning_failure_title": "Planning failed",
+  "planning_failure_reason": "Reason:",
+  "planning_failure_category": "Category:",
+  "planning_failure_source": "Rule:",
+  "planning_failure_phrases": "Phrases:",
+  "planning_failure_retryable": "Retryable",
+  "planning_failure_not_retryable": "Not retryable",
+  "planning_failure_retry_counts": "Retries:",
+  "planning_failure_retry_budget": "Retry budget:",
+  "planning_failure_badge": "Planning failed",
+  "planning_failure_question_pending": "Question waiting: Fix the wording and plan again",
+  "planning_failure_question_fix": "Fix the wording and plan again",
+  "planning_failure_question_leave": "Leave it"
 }

@@ -970,6 +970,34 @@ The decision log gains the kinds `rules_review_fix_failed`, `rules_review_retrie
 and `rules_review_auto_fix_disabled`, one for each of the three held actions. Show an
 unknown kind as plain text.
 
+### Planning failure (`planning_failure`)
+
+An Automaton whose last planning attempt failed carries a `planning_failure`
+object on `GET /api/autonomous/prds/{id}` (every `detail` level) and on every
+row of `GET /api/autonomous/prds` (the summary list and `?full=1`). The key is
+left out when the last planning attempt did not fail, so a draft with no
+stories is never explained only by an internal field.
+
+| Field | Meaning |
+|-------|---------|
+| `reason` | Plain-language reason planning failed |
+| `category` | Failure category (`scope`, `infra`, ...) |
+| `source` | The rule that tripped (for example `release-version-fixed`) |
+| `phrases` | The exact phrases that tripped the rule (omitted when none) |
+| `retryable` | `true` when planning will be tried again by itself |
+| `retry_counts` | Retries used so far, per category (omitted when none) |
+| `retry_budget` | Retries allowed for this failure's category |
+| `occurred_at` | When the failure was recorded |
+
+The same object is returned by the MCP tools `autonomous_prd_get` and
+`autonomous_prd_list`. The CLI `autonomous prd-get` prints a "Planning failed"
+section and `autonomous prd-list` adds one `planning failed:` line per
+affected Automaton. The chat verbs `autonomous get` and `autonomous list` add a
+one-line failure with the reason and the phrases. The PWA shows the same fields
+on the Automaton detail and a "Planning failed" badge on the Automata list card
+of a draft; when the "Fix the wording and plan again" question is waiting, the
+detail shows it with the ordinary question row.
+
 ### Automata list (`GET /api/autonomous/prds`)
 
 The default reply is a summary list, not whole records: each row carries ids,

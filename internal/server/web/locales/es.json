@@ -5630,5 +5630,18 @@
   "spec_check_severity_warning": "aviso",
   "spec_check_severity_error": "error",
   "spec_check_fixable": "El daemon puede corregir esta redacción por sí mismo.",
-  "spec_check_suggestion": "Reformulación sugerida"
+  "spec_check_suggestion": "Reformulación sugerida",
+  "planning_failure_title": "Falló la planificación",
+  "planning_failure_reason": "Motivo:",
+  "planning_failure_category": "Categoría:",
+  "planning_failure_source": "Regla:",
+  "planning_failure_phrases": "Frases:",
+  "planning_failure_retryable": "Se puede reintentar",
+  "planning_failure_not_retryable": "No se puede reintentar",
+  "planning_failure_retry_counts": "Reintentos:",
+  "planning_failure_retry_budget": "Presupuesto de reintentos:",
+  "planning_failure_badge": "Falló la planificación",
+  "planning_failure_question_pending": "Pregunta pendiente: corregir la redacción y planificar de nuevo",
+  "planning_failure_question_fix": "Corregir la redacción y planificar de nuevo",
+  "planning_failure_question_leave": "Dejarlo así"
 }

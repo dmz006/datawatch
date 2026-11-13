@@ -19913,9 +19913,73 @@ window._shippedKick = _shippedKick;
 // last_decompose_failure on a successful retry, so the line disappears with it.
 // The detail is free text from the LLM/validator, so it goes through escHtml.
 function renderPRDDecomposeFailure(prd) {
+  const pf = prd && prd.planning_failure;
+  if (pf && pf.reason) return renderPlanningFailure(prd, pf);
   const f = prd && prd.last_decompose_failure;
   if (!f || !f.detail) return '';
   return `<div class="prd-decompose-failure" style="margin-top:4px;font-size:11px;color:#ef4444;">${escHtml(t('decompose_last_failure') || 'Decompose failed: ')}${escHtml(f.detail)}</div>`;
+}
+
+// Planning failure block on the Automaton detail: the reason, the category,
+// the rule that tripped, the exact phrases and the retry counts against the
+// budget. Every string is escaped. The pending "Fix the wording and plan
+// again" question, when it exists, renders below through the open-question row.
+function renderPlanningFailure(prd, pf) {
+  const id = prd && prd.id ? prd.id : '';
+  const row = (labelKey, labelFallback, value) =>
+    `<div><span style="color:var(--text2);">${escHtml(t(labelKey) || labelFallback)}</span> ${value}</div>`;
+  const phrases = Array.isArray(pf.phrases) ? pf.phrases.filter(Boolean) : [];
+  const phraseHtml = phrases.map(p => `<code class="prd-planning-failure-phrase">${escHtml(p)}</code>`).join(' ');
+  const counts = pf.retry_counts && typeof pf.retry_counts === 'object' ? pf.retry_counts : {};
+  const countText = Object.keys(counts).sort().map(k => `${k}=${counts[k]}`).join(', ');
+  const used = counts[pf.category] || 0;
+  const retryText = `${used} / ${pf.retry_budget || 0}` + (countText ? ` (${countText})` : '')
+    + ' · ' + (pf.retryable ? (t('planning_failure_retryable') || 'Retryable') : (t('planning_failure_not_retryable') || 'Not retryable'));
+  const q = _planningFailureQuestionFor(id);
+  const qHtml = q && typeof _automationQuestionsRowHtml === 'function'
+    ? `<div class="prd-planning-failure-question" data-prd-id="${escHtml(id)}"><div style="color:var(--text2);margin-top:4px;">${escHtml(t('planning_failure_question_pending') || 'Question waiting: Fix the wording and plan again')}</div>${_automationQuestionsRowHtml(q)}</div>`
+    : `<div class="prd-planning-failure-question" data-prd-id="${escHtml(id)}"></div>`;
+  if (!q) _planningFailureQuestionLoad(id);
+  return `<div class="prd-decompose-failure prd-planning-failure" style="margin-top:4px;font-size:11px;color:#ef4444;">
+    <div style="font-weight:700;">${escHtml(t('planning_failure_title') || 'Planning failed')}</div>
+    ${row('planning_failure_reason', 'Reason:', escHtml(pf.reason))}
+    ${row('planning_failure_category', 'Category:', escHtml(pf.category || ''))}
+    ${row('planning_failure_source', 'Rule:', escHtml(pf.source || ''))}
+    ${phrases.length ? row('planning_failure_phrases', 'Phrases:', phraseHtml) : ''}
+    ${row('planning_failure_retry_counts', 'Retries:', escHtml(retryText))}
+    ${qHtml}
+  </div>`;
+}
+
+// Badge on an Automata list card for a draft whose planning failed.
+function renderPlanningFailureBadge(prd) {
+  const pf = prd && prd.planning_failure;
+  if (!pf || !pf.reason || (prd.status || 'draft') !== 'draft') return '';
+  return `<span class="planning-failure-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid #ef4444;" title="${escHtml(pf.reason)}">${escHtml(t('planning_failure_badge') || 'Planning failed')}</span>`;
+}
+
+// The open planning question per Automaton id, fetched from the ordinary
+// question list (asked_by planning, prd_id = the Automaton).
+window._planningQuestionByPrd = window._planningQuestionByPrd || {};
+window._planningQuestionLoading = window._planningQuestionLoading || {};
+function _planningFailureQuestionFor(prdId) {
+  return (window._planningQuestionByPrd || {})[prdId] || null;
+}
+function _planningFailureQuestionLoad(prdId) {
+  if (!prdId || typeof apiFetch !== 'function' || window._planningQuestionLoading[prdId]) return;
+  window._planningQuestionLoading[prdId] = true;
+  Promise.resolve().then(() => apiFetch('/api/questions?state=open&limit=50')).then(r => r && r.ok ? r.json() : null).then(body => {
+    const list = Array.isArray(body) ? body : (body && Array.isArray(body.questions) ? body.questions : []);
+    const q = list.find(x => x && x.asked_by === 'planning' && x.prd_id === prdId && (x.options || []).some(o => o && o.id === 'fix_wording'));
+    if (!q) return;
+    window._planningQuestionByPrd[prdId] = q;
+    if (typeof document === 'undefined' || !document.querySelectorAll || typeof _automationQuestionsRowHtml !== 'function') return;
+    document.querySelectorAll('.prd-planning-failure-question').forEach(el => {
+      if (el.getAttribute('data-prd-id') === prdId) {
+        el.innerHTML = `<div style="color:var(--text2);margin-top:4px;">${escHtml(t('planning_failure_question_pending') || 'Question waiting: Fix the wording and plan again')}</div>${_automationQuestionsRowHtml(q)}`;
+      }
+    });
+  }).catch(() => {}).then(() => { delete window._planningQuestionLoading[prdId]; });
 }
 
 // 2026-10-17 — plan review gate: PRD-card verdict panel + re-run button.
@@ -20166,7 +20230,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -31207,7 +31271,7 @@ function renderAutomataCard(prd, alsoInHtml) {
     statusHtml: (shippedChipHtml(prd) || statusPill(status)) + renderPrdPushState(prd),
     title: title,
     checkHtml: checkboxCell,
-    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
+    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
     backend: [prd.backend, prd.model].filter(Boolean).join(' · '),
     progress: counts,
     progressLabel: t('work_tile_progress', [counts.done, counts.total]),

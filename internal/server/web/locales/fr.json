@@ -5630,5 +5630,18 @@
   "spec_check_severity_warning": "avertissement",
   "spec_check_severity_error": "erreur",
   "spec_check_fixable": "Le daemon peut corriger lui-même cette formulation.",
-  "spec_check_suggestion": "Reformulation suggérée"
+  "spec_check_suggestion": "Reformulation suggérée",
+  "planning_failure_title": "Échec de la planification",
+  "planning_failure_reason": "Raison :",
+  "planning_failure_category": "Catégorie :",
+  "planning_failure_source": "Règle :",
+  "planning_failure_phrases": "Formulations :",
+  "planning_failure_retryable": "Peut être relancé",
+  "planning_failure_not_retryable": "Ne peut pas être relancé",
+  "planning_failure_retry_counts": "Nouvelles tentatives :",
+  "planning_failure_retry_budget": "Budget de tentatives :",
+  "planning_failure_badge": "Échec de la planification",
+  "planning_failure_question_pending": "Question en attente : corriger la formulation et replanifier",
+  "planning_failure_question_fix": "Corriger la formulation et replanifier",
+  "planning_failure_question_leave": "Laisser tel quel"
 }

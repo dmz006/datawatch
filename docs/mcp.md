@@ -310,6 +310,7 @@ Compute node tools:
 Autonomous PRD reads and writes:
 
 - **`autonomous_prd_get`** — takes an optional `detail` argument that sets how much comes back. The default is `summary`. Any other value is rejected with an error.
+- **`autonomous_prd_get` / `autonomous_prd_list` — `planning_failure`.** An Automaton whose last planning attempt failed carries `planning_failure {reason, category, source, phrases[], retryable, retry_counts{}, retry_budget, occurred_at}` (the rule that tripped, the exact phrases and the retries used against the budget); the key is absent when planning did not fail. See [api/autonomous.md](api/autonomous.md#planning-failure-planning_failure).
   - `summary` returns the Automaton's ids, titles, statuses and counts, and the same for its stories and tasks.
   - `tasks` returns everything in `summary`, plus each task's status, error and verification summary.
   - `full` returns everything, including task specs and logs, and the `foreign_file_drift` field on tasks.

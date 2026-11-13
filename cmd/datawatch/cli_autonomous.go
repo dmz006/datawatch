@@ -938,10 +938,21 @@ view applies (all / shipped / unshipped).`,
 			if err != nil {
 				return err
 			}
-			if len(q) == 0 {
-				return daemonGet("/api/autonomous/prds")
+			path := "/api/autonomous/prds"
+			if len(q) > 0 {
+				path += "?" + q.Encode()
 			}
-			return daemonGet("/api/autonomous/prds?" + q.Encode())
+			body, err := daemonJSONBody(http.MethodGet, path, nil)
+			if err != nil {
+				return err
+			}
+			if len(body) > 0 {
+				prettyPrint(body)
+			}
+			for _, line := range autonomous.PlanningFailureListLines(body) {
+				fmt.Println("planning failed: " + line)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "Comma-separated statuses to keep (may include shipped)")
@@ -1066,6 +1077,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			}
 			for _, block := range rulesReviewOutcomeBlocks(body) {
 				fmt.Print(block)
+			}
+			for _, line := range autonomous.PlanningFailureLines(body) {
+				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdPushLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
