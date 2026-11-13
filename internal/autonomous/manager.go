@@ -2727,6 +2727,21 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
 			prevStatus := t.Status
+			if t.Kind == TaskKindFinalGate && (prevStatus == TaskInProgress || prevStatus == TaskVerifying || prevStatus == TaskRunningTests) && m.holdFinalGateForRecord(prd, t) {
+				// The final gate outlived the daemon (or finished while it was
+				// down): put the task back to pending without a failure or a
+				// retry. The gate run re-attaches to its record and takes its
+				// result once, so the gate is neither failed nor restarted.
+				m.releaseCapacity(t.ID)
+				m.store.WithLock(func() {
+					t.Status = TaskPending
+					t.Error = ""
+					t.UpdatedAt = time.Now()
+				})
+				reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+				log.Printf("[autonomous] boot-resume: prd=%s final gate task %s keeps its running gate: the run re-attaches to its record, no failure, no retry counted", prd.ID, t.ID)
+				continue
+			}
 			switch t.Status {
 			case TaskWaitingCapacity:
 				// Waiter died with the prior daemon; it holds no session.

@@ -56,8 +56,12 @@ type GateResult struct {
 	Passed   bool
 	ExitCode int
 	TimedOut bool
-	Output   string
-	Reason   string
+	// Interrupted is true when the caller's context ended while a durable gate
+	// was still running. The gate keeps running and is re-attached later; the
+	// result is not a verdict.
+	Interrupted bool
+	Output      string
+	Reason      string
 }
 
 // RunScriptGate runs check with projectDir as the working directory. A
@@ -74,6 +78,10 @@ func RunScriptGate(ctx context.Context, check GateCheck, projectDir string, time
 		runCtx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
+
+	if res, ok := runGateDurable(runCtx, check, argv, projectDir, timeout); ok {
+		return res
+	}
 
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...) // #nosec G204 -- argv built by gateArgv from validated input
 	cmd.Dir = projectDir
