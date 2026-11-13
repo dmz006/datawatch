@@ -723,7 +723,8 @@ func (l *Ledger) adoptionPendingLocked() string {
 func (l *Ledger) blockReasonLocked(req Request) string {
 	now := l.opt.Clock.Now()
 	for _, p := range req.Pools {
-		if lim := l.limits[p]; lim > 0 && l.usedLocked(p) >= lim {
+		lim := l.limits[p]
+		if lim > 0 && l.usedLocked(p) >= lim {
 			if name, ok := strings.CutPrefix(p, "node:"); ok {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
 			}
@@ -731,6 +732,26 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 				return fmt.Sprintf("waiting for node %s: %d/%d verifier slots in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
 			}
 			return fmt.Sprintf("pool %s full (%d/%d, held by %s)", p, l.usedLocked(p), lim, l.holdersLocked(p))
+		}
+		// Workers rank below verifiers in the wait queue, so by raw order a
+		// verifier would be granted the pool's last free slot out from under
+		// a worker queued for the same pool — starving the worker that does
+		// the work the verifier reviews. Hold that last slot for the queued
+		// worker(s); the verifier is admitted when the worker drains, or via
+		// its own verifier pool or the review reserve. A finished task
+		// rekeying its OWN lease (verify/judge) never acquires a fresh slot,
+		// so this rule never blocks the hand-off that fixes the full-pool
+		// deadlock.
+		if req.Role == RoleVerifier {
+			if hs := l.workerWaitersLocked(p); len(hs) > 0 && l.usedLocked(p) == lim-1 {
+				if name, ok := strings.CutPrefix(p, "node:"); ok {
+					return fmt.Sprintf("waiting for node %s: last slot held for queued worker(s) %s", name, strings.Join(hs, ","))
+				}
+				if name, ok := strings.CutPrefix(p, "node-verify:"); ok {
+					return fmt.Sprintf("waiting for node %s: last verifier slot held for queued worker(s) %s", name, strings.Join(hs, ","))
+				}
+				return fmt.Sprintf("pool %s: last slot held for queued worker(s) %s", p, strings.Join(hs, ","))
+			}
 		}
 		if why := l.rateBlockLocked(p, now); why != "" {
 			return why
@@ -757,6 +778,20 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 		}
 	}
 	return ""
+}
+
+// workerWaitersLocked returns the holders of the queued role-worker requests
+// that share pool p (call with l.mu held; p is a pool name). Feeds the
+// last-slot rule in blockReasonLocked: a verifier must not take the pool's
+// last free slot while such a waiter sits in the queue.
+func (l *Ledger) workerWaitersLocked(p string) []string {
+	var out []string
+	for _, w := range l.waiters {
+		if w.req.Role == RoleWorker && sharesPool(w.req.Pools, []string{p}) {
+			out = append(out, w.req.Holder)
+		}
+	}
+	return out
 }
 
 // rankedLocked returns the nodes req may be placed on, in try order: least
