@@ -80,7 +80,7 @@ func planRecordFilterQuery(op string, req mcpsdk.CallToolRequest) (url.Values, *
 
 func (s *Server) toolPlanRecordList() mcpsdk.Tool {
 	return mcpsdk.NewTool("plan_record_list",
-		mcpsdk.WithDescription("List plan records of one kind, most recently updated first: registry rows (the numbered items of the plans registry) or findings. Each record shows its title first and its id second, with its project, state, legacy row number and review flag. Filter by project, state or the Automaton that shipped or raised it; pass q to narrow by words. Read-only: it never creates or changes a record. Returns the same object as GET /api/plan-records/registry-rows or /findings."),
+		mcpsdk.WithDescription("List plan records of one kind, most recently updated first: registry rows (the numbered items of the plans registry) or findings. Each record shows its title first and its id second, with its project, state (the status), set_by_hand (true when the status was written by hand, so the plan roll-up keeps it), legacy row number and review flag. Filter by project, state or the Automaton that shipped or raised it; pass q to narrow by words. Read-only: it never creates or changes a record. Returns the same object as GET /api/plan-records/registry-rows or /findings."),
 		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("registry-row or finding")),
 		mcpsdk.WithString("project", mcpsdk.Description("Only records of this registered project alias")),
 		mcpsdk.WithString("state", mcpsdk.Description("Only records in this state. Registry rows: open, planned, in_progress, blocked, shipped, done, deferred, cancelled. Findings: open, triaged, fixed, wontfix, duplicate")),
@@ -117,7 +117,7 @@ func (s *Server) handlePlanRecordList(_ context.Context, req mcpsdk.CallToolRequ
 
 func (s *Server) toolPlanRecordGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("plan_record_get",
-		mcpsdk.WithDescription("Read one plan record: title first, then id, uid, project, state, body, the old row number, where an imported record came from, the Automata that shipped or raised it, links, older titles and the review flag. The ref is an id, a uid, \"row <n>\" (the old row number), an exact title, an older title or an unambiguous title prefix. A title that matches more than one record is refused with the list of matches; say which one by its id. Read-only. Returns the same object as GET /api/plan-records/registry-rows/{ref} or /findings/{ref}."),
+		mcpsdk.WithDescription("Read one plan record: title first, then id, uid, project, state (the status), set_by_hand (true when the status was written by hand, so the plan roll-up keeps it), body, the old row number, where an imported record came from, the Automata that shipped or raised it, links, older titles and the review flag. The ref is an id, a uid, \"row <n>\" (the old row number), an exact title, an older title or an unambiguous title prefix. A title that matches more than one record is refused with the list of matches; say which one by its id. Read-only. Returns the same object as GET /api/plan-records/registry-rows/{ref} or /findings/{ref}."),
 		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("registry-row or finding")),
 		mcpsdk.WithString("ref", mcpsdk.Required(), mcpsdk.Description("The record: id, uid, \"row <n>\", title, older title or title prefix")),
 		mcpsdk.WithString("project", mcpsdk.Description("Narrow a title reference to this registered project alias (titles repeat across projects)")),
@@ -455,6 +455,7 @@ func PlanRecordToolNames() []string {
 		"plan_reorder_automata",
 		"plan_attach",
 		"plan_detach",
+		"plan_rollup",
 	}
 }
 

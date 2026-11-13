@@ -166,6 +166,8 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/plans/{ref}/attach` | `plan_attach` | Complete | body `{kind: automaton\|automation\|finding, id}`; the id is checked first (404 when unknown); an item linked or attached elsewhere is 409 naming the holder |
 | `POST /api/plans/{ref}/detach` | `plan_detach` | Complete | same body; the item must belong to the plan in the path, else 409 naming the plan it is in |
 | `PUT /api/projects/{name}/arcs` | `project_set_arcs` | Complete | deprecated alias kept for the older plan list (arcs); the registry plan records replace it |
+| `GET /api/plans/rollup` | `plan_rollup` | Complete | preview only (`dry_run=true`, the default; `dry_run=false` is 400); `project` optional; lists the plans whose status differs from the one their linked work gives, a hand-set plan marked `set_by_hand_kept`; MCP `dry_run` true uses this route |
+| `POST /api/plans/rollup` | `plan_rollup` | Complete | applies by default; body `{project?, dry_run?}` (or `?dry_run=true`) previews instead; a status set by hand is never changed; needs `autonomous:write` |
 | `POST /api/plans/migrate` | `plan_migrate` | Complete | previews unless `apply` is `true`; builds plans from the older project plan lists (arcs) and registry rows; never changes an existing plan or link |
 | `GET /api/autonomous/tags/registry` | — | Not in MCP | Keeper-to-peer protocol route that serves the keeper's snapshot to peers. Not an operator action; the status tool shows this daemon's registry object instead |
 | `POST /api/autonomous/tags/registry/write` | — | Not in MCP | Keeper-to-peer protocol route that applies one forwarded tag write on the keeper. Not an operator action; peers call it, operators use the tag routes on the peer |

@@ -9,6 +9,7 @@
 //	plans detach <plan> --automaton|--automation|--finding ID
 //	                                            POST /api/plans/{ref}/detach
 //	plans migrate [--apply]                     POST /api/plans/migrate
+//	plans rollup [--project P] [--dry-run]      GET (dry run) or POST /api/plans/rollup
 //
 // `datawatch projects arcs` stays as a deprecated alias: it prints a note and
 // runs the plans list (or, with --set, still replaces the arcs).
@@ -116,6 +117,7 @@ func newPlansCmd() *cobra.Command {
   datawatch plans attach <plan> (--automaton ID | --automation ID | --finding REF)
   datawatch plans detach <plan> (--automaton ID | --automation ID | --finding REF)
   datawatch plans migrate [--apply] [--json]
+  datawatch plans rollup [--project P] [--dry-run] [--json]
 
 A plan is named by its id or its title. Reorder lists the plans first, in the
 order they should have; the rest keep their order after them. reorder-automata
@@ -129,11 +131,18 @@ the old row order). It previews by default; add --apply to write. A plan or
 link that already exists is never changed, so a second --apply changes nothing.
 No arc, row or config key is deleted.
 
+rollup derives each plan's status from the Automata and Automations linked to
+it: any failed or blocked item makes it blocked, any running item keeps it open,
+all shipped makes it shipped, all finished makes it done. A plan whose status was
+set by hand (marked "(by hand)" in plans list) is never changed; rollup lists it
+with the status it would have had. --dry-run shows what would change and writes
+nothing. Without --project every project is rolled up.
+
 When the daemon reports 404, plan records are turned off: set
 autonomous.plan_records.enabled to true in the daemon config.`,
 	}
 	cmd.AddCommand(newPlansListCmd(), newPlansCreateCmd(), newPlansReorderCmd(),
-		newPlansReorderAutomataCmd(), newPlansAttachCmd(), newPlansDetachCmd(), newPlansMigrateCmd())
+		newPlansReorderAutomataCmd(), newPlansAttachCmd(), newPlansDetachCmd(), newPlansMigrateCmd(), newPlansRollupCmd())
 	return cmd
 }
 
@@ -160,14 +169,105 @@ func newPlansMigrateCmd() *cobra.Command {
 	return cmd
 }
 
+// ----- rollup --------------------------------------------------------------
+
+type cliPlansRollup struct {
+	Project string `json:"project"`
+	DryRun  bool   `json:"dry_run"`
+	Applied bool   `json:"applied"`
+	Changes []struct {
+		Title         string `json:"title"`
+		Plan          string `json:"plan"`
+		From          string `json:"from"`
+		To            string `json:"to"`
+		Reason        string `json:"reason"`
+		SetByHandKept bool   `json:"set_by_hand_kept"`
+	} `json:"changes"`
+	Changed int `json:"changed"`
+	Kept    int `json:"kept"`
+}
+
+func renderPlansRollup(w io.Writer, body []byte) error {
+	var res cliPlansRollup
+	if err := json.Unmarshal(body, &res); err != nil {
+		return fmt.Errorf("the daemon sent a roll-up result I cannot read: %w", err)
+	}
+	head, verb := "Roll-up", "changed"
+	if res.DryRun {
+		head, verb = "Roll-up preview", "would change"
+	}
+	scope := "all projects"
+	if res.Project != "" {
+		scope = "project " + res.Project
+	}
+	_, _ = fmt.Fprintf(w, "%s (%s): %s %d, kept as set by hand %d\n", head, scope, verb, res.Changed, res.Kept)
+	for _, c := range res.Changes {
+		s := fmt.Sprintf("  %s  [%s]: %s -> %s", oneLineText(c.Title), c.Plan, c.From, c.To)
+		if c.SetByHandKept {
+			s += " (kept: status set by hand)"
+		}
+		if c.Reason != "" {
+			s += " - " + c.Reason
+		}
+		_, _ = fmt.Fprintln(w, s)
+	}
+	if len(res.Changes) == 0 {
+		_, _ = fmt.Fprintln(w, "Every plan already has the status its linked work gives it.")
+	}
+	if res.DryRun && res.Changed > 0 {
+		_, _ = fmt.Fprintln(w, "To write these changes run the same command without --dry-run.")
+	}
+	return nil
+}
+
+func newPlansRollupCmd() *cobra.Command {
+	var project string
+	var dryRun, jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "rollup",
+		Short: "Roll plan statuses up from their linked work (--dry-run previews)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var out []byte
+			var err error
+			if dryRun {
+				q := url.Values{"dry_run": {"true"}}
+				if project != "" {
+					q.Set("project", project)
+				}
+				out, err = daemonJSONBody(http.MethodGet, "/api/plans/rollup?"+q.Encode(), nil)
+			} else {
+				body := map[string]any{"dry_run": false}
+				if project != "" {
+					body["project"] = project
+				}
+				out, err = daemonJSONBody(http.MethodPost, "/api/plans/rollup", body)
+			}
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				planRecordPrintJSON(cmd.OutOrStdout(), out)
+				return nil
+			}
+			return renderPlansRollup(cmd.OutOrStdout(), out)
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "Only this registered project (default every project)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would change and write nothing")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print the raw JSON")
+	return cmd
+}
+
 // ----- list ----------------------------------------------------------------
 
 type cliPlanRow struct {
-	Title    string `json:"title"`
-	ID       string `json:"id"`
-	State    string `json:"state"`
-	Order    int    `json:"order"`
-	Progress struct {
+	Title     string `json:"title"`
+	ID        string `json:"id"`
+	State     string `json:"state"`
+	SetByHand bool   `json:"set_by_hand"`
+	Order     int    `json:"order"`
+	Progress  struct {
 		Done  int `json:"done"`
 		Total int `json:"total"`
 	} `json:"progress"`
@@ -192,7 +292,11 @@ func renderPlansList(w io.Writer, body []byte) error {
 		return fmt.Errorf("the daemon sent a plans list I cannot read: %w", err)
 	}
 	line := func(i int, p cliPlanRow) {
-		s := fmt.Sprintf("%d. %s  [%s]  %s  %d/%d done", i, oneLineText(p.Title), p.ID, p.State, p.Progress.Done, p.Progress.Total)
+		status := p.State
+		if p.SetByHand {
+			status += " (by hand)"
+		}
+		s := fmt.Sprintf("%d. %s  [%s]  %s  %d/%d done", i, oneLineText(p.Title), p.ID, status, p.Progress.Done, p.Progress.Total)
 		if p.FindingCount > 0 {
 			s += fmt.Sprintf("  %d findings", p.FindingCount)
 		}

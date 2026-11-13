@@ -1996,8 +1996,10 @@ paths:
     get:
       summary: A project's plans in order, with a Backlog group
       description: |
-        Lists the project's plans in priority order, each with its goal, state,
-        progress (Automata done out of total, with a whole-number percent for a bar),
+        Lists the project's plans in priority order, each with its goal, state (the
+        status, derived from the linked work by `POST /api/plans/rollup` unless it was
+        set by hand), `set_by_hand` (true when the status was written by hand, so the
+        roll-up keeps it), progress (Automata done out of total, with a whole-number percent for a bar),
         points, the ids of its Automations and Automata, and a next marker naming the
         Automaton that runs next. Plans with no Automaton yet are in the `backlog`
         group, in priority order. Paged with `limit` and `offset` (default 50, at most
@@ -2022,7 +2024,7 @@ paths:
                 type: object
                 properties:
                   project: {type: string}
-                  plans: {type: array, items: {type: object}}
+                  plans: {type: array, items: {$ref: "#/components/schemas/PlanRow"}}
                   page: {type: object}
                   backlog: {type: object}
         "400": {description: A paging value is not a whole number}
@@ -2087,7 +2089,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  plan: {type: object}
+                  plan: {$ref: "#/components/schemas/PlanHeader"}
                   progress: {type: object}
                   next: {type: object, nullable: true}
                   automata: {type: array, items: {type: object}}
@@ -2122,7 +2124,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  plan: {type: object}
+                  plan: {$ref: "#/components/schemas/PlanHeader"}
                   tasks: {type: array, items: {type: object}}
                   page: {type: object}
         "400": {description: A paging value is not a whole number}
@@ -2164,6 +2166,79 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/rollup:
+    get:
+      summary: Preview the plan status roll-up (what would change)
+      description: |
+        Shows what the roll-up would change, and writes nothing. A plan's status is
+        derived from the states last reported for the Automata and Automations linked
+        to it: no linked work leaves the plan alone; any failed or blocked item makes
+        it `blocked`; any running item keeps it `open`; all items shipped makes it
+        `shipped`; all items finished makes it `done`; anything else keeps it `open`.
+        A plan whose status was set by hand is never changed: it is listed with
+        `set_by_hand_kept` true and the status the roll-up would have written.
+        `dry_run` defaults to true on this route and `dry_run=false` is refused with
+        400: a read never writes, so use `POST /api/plans/rollup` to apply. `project`
+        limits it to one registered project alias; without it every project is
+        previewed. Needs the autonomous read capability when called by a federated
+        peer.
+      operationId: plansRollupPreview
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Registered project alias; default every project"}
+        - {name: dry_run, in: query, schema: {type: boolean, default: true}, description: "Only true is accepted on GET"}
+      responses:
+        "200":
+          description: The changes the roll-up would make
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRollupResult"
+        "400": {description: dry_run is false or not a boolean, or the project is not a registered alias}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Apply the plan status roll-up
+      description: |
+        Derives each plan's status from its linked work (see `GET /api/plans/rollup`
+        for the rules) and writes it. It applies by default; `{"dry_run": true}` in the
+        body, or `?dry_run=true`, only reports what would change and writes nothing, so
+        the same request can be run both ways. A plan whose status was set by hand is
+        kept and reported with `set_by_hand_kept` true. A plan that becomes closed
+        gets its `closed_at`; one that becomes open again loses it. Each write is
+        recorded in the audit log with the actor `rollup`. Both body fields are
+        optional; an empty body rolls every project up. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: plansRollupApply
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Registered project alias; the body's project wins"}
+        - {name: dry_run, in: query, schema: {type: boolean}, description: "true previews instead of applying"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project: {type: string, description: "Registered project alias; default every project"}
+                dry_run: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The changes made (or, with dry_run, the changes that would be made)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRollupResult"
+        "400": {description: Bad body, dry_run is not a boolean, or the project is not a registered alias}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Plan records are turned off}
         "503": {description: Plan records are not available}
   /api/plans/migrate:
@@ -11872,10 +11947,57 @@ components:
           items: {type: object, properties: {kind: {type: string}, ref: {type: string}}}
         aliases: {type: array, items: {type: string}}
         needs_review: {type: boolean}
+        set_by_hand: {type: boolean, description: "True when the status (state) was written by hand, so the plan roll-up keeps it. Always present"}
         review_reason: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         closed_at: {type: string, format: date-time}
+    PlanRow:
+      type: object
+      description: One plan of the plans list. The title comes first and the id second.
+      properties:
+        title: {type: string}
+        id: {type: string}
+        uid: {type: string}
+        goal: {type: string}
+        state:
+          type: string
+          description: The plan's status. Derived from its linked work by the roll-up unless set_by_hand is true.
+        set_by_hand: {type: boolean, description: "True when the status was written by hand; the roll-up keeps it and a client marks it (by hand)"}
+        order: {type: integer}
+        progress: {type: object, properties: {done: {type: integer}, total: {type: integer}, percent: {type: integer}}}
+        points: {type: number}
+        automation_ids: {type: array, items: {type: string}}
+        automaton_ids: {type: array, items: {type: string}}
+        finding_count: {type: integer}
+        next: {type: object, nullable: true, properties: {automaton_id: {type: string}, title: {type: string}}}
+    PlanHeader:
+      type: object
+      description: The plan header of the plan detail reads (the Automata and tasks routes).
+      properties:
+        title: {type: string}
+        id: {type: string}
+        state: {type: string, description: The plan's status}
+        set_by_hand: {type: boolean, description: True when the status was written by hand}
+    PlanRollupChange:
+      type: object
+      description: One plan the roll-up found different from its derived status.
+      properties:
+        title: {type: string}
+        plan: {type: string, description: The plan id}
+        from: {type: string, description: The status the plan has}
+        to: {type: string, description: The status the roll-up derives}
+        reason: {type: string}
+        set_by_hand_kept: {type: boolean, description: "True when the status was set by hand: `to` is what the roll-up would have written and nothing was"}
+    PlanRollupResult:
+      type: object
+      properties:
+        project: {type: string, description: Present when the roll-up was limited to one project}
+        dry_run: {type: boolean}
+        applied: {type: boolean, description: True when the changes were written}
+        changes: {type: array, items: {$ref: "#/components/schemas/PlanRollupChange"}}
+        changed: {type: integer, description: Plans written, or that would be on a dry run}
+        kept: {type: integer, description: Plans whose hand-set status was left alone}
     PlanRecordResponse:
       type: object
       properties:

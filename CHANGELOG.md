@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Plan status roll-up on every surface.** A plan's status is derived from the Automata and Automations linked to it (any failed or blocked item makes it blocked, any running item keeps it open, all shipped makes it shipped, all finished makes it done), and a status set by hand is kept. You can now read and apply it without reading code: REST `GET /api/plans/rollup?project=&dry_run=true` previews what would change and `POST /api/plans/rollup` applies it (body `{"project", "dry_run"}`; `dry_run` previews), MCP `plan_rollup` (`dry_run`, `project`), CLI `datawatch plans rollup [--project P] [--dry-run] [--json]`, and chat `autonomous plan rollup [dry-run] [project=P]`. A preview never writes; a hand-set plan is listed with `set_by_hand_kept` and the status it would have had.
+- **The plan list and detail show `set_by_hand`.** `GET /api/projects/{name}/plans`, the plan header of `/api/plans/{ref}/automata` and `/tasks`, and the plan-record routes (`plan_record_get`, `plan_record_list`) now carry `set_by_hand` next to `state`; `datawatch plans list` and chat `plan list` mark a hand-set status `(by hand)`. Both OpenAPI files describe the new paths and fields.
+
 ## v9.172.5 — Sessions deep-dive how-to corrections
 
 ### Fixed

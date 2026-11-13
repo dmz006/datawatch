@@ -369,6 +369,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("GET /api/projects/{name}/overview-summary", api.handleProjectOverviewSummary) // overview: header, progress, active plan lines, counts
 	apiMux.HandleFunc("GET /api/projects/{name}/arcs", api.handleProjectArcs)                        // deprecated alias: roll-up arcs plus plans
 	apiMux.HandleFunc("GET /api/plans/{ref}/automata", api.handlePlanAutomata)                       // plans read API: a plan's Automata in run order
+	apiMux.HandleFunc("GET "+plansRollupPath, api.handlePlansRollupGet)                              // plans roll-up: preview what the roll-up would change
+	apiMux.HandleFunc("POST "+plansRollupPath, api.handlePlansRollupPost)                            // plans roll-up: apply it (dry_run previews)
 	apiMux.HandleFunc("POST /api/plans", api.handlePlanCreate)                                       // plans write API: create a plan
 	apiMux.HandleFunc("PUT /api/plans/order", api.handlePlansOrder)                                  // plans write API: set the plan priority order
 	apiMux.HandleFunc("PUT /api/plans/{ref}/automata/order", api.handlePlanAutomataOrder)            // plans write API: set the order of a plan's Automata

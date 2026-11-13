@@ -50,11 +50,14 @@ type Target struct {
 // kept in step with the records on every write, so a list never reads a full
 // record.
 type Summary struct {
-	UID          string `json:"uid"`
-	ID           string `json:"id"`
-	Kind         Kind   `json:"kind"`
-	Project      string `json:"project"`
-	State        State  `json:"state"`
+	UID     string `json:"uid"`
+	ID      string `json:"id"`
+	Kind    Kind   `json:"kind"`
+	Project string `json:"project"`
+	State   State  `json:"state"`
+	// SetByHand is true when the plan's status was written by hand, so the
+	// roll-up keeps it (kind plan only).
+	SetByHand    bool   `json:"set_by_hand,omitempty"`
 	Title        string `json:"title"`
 	Order        int    `json:"order,omitempty"`
 	LegacyNumber int    `json:"legacy_number,omitempty"`
@@ -134,7 +137,7 @@ func summarize(r *Record) Summary {
 
 func summarizeBase(r *Record) Summary {
 	return Summary{
-		UID: r.UID, ID: r.ID, Kind: r.Kind, Project: r.Project, State: r.State, Title: r.Title,
+		UID: r.UID, ID: r.ID, Kind: r.Kind, Project: r.Project, State: r.State, SetByHand: r.SetByHand, Title: r.Title,
 		Order: r.Order, LegacyNumber: r.LegacyNumber, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		AutomatonCount: len(r.Automata), AutomationCount: len(r.Automations), FindingCount: len(r.Findings),
 		AttachKind: r.AttachKind, AttachRef: r.AttachRef,
