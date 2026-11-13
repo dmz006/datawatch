@@ -36687,8 +36687,51 @@ function _triageBindClick() {
 // operator. The loader still owns the loading and failed states.
 window.triageListHtml = function(body) {
   const recs = (body && Array.isArray(body.records)) ? body.records : [];
-  return recs.map(r => window.triageCardHtml(r)).join('') ||
-    `<div class="list-state-empty triage-list-empty" style="text-align:center;padding:20px;color:var(--text2);min-width:0;">${escHtml(t('triage_empty'))}</div>`;
+  if (!recs.length) {
+    return `<div class="list-state-empty triage-list-empty" style="text-align:center;padding:20px;color:var(--text2);min-width:0;">${escHtml(t('triage_empty'))}</div>`;
+  }
+  const mode = _inboxViewMode();
+  if (mode === 'list') return recs.map(r => window.triageCardHtml(r)).join('');
+  return renderInboxTileGrid(recs.map(r => window.triageTileHtml(r)).join(''), mode);
+};
+// triageTileHtml is the tile-grid counterpart of triageCardHtml: the same
+// headline, the record status, the owner, the reason (fully shown for a
+// blocked record, clamped otherwise), the wait line and the action buttons
+// without their description lines so the tile stays compact. It keeps the
+// triage-card class and the data attributes, so the one delegated click
+// handler opens details and dispatches the buttons exactly as on the card.
+// A merge_blocked record keeps its own card in every mode: the block rows
+// need the full card width.
+window.triageTileHtml = function(record) {
+  if (record && typeof record === 'object' && record.status === 'merge_blocked') return window.mergeBlockedTriageCardHtml(record);
+  _triageBindClick();
+  if (!record || typeof record !== 'object') {
+    return `<div class="work-tile triage-tile" style="color:var(--text2);min-width:0;">${escHtml(t('triage_record_empty'))}</div>`;
+  }
+  const M = window.AutomataTriageModel;
+  const prdID = String(record.prd_id || '');
+  const taskID = String(record.task_id || '');
+  _triageRemember(record, prdID, taskID);
+  const status = String(record.status || '');
+  const statusChip = status
+    ? `<span class="work-tile-status" style="flex-shrink:0;font-size:11px;padding:1px 8px;border:1px solid var(--border);border-radius:10px;color:var(--text2);">${escHtml(status)}</span>`
+    : '';
+  const owner = M.triageOwnerLabel(record);
+  const meta = [
+    prdID ? `<span class="triage-prd">${escHtml(prdID)}</span>` : '',
+    owner ? `<span class="triage-owner">${escHtml(t('triage_in_automation', [owner]))}</span>` : '',
+  ].filter(Boolean).join('');
+  const reason = M.triageReason(record);
+  const reasonText = reason.text || t(reason.key);
+  const isBlocked = status === 'blocked';
+  const clampStyle = isBlocked ? '' : 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
+  const reasonHtml = `<div class="triage-tile-reason" style="margin-top:6px;font-size:12px;color:var(--text2);${clampStyle}overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(reasonText)}</div>`;
+  return `<div class="work-tile triage-tile triage-card" data-prd-id="${escHtml(prdID)}" style="min-width:0;cursor:pointer;">` +
+    `<div class="work-tile-head"><span class="work-tile-title triage-headline">${escHtml(_triageHeadlineText(record))}</span>${statusChip}</div>` +
+    (meta ? `<div class="work-tile-meta">${meta}</div>` : '') +
+    reasonHtml + _triageWaitLine(record) +
+    _triageButtons(record, prdID, taskID, false) +
+    `</div>`;
 };
 
 // ── Security failure card ───────────────────────────────────────────────────
@@ -43147,6 +43190,10 @@ const _AUTOMATION_SUBTABS = [
     bodyHTML: () => `
       <!-- Inbox order: the queue and hold cards first, then the triage card
            (the failed and blocked records), then the rest. -->
+      <!-- The view-mode switch (List / Tiles / Compact) for the three Inbox
+           lists below. Switching repaints from the data already loaded and
+           never touches the Inbox badge count. -->
+      <div id="inboxViewModeToggle">${_inboxViewToggleHtml()}</div>
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
@@ -44523,7 +44570,45 @@ window.questionsCardHtml = function(body) {
   if (!list.length) {
     return `<div style="color:var(--text2);">${escHtml(t('automation_questions_empty'))}</div>`;
   }
-  return `<div class="questions-queue-list">${list.map(_automationQuestionsRowHtml).join('')}</div>`;
+  const mode = _inboxViewMode();
+  if (mode === 'list') {
+    return `<div class="questions-queue-list">${list.map(_automationQuestionsRowHtml).join('')}</div>`;
+  }
+  return renderInboxTileGrid(list.map(q => window.questionTileHtml(q)).join(''), mode);
+};
+// questionTileHtml draws one open question for the tile grid: the label (or
+// the first line of the question) as the title, the high marker, the id /
+// asker / age as the meta line, the escaped question text clamped, and the
+// same in-place option buttons and Open action the row carries.
+window.questionTileHtml = function(q) {
+  const e = (q && typeof q === 'object') ? q : {};
+  const id = String(e.id == null ? '' : e.id);
+  const text = String(e.text == null ? '' : e.text);
+  const label = String(e.label == null ? '' : e.label);
+  const firstLine = text.split('\n').find(l => String(l).trim()) || '';
+  const title = label || firstLine || id || t('automation_questions_title');
+  const high = e.priority === 'high'
+    ? `<span class="work-tile-status" style="flex-shrink:0;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_questions_high'))}</span>`
+    : '';
+  const age = _automationQuestionsAgeText(e);
+  const meta = [
+    id ? `<span class="questions-id">${escHtml(id)}</span>` : '',
+    `<span class="questions-meta">${escHtml(t('automation_questions_by'))} ${escHtml(e.asked_by || '')}</span>`,
+    age ? `<span class="questions-age">${escHtml(t('automation_questions_age', [age]))}</span>` : '',
+  ].filter(Boolean).join('');
+  const opts = Array.isArray(e.options) ? e.options.filter(o => o && typeof o === 'object' && o.id) : [];
+  const optsHtml = opts.length
+    ? `<div class="work-tile-actions questions-options" style="margin-top:6px;">` + opts.map(o =>
+      `<button type="button" class="btn-secondary questions-option-btn" data-question-id="${escHtml(id)}" data-option-id="${escHtml(String(o.id))}" title="${escHtml(String(o.tradeoffs || ''))}" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.answerQuestionOption === 'function') window.answerQuestionOption(this)">${escHtml(String(o.label || o.id))}</button>`
+    ).join('') + `</div>`
+    : '';
+  return `<div class="work-tile questions-question-tile" data-question-id="${escHtml(id)}" style="min-width:0;">` +
+    `<div class="work-tile-head"><span class="work-tile-title">${escHtml(title)}</span>${high}</div>` +
+    (meta ? `<div class="work-tile-meta">${meta}</div>` : '') +
+    (text ? `<div class="questions-tile-text" style="margin-top:6px;font-size:12px;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(text)}</div>` : '') +
+    optsHtml +
+    `<div class="work-tile-foot" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;"><span style="margin-right:auto;color:var(--text2);font-size:11px;">${escHtml(t('automation_questions_open'))}</span>` +
+    `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(id)}')">${escHtml(t('automation_questions_open'))}</button></div></div>`;
 };
 
 // _automationQuestionsOpenBody is the one scope cut + renderer for the live
@@ -45062,7 +45147,10 @@ window.heldQuestionsCardHtml = function(body) {
   const shadow = Array.isArray(body.shadow) ? body.shadow.filter(e => e && typeof e === 'object') : [];
   let html = `<div class="held-question-mode-line" style="display:flex;align-items:center;gap:8px;">${window.heldQuestionModeBadgeHtml(mode)}</div>`;
   if (open.length) {
-    html += `<div class="held-question-list">${open.map(e => window.heldQuestionRowHtml(e)).join('')}</div>`;
+    const mode = _inboxViewMode();
+    html += (mode === 'list')
+      ? `<div class="held-question-list">${open.map(e => window.heldQuestionRowHtml(e)).join('')}</div>`
+      : renderInboxTileGrid(open.map(e => window.heldQuestionTileHtml(e, false)).join(''), mode);
   } else {
     html += `<div class="held-question-empty" style="color:var(--text2);font-size:12px;">${escHtml(t('held_question_empty'))}</div>`;
   }
@@ -45072,6 +45160,37 @@ window.heldQuestionsCardHtml = function(body) {
       <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e, true)).join('')}</div></div>`;
   }
   return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
+};
+// heldQuestionTileHtml draws one held question for the tile grid: the title
+// (or the question id) as the tile title, the escaped question text clamped,
+// the reason and the recommended option when present, and the same Answer
+// button the row carries (a shadow tile never has one).
+window.heldQuestionTileHtml = function(entry, isShadow) {
+  const e = (entry && typeof entry === 'object') ? entry : {};
+  const question = String(e.question_id == null ? '' : e.question_id);
+  const rawTitle = (e.title != null && String(e.title) !== '') ? e.title : e.automaton_title;
+  const title = String(rawTitle == null ? '' : rawTitle) || question;
+  const text = String(e.text == null ? '' : e.text);
+  const reason = String(e.reason == null ? '' : e.reason);
+  const rec = String(e.recommended_option == null ? '' : e.recommended_option);
+  const task = String(e.task_id == null ? '' : e.task_id);
+  const automaton = String((e.prd_id != null && String(e.prd_id) !== '') ? e.prd_id : e.automaton_id);
+  const meta = [
+    question ? `<span class="held-question-id">${escHtml(question)}</span>` : '',
+    automaton ? `<span class="held-question-automaton">${escHtml(automaton)}</span>` : '',
+    task ? `<span class="held-question-task">${escHtml(task)}</span>` : '',
+  ].filter(Boolean).join('');
+  const answerBtn = (question && !isShadow)
+    ? `<button type="button" class="btn-secondary held-question-answer" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')">${escHtml(t('held_question_answer'))}</button>`
+    : '';
+  return `<div class="work-tile held-question-tile" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}" style="min-width:0;">` +
+    `<div class="work-tile-head"><span class="work-tile-title held-question-title">${escHtml(title)}</span></div>` +
+    (meta ? `<div class="work-tile-meta">${meta}</div>` : '') +
+    (text ? `<div class="held-question-text" style="margin-top:6px;font-size:12px;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(text)}</div>` : '') +
+    (reason ? `<div class="held-question-reason" style="margin-top:2px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(reason)}</div>` : '') +
+    (rec ? `<div class="held-question-recommended" style="margin-top:2px;font-size:11px;color:var(--text);overflow-wrap:anywhere;">${escHtml(t('held_question_recommended', [rec]))}</div>` : '') +
+    (answerBtn ? `<div class="work-tile-actions" style="margin-top:6px;">${answerBtn}</div>` : '') +
+    `</div>`;
 };
 
 // _automationHeldQuestionsLoader is the held section on GET
@@ -63734,7 +63853,7 @@ function _tileGridHTML(innerHTML, scope) {
 function _tileSyncModes() {
   const mode = _tileRowMode(_tileViewportWidth());
   document.querySelectorAll('.work-tile-grid').forEach(el => {
-    if (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('session-tile-grid-compact')) return;
+    if (el.classList && typeof el.classList.contains === 'function' && (el.classList.contains('session-tile-grid-compact') || el.classList.contains('inbox-tile-grid-compact'))) return;
     if (!el.dataset.tileChosen) el.dataset.tileMode = mode;
   });
 }
@@ -63959,16 +64078,22 @@ function _listMoreHTML(scope, key, pg) {
   return `<div class="list-show-more" style="text-align:center;margin:8px;"><button type="button" class="btn-secondary" onclick="listShowMore('${escJsAttr(scope)}','${escJsAttr(String(key))}')">${escHtml(_tagT('list_show_more', 'Show more'))} (${step} / ${pg.remaining})</button></div>`;
 }
 
-// _listControlsHTML is the toolbar: the list/tiles/compact toggle and the group-by select.
+// _listControlsHTML is the toolbar: the list/tiles/compact toggle and the
+// group-by select. `opts.noMode` omits the mode buttons (the tag list);
+// `opts.noGroup` omits the group select — the Inbox uses this toolbar for the
+// mode switch only, its three lists have no grouping.
 function _listControlsHTML(scope, o) {
   const opts = o || {};
   const mode = _listModeGet(scope, _tileViewportWidth());
   const labels = { list: _tagT('list_mode_list', 'List'), tiles: _tagT('list_mode_tiles', 'Tiles'), compact: _tagT('list_mode_compact', 'Compact') };
   const toggle = LIST_MODES.map(m => `<button type="button" class="tag-view-btn${mode === m ? ' active' : ''}" aria-pressed="${mode === m}" onclick="listSetMode('${escJsAttr(scope)}','${m}')">${escHtml(labels[m])}</button>`).join('');
-  const cur = _listGroupGet(scope);
-  const axes = ['none', 'tag', 'state', 'node', 'project'].concat(LIST_GROUP_PREFIXES.map(p => 'prefix:' + p));
-  const axisLabel = (a) => a === 'none' ? _tagT('list_group_by_none', 'No grouping') : (a.indexOf('prefix:') === 0 ? a.slice(7) + ':' : a);
-  const sel = `<select class="list-group-select" aria-label="${escHtml(_tagT('list_group_by', 'Group by'))}" onchange="listSetGroup('${escJsAttr(scope)}',this.value)">${axes.map(a => `<option value="${escHtml(a)}"${a === cur ? ' selected' : ''}>${escHtml(axisLabel(a))}</option>`).join('')}</select>`;
+  let sel = '';
+  if (!opts.noGroup) {
+    const cur = _listGroupGet(scope);
+    const axes = ['none', 'tag', 'state', 'node', 'project'].concat(LIST_GROUP_PREFIXES.map(p => 'prefix:' + p));
+    const axisLabel = (a) => a === 'none' ? _tagT('list_group_by_none', 'No grouping') : (a.indexOf('prefix:') === 0 ? a.slice(7) + ':' : a);
+    sel = `<select class="list-group-select" aria-label="${escHtml(_tagT('list_group_by', 'Group by'))}" onchange="listSetGroup('${escJsAttr(scope)}',this.value)">${axes.map(a => `<option value="${escHtml(a)}"${a === cur ? ' selected' : ''}>${escHtml(axisLabel(a))}</option>`).join('')}</select>`;
+  }
   return `<div class="list-controls" data-list-scope="${escHtml(scope)}" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0;"><div class="tag-view-switch" role="group">${opts.noMode ? '' : toggle}</div>${sel}</div>`;
 }
 
@@ -63985,8 +64110,50 @@ function _listBodyHTML(scope, items, renderTile) {
   }).join('');
 }
 
+// ── Inbox view modes ─────────────────────────────────────────────────────────
+// The Inbox sub-tab lists (Triage, Open questions, Held questions) share one
+// view mode — List / Tiles / Compact — remembered per device under the shared
+// list-mode storage with scope 'inbox'. Switching paints the lists that
+// already have data straight from that data (no refetch) and repaints the
+// toggle row at the top of the Inbox. It never reads or writes the Inbox
+// badge counts, so the badge on the sub-tab is unaffected.
+const INBOX_VIEW_LOADER_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions'];
+// renderInboxTileGrid wraps the tile HTML in the shared .work-tile grid.
+// Compact pins data-tile-mode to "tile" (like the Sessions compact grid), so
+// the resize handler's per-width rewrite is skipped via the
+// .inbox-tile-grid-compact class; tiles follow the viewport.
+function renderInboxTileGrid(innerHTML, mode) {
+  const grid = mode === 'compact' ? 'tile' : _tileRowMode(_tileViewportWidth());
+  return `<div class="work-tile-grid inbox-tile-grid${mode === 'compact' ? ' inbox-tile-grid-compact' : ''}" data-tile-mode="${grid}">${innerHTML}</div>`;
+}
+// _inboxViewMode is the Inbox's shared mode: the remembered choice, or the
+// viewport default (tiles at 720px and up, compact below).
+function _inboxViewMode() {
+  return _listModeGet('inbox', _tileViewportWidth());
+}
+// _inboxViewToggleHtml is the [List] [Tiles] [Compact] row shown at the top
+// of the Inbox sub-tab: the shared list-controls toggle without the group-by
+// select, which the Inbox lists do not have.
+function _inboxViewToggleHtml() {
+  return _listControlsHTML('inbox', { noGroup: true });
+}
+// _inboxViewRepaint repaints the Inbox lists from their already-loaded data
+// (a list with no data yet is left alone) and the toggle row. It does not
+// load anything.
+function _inboxViewRepaint() {
+  const L = (typeof window !== 'undefined' && window._listLoaders) ? window._listLoaders : null;
+  INBOX_VIEW_LOADER_KEYS.forEach(k => {
+    const l = L && L[k];
+    if (l && l.state && l.state.hasData && typeof l.paint === 'function') l.paint();
+  });
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('inboxViewModeToggle');
+  if (el && 'innerHTML' in el) el.innerHTML = _inboxViewToggleHtml();
+}
+
 function _listRepaint(scope) {
   if (scope === 'session') { if (typeof renderSessionsView === 'function') renderSessionsView(); return; }
+  if (scope === 'inbox') { if (typeof _inboxViewRepaint === 'function') _inboxViewRepaint(); return; }
   if (typeof _tagBrowseRepaint === 'function') _tagBrowseRepaint(scope);
 }
 if (typeof window !== 'undefined') {

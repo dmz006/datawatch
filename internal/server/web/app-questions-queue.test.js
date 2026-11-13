@@ -47,6 +47,7 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     const sandbox = buildSandbox();
     vmmod.createContext(sandbox); // buildSandbox returns a plain object; runInContext needs a context
     loadScript(APP_JS, sandbox);
+    sandbox.listSetMode('inbox', 'list'); // these tests pin the inbox list mode
     sandbox._i18n.bundle = en;
     return sandbox;
   };
@@ -132,6 +133,7 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     const s3 = buildSandbox();
     vmmod.createContext(s3);
     loadScript(APP_JS, s3);
+    s3.listSetMode('inbox', 'list'); // these tests pin the inbox list mode
     s3._i18n.bundle = de;
     s3.fetch = () => Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve('off') });
     const ctl = vmmod.runInContext('_automationQuestionsLoader()', s3);
@@ -164,6 +166,7 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     const s6 = buildSandbox({ byId: { automationQuestionsSearch: { value: 'gpu' } } });
     vmmod.createContext(s6);
     loadScript(APP_JS, s6);
+    s6.listSetMode('inbox', 'list'); // these tests pin the inbox list mode
     s6._i18n.bundle = en;
     const urls = [];
     s6.fetch = (url, o) => { urls.push(String(url)); return okList([q({})]); };
@@ -183,6 +186,7 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     const s7 = buildSandbox();
     vmmod.createContext(s7);
     loadScript(APP_JS, s7);
+    s7.listSetMode('inbox', 'list'); // these tests pin the inbox list mode
     s7._i18n.bundle = en;
     // A hidden page does not poll (app.js gates polling on visibility), so
     // the only re-requests below come from the search commit itself.
