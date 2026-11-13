@@ -311,6 +311,8 @@ Autonomous PRD reads and writes:
 
 - **`autonomous_prd_list`** — returns the summary list by default (one small row per Automaton, no task detail). `full=true` returns whole records; with `limit` or `cursor` that is one page of whole records, without either it is every record (heavy). `limit` and `cursor` page the list: pass a reply's `next_cursor` as the next `cursor`. `status` and `shipped` still narrow it.
 - **`autonomous_prd_tasks`** — reads one page of one Automaton's task rows. Takes `id` (required), `limit` (default 50, max 500), `cursor`, `story` and `status` (comma list). The reply is `{prd_id, tasks, total, next_cursor}`; `total` counts the matching tasks, ignoring the cursor.
+- **`autonomous_prd_archive`** — reads the archive of one finished Automaton on request: the decision log, session history and raw judge text moved out of the live record. Takes `id` (required). An Automaton that is not archived answers not found.
+- **`autonomous_archive`** — archives finished Automata. The default is a dry run (`dry_run` true or absent): it reports which Automata would be archived and the bytes before and after, and writes nothing. `dry_run=false` takes a verified backup of the touched records first, then archives one Automaton at a time. An Automaton that is in use is skipped. Needs the autonomous write capability.
 - **`autonomous_prd_get`** — takes an optional `detail` argument that sets how much comes back. The default is `summary`. Any other value is rejected with an error.
   - `summary` returns the Automaton's ids, titles, statuses and counts, and the same for its stories and tasks.
   - `tasks` returns everything in `summary`, plus each task's status, error and verification summary.

@@ -48,6 +48,11 @@ func (m *Manager) PRDSessionIDs(prdID string) []string {
 	for _, d := range prd.Decisions {
 		add(d.JudgeSessionID)
 	}
+	if prd.Archive != nil {
+		for _, id := range prd.Archive.JudgeSessionIDs {
+			add(id)
+		}
+	}
 	for i := range prd.Story {
 		st := &prd.Story[i]
 		addVerdicts(st.Verdicts)

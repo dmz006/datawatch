@@ -163,6 +163,7 @@ entries:
   - automation_return_to_draft
   - automation_skip_member
   - automation_update
+  - autonomous_archive
   - autonomous_attention_list
   - autonomous_cleanup_status
   - autonomous_event_log
@@ -179,6 +180,7 @@ entries:
   - autonomous_prd_add_task
   - autonomous_prd_approve
   - autonomous_prd_approve_task
+  - autonomous_prd_archive
   - autonomous_prd_cancel
   - autonomous_prd_cancel_story
   - autonomous_prd_cancel_task

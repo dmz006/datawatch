@@ -463,6 +463,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/prds/{id}/decompose-lint", api.handleAutonomousDecomposeLintPRD)
 	// One page of one Automaton's task rows (never part of the list).
 	apiMux.HandleFunc("/api/autonomous/prds/{id}/tasks", api.handlePRDTasks)
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/archive", api.handlePRDArchive)
+	apiMux.HandleFunc("/api/autonomous/archive", api.handleAutonomousArchive)
 	// Planning routing: config, test and scorecard.
 	apiMux.HandleFunc("/api/autonomous/planning-routing", api.handleAutonomousPlanningRouting)
 	apiMux.HandleFunc("/api/autonomous/planning-routing/test", api.handleAutonomousPlanningRoutingTest)

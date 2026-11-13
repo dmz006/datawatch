@@ -226,6 +226,14 @@ func buildSummaryEntry(p *PRD) SummaryEntry {
 		judges.add(p.Decisions[i].JudgeSessionID)
 		all.add(p.Decisions[i].JudgeSessionID)
 	}
+	if p.Archive != nil {
+		// The decision log moved to the archive; its judge ids stay in the
+		// marker so the entry reads the same as before archiving.
+		for _, id := range p.Archive.JudgeSessionIDs {
+			judges.add(id)
+			all.add(id)
+		}
+	}
 	decompose.add(p.PlannerSessionID)
 	var latest time.Time
 	for i := range p.Story {

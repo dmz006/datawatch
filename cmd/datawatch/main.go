@@ -6927,6 +6927,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
 			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
+			// autonomous.archive — the finished-Automaton archive reads its
+			// switch and retention at every use; the background pass only reads
+			// and rewrites Automaton record files and never touches a session.
+			amgr.SetArchiveSettings(func() (bool, int) {
+				ac := cfg.Autonomous.Archive
+				return ac.EffectiveEnabled(), ac.EffectiveRetentionDays()
+			})
 			// autonomous.project_link_backfill_apply (default off) — one-time
 			// project link backfill: dry-run report only unless set, then a
 			// durable done marker stops re-runs. Reads and writes Automaton

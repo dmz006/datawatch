@@ -94,6 +94,8 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_instantiate":                   CapAutonomousWrite,
 	"autonomous_prd_list":                          CapAutonomousList,
 	"autonomous_prd_tasks":                         CapAutonomousRead,
+	"autonomous_prd_archive":                       CapAutonomousRead,
+	"autonomous_archive":                           CapAutonomousWrite,
 	"autonomous_prd_plan_coverage_acknowledge":     CapAutonomousWrite,
 	"autonomous_prd_plan_coverage_get":             CapAutonomousRead, // plan coverage read
 	"autonomous_prd_change_record":                 CapAutonomousRead,
@@ -804,7 +806,7 @@ var nonConfigWriteTools = map[string]bool{
 	"autonomous_prd_approve_task": true, "autonomous_prd_cancel": true, "autonomous_prd_cancel_story": true, "autonomous_prd_cancel_task": true,
 	"autonomous_prd_children": true, "autonomous_prd_clone_to_template": true, "autonomous_prd_create": true, "autonomous_prd_decompose": true,
 	"autonomous_prd_edit_story": true, "autonomous_prd_edit_task": true, "autonomous_prd_get": true, "autonomous_prd_instantiate": true,
-	"autonomous_prd_list": true, "autonomous_prd_tasks": true, "autonomous_prd_plan_coverage_acknowledge": true, "autonomous_prd_plan_coverage_get": true, "autonomous_prd_plan_review": true,
+	"autonomous_prd_list": true, "autonomous_prd_tasks": true, "autonomous_prd_archive": true, "autonomous_archive": true, "autonomous_prd_plan_coverage_acknowledge": true, "autonomous_prd_plan_coverage_get": true, "autonomous_prd_plan_review": true,
 	"autonomous_prd_reject": true, "autonomous_prd_rejudge": true, "autonomous_prd_remove_story": true, "autonomous_prd_remove_task": true,
 	"autonomous_prd_repair_depends_on": true, "autonomous_prd_request_revision": true, "autonomous_prd_reset_task": true, "autonomous_prd_reset_to_draft": true,
 	"autonomous_prd_resolve_task_review": true, "autonomous_prd_resume": true, "autonomous_prd_run": true, "autonomous_prd_scan": true,

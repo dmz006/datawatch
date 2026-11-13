@@ -1625,6 +1625,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.handleAutonomousShippedCountsVerb(args)
 	case "shipped-backfill", "shipped_backfill":
 		r.handleAutonomousShippedBackfillVerb(args)
+	case "archive":
+		r.handleAutonomousArchiveVerb(args)
 	case "lane-fill", "lane_fill", "set-lane-preference", "set_lane_preference":
 		r.handleLaneFillVerb(verb, args)
 	case "lane-utilization", "lane_utilization":

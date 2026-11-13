@@ -47,6 +47,14 @@ type Store struct {
 	// rec is the per-PRD record layout state (store_records.go).
 	rec prdRecords
 
+	// archiveSessionOpen reports whether a session id names a live session;
+	// the archive refuses an Automaton that has one. archiveHook is test-only:
+	// it is called after each archive stage and an error stops the archive
+	// there, as an interrupt would. archiveBackupHook is test-only too.
+	archiveSessionOpen func(sessionID string) bool
+	archiveHook        func(stage string) error
+	archiveBackupHook  func(dst string)
+
 	// SavePRDFailHook is test-only: when set and it returns true for a PRD,
 	// SavePRD rejects the save with an error. Nil in production — behavior
 	// is unchanged when unset.

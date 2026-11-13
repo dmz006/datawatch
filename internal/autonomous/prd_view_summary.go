@@ -138,7 +138,7 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		Rev:           prd.Rev,
 		CreatedAt:     prd.CreatedAt,
 		UpdatedAt:     prd.UpdatedAt,
-		DecisionCount: len(prd.Decisions),
+		DecisionCount: len(prd.Decisions) + prd.archivedDecisionCount(),
 		Stories:       make([]StorySummary, 0, len(prd.Story)),
 		StoryCount:    len(prd.Story),
 		CIWatch:       prd.CIWatch,
@@ -184,6 +184,9 @@ func BuildSummaryView(prd *PRD) SummaryView {
 	}
 	for i := range prd.Decisions {
 		view.Cost += prd.Decisions[i].CostUSD
+	}
+	if prd.Archive != nil {
+		view.Cost += prd.Archive.DecisionCostUSD // the decision log moved to the archive
 	}
 	view.ReviewNeeded = reviewNeededEntries(prd)
 
