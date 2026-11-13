@@ -11,7 +11,11 @@ import (
 	"testing"
 )
 
-func TestDecompose_FixedReleaseVersionRejected(t *testing.T) {
+// A fixed release number used to fail the decompose; the daemon now
+// rewords it itself when the gate is the only content failure (see
+// release_version_fix.go). The validator itself still rejects the raw
+// plan — pinned by the direct validator tests below.
+func TestDecompose_FixedReleaseVersionSelfCorrected(t *testing.T) {
 	fn := func(req DecomposeRequest) (string, error) {
 		return `{"title":"Ship release","stories":[{"title":"Release","tasks":[{"title":"Bump version","spec":"Bump the patch version from 9.5.26 to 9.5.27 in release.go"}]}]}`, nil
 	}
@@ -22,29 +26,15 @@ func TestDecompose_FixedReleaseVersionRejected(t *testing.T) {
 	prd, _ := m.CreatePRD("ship the release", "", "", "", "")
 
 	updated, err := m.Decompose(prd.ID)
-	if err == nil {
-		t.Fatal("Decompose: want error for fixed release version, got nil")
+	if err != nil {
+		t.Fatalf("Decompose: want self-corrected success, got %v", err)
 	}
-	// The offending number must be named in the error.
-	if !strings.Contains(err.Error(), "9.5.26") && !strings.Contains(err.Error(), "9.5.27") {
-		t.Fatalf("error %q does not name the offending version number", err)
+	if updated.Status != PRDNeedsReview {
+		t.Fatalf("status = %s, want needs_review", updated.Status)
 	}
-	if !strings.Contains(err.Error(), "next patch above main") {
-		t.Fatalf("error %q does not contain %q", err, "next patch above main")
-	}
-	// Rejected plans must not land in needs_review and must store nothing.
-	stored, ok := m.store.GetPRD(prd.ID)
-	if !ok {
-		t.Fatal("PRD missing from store")
-	}
-	if stored.Status == PRDNeedsReview {
-		t.Fatalf("status = %s, want not needs_review", stored.Status)
-	}
-	if n := len(storedStoriesFor(m, prd.ID)); n != 0 {
-		t.Fatalf("stored stories = %d, want 0", n)
-	}
-	if updated != nil && updated.Status == PRDNeedsReview {
-		t.Fatalf("returned PRD status = %s, want not needs_review", updated.Status)
+	spec := updated.Story[0].Tasks[0].Spec
+	if strings.Contains(spec, "9.5.26") || strings.Contains(spec, "9.5.27") {
+		t.Fatalf("fixed number left in spec: %q", spec)
 	}
 }
 
