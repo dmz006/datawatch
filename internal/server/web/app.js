@@ -27521,23 +27521,29 @@ function _serverChoiceSettleBoot() {
   }
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (name) => {
+    let timeoutId = null;
+    // finish(name, saveAll) commits the choice. The fallback save only runs
+    // through this guard — once a validated restore has settled, the pending
+    // settle timeout must not be able to overwrite the saved value (or a
+    // choice the user made in the meantime) with 'all'.
+    const finish = (name, saveAll) => {
       if (settled) return;
       settled = true;
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      if (saveAll) _serverChoiceSave('all'); // stale or unvalidatable: persist the fallback
       state.activeServer = name;
       resolve(name);
     };
     _onServerListReady(() => {
       if (_pickerServers().some(s => s.name === choice)) {
-        finish(choice); // validated: the saved peer is still listed and enabled
+        finish(choice, false); // validated: the saved peer is still listed and enabled
       } else {
-        _serverChoiceSave('all'); // stale: peer removed or disabled
-        finish('all');
+        finish('all', true); // stale: peer removed or disabled
       }
     });
     // The list never arrived (the local daemon's /api/servers is down or
     // slow): do not hold boot open — an unvalidatable choice is All.
-    setTimeout(() => { _serverChoiceSave('all'); finish('all'); }, _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
+    timeoutId = setTimeout(() => finish('all', true), _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
   });
 }
 
