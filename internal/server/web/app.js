@@ -37759,8 +37759,20 @@ window.housekeepingRepairsCardHtml = function(data) {
       lines.join('') + empty + `</div>`;
   }).join('');
   return `<div class="prd-capacity-card housekeeping-repairs-card" style="min-width:0;"><div class="cap-title">${escHtml(t('housekeeping_repairs_card_title'))}${_housekeepingHelpLink('housekeeping_repairs_card', 'housekeeping_repairs_help_link')}</div>` +
-    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('housekeeping_repairs_purpose'))} ${escHtml(t('housekeeping_repairs_grace', [Number(d.grace_seconds) || 0]))}</div>${rows}</div>`;
+    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('housekeeping_repairs_purpose'))} ${escHtml(t('housekeeping_repairs_grace', [Number(d.grace_seconds) || 0]))}</div>${rows}${_housekeepingIntermittentHtml(d.intermittent_defects)}</div>`;
 };
+// _housekeepingIntermittentHtml draws the intermittent-test-failure rows of the
+// same view: { intermittent_defects: [{key, test, message, first_lines, date, commit}] }.
+function _housekeepingIntermittentHtml(list) {
+  const rows = (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');
+  const body = rows.length ? rows.slice(0, 20).map(r => {
+    const first = r.first_lines ? `<div style="font-size:11px;color:var(--text2);white-space:pre-wrap;overflow-wrap:anywhere;">${escHtml(t('housekeeping_repairs_intermittent_first_lines', [String(r.first_lines)]))}</div>` : '';
+    return `<div class="housekeeping-intermittent-row" data-key="${escHtml(String(r.key || ''))}" style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;margin-top:3px;">${escHtml(t('housekeeping_repairs_intermittent_line', [String(r.test || ''), String(r.date || ''), String(r.commit || '').slice(0, 12), String(r.message || '')]))}</div>${first}`;
+  }).join('') : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('housekeeping_repairs_intermittent_none'))}</div>`;
+  return `<div class="housekeeping-intermittent" data-count="${rows.length}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t('housekeeping_repairs_intermittent_title'))}</div>` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('housekeeping_repairs_intermittent_purpose'))}</div>${body}</div>`;
+}
 
 function _automationHousekeepingRepairsLoader() {
   return window._listLoaders.automation_housekeeping_repairs || listLoader({

@@ -49,6 +49,16 @@ anything, raises an alert or changes a mode. It is on every surface:
 | Chat | `autonomous housekeeping-repairs` |
 | Web UI | the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds, and a group row under Settings, Automata, Housekeeping repairs |
 
+The same view lists **intermittent test failures** after the groups. When the
+merge check of a finished Automaton runs the tests and one fails on the first
+run and passes on the rerun, the daemon files a defect record with the test
+name, the failure message, the first lines of the failing output, the date and
+the commit under test, and raises one alert titled with the test name. The merge
+is not blocked. The same test at the same commit is one record, however often
+the check runs. These rows have no mode and nothing to repair: they are on every
+surface above (REST field `intermittent_defects`, the same MCP tool, CLI and
+chat verb, and the card) and need a fix in the test or the code.
+
 A group's mode is changed only through the config set paths, key
 `autonomous.housekeeping_repairs.<group>`; none of the read surfaces can change
 it. Until the daemon runs the repair pass, `did` stays empty and `would` shows

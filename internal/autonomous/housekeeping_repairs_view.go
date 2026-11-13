@@ -8,6 +8,7 @@ package autonomous
 import (
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
 )
@@ -26,6 +27,10 @@ type HousekeepingRepairGroupView struct {
 type HousekeepingRepairsView struct {
 	GraceSeconds int                           `json:"grace_seconds"`
 	Groups       []HousekeepingRepairGroupView `json:"groups"`
+	// IntermittentDefects are the defect records of gates the merge shadow
+	// found intermittent (failed once, passed on rerun), newest first. They
+	// are a row kind of their own: no mode, nothing to repair.
+	IntermittentDefects []IntermittentDefectRow `json:"intermittent_defects"`
 }
 
 // View builds the read view from the bounded record, newest first within each
@@ -39,7 +44,7 @@ func (r *Repairer) View() HousekeepingRepairsView {
 	} else {
 		set = config.HousekeepingRepairsConfig{}.Effective()
 	}
-	v := HousekeepingRepairsView{GraceSeconds: set.GraceSecondsOrDefault()}
+	v := HousekeepingRepairsView{GraceSeconds: set.GraceSecondsOrDefault(), IntermittentDefects: []IntermittentDefectRow{}}
 	for _, g := range config.HousekeepingRepairGroups {
 		gv := HousekeepingRepairGroupView{
 			Group: g, Mode: set.ModeFor(g),
@@ -83,6 +88,15 @@ func RenderHousekeepingRepairs(b io.StringWriter, v *HousekeepingRepairsView) {
 			}
 		}
 	}
+	if len(v.IntermittentDefects) > 0 {
+		w("Intermittent test failures (" + strconv.Itoa(len(v.IntermittentDefects)) + ")\n")
+		for _, d := range v.IntermittentDefects {
+			w("  " + d.Test + " — " + d.Date + ", commit " + d.Commit + ": " + d.Message + "\n")
+			if d.FirstLines != "" {
+				w("    first lines: " + strings.ReplaceAll(d.FirstLines, "\n", " | ") + "\n")
+			}
+		}
+	}
 }
 
 // SetHousekeepingRepairer installs the Repairer the read view reads from.
@@ -97,7 +111,9 @@ func (m *Manager) HousekeepingRepairsView() HousekeepingRepairsView {
 	m.mu.Lock()
 	r := m.housekeepingRepairer
 	m.mu.Unlock()
-	return r.View()
+	v := r.View()
+	v.IntermittentDefects = m.intermittentDefectRows()
+	return v
 }
 
 // HousekeepingRepairsView serves GET /api/autonomous/housekeeping-repairs.

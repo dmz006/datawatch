@@ -134,6 +134,7 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	// Steps 1 to 3: the trial merge, its conflicts and the gates on it.
 	var conflicts []Conflict
 	var gateList []Gate
+	var gateResults []GateResult
 	var trialErr error
 	if len(taskFindings) > 0 {
 		conflicts = []Conflict{}
@@ -147,7 +148,8 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 					gateList = skippedGates("not run: the trial merge has conflicts")
 					return nil
 				}
-				gateList = toGates(gates(ctx, wt, timeout))
+				gateResults = gates(ctx, wt, timeout)
+				gateList = toGates(gateResults)
 				return nil
 			})
 		if cerr := ctx.Err(); cerr != nil {
@@ -198,7 +200,51 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	if err := Save(in.DataDir, in.AutomatonID, plan); err != nil {
 		return nil, err
 	}
+	// An intermittent gate is a defect: record it. The merge stays unblocked,
+	// so a failure to record is not an error of the run.
+	plan.IntermittentDefects = r.recordIntermittent(ctx, in, gateResults, now)
 	return plan, nil
+}
+
+// recordIntermittent makes and stores the defect records of every intermittent
+// gate. It returns the records created by this call. It returns none, and
+// reads nothing from git, when no gate was intermittent.
+func (r Runner) recordIntermittent(ctx context.Context, in Input, results []GateResult, now time.Time) []IntermittentDefect {
+	var all []IntermittentDefect
+	commit := ""
+	for _, res := range results {
+		if res.Status != GateIntermittent {
+			continue
+		}
+		if commit == "" {
+			commit = commitUnderTest(ctx, in.RepoPath, in.Branch)
+		}
+		all = append(all, IntermittentDefectsFromGate(res, in.AutomatonID, commit, now)...)
+	}
+	if len(all) == 0 {
+		return nil
+	}
+	created, err := RecordIntermittentDefects(in.DataDir, in.AutomatonID, all)
+	if err != nil {
+		return nil
+	}
+	return created
+}
+
+// unknownCommit is the commit of a record whose work branch head could not be read.
+const unknownCommit = "unknown"
+
+// commitUnderTest returns the full hash of the work branch head, the commit the
+// gates tested (merged into the base ref).
+func commitUnderTest(ctx context.Context, repoPath, branch string) string {
+	out, err := runGit(ctx, repoPath, "rev-parse", "--verify", "--end-of-options", branch+"^{commit}")
+	if err != nil {
+		return unknownCommit
+	}
+	if c := strings.TrimSpace(out); c != "" {
+		return c
+	}
+	return unknownCommit
 }
 
 func (r Runner) now() time.Time {
