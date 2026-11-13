@@ -751,7 +751,9 @@ Fix 2 (correct the encryption page) and the documentation half of the Claim chec
 | `docs/operations.md` | The `--secure` notes and the encryption section no longer say every store is encrypted; the daemon-mode line names the environment-variable route; the data-compatibility line uses the current session record layout |
 | `docs/setup.md` | The file table and key-derivation settings match the code |
 | `docs/memory-usage-guide.md`, `docs/memory.md`, `docs/howto/cross-agent-memory.md` | No memory encryption setting exists; only `content` and `summary` are encrypted; import, export and keyword search differences; the non-existent `secrets export` and key-rotation claims removed |
-| `docs/howto/secrets-manager.md` | The vault key is a random key file beside the vault, not derived from the machine id |
+| `docs/howto/secrets-manager.md` | The vault key is a random key file beside the vault, not derived from the machine id; the backend-move step no longer uses the non-existent `secrets export` and `secrets import <file>` (it reads with `secrets get` and writes with `secrets set`, and says `secrets migrate` is a different job); the export-file pitfall now warns about shell history instead |
+| `docs/api/devices.md` | Storage note said `devices.json` is encrypted when `secrets.encryption_enabled` is on. No such setting exists and the store writes plain, with or without `--secure`; the page now says so |
+| `docs/profiles.md` | Links the encryption page next to the "encrypted with `--secure`" sentence |
 | `docs/datawatch-definitions.md` | New glossary section: secure mode, data key, encrypted store, plain today, cannot be encrypted, secrets vault, fixed file list |
 | `docs/architecture-overview.md`, `README.md`, `docs/README.md`, `CHANGELOG.md` | Overclaims softened; index line and unreleased note updated |
 
@@ -763,7 +765,9 @@ Left as written because they are dated history, not current guidance: the v8.5.0
 2. **Wording of the front door.** `README.md` no longer says "data on disk is encrypted". Confirm the softened wording is acceptable for 10.0.
 3. **`secure_tracking`.** The page mentions the setting and says it is undocumented. Decide whether it goes into `docs/config-reference.yaml`.
 4. **Legacy `sessions.json` pages.** About a dozen architecture and flow pages still name `sessions.json`. They are not about encryption and were not changed; say whether a separate sweep is wanted.
-5. **Each fix.** As a fix lands, `docs/encryption.md`, the glossary section and this list need another update; the page's footer says so.
+5. **Rest of the secrets how-to.** `docs/howto/secrets-manager.md` still shows `datawatch secrets backends` (step 1), and its comparison tables were not checked against the code. The command is not in the CLI. This is outside the encryption claims, so it was left; say whether a full pass over that page is wanted.
+6. **Devices file.** `devices.json` (push registration tokens) is plain even in secure mode. It is in the "still plain today" list, but the operator should decide whether it is a 10.0 fix; the correction to its API page only states the current behaviour.
+7. **Each fix.** As a fix lands, `docs/encryption.md`, the glossary section and this list need another update; the page's footer says so.
 
 ## Parity surface
 
