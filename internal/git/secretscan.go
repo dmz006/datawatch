@@ -84,7 +84,7 @@ var builtInDetectors = []secretDetector{
 	},
 	{
 		name: DetectorGenericToken,
-		re: regexp.MustCompile(`(?i)\b(?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|token|password|passwd)\b\s*[:=]\s*["']?[A-Za-z0-9+/=_-]{16,}`),
+		re:   regexp.MustCompile(`(?i)\b(?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|token|password|passwd)\b\s*[:=]\s*["']?[A-Za-z0-9+/=_-]{16,}`),
 		// High entropy required: the material after the assignment must be
 		// hard to guess, not a fixed placeholder.
 		minEntropy: 3.5,

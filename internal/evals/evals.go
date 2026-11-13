@@ -57,11 +57,11 @@ const (
 // Grader holds the per-case grader spec.
 type Grader struct {
 	Type    GraderType `yaml:"type" json:"type"`
-	Pattern string     `yaml:"pattern,omitempty" json:"pattern,omitempty"`         // regex_match
-	Strict  bool       `yaml:"strict,omitempty" json:"strict,omitempty"`           // string_match: exact match
-	Command string     `yaml:"command,omitempty" json:"command,omitempty"`         // binary_test
-	Rubric  string     `yaml:"rubric,omitempty" json:"rubric,omitempty"`           // llm_rubric
-	Model   string     `yaml:"model,omitempty" json:"model,omitempty"`             // llm_rubric model override
+	Pattern string     `yaml:"pattern,omitempty" json:"pattern,omitempty"` // regex_match
+	Strict  bool       `yaml:"strict,omitempty" json:"strict,omitempty"`   // string_match: exact match
+	Command string     `yaml:"command,omitempty" json:"command,omitempty"` // binary_test
+	Rubric  string     `yaml:"rubric,omitempty" json:"rubric,omitempty"`   // llm_rubric
+	Model   string     `yaml:"model,omitempty" json:"model,omitempty"`     // llm_rubric model override
 }
 
 // Case is one test row.
