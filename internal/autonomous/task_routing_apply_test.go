@@ -532,3 +532,98 @@ func TestTaskRoutingHandSetEditedRoutedTaskNotRerouted(t *testing.T) {
 		t.Errorf("router-owned task not re-routed: %q/%q", plain.Backend, plain.Model)
 	}
 }
+
+// TestTaskRoutingProfileSwitchKeepsRunningAndRoutedLLMs creates tasks under
+// profile A (one later running, one left routed), switches the active
+// profile to B through SetActiveProfile, and checks that neither task's LLM,
+// backend or model moves, that the dry run reports profile B without
+// changing a task, and that only a task created after the switch takes B's
+// row.
+func TestTaskRoutingProfileSwitchKeepsRunningAndRoutedLLMs(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	running := addRoutedTask(t, m, prd.ID, st.ID, "Write unit tests", "")
+	routed := addRoutedTask(t, m, prd.ID, st.ID, "Add more tests", "")
+	if running.Backend != "pi-prompt" || routed.Backend != "pi-prompt" {
+		t.Fatalf("profile A routing: %q %q", running.Backend, routed.Backend)
+	}
+	m.Store().WithLock(func() {
+		r, _ := findTaskInPRD(prd, running.ID)
+		r.Status = TaskInProgress
+		r.SessionID = "live-session"
+	})
+	type llm struct{ backend, model, effort, profile string }
+	snap := func() map[string]llm {
+		p, _ := m.Store().SnapshotPRD(prd.ID)
+		out := map[string]llm{}
+		for si := range p.Story {
+			for ti := range p.Story[si].Tasks {
+				tk := p.Story[si].Tasks[ti]
+				l := llm{tk.Backend, tk.Model, string(tk.Effort), ""}
+				if tk.TaskRouting != nil {
+					l.profile = tk.TaskRouting.Profile
+				}
+				out[tk.ID] = l
+			}
+		}
+		return out
+	}
+	before := snap()
+	decisionsBefore := func() int { p, _ := m.Store().SnapshotPRD(prd.ID); return len(p.Decisions) }()
+
+	// Switch to profile B, which routes the tests row elsewhere.
+	cfg := m.Config()
+	cfg.TaskRouting, _ = SaveProfile(cfg.TaskRouting, "B", nil)
+	cfg.TaskRouting.Profiles["B"][config.TaskTypeTests] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"}
+	cfg.TaskRouting, _ = SetActiveProfile(cfg.TaskRouting, "B")
+	m.SetConfig(cfg)
+
+	after := snap()
+	for id, b := range before {
+		if after[id] != b {
+			t.Errorf("task %s changed by the profile switch: %+v -> %+v", id, b, after[id])
+		}
+	}
+	if decisionsBefore != func() int { p, _ := m.Store().SnapshotPRD(prd.ID); return len(p.Decisions) }() {
+		t.Error("profile switch appended a decision")
+	}
+
+	// Dry run shows profile B and writes nothing.
+	out, err := m.TaskRoutingDryRun(prd.ID, "")
+	if err != nil || len(out) != 2 {
+		t.Fatalf("dry run: %v %v", err, out)
+	}
+	for _, e := range out {
+		if e.Profile != "B" {
+			t.Errorf("dry run entry %s shows profile %q, want B", e.TaskID, e.Profile)
+		}
+	}
+	for _, e := range out {
+		if e.TaskID == routed.ID && (!e.WouldApply || e.Result == nil || e.Result.WorkerBackend != "claude-code") {
+			t.Errorf("dry run for the routed task does not show profile B's row: %+v", e)
+		}
+		if e.TaskID == running.ID && e.WouldApply {
+			t.Errorf("dry run would apply to a running task: %+v", e)
+		}
+	}
+	if got := snap(); len(got) != len(after) {
+		t.Fatalf("dry run changed the task set")
+	} else {
+		for id, a := range after {
+			if got[id] != a {
+				t.Errorf("dry run changed task %s: %+v -> %+v", id, a, got[id])
+			}
+		}
+	}
+	if n := func() int { p, _ := m.Store().SnapshotPRD(prd.ID); return len(p.Decisions) }(); n != decisionsBefore {
+		t.Error("dry run appended a decision")
+	}
+
+	// A task created after the switch takes profile B's row.
+	nt := addRoutedTask(t, m, prd.ID, st.ID, "Write integration tests", "")
+	if nt.Backend != "claude-code" || nt.Model != "sonnet" || nt.TaskRouting == nil || nt.TaskRouting.Profile != "B" {
+		t.Errorf("new task not routed by profile B: %q %q %+v", nt.Backend, nt.Model, nt.TaskRouting)
+	}
+	if final := snap(); final[running.ID] != before[running.ID] || final[routed.ID] != before[routed.ID] {
+		t.Error("adding a task after the switch changed an earlier task")
+	}
+}
