@@ -1030,7 +1030,7 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 				}
 				body["skills"] = skills
 			}
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds", body)
+			return daemonJSONWithSpecCheck(http.MethodPost, "/api/autonomous/prds", body)
 		},
 	}
 	cmd.Flags().StringVar(&projectDir, "project-dir", "", "Project directory; omit to let the daemon apply its default (worktree mode) instead of assuming the current directory")
@@ -1388,7 +1388,7 @@ func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"actor": "operator", "note": note})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/request_revision", body)
+			return daemonJSONWithSpecCheck(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/request_revision", body)
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "what's wrong with the current plan")

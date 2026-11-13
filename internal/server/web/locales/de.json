@@ -5625,5 +5625,10 @@
   "task_routing_export_failed": "Export failed: %1$s",
   "task_routing_imported": "Profile imported",
   "task_routing_detail_row": "row %1$s",
-  "task_routing_detail_reason": "no row: %1$s"
+  "task_routing_detail_reason": "no row: %1$s",
+  "spec_check_title": "Spec-Prüfung: Formulierungen, die der Planer in Aufgabentitel übernehmen könnte",
+  "spec_check_severity_warning": "Warnung",
+  "spec_check_severity_error": "Fehler",
+  "spec_check_fixable": "Der Daemon kann diese Formulierung selbst korrigieren.",
+  "spec_check_suggestion": "Vorgeschlagene Umformulierung"
 }

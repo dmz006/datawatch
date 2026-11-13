@@ -5625,5 +5625,10 @@
   "task_routing_export_failed": "Export failed: %1$s",
   "task_routing_imported": "Profile imported",
   "task_routing_detail_row": "row %1$s",
-  "task_routing_detail_reason": "no row: %1$s"
+  "task_routing_detail_reason": "no row: %1$s",
+  "spec_check_title": "仕様チェック: プランナーがタスクタイトルにコピーする可能性のある表現",
+  "spec_check_severity_warning": "警告",
+  "spec_check_severity_error": "エラー",
+  "spec_check_fixable": "この表現はデーモンが自動で修正できます。",
+  "spec_check_suggestion": "推奨される言い換え"
 }

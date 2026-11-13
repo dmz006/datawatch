@@ -2293,6 +2293,29 @@ Give a `title`, a `spec`, or both. The warnings come back best match first, at m
 
 The create route, `POST /api/autonomous/prds`, runs the same finder after it stores the Automaton, so a failed search never stops a create. In `on` mode its reply carries `overlap_warnings`, an empty list when nothing matches. In `shadow` mode it writes one `automaton_create_search` audit entry and the reply has no such field. In `off` mode it searches nothing.
 
+### Spec check on create and revise
+
+`POST /api/autonomous/prds` and `POST /api/autonomous/prds/{id}/request_revision` both lint the Automaton's spec text and return the findings in a top-level `spec_check` array on the reply. The array is always present and is empty when the spec is clean. A finding never blocks the create or the revision. On a revision the daemon lints the stored spec together with the revision note.
+
+```json
+{
+  "id": "ab12cd34",
+  "spec_check": [
+    {
+      "rule": "names_tracker_id",
+      "phrase": "BL123",
+      "severity": "warning",
+      "correctable": true,
+      "suggestion": "remove 'BL123' and describe the work itself instead of naming a tracking item by id"
+    }
+  ]
+}
+```
+
+`rule` is one of `release-version-fixed`, `names_tracker_id`, `system-binary-path`, `private-address` or `worktree-path`. `phrase` is the exact text found. `severity` is `warning` when the planner would copy the phrase into a task title and the daemon can fix the wording itself (`correctable` is true), and `error` when the operator or planner has to reword it. `suggestion` is the rewording.
+
+Every surface renders the findings with one shared formatter, one line per finding: the severity, the rule, the exact phrase and the suggested rewording. The CLI (`datawatch autonomous prd-create`, `prd-request-revision`) prints `spec check:` lines after the reply. The MCP tools `autonomous_prd_create` and `autonomous_prd_request_revision` return the JSON reply and, when there are findings, a second text item with the lines. The comm verbs `autonomous create` and `autonomous request-revision` append a `Spec check:` block to the reply. The web create and revise forms show a warning block. The `automation_create` and `automation_update` tools take no spec text, so they carry no `spec_check`.
+
 Surfaces: the REST route above; the MCP tool `autonomous_overlap_search` (`title`, `spec`, `limit`, proxying the route); the CLI `datawatch autonomous overlap [spec] [--title T] [--spec S] [--json]`; and the comm verb `autonomous overlap <text>`, where the text is the spec. The CLI and the comm verb render the warnings with the same text; the REST route and the MCP tool return the JSON object.
 
 ---

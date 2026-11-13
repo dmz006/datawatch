@@ -21359,7 +21359,10 @@ function prdAction(id, action, method, body) {
     }).catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
     return;
   }
-  apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD(); })
+  apiFetch(url, opts).then(resp => {
+    if (action === 'request_revision') mountSpecCheck(renderSpecCheck(resp && resp.spec_check));
+    showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD();
+  })
     .catch(err => {
       const msg = String(err);
       // 2026-10-17 — plan review gate (mode=block): the Approve endpoint
@@ -21687,6 +21690,49 @@ function mountOverlapWarnings(html) {
   block.innerHTML = html;
   document.body.appendChild(block);
 }
+// Spec check: the findings the daemon returns on the create and revise
+// replies (spec_check). The block is a warning only; it never blocks the
+// create. Every label goes through t(); the phrase and the suggested
+// rewording are the daemon's own text.
+function renderSpecCheck(findings) {
+  if (!Array.isArray(findings) || !findings.length) return '';
+  const lines = findings.filter(f => f && f.phrase).map(f => {
+    const sevKey = f.severity === 'error' ? 'spec_check_severity_error' : 'spec_check_severity_warning';
+    return '<li style="margin-top:6px;">'
+      + '<strong>' + escHtml(t(sevKey)) + '</strong> '
+      + '<code>' + escHtml(f.phrase) + '</code> '
+      + '<span style="color:var(--text2);">[' + escHtml(f.rule || '') + ']</span>'
+      + '<div style="color:var(--text2);font-size:11px;">' + escHtml(t('spec_check_suggestion')) + ': ' + escHtml(f.suggestion || '') + '</div>'
+      + (f.correctable ? '<div style="color:var(--text2);font-size:11px;">' + escHtml(t('spec_check_fixable')) + '</div>' : '')
+      + '</li>';
+  });
+  if (!lines.length) return '';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+    + '<strong>' + escHtml(t('spec_check_title')) + '</strong>'
+    + '<button type="button" class="btn-secondary" aria-label="' + escHtml(t('action_close')) + '" onclick="closeSpecCheck()">&times;</button>'
+    + '</div><ul style="margin:4px 0 0 16px;padding:0;">' + lines.join('') + '</ul>';
+}
+// mountSpecCheck shows the rendered block, replacing any block already
+// shown. An empty html string only clears the old block.
+function mountSpecCheck(html) {
+  const old = document.getElementById('specCheckWarnings');
+  if (old) old.remove();
+  if (!html) return;
+  const block = document.createElement('div');
+  block.id = 'specCheckWarnings';
+  block.setAttribute('role', 'status');
+  block.style.cssText = 'position:fixed;left:16px;right:16px;top:16px;max-width:560px;margin:0 auto;'
+    + 'max-height:50vh;overflow:auto;padding:10px 12px;border:1px solid var(--warning,#d90);border-radius:6px;'
+    + 'background:var(--bg2,#fff);color:var(--text,#111);font-size:12px;z-index:10000;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+  block.innerHTML = html;
+  document.body.appendChild(block);
+}
+function closeSpecCheck() {
+  const block = document.getElementById('specCheckWarnings');
+  if (block) block.remove();
+}
+window.closeSpecCheck = closeSpecCheck;
+
 function closeOverlapWarnings() {
   const block = document.getElementById('overlapWarnings');
   if (block) block.remove();
@@ -21848,6 +21894,7 @@ function openPRDCreateModal(presetParentId) {
       }).then(prd => {
         createdPrdId = prd.id;
         mountOverlapWarnings(renderOverlapWarnings(prd.overlap_warnings));
+        mountSpecCheck(renderSpecCheck(prd.spec_check));
         // PRD-level LLM (backend/effort already in create payload — model
         // and any consolidation goes through set_llm so the audit trail
         // gets the full triple).
@@ -32918,6 +32965,7 @@ function _wizardSubmit() {
     body: JSON.stringify(body),
   }).then(prd => {
     mountOverlapWarnings(renderOverlapWarnings(prd && prd.overlap_warnings));
+    mountSpecCheck(renderSpecCheck(prd && prd.spec_check));
     if (!prd || !prd.id) return prd;
     if (backend || effort || decompositionProfile) {
       const modelEl = document.getElementById('wizardModelField')?.querySelector('input,select');
