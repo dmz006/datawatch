@@ -10,6 +10,7 @@ import (
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -130,29 +131,41 @@ func TestBudgetPressureComposed(t *testing.T) {
 	bo.Clock = clk.Now
 	bo.Set("pi-prompt", clk.Now().Add(time.Minute), "rate-limit", autonomous.BackoffSourceRateLimit)
 	bo.Set("claude-code", clk.Now().Add(time.Minute), "rate-limit", autonomous.BackoffSourceRateLimit)
-	gate := composeBackpressure(backoffBackpressure(bo), budgetBackpressure(bl))
+	// Production order: the back-off gate (RoleBackpressure) is consulted
+	// before the budget gate (AutonomousBackpressure).
+	roleGate := backoffReserveBackpressure(bo, backoffReserveGate(&config.Config{}))
+	budgetGate := budgetBackpressure(bl)
+	ask := func(pool string) (bool, string) {
+		if b, w := roleGate(pool, capacity.RoleWorker, map[capacity.Role]int{}); b {
+			return b, w
+		}
+		if b, w := budgetGate(pool); b {
+			return b, w
+		}
+		return false, ""
+	}
 
-	if blocked, why := gate("llm:pi-prompt"); !blocked || !strings.HasPrefix(why, "backoff: ") {
+	if blocked, why := ask("llm:pi-prompt"); !blocked || !strings.HasPrefix(why, "backoff: ") {
 		t.Errorf("llm:pi-prompt should be blocked by its back-off, got %v %q", blocked, why)
 	}
-	// Both gates block claude-code: the first one's answer wins.
-	if blocked, why := gate("llm:claude-code"); !blocked || !strings.HasPrefix(why, "backoff: ") {
+	// Both gates block claude-code: the back-off is reported first.
+	if blocked, why := ask("llm:claude-code"); !blocked || !strings.HasPrefix(why, "backoff: ") {
 		t.Errorf("llm:claude-code should report the back-off first, got %v %q", blocked, why)
 	}
 	bo.Clear("claude-code")
-	if blocked, why := gate("llm:claude-code"); !blocked || !strings.Contains(why, "budget window full") {
+	if blocked, why := ask("llm:claude-code"); !blocked || !strings.Contains(why, "budget window full") {
 		t.Errorf("llm:claude-code should be blocked by the budget once the back-off clears, got %v %q", blocked, why)
 	}
 	for _, pool := range []string{"llm:unbudgeted", "host", "node:claude-code", "ext:claude-code"} {
-		if blocked, why := gate(pool); blocked {
+		if blocked, why := ask(pool); blocked {
 			t.Errorf("pool %q must not be blocked, got %q", pool, why)
 		}
 	}
 	if blocked, _ := budgetBackpressure(nil)("llm:claude-code"); blocked {
 		t.Error("a nil budget ledger blocks nothing")
 	}
-	if blocked, _ := composeBackpressure(nil, budgetBackpressure(bl))("host"); blocked {
-		t.Error("nil gates are skipped and host is never blocked")
+	if blocked, _ := budgetGate("host"); blocked {
+		t.Error("host is never blocked")
 	}
 }
 
@@ -206,7 +219,7 @@ func TestUsageSpendRecordedBeforeBudgetExists(t *testing.T) {
 	clk := &budgetTestClock{now: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
 	bl := autonomous.NewBudgetLedger("")
 	bl.Clock = clk.Now
-	hook := recordUsageSpend(bl, func() *inference.Registry { return nil })
+	hook := recordUsageSpend(bl, func() *inference.Registry { return nil }, nil)
 
 	hook(session.UsageEvent{Backend: "claude-code", At: clk.Now(), TokensIn: 10, TokensOut: 10, USD: 2})
 	hook(session.UsageEvent{Backend: "claude-code", At: clk.Now(), TokensIn: 10, TokensOut: 10, USD: 0})
@@ -223,7 +236,7 @@ func TestRecordUsageSpendCarriesSessionID(t *testing.T) {
 	clk := &budgetTestClock{now: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
 	bl := autonomous.NewBudgetLedger("")
 	bl.Clock = clk.Now
-	hook := recordUsageSpend(bl, func() *inference.Registry { return nil })
+	hook := recordUsageSpend(bl, func() *inference.Registry { return nil }, nil)
 
 	hook(session.UsageEvent{SessionID: "s1", Backend: "claude-code", At: clk.Now(), USD: 2})
 	hook(session.UsageEvent{SessionID: "s2", Backend: "claude-code", At: clk.Now(), USD: 3})

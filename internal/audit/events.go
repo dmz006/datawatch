@@ -22,6 +22,17 @@ const (
 	// that backend keep waiting after the restart. Subject: the backend.
 	// Details: backend, until (RFC 3339), source.
 	ActionUsageBackoffRestored = "autonomous_usage_backoff_restored"
+	// ActionUsageBackoffReserveAdmitted — a review-role session (guardrail
+	// judge, verifier or planning) was admitted on a backend that is in
+	// back-off, through that backend's review reserve. Subject: the backend.
+	// Details: backend, role, slots, used_slots, tokens_used, token_cap.
+	ActionUsageBackoffReserveAdmitted = "autonomous_usage_backoff_reserve_admitted"
+	// ActionUsageBackoffReserveRefused — a session request was refused on a
+	// backend that is in back-off: a worker (the reserve is never granted to
+	// them) or a review role whose request hit a full slot count, a spent
+	// one-hour token budget, or a disabled reserve. Subject: the backend.
+	// Details: backend, role, slots, used_slots, tokens_used, token_cap.
+	ActionUsageBackoffReserveRefused = "autonomous_usage_backoff_reserve_refused"
 
 	// ActionResourceCeilingKill — a run was stopped for using more memory than
 	// its ceiling, or started with no ceiling because the host has neither a

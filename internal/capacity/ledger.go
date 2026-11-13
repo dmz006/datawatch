@@ -209,8 +209,12 @@ func (r Request) candidateNames() []string {
 
 // Lease is a held slot set.
 type Lease struct {
-	Holder    string    `json:"holder"`
-	PRDID     string    `json:"prd_id"`
+	Holder string `json:"holder"`
+	PRDID  string `json:"prd_id"`
+	// Role is the dispatch role the lease was admitted under; empty is
+	// RoleWorker (the zero value), so leases admitted before roles were
+	// recorded count as worker. Read by heldByRoleLocked.
+	Role      Role      `json:"role,omitempty"`
 	Pools     []string  `json:"pools"`
 	Node      string    `json:"node,omitempty"`
 	Model     string    `json:"model,omitempty"`
@@ -320,7 +324,7 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options tune dispatch behaviour.
 //
 // LOCK RULE: every function in Options (External, Backpressure,
-// AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
+// RoleBackpressure, AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
 // VerifierHeadroom)
 // is invoked while the ledger lock is held. Each must therefore be a fast
 // in-memory read: it must never call back
@@ -343,6 +347,15 @@ type Options struct {
 	// requests marked Interactive skip it. Called under the lock: in-memory
 	// state only.
 	AutonomousBackpressure func(pool string) (blocked bool, reason string)
+	// RoleBackpressure is a soft block for autonomous requests that sees the
+	// requesting role and the pool's live per-role lease counts, so a gate
+	// can refuse some roles while admitting others (for example a role-
+	// aware back-off with a review reserve). heldByRole tallies the pool's
+	// leases by lease role, an empty lease role counting as RoleWorker; the
+	// hook reads only the arguments passed to it, never the ledger back.
+	// Requests marked Interactive skip it. Called under the lock: in-memory
+	// state only.
+	RoleBackpressure func(pool string, role Role, heldByRole map[Role]int) (blocked bool, reason string)
 	// HeldBackpressure is a soft block for autonomous requests that needs the
 	// pool's current usage. Both numbers come from the ledger itself: held is
 	// the count of leases naming the pool (l.leases) and limit is the value set
@@ -562,6 +575,21 @@ func (l *Ledger) heldLocked(pool string) int {
 	return n
 }
 
+// heldByRoleLocked tallies the pool's leases by lease role, an empty lease
+// role counting as RoleWorker (the zero value). Caller holds l.mu.
+func (l *Ledger) heldByRoleLocked(pool string) map[Role]int {
+	out := make(map[Role]int)
+	for _, ls := range l.leases {
+		for _, p := range ls.Pools {
+			if p == pool {
+				out[ls.Role]++
+				break
+			}
+		}
+	}
+	return out
+}
+
 // optOn reads an Options switch: nil means on.
 func optOn(f func() bool) bool { return f == nil || f() }
 
@@ -709,6 +737,11 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 		}
 		if l.opt.Backpressure != nil {
 			if blocked, why := l.opt.Backpressure(p); blocked {
+				return fmt.Sprintf("pool %s backpressure: %s", p, why)
+			}
+		}
+		if l.opt.RoleBackpressure != nil && !req.Interactive {
+			if blocked, why := l.opt.RoleBackpressure(p, req.Role, l.heldByRoleLocked(p)); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
@@ -1047,8 +1080,9 @@ func (l *Ledger) Replan() {
 func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
 	l.recordWaitEndLocked(w, now)
 	l.leases[req.Holder] = &Lease{
-		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
-		Node: req.Node, Model: req.Model, Acquired: now,
+		Holder: req.Holder, PRDID: req.PRDID, Role: req.Role,
+		Pools: append([]string(nil), req.Pools...),
+		Node:  req.Node, Model: req.Model, Acquired: now,
 	}
 	l.lastGrant[req.PRDID] = now
 	l.recordRequestsLocked(req.Pools, now)
@@ -1338,7 +1372,8 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 	}
 	now := time.Now()
 	ls := &Lease{
-		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
+		Holder: req.Holder, PRDID: req.PRDID, Role: req.Role,
+		Pools: append([]string(nil), req.Pools...),
 		Model: req.Model, Acquired: now, SessionID: sessionID,
 		NodeUnknown: req.NodeUnknown && req.Node == "",
 	}

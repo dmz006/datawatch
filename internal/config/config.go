@@ -3544,6 +3544,18 @@ type AutonomousConfig struct {
 	// BackoffMaxWaitMinutes caps the back-off applied when a rate limit
 	// carries no parseable reset time. Unset => 60; values < 1 clamp to 60.
 	BackoffMaxWaitMinutes int `yaml:"backoff_max_wait_minutes,omitempty" json:"backoff_max_wait_minutes,omitempty"`
+	// BackoffReserveForReview is the number of live session slots a backed-off
+	// backend keeps for the work that reviews it — guardrail judges and
+	// verifiers (planning roles of rank 0) and decompose/planning sessions
+	// (rank 2) — while worker sessions are held. A pointer, so an explicit 0
+	// (no reserve at all: a backed-off backend then refuses every new
+	// autonomous session) survives omitempty; unset reads as 1 through the
+	// default. Negative values clamp to 0 (reserve off).
+	BackoffReserveForReview *int `yaml:"backoff_reserve_for_review,omitempty" json:"backoff_reserve_for_review,omitempty"`
+	// BackoffReserveTokensPerHour caps the review work a backed-off backend
+	// takes through that gate: a rolling one-hour token budget. 0 (unset) or
+	// negative reads as no cap.
+	BackoffReserveTokensPerHour int64 `yaml:"backoff_reserve_tokens_per_hour,omitempty" json:"backoff_reserve_tokens_per_hour,omitempty"`
 	// RoleScanIntervalSeconds is how often the daemon re-checks LLM role
 	// tags for contention (two entries claiming one role, or two roles
 	// converging on one entry). Unset or < 1 => 300. Warnings only.
@@ -8049,13 +8061,16 @@ func DefaultConfig() *Config {
 		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
-			ReleasePath:                              "direct_push",
-			ScriptGateTimeoutSeconds:                 DefaultScriptGateTimeoutSeconds,
-			GateDrainMinutes:                         DefaultGateDrainMinutes,
-			AutoFixRetries:                           1,
-			MaxConcurrentTasks:                       1,
-			UsageBackoff:                             UsageBackoffPauseBackend,
-			BackoffMaxWaitMinutes:                    BackoffMaxWaitDefaultMinutes,
+			ReleasePath:              "direct_push",
+			ScriptGateTimeoutSeconds: DefaultScriptGateTimeoutSeconds,
+			GateDrainMinutes:         DefaultGateDrainMinutes,
+			AutoFixRetries:           1,
+			MaxConcurrentTasks:       1,
+			UsageBackoff:             UsageBackoffPauseBackend,
+			BackoffMaxWaitMinutes:    BackoffMaxWaitDefaultMinutes,
+			// BackoffReserveForReview is a pointer so an explicit 0 (reserves
+			// off) survives omitempty; the default keeps one slot per backend.
+			BackoffReserveForReview:                  intPtr(DefaultBackoffReserveForReview),
 			RoleScanIntervalSeconds:                  RoleScanIntervalDefaultSeconds,
 			ResumeMaxAgeSeconds:                      3600,
 			FirstAttemptEscalateAfterFailures:        DefaultFirstAttemptEscalateAfterFailures,
