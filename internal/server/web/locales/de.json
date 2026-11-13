@@ -5135,5 +5135,17 @@
   "projects_manage_err_name": "Gib einen Projektnamen ein.",
   "projects_manage_err_dir": "Gib das Projektverzeichnis ein.",
   "projects_manage_saved": "Projekt %1$s gespeichert.",
-  "projects_manage_removed": "Projekt %1$s entfernt."
+  "projects_manage_removed": "Projekt %1$s entfernt.",
+  "automaton_project_label": "Projekt",
+  "automaton_project_source_link": "direkt an diesem Automaten gesetzt",
+  "automaton_project_source_automation": "aus der zugehörigen Automation",
+  "automaton_project_source_parent": "vom übergeordneten Automaten",
+  "automaton_project_source_directory": "aus dem Verzeichnis",
+  "automaton_project_none": "Kein Projekt",
+  "automaton_project_save": "Projekt speichern",
+  "automaton_project_clear": "Verknüpfung entfernen",
+  "automaton_project_saved": "Projektverknüpfung gespeichert",
+  "automaton_project_error": "Projekt konnte nicht gesetzt werden",
+  "projects_page_without_project": "Automaten ohne Projekt",
+  "projects_page_without_project_hint": "Eine Projektverknüpfung lässt sich in den Details des Automaten setzen, um ihn hier einzuordnen."
 }

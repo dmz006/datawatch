@@ -202,3 +202,19 @@ test('a roll-up request that fails paints the failure as an Events entry', async
   assert.match(out.view, /id="projectEvents"/);
   assert.match(out.view, /Could not load the roll-up:/);
 });
+
+test('the without_project group renders after Unassigned; an empty group renders nothing extra', () => {
+  const { sb } = loadView();
+  const roll = { arcs: [], unassigned: { automata: [{ id: 'loose-1', title: 'Loose' }] },
+    without_project: { automata: [{ id: 'orphan-1', title: 'Orphan <x>', status: 'draft' }] } };
+  const html = sb._projectPageHTML(FULL, roll, '');
+  assert.match(html, /Automata without a project/);
+  assert.match(html, /Set a project link from the Automaton detail/);
+  assert.match(html, /Orphan &lt;x&gt;/);
+  assert.ok(html.indexOf('Unassigned Automata') < html.indexOf('Automata without a project'));
+  const empty = sb._projectPageHTML(FULL, { arcs: [], unassigned: { automata: [] }, without_project: { automata: [] } }, '');
+  assert.doesNotMatch(empty, /Automata without a project/);
+  assert.doesNotMatch(empty, /project-without-project/);
+  const absent = sb._projectPageHTML(FULL, { arcs: [], unassigned: { automata: [] } }, '');
+  assert.doesNotMatch(absent, /Automata without a project/);
+});

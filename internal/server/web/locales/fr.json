@@ -5135,5 +5135,17 @@
   "projects_manage_err_name": "Saisissez un nom de projet.",
   "projects_manage_err_dir": "Saisissez le répertoire du projet.",
   "projects_manage_saved": "Projet %1$s enregistré.",
-  "projects_manage_removed": "Projet %1$s retiré."
+  "projects_manage_removed": "Projet %1$s retiré.",
+  "automaton_project_label": "Projet",
+  "automaton_project_source_link": "défini directement sur cet automate",
+  "automaton_project_source_automation": "depuis son Automation",
+  "automaton_project_source_parent": "depuis son automate parent",
+  "automaton_project_source_directory": "depuis son répertoire",
+  "automaton_project_none": "Aucun projet",
+  "automaton_project_save": "Enregistrer le projet",
+  "automaton_project_clear": "Retirer le lien",
+  "automaton_project_saved": "Lien de projet enregistré",
+  "automaton_project_error": "Impossible de définir le projet",
+  "projects_page_without_project": "Automates sans projet",
+  "projects_page_without_project_hint": "Définissez un lien de projet depuis le détail de l'automate pour le placer ici."
 }
