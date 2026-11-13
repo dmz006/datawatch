@@ -127,10 +127,21 @@ often than search:
 - **Group by** — the axis picker described under [Grouping](#grouping).
 - **Views** — your saved views: save the current cut under a name, apply,
   rename or delete one (see [Saved views](#saved-views)).
-- **Status chips** — the full set of state chips (running, waiting_input,
-  rate_limited, complete, failed, killed). The same section
-  also holds the **watched only** toggle, the **Backend** chips and, when
-  you use tags, the **Tags** filter (described next).
+- **Status chips** — one chip per state that is present in the list
+  (running, waiting, stalled, rate-limited, complete, failed, killed),
+  each with its count; a state whose count is zero stays off the sheet
+  unless you have it selected. The group is a **multi-select set**
+  (nothing picked = all): pick any number of states and the list keeps
+  the sessions matching *any* of them, tap an active chip again to
+  remove exactly that one, and the **All** chip — active while nothing is
+  picked — clears the whole group. The same section holds the
+  **watched only** toggle (plain on/off) and the **Backend** chips,
+  which are a second multi-select set over the backend families present
+  in the list with the same toggle-off and **All** behaviour; the two
+  groups apply together (a session must match a picked state *and* a
+  picked backend), and the **Backend** group never touches the free-text
+  search box. When you use tags, the section also carries the **Tags**
+  filter (described next).
 
 Close the sheet by tapping outside it, by pressing its close button, or by
 pressing **Escape**. Your choices apply as you make them, so closing needs no
@@ -191,11 +202,13 @@ so the Tags section does not draw one chip per tag. It is built like this:
 - **Any / all and Clear** — the match mode and the clear action sit below the
   picker and work as before.
 
-With the sheet closed, the selected tags show as a compact row of small
-chips above the session list, each with a **✕** to remove just that tag (an
-Automaton shows its title, not its id) and a **Clear all** control. The row
-is absent when no tag is selected, and a stored selection or an active tag
-filter is not changed by any of this: it is how the Tags section is drawn,
+With the sheet closed, the picked **Status** chips, picked **Backend**
+chips and selected tags show together as a compact row of small chips
+above the session list, each with a **✕** to remove just that one (an
+Automaton shows its title, not its id) and a **Clear all** control that
+empties all three groups at once. The row is absent while nothing is
+picked in any of the three groups, and a stored selection or an active tag
+filter is not changed by any of this: it is how the groups are drawn,
 with no new setting, endpoint, MCP tool, CLI command or chat verb.
 
 ## View modes
@@ -281,14 +294,22 @@ This is a browser-side change only: no setting, endpoint, MCP tool, CLI
 command or chat verb changed, and the stored `cs_sessions_view_mode` value is
 read as before.
 
-### The state filter
+### The state and backend filters
 
-The page has no count line above the list. The status chips in the Filters sheet
-**filter the page to that state**, and choosing **All** clears the selection. The chip
-choice is remembered per device (`cs_session_state_chip`). Picking a
-historical state (complete, failed, killed, …) also auto-enables the History
-toggle so those sessions actually become visible instead of silently
-filtering to nothing.
+The page has no count line above the list. The **Status** and **Backend**
+chip groups in the Filters sheet work the way the Tags group works:
+each is a set (empty means "all"), several picks match any of the picked
+values, a second tap on an active chip removes exactly that chip, and the
+group's **All** chip clears the whole group. Picking a historical state
+(complete, failed, killed, …) also auto-enables the History toggle so
+those sessions actually become visible instead of silently filtering to
+nothing.
+
+The choices are remembered per device in local storage: the status set
+under `cs_session_state_chips` and the backend set under
+`cs_session_backend_sel`. A pick stored the old single-way under
+`cs_session_state_chip` by an earlier build is read in as that one chip,
+so a device moving to the new build keeps its filter.
 
 ### "Show more" paging
 
@@ -636,7 +657,8 @@ in your tag registry.
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
-| State filter | PWA, Filters sheet | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
+| State filter | PWA, Filters sheet | status chip set per device (`cs_session_state_chips`; an older single pick in `cs_session_state_chip` is read in) | multi-select set: union of the picked states, second tap removes one chip, **All** clears the group; historical picks auto-enable History |
+| Backend filter | PWA, Filters sheet | backend chip set per device (`cs_session_backend_sel`) | multi-select set: union of the picked backend families, second tap removes one chip, **All** clears the group; leaves the search box untouched |
 | Saved views (mode + axis + prefix + filter) | PWA Filters sheet | yes (`cs_sessions_saved_views`) | save / apply / rename / delete; names trimmed and capped |
 | Tile ⋯ menu actions | PWA, per tile | no | Stop / Commands (waiting_input) / Restart / Delete / Summary (if summarizer on) / Watch / Mute |
 | Progress on tiles; done/total on automaton blocks | PWA tile bar; grouped read (CLI, comm) | no | tile bar is lifecycle-based; automaton blocks carry their done/total terminal-session tally |
@@ -664,7 +686,8 @@ in your tag registry.
 - **The list looks short and I did not filter.** Check the badge on the
   **Filters** button and the search box: a remembered search or an active
   filter narrows the list (the `N of M` count shows it). Clear the search
-  text and the status chips to see everything.
+  text and tap **All** in the **Status** and **Backend** groups (or
+  **Clear all** in the chip row above the list) to see everything.
 - **A group says N but I count fewer rows.** The group body is paged —
   expand with its **Show more** (shown/total) step; the header count is
   the full group, not the rendered page.
