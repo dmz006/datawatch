@@ -5582,7 +5582,7 @@
   "housekeeping_repairs_skipped_line": "Ignoré car risqué — {0} : {1} {2}",
   "housekeeping_repairs_nothing": "Rien trouvé.",
   "housekeeping_repairs_intermittent_title": "Échecs de test intermittents",
-  "housekeeping_repairs_intermittent_purpose": "Un test qui a échoué à la première exécution de la vérification de fusion d'un Automaton et réussi à la relance. La fusion n'est pas bloquée, mais le test ou le code a un défaut.",
+  "housekeeping_repairs_intermittent_purpose": "Un test qui a échoué à la première exécution de la vérification de fusion d'un Automate et réussi à la relance. La fusion n'est pas bloquée, mais le test ou le code a un défaut.",
   "housekeeping_repairs_intermittent_line": "{0} — {1}, commit {2} : {3}",
   "housekeeping_repairs_intermittent_first_lines": "Premières lignes : {0}",
   "housekeeping_repairs_intermittent_none": "Aucun échec de test intermittent.",

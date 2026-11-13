@@ -5582,7 +5582,7 @@
   "housekeeping_repairs_skipped_line": "危険のためスキップ — {0}: {1} {2}",
   "housekeeping_repairs_nothing": "見つかったものはありません。",
   "housekeeping_repairs_intermittent_title": "断続的なテスト失敗",
-  "housekeeping_repairs_intermittent_purpose": "Automatonのマージ確認の初回実行で失敗し、再実行で成功したテストです。マージはブロックされませんが、テストまたはコードに不具合があります。",
+  "housekeeping_repairs_intermittent_purpose": "オートマタのマージ確認の初回実行で失敗し、再実行で成功したテストです。マージはブロックされませんが、テストまたはコードに不具合があります。",
   "housekeeping_repairs_intermittent_line": "{0} — {1}、コミット {2}: {3}",
   "housekeeping_repairs_intermittent_first_lines": "最初の行: {0}",
   "housekeeping_repairs_intermittent_none": "断続的なテスト失敗はありません。",
