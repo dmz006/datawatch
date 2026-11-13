@@ -44,8 +44,8 @@ a PWA card; see "Where the shadow state is read" below.
   conflicts, each with its file class, resolution and resolver, are recorded in
   the plan. No branch, tag or ref is ever created or moved and nothing is pushed.
 - Record each gate of the trial merge with its status — `pass`, `fail`,
-  `timeout`, `skipped`, or `load_sensitive` (a test gate that failed first and
-  passed when rerun alone) — and its duration, and each finding with a code and
+  `timeout`, `skipped`, or `intermittent` (a test gate that failed first and
+  passed when rerun) — and its duration, and each finding with a code and
   whether it blocks.
 - Run the plan's checks before the trial merge: an Automaton task branch that
   holds commits the work branch does not blocks the plan with
@@ -85,13 +85,15 @@ repository root that the base ref does not track in its root tree, dotfiles
 included. It catches the stray tracked file that would otherwise ride into the
 merge at the repository root.
 
-**Load-sensitive test gate — `load_sensitive` (a status, not a failure).** The
-`test` gate that fails on its first run is run once more, alone. When the rerun
-passes, the gate is recorded `load_sensitive` — the first five lines of the
-failing run are kept as the gate's finding — and it does not block the plan.
-When the rerun does not pass, the first failure stands, with the rerun's status
-noted in the detail. It is the daemon's answer to the test that fails only under load: the
-gate names it, and the operator still decides what that test is.
+**Intermittent test gate — `intermittent` (a status, not a failure).** The
+`test` gate that fails on its first run is run once more. When the rerun
+passes, the gate is recorded `intermittent` with the detail `intermittent:
+passed on rerun` — the first five lines of the failing run are kept as the
+gate's finding — and it does not block the plan. When the rerun does not pass,
+the first failure stands, with the rerun's status noted in the detail. A test
+that fails and then passes is a real intermittent failure (a race, an unbounded
+wait, a shared resource or a timing assumption), never "load": the gate names
+it, and the operator still decides what to fix.
 
 **Lint version pin — `lint_version_mismatch` (blocks).** The `lint` gate records
 the local golangci-lint version against the version the trial merge's CI
@@ -306,8 +308,8 @@ comm channel; the PWA card shows the comparison, not the plan), then review:
   `defect-candidates/<automaton id>.json` — the candidates have no read surface
   today, and filing them into the defect queue is a separate job.
 - The plan's findings that name a test to watch or a merge to fix: the
-  `load_sensitive` gate (a test that failed under load and passed when rerun
-  alone is still a test to watch), the failing tests named in a failed `test`
+  `intermittent` gate (a test that failed and passed on rerun is still a
+  test to watch), the failing tests named in a failed `test`
   gate's detail (a stale expected count is a test to fix before the next merge),
   and the blocking `unmerged_task_branch`, `stray_root_file`,
   `lint_version_mismatch` and `review_stale` findings (a `review_stale` review
