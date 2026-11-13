@@ -1653,6 +1653,22 @@ call on REST `POST /api/plans/migrate`, MCP `plan_migrate`, chat
 `autonomous plan-migrate [apply]`. See
 [howto/plan-records](howto/plan-records.md#building-plans-from-arcs-and-rows).
 
+### `datawatch plans <subcommand>`
+
+Order and link plans (the registry records of what you are working on).
+
+| Subcommand | Description |
+|---|---|
+| `list <project> [--limit N] [--json]` | The project's plans in priority order, then the backlog |
+| `create <project> <title> [--goal TEXT]` | Create a plan; it goes last in the plan order. A taken title is refused |
+| `reorder <plan> [<plan>...]` | The plans you list take positions 1 to n; the rest follow in their old order. An unknown or repeated plan fails the call and changes nothing |
+| `reorder-automata <plan> <automaton> [<automaton>...]` | Set the run order of a plan's Automata; name every Automaton of the plan once |
+| `attach <plan> (--automaton ID \| --automation ID \| --finding REF)` | Link one item to a plan. A link held by another plan is refused and the holder is named |
+| `detach <plan> (--automaton ID \| --automation ID \| --finding REF)` | Unlink an item from the plan that holds it |
+| `migrate [--apply]` | Build plans from the older project plan list (arcs) and registry rows; see below |
+
+Same calls on REST (`POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach|detach`), MCP (`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`) and chat (`autonomous plan list <project>`, `plan new <project> <title...>`, `plan move <project> <plan> <position>`, `plan move <plan> automaton <id> <position>`, `plan attach|detach <plan> automaton|automation|finding <id>`; `arcs` still works in place of `plan`). See [howto/plan-records](howto/plan-records.md#ordering-and-linking-plans).
+
 ### `datawatch cooldown <subcommand>`
 
 | Subcommand | Description |
