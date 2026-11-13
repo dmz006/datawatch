@@ -67,6 +67,7 @@ candidates so you can repeat the call with an id.
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
 | Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
+| Plans roll-up | `GET /api/plans/rollup?project=&dry_run=true` (preview) and `POST /api/plans/rollup` (apply), MCP `plan_rollup`, CLI `datawatch plans rollup [--project P] [--dry-run] [--json]`, chat `autonomous plan rollup [dry-run] [project=P]`. See *Rolling plan status up from the work* below. |
 | Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
 | PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a state filter, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The sections hide themselves when plan records are off. |
 
@@ -410,3 +411,43 @@ never reach into a different plan.
 `datawatch projects arcs <name>` and the `project_set_arcs` tool stay as
 deprecated aliases. The CLI prints a note and runs the plans list; in chat,
 `arcs` is accepted in place of `plan` (`autonomous arcs list <project>`).
+
+## Rolling plan status up from the work
+
+A plan's status follows the work linked to it. The roll-up looks at the state
+last reported for each linked Automaton and Automation and derives the status:
+
+| Linked work | Plan status |
+|---|---|
+| none linked | left alone |
+| any item failed or blocked | `blocked` (it wins over running) |
+| any item running | `open` |
+| every item shipped | `shipped` |
+| every item finished | `done` |
+| anything else (some waiting or held) | `open` |
+
+A status that someone set by hand is never changed. A plan list marks it:
+`datawatch plans list` and chat `plan list` print `(by hand)` after the status,
+and REST and MCP carry `set_by_hand: true` next to `state` on the plan list, on
+the plan header of the Automata and tasks reads, and on `plan_record_get` and
+`plan_record_list`. Setting a status again through a plan update marks it by
+hand; the roll-up keeps it and reports what it would have written
+(`set_by_hand_kept`).
+
+| To | REST | CLI | MCP | Chat |
+|---|---|---|---|---|
+| Preview what would change | `GET /api/plans/rollup?project=&dry_run=true` | `datawatch plans rollup --dry-run [--project P]` | `plan_rollup` with `dry_run` true | `autonomous plan rollup dry-run [project=P]` |
+| Apply it | `POST /api/plans/rollup` `{project?, dry_run?}` | `datawatch plans rollup [--project P]` | `plan_rollup` | `autonomous plan rollup [project=P]` |
+
+A preview never writes: the GET route refuses `dry_run=false` with 400, and a
+`POST` with `{"dry_run": true}` (or `?dry_run=true`) previews too. Without a
+project every project is rolled up; a project must be a registered alias. Each
+change in the answer names the plan (title first, then id), the status it has,
+the status it gets and the reason; `changed` counts the plans written (or that
+would be) and `kept` the hand-set plans left alone. A plan that becomes closed
+gets its closed time, and one that becomes open again loses it. Each write
+goes to the audit log with the actor `rollup`. The daemon also rolls every plan up once a day and when an Automaton is
+recorded as shipped, so this is the way to check or catch up now, not a step you
+need to run. It needs `autonomous:write`
+for a federated peer to apply and `autonomous:read` to preview, and answers 404
+while plan records are off.

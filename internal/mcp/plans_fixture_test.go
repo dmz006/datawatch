@@ -86,7 +86,7 @@ func TestFixtureMCPToolsAreRegistered(t *testing.T) {
 		have[tl.Name] = tl.Description
 	}
 	for _, name := range []string{"plan_reorder", "plan_reorder_automata", "plan_attach", "plan_detach",
-		"plan_record_search", "project_set_arcs"} {
+		"plan_record_search", "plan_rollup", "project_set_arcs"} {
 		if _, ok := have[name]; !ok {
 			t.Errorf("tool %q is not registered", name)
 		}

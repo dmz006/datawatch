@@ -1666,8 +1666,9 @@ Order and link plans (the registry records of what you are working on).
 | `attach <plan> (--automaton ID \| --automation ID \| --finding REF)` | Link one item to a plan. A link held by another plan is refused and the holder is named |
 | `detach <plan> (--automaton ID \| --automation ID \| --finding REF)` | Unlink an item from the plan that holds it |
 | `migrate [--apply]` | Build plans from the older project plan list (arcs) and registry rows; see below |
+| `rollup [--project P] [--dry-run] [--json]` | Derive each plan's status from its linked Automata and Automations and write it. `--dry-run` shows what would change and writes nothing. A status set by hand is kept and listed; `list` marks it `(by hand)` |
 
-Same calls on REST (`POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach|detach`), MCP (`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`) and chat (`autonomous plan list <project>`, `plan new <project> <title...>`, `plan move <project> <plan> <position>`, `plan move <plan> automaton <id> <position>`, `plan attach|detach <plan> automaton|automation|finding <id>`; `arcs` still works in place of `plan`). See [howto/plan-records](howto/plan-records.md#ordering-and-linking-plans).
+Same calls on REST (`POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach|detach`), MCP (`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`) and chat (`autonomous plan list <project>`, `plan new <project> <title...>`, `plan move <project> <plan> <position>`, `plan move <plan> automaton <id> <position>`, `plan attach|detach <plan> automaton|automation|finding <id>`, `plan rollup [dry-run] [project=P]`; `arcs` still works in place of `plan`). `rollup` is `GET /api/plans/rollup?dry_run=true` (preview) and `POST /api/plans/rollup` (apply) on REST and `plan_rollup` in MCP. See [howto/plan-records](howto/plan-records.md#ordering-and-linking-plans).
 
 ### `datawatch cooldown <subcommand>`
 

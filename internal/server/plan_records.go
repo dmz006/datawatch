@@ -106,7 +106,7 @@ type planRecordView struct {
 	Links          []planrecords.Link `json:"links"`
 	Aliases        []string           `json:"aliases"`
 	NeedsReview    bool               `json:"needs_review"`
-	SetByHand      bool               `json:"set_by_hand,omitempty"`
+	SetByHand      bool               `json:"set_by_hand"`
 	ReviewReason   string             `json:"review_reason,omitempty"`
 	CreatedAt      string             `json:"created_at"`
 	UpdatedAt      string             `json:"updated_at"`

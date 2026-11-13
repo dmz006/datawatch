@@ -16,6 +16,7 @@ const AuditRolledUp = "plan_record_rolled_up"
 // its derived status. SetByHandKept is true when the plan's status was set by
 // hand: To is then what the roll-up would have written, and nothing was.
 type RollupChange struct {
+	Title         string `json:"title"`
 	Plan          string `json:"plan"`
 	From          State  `json:"from"`
 	To            State  `json:"to"`
@@ -91,7 +92,7 @@ func (s *Store) rollupLocked(plan Record, dryRun bool) (*RollupChange, error) {
 	if to == plan.State {
 		return nil, nil
 	}
-	ch := &RollupChange{Plan: plan.ID, From: plan.State, To: to, Reason: reason}
+	ch := &RollupChange{Title: plan.Title, Plan: plan.ID, From: plan.State, To: to, Reason: reason}
 	if plan.SetByHand {
 		ch.SetByHandKept = true
 		return ch, nil

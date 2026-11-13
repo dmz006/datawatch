@@ -2,6 +2,7 @@
 //
 //	GET /api/projects/{name}/plans            plans in order, Backlog group (autonomous:read)
 //	GET /api/projects/{name}/overview-summary header, progress, active plan lines, counts
+//	GET /api/plans/rollup?project=&dry_run=true what the roll-up would change (plans_rollup_api.go)
 //	GET /api/plans/{ref}/automata             a plan's Automata in run order
 //	GET /api/plans/{ref}/tasks                a plan's tasks, read when a plan is expanded
 //	GET /api/plan-records/browse              registry rows and findings, searchable
@@ -67,6 +68,7 @@ type planRow struct {
 	UID           string          `json:"uid"`
 	Goal          string          `json:"goal,omitempty"`
 	State         string          `json:"state"`
+	SetByHand     bool            `json:"set_by_hand"`
 	Order         int             `json:"order,omitempty"`
 	Progress      planProgress    `json:"progress"`
 	Points        float64         `json:"points"`
@@ -79,7 +81,7 @@ type planRow struct {
 func (s *Server) planRowFor(d planrecords.PlanDigest, points map[string]float64) planRow {
 	row := planRow{
 		Title: d.Summary.Title, ID: d.Summary.ID, UID: d.Summary.UID, Goal: d.Summary.Goal,
-		State: string(d.Summary.State), Order: d.Summary.Order,
+		State: string(d.Summary.State), SetByHand: d.Summary.SetByHand, Order: d.Summary.Order,
 		Progress:      newPlanProgress(d.Done, len(d.Automata)),
 		AutomationIDs: d.AutomationIDs, AutomatonIDs: make([]string, 0, len(d.Automata)),
 		FindingCount: d.Summary.FindingCount,
@@ -233,10 +235,11 @@ func (s *Server) handleProjectPlans(w http.ResponseWriter, r *http.Request) {
 
 // overviewPlanLine is one active plan of the overview: state and a progress bar.
 type overviewPlanLine struct {
-	Title    string       `json:"title"`
-	ID       string       `json:"id"`
-	State    string       `json:"state"`
-	Progress planProgress `json:"progress"`
+	Title     string       `json:"title"`
+	ID        string       `json:"id"`
+	State     string       `json:"state"`
+	SetByHand bool         `json:"set_by_hand"`
+	Progress  planProgress `json:"progress"`
 }
 
 // handleProjectOverviewSummary serves GET /api/projects/{name}/overview-summary.
@@ -255,7 +258,7 @@ func (s *Server) handleProjectOverviewSummary(w http.ResponseWriter, r *http.Req
 	var pts float64
 	for _, d := range ov.Active {
 		lines = append(lines, overviewPlanLine{
-			Title: d.Summary.Title, ID: d.Summary.ID, State: string(d.Summary.State),
+			Title: d.Summary.Title, ID: d.Summary.ID, State: string(d.Summary.State), SetByHand: d.Summary.SetByHand,
 			Progress: newPlanProgress(d.Done, len(d.Automata)),
 		})
 		for _, a := range d.Automata {
@@ -344,7 +347,7 @@ func (s *Server) handlePlanAutomata(w http.ResponseWriter, r *http.Request) {
 		next = &planNextMarker{AutomatonID: d.Next.ID, Title: d.Next.Title}
 	}
 	writeJSONOK(w, map[string]any{
-		"plan":     map[string]any{"title": d.Summary.Title, "id": d.Summary.ID, "state": string(d.Summary.State)},
+		"plan":     map[string]any{"title": d.Summary.Title, "id": d.Summary.ID, "state": string(d.Summary.State), "set_by_hand": d.Summary.SetByHand},
 		"progress": newPlanProgress(d.Done, len(d.Automata)),
 		"next":     next,
 		"automata": rows,
@@ -426,7 +429,7 @@ func (s *Server) handlePlanTasks(w http.ResponseWriter, r *http.Request) {
 		all = []planTaskRow{}
 	}
 	writeJSONOK(w, map[string]any{
-		"plan":  map[string]any{"title": sum.Title, "id": sum.ID, "state": string(sum.State)},
+		"plan":  map[string]any{"title": sum.Title, "id": sum.ID, "state": string(sum.State), "set_by_hand": sum.SetByHand},
 		"tasks": all[lo:hi],
 		"page":  pageMeta(pg, len(all)),
 	})
