@@ -119,7 +119,7 @@ func TestStore_SetTags_Overwrites(t *testing.T) {
 }
 
 // A memory with no tags set at all must read back as "" (COALESCE), not
-// error or a NULL-scan panic -- the whole point of the DEFAULT ''
+// error or a NULL-scan panic -- the whole point of the DEFAULT ”
 // migration + COALESCE in every SELECT this column was added to.
 func TestStore_Tags_DefaultEmptyString(t *testing.T) {
 	s, _ := tempDB(t)

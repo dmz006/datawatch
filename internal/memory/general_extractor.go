@@ -48,11 +48,11 @@ type FactExtractor interface {
 
 // Pre-compiled patterns for the heuristic path.
 var (
-	patternIsA      = regexp.MustCompile(`(?i)\b([A-Z][\w\.]*(?:\s+[A-Z][\w\.]*)?)\s+is\s+(?:a|an|the)\s+([\w\-\s]{3,40}?)\b`)
+	patternIsA       = regexp.MustCompile(`(?i)\b([A-Z][\w\.]*(?:\s+[A-Z][\w\.]*)?)\s+is\s+(?:a|an|the)\s+([\w\-\s]{3,40}?)\b`)
 	patternDependsOn = regexp.MustCompile(`(?i)\b([\w\.\-]{3,40})\s+depends\s+on\s+([\w\.\-]{3,40})\b`)
-	patternUses     = regexp.MustCompile(`(?i)\b([\w\.\-]{3,40})\s+uses\s+([\w\.\-]{3,40})\b`)
-	patternImports  = regexp.MustCompile(`(?i)\b([\w\.\-]{3,40})\s+imports\s+([\w\.\-]{3,40})\b`)
-	patternCalls    = regexp.MustCompile(`(?i)\b([\w\.\-]{3,40})\s+calls\s+([\w\.\-]{3,40})\b`)
+	patternUses      = regexp.MustCompile(`(?i)\b([\w\.\-]{3,40})\s+uses\s+([\w\.\-]{3,40})\b`)
+	patternImports   = regexp.MustCompile(`(?i)\b([\w\.\-]{3,40})\s+imports\s+([\w\.\-]{3,40})\b`)
+	patternCalls     = regexp.MustCompile(`(?i)\b([\w\.\-]{3,40})\s+calls\s+([\w\.\-]{3,40})\b`)
 )
 
 // ExtractFacts pulls subject-predicate-object triples from the

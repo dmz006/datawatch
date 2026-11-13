@@ -80,11 +80,11 @@ var AllScopesTopDown = []Scope{
 // existing API surface.
 type ScopeRef struct {
 	Scope     Scope  `json:"scope"`
-	Persona   string `json:"persona,omitempty"`  // empty for project-shared / prd-shared / story-shared / session-local
-	Project   string `json:"project,omitempty"`  // empty for persona-global
+	Persona   string `json:"persona,omitempty"`    // empty for project-shared / prd-shared / story-shared / session-local
+	Project   string `json:"project,omitempty"`    // empty for persona-global
 	SessionID string `json:"session_id,omitempty"` // empty for everything except session-local
-	PRDID     string `json:"prd_id,omitempty"`   // required for prd-shared (BL385)
-	StoryID   string `json:"story_id,omitempty"` // required for story-shared (BL385)
+	PRDID     string `json:"prd_id,omitempty"`     // required for prd-shared (BL385)
+	StoryID   string `json:"story_id,omitempty"`   // required for story-shared (BL385)
 }
 
 // Resolve returns the (projectDir, role, sessionID) tuple the Backend
@@ -186,8 +186,8 @@ func ScopedRecall(b Backend, queryVec []float32, persona, project, sessionID, pr
 // every entry from the source. Today supports role-prefix and a
 // simple substring match on Content.
 type SeedFilter struct {
-	RolePrefix       string // e.g. "persona/security-skeptic" → only that persona's entries
-	ContentSubstring string // case-insensitive substring on Memory.Content
+	RolePrefix       string    // e.g. "persona/security-skeptic" → only that persona's entries
+	ContentSubstring string    // case-insensitive substring on Memory.Content
 	Since            time.Time // entries newer than this only
 }
 
@@ -244,13 +244,13 @@ func Seed(b Backend, from, to ScopeRef, filter SeedFilter, n int) (int, error) {
 
 // Breadcrumb is the metadata trail preserved on Promote per BL295 Q29.
 type Breadcrumb struct {
-	Session     string    `json:"session,omitempty"`
-	Persona     string    `json:"persona,omitempty"`
-	Run         string    `json:"run,omitempty"`
-	PromotedAt  time.Time `json:"promoted_at"`
-	PromotedBy  string    `json:"promoted_by"` // "operator" | "<persona-name>"
-	FromScope   Scope     `json:"from_scope"`
-	ToScope     Scope     `json:"to_scope"`
+	Session    string    `json:"session,omitempty"`
+	Persona    string    `json:"persona,omitempty"`
+	Run        string    `json:"run,omitempty"`
+	PromotedAt time.Time `json:"promoted_at"`
+	PromotedBy string    `json:"promoted_by"` // "operator" | "<persona-name>"
+	FromScope  Scope     `json:"from_scope"`
+	ToScope    Scope     `json:"to_scope"`
 }
 
 // Promote moves a memory from one scope to another (typically
