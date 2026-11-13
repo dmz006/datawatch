@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.8 — Two slow tests behind opt-in make targets
+
+### Fixed
+
+- **Two slow non-unit tests no longer run in a plain `go test ./...`.** The release-target cross-build check and the temporary-folder leak guard each start nested builds or test runs and made the regular run slow. Both now skip with a message naming their target unless asked for, and two opt-in `make` targets run them: `make test-cross-build` (sets `DW_RUN_CROSS_BUILD=1`) and `make test-tmp-guard` (sets `DW_RUN_TMP_GUARD=1`). `make help` lists both, a test guards that the plain run skips them and the targets run them, and the contributor guide and testing guide say to run both before tagging a release. Whether CI and the release workflow run them is decided separately.
+
 ## v9.172.7 — Automata list and get: notes off standard output
 
 ### Fixed
