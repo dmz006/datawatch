@@ -413,3 +413,36 @@ test('TaskRouting Settings page writes the whole table and reports a table the s
   assert.ok(toasts.some(([, k]) => k === 'error'), 'the refusal is reported in a toast');
   assert.match(panel.innerHTML, /unknown task type|not valid/);
 });
+
+test('no duplicate task routing card id or editor element id in app.js', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  for (const id of ['automataTaskRoutingPanel', 'settings-sec-automata_task_routing']) {
+    const n = (src.match(new RegExp('id="' + id + '"', 'g')) || []).length;
+    assert.equal(n, 1, 'id ' + id + ' appears ' + n + ' times');
+  }
+  // settings section header registered once, and no second window.taskRouting* definition
+  const defs = (src.match(/^window\.taskRouting[A-Za-z]* = function/gm) || []);
+  assert.ok(defs.length > 10);
+  assert.equal(new Set(defs).size, defs.length, 'a window.taskRouting* function is defined twice');
+  assert.equal((src.match(/settingsSectionHeader\('automata_task_routing'/g) || []).length, 1);
+});
+
+test('every t() key used by the routing editor, chips and detail line exists in all five bundles', () => {
+  const lines = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8').split('\n');
+  const start = lines.findIndex(l => l.startsWith('// ── Task routing card'));
+  const end = lines.findIndex((l, i) => i > start && l.startsWith('// ── Tag registry settings panel'));
+  assert.ok(start > 0 && end > start);
+  const seg = lines.slice(start, end).join('\n');
+  const keys = new Set([...seg.matchAll(/\bt\(\s*['"]([A-Za-z0-9_.]+)['"]/g)].map(m => m[1]));
+  for (const m of seg.matchAll(/'(task_routing_[a-z_]+)'/g)) keys.add(m[1]);
+  assert.ok(keys.size > 25);
+  for (const lang of ['en', 'de', 'es', 'fr', 'ja']) {
+    const b = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', lang + '.json'), 'utf8'));
+    assert.deepEqual([...keys].filter(k => !(k in b)), [], lang + ' is missing keys');
+    for (const k of keys) {
+      if (lang !== 'en' && k.startsWith('task_routing_')) {
+        assert.ok(String(b[k]).length > 0, lang + ' ' + k + ' empty');
+      }
+    }
+  }
+});

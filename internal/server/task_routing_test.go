@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -588,5 +591,37 @@ func TestTaskRoutingConfigPutUnknownAndPremiumRefusedNamingRow(t *testing.T) {
 	}
 	if got := taskRoutingGetConfig(t, s); got.ActiveProfile != "p" {
 		t.Errorf("flagged premium block not stored: %q", got.ActiveProfile)
+	}
+}
+
+// TestTaskRoutingDuplicateRoutePatternsNotRegistered fails when any task-routing
+// route pattern is registered twice in the package. net/http panics at start on
+// a duplicate pattern, so this catches it at test time instead.
+func TestTaskRoutingDuplicateRoutePatternsNotRegistered(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`\.Handle(?:Func)?\(\s*"([^"]*task-routing[^"]*)"`)
+	seen := map[string]string{}
+	total := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			total++
+			if prev, dup := seen[m[1]]; dup {
+				t.Errorf("duplicate task-routing route %q registered in %s and %s", m[1], prev, f)
+			}
+			seen[m[1]] = f
+		}
+	}
+	if total < 8 {
+		t.Fatalf("expected the task-routing routes to be found, got %d", total)
 	}
 }
