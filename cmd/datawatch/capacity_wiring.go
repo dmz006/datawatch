@@ -508,32 +508,10 @@ func syncLLMRates(cfg *config.Config, reg *inference.Registry, led *capacity.Led
 	}
 }
 
-// backoffBackpressure reports an "llm:<backend>" pool as blocked while the
-// shared autonomous back-off registry holds an active flag for that backend,
-// so task, verifier and decompose admission wait in the capacity queue with
-// the back-off as their wait reason. Only llm: pools are gated — host, node:
-// and external pools are never blocked here. It is installed as the ledger's
-// AutonomousBackpressure, which requests marked Interactive skip, so operator
-// session starts are never held back by a back-off. It runs under the capacity
-// ledger lock (rule on capacity.Options): Backoff.Blocked only reads an
-// in-memory map under its own short mutex.
-func backoffBackpressure(bo *autonomous.Backoff) func(pool string) (bool, string) {
-	return func(pool string) (bool, string) {
-		backend, ok := strings.CutPrefix(pool, "llm:")
-		if !ok || bo == nil {
-			return false, ""
-		}
-		if blocked, why := bo.Blocked(backend); blocked {
-			return true, "backoff: " + why
-		}
-		return false, ""
-	}
-}
-
 // budgetBackpressure reports an "llm:<name>" pool as blocked while that LLM's
 // dollar budget window is full, with the ledger's "budget window full: ..."
-// reason as the wait reason. Like backoffBackpressure it gates only llm:
-// pools — host, node: and external pools are never blocked — and it is
+// reason as the wait reason. Like the other back-pressure gates it gates only
+// llm: pools — host, node: and external pools are never blocked — and it is
 // consulted only for autonomous requests, so operator session starts are
 // never held back. Admission resumes on the wait loop's next poll once the
 // window rolls over. It runs under the capacity ledger lock (rule on
@@ -575,23 +553,6 @@ func sharedNodeBackpressure() func(pool string, held, limit int) (bool, string) 
 		// here would deadlock it.
 		if why := fingerprintPeerGate.ReasonWithHeld(node, held, limit); why != "" {
 			return true, "shared node: " + why
-		}
-		return false, ""
-	}
-}
-
-// composeBackpressure returns a gate that answers with the first blocked
-// answer of fns, in order, and reports not blocked when none block. Nil
-// functions are skipped.
-func composeBackpressure(fns ...func(pool string) (bool, string)) func(pool string) (bool, string) {
-	return func(pool string) (bool, string) {
-		for _, fn := range fns {
-			if fn == nil {
-				continue
-			}
-			if blocked, why := fn(pool); blocked {
-				return true, why
-			}
 		}
 		return false, ""
 	}
@@ -703,20 +664,27 @@ func newPeerBudget(registry func() *inference.Registry, store func() *multiserve
 // every event with a positive dollar amount under the LLM the backend
 // resolves to in the inference registry (the backend name itself when it has
 // no entry), whether or not that LLM has a budget yet, so history exists when
-// a budget is switched on later.
-func recordUsageSpend(bl *autonomous.BudgetLedger, registry func() *inference.Registry) func(session.UsageEvent) {
-	return recordUsage(bl, registry, nil)
+// a budget is switched on later. A nil gate records no reserve tokens.
+func recordUsageSpend(bl *autonomous.BudgetLedger, registry func() *inference.Registry, gate *autonomous.BackoffReserve) func(session.UsageEvent) {
+	return recordUsage(bl, registry, nil, gate)
 }
 
 // recordUsage is recordUsageSpend plus the capacity ledger: every event's
 // tokens (in and out) count against its LLM pool's token rate ceiling. Unlike
 // the dollar record, tokens count even when the event carries no dollar
-// amount. A nil ledger skips the token record.
-func recordUsage(bl *autonomous.BudgetLedger, registry func() *inference.Registry, led *capacity.Ledger) func(session.UsageEvent) {
+// amount. A nil ledger skips the token record. The same tokens are also
+// folded into the review-reserve rolling budget (nil gate skips it), so a
+// backend spent through its reserve cannot keep spending it: only sessions
+// on that backend's LLM are charged, matching how back-off names it.
+func recordUsage(bl *autonomous.BudgetLedger, registry func() *inference.Registry, led *capacity.Ledger, gate *autonomous.BackoffReserve) func(session.UsageEvent) {
 	return func(ev session.UsageEvent) {
 		name := budgetLLMName(registry, ev.Backend)
+		tokens := int64(ev.TokensIn) + int64(ev.TokensOut)
 		if led != nil {
-			led.RecordTokens("llm:"+name, int64(ev.TokensIn)+int64(ev.TokensOut))
+			led.RecordTokens("llm:"+name, tokens)
+		}
+		if gate != nil {
+			gate.RecordTokens(name, tokens)
 		}
 		if bl == nil || ev.USD <= 0 {
 			return
@@ -1081,18 +1049,22 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// take it out — all under the cache's own mutex, no I/O.
 	verifierHeadroom := newVerifierNodeCache()
 	verifierHeadroomCache = verifierHeadroom
+	// The review reserve: while a backend is in back-off, a bounded number of
+	// its live slots stay free for the work that reviews that backend's
+	// output (guardrail judges, verifiers, planning) — bounded further by a
+	// rolling one-hour token budget. The gate reads the effective settings
+	// live and queues its verdicts for the sync tick's audit drain.
+	backoffReserve := backoffReserveGate(cfg)
 	opts := capacity.Options{
-		External:     external,
-		Backpressure: backpressure,
-		NodeHealthy:  nodeHealth.healthy,
-		NodeGate:     nodeHealth.gate,
-		NodeState:    nodeHealth.state,
-		AutonomousBackpressure: composeBackpressure(
-			backoffBackpressure(autonomousBackoff),
-			budgetBackpressure(autonomousBudget),
-		),
-		HeldBackpressure: sharedNodeBackpressure(),
-		VerifierHeadroom: verifierHeadroom.blocked,
+		External:               external,
+		Backpressure:           backpressure,
+		NodeHealthy:            nodeHealth.healthy,
+		NodeGate:               nodeHealth.gate,
+		NodeState:              nodeHealth.state,
+		RoleBackpressure:       backoffReserveBackpressure(autonomousBackoff, backoffReserve),
+		AutonomousBackpressure: budgetBackpressure(autonomousBudget),
+		HeldBackpressure:       sharedNodeBackpressure(),
+		VerifierHeadroom:       verifierHeadroom.blocked,
 	}
 	applyNodeLimitOptions(&opts, cfg)
 	led := capacity.New(opts)
@@ -1103,8 +1075,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// A hold nobody ends clears itself after Options.AdoptionTimeout.
 	led.BeginAdoption()
 
-	// Usage deltas feed both the dollar budget and the token rate ceilings.
-	mgr.SetUsageEventHook(recordUsage(autonomousBudget, registry, led))
+	// Usage deltas feed the dollar budget, the token rate ceilings and the
+	// review reserve's rolling token budget.
+	mgr.SetUsageEventHook(recordUsage(autonomousBudget, registry, led, backoffReserve))
 
 	resolve := capacityResolver(httpServer.InferenceRegistry, httpServer.ComputeRegistry)
 	keys, choices := capacityManagerKeys(resolve)
@@ -1549,6 +1522,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				// delays pool syncing; admission reads only the cache.
 				go peerBudget.Refresh(ctx)
 				auditBudgetTransitions(autonomousBudget, budgetFull, emitBackoffAudit)
+				// Review-reserve verdicts queued on a ledger decision are emitted
+				// here, outside every lock.
+				drainBackoffReserveAudit(backoffReserve)
 				if autonomousBudget != nil {
 					rollovers.Observe(autonomousBudget.StatusAll())
 				}

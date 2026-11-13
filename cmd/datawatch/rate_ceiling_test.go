@@ -71,7 +71,7 @@ func TestRateCeilingWiring_SyncAndRecordTokens(t *testing.T) {
 	}
 
 	// Usage events count tokens (even without a dollar amount) against the pool.
-	hook := recordUsage(nil, func() *inference.Registry { return reg }, led)
+	hook := recordUsage(nil, func() *inference.Registry { return reg }, led, nil)
 	hook(session.UsageEvent{Backend: "cc", At: time.Now(), TokensIn: 60, TokensOut: 50})
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

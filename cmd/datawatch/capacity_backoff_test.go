@@ -9,6 +9,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // backoffTestClock is a manually advanced capacity.Clock; After channels fire
@@ -75,22 +76,22 @@ func TestBackoffBackpressure_GatesOnlyLLMPools(t *testing.T) {
 	bo := autonomous.NewBackoff()
 	bo.Clock = clk.Now
 	bo.Set("claude-code", clk.Now().Add(time.Minute), "rate-limit", autonomous.BackoffSourceRateLimit)
-	bp := backoffBackpressure(bo)
+	bp := backoffReserveBackpressure(bo, backoffReserveGate(&config.Config{}))
 
-	blocked, why := bp("llm:claude-code")
+	blocked, why := bp("llm:claude-code", capacity.RoleWorker, map[capacity.Role]int{})
 	if !blocked || !strings.HasPrefix(why, "backoff: ") || !strings.Contains(why, "claude-code") {
 		t.Fatalf("llm:claude-code should be blocked with a backoff reason, got %v %q", blocked, why)
 	}
 	for _, pool := range []string{"llm:pi-prompt", "host", "node:claude-code", "ext:claude-code"} {
-		if b, _ := bp(pool); b {
+		if b, _ := bp(pool, capacity.RoleWorker, nil); b {
 			t.Errorf("pool %q must not be blocked by claude-code's back-off", pool)
 		}
 	}
 	clk.Advance(2 * time.Minute)
-	if b, _ := bp("llm:claude-code"); b {
+	if b, _ := bp("llm:claude-code", capacity.RoleWorker, nil); b {
 		t.Error("llm:claude-code must pass once the clock is past until")
 	}
-	if b, _ := backoffBackpressure(nil)("llm:claude-code"); b {
+	if b, _ := backoffReserveBackpressure(nil, nil)("llm:claude-code", capacity.RoleWorker, nil); b {
 		t.Error("a nil registry blocks nothing")
 	}
 }
@@ -103,9 +104,9 @@ func TestBackoffBackpressure_InteractiveStartNeverBlocked(t *testing.T) {
 	bo.Clock = clk.Now
 	bo.Set("claude-code", clk.Now().Add(time.Minute), "rate-limit", autonomous.BackoffSourceRateLimit)
 	led := capacity.New(capacity.Options{
-		PollInterval:           time.Second,
-		Clock:                  clk,
-		AutonomousBackpressure: backoffBackpressure(bo),
+		PollInterval:     time.Second,
+		Clock:            clk,
+		RoleBackpressure: backoffReserveBackpressure(bo, backoffReserveGate(&config.Config{})),
 	})
 	pools := []string{"host", "llm:claude-code"}
 
