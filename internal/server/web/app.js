@@ -20628,6 +20628,15 @@ function renderPlanningFailureBadge(prd) {
   return `<span class="planning-failure-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid #ef4444;" title="${escHtml(pf.reason)}">${escHtml(t('planning_failure_badge') || 'Planning failed')}</span>`;
 }
 
+// Badge on an Automata card for a finished record whose working branch still
+// has commits that never landed on the base branch: the read-only
+// merge_state field the daemon derives (never persisted). Only the
+// unfinished value carries this badge; an absent field renders nothing.
+function renderMergeStateBadge(prd) {
+  if (!prd || prd.merge_state !== 'finished_not_merged') return '';
+  return `<span class="merge-state-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(217,119,6,0.15);color:#d97706;border:1px solid #d97706;" title="${escHtml('Branch work not merged into the base branch (merge_state: finished_not_merged)')}">${escHtml(t('prd_merge_state_badge') || 'Branch not merged')}</span>`;
+}
+
 // The open planning question per Automaton id, fetched from the ordinary
 // question list (asked_by planning, prd_id = the Automaton).
 window._planningQuestionByPrd = window._planningQuestionByPrd || {};
@@ -20900,7 +20909,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${renderMergeStateBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}

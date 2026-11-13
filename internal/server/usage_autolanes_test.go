@@ -204,8 +204,8 @@ func TestAutoLanesRecentChangesCap(t *testing.T) {
 	base := time.Now().UTC().Truncate(time.Second)
 	for i := 0; i < total; i++ {
 		e := usagecalc.AutoLanesLogEntry{
-			At:        base.Add(time.Duration(i) * time.Minute),
-			From:      1, To: 2,
+			At:   base.Add(time.Duration(i) * time.Minute),
+			From: 1, To: 2,
 			Direction: usagecalc.AutoLanesUp,
 			Reason:    "decision",
 		}

@@ -89,9 +89,9 @@ func newHeldQuestionsFixture(t *testing.T, heldMode string) heldQuestionsFixture
 		t.Helper()
 		q := autonomous.Question{
 			Text: text, Label: "approval", AskedBy: "supervisor",
-			Context:   autonomous.QuestionContextNone,
-			Default:   "no",
-			Options:   []autonomous.QuestionOption{{ID: "yes", Label: "Yes"}, {ID: "no", Label: "No"}},
+			Context: autonomous.QuestionContextNone,
+			Default: "no",
+			Options: []autonomous.QuestionOption{{ID: "yes", Label: "Yes"}, {ID: "no", Label: "No"}},
 		}
 		got, err := store.Raise(q)
 		if err != nil {
@@ -158,13 +158,13 @@ func heldQuestionsGET(t *testing.T, s *Server, query string) (int, heldQuestions
 }
 
 type heldQuestionsBody struct {
-	Mode    string                  `json:"mode"`
-	States  []string                `json:"states"`
-	Open    []map[string]any        `json:"open"`
-	Shadow  []map[string]any        `json:"shadow"`
-	Question *map[string]any       `json:"question"`
-	Message *string                `json:"message"`
-	Error   *string                `json:"error"`
+	Mode     string           `json:"mode"`
+	States   []string         `json:"states"`
+	Open     []map[string]any `json:"open"`
+	Shadow   []map[string]any `json:"shadow"`
+	Question *map[string]any  `json:"question"`
+	Message  *string          `json:"message"`
+	Error    *string          `json:"error"`
 }
 
 func heldEntryFor(entries []map[string]any, key, value string) map[string]any {
@@ -246,8 +246,8 @@ func TestHeldQuestionsREST(t *testing.T) {
 			t.Fatalf("want 3 shadow notes, got %d: %s", len(body.Shadow), raw)
 		}
 		wantShadows := map[string]map[string]any{
-			"review_held":     {"prd_id": "prd-1", "recommended_option": "hold"},
-			"blocked":         {"prd_id": "prd-1", "recommended_option": "resume"},
+			"review_held":       {"prd_id": "prd-1", "recommended_option": "hold"},
+			"blocked":           {"prd_id": "prd-1", "recommended_option": "resume"},
 			"awaiting_decision": {"prd_id": "prd-2", "recommended_option": "hold"},
 		}
 		for _, e := range body.Shadow {

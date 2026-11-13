@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
 )
 
 // The REST body carries totals with cache and local tokens, and omits the

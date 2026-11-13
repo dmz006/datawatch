@@ -54,9 +54,9 @@ func TestApplyConfigPatch_GitSecretScan(t *testing.T) {
 	// CLI config set / MCP config_set / comm configure all funnel into
 	// applyConfigPatch with JSON-decoded values.
 	applyConfigPatch(cfg, map[string]interface{}{
-		"git.secret_scan.mode":               "enforce",
-		"git.secret_scan.detectors":          []interface{}{"private_key", "github_token"},
-		"git.secret_scan.allow_list.paths":   "vendor, testdata",
+		"git.secret_scan.mode":                    "enforce",
+		"git.secret_scan.detectors":               []interface{}{"private_key", "github_token"},
+		"git.secret_scan.allow_list.paths":        "vendor, testdata",
 		"git.secret_scan.allow_list.fingerprints": []interface{}{"0123456789abcdef"},
 	})
 	if cfg.Git.SecretScan.Mode != config.GitSecretScanEnforce {
@@ -74,9 +74,9 @@ func TestApplyConfigPatch_GitSecretScan(t *testing.T) {
 	// Empty values clear back to the effective defaults (shadow mode,
 	// all built-in detectors, no allow-list).
 	applyConfigPatch(cfg, map[string]interface{}{
-		"git.secret_scan.mode":                 "off",
-		"git.secret_scan.detectors":            "",
-		"git.secret_scan.allow_list.paths":     "",
+		"git.secret_scan.mode":                    "off",
+		"git.secret_scan.detectors":               "",
+		"git.secret_scan.allow_list.paths":        "",
 		"git.secret_scan.allow_list.fingerprints": []interface{}{},
 	})
 	if cfg.Git.SecretScan.Mode != config.GitSecretScanOff {
@@ -117,9 +117,9 @@ func TestHandleGetConfig_GitSecretScanDefaults(t *testing.T) {
 func TestHandlePutConfig_GitSecretScanRoundTrip(t *testing.T) {
 	s := &Server{cfg: &config.Config{}, cfgPath: t.TempDir() + "/config.yaml"}
 	if code := secretScanPUT(t, s, map[string]any{
-		"git.secret_scan.mode":                 "enforce",
-		"git.secret_scan.detectors":            "private_key, github_token",
-		"git.secret_scan.allow_list.paths":     []any{"vendor"},
+		"git.secret_scan.mode":                    "enforce",
+		"git.secret_scan.detectors":               "private_key, github_token",
+		"git.secret_scan.allow_list.paths":        []any{"vendor"},
 		"git.secret_scan.allow_list.fingerprints": "0123456789abcdef",
 	}); code != http.StatusOK {
 		t.Fatalf("PUT: want 200, got %d", code)
@@ -145,8 +145,8 @@ func TestHandlePutConfig_GitSecretScanModeRejected(t *testing.T) {
 	// An unknown mode rejects the whole PUT — including any other key in
 	// the same patch — leaving the stored value untouched.
 	if code := secretScanPUT(t, s, map[string]any{
-		"git.secret_scan.mode":              "paranoid",
-		"git.secret_scan.allow_list.paths":  "vendor",
+		"git.secret_scan.mode":             "paranoid",
+		"git.secret_scan.allow_list.paths": "vendor",
 	}); code != http.StatusBadRequest {
 		t.Fatalf("PUT mode=paranoid: want 400, got %d", code)
 	}

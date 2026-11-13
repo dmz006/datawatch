@@ -59,6 +59,14 @@ type SummaryView struct {
 	// otherwise the stored status. The stored Status never moves because of shipped state.
 	Shipped         bool   `json:"shipped"`
 	EffectiveStatus string `json:"effective_status"`
+	// MergeState is the derived read-only merge state of a finished
+	// record: "finished_not_merged" (autonomous.MergeStateFinishedNotMerged)
+	// when the record completed — or was archived since — while its work
+	// branch still carries commits that are not on the base branch, "" for
+	// active records, merged or empty branches, and undetermined state.
+	// Filled on read by the server (never stored on the record); it
+	// surfaces work waiting to land, it never hides the record.
+	MergeState string `json:"merge_state,omitempty"`
 
 	// The fields below feed a collapsed Automata row. All are scalars, short
 	// lists or small count maps, so none grows with the amount of text the

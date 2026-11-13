@@ -167,6 +167,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		row := autonomous.BuildSummaryRow(prd)
 		row.Project = aliasRes.Resolve(prd.ProjectProfile, prd.ProjectDir)
 		row.PlanningFailure = s.planningFailureOf(prd)
+		row.MergeState = s.mergeStateOf(prd)
 		fillTags(&row.SummaryView)
 		st := autonomous.PRDEffectiveDisplayStatus(prd, shipEnabled)
 		if len(statuses) > 0 && !statuses[st] &&

@@ -5624,6 +5624,8 @@
   "planning_failure_retry_counts": "Reintentos:",
   "planning_failure_retry_budget": "Presupuesto de reintentos:",
   "planning_failure_badge": "Falló la planificación",
+
+  "prd_merge_state_badge": "Rama sin fusionar",
   "planning_failure_question_pending": "Pregunta pendiente: corregir la redacción y planificar de nuevo",
   "planning_failure_question_fix": "Corregir la redacción y planificar de nuevo",
   "planning_failure_question_leave": "Dejarlo así",

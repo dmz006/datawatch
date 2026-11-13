@@ -578,7 +578,7 @@ func TestSyncAutoTags_MemberLeaveKeepsOperatorAndSharedTags(t *testing.T) {
 	}
 
 	gone := autoTagsPRDIDs(t, m, keeper.ID)
-	autoTagsHas(t, "leaver", gone, op.ID)    // operator tag survives
+	autoTagsHas(t, "leaver", gone, op.ID)      // operator tag survives
 	autoTagsHas(t, "leaver", gone, kindTag.ID) // shared kind tag survives
 	autoTagsLacks(t, "leaver", gone, autoTag.ID)
 	autoTagsLacks(t, "leaver", gone, reviewTag.ID)
@@ -589,7 +589,7 @@ func TestSyncAutoTags_MemberLeaveKeepsOperatorAndSharedTags(t *testing.T) {
 	autoTagsHas(t, "keeper", autoTagsPRDIDs(t, m, feat.ID), kindTag.ID)
 
 	mustNotHaveAutoTag(t, m, "stage "+a.ID+" review") // nobody on review: reclaimed
-	mustAutoTagStage(t, m, a, "draft")                 // still in use: kept
+	mustAutoTagStage(t, m, a, "draft")                // still in use: kept
 	mustAutoTag(t, m, "automation ")
 }
 
@@ -666,7 +666,7 @@ func TestSyncAutoTags_DaemonOffRecomputesAndReclaims(t *testing.T) {
 		t.Fatalf("daemon off: %d engine tag(s) remain, want 1 (the shared kind tag)", n)
 	}
 	ids := autoTagsPRDIDs(t, m, prd.ID)
-	autoTagsHas(t, "daemon off", ids, op.ID)             // operator tag survives
+	autoTagsHas(t, "daemon off", ids, op.ID) // operator tag survives
 	mustNotHaveAutoTag(t, m, "automation")
 	mustNotHaveAutoTag(t, m, "stage "+a.ID+" draft")
 	mustAutoTag(t, m, "kind feature") // the shared vocabulary record stays
@@ -708,7 +708,7 @@ func TestSyncAutoTags_DeleteClearsAndReclaims(t *testing.T) {
 	autoTagsHas(t, "deleted", ids, op.ID)      // operator tag survives
 	autoTagsHas(t, "deleted", ids, kindTag.ID) // shared kind tag survives
 	autoTagsLacks(t, "deleted", ids, autoTag.ID)
-	mustNotHaveAutoTag(t, m, "automation")   // no Automation: its record is reclaimed
+	mustNotHaveAutoTag(t, m, "automation") // no Automation: its record is reclaimed
 	mustNotHaveAutoTag(t, m, "stage "+a.ID+" draft")
 }
 

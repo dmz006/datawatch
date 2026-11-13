@@ -1,10 +1,20 @@
-// Branch guard for the supervisor loop's close step. A cancelled Automaton
-// whose work branch still carries commits that are not on the base branch is
-// kept, so that work is not orphaned by archiving. The guard is read-only: it
-// runs for-each-ref and the CompareBranchToMain queries, nothing else.
+// Branch guard for the supervisor loop's close step. A finished Automaton
+// whose work branch still carries commits that are not on the base branch
+// is kept, so that work is not orphaned by archiving:
 //
-// It applies only inside closeFinishedRecords. Manager.Archive and the
-// operator Archive path are unchanged and still archive.
+//   - A completed record is kept while its branch carries unmerged commits
+//     (merged-branch guard, archive_merge_guard.go). "Merged" is judged
+//     by cherry-pick equivalence, so a rebased or squashed landing counts;
+//     an empty branch (zero commits ahead) or a dropped branch has no work.
+//
+//   - A cancelled record past its grace window is kept while its branch is
+//     ahead of the base branch (archiveKeepsBranch).
+//
+// Both guards are read-only: they run ref/rev-list/cherry/log queries,
+// nothing else. They apply inside closeFinishedRecords. Manager.Archive
+// applies the same merged-branch rule to automated actors (operator
+// archives and the merge step stay unblocked), and the derived read-only
+// merge_state field surfaces the state on record views.
 package autonomous
 
 import (
@@ -58,4 +68,26 @@ func (s *SupervisorLoopSteps) archiveKeepsBranch(p *PRD) bool {
 		return true
 	}
 	return cmp.Ahead > 0
+}
+
+// archiveCompletedBranchGuard reports whether the close step must keep p
+// because p finished while its work branch still carries commits that are
+// not on the base branch (merged-branch guard). It shares branchUnmerged
+// with the Manager.Archive guard, so both paths judge "merged" the same
+// way — by cherry-pick equivalence, so a rebased or squashed landing
+// counts as merged. Same conservative failure mode: any git error, an
+// empty base repository or an unknown comparison keeps the record.
+func (s *SupervisorLoopSteps) archiveCompletedBranchGuard(p *PRD) bool {
+	if p == nil {
+		return false
+	}
+	m := s.c.m
+	ctx, cancel := context.WithTimeout(context.Background(), archiveBranchGitTimeout*2)
+	defer cancel()
+	block, _, known := m.archiveBranchMergeBlock(ctx, p)
+	if !known {
+		log.Printf("[autonomous] supervisor-loop: keeping %s: branch merge state undetermined", p.ID)
+		return true
+	}
+	return block
 }

@@ -203,8 +203,8 @@ func (c *Coordinator) collectHeldItems(qcfg config.AutonomousQuestionsConfig, st
 			return
 		}
 		out = append(out, heldQuestionPending{
-			item: item,
-			hash: heldQuestionLineHash(heldQuestionMarker(item)),
+			item:             item,
+			hash:             heldQuestionLineHash(heldQuestionMarker(item)),
 			linkedQuestionID: linked,
 		})
 	}
@@ -233,22 +233,22 @@ func (c *Coordinator) collectHeldItems(qcfg config.AutonomousQuestionsConfig, st
 		// PRD-level holds.
 		if prd.Status == PRDBlocked && prd.BlockedReason != "" {
 			add(&HeldItem{
-				State:        HeldBlocked,
-				PRDID:        prd.ID,
-				PRDTitle:     prd.Title,
-				AutomationID: aCtx.automationID,
+				State:          HeldBlocked,
+				PRDID:          prd.ID,
+				PRDTitle:       prd.Title,
+				AutomationID:   aCtx.automationID,
 				AutomationName: aCtx.automationName,
-				Reason:       prd.BlockedReason,
+				Reason:         prd.BlockedReason,
 			}, "")
 		}
 		if prd.Status == PRDRevisionsAsked {
 			add(&HeldItem{
-				State:            HeldRevisionRequested,
-				PRDID:            prd.ID,
-				PRDTitle:         prd.Title,
-				AutomationID:     aCtx.automationID,
-				AutomationName:   aCtx.automationName,
-				Reason:           prd.RejectionReason,
+				State:          HeldRevisionRequested,
+				PRDID:          prd.ID,
+				PRDTitle:       prd.Title,
+				AutomationID:   aCtx.automationID,
+				AutomationName: aCtx.automationName,
+				Reason:         prd.RejectionReason,
 			}, "")
 		}
 
@@ -267,16 +267,16 @@ func (c *Coordinator) collectHeldItems(qcfg config.AutonomousQuestionsConfig, st
 						reason = t.ReviewSummary.Text
 					}
 					add(&HeldItem{
-						State:            HeldReviewHeld,
-						PRDID:            prd.ID,
-						PRDTitle:         prd.Title,
-						TaskID:           t.ID,
-						TaskTitle:        t.Title,
-						AutomationID:     aCtx.automationID,
-						AutomationName:   aCtx.automationName,
-						FailureCategory:  category,
-						Reason:           reason,
-						AttemptsUsed:     t.EscalationFailures,
+						State:             HeldReviewHeld,
+						PRDID:             prd.ID,
+						PRDTitle:          prd.Title,
+						TaskID:            t.ID,
+						TaskTitle:         t.Title,
+						AutomationID:      aCtx.automationID,
+						AutomationName:    aCtx.automationName,
+						FailureCategory:   category,
+						Reason:            reason,
+						AttemptsUsed:      t.EscalationFailures,
 						AvailableBackends: aCtx.backends,
 					}, "")
 					continue
