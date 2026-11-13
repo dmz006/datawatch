@@ -95,9 +95,15 @@ not remove. Use it to clear the leftovers of a killed run.
 (`internal/session`) runs the tested suites one package at a time against a
 fresh, private temp directory and fails the run — naming the surviving entry and
 the responsible package — if any scratch directory is left behind.
-`make test-tmp-guard` runs the guard in full mode over every package in the
-repository; the ordinary `go test ./...` run of the same test keeps a small
-default list so a local run stays fast.
+The guard is opt-in: a plain `go test ./...` skips it with a message naming
+the target (the target sets `DW_RUN_TMP_GUARD=1`). `make test-tmp-guard` runs it in full mode over every package in the
+repository.
+
+`make test-cross-build` is the other opt-in local pre-tag check. It
+cross-compiles the daemon (`./cmd/datawatch/`) for windows/amd64, windows/arm64
+and darwin/arm64 (`TestMainBuildsForReleaseTargets` in `tests/ci`; the target sets `DW_RUN_CROSS_BUILD=1`), and is
+skipped by a plain `go test ./...` with a message naming the target. Whether CI
+and the release workflow run either check is decided separately.
 
 ## Smoke checks: the no-config-copy rule (smoke-check-task)
 

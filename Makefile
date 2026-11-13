@@ -8,7 +8,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
         security-registry-gen security-registry-check \
-        test-tmp-guard \
+        test-tmp-guard test-cross-build help \
         test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-shared-nav test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
@@ -342,10 +342,24 @@ test:
 # Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
 # mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
 # (except internal/session, which would run a copy of the guard) one at a
-# time, attributing any temp-dir survivor to the package that left it. The
-# normal `go test ./...` run of the same test keeps the small default list.
+# time, attributing any temp-dir survivor to the package that left it.
+# DW_RUN_TMP_GUARD=1 opts in; a plain `go test ./...` skips the test.
 test-tmp-guard:
-	DW_LEAK_GUARD_FULL=1 go test -count=1 -timeout 20h ./internal/session/ -run TestNoNewTmpLeakEntries
+	DW_RUN_TMP_GUARD=1 DW_LEAK_GUARD_FULL=1 go test -count=1 -timeout 20h ./internal/session/ -run TestNoNewTmpLeakEntries
+
+# Release-target cross-build check (tests/ci TestMainBuildsForReleaseTargets):
+# DW_RUN_CROSS_BUILD=1 opts in to cross-compiling ./cmd/datawatch/ for
+# windows/amd64, windows/arm64 and darwin/arm64. Skipped in the normal
+# `go test ./...` run.
+test-cross-build:
+	DW_RUN_CROSS_BUILD=1 go test -count=1 -timeout 30m ./tests/ci/ -run TestMainBuildsForReleaseTargets
+
+# Local pre-tag checks: slow opt-in checks that a plain `go test ./...` skips.
+# Run both before tagging a release.
+help:
+	@echo "Local pre-tag checks (a plain 'go test ./...' skips both):"
+	@echo "  make test-tmp-guard    runs the temp-dir leak guard over every package"
+	@echo "  make test-cross-build  cross-builds the daemon for windows and darwin"
 
 fmt:
 	gofmt -w .
