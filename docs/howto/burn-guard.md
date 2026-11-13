@@ -252,7 +252,7 @@ below, without a restart — the guard reads the current value every interval.
 | Surface | How |
 |---|---|
 | YAML (config file) | `usage.burn_guard.ask_on_change: true` under the `usage.burn_guard` key; see the [configuration reference](../config-reference.yaml) |
-| Web UI | the read-only **Burn guard** card on the usage page, with **Run now** to evaluate once and a **Burn guard settings** link that opens the section below; the guard's settings (**Ask instead of alerting** is `ask_on_change`) are in **Settings → General → Automata**; the **Burn guard** stat card in the Monitor panel |
+| Web UI | the read-only **Burn guard** card on the usage page, with **Run now** to evaluate once and a **Burn guard settings** link that opens the section below; the guard's settings (**Ask instead of alerting** is `ask_on_change`) are in **Settings → General → Automata**; the **Burn guard** stat card in **System Statistics** on the **Observer** view (showing current rung and state when the daemon is reporting guard state) |
 | CLI | `datawatch config set usage.burn_guard.ask_on_change true` (switch it back with `false`); `datawatch usage burn-guard status`, `run`, `config [key=value ...]`; `datawatch automation set-effort-ceiling <id> docs=low ...` (or `--clear`) for the effort ceiling |
 | MCP | `config_set` with `key: usage.burn_guard.ask_on_change`, `value: true`; `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
 | Chat | `configure usage.burn_guard.ask_on_change=true` |
