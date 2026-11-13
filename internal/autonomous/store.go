@@ -23,9 +23,13 @@ import (
 
 // Store is the in-memory + JSONL-backed PRD/Story/Task/Learning store.
 type Store struct {
-	mu        sync.Mutex
-	dir       string
-	prds      map[string]*PRD
+	mu   sync.Mutex
+	dir  string
+	prds map[string]*PRD
+	// sumIdx and rev back the summary index (summary_index.go); both are
+	// guarded by mu.
+	sumIdx    map[string]SummaryEntry
+	rev       uint64
 	stories   map[string]*Story // keyed by Story.ID
 	tasks     map[string]*Task  // keyed by Task.ID
 	learnings []Learning
@@ -1161,7 +1165,8 @@ func (s *Store) load() error {
 	if err := s.loadPRDs(); err != nil {
 		return err
 	}
-	s.clearStaleProgress() // boot-time safety re-check of the progress invariant
+	s.rebuildSummaryLocked() // index every loaded Automaton
+	s.clearStaleProgress()   // boot-time safety re-check of the progress invariant
 	if err := loadJSONL(filepath.Join(s.dir, "learnings.jsonl"), func(line []byte) error {
 		var l Learning
 		if err := json.Unmarshal(line, &l); err != nil {
