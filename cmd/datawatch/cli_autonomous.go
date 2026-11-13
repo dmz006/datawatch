@@ -93,6 +93,8 @@ Subcommands:
   uncommitted-work [--automaton ID] [--json]
   planning-routing get|set|test|scorecard
                                   Planning routing config, no-LLM routing test and counts-only scorecard
+  task-routing show|set|profile|automaton|dry-run
+                                  Task type routing table: which LLM and model each task starts with
                                    Uncommitted-work status: the policy and scope in effect and the tasks and
                                    Automata held because work was left uncommitted (read only, nothing is
                                    committed or discarded)
@@ -354,6 +356,7 @@ Subcommands:
 		newAutonomousUncommittedWorkCmd(),
 		newAutonomousUnlandedWorkCmd(),
 		newAutonomousPlanningRoutingCmd(),
+		newAutonomousTaskRoutingCmd(),
 		newAutonomousRequestWatchCmd(),
 		newAutonomousProtectedPathsCmd(),
 		newAutonomousAuthorizePathsCmd(),

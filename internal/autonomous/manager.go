@@ -150,8 +150,11 @@ type Config struct {
 	PlanningBackend string `json:"planning_backend,omitempty"`
 	// PlanningRouting is the autonomous.planning_routing block: routes the
 	// decompose call to a rule-chosen planner and ladder. Off by default.
-	PlanningRouting     config.PlanningRoutingConfig `json:"planning_routing,omitempty"`
-	VerificationBackend string                       `json:"verification_backend,omitempty"`
+	PlanningRouting config.PlanningRoutingConfig `json:"planning_routing,omitempty"`
+	// TaskRouting is the autonomous.task_routing block: the task-type
+	// routing table and its profiles. Off by default.
+	TaskRouting         config.TaskRoutingConfig `json:"task_routing,omitempty"`
+	VerificationBackend string                   `json:"verification_backend,omitempty"`
 	// ExecutionBackend is the fallback backend used when a task and its
 	// parent PRD both have an empty Backend field. Empty string means
 	// fall through to the global session.llm_backend default.
@@ -1366,7 +1369,10 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
-	mu sync.Mutex
+	// taskRoutingBackendKnown reports whether an LLM backend is known to the
+	// registry; nil skips the check (SetTaskRoutingBackendCheck).
+	taskRoutingBackendKnown func(backend string) bool
+	mu                      sync.Mutex
 	// housekeepingRepairer feeds the housekeeping repairs read view. Guarded by mu.
 	housekeepingRepairer *Repairer
 	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
@@ -3405,6 +3411,9 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		})
 		prd.ScopeWarnings = scopeWarnings
 	})
+	// Task-type routing: every task the planner materialized gets the active
+	// profile's row (a no-op while routing is off), before approval.
+	m.ApplyTaskRoutingToPRD(prd)
 	// A save failure here is a real decompose failure: route it through
 	// the shared give-up tail (log, keep artifact, record
 	// LastDecomposeFailure, roll back to PRDDraft) rather than returning
@@ -5179,6 +5188,9 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 			}
 		})
 	}
+	// Task-type routing: a new task starts with the active profile's row
+	// unless an LLM is set above it. Existing tasks are never re-routed.
+	m.ApplyTaskRouting(prd, task)
 	note := fmt.Sprintf("story=%s task=%s title=%q", storyID, task.ID, title)
 	if len(dependsOn) > 0 {
 		note += fmt.Sprintf(" depends_on=%v", dependsOn)

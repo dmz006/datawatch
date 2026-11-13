@@ -7837,6 +7837,25 @@ Planning routing chooses the planner for each Automaton decompose by rule. It is
 
 **Roll out in shadow mode first.** Set `enabled: true` and `shadow: true`; the routed decision is recorded for every decompose and the planner does not change. Read the would-route counts in the scorecard, compare them with what you expect, then set `shadow: false`. The scorecard and its gate report carry counts, planner names and rule and class names only, never plan or finding text. The full guide is [howto/automata-planning-routing.md](howto/automata-planning-routing.md).
 
+## Task-type routing table
+
+Task routing picks the worker and verification LLM for each task by its type (documentation, locale strings, code and so on) when the planner decomposes an Automaton or a task is added. It is off by default. The most specific LLM choice always wins: a task LLM set by an operator, then a story LLM, then an Automaton LLM, then the table, then the global default. A task edited by hand, a started task and a task with a live session are never rewritten, and applying never touches a session. Switching the active profile affects only tasks created afterwards.
+
+| Surface | Access |
+|---|---|
+| YAML | `autonomous.task_routing` in `datawatch.yaml` (`enabled`, `active_profile`, `profiles`) |
+| REST | `/api/autonomous/task-routing` (GET, PUT), `.../profiles` (GET, POST), `.../profiles/{name}` (DELETE), `.../profiles/{name}/export`, `.../profiles/import`, `.../active-profile` (PUT), `/api/autonomous/prds/{id}/task-routing` and `.../task-routing/dry-run`; `PUT /api/config` still accepts `autonomous.task_routing.*` |
+| MCP | `task_routing_get`, `task_routing_set`, `task_routing_profile_list`, `_save`, `_activate`, `_delete`, `_export`, `_import`, `task_routing_automaton`, `task_routing_dry_run`; `get_config` and `config_set` also work |
+| CLI | `datawatch autonomous task-routing show\|set\|profile\|automaton\|dry-run` |
+| Comm | `autonomous task-routing show\|profile list\|profile use <name>\|automaton <id>\|dry-run <id> [profile]` |
+| Web | Settings, Automata tab, Task routing card; per-task routing column in the Automaton detail view |
+
+Reads use the autonomous read permission and writes the autonomous write permission (federated callers: the autonomous-read and config-write capabilities on the MCP tools). Switching, saving or deleting a profile changes only tasks created afterwards and never touches a session.
+
+A bad block is rejected whole; a row naming an Opus or Fable model needs `allow_premium_model` on that row. Each task records its routing result and the Automaton's decision log gets a `task_routing` entry. The full guide is [howto/automata-task-routing.md](howto/automata-task-routing.md).
+
+**Operator review.** Turn routing on only after checking the shipped `default` profile's backends and models suit your nodes (it names `pi-prompt` with `ollama/qwen3.8:27b` and `claude-code` with `sonnet`). Run a dry run on a draft Automaton first. Still open: the chat channel cannot save, delete, import, export or edit profiles (only `profile use`), by design to keep chat replies short, so confirm that is acceptable; the dry run is meant for drafts and its result on an already-decomposed Automaton is worth a manual check; the German, Spanish, French and Japanese strings for the Settings card and detail column were added with the English ones and have not had a native-speaker review; and `docs/mcp.md`, the REST API reference and the CLI reference do not yet list the new tools, routes and command group.
+
 ## Plugin services: lifecycle semantics
 
 The [plugins guide](plugins.md) is the concept reference for service-kind plugins; this section is the operations contract for them — who owns the process, what the daemon does and never does.

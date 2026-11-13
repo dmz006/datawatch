@@ -264,6 +264,10 @@ entries:
   - /api/autonomous/planning-routing
   - /api/autonomous/planning-routing/scorecard
   - /api/autonomous/planning-routing/test
+  - /api/autonomous/task-routing
+  - /api/autonomous/task-routing/active-profile
+  - /api/autonomous/task-routing/profiles
+  - /api/autonomous/task-routing/profiles/import
   - /api/autonomous/prds
   - /api/autonomous/prds/
   - /api/autonomous/prds/aggregated
@@ -483,6 +487,7 @@ entries:
   - automata-rules-and-context
   - automata-tag-registry
   - automata-tags
+  - automata-task-routing
   - automation-decision-assistant
   - automaton-decision-records
   - automaton-decompose-lint
@@ -758,6 +763,16 @@ entries:
   - retry_profile_update
   - routing_rules_list
   - routing_rules_test
+  - task_routing_automaton
+  - task_routing_dry_run
+  - task_routing_get
+  - task_routing_profile_activate
+  - task_routing_profile_delete
+  - task_routing_profile_export
+  - task_routing_profile_import
+  - task_routing_profile_list
+  - task_routing_profile_save
+  - task_routing_set
   - usage_backoff_clear
   - usage_backoff_recheck
   - usage_backoff_set

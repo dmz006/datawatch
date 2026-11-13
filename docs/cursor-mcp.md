@@ -203,6 +203,9 @@ Selected core tools:
 | `planning_routing_set` | Update the planning routing config; omitted fields keep their value and a bad config is rejected |
 | `planning_routing_test` | Route one input (`kind`, `tags`, `spec_bytes`, `files`, `project`) and return the decision; no LLM call, nothing changes |
 | `planning_scorecard` | Counts-only planning scorecard and gate report over a `window` such as `7d` |
+| `task_routing_get` / `task_routing_set` | Read or update the task routing table (task type to worker and verification LLM); a bad table is refused and nothing is applied |
+| `task_routing_profile_list` / `_save` / `_activate` / `_delete` / `_export` / `_import` | Manage named task routing profiles; activating affects only tasks created afterwards |
+| `task_routing_automaton` / `task_routing_dry_run` | Per-Automaton read of which row decided each task's LLM, and a no-write dry run of a profile |
 | `pipeline_start` / `pipeline_status` | Session chaining |
 | `exit_hook_list` / `exit_hook_add` / `exit_hook_delete` / `exit_hook_enable` / `exit_hook_disable` | Session exit hooks (BL356) |
 | `queue_push` / `queue_claim` / `queue_complete` / `queue_fail` / `queue_list` | Distributed work queue (BL357) |

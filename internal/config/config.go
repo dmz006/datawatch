@@ -3240,8 +3240,13 @@ type AutonomousConfig struct {
 	// false); Shadow computes/records the routed decision but keeps the
 	// planner unchanged. Not applied by applyDefaults — an existing
 	// config without the block loads unchanged.
-	PlanningRouting   PlanningRoutingConfig `yaml:"planning_routing,omitempty" json:"planning_routing,omitempty"`
-	VerificationModel string                `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
+	PlanningRouting PlanningRoutingConfig `yaml:"planning_routing,omitempty" json:"planning_routing,omitempty"`
+	// TaskRouting (autonomous.task_routing) maps a task type to the
+	// worker and verification LLM a newly created task starts with; see
+	// internal/config/task_routing.go. Off by default. A config without
+	// the block gets the shipped "default" profile on load.
+	TaskRouting       TaskRoutingConfig `yaml:"task_routing,omitempty" json:"task_routing,omitempty"`
+	VerificationModel string            `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for the guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
 	// rejudge). Tier 3 of ResolveGuardrailModel (see
@@ -8526,6 +8531,7 @@ func applyDefaults(cfg *Config) {
 	}
 	// BL304 — migrate legacy decomposition_* YAML keys → planning_* Go fields.
 	// Old configs that set decomposition_backend/effort/model still work.
+	cfg.Autonomous.TaskRouting = TaskRoutingWithDefaults(cfg.Autonomous.TaskRouting)
 	if cfg.Autonomous.PlanningBackend == "" && cfg.Autonomous.DecompositionBackendLegacy != "" {
 		cfg.Autonomous.PlanningBackend = cfg.Autonomous.DecompositionBackendLegacy
 	}

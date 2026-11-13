@@ -263,7 +263,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_unlanded_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `autonomous_timeline`, `autonomous_pending_items`, `autonomous_pending_item_add`, `autonomous_pending_item_attach`, `autonomous_pending_items_refresh`, `security_failure_list`, `dependency_update_status`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_unlanded_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `task_routing_get/set`, `task_routing_profile_list/save/activate/delete/export/import`, `task_routing_automaton`, `task_routing_dry_run`, `autonomous_request_watch`, `autonomous_timeline`, `autonomous_pending_items`, `autonomous_pending_item_add`, `autonomous_pending_item_attach`, `autonomous_pending_items_refresh`, `security_failure_list`, `dependency_update_status`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Tags and placement | `autonomous_tag_list/create/rename/set_parent/set_color/delete`, `autonomous_prd_set_tags`, `autonomous_tag_sweep`, `session_set_tags`, `session_tag_list` |
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
@@ -2005,6 +2005,114 @@ Route one input under the current planning routing config and return the decisio
 **Example:**
 ```
 planning_routing_test(kind="feature", tags="security", spec_bytes=12000, files="internal/auth/login.go")
+```
+
+### `task_routing_get`
+
+Read the task routing table: whether routing is on, the active profile, every profile's rows (task type to worker LLM, verification LLM, effort, second choice) and the validation result. Read-only. It proxies `GET /api/autonomous/task-routing`.
+
+**Parameters:** none.
+
+**Reply:** `enabled`, `active_profile`, `profiles`, `task_types` and `validation` (`valid`, and `problems` when it is not valid).
+
+**Example:**
+```
+task_routing_get()
+```
+
+### `task_routing_set`
+
+Update the task routing table. Every field is optional: a field you leave out keeps its current value. The result is validated first and a bad table is refused with every problem listed, nothing applied. Only tasks created afterwards read the new table. It proxies `PUT /api/autonomous/task-routing`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | boolean | No | Turn task routing on or off. |
+| `active_profile` | string | No | Name of the profile to make active; it must exist. |
+| `profiles` | string (JSON object) | No | Profiles by name, replacing the current ones: `{"default":{"docs_set":{"worker_backend","worker_model","verification_backend","verification_model","effort","second_choice":{"backend","model"},"allow_premium_model"}}}`. |
+
+**Reply:** the same view as `task_routing_get`.
+
+**Example:**
+```
+task_routing_set(enabled=true)
+```
+
+### `task_routing_profile_list`
+
+List the saved task routing profiles and which one is active. Read-only. It proxies `GET /api/autonomous/task-routing/profiles`.
+
+**Parameters:** none.
+
+### `task_routing_profile_save`
+
+Save a profile under a name. With no `rows` it copies the active profile's current table; a profile of the same name is replaced. The table is validated first. It proxies `POST /api/autonomous/task-routing/profiles`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Profile name. |
+| `rows` | string (JSON object) | No | Rows by task type; omit to copy the active profile. |
+
+### `task_routing_profile_activate`
+
+Make a saved profile the active one. Only tasks created afterwards use it; no existing task or session changes. It proxies `PUT /api/autonomous/task-routing/active-profile`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Profile name. |
+
+### `task_routing_profile_delete`
+
+Delete a saved profile. The active profile cannot be deleted. It proxies `DELETE /api/autonomous/task-routing/profiles/{name}`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Profile name. |
+
+### `task_routing_profile_export`
+
+Export one profile as a JSON document (`format_version`, `name`, `rows`), the same file the web app downloads. Read-only. It proxies `GET /api/autonomous/task-routing/profiles/{name}/export`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Profile name. |
+
+### `task_routing_profile_import`
+
+Import a profile from an exported document. It is validated and refused with every problem listed if it is not valid. An existing profile of the same name is replaced only when `overwrite` is true. It proxies `POST /api/autonomous/task-routing/profiles/import`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `document` | string (JSON) | Yes | The exported profile document. |
+| `name` | string | No | Store it under this name instead of the document's own. |
+| `overwrite` | boolean | No | Replace an existing profile of the same name. |
+
+### `task_routing_automaton`
+
+Per-Automaton task routing read: for every task, its task type, how it was classified, which row decided its LLM (or why none did) and the LLM it will run with. Read-only; writes nothing. It proxies `GET /api/autonomous/prds/{id}/task-routing`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Automaton id. |
+
+**Example:**
+```
+task_routing_automaton(id="<automaton-id>")
+```
+
+### `task_routing_dry_run`
+
+Dry run for a draft Automaton: what the active (or the named) profile would assign to each task. Nothing is written, no decision is logged and no LLM is called. It proxies `POST /api/autonomous/prds/{id}/task-routing/dry-run`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Automaton id. |
+| `profile` | string | No | Profile name; defaults to the active profile. |
+
+**Example:**
+```
+task_routing_dry_run(id="<automaton-id>", profile="my-profile")
 ```
 
 ### `planning_scorecard`

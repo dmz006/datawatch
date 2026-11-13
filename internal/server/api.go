@@ -6828,6 +6828,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
 			"scope_lint":                      s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
 			"planning_routing":                s.cfg.Autonomous.PlanningRouting,
+			"task_routing":                    s.cfg.Autonomous.TaskRouting,
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -9743,6 +9744,27 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.PlanningRouting.Enabled = toBool(v)
 		case "autonomous.planning_routing.shadow":
 			cfg.Autonomous.PlanningRouting.Shadow = toBool(v)
+		// Task routing table: the on switch, the active profile (it must
+		// exist; a name that does not is skipped) and the whole block
+		// (checked before it replaces the live one).
+		case "autonomous.task_routing.enabled":
+			cfg.Autonomous.TaskRouting.Enabled = toBool(v)
+		case "autonomous.task_routing.active_profile":
+			if name := toString(v); name != "" {
+				if _, ok := cfg.Autonomous.TaskRouting.Profiles[name]; ok {
+					cfg.Autonomous.TaskRouting.ActiveProfile = name
+				} else {
+					skipped = append(skipped, k)
+				}
+			}
+		case "autonomous.task_routing":
+			var in config.TaskRoutingConfig
+			if b, err := json.Marshal(v); err == nil && json.Unmarshal(b, &in) == nil &&
+				len(config.ValidateTaskRouting(in, autonomous.TaskRoutingChecksFor(nil))) == 0 {
+				cfg.Autonomous.TaskRouting = in
+			} else {
+				skipped = append(skipped, k)
+			}
 		case "autonomous.poll_interval_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.PollIntervalSeconds = n

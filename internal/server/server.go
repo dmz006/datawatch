@@ -465,6 +465,15 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/planning-routing", api.handleAutonomousPlanningRouting)
 	apiMux.HandleFunc("/api/autonomous/planning-routing/test", api.handleAutonomousPlanningRoutingTest)
 	apiMux.HandleFunc("/api/autonomous/planning-routing/scorecard", api.handleAutonomousPlanningScorecard)
+	// Task routing: table, profiles, per-Automaton read and dry run.
+	apiMux.HandleFunc("/api/autonomous/task-routing", api.handleTaskRouting)
+	apiMux.HandleFunc("/api/autonomous/task-routing/profiles", api.handleTaskRoutingProfiles)
+	apiMux.HandleFunc("/api/autonomous/task-routing/profiles/import", api.handleTaskRoutingProfileImport)
+	apiMux.HandleFunc("/api/autonomous/task-routing/profiles/{name}", api.handleTaskRoutingProfile)
+	apiMux.HandleFunc("/api/autonomous/task-routing/profiles/{name}/export", api.handleTaskRoutingProfileExport)
+	apiMux.HandleFunc("/api/autonomous/task-routing/active-profile", api.handleTaskRoutingActiveProfile)
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/task-routing", api.handleAutomatonTaskRouting)
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/task-routing/dry-run", api.handleAutomatonTaskRouting)
 	// BL221 (v6.2.0) Phase 4 — type registry endpoint.
 	apiMux.HandleFunc("/api/autonomous/types", api.handleAutonomousTypes)
 	// Tag registry endpoints.

@@ -156,6 +156,16 @@ var MCPToolCap = map[string]string{
 	"planning_routing_set":                         CapConfigWrite,
 	"planning_scorecard":                           CapAutonomousRead,
 	"planning_routing_test":                        CapAutonomousRead,
+	"task_routing_get":                             CapAutonomousRead,
+	"task_routing_profile_list":                    CapAutonomousRead,
+	"task_routing_profile_export":                  CapAutonomousRead,
+	"task_routing_automaton":                       CapAutonomousRead,
+	"task_routing_dry_run":                         CapAutonomousRead,
+	"task_routing_set":                             CapConfigWrite,
+	"task_routing_profile_save":                    CapConfigWrite,
+	"task_routing_profile_activate":                CapConfigWrite,
+	"task_routing_profile_delete":                  CapConfigWrite,
+	"task_routing_profile_import":                  CapConfigWrite,
 	"autonomous_scan_config_set":                   CapAutonomousWrite,
 	"autonomous_status":                            CapAutonomousRead,
 	// BL427 lifecycle-event subscriptions.
@@ -747,7 +757,7 @@ var configWriteTools = map[string]bool{
 	"server_update": true, "smoke_forward_config_set": true, "usage_backoff_set": true, "usage_extra_credit_set": true,
 	"usage_remaining_work_set": true, "websearch_provider_add": true, "websearch_provider_delete": true, "websearch_provider_disable": true,
 	"websearch_provider_update":            true,
-	"autonomous_decompose_lint_config_set": true, "planning_routing_set": true, "rules_context_set": true, "secret_scan_config_set": true,
+	"autonomous_decompose_lint_config_set": true, "planning_routing_set": true, "rules_context_set": true, "task_routing_set": true, "task_routing_profile_save": true, "task_routing_profile_activate": true, "task_routing_profile_delete": true, "task_routing_profile_import": true, "secret_scan_config_set": true,
 }
 
 var sensitiveWriteTools = map[string]bool{
@@ -904,7 +914,7 @@ var nonConfigWriteTools = map[string]bool{
 	"plan_record_search": true, "plan_record_update": true,
 	"checks_status": true, "compute_node_backend_versions": true, "compute_node_drain": true, "compute_node_undrain": true,
 	"compute_placement_answer": true, "compute_placement_list": true, "compute_served_models": true, "generated_artefacts_get": true, "llm_classifier": true, "planning_routing_get": true,
-	"planning_routing_test": true, "planning_scorecard": true, "platform_context_status": true, "plugin_service_restart": true,
+	"planning_routing_test": true, "planning_scorecard": true, "task_routing_get": true, "task_routing_profile_list": true, "task_routing_profile_export": true, "task_routing_automaton": true, "task_routing_dry_run": true, "platform_context_status": true, "plugin_service_restart": true,
 	"plugin_service_start": true, "plugin_service_status": true, "plugin_service_stop": true, "plugin_token_list": true,
 	"plugin_token_rotate": true, "plugin_widget_get": true, "plugin_widget_list": true, "project_history": true, "project_timeline": true,
 	"project_policy_effective": true, "project_rollup": true, "project_set_arcs": true, "release_push_status": true,
