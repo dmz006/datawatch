@@ -58,7 +58,7 @@ func NewWithHost(model, binary, host string) llm.Backend {
 	return &Backend{model: model, binary: binary, host: host}
 }
 
-func (b *Backend) Name() string                  { return "ollama" }
+func (b *Backend) Name() string                   { return "ollama" }
 func (b *Backend) SupportsInteractiveInput() bool { return false }
 
 func (b *Backend) Version() string {

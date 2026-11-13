@@ -12,12 +12,12 @@ import (
 )
 
 type mockAdapter struct {
-	kind       Kind
-	calls      []callRecord
-	failTimes  int
-	failError  error
-	transient  bool
-	respText   string
+	kind      Kind
+	calls     []callRecord
+	failTimes int
+	failError error
+	transient bool
+	respText  string
 }
 
 type callRecord struct {

@@ -92,9 +92,9 @@ func TestPullModelStreamsProgressToCompletion(t *testing.T) {
 			t.Errorf("pull body must name the model and ask for a stream; got %+v", body)
 		}
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		fmt.Fprint(w, `{"status":"pulling manifest"}`+"\n") //nolint:errcheck
+		fmt.Fprint(w, `{"status":"pulling manifest"}`+"\n")                                  //nolint:errcheck
 		fmt.Fprint(w, `{"status":"downloading manifest","total":1000,"completed":400}`+"\n") //nolint:errcheck
-		fmt.Fprint(w, `{"status":"success"}`+"\n")                                              //nolint:errcheck
+		fmt.Fprint(w, `{"status":"success"}`+"\n")                                           //nolint:errcheck
 	}))
 	defer srv.Close()
 
@@ -123,7 +123,7 @@ func TestPullModelStreamsProgressToCompletion(t *testing.T) {
 // still a completion, not a decode failure.
 func TestPullModelFeedEndingWithoutSuccessLineCompletes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"status":"pulling manifest"}`+"\n") //nolint:errcheck
+		fmt.Fprint(w, `{"status":"pulling manifest"}`+"\n")                             //nolint:errcheck
 		fmt.Fprint(w, `{"status":"writing manifest","total":100,"completed":100}`+"\n") //nolint:errcheck
 	}))
 	defer srv.Close()
@@ -226,7 +226,7 @@ func runMarketplacePullPath(t *testing.T, handler http.HandlerFunc) *marketplace
 	defer srv.Close()
 
 	m := &marketplacePullState{status: "pending"} // as written by the registry before the worker starts
-	m.status = "in_progress"                       // as runOllamaPull sets it before calling PullModel
+	m.status = "in_progress"                      // as runOllamaPull sets it before calling PullModel
 	err := PullModel(context.Background(), nil, srv.URL, "qwen3:8b", func(p PullProgress) {
 		if p.BytesTotal > 0 {
 			m.bytesTotal = p.BytesTotal
@@ -252,9 +252,9 @@ func runMarketplacePullPath(t *testing.T, handler http.HandlerFunc) *marketplace
 
 func TestMarketplacePathReportsCompletionOnPullSuccess(t *testing.T) {
 	m := runMarketplacePullPath(t, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"status":"pulling manifest"}`+"\n") //nolint:errcheck
+		fmt.Fprint(w, `{"status":"pulling manifest"}`+"\n")                         //nolint:errcheck
 		fmt.Fprint(w, `{"status":"downloading","total":2000,"completed":600}`+"\n") //nolint:errcheck
-		fmt.Fprint(w, `{"status":"success"}`+"\n")                                    //nolint:errcheck
+		fmt.Fprint(w, `{"status":"success"}`+"\n")                                  //nolint:errcheck
 	})
 	if m.status != "done" {
 		t.Fatalf("marketplace path should end done after a successful pull; got %q (err=%q)", m.status, m.err)
