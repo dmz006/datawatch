@@ -95,7 +95,7 @@ No setup beyond having a backend. Sessions spawn on demand.
 A session may only start in a project directory that lies under an allowed
 root. The roots are:
 
-- the PRD worktree base, `autonomous.worktree_dir` (default
+- the Automata worktree base, `autonomous.worktree_dir` (default
   `~/.datawatch/prd-worktrees`);
 - the workspace root: `session.workspace_root` when set, otherwise the default
   workspace folder `~/workspace`;
@@ -175,34 +175,38 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
 
 1. PWA → bottom nav **Sessions**. The list shows every session this
    daemon knows about; new sessions go to the top by default.
-2. **Filter bar** — above the session list, three controls left to right:
-   - **LLM (N) ▸** — collapses/expands a badge row showing each
-     backend-family (`claude-code`, `opencode`, `opencode-acp`,
-     `opencode-prompt`, `openwebui`, `ollama`, `shell`,
-     `council-virtual`). Click a badge to filter; button highlights
-     when a filter is active.
-   - **State (N) ▸** — collapses/expands a colored dot rail for every
-     real state (Running 🟢 / Waiting 🟠 / Rate-limited 🔴 / Complete ⚪
-     / Failed 🔴 / Killed ⚪). Click any dot to filter; multiple states
-     can be selected simultaneously.
-   - **Text input** — narrows by session name, task, ID,
-     `llm_ref`, or `compute_node_ref` substrings. Combines with the
-     badge filters.
-   - **Tags** (header icon button) — the session list's **Watched only**
-     toggle and tag filter live in the dropdown behind the Tags icon
-     button in the page header, not in the filter bar. The button is a
-     tag icon with no visible word: a solid tag filled in the theme
-     accent color, with a lighter hole and a subtle darker edge, that
-     reads clearly on both the dark and the light theme. It looks
-     brighter when the dropdown is open or a tag filter is on, it
-     carries a count badge while filters are active, and it shows a
-     visible focus ring for keyboard users. Its tooltip and accessible
-     name read **Tags**. Open it, tick **Watched only** to
-     list only sessions you watch, and tick tags to list only sessions
-     that carry them (**match ANY** by default; the match button
-     switches to **match ALL**). The icon shows a count of the active
-     filters, and **Clear** in the dropdown resets the tag ticks. These
-     combine with the filter bar above. See
+2. **Narrow the list.** One toolbar line sits directly under the page
+   heading, at every width — the control-by-control description is in
+   [sessions-tiles-and-grouping](sessions-tiles-and-grouping.md#the-toolbar-row).
+   In order: a **server select** (the same shared picker as the header
+   dropdown — choosing an entry in one updates the other), a **search
+   box** that takes the free width of the line, a **Filters** button (a
+   badge shows how many filters are active), a **Fold all** icon (while a
+   grouping is active) and the **List / Tiles / Compact** view-mode
+   select; your view choice is remembered on this device.
+   - **Search** — narrows by a session's name, its id, its backend, its
+     tag text and its state, so `claude`, `a1f2`, `automation:` or
+     `waiting` all work. While a search is active the page shows an
+     **N of M** count (for example `3 of 21`).
+   - **Filters** — one sheet holds every filter: a **Group by** select
+     (none, or by Status, Backend, Project, Tag, or Automaton), the
+     **Views** bar (memory + the saved views), a **Status** chip per real
+     state (multi-select; **All** means no filter), a **watched only**
+     toggle (list only the sessions you watch) and the **Backend** chips
+     (when two or more backends are in use). When any session carries a
+     tag, a **Tags** sub-section adds a tag search, per-tag chips with
+     counts, a **watched only** on/off and a **Clear**. Selected values
+     also show up as removable chips in the compact summary line above
+     the list, together with a **Clear all**.
+   - **Fold all** — folds or unfolds every group at once; it appears
+     while a grouping is active and the visible list has foldable groups.
+   - **Tree / History** — a line below the toolbar carries the **Tree**
+     and **History (N)** buttons, and the 🌐 hostname chip while a remote
+     server is active (click it to return to this server).
+   - **Tags** (header icon button) — a separate surface for tags: its
+     dropdown also carries a **Watched only** tick that drives the same
+     watched-only list, and its **This session** section watches or un-watches
+     the open session. See
      [`automata-tags.md`](automata-tags.md#the-header-tags-dropdown).
 3. Click the **+** FAB → wizard:
    - **LLM** dropdown (populated from `/api/llms`; disabled entries
@@ -683,7 +687,7 @@ sub-tab.
 
 ## Screenshots
 
-![Sessions list with filter bar](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-filter.png)
+![Sessions list with its toolbar](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-filter.png)
 
 ![New-session wizard](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-new-wizard.png)
 
