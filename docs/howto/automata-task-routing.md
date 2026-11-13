@@ -234,5 +234,13 @@ permission, like the planning routing routes.
 5. Open the Automaton's decision log and find the `task_routing` entries by the
    `task-router` actor.
 
+## For the operator to review
+
+- **Routing is off by default.** Nothing changes for existing Automata until you turn it on; check the shipped defaults table above fit your installed LLMs before you do.
+- **Premium models need your approval per row.** A row naming an Opus or Fable model is refused unless that row sets `allow_premium_model`. Review every such row before saving.
+- **Switching the active profile only affects tasks created afterwards.** Tasks already created keep what they were given; re-run decompose or edit the task to change them.
+- **The mobile apps do not show routing yet.** The Settings card and the per-task column are in the web app only; mobile parity is tracked separately.
+- **Docs and the live daemon can differ.** If a tool or command named here is missing on your daemon, it is older than this change; update it before relying on this guide.
+
 See also: [Automata planning routing](automata-planning-routing.md),
 [Automata capacity](automata-capacity.md).
