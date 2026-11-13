@@ -26,7 +26,9 @@ commit that adds it, same as any other rule change.
 - [ ] `go build ./...` clean.
 - [ ] `go test ./...` clean — the **full** suite, not just the touched
   package. A change in a shared resolution/cascade function can break
-  an unrelated caller.
+  an unrelated caller. CI no longer runs `go test` (removed from `ci.yaml`
+  and `release.yaml`); the only place the full suite runs before a tag is
+  `make pre-tag` (section 4a), so a failure here is found on the build host.
 - [ ] If a test fails in a way that looks unrelated to this change,
   don't assume flake — rerun it in isolation 3-5x locally first. Only
   write it off as a pre-existing flake if it passes consistently
@@ -110,6 +112,13 @@ commit that adds it, same as any other rule change.
   `PRE_TAG_ONLY=a,b` runs only the named steps; `PRE_TAG_RECORD_FILE`
   moves the record; `PRE_TAG_SLOW_TIMEOUT` caps each slow command
   (seconds, default 21600).
+- [ ] **CI no longer runs `go test`.** The `go test` step was removed from
+  `ci.yaml` and `release.yaml`, and the release job is now named
+  `lint + build` (it was `go test + lint`). `make pre-tag` is the only gate
+  that runs the Go test suite, so a tag pushed without a passing pre-tag
+  record for that commit ships untested Go code. Branch protection or
+  status checks that required the old `go test + lint` job name must be
+  updated to `lint + build`.
 
 ## 5. Git
 

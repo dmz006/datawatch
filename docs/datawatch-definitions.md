@@ -3317,5 +3317,5 @@ The **derived project alias** is the read-only `project` field on an Automaton o
 
 ### Pre-tag run
 
-The **pre-tag run** is `make pre-tag` (`scripts/pre-tag.sh`): every release gate run locally in CI order, stopping at the first failure, so a code failure shows up on the build host before the tag is pushed. Each run appends a line with the commit, date, step count, result and seconds to `.datawatch/pre-tag-record`. A step with a missing tool is skipped, not failed. See [operations.md](operations.md#pre-tag-run-make-pre-tag) and [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
+The **pre-tag run** is `make pre-tag` (`scripts/pre-tag.sh`): every release gate run locally in CI order, stopping at the first failure, so a code failure shows up on the build host before the tag is pushed. It is the only gate that runs `go test`: CI (`ci.yaml`, `release.yaml`) no longer does. Each run appends a line with the commit, date, step count, result and seconds to `.datawatch/pre-tag-record`. A step with a missing tool is skipped, not failed. See [operations.md](operations.md#pre-tag-run-make-pre-tag) and [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
 
