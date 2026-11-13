@@ -18,6 +18,13 @@ type TraceSink interface {
 	Append(events ...trace.Event) (int, error)
 }
 
+// TraceDeleter drops one session's trace when the session itself is
+// deleted; *trace.Store satisfies it. It must match the exact session
+// id; sessions whose ids only share a prefix are untouched.
+type TraceDeleter interface {
+	DeleteSession(sessionID string) error
+}
+
 // DefaultTraceInterval is how often running sessions are re-read for new
 // transcript lines when TraceIngestConfig.Interval is zero.
 const DefaultTraceInterval = 5 * time.Second

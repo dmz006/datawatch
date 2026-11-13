@@ -501,6 +501,11 @@ type Manager struct {
 	// timeline (see trace_ingest.go). nil until wired; observe only.
 	traceIngest *TraceIngestor
 
+	// traceDeleter drops the session's trace when the session is deleted
+	// (see TraceDeleter in trace_ingest.go). nil until wired; a failure
+	// there is logged and never fails the delete.
+	traceDeleter TraceDeleter
+
 	// sessionTempRelease releases the session's own temporary files (task
 	// capture files, per-session worker config directories for the pi,
 	// claude-code, opencode, aider and goose backends) using the created-path
@@ -1215,6 +1220,12 @@ func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 // is told when a session starts and when it ends, and receives the
 // timeline lines through AppendTimeline. Pass nil to detach.
 func (m *Manager) SetTraceIngestor(t *TraceIngestor) { m.traceIngest = t }
+
+// SetTraceDeleter wires the trace deleter used by Manager.Delete: when a
+// session is deleted, its trace is dropped for the session's exact FullID
+// (sessions sharing only a name prefix keep their trace). A deleter error
+// is logged and never fails the delete. Pass nil to detach.
+func (m *Manager) SetTraceDeleter(d TraceDeleter) { m.traceDeleter = d }
 
 // notifySessionStart tells the trace ingestor, then fires onSessionStart.
 func (m *Manager) notifySessionStart(sess *Session) {
@@ -4898,6 +4909,15 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 	// Delete from store
 	if err := m.store.Delete(fullID); err != nil {
 		return fmt.Errorf("delete from store: %w", err)
+	}
+
+	// Drop the session's trace (best-effort): the deleter matches the exact
+	// session id, so a session that only shares a name prefix keeps its
+	// trace. A trace failure is logged and never fails the delete.
+	if m.traceDeleter != nil {
+		if err := m.traceDeleter.DeleteSession(fullID); err != nil {
+			fmt.Printf("[warn] remove trace for deleted session %s: %v\n", fullID, err)
+		}
 	}
 
 	// v5.26.26 — reap daemon-owned workspaces. When handleStartSession

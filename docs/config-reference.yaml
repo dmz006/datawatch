@@ -355,7 +355,8 @@ tracing:
   # 0 or unset reads 512; allowed range 0..1048576.
   arg_cap_bytes: 512
   # Days trace events are kept. 0 = keep forever (the default);
-  # a positive number of days prunes by age. Allowed range 0..3650.
+  # a positive number of days prunes by age (the daemon prunes once at
+  # startup and then once a day). Allowed range 0..3650.
   retention_days: 0
   # Per-backend switches, e.g. {pi: false}. A backend not listed is traced.
   backends: {}
