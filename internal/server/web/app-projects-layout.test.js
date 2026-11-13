@@ -65,6 +65,7 @@ function hist() {
 // page draws one sub-tab of the project page (Overview by default).
 function page(sb, roll = ROLLUP, sub = 'overview') {
   vm.runInContext(`_projectsState.subtab = ${JSON.stringify(sub)}`, sb);
+  vm.runInContext(`_projectsSummary = { name: ${JSON.stringify(FULL.name)}, error: '', data: { header: {}, progress: { automata: { done: 0, total: 0, percent: 0 }, points: 0 }, active_plans: [], next: null, counts: {} } }`, sb);
   return sb._projectPageHTML(FULL, roll, '', hist());
 }
 
@@ -134,8 +135,8 @@ test('the sub-tab strip puts Gantt before Unassigned, and Unassigned before Hist
 
 // ---- collapse memory (cards only where a sub-tab holds more than one block) ----
 
-const CARD_TABS = { overview: ['progress'], policy: ['policy', 'merge'], events: ['events', 'stream'] };
-const BARE_TABS = ['plans', 'gantt', 'unassigned', 'history'];
+const CARD_TABS = { overview: ['overview'], plans: ['progress'], policy: ['policy', 'merge'], events: ['events', 'stream'] };
+const BARE_TABS = ['gantt', 'unassigned', 'history'];
 
 test('multi-block sub-tabs draw cards with a toggle; single-block sub-tabs draw none', () => {
   const { sb } = load({ showEmpty: true });
@@ -254,7 +255,7 @@ test('the Projects view paints the cards through the real render path', async ()
 
 test('no control hides or moves a card', () => {
   const { sb } = load({ showEmpty: true });
-  for (const sub of ['overview', 'plans', 'gantt', 'unassigned', 'history', 'policy', 'events']) {
+  for (const sub of ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'policy', 'events']) {
     const html = page(sb, ROLLUP, sub);
     assert.doesNotMatch(html, /draggable/i);
     assert.doesNotMatch(html, /ondrag|ondrop/i);
@@ -264,7 +265,7 @@ test('no control hides or moves a card', () => {
       assert.match(m[1], /^projectsToggleSection\('[a-z]+'\)$/, 'a toggle only collapses or expands');
     }
     const ids = new Set(Array.from(html.matchAll(/data-section="([^"]+)"/g)).map(m => m[1]));
-    for (const id of ids) assert.ok(['progress', 'stream', 'policy', 'merge', 'events'].includes(id), id + ' is a known section');
+    for (const id of ids) assert.ok(['overview', 'progress', 'stream', 'policy', 'merge', 'events'].includes(id), id + ' is a known section');
   }
 });
 
