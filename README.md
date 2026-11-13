@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.166.0 (2026-11-12).** A daemon restart no longer kills a running final gate: gates keep running in their own process group, the daemon re-attaches or reads the result, and a graceful restart waits up to autonomous.gate_drain_minutes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.167.0 (2026-11-12).** The Projects page matches an Automaton to its project by an explicit link first and by its directory only as the last fallback, lists Automata that match no project in a group of their own, and counts shipped work in throughput. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

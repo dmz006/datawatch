@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.167.0 — Match Automata to a project by explicit link first, directory as fallback
+
+The Projects page now decides which project an Automaton belongs to by an explicit link first, and by its directory only as the last fallback.
+
+- Membership order: the Automaton's own project link, then its Automation's project, then its parent's, then a directory match, where a worktree is mapped back to its repository.
+- Automata that match nothing are listed once in a separate Automata without a project group, shown on the Projects page under the unassigned Automata, so none is ever hidden. The group is not counted in any project total.
+- The link is editable on every surface: the Automaton detail in the web app, a `set_project` REST route, the `autonomous_prd_set_project` MCP tool, the `datawatch autonomous prd-set-project` command, and the `autonomous project` chat command. A name that is not a configured project is refused.
+- A backfill links the Automata that have no link yet from their Automation, parent or repository. It is a dry run that only reports unless `autonomous.project_link_backfill_apply` is on; REST, the `autonomous_project_link_backfill` MCP tool, `datawatch autonomous project-link-backfill` and the `autonomous project-backfill` chat command run one pass.
+- Throughput on the project roll-up counts shipped work: an Automaton that completed, or was merged and archived, is counted once.
+- Operator documentation covers the membership order, the without-project group, the link and the backfill.
+
 ## v9.166.0 — A daemon restart no longer kills a running final gate
 
 ### Fixed
