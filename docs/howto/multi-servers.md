@@ -23,12 +23,12 @@ them — or select "All" to see aggregated data from every server at once.
 
 ## What it is
 
-Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and was replaced, in [v9.160.1](../../CHANGELOG.md), by the one header dropdown in the fixed app header; this change adds the **remembered choice** described below: 
+Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and was replaced, in [v9.160.1](../../CHANGELOG.md), by the one header dropdown in the fixed app header:
 
 | Surface | What was added |
 |---------|---------------|
 | PWA Settings → Comms → **Remote Servers** card | Add / edit / delete / test remote server connections |
-| PWA header dropdown | One server selector in the fixed app header, present on every page |
+| PWA header dropdown | One server selector in the fixed app header, present on every page; it also remembers the entry this browser picked (see [Switch between servers (header dropdown)](#switch-between-servers-header-dropdown), below) |
 | REST | `GET/POST /api/servers`, `GET/PUT/DELETE /api/servers/{name}`, `POST /api/servers/{name}/test` |
 | MCP | `server_list`, `server_add`, `server_delete`, `server_test` tools |
 | CLI | `datawatch server {list,add,delete,test}` |
@@ -192,10 +192,10 @@ panels aggregate under **All servers** (`/api/autonomous/prds/aggregated`,
 `/api/cost/aggregated`); the other panels have no aggregated variant.
 
 > **Confirm this on your setup before relying on it.** The in-place switch
-> is recorded under **v9.112.9 — “Switch the page to the selected
-> federated host in the server picker”** (### Fixed, found 2026-11-08) in
-> the [changelog](../../CHANGELOG.md), and its entry records
-> that no live verification had been run when it was recorded. It is
+> is recorded under **v9.112.9 — “Switch the page to the chosen
+> federated host from the server picker”** (### Fixed, “Found
+> 2026-11-08”) in the [changelog](../../CHANGELOG.md), and that entry
+> records that no live verification had been run when it was recorded. It is
 > implemented in this tree's `internal/server/web/app.js` — `selectServer`
 > re-renders the tab you're on, and the **Automata** re-render spans the
 > whole tab, **Automation** sub-tab included — with PWA tests for the
