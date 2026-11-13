@@ -1370,7 +1370,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "request_revision", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
-		s.writeReplyWithFields(w, r, updated, map[string]any{"spec_check": autonomous.SpecCheckFindings(prdSpecText(updated)+"\n"+req.Note)})
+		s.writeReplyWithFields(w, r, updated, map[string]any{"spec_check": autonomous.SpecCheckFindings(prdSpecText(updated) + "\n" + req.Note)})
 	case "edit_task":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
