@@ -5583,6 +5583,8 @@
   "housekeeping_repairs_skipped_line": "Ignoré car risqué — {0} : {1} {2}",
   "housekeeping_repairs_nothing": "Rien trouvé.",
   "housekeeping_repairs_failed": "Impossible de charger les réparations de maintenance : {0}",
+  "housekeeping_questions_card_title": "Questions ouvertes",
+  "housekeeping_questions_help_link": "Aide : la carte « Questions ouvertes » de la maintenance",
   "task_routing_title": "Task routing",
   "task_routing_desc": "Choisissez quel LLM traite et vérifie chaque type de tâche d'un Automate. Le profil actif s'applique aux tâches créées ensuite.",
   "task_routing_enabled": "Router les tâches de l'Automate selon leur type",

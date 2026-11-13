@@ -61,7 +61,7 @@ const OWNED = {
   automations: ['automationFilterBar', 'automationPanel', 'automationReleaseArcCard', 'automationGanttCard'],
   resources: ['automationCapacityCard', 'automationLaneFillCard', 'automationUsageCard'],
   progress: ['progressCard'],
-  housekeeping: ['automationUncommittedWorkCard'],
+  housekeeping: ['automationUncommittedWorkCard', 'automationHkQuestionsCard'],
 };
 
 test('switching changes the body only: each sub-tab holds its own cards and none of the others, an unknown id changes nothing', () => {

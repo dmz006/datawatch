@@ -5583,6 +5583,8 @@
   "housekeeping_repairs_skipped_line": "Als unsicher übersprungen — {0}: {1} {2}",
   "housekeeping_repairs_nothing": "Nichts gefunden.",
   "housekeeping_repairs_failed": "Housekeeping-Reparaturen konnten nicht geladen werden: {0}",
+  "housekeeping_questions_card_title": "Offene Fragen",
+  "housekeeping_questions_help_link": "Hilfe: die Karte „Offene Fragen“ im Housekeeping",
   "task_routing_title": "Task routing",
   "task_routing_desc": "Wählen Sie, welches LLM jede Aufgabenart eines Automaten bearbeitet und prüft. Das aktive Profil gilt für danach erstellte Aufgaben.",
   "task_routing_enabled": "Automaten-Aufgaben nach Aufgabenart weiterleiten",
