@@ -35,6 +35,12 @@ Next to the list the tab loads the capacity and queue card, the list of LLM
 backends and the tag list. Each one has its own request and its own error
 handling, so a failure in one never blanks the list.
 
+The list is served from the daemon's in-memory summary index, so building a
+page reads no record from disk and a repeat of an unchanged list answers
+**304 Not Modified** before any row is built. The Projects tab reads the same
+index for its roll-up, timeline and History, so it also does not slow down as
+Automata gain spec and task text.
+
 ## Load more
 
 When more Automata match than the 50 shown, a **Load more** button appears
@@ -94,6 +100,24 @@ shown whole — what you read is what you can save back, and a save that still
 carries a truncation marker is refused (400) because it is a copy, not the
 original. The complete output text is one more request away through the
 outputs route described in the paging guide.
+
+## Finished Automata and the archive
+
+A completed, shipped or cancelled Automaton keeps a lot it no longer needs at
+hand: its decision log, each task's session history, long task errors, the
+generated memory report and the raw judge text. The daemon moves those parts
+into one archive file (`<data dir>/autonomous/archive/<id>.json`) once the
+Automaton is older than `autonomous.archive.retention_days` (default 30). The
+live record keeps its identity, status, counts, tags, links and every story and
+task with its title and short fields, so the list, counts, cost and History read
+exactly the same. Nothing is deleted; the archive file is read only when asked
+for, so opening an archived row on the tab is as quick as any other.
+
+Archiving is skipped for an Automaton with a running task, an open session, or
+a completed record whose branch is not merged. Set
+`autonomous.archive.enabled` to `false` to stop the daemon archiving by itself.
+The dry-run report, the apply run and the per-Automaton read are described in
+[operations.md](../operations.md) (search "What the archive does").
 
 ## Children
 
@@ -166,7 +190,9 @@ and byte budget each time.
    battery and refreshes when you return. Switching apps on a phone and back
    triggers that one refresh.
 7. **If a page is huge, find the full form.** The only requests that return
-   whole records are `full=1` on the Automata routes and an `/api/sessions`
+   whole records are `full=1` on the Automata routes (and the `--full` flag of
+   `datawatch autonomous list` and `full=true` of the MCP `autonomous_prd_list`
+   tool, which add the same parameter) and an `/api/sessions`
    call with no `view=summary` or `limit`. The web app does not send these.
    A script or an older client that does is the likely cause.
 8. **Clear the saved copy if the tab shows something odd.** The cached list
@@ -195,5 +221,8 @@ release smoke against the smoke daemon.
   the summary list, paging, ETag / 304 and compression.
 - [automation-tab.md](automation-tab.md): the Automation tab that chains
   Automata.
+- [operations.md](../operations.md): the archive settings
+  (`autonomous.archive.retention_days`, `autonomous.archive.enabled`), the
+  dry-run and apply commands and the verified backup.
 - [automata-tags.md](automata-tags.md): tagging Automata; the tag filter works
   on the server too.
