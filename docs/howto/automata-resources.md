@@ -16,6 +16,7 @@ button with a short explanation and a link to the matching guide.
 | Card | What it tells you |
 |---|---|
 | **Usage calculator** (one card at the top) | **Weekly allowance**, **Pace line** and **Burn per day**: one card — a verdict sentence over three graphs of a fixed size. The same three graphs are on the usage page and can be added to a dashboard. See [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs). |
+| **Burn guard** (follows the usage card) | A read-only status line: the guard's enabled state and last check, the rung in force, the projection against the pace line and a **Run now** button. It has no settings controls; a **Burn guard settings** link opens the guard's fields in Settings. See [burn-guard.md](burn-guard.md). |
 | **Lane fill** | One row per lane. Each row shows the lane's **node** (or *Node: not reported*), its state and what it runs. The bar is full when the lane works, half when it waits on a verifier and empty when it is idle. See [automation-lane-fill.md](automation-lane-fill.md). |
 | **Capacity and queue** | The pools and their usage, any usage back-off, budgets and the Automata waiting for capacity. See [automata-capacity.md](automata-capacity.md). |
 | **Automata ship status** | A line saying what shipping is, the push, tag and CI watch steps as tiles with their mode words, the tag format, remote and CI workflow names, and the outcomes. See [automata-checks-and-ship.md](automata-checks-and-ship.md). |
@@ -34,8 +35,11 @@ The infrastructure retries and the Automata checks cards are on the
 ## Settings
 
 This tab has no settings of its own. The lane fill keys are under
-`autonomous.lane_fill.*` and the usage keys under `usage.calculator.*`; both
-are in **Settings → General → Automata**.
+`autonomous.lane_fill.*`, the usage keys under `usage.calculator.*` and the
+burn guard keys under `usage.burn_guard.*`; all are in **Settings → General
+→ Automata**, in the **Usage calculator** and **Usage burn guard** sections. The cards changed only where they are drawn and what they
+show — no new REST, MCP, CLI, comm or chat surface was added, and the
+existing endpoints and verbs are unchanged.
 
 ## See also
 
