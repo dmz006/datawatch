@@ -82,6 +82,9 @@ jobs:
       - name: dockerfile certifi floor check
         run: bash scripts/check-dockerfile-certifi.sh && bash scripts/check-dockerfile-certifi.sh --self-test
 
+      - name: dockerfile soupsieve floor check
+        run: bash scripts/check-dockerfile-soupsieve.sh && bash scripts/check-dockerfile-soupsieve.sh --self-test
+
       - name: go test
         run: go test ./... -count=1 -timeout 12m
 
