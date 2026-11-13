@@ -24,10 +24,11 @@ const (
 	GateTimeout GateStatus = "timeout"
 	// GateSkipped means the project's Makefile has no such target.
 	GateSkipped GateStatus = "skipped"
-	// GateLoadSensitive means the gate failed, then passed when rerun alone.
-	// The failure is recorded as a finding, not as a gate failure. See
-	// RunGateWithRerun.
-	GateLoadSensitive GateStatus = "load_sensitive"
+	// GateIntermittent means the gate failed, then passed on rerun. That is a
+	// real intermittent failure (a race, an unbounded wait, a shared resource
+	// or a timing assumption). It is recorded as a finding, not as a gate
+	// failure, and does not block the merge. See RunGateWithRerun.
+	GateIntermittent GateStatus = "intermittent"
 )
 
 // GateResult records one build, lint or test gate.
@@ -44,7 +45,7 @@ type GateResult struct {
 	// the local golangci-lint version and the version CI pins.
 	Detail string
 	// Finding is the first lines of the failing output of the first run. It
-	// is set only when Status is GateLoadSensitive.
+	// is set only when Status is GateIntermittent.
 	Finding string
 	// Findings are gate-level findings, such as lint_version_mismatch from
 	// the lint gate. They are empty when the gate has none.
@@ -67,7 +68,7 @@ const gateWaitDelay = 5 * time.Second
 // Each gate runs `make <name>` with its own timeout, so one hung gate cannot
 // consume the time of the others. The gates always run in order and every
 // gate is reported, even when an earlier one failed. A failing test gate is
-// rerun once alone (see RunGateWithRerun).
+// rerun once (see RunGateWithRerun).
 //
 // A gate whose target the Makefile does not define is reported as skipped.
 // The make command is resolved by name from PATH.
@@ -75,7 +76,7 @@ func RunGates(ctx context.Context, dir string, timeout time.Duration) []GateResu
 	results := make([]GateResult, 0, len(gateNames))
 	for _, name := range gateNames {
 		if name == rerunGateName {
-			results = append(results, RunGateWithRerun(ctx, dir, name, timeout, RerunOptions{}))
+			results = append(results, RunGateWithRerun(ctx, dir, name, timeout))
 			continue
 		}
 		results = append(results, RunGate(ctx, dir, name, timeout))
@@ -86,12 +87,11 @@ func RunGates(ctx context.Context, dir string, timeout time.Duration) []GateResu
 // RunGate runs one gate, the make target name, in dir with the given timeout
 // and returns its GateResult. A target missing from the Makefile is skipped.
 func RunGate(ctx context.Context, dir, name string, timeout time.Duration) GateResult {
-	return runGate(ctx, dir, name, timeout, nil)
+	return runGate(ctx, dir, name, timeout)
 }
 
-// runGate is RunGate with extra environment variables appended to the
-// inherited environment. A nil extraEnv leaves the environment unchanged.
-func runGate(ctx context.Context, dir, name string, timeout time.Duration, extraEnv []string) GateResult {
+// runGate runs one gate. RunGate and RunGateWithRerun both call it.
+func runGate(ctx context.Context, dir, name string, timeout time.Duration) GateResult {
 	res := GateResult{Name: name}
 	if !makefileHasGateTarget(dir, name) {
 		res.Status = GateSkipped
@@ -118,9 +118,6 @@ func runGate(ctx context.Context, dir, name string, timeout time.Duration, extra
 	// The gate runs in its own process group, so a timeout kills every
 	// process it started, not only make (see gate_kill.go).
 	configureGateProcessGroup(cmd)
-	if extraEnv != nil {
-		cmd.Env = append(os.Environ(), extraEnv...)
-	}
 
 	start := time.Now()
 	runErr := cmd.Run()

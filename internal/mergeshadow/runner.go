@@ -352,14 +352,14 @@ func semverAbove(a, b [3]int) bool {
 	return false
 }
 
-// gateDetail is the Detail recorded on the plan's Gate. A load_sensitive gate
+// gateDetail is the Detail recorded on the plan's Gate. An intermittent gate
 // also carries its finding, the first failing lines, so the plan keeps them.
 func gateDetail(r GateResult) string {
 	detail := r.Detail
 	if r.Name == "test" && r.Status == GateFail {
 		detail = joinDetail(detail, failingTestsDetail(r.Output))
 	}
-	if r.Status != GateLoadSensitive || r.Finding == "" {
+	if r.Status != GateIntermittent || r.Finding == "" {
 		return detail
 	}
 	return joinDetail(detail, "finding: "+strings.ReplaceAll(r.Finding, "\n", " | "))
