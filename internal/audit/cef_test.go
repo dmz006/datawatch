@@ -368,7 +368,7 @@ func TestSessionEndReap_CEFCommandEscape(t *testing.T) {
 		Timestamp: time.Now(),
 		Actor:     "autonomous",
 		Action:    "session_end_reap",
-		Details:   map[string]any{"commands": `back\slash =eq line1
+		Details: map[string]any{"commands": `back\slash =eq line1
 line2`},
 	}
 	line := FormatCEFLine(e)

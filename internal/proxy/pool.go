@@ -38,14 +38,14 @@ func DefaultPoolConfig() PoolConfig {
 
 // ServerHealth tracks a single remote server's health state.
 type ServerHealth struct {
-	Name          string    `json:"name"`
-	URL           string    `json:"url"`
-	Healthy       bool      `json:"healthy"`
-	LastCheck     time.Time `json:"last_check"`
-	LastError     string    `json:"last_error,omitempty"`
-	ConsecFails   int       `json:"consec_fails"`
-	BreakerOpen   bool      `json:"breaker_open"`
-	BreakerUntil  time.Time `json:"breaker_until,omitempty"`
+	Name         string    `json:"name"`
+	URL          string    `json:"url"`
+	Healthy      bool      `json:"healthy"`
+	LastCheck    time.Time `json:"last_check"`
+	LastError    string    `json:"last_error,omitempty"`
+	ConsecFails  int       `json:"consec_fails"`
+	BreakerOpen  bool      `json:"breaker_open"`
+	BreakerUntil time.Time `json:"breaker_until,omitempty"`
 }
 
 // Pool manages HTTP clients and circuit breakers for remote servers.
@@ -57,7 +57,7 @@ type Pool struct {
 	health  map[string]*ServerHealth // name → health
 	clients map[string]*http.Client  // name → persistent client
 
-	stopCh chan struct{}
+	stopCh   chan struct{}
 	stopOnce sync.Once
 }
 

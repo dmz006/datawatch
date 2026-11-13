@@ -25,8 +25,8 @@ type SignalCLIBackend struct {
 	stdin  io.WriteCloser
 	stdout *bufio.Scanner
 
-	pendingMu sync.Mutex       // guards pending map
-	writeMu   sync.Mutex       // guards stdin writes
+	pendingMu sync.Mutex // guards pending map
+	writeMu   sync.Mutex // guards stdin writes
 	idCtr     int64
 	pending   map[int]chan *JSONRPCResponse
 

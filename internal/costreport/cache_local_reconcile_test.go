@@ -81,10 +81,10 @@ func TestBuild_ReconcilesAgainstReadings(t *testing.T) {
 	d1 := fixedDay(time.October, 6, 0)
 	d2 := fixedDay(time.October, 7, 0)
 	src := &fakeSource{result: &SourceResult{Records: []Record{
-		{Backend: "claude-code", At: d1.Add(3 * time.Hour), TokensIn: 1000},          // $0.01
-		{Backend: "claude-code", At: d2.Add(3 * time.Hour), TokensOut: 1000},         // $0.02
+		{Backend: "claude-code", At: d1.Add(3 * time.Hour), TokensIn: 1000},    // $0.01
+		{Backend: "claude-code", At: d2.Add(3 * time.Hour), TokensOut: 1000},   // $0.02
 		{Backend: "claude-code", At: d2.Add(4 * time.Hour), CacheRead: 100000}, // $0.10
-		{Backend: "ollama", At: d2.Add(5 * time.Hour), TokensIn: 5000},               // no rate: left out
+		{Backend: "ollama", At: d2.Add(5 * time.Hour), TokensIn: 5000},         // no rate: left out
 	}}}
 	req := Request{GroupBy: GroupByBackend, Usage: &UsageInput{PaceLine: 3, Days: []UsageDay{
 		{Start: d1, End: d1.Add(day), Points: 1},
