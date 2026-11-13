@@ -7542,7 +7542,19 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 /* Usage page: a verdict sentence above small fixed-size cards. The cards never
    stretch on a wide screen: fixed width and height, with max-width on narrow ones. */
 .usage-verdict-sentence { font-size: 14px; font-weight: 600; line-height: 1.4; max-width: 720px; }
-.usage-cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.usage-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: start; }
+.usage-cards .usage-card { width: 100%; }
+@media (max-width: 600px) {
+  .usage-cards { grid-template-columns: 1fr; }
+}
+.usage-calc-frame {
+  box-sizing: border-box;
+  background: var(--bg2, #1a1d27);
+  border: 1px solid var(--border, #333);
+  border-radius: var(--radius, 12px);
+  padding: 12px 14px;
+  overflow: hidden;
+}
 .usage-card { box-sizing: border-box; width: 220px; height: 190px; max-width: 100%; padding: 8px 10px; overflow: hidden; display: flex; flex-direction: column; gap: 4px; font-size: 12px; background: var(--bg2, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; }
 .usage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .usage-card-title { font-weight: 600; font-size: 13px; }

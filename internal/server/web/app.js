@@ -34125,10 +34125,13 @@ function _usageCalcWrite(method, path, body) {
     });
 }
 
-// The usage page body: one plain-language verdict sentence above up to three small
-// cards (weekly allowance, pace line, burn per day). The reading and extra credit
-// forms live in Settings; this page only reads the advice body and draws it. A card
-// whose data is off, empty or never set is not drawn.
+// The usage page body: one card. The card head holds the title, the "?" help
+// entry and the Refresh button; the body holds the plain-language verdict
+// sentence above up to three compact graph tiles (weekly allowance, pace line,
+// burn per day) in a responsive grid, one column on phones. The reading and
+// extra credit forms live in Settings; this page only reads the advice body and
+// draws it. A tile whose data is off, empty or never set is not drawn. The burn
+// guard has its own card and is not drawn inside this one.
 // opts: error, loading.
 const USAGE_CALC_DOCS_HREF = '/diagrams.html#docs/howto/usage-calculator.md';
 window.usageCalcHelpToggle = function (btn) {
@@ -34250,8 +34253,7 @@ window.usageCalcFrameHtml = function (body, opts) {
     if (row) parts.push(row);
   }
   parts.push(`<div class="usage-settings-link" style="font-size:12px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(t('usage_page_settings_link'))}</a></div>`);
-  parts.push(`<div id="burnGuardCard">${window.burnGuardCardHtml(window._burnGuard && window._burnGuard.status, window._burnGuard && window._burnGuard.config, { error: window._burnGuard && window._burnGuard.error, message: window._burnGuard && window._burnGuard.message })}</div>`);
-  return `<div class="usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
+  return `<div class="card usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
 };
 
 function _usageCalcVerdictHtml(res, active) {
