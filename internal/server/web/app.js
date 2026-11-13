@@ -42409,11 +42409,19 @@ const COST_CHARTS_DOC_HREF = '/diagrams.html#docs/howto/cost-report.md';
 const COST_CHARTS_GROUPS = ['project', 'automation', 'automaton'];
 const COST_CHARTS_WINDOWS = ['7d', '14d', '30d', '8w'];
 const COST_CHARTS_METRICS = ['tokens', 'money'];
-// Bounds: lines drawn per chart, points per line (neighbouring buckets are
-// summed past this), table rows per card, and Events entries kept.
-const COST_CHARTS_MAX_LINES = 6;
+// Bounds and the Top-N control. Points per line are fixed: neighbouring
+// buckets are summed past COST_CHARTS_MAX_POINTS. How many series a card
+// draws is the operator's choice instead of a fixed six: the control offers
+// COST_CHARTS_TOPN_OPTIONS (0 is "all"), default COST_CHARTS_TOPN_DEFAULT.
+// Whatever the control leaves out of the drawing is folded into the one
+// "Other" series (key COST_CHARTS_OTHER_KEY), whose total carries them, so
+// nothing is dropped. A series the operator hides stays named in the
+// legend, and costChartsKeyLabel resolves an Automaton id back to its
+// title in legends, tooltips and table rows.
 const COST_CHARTS_MAX_POINTS = 60;
-const COST_CHARTS_MAX_ROWS = 8;
+const COST_CHARTS_TOPN_OPTIONS = [5, 10, 20, 0];
+const COST_CHARTS_TOPN_DEFAULT = 10;
+const COST_CHARTS_OTHER_KEY = '__cost_charts_other__';
 const COST_CHARTS_COLOURS = ['#7c3aed', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#64748b'];
 const COST_CHARTS_VIEWS = ['cost', 'tools', 'failures', 'report'];
 // Locale keys by choice, listed whole so each can be found by search.
@@ -42426,6 +42434,8 @@ const COST_CHARTS_CARD_IDS = {
 
 const _costCharts = {
   group: 'project', window: '7d', metric: 'tokens',
+  topN: COST_CHARTS_TOPN_DEFAULT,   // how many series each card draws (0 = all)
+  hidden: { cost: {}, tools: {}, failures: {}, report: {} },   // per-card hidden series keys
   loading: false, loaded: false, gen: 0,
   data: null,   // { cost, tools, failures }, each { body } | { error } | { unsupported }
   events: [],   // the Events entries of the cards that are not shown
@@ -42439,6 +42449,34 @@ function _ccNum(n) {
   return String(Math.round(n));
 }
 function _ccMoney(n) { return (Number(n) || 0).toFixed(2); }
+
+// _automataTitle finds the title of the Automaton an id names in the
+// Automata list the page already holds ('' when unknown). No fetch is made.
+function _automataTitle(id) {
+  if (typeof _automataState !== 'undefined' && _automataState && Array.isArray(_automataState.allPrds)) {
+    const prd = _automataState.allPrds.find(p => p && p.id === id);
+    if (prd && typeof prd.title === 'string' && prd.title.trim()) return prd.title;
+  }
+  return '';
+}
+
+// costChartsKeyLabel names a series in operator-facing text: the readable
+// label the server sent, else the Automaton's title, else the raw key. An
+// id only ever appears where no title is known. Plain strings (failure
+// categories) pass through untouched.
+function costChartsKeyLabel(entry) {
+  if (entry && typeof entry === 'object') {
+    const key = String(entry.key != null ? entry.key : '');
+    const label = typeof entry.label === 'string' ? entry.label.trim() : '';
+    if (key === COST_CHARTS_OTHER_KEY) return t('cost_charts_other');
+    if (label && label !== key) return label;
+    const title = _automataTitle(key);
+    if (title) return title;
+    return key;
+  }
+  return String(entry == null ? '' : entry);
+}
+window.costChartsKeyLabel = costChartsKeyLabel;
 
 // _ccReduce sums neighbouring values so a line never has more than max points.
 function _ccReduce(values, max) {
@@ -42489,17 +42527,35 @@ function _ccFigure(units, unit) {
   return Number(unit === 'dollars' ? u.dollars : u.points) || 0;
 }
 
-// costChartsLines turns a series-shaped body into the lines to draw: one per
-// group, the value of each bucket by pick(point), the largest totals first,
-// at most COST_CHARTS_MAX_LINES, each with at most COST_CHARTS_MAX_POINTS.
-function costChartsLines(body, pick, keep) {
+// costChartsLines turns a series-shaped body into the lines to draw: one
+// per group, the value of each bucket by pick(point), the largest totals
+// first. Series the operator hid (opts.hidden[view]) are left out, the
+// Top-N choice (opts.topN, 0 is all) bounds the rest and the remainder is
+// folded into the one "Other" line so its total is still drawn. Each line
+// has at most COST_CHARTS_MAX_POINTS.
+function costChartsLines(body, pick, keep, opts) {
+  opts = opts || {};
   const groups = (body && Array.isArray(body.groups)) ? body.groups : [];
-  const all = groups.filter(g => !keep || keep(g)).map(g => {
-    const raw = (Array.isArray(g.points) ? g.points : []).map(p => Number(pick(p)) || 0);
-    return { key: String(g.key), total: raw.reduce((a, b) => a + b, 0), values: _ccReduce(raw, COST_CHARTS_MAX_POINTS) };
-  });
+  const hidden = (opts.hidden && opts.hidden.cost) || (opts.hidden && opts.hidden.tools) || {};
+  const topN = Number(opts.topN) || 0;
+  const entry = g => ({ key: String(g.key), label: typeof g.label === 'string' ? g.label : '' });
+  const hiddenLines = groups.filter(g => hidden[String(g.key)]).map(entry);
+  const all = groups
+    .filter(g => !hidden[String(g.key)])
+    .filter(g => !keep || keep(g))
+    .map(g => {
+      const raw = (Array.isArray(g.points) ? g.points : []).map(p => Number(pick(p)) || 0);
+      return Object.assign(entry(g), { total: raw.reduce((a, b) => a + b, 0), values: _ccReduce(raw, COST_CHARTS_MAX_POINTS) });
+    });
   all.sort((a, b) => b.total - a.total);
-  return { lines: all.slice(0, COST_CHARTS_MAX_LINES), total: all.length };
+  const kept = topN > 0 ? all.slice(0, topN) : all.slice();
+  const rest = topN > 0 ? all.slice(topN) : [];
+  const lines = kept.slice();
+  if (rest.length) {
+    lines.push({ key: COST_CHARTS_OTHER_KEY, label: '', total: rest.reduce((a, l) => a + l.total, 0),
+      values: rest[0].values.map((_, i) => rest.reduce((a, l) => a + (l.values[i] || 0), 0)) });
+  }
+  return { lines, hiddenLines, total: all.length, folded: rest.length };
 }
 
 // _costChartsLinesSVG draws lines on a shared time axis, extending
@@ -42531,7 +42587,7 @@ function _costChartsLinesSVG(spec) {
   spec.lines.forEach((l, li) => {
     const colour = COST_CHARTS_COLOURS[li % COST_CHARTS_COLOURS.length];
     const pts = l.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-    const tip = `${l.key} · ${fmt(l.total)}`;
+    const tip = `${costChartsKeyLabel(l)} · ${fmt(l.total)}`;
     svg += `<polyline fill="none" stroke="${colour}" stroke-width="1.5" points="${pts}"><title>${escHtml(tip)}</title></polyline>`;
     const last = l.values.length - 1;
     if (last >= 0) svg += `<circle cx="${x(last).toFixed(1)}" cy="${y(l.values[last]).toFixed(1)}" r="2.5" fill="${colour}"><title>${escHtml(tip)}</title></circle>`;
@@ -42576,43 +42632,62 @@ function _costChartsBarsSVG(spec) {
   return `<svg class="cost-charts-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('cost_charts_chart_aria', [spec.axis]))}" style="display:block;margin-top:4px;">${svg}</svg>`;
 }
 
-function _ccLegend(keys) {
-  return `<div class="cost-charts-legend" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--text2);margin-top:2px;">${keys.map((k, i) =>
-    `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${COST_CHARTS_COLOURS[i % COST_CHARTS_COLOURS.length]};"></span>${escHtml(String(k))}</span>`).join('')}</div>`;
+// _ccLegend names the series. In a toggleable card (view set) every named
+// series is a tile that shows or hides it in this card's drawing; a hidden
+// tile is struck through but keeps its name, and the Other series is a
+// plain entry because its parts are already in the drawing.
+function _ccLegend(entries, view, hidden) {
+  const hiddenMap = view && hidden ? (hidden[view] || {}) : null;
+  return `<div class="cost-charts-legend" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--text2);margin-top:2px;">${entries.map((e, i) => {
+    const key = e && typeof e === 'object' && e.key != null ? String(e.key) : String(e);
+    const swatch = `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${COST_CHARTS_COLOURS[i % COST_CHARTS_COLOURS.length]};"></span>`;
+    if (view && key !== COST_CHARTS_OTHER_KEY) {
+      const off = hiddenMap ? hiddenMap[key] === true : false;
+      return `<button type="button" class="cost-charts-legend-tile${off ? ' cost-charts-legend-tile-off' : ''}" aria-pressed="${off ? 'false' : 'true'}" title="${escHtml(t('cost_charts_legend_toggle'))}" onclick="window.costChartsToggleSeries('${view}', '${escHtml(key)}')">${swatch}<span>${escHtml(costChartsKeyLabel(e))}</span></button>`;
+    }
+    return `<span>${swatch}${escHtml(costChartsKeyLabel(e))}</span>`;
+  }).join('')}</div>`;
 }
 
 function _ccBoundedNote(shown, total) {
   return total > shown ? `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_groups', [shown, total]))}</div>` : '';
 }
 
-function _ccLineChart(buckets, picked, axis, money) {
-  return `<div class="cost-charts-chart">${_costChartsLinesSVG({ buckets, lines: picked.lines, axis, money })}${_ccLegend(picked.lines.map(l => l.key))}${_ccBoundedNote(picked.lines.length, picked.total)}</div>`;
+function _ccLineChart(buckets, picked, axis, money, view, hidden) {
+  const shown = picked.lines.length - (picked.folded ? 1 : 0);
+  // The legend lists the drawn lines and every hidden series, so a hidden
+  // series keeps its name (struck through) even though it is not drawn.
+  const legendEntries = picked.lines.concat(picked.hiddenLines || []);
+  return `<div class="cost-charts-chart">${_costChartsLinesSVG({ buckets, lines: picked.lines, axis, money })}${_ccLegend(legendEntries, view, hidden)}${_ccBoundedNote(shown, picked.total)}</div>`;
 }
 
 // _ccCostBody draws cost over time. Tokens are one chart. Money is one chart
 // per billing unit, each axis labelled with its unit and billing mode, so
 // dollars and points are never drawn on one axis or added together.
-function _ccCostBody(series, metric) {
+function _ccCostBody(series, metric, opts) {
+  opts = opts || {};
+  const hidden = opts.hidden || {};
   const buckets = Array.isArray(series.buckets) ? series.buckets : [];
   const units = costChartsMoneyUnits(series);
   let html = '';
   if (metric === 'money' && units.length) {
     units.forEach(u => {
       const picked = costChartsLines(series, p => _ccFigure(p.units, u.unit),
-        g => Array.isArray(g.unit_totals) && g.unit_totals.some(x => x && x.unit === u.unit));
-      html += _ccLineChart(buckets, picked, costChartsUnitLabel(u.unit, u.billing_mode), true);
+        g => Array.isArray(g.unit_totals) && g.unit_totals.some(x => x && x.unit === u.unit), opts);
+      html += _ccLineChart(buckets, picked, costChartsUnitLabel(u.unit, u.billing_mode), true, 'cost', hidden);
     });
   } else {
-    html += _ccLineChart(buckets, costChartsLines(series, p => p.tokens), costChartsUnitLabel(null, ''), false);
+    html += _ccLineChart(buckets, costChartsLines(series, p => p.tokens, null, opts), costChartsUnitLabel(null, ''), false, 'cost', hidden);
     if (metric === 'money') html += `<div class="cost-charts-money-off" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_money_off'))}</div>`;
   }
   if (series.unknown_spend_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(series.unknown_spend_note)}</div>`;
   return html;
 }
 
-function _ccToolsBody(body) {
+function _ccToolsBody(body, opts) {
+  opts = opts || {};
   const buckets = Array.isArray(body.buckets) ? body.buckets : [];
-  let html = _ccLineChart(buckets, costChartsLines(body, p => p.tool_calls), t('cost_charts_unit_tool_calls'), false);
+  let html = _ccLineChart(buckets, costChartsLines(body, p => p.tool_calls, null, opts), t('cost_charts_unit_tool_calls'), false, 'tools', opts.hidden);
   html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(body.tool_names_note || t('cost_charts_tool_names_note'))}</div>`;
   if (body.unknown_spend_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(body.unknown_spend_note)}</div>`;
   return html;
@@ -42642,17 +42717,28 @@ function _ccTable(head, rows, total) {
   return `<table class="cost-charts-table" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;"><thead><tr style="color:var(--text2);">${th}</tr></thead><tbody>${rows.map(tr).join('')}</tbody>${foot}</table>`;
 }
 
-function _ccFailuresBody(f) {
+function _ccFailuresBody(f, opts) {
+  opts = opts || {};
   const stacks = costChartsWeekStacks(f);
   let html = `<div class="cost-charts-chart">${_costChartsBarsSVG({ weeks: stacks.weeks, categories: stacks.categories, axis: t('cost_charts_unit_attempts') })}${_ccLegend(stacks.categories)}</div>`;
-  const groups = Array.isArray(f.groups) ? f.groups : [];
-  const rows = groups.slice(0, COST_CHARTS_MAX_ROWS).map(g => {
-    const top = Array.isArray(g.categories) && g.categories[0] ? `${g.categories[0].category} (${g.categories[0].attempts})` : '';
-    return [escHtml(String(g.label || g.key)), String(g.attempts || 0), String(g.tasks || 0), String(g.retries || 0), escHtml(top)];
-  });
+  const groups = (Array.isArray(f.groups) ? f.groups : []).map(g => ({
+    key: String(g.key), label: typeof g.label === 'string' ? g.label : '',
+    attempts: Number(g.attempts) || 0, tasks: Number(g.tasks) || 0, retries: Number(g.retries) || 0,
+    top: Array.isArray(g.categories) && g.categories[0] ? `${g.categories[0].category} (${g.categories[0].attempts})` : '' }));
+  const hidden = (opts.hidden && opts.hidden.failures) || {};
+  const visible = groups.filter(g => !hidden[g.key]);
+  const topN = Number(opts.topN) || 0;
+  const kept = topN > 0 ? visible.slice(0, topN) : visible.slice();
+  const rest = topN > 0 ? visible.slice(topN) : [];
+  const rows = kept.map(g => [escHtml(costChartsKeyLabel(g)), String(g.attempts), String(g.tasks), String(g.retries), escHtml(g.top)]);
+  if (rest.length) {
+    rows.push([escHtml(t('cost_charts_other')),
+      String(rest.reduce((a, g) => a + g.attempts, 0)), String(rest.reduce((a, g) => a + g.tasks, 0)), String(rest.reduce((a, g) => a + g.retries, 0)),
+      escHtml(rest.map(g => costChartsKeyLabel(g)).join(', '))]);
+  }
   html += _ccTable([t('cost_charts_col_group'), t('cost_charts_col_attempts'), t('cost_charts_col_tasks'), t('cost_charts_col_retries'), t('cost_charts_col_top_category')], rows,
     [escHtml(t('cost_charts_total')), String(f.total_attempts || 0), String(f.total_tasks || 0), String(f.total_retries || 0), '']);
-  if (groups.length > rows.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [rows.length, groups.length]))}</div>`;
+  if (visible.length > kept.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [kept.length, visible.length]))}</div>`;
   if (f.retry_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(f.retry_note)}</div>`;
   return html;
 }
@@ -42681,19 +42767,50 @@ function costChartsReportRows(data) {
   return list;
 }
 
-function _ccReportBody(data) {
-  const all = costChartsReportRows(data);
-  const cost = data.cost && data.cost.body, tools = data.tools && data.tools.body, fails = data.failures && data.failures.body;
+// _ccMoneyCell renders the money of one row or total, one line per unit so
+// dollars and points are never added together.
+function _ccMoneyCell(units) {
+  if (!units || !units.length) return '—';
+  return units.map(u => `<div>${escHtml(costChartsUnitLabel(u.unit, u.billing_mode))}: ${escHtml(_ccMoney(u.unit === 'dollars' ? u.dollars : u.points))}</div>`).join('');
+}
+
+// _ccSumMoney adds the money of several rows per unit and billing mode,
+// for the Other row of the report table.
+function _ccSumMoney(rows) {
+  const map = {};
+  rows.forEach(r => (r.money || []).forEach(u => {
+    if (!u) return;
+    const k = u.unit + '\u0000' + (u.billing_mode || '');
+    const e = map[k] || (map[k] = { unit: u.unit, billing_mode: u.billing_mode, dollars: 0, points: 0 });
+    if (u.unit === 'dollars') e.dollars += Number(u.dollars) || 0;
+    else e.points += Number(u.points) || 0;
+  }));
+  return Object.values(map).filter(u => (u.unit === 'dollars' && u.dollars > 0) || (u.unit === 'points' && u.points > 0));
+}
+
+function _ccReportBody(data, opts) {
+  opts = opts || {};
   const dash = '—';
-  const moneyCell = r => r.money.map(u => `<div>${escHtml(costChartsUnitLabel(u.unit, u.billing_mode))}: ${escHtml(_ccMoney(u.unit === 'dollars' ? u.dollars : u.points))}</div>`).join('') || dash;
   const num = v => (v == null ? dash : escHtml(_ccNum(v)));
-  const rows = all.slice(0, COST_CHARTS_MAX_ROWS).map(r => [
-    escHtml(r.label || r.key), num(r.tokens), moneyCell(r), num(r.calls), num(r.attempts), num(r.retries)]);
-  const totalMoney = cost ? costChartsMoneyUnits(cost).map(u => `<div>${escHtml(costChartsUnitLabel(u.unit, u.billing_mode))}: ${escHtml(_ccMoney(u.unit === 'dollars' ? u.dollars : u.points))}</div>`).join('') || dash : dash;
+  const hidden = (opts.hidden && opts.hidden.report) || {};
+  const visible = costChartsReportRows(data).filter(r => !hidden[r.key]);
+  const topN = Number(opts.topN) || 0;
+  const kept = topN > 0 ? visible.slice(0, topN) : visible.slice();
+  const rest = topN > 0 ? visible.slice(topN) : [];
+  const rows = kept.map(r => [escHtml(costChartsKeyLabel(r)), num(r.tokens), _ccMoneyCell(r.money), num(r.calls), num(r.attempts), num(r.retries)]);
+  if (rest.length) {
+    const sumCell = k => {
+      const vs = rest.map(r => r[k]).filter(v => v != null);
+      return vs.length ? escHtml(_ccNum(vs.reduce((a, v) => a + v, 0))) : dash;
+    };
+    rows.push([escHtml(t('cost_charts_other')), sumCell('tokens'), _ccMoneyCell(_ccSumMoney(rest)), sumCell('calls'), sumCell('attempts'), sumCell('retries')]);
+  }
+  const cost = data.cost && data.cost.body, tools = data.tools && data.tools.body, fails = data.failures && data.failures.body;
+  const totalMoney = cost ? _ccMoneyCell(costChartsMoneyUnits(cost)) : dash;
   const sumTokens = cost ? (cost.groups || []).reduce((a, g) => a + (Number(g.tokens) || 0), 0) : null;
   const total = [escHtml(t('cost_charts_total')), num(sumTokens), totalMoney, num(tools ? tools.total_tool_calls : null), num(fails ? fails.total_attempts : null), num(fails ? fails.total_retries : null)];
   let html = _ccTable([t('cost_charts_col_group'), t('cost_charts_col_tokens'), t('cost_charts_col_money'), t('cost_charts_col_tool_calls'), t('cost_charts_col_attempts'), t('cost_charts_col_retries')], rows, total);
-  if (all.length > rows.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [rows.length, all.length]))}</div>`;
+  if (visible.length > kept.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [kept.length, visible.length]))}</div>`;
   return html;
 }
 
@@ -42761,17 +42878,31 @@ function costChartsHelpLink() {
   return ` <a href="${COST_CHARTS_DOC_HREF}" target="_blank" rel="noopener" class="docs-link cost-charts-help" title="${escHtml(tip)}" aria-label="${escHtml(t('cost_charts_help_label'))}" onclick="event.stopPropagation()" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:4px;">?</a>`;
 }
 
-function _ccCardHtml(view, card, data, metric) {
+// _ccCardControlsHtml is the compact selector row of one card: grouping,
+// period, metric and the Top-N series count. Every select writes the shared
+// state and repaints, so the rows of the cards never disagree.
+function _ccCardControlsHtml(view, st) {
+  const iid = suffix => 'costCharts' + view.charAt(0).toUpperCase() + view.slice(1) + suffix;
+  const opt = (v, cur, label) => `<option value="${escHtml(String(v))}"${String(v) === String(cur) ? ' selected' : ''}>${escHtml(String(label))}</option>`;
+  const topnCur = Number(st.topN) || 0;
+  return `<label style="display:inline-flex;align-items:center;gap:4px;">${escHtml(t('cost_charts_label_group'))} <select id="${iid('Group')}" onchange="window.costChartsSetGroup(this.value)" style="font-size:12px;">${COST_CHARTS_GROUPS.map(g => opt(g, st.group, t(COST_CHARTS_GROUP_KEYS[g]))).join('')}</select></label>`
+    + `<label style="display:inline-flex;align-items:center;gap:4px;">${escHtml(t('cost_charts_label_window'))} <select id="${iid('Window')}" onchange="window.costChartsSetWindow(this.value)" style="font-size:12px;">${COST_CHARTS_WINDOWS.map(w => opt(w, st.window, w)).join('')}</select></label>`
+    + `<label style="display:inline-flex;align-items:center;gap:4px;">${escHtml(t('cost_charts_label_metric'))} <select id="${iid('Metric')}" onchange="window.costChartsSetMetric(this.value)" style="font-size:12px;">${COST_CHARTS_METRICS.map(m => opt(m, st.metric, t(COST_CHARTS_METRIC_KEYS[m]))).join('')}</select></label>`
+    + `<label style="display:inline-flex;align-items:center;gap:4px;">${escHtml(t('cost_charts_topn_label'))} <select id="${iid('Series')}" onchange="window.costChartsSetTopN(this.value)" style="font-size:12px;">${COST_CHARTS_TOPN_OPTIONS.map(o => opt(o === 0 ? 'all' : String(o), topnCur, o === 0 ? t('cost_charts_topn_all') : String(o))).join('')}</select></label>`;
+}
+
+function _ccCardHtml(view, card, data, st) {
   let body = '';
-  if (view === 'cost') body = _ccCostBody(data.cost.body, metric);
-  else if (view === 'tools') body = _ccToolsBody(data.tools.body);
-  else if (view === 'failures') body = _ccFailuresBody(data.failures.body);
-  else body = _ccReportBody(data);
+  if (view === 'cost') body = _ccCostBody(data.cost.body, st.metric, st);
+  else if (view === 'tools') body = _ccToolsBody(data.tools.body, st);
+  else if (view === 'failures') body = _ccFailuresBody(data.failures.body, st);
+  else body = _ccReportBody(data, st);
   const sep = ' · ';
   return `<div id="${COST_CHARTS_CARD_IDS[view]}" class="cost-charts-card prd-capacity-slot" data-view="${view}" data-state="${card.state}" style="margin:6px 0 0;">`
-    + `<div class="cap-title">${escHtml(_ccTitle(view))}${costChartsHelpLink()}</div>`
+    + `<div class="cap-title card-head">${escHtml(_ccTitle(view))}${costChartsHelpLink()}</div>`
     + `<div class="cost-charts-purpose" style="font-size:12px;color:var(--text2);">${escHtml(_ccPurpose(view))}</div>`
     + `<div class="cost-charts-status" style="font-size:12px;margin-top:2px;"><strong>${escHtml(t('cost_charts_label_state'))}:</strong> ${escHtml(_ccStateText(card.state))}${sep}<strong>${escHtml(t('cost_charts_label_reason'))}:</strong> ${escHtml(_ccResolve(card.reason))}${sep}<strong>${escHtml(t('cost_charts_label_next'))}:</strong> ${escHtml(_ccResolve(card.next))}</div>`
+    + `<div class="cost-charts-controls" style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px;margin-top:4px;">${_ccCardControlsHtml(view, st)}</div>`
     + body
     + `</div>`;
 }
@@ -42792,13 +42923,14 @@ function _ccControlsHtml(st, hidden) {
 // costChartsCardsHtml is the pure renderer for the whole area: the controls,
 // then each card that has data. data is null while the first load runs.
 window.costChartsCardsHtml = function(data, opts) {
-  const st = Object.assign({ group: 'project', window: '7d', metric: 'tokens' }, opts || {});
+  const st = Object.assign({ group: 'project', window: '7d', metric: 'tokens', topN: COST_CHARTS_TOPN_DEFAULT,
+    hidden: { cost: {}, tools: {}, failures: {}, report: {} } }, opts || {});
   if (!data) return `${_ccControlsHtml(st, 0)}<div class="cost-charts-loading" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_charts_loading'))}</div>`;
   const model = costChartsModel(data, st);
   let html = '';
   let hidden = 0;
   COST_CHARTS_VIEWS.forEach(v => {
-    if (model[v].state === 'shown') html += _ccCardHtml(v, model[v], data, st.metric);
+    if (model[v].state === 'shown') html += _ccCardHtml(v, model[v], data, st);
     else hidden++;
   });
   return _ccControlsHtml(st, hidden) + html;
@@ -42893,6 +43025,27 @@ window.costChartsSetMetric = function(m) {
     _costCharts.events = costChartsEventEntries(costChartsModel(_costCharts.data, _costCharts), _costCharts, new Date().toISOString());
     _costChartsPaint();
   }
+};
+// The Top-N choice only changes how many of the loaded series each card
+// draws ('all' is 0): the remainder folds into the Other line or row, no
+// new request.
+window.costChartsSetTopN = function(v) {
+  const topN = v === 'all' ? 0 : (Number(v) || 0);
+  if (COST_CHARTS_TOPN_OPTIONS.indexOf(topN) < 0 || topN === (_costCharts.topN || 0)) return;
+  _costCharts.topN = topN;
+  if (_costCharts.data) _costChartsPaint();
+};
+// Showing or hiding one series keeps it in the loaded data and named in the
+// legend (its tile is struck through) and drops it from this card's drawing
+// only: no new request.
+window.costChartsToggleSeries = function(view, key) {
+  if (COST_CHARTS_VIEWS.indexOf(view) < 0) return;
+  const k = String(key || '');
+  if (!k || k === COST_CHARTS_OTHER_KEY) return;
+  if (!_costCharts.hidden) _costCharts.hidden = { cost: {}, tools: {}, failures: {}, report: {} };
+  const h = _costCharts.hidden[view] || (_costCharts.hidden[view] = {});
+  h[k] = !h[k];
+  if (_costCharts.data) _costChartsPaint();
 };
 window._costChartsState = _costCharts;
 

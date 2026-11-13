@@ -5640,5 +5640,9 @@
   "automaton_project_saved": "プロジェクトのリンクを保存しました",
   "automaton_project_error": "プロジェクトを設定できませんでした",
   "projects_page_without_project": "プロジェクトのないオートマトン",
-  "projects_page_without_project_hint": "オートマトンの詳細でプロジェクトのリンクを設定すると、ここから移動します。"
+  "projects_page_without_project_hint": "オートマトンの詳細でプロジェクトのリンクを設定すると、ここから移動します。",
+  "cost_charts_other": "その他",
+  "cost_charts_topn_label": "シリーズ",
+  "cost_charts_topn_all": "すべて",
+  "cost_charts_legend_toggle": "このシリーズを表示／非表示にする"
 }

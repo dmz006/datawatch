@@ -8070,6 +8070,26 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .task-routing-table td::before { content: attr(data-label); display: block; font-size: 10px; color: var(--text2); }
   .task-routing-select { width: 100%; margin-bottom: 2px; }
 }
+/* Cost report chart cards: legend series tiles (show/hide one series in this card). */
+.cost-charts-legend-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.cost-charts-legend-tile:hover { border-color: var(--border); background: var(--bg2); }
+.cost-charts-legend-tile:focus-visible { outline: 2px solid var(--border); }
+.cost-charts-legend-tile-off { opacity: 0.5; }
+.cost-charts-legend-tile-off span:last-child { text-decoration: line-through; }
+
 @media (max-width: 520px) {
   .prd-task-routing-col { display: none; }
   .prd-task-routing-line { display: block; }

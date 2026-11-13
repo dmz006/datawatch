@@ -5640,5 +5640,9 @@
   "automaton_project_saved": "Project link saved",
   "automaton_project_error": "Could not set the project",
   "projects_page_without_project": "Automata without a project",
-  "projects_page_without_project_hint": "Set a project link from the Automaton detail to place one here."
+  "projects_page_without_project_hint": "Set a project link from the Automaton detail to place one here.",
+  "cost_charts_other": "Other",
+  "cost_charts_topn_label": "Series",
+  "cost_charts_topn_all": "All",
+  "cost_charts_legend_toggle": "Show or hide this series"
 }
