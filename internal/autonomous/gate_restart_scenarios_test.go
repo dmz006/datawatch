@@ -219,7 +219,6 @@ func TestGateSurvivesRestart(t *testing.T) {
 
 		// The restart: all in-memory state is gone; a fresh Manager reads the
 		// same data directory and run root.
-		m1 = nil
 		m2 := s.manager(t)
 		prd2, task2 := s.load(t, m2)
 		m2.resetInProgressTasksForResume(prd2)
@@ -270,7 +269,6 @@ func TestGateSurvivesRestart(t *testing.T) {
 		})
 		waitUntil(t, "the gate process to be gone", func() bool { return !gateRecordAlive(recBefore) })
 
-		m1 = nil
 		m2 := s.manager(t)
 		prd2, task2 := s.load(t, m2)
 		m2.resetInProgressTasksForResume(prd2)
