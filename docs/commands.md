@@ -1449,6 +1449,8 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `session tags <session-id> --tags <id1,id2,...>` | Replace the tags a session carries itself (an empty `--tags` value clears them). Inherited tags come from the Automaton and are not set here; `POST /api/sessions/tags` |
 | `attention` | List the Automata that need attention: the attention statuses (`blocked`, `needs_review`, `paused` by default) plus any with a task held for review; `GET /api/autonomous/attention`. When the completion review blocked an Automaton, its item carries `rules_review_outcome`: the CLI and chat print an action line (`fix task created`, `fix task failed`, `retries spent` or `auto-fix off`) with the retries spent of the budget, then each finding (the problem the completion review found) as a bullet; chat shows up to five findings and `+N more`. `--json` prints only the raw body. A parked Automaton accepts add-task and a re-run |
 | `prd-set-kind <id> <feature\|bug\|other>` | Set the Automaton kind the progress figures count it under; an unknown kind is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_kind` (body `{"kind": ...}`, an empty kind derives it again) |
+| `prd-set-project <id> <project\|"">` | Link an Automaton to a configured project; an empty name or `clear` removes the link. An unknown name is refused and the message lists the configured projects; `POST /api/autonomous/prds/{id}/set_project` (body `{"project": ...}`) |
+| `project-link-backfill [--apply]` | Report which Automata with no project link belong to the datawatch project (dry run by default, prints the table and the counts); `--apply` writes the links; `POST /api/autonomous/project-link-backfill` (body `{"apply": true}`). Config: `autonomous.project_link_backfill_apply` |
 | `prd-create <spec> --kind <feature\|bug\|other>` | Give the kind at creation; omit it to derive the kind from the title and spec |
 | `prd-set-lane-preference <id> <gpu\|claude\|any>` | Set which lane an Automaton may take; an unknown value is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_lane_preference` (body `{"lane_preference": ...}`) |
 | `prd-create <spec> --lane-preference <gpu\|claude\|any>` | Give the lane preference at creation; omit it to take any lane |
@@ -1472,6 +1474,8 @@ Comm channels for the progress figures: `progress [automation=<id>] [tag=<id> ..
 and `progress trend [days] [tag=<id> ...] [tag_match=<any|all>]` (see their
 own section above), and
 `autonomous set-kind <prd-id> <feature|bug|other>` to set an Automaton kind.
+
+Comm channel for the project link: `automaton project <id> <name|clear>` links an Automaton to a configured project (or clears the link), and `automaton project-backfill [apply]` reports which unlinked Automata belong to the datawatch project (`apply` writes the links). Both also work as `autonomous project ...` and `autonomous project-backfill ...`. See `docs/howto/projects-tab.md`.
 
 Comm channel for the timeline chart: `timeline [project=<dir>] [automaton=<id>] [stage=<id>] [kind=<kind>] [tag=<id>]`
 (see its own section above) replies with the summary the CLI draws its text
