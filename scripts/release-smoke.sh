@@ -7094,6 +7094,64 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "Housekeeping repairs — GET /api/autonomous/housekeeping-repairs and autonomous.housekeeping_repairs.*"
+# The read lists four groups (task_chain, advance_judge, lane_fill, leftovers),
+# each with a mode in off|report|on and the would/did/failed/skipped_unsafe
+# lists. It is read only. A bad mode is refused with a 400 naming the key and
+# stores nothing. On a scratch daemon only, a group set to report reads back
+# and the original value is restored. It never sets a mode to on, so no repair
+# runs here.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  HK_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/housekeeping-repairs" 2>/dev/null || true)
+  HK_CODE=$(echo "$HK_BODY" | tail -n1)
+  HK_JSON=$(echo "$HK_BODY" | sed '$d')
+  if [[ "$HK_CODE" == "200" ]] && echo "$HK_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert isinstance(d["grace_seconds"], int) and d["grace_seconds"] >= 0, d["grace_seconds"]
+names=[g["group"] for g in d["groups"]]
+assert names==["task_chain","advance_judge","lane_fill","leftovers"], names
+for g in d["groups"]:
+    assert g["mode"] in ("off","report","on"), g["mode"]
+    for k in ("would","did","failed","skipped_unsafe"):
+        assert isinstance(g[k], list), (g["group"], k)
+' 2>/dev/null; then
+    ok "housekeeping repairs: GET answers 200 with the four groups, their modes and the four record lists"
+  else
+    ko "housekeeping repairs: read returned HTTP $HK_CODE or a malformed body: $(echo "$HK_JSON" | head -c 300)"
+  fi
+
+  HK_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/housekeeping-repairs" 2>/dev/null || true)
+  if [[ "$HK_POST" == "405" ]]; then
+    ok "housekeeping repairs: the route is read only (POST answers 405)"
+  else
+    ko "housekeeping repairs: POST answered HTTP $HK_POST, expected 405"
+  fi
+
+  HK_BAD=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.housekeeping_repairs.task_chain":"sometimes"}' "$BASE/api/config" 2>/dev/null || true)
+  HK_BAD_CODE=$(echo "$HK_BAD" | tail -n1)
+  if [[ "$HK_BAD_CODE" == "400" ]] && echo "$HK_BAD" | grep -q "autonomous.housekeeping_repairs.task_chain"; then
+    ok "housekeeping repairs: a bad mode is refused with a 400 that names the key"
+  else
+    ko "housekeeping repairs: bad mode answered HTTP $HK_BAD_CODE, expected 400 naming the key: $(echo "$HK_BAD" | head -c 200)"
+  fi
+
+  if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+    skip "housekeeping repairs: external daemon (DW_BASE set); the mode round trip is not run"
+  else
+    HK_ORIG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("autonomous",{}).get("housekeeping_repairs",{}).get("leftovers","report"))' 2>/dev/null || echo "report")
+    HK_SET=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.housekeeping_repairs.leftovers":"report"}' "$BASE/api/config" 2>/dev/null || echo "000")
+    HK_MODE=$(curl "${curl_args[@]}" "$BASE/api/autonomous/housekeeping-repairs" 2>/dev/null | python3 -c 'import json,sys;print([g["mode"] for g in json.load(sys.stdin)["groups"] if g["group"]=="leftovers"][0])' 2>/dev/null || echo "?")
+    if [[ "$HK_SET" == "200" && "$HK_MODE" == "report" ]]; then
+      ok "housekeeping repairs: leftovers set to report reads back in the repairs read"
+    else
+      ko "housekeeping repairs: leftovers PUT answered HTTP $HK_SET and the read shows '$HK_MODE' (expected 200 and report)"
+    fi
+    curl "${curl_args[@]}" -o /dev/null -X PUT -H "Content-Type: application/json" -d "{\"autonomous.housekeeping_repairs.leftovers\":\"$HK_ORIG\"}" "$BASE/api/config" 2>/dev/null || true
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

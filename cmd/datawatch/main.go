@@ -7874,7 +7874,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			})
 			// Supervisor loop: the eight mechanical steps run once per idle
 			// tick, and an escalation raises a question in the queue.
-			wireSupervisorLoop(autoCoord, amgr, cfg, autonomousInferenceReg, httpServer)
+			wireSupervisorLoop(autoCoord, amgr, aAPI, cfg, autonomousInferenceReg, httpServer)
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning
