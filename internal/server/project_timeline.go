@@ -13,9 +13,11 @@
 // matching arc and a ProjectDir equal to the project's directory goes to the
 // "unassigned" group. Templates are left out.
 //
-// Timestamps: an Automaton starts at ApprovedAt, else CreatedAt, and finishes at
-// UpdatedAt (see historyAutomatonTimes). A task starts at StartedAt and ends at
-// CompletedAt. An arc spans the earliest start to the latest finish of everything
+// Timestamps: an Automaton spans its earliest task StartedAt to its latest
+// task CompletedAt across its Story tasks; while it runs the end stays null so
+// the client draws it to now. An Automaton with no started task falls back to
+// its created time to its completion time. A task starts at StartedAt and ends
+// at CompletedAt. An arc spans the earliest start to the latest finish of everything
 // under it. Work that is still running (an Automaton in a running status, or a
 // task with a start and no completion that is still in flight) has last=null and
 // running=true so the client draws it to now. An arc or Automaton with nothing
@@ -246,9 +248,12 @@ func timelineTaskStatus(st autonomous.TaskStatus) string {
 }
 
 // timelineAutomatonStatus maps an Automaton to a timeline status. A shipped
-// Automaton that was not cancelled or failed reads as completed.
+// Automaton reads as completed no matter its recorded status, including a
+// cancelled or rejected one; an unshipped Automaton maps its status as-is.
 func timelineAutomatonStatus(p *autonomous.PRD) string {
-	shipped := p.IsShipped() || p.MergedInRelease != ""
+	if p.IsShipped() || p.MergedInRelease != "" {
+		return tlStatusCompleted
+	}
 	switch p.Status {
 	case autonomous.PRDRunning, autonomous.PRDActive:
 		return tlStatusRunning
@@ -260,9 +265,6 @@ func timelineAutomatonStatus(p *autonomous.PRD) string {
 		return tlStatusBlocked
 	case autonomous.PRDCancelled, autonomous.PRDRejected:
 		return tlStatusCancelled
-	}
-	if shipped {
-		return tlStatusCompleted
 	}
 	return tlStatusWaiting
 }
@@ -280,11 +282,31 @@ func timelineTaskRow(t *autonomous.Task) timelineRow {
 		DependsOn: append([]string(nil), t.DependsOn...)}
 }
 
-// timelineAutomatonSpan is the span of an Automaton: its created time to its
-// completion time, or now (end null) while it runs.
+// timelineAutomatonSpan is the span of an Automaton: its earliest task start
+// to its latest task completion across all of its Story tasks, or now (end
+// null) while it runs. An Automaton with no started task falls back to its
+// created time to its completion time so the row still draws. The span is
+// never shorter in a way that hides real work: it never ends before it starts.
 func timelineAutomatonSpan(p *autonomous.PRD) timelineSpan {
-	var s timelineSpan
 	running := timelineAutomatonRunning(p)
+	var s timelineSpan
+	anyStarted := false
+	for _, st := range p.Story {
+		for i := range st.Tasks {
+			t := &st.Tasks[i]
+			s.add(t.StartedAt, t.CompletedAt, timelineTaskRunning(t))
+			if t.StartedAt != nil {
+				anyStarted = true
+			}
+		}
+	}
+	if anyStarted {
+		if s.first != nil && s.last != nil && s.last.Before(*s.first) {
+			l := *s.first
+			s.last = &l
+		}
+		return s
+	}
 	var end *time.Time
 	switch timelineAutomatonStatus(p) {
 	case tlStatusCompleted, tlStatusFailed, tlStatusCancelled:
