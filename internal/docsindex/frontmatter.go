@@ -46,8 +46,8 @@ import (
 // FrontMatter captures the operator-relevant fields. Non-listed fields
 // in the YAML are tolerated (PAI + other tooling may add their own).
 type FrontMatter struct {
-	Docs       *DocsBlock `yaml:"docs,omitempty"`
-	ExecSteps  []ExecStep `yaml:"exec_steps,omitempty"`
+	Docs       *DocsBlock  `yaml:"docs,omitempty"`
+	ExecSteps  []ExecStep  `yaml:"exec_steps,omitempty"`
 	ExecParams []ExecParam `yaml:"exec_params,omitempty"`
 }
 
@@ -55,10 +55,10 @@ type FrontMatter struct {
 // per-howto exec metadata pointer. For core howtos, Docs is rarely
 // set explicitly — the corpus indexer auto-includes them.
 type DocsBlock struct {
-	Index          bool     `yaml:"index,omitempty"`
-	Files          []string `yaml:"files,omitempty"`
-	ExcludeDefault bool     `yaml:"exclude_default,omitempty"`
-	Topics         []string `yaml:"topics,omitempty"`
+	Index          bool        `yaml:"index,omitempty"`
+	Files          []string    `yaml:"files,omitempty"`
+	ExcludeDefault bool        `yaml:"exclude_default,omitempty"`
+	Topics         []string    `yaml:"topics,omitempty"`
 	Howtos         []HowtoMeta `yaml:"howtos,omitempty"`
 }
 

@@ -55,8 +55,8 @@ const lintCommNoRecord = `{"prd_id": "p9", "decompose_lint": null}`
 // lintCommLog records every request the fake daemon saw; last is the
 // most recent call, for two-call verbs (config-set GETs then PUTs).
 type lintCommLog struct {
-	calls int
-	last  lintCommCall
+	calls  int
+	last   lintCommCall
 	bodies []string
 }
 
