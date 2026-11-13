@@ -7823,6 +7823,25 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .session-tile-grid-compact .work-tile-status,
 .session-tile-grid-compact .work-tile-tags > * { padding-top: 0; padding-bottom: 0; line-height: 1.3; }
 .session-tile-grid-compact .work-tile-progress { height: 3px; }
+
+/* Inbox view modes: the three Inbox lists (Triage, Open questions, Held
+   questions) share one mode and their tile grids reuse the .work-tile grid.
+   .inbox-tile-grid-compact is the same grid shrunk, and — like the Sessions
+   compact grid — data-tile-mode stays "tile", so the resize handler's
+   per-width rewrite skips it. */
+.inbox-tile-grid { margin: 4px 0; --inbox-tile-pad: 10px; }
+.inbox-tile-grid .work-tile { padding: var(--inbox-tile-pad); }
+.inbox-tile-grid-compact { --inbox-tile-pad: 6px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; font-size: 11px; }
+.inbox-tile-grid-compact .work-tile { gap: 3px; }
+.inbox-tile-grid-compact .work-tile-title { font-size: 12px; }
+.inbox-tile-grid-compact .work-tile-meta,
+.inbox-tile-grid-compact .questions-tile-text,
+.inbox-tile-grid-compact .held-question-text,
+.inbox-tile-grid-compact .held-question-reason,
+.inbox-tile-grid-compact .held-question-recommended,
+.inbox-tile-grid-compact .triage-tile-reason,
+.inbox-tile-grid-compact .triage-wait { font-size: 10px; }
+.inbox-tile-grid-compact .work-tile-progress { height: 3px; }
 @media (prefers-reduced-motion: reduce) {
   .sessions-mode-btn { transition: none; }
 }
