@@ -129,7 +129,7 @@ func TestSessionsTagInventoryEndpoint(t *testing.T) {
 	archived := &session.Session{
 		ID: "s-arch", FullID: "testhost-s-arch", State: session.StateComplete,
 		UpdatedAt: time.Now().Add(-400 * 24 * time.Hour),
-		Tags: []string{"kind:worker"},
+		Tags:      []string{"kind:worker"},
 	}
 	if err := tm.sm.SaveSession(archived); err != nil {
 		t.Fatalf("SaveSession: %v", err)

@@ -196,9 +196,9 @@ func TestDescribeTimeout_WSConnection_NotStalledByHangingBackend(t *testing.T) {
 		tmux  string
 		input string
 	}{
-		{"fake-b", "a plain follow-up"},             // 2: delivered while 1 was still waiting
-		{"fake-a", "@" + p + " describe for me"},    // 1: timed-out describe → '@<path>' fallback
-		{"fake-a", "a later same-session note"},     // 3: released only after 1 resolved
+		{"fake-b", "a plain follow-up"},          // 2: delivered while 1 was still waiting
+		{"fake-a", "@" + p + " describe for me"}, // 1: timed-out describe → '@<path>' fallback
+		{"fake-a", "a later same-session note"},  // 3: released only after 1 resolved
 	}
 	if len(sends) != len(wantOrder) {
 		t.Fatalf("expected %d send-keys calls, got %d: %+v", len(wantOrder), len(sends), fakeT.CallsSnapshot())
