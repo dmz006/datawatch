@@ -500,6 +500,20 @@ lint enforces the same three rules on what comes back — see
 two script-content rules read the script file from the project directory and
 are skipped when it does not exist yet.
 
+**Correcting a script after decompose.** When a finding names a task's
+verification script (`no_verification_script`, `unexecutable_verification_script`,
+`final_gate_without_script`, or a script-content rule), you can fix that one
+task without a re-decompose: set its script with `prd-edit-task
+--verification-script <path>` (MCP `autonomous_prd_edit_task`, REST `edit_task`
+body key `verification_script`, comm `edit-task … verification_script=<path>`,
+or the **Verification script** field of the task editor), or state why it needs
+none with `--verification-script-reason <text>`. The path must be one
+repo-relative script file — a command string, absolute path, `..` path or the
+project root is refused — and is added to the task's generated files. Edit the
+script file itself first if it fails a script-content rule; the edit records the
+path only. See [Recovering a blocked Automaton](../operations.md) for the
+held-task flow.
+
 ### The script gate: the final gate no longer spends a session
 
 There is **one** final gate per Automaton, on the **last** story, depending on

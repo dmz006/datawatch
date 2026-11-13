@@ -1105,8 +1105,9 @@ path handles its diff.
 
 **Recovering a blocked Automaton — make the task verifiable.** While the
 Automaton is blocked the held task can be patched in place. Edit-task
-patches the held task while it is held — its `spec`, its read-only mark and
-its `report_path`, in one or more calls — and retry (action `retry`) then
+patches the held task while it is held — its `spec`, its read-only mark, its
+`report_path`, its `verification_script` and its `verification_script_reason`,
+in one or more calls — and retry (action `retry`) then
 requeues it, carrying the same optional mark and report path along with any
 spec, worker or file-scope change. Both check everything before anything is
 written, so a refused change leaves the task held: a `report_path` is only
@@ -1143,6 +1144,31 @@ recorded on the decision log and given to the next attempt.
 Comm channel: `autonomous edit-task <automaton> <task> read_only=true
 report_path=.datawatch/reports/ci-audit.txt [new-spec…]`, then
 `autonomous review-task <automaton> <task> retry note=...`.
+
+**Fixing a task whose verification script is wrong or missing.** A script that
+is a command string, breaks after earlier tasks land, or was never written no
+longer needs a re-decompose: edit the held task's script in place, then retry
+it. `verification_script` must be one repo-relative script file (a command
+string, absolute path, `..` path, the project root or an unclean path such as
+`./scripts/verify.sh` is refused and nothing is stored); the file is also added
+to the task's generated files. `verification_script_reason` states why a task
+needs no script and may be sent alone or with a script.
+
+```sh
+datawatch autonomous prd-edit-task <automaton-id> --task <task-id> \
+  --verification-script scripts/verify-docs.sh
+datawatch autonomous prd-edit-task <automaton-id> --task <task-id> \
+  --verification-script-reason "documentation-only change; no behavior to run"
+```
+
+MCP: `autonomous_prd_edit_task(..., verification_script="scripts/verify-docs.sh")`.
+Comm channel: `autonomous edit-task <automaton> <task>
+verification_script=scripts/verify-docs.sh` or
+`verification_script_reason="documentation-only change"` (a reason with spaces
+goes in double quotes; an unclosed quote is an error). In the web app, use the
+**Verification script** and **Script exemption reason** fields of the task
+editor. The script file itself must already exist in the project; this edit
+records the path, it does not create the file.
 
 **Cancelling the held task is terminal.** `cancel` records the operator's
 decision with the reason "cancelled after operator review" (your note, when
