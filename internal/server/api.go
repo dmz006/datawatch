@@ -606,6 +606,11 @@ type Server struct {
 	// planRecords — the plans-and-backlog record store behind
 	// /api/plan-records. Nil answers 503.
 	planRecords *planrecords.Store
+	// planPoints caches per-Automaton points for the plans read API;
+	// planPointsSource and planTasksSource replace the daemon reads in tests.
+	planPoints       planPointsCache
+	planPointsSource func() map[string]float64
+	planTasksSource  func(automatonID string) ([]planTaskRow, bool)
 	// questionRaiseNotifier — the raise fan-out to the messaging group,
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).

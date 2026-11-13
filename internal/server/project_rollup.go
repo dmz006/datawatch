@@ -112,7 +112,10 @@ type projectRollup struct {
 	GeneratedAt  time.Time     `json:"generated_at"`
 	PointsPriced bool          `json:"points_priced"`
 	Arcs         []rollupGroup `json:"arcs"`
-	Unassigned   rollupGroup   `json:"unassigned"`
+	// Plans is the project's plans, the successor of Arcs (Arcs stays as a
+	// deprecated field). It is read from the plan-record summary index.
+	Plans      []planRow   `json:"plans"`
+	Unassigned rollupGroup `json:"unassigned"`
 	// WithoutProject lists the Automata without a project: no link, no
 	// Automation or parent project, no directory match and no arc. It is
 	// not part of Total.
@@ -188,7 +191,7 @@ func buildProjectRollup(in rollupInput) projectRollup {
 	}
 
 	arcIndex := map[string]int{}
-	out := projectRollup{Project: in.Project, WindowDays: in.WindowDays, GeneratedAt: in.Now}
+	out := projectRollup{Project: in.Project, WindowDays: in.WindowDays, GeneratedAt: in.Now, Plans: []planRow{}}
 	out.Arcs = make([]rollupGroup, 0, len(in.Arcs))
 	for _, arc := range in.Arcs {
 		if _, dup := arcIndex[arc.AutomationID]; dup {
@@ -402,9 +405,7 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "config not available", http.StatusServiceUnavailable)
 		return
 	}
-	name := r.PathValue("name")
-	entry, ok := s.cfg.Projects[name]
-	if !ok {
+	if _, ok := s.cfg.Projects[r.PathValue("name")]; !ok {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return
 	}
@@ -413,14 +414,30 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	resp, ok := s.projectRollupFor(w, r, r.PathValue("name"), windowDays)
+	if !ok {
+		return
+	}
+	resp.Plans = s.plansForAlias(resp.Project)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// projectRollupFor builds the roll-up of one project. It answers the failure
+// itself (404 unknown project, 503 no Automata store) and returns false.
+func (s *Server) projectRollupFor(w http.ResponseWriter, r *http.Request, name string, windowDays int) (projectRollup, bool) {
+	entry, ok := s.cfg.Projects[name]
+	if !ok {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return projectRollup{}, false
+	}
 	mgr := s.costReportAutonomousManager()
 	if mgr == nil {
 		http.Error(w, "automations not available", http.StatusServiceUnavailable)
-		return
+		return projectRollup{}, false
 	}
-
 	now := time.Now()
-	resp := buildProjectRollup(rollupInput{
+	return buildProjectRollup(rollupInput{
 		Project:     name,
 		Dir:         entry.Dir,
 		Arcs:        entry.Arcs,
@@ -433,9 +450,7 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 		Projects:    rollupProjectDirs(s.cfg.Projects),
 		ArcHeld:     rollupArcHeld(s.cfg.Projects),
 		Merged:      s.rollupMergedFn(mgr),
-	})
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	}), true
 }
 
 // rollupProjectDirs is the configured project name to directory map the

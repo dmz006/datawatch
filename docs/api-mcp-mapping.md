@@ -152,6 +152,12 @@ documenting coverage gaps and the reasoning behind them.
 | `PUT /api/plan-records/{kind}/{ref}` | `plan_record_update` | Complete | partial update; `project`, `kind` and `legacy_number` cannot change; a rename keeps the old title as an alias |
 | `GET /api/plan-records/search` | `plan_record_search` | Complete | `q` required; optional `kind`, `project`, `state`, `limit`, `offset` |
 | `POST /api/plan-records/import` | `plan_record_import` | Complete | `dry_run=true` previews and writes nothing; MCP args `project`, `source`, `conflict_policy`, `dry_run` (default `true`) |
+| `GET /api/projects/{name}/plans` | — | Not in MCP | plans in order with progress, points, Automation ids and next marker, plus a Backlog group; paged. A read for the Projects page |
+| `GET /api/projects/{name}/overview-summary` | — | Not in MCP | header, progress, active plan lines, what is next, record counts. A read for the Projects page |
+| `GET /api/plans/{ref}/automata` | — | Not in MCP | a plan's Automata in run order; blocked and held are skipped by the next marker; paged |
+| `GET /api/plans/{ref}/tasks` | — | Not in MCP | a plan's tasks, read when the plan is expanded; paged |
+| `GET /api/plan-records/browse` | — | Not in MCP | all registry rows and findings with plan and Automaton links; `q`, `kind`, `state`, `project`; paged |
+| `GET /api/projects/{name}/arcs` | — | Not in MCP | deprecated alias of the roll-up arcs, with plans added |
 | `POST /api/plans/migrate` | `plan_migrate` | Complete | previews unless `apply` is `true`; builds plans from project arcs and registry rows; never changes an existing plan or link |
 | `GET /api/autonomous/tags/registry` | — | Not in MCP | Keeper-to-peer protocol route that serves the keeper's snapshot to peers. Not an operator action; the status tool shows this daemon's registry object instead |
 | `POST /api/autonomous/tags/registry/write` | — | Not in MCP | Keeper-to-peer protocol route that applies one forwarded tag write on the keeper. Not an operator action; peers call it, operators use the tag routes on the peer |
