@@ -1,0 +1,22 @@
+# gate-repair fixture — grounded in scripts/check-docs-sync.sh, whose failure
+# line is "ERROR: embedded PWA docs drift from docs/ — run 'make sync-docs'
+# and re-stage." followed by the rsync dry-run diff.
+# expect: docs_mirror_stale
+# exit-code: 1
+# signal-killed: no
+# script: .datawatch/verify/story1-docs-sync.sh
+# own-verify-folder: yes
+# script-story: 0
+# gate-story: 0
+# changed: docs/howto/gate-repair.md
+# script text:
+#   set -e
+#   out="$(rsync -ai --dry-run docs/ internal/server/web/docs/ 2>/dev/null | grep -v '^\.\.*/\s*$' || true)"
+#   [ -z "$out" ] && exit 0
+#   echo "ERROR: embedded PWA docs drift from docs/ — run 'make sync-docs' and re-stage." >&2
+#   printf '%s\n' "$out" >&2
+#   exit 1
+---
+ERROR: embedded PWA docs drift from docs/ — run 'make sync-docs' and re-stage.
+>f+++++++++ docs/howto/gate-repair.md
+>l.t....pT docs/plans/2026-10-17-supervisor-rules-and-lessons.md

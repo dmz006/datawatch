@@ -1,0 +1,17 @@
+# gate-repair fixture — grounded in runGateCheck's missing-script report
+# (script_gate.go: "gate script %q is missing from the project's
+# .datawatch/verify folder"): the gate script belongs to a later story, so
+# its own file has not landed yet.
+# expect: later_story_script
+# exit-code: -1
+# signal-killed: no
+# script: .datawatch/verify/story2-alerts.sh
+# own-verify-folder: yes
+# script-story: 1
+# gate-story: 0
+# changed: (none)
+# script text:
+#   set -e
+#   go test ./internal/alerts/ -run TestAlertRouting
+---
+gate script .datawatch/verify/story2-alerts.sh is missing from the project's .datawatch/verify folder
