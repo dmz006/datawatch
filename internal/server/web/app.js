@@ -23828,7 +23828,7 @@ const GENERAL_CONFIG_FIELDS = [
     { label: 'Tracing', labelKey: 'settings_tracing_group', type: 'group' },
     { key: 'tracing.mode', label: 'Trace detail (off, summary or full; default summary)', labelKey: 'settings_tracing_mode', type: 'select', options: ['off', 'summary', 'full'], default: 'summary' },
     { key: 'tracing.arg_cap_bytes', label: 'Trace argument size limit (bytes, whole number, 0 = default)', labelKey: 'settings_tracing_arg_cap_bytes', type: 'number', placeholder: '0' },
-    { key: 'tracing.retention_days', label: 'Trace retention (days, whole number, 0 = default)', labelKey: 'settings_tracing_retention_days', type: 'number', placeholder: '0' },
+    { key: 'tracing.retention_days', label: 'Trace retention (days, whole number 0 to 3650; 0 = default = never pruned by age)', labelKey: 'settings_tracing_retention_days', hintKey: 'settings_tracing_retention_days_hint', type: 'number', placeholder: '0', min: 0, max: 3650, step: 1 },
     { key: 'tracing.backends', label: 'Trace per backend (JSON object of backend to true or false; a backend not listed is on)', labelKey: 'settings_tracing_backends', hintKey: 'settings_tracing_backends_hint', type: 'json_map', saveFn: 'saveTracingBackendsSetting', placeholder: '{"pi": false}' },
     { label: 'Onboarding report', labelKey: 'settings_onboarding_report_group', docsKey: 'onboarding_report_card_title', type: 'group' },
     { key: 'onboarding_report.enabled', label: 'Onboarding report (on by default)', labelKey: 'settings_onboarding_report_enabled', hintKey: 'settings_onboarding_report_enabled_hint', docsKey: 'onboarding_report.enabled', type: 'toggle' },
