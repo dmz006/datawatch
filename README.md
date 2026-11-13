@@ -23,7 +23,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 - Give it a goal: it breaks the goal into steps, does them and checks the results
 - It remembers past work, so a new session starts with background
 - Use one machine or many; the work is shared
-- Your data stays on your machines, encrypted and behind a login
+- Your data stays on your machines, behind a login, with encryption on disk in secure mode
 
 ---
 
@@ -111,7 +111,7 @@ More: [channel routing](docs/howto/channel-routing.md) · [file sharing](docs/ho
 
 ### Security
 
-- Data on disk is encrypted
+- Secure mode (`--secure`) encrypts the config and the main data stores on disk; some files stay plain, so pair it with disk encryption (the encryption page lists what is and is not covered)
 - Passwords and keys live in a vault
 - Logins, encrypted connections, and a log of who did what
 - Self-config gate: an agent may change the daemon's own non-secret settings only while it holds the **self-config** group — every attempt (allowed and denied) is recorded, and you can read the trail from the PWA Settings card, `datawatch audit self-config` or `GET /api/audit/self-config`

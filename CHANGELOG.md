@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **The encryption page and the pages that repeat it now match the code.** `docs/encryption.md` was rewritten against the 2026-11-13 encryption audit: it names the current config format and key settings, the real file names (session records under `sessions.d/`, `schedule.json`, `output.log.enc`), and states that memory encryption follows `--secure` (there is no memory encryption setting). It now lists what `--secure` covers, what is still plain, what cannot be encrypted, that there is no password-change or key-rotation command, that `export --all` misses the current session records and the schedule store, and that the vault key file sits beside the vault. The operations, setup, memory, secrets and cross-agent memory pages, the glossary and the README no longer say that all data is encrypted. No behavior changed.
+
 ## v9.172.5 — Sessions deep-dive how-to corrections
 
 ### Fixed

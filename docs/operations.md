@@ -123,7 +123,7 @@ datawatch start --config /path/to/config.yaml
 - PID is written to `~/.datawatch/daemon.pid`
 - **PID lock:** On startup, datawatch checks `daemon.pid` — if the PID is still running, it refuses to start a second instance. This prevents multiple daemons from competing for the same sessions and Signal connection.
 - Use `datawatch stop` to send SIGTERM gracefully
-- Daemon mode is incompatible with `--secure` (encrypted config); use `--foreground` instead
+- Background daemon mode cannot prompt for the `--secure` password. Use `--foreground`, or set `DATAWATCH_SECURE_PASSWORD` in the service environment (see [encryption.md](encryption.md) for what that exposes)
 
 ---
 
@@ -324,7 +324,7 @@ Your own archive is unaffected and works at any time, from any surface. The two 
 
 ### Data compatibility
 
-datawatch data files (`sessions.json`, `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
+datawatch data files (the session records under `sessions.d/` — the legacy single `sessions.json` is read only for migration — and `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
 
 **Encrypted stores (`--secure` mode):** The encryption formats (`DWDAT2\n` XChaCha20-Poly1305 and legacy `DWDAT1\n` AES-256-GCM) are stable. The derived key (Argon2id with salt embedded in config header) is deterministic — the same password always yields the same key across versions. Upgrading does not require re-encrypting data files. Legacy v1 files are read transparently.
 
@@ -653,12 +653,23 @@ datawatch config set session.liveness_idle_timeout_overrides '{"pi": 30, "goose"
 ```
 
 
-**Note on `--secure` mode:** When started with `datawatch --secure start`, ALL data stores
-are encrypted with XChaCha20-Poly1305: `sessions.json`, `schedule.json`, `commands.json`,
-`filters.json`, and `alerts.json` — not just `config.yaml`. The encryption key is derived
-from your passphrase using Argon2id with a salt embedded in the encrypted config header.
-Set `DATAWATCH_SECURE_PASSWORD` env variable for non-interactive restarts.
-See [docs/encryption.md](encryption.md) for full details.
+**Note on `--secure` mode:** When started with `datawatch --secure start`, the
+config file (`DWATCH3`) and a defined set of data stores are encrypted with
+XChaCha20-Poly1305: the session records in `sessions.d/` and the session archive,
+`schedule.json`, `commands.json`, `filters.json`, `alerts.json`, the federation,
+compute, LLM, skills and channel-routing registries, plan records, session output
+(`output.log.enc`), the application log and the memory `content` and `summary`
+fields. **It is not every file.** Token and credential files, the Automaton store,
+spend files, the tracker files in each session folder, audit and trace logs and
+the TLS private keys are still plain, and a running secure daemon appears to write
+`config.yaml` back unencrypted after a runtime settings change (found by reading
+the code, not yet reproduced). The encryption key is derived from your passphrase
+using Argon2id with a salt embedded in the encrypted config header. Set the
+`DATAWATCH_SECURE_PASSWORD` environment variable for non-interactive restarts; it
+is then readable by the same user through the process environment. Use disk-level
+encryption for anything `--secure` does not cover. See
+[docs/encryption.md](encryption.md) for the full list and the
+[encryption audit](plans/2026-11-13-encryption-audit.md) for the evidence.
 
 **Minimum viable config** (everything else uses defaults):
 
@@ -2519,9 +2530,13 @@ switch once devices report their own environment.
 
 ### Encryption at Rest
 
-When `--secure` mode is enabled, all data stores are encrypted with XChaCha20-Poly1305.
+When `--secure` mode is enabled, the config file and the stores listed in
+[encryption.md](encryption.md) are encrypted with XChaCha20-Poly1305; the rest of
+the data directory is not (that page has the plain-today list, the items that
+cannot be encrypted, and the open items for the operator).
 Set `DATAWATCH_SECURE_PASSWORD` as an environment variable for automatic restarts.
-See [encryption.md](encryption.md) for details.
+Back up `config.yaml`: it holds the salt, and there is no password-change or
+key-rotation command.
 
 ### Interface Configuration Summary
 

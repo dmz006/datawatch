@@ -113,7 +113,7 @@ Complete reference for configuring, operating, and extending datawatch.
 
 | Document | Description |
 |---|---|
-| [encryption.md](encryption.md) | Encryption at rest — what's encrypted, formats, memory content encryption, export command, env variable |
+| [encryption.md](encryption.md) | Encryption at rest — what `--secure` covers, what stays plain, what cannot be encrypted, formats, key management, export limits, open items for the operator · evidence: [encryption audit](plans/2026-11-13-encryption-audit.md) |
 
 ## Operations
 

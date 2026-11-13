@@ -71,7 +71,7 @@ ollama pull nomic-embed-text
 
 datawatch config set memory.enabled true
 datawatch config set memory.backend sqlite
-datawatch config set memory.encryption.enabled true       # XChaCha20-Poly1305
+# Memory text is encrypted when the daemon runs with --secure (no memory setting for it)
 datawatch config set embedder.backend ollama
 datawatch config set embedder.model nomic-embed-text
 datawatch reload
@@ -200,10 +200,8 @@ memory:
   enabled: true
   backend: sqlite                     # or postgres
   postgres_url: ${secret:PG_URL}
-  encryption:
-    enabled: true                      # XChaCha20-Poly1305
-    key: ${secret:MEMORY_KEY}
-    rotate_after_days: 90
+  # No encryption keys here: memory content and summary are encrypted
+  # (XChaCha20-Poly1305) when the daemon runs with --secure.
 
 embedder:
   backend: ollama                      # or openai / openai_compat
@@ -616,9 +614,11 @@ can always trace a memory back to the session that originally captured it.
 - **Embedder slow.** Ollama embedding is fast on a GPU, painfully
   slow on CPU. For >1k chunks, use OpenAI embeddings (cheap) or
   pre-warm Ollama with `ollama run nomic-embed-text`.
-- **Encryption key lost.** XChaCha20-Poly1305 with key rotation is
-  default; if you lose the key, encrypted entries are unrecoverable.
-  Back the key up via `datawatch secrets export`.
+- **Encryption key lost.** With `--secure`, memory text is encrypted with a key
+  derived from your `--secure` password and the salt in the `config.yaml`
+  header. If you lose the password or that file, encrypted entries are
+  unrecoverable. There is no key-rotation or password-change command; see
+  [encryption](../encryption.md).
 - **Federation across mismatched backends.** Two daemons on different
   memory backends won't share entries unless you configure observer
   push to forward summaries.
@@ -634,7 +634,7 @@ can always trace a memory back to the session that originally captured it.
   memory summaries across hosts.
 - See also: [`identity-and-telos.md`](identity-and-telos.md) — L0 layer
   is operator-fixed; memory provides L1-L3.
-- See also: [`secrets-manager.md`](secrets-manager.md) — encryption key
+- See also: [`secrets-manager.md`](secrets-manager.md) — vault key
   storage.
 - Architecture: `../architecture-overview.md` § Memory + KG.
 
