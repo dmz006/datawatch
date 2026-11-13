@@ -706,7 +706,12 @@ function _daemonVersionNoteFrame(version, serverName) {
   const seen = state._versionChangeSeen || (state._versionChangeSeen = {});
   if (!(key in bySrv)) {
     bySrv[key] = version; // first frame from this server: record only
-    if (key === 'local' && !state._daemonVersion) state._daemonVersion = version;
+    if (key === 'local' && !state._daemonVersion) {
+      state._daemonVersion = version;
+      // The SW may have been registered before the version was known (bare
+      // /sw.js); adopt the versioned script URL now (no-op if it already is).
+      _swAdoptDaemonVersion(version);
+    }
     return;
   }
   if (bySrv[key] === version || seen[key] === version) return;
@@ -729,6 +734,10 @@ function _bootDaemonVersion() {
       const v = (h && typeof h.version === 'string') ? h.version : '';
       if (!v || state._daemonVersion) return; // lost the race to a local frame
       state._daemonVersion = v;
+      // registerServiceWorker may have run before the version was known and
+      // registered bare /sw.js; adopt /sw.js?v=<v> now (no-op if already
+      // versioned with this release).
+      _swAdoptDaemonVersion(v);
       const bySrv = state._daemonVersionByServer || (state._daemonVersionByServer = {});
       bySrv[_daemonVersionKey('local')] = v;
     })
@@ -28207,12 +28216,72 @@ let _swDisabledInfoShown = false;
 // an update and reload the page.
 let _swControllerChangeAttached = false;
 
+// ── Versioned SW registration + once-only upgrade reload ─────────────
+// The worker script's bytes are identical every release, so registering it
+// as bare /sw.js can mean the browser never installs a fresh copy. The page
+// therefore registers /sw.js?v=<daemon version>: each release is a distinct
+// script URL for the browser (and sw.js derives its cache name from the
+// same query string), so an upgrade is always visible. The version is
+// state._daemonVersion (recorded by _daemonVersionNoteFrame); if it has not
+// been recorded yet when registerServiceWorker runs, register bare and adopt
+// the versioned URL later (see _swAdoptDaemonVersion). Pure helper:
+function _swScriptUrl(version) {
+  if (version && typeof version === 'string') {
+    const v = version.trim();
+    if (v) return '/sw.js?v=' + encodeURIComponent(v);
+  }
+  return '/sw.js';
+}
+
+// Once-only auto-reload slot. sessionStorage survives a reload (it is
+// cleared only when the tab closes), so a tab can auto-reload for a SW
+// upgrade at most once: whatever controllerchange events fire afterwards
+// (claim re-fires, re-register, etc.) find the marker and do not reload —
+// a reload loop is impossible by construction. If the marker cannot be
+// read/written (storage blocked or unavailable), refuse the slot: an
+// unrecorded reload would be repeated forever.
+const SW_AUTO_RELOAD_MARK_KEY = 'cs_sw_autoreload_done';
+function _swTakeAutoReloadSlot(store) {
+  try {
+    if (!store) return false;
+    if (store.getItem(SW_AUTO_RELOAD_MARK_KEY) === '1') return false;
+    store.setItem(SW_AUTO_RELOAD_MARK_KEY, '1');
+    return true;
+  } catch (_) { return false; }
+}
+
+// registerServiceWorker may run before state._daemonVersion is known (it
+// fires on DOMContentLoaded; the version arrives from /api/health or the
+// first 'sessions' frame). When the local version is first recorded after a
+// bare registration, re-register with the versioned script URL so this tab's
+// worker is the current release. Re-registering is per-scope idempotent:
+// same URL is a no-op; a new URL is an ordinary SW update.
+function _swAdoptDaemonVersion(version) {
+  try {
+    if (!version) return;
+    const url = _swScriptUrl(version);
+    if (window._swRegUrl === url) return;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register(url).then(reg => {
+      if (!reg) return;
+      window._swReg = reg;
+      window._swRegUrl = url;
+    }).catch(() => {});
+  } catch (_) { /* SW is best-effort; never break the page */ }
+}
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   {
-    navigator.serviceWorker.register('/sw.js').then(reg => {
+    // The versioned script URL keeps the browser's "has the worker file
+    // changed" check honest across releases (see _swScriptUrl above); bare
+    // /sw.js only when the release has not been recorded yet —
+    // _swAdoptDaemonVersion re-registers once it has.
+    const scriptUrl = _swScriptUrl(state._daemonVersion);
+    navigator.serviceWorker.register(scriptUrl).then(reg => {
       console.log('SW registered:', reg.scope);
       window._swReg = reg;
+      window._swRegUrl = scriptUrl;
       // GATE alpha.36 (operator 2026-05-10): force an SW update check
       // on load AND every 60s. Without this the browser may sit on a
       // stale SW until next cold-start.
@@ -28272,7 +28341,11 @@ function registerServiceWorker() {
           console.log('SW controller changed — fresh assets available');
           if (_canAutoReload(_autoReloadCtx())) {
             // Real build change: a fresh SW took control of this page and
-            // the user is idle — take the page over now.
+            // the user is idle — take the page over now. Once-only: the
+            // sessionStorage slot (see _swTakeAutoReloadSlot) survives the
+            // reload, so a controllerchange re-firing on the freshly loaded
+            // page can never reload a second time.
+            if (!_swTakeAutoReloadSlot(typeof sessionStorage !== 'undefined' ? sessionStorage : null)) return;
             _reloadGuard = true;
             window.location.reload();
           } else {
