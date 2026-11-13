@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A toolchain freshness check for the build host, with its documentation.** `scripts/check-toolchain.sh` compares the installed Go, `gosec`, `govulncheck`, `gitleaks`, `golangci-lint`, `trivy` and `goreleaser` with the newest stable release of each (tool list in `toolchain.yaml`, Go target read from `go.mod`) and prints one status per tool: `CURRENT`, `PATCH-BEHIND`, `BEHIND`, `GO-BEHIND`, `MISSING` or `UNREACHABLE`. It exits 1 when Go is behind the newest stable patch of its line or any tool is a minor or major behind, and 0 otherwise, so a network error never fails it. `scripts/check-toolchain_test.sh` tests it offline through the `TOOLCHAIN_FIXTURE_DIR` hook. This is a development tool for the machine that builds datawatch, run by hand: it is not a product feature, has no setting and no REST, MCP, CLI, chat or app surface, and is not yet part of `make lint` or the merge gates. The new how-to [toolchain-freshness-check.md](docs/howto/toolchain-freshness-check.md), a section in `docs/operations.md` (*Build-host toolchain freshness check*), a glossary entry and reference-matrix row in `docs/datawatch-definitions.md`, and the how-to and documentation indexes describe it. Documentation only for this entry: no daemon code or setting changed.
+
 ## v9.172.5 — Sessions deep-dive how-to corrections
 
 ### Fixed
