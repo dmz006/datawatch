@@ -15,7 +15,7 @@ Method: read `AGENT.md`, the `Makefile`, `scripts/`, every workflow in
 `.github/workflows/`, `docs/testing.md` and `docs/testing/`; pulled run and step
 timings with `gh`; read the per-package times out of one CI log; searched git
 history with `git log -S`; and used the supervisor's audit in
-`/home/dmz/workspace/supervisor-scratch/` (`testdiff.txt`, `added.txt`,
+the supervisor's scratch folder (`testdiff.txt`, `added.txt`,
 `tests.txt`) as one input. I did not run the test suite.
 
 ## Where we are
