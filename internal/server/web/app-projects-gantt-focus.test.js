@@ -98,7 +98,11 @@ test('focus reads once with focus=<id>, the range is first task to last task', a
   assert.equal(r.start, Date.parse(ago(30)) - mg, 'starts at the first task minus the 2 percent margin');
   assert.equal(r.end, Date.parse(ago(2)) + mg, 'ends at the last task plus the margin');
   assert.match(cap.panel, /Focus: Arc one/);
-  assert.match(bodyHtml(sb), new RegExp('First task ' + new Date(Date.parse(ago(31))).toLocaleDateString().replace(/[/.]/g, '\\$&') + ' – last task'));
+  // The label prints the range the page uses (first task minus the margin to last
+  // task plus the margin), not a hand-picked instant — ago(31) can be the previous
+  // calendar day from r.start depending on time zone and time of day.
+  const dateRe = ts => new Date(ts).toLocaleDateString().replace(/[/.]/g, '\\$&');
+  assert.match(bodyHtml(sb), new RegExp('First task ' + dateRe(r.start) + ' – last task ' + dateRe(r.end)));
   assert.ok(tl.every(c => c.method === 'GET'), 'a read');
   assert.equal(calls.filter(c => c.method !== 'GET').length, 0, 'no write route');
 });

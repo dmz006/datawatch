@@ -409,9 +409,15 @@ REST and MCP return the same rows as JSON (`rows`, with `has_more` and
 
 **Focus** opens one Automation's own timeline on a page of its own: every Automaton
 under it with every task, in one read of the timeline with `focus=<id>`, so nothing
-is capped or paged. The range runs from the first task to the last (the header
-reads "First task … – last task …"), with the same presets, wheel zoom and drag pan
-as the Gantt, with the same bars, hover highlight and **Edges** toggle; each Automaton can be collapsed and the state is remembered. An
+is capped or paged. The range runs from the first task to the last, each end
+extended by the same 2 percent margin the Gantt's **All time** uses; the header
+reads "First task … – last task …" with the two ends of that displayed range —
+the range ends, not the exact start and end of the first and last task, so each
+can read up to a day earlier or later than the oldest or newest task's own date
+depending on the range's width and your local calendar day. It has the same
+presets, wheel zoom and drag pan as the Gantt, the same bars, hover highlight
+and **Edges** toggle, and each Automaton can be collapsed with the state
+remembered. An
 Automation with nothing started reads "This Automation has no Automata or tasks yet.
 It is planned." and is not an error. **Back** returns to the project page, or to the
 Automation page when you came from its header. From the Automation page the Focus
@@ -792,6 +798,15 @@ the lane defaults. Use REST, MCP or the CLI for those.
   French and Japanese locales; a native speaker has not reviewed the four translations.
   Android and iPhone do not draw edges yet; tracked in datawatch-app. Confirm the cap and
   the default of edges on, and check the edge routing on a project with many dependencies.
+
+- **Focus header dates (2026-11-13).** The Focus header's "First task … – last
+task …" line prints the two ends of the displayed range (the first task pulled
+back and the last task pushed out by the 2 percent margin), not the exact dates
+of the first and last task; each side can read up to a day off. Confirm that the
+range-end wording is what you want under the "First task" and "last task"
+words, rather than changing the label or the dates. The date format is the
+browser's local `toLocaleDateString()`; the label ships in the five locales,
+untranslated native review pending as with the other labels here.
 
 - **The Automation link has no control.** Setting a link works on an Automaton
   from the web app, REST, MCP, the CLI and chat. An Automation also carries a
