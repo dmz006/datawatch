@@ -507,6 +507,20 @@ func (s *Store) Update(ref string, p Patch) (Record, error) {
 		next.State = *p.State
 		changed = append(changed, "state")
 	}
+	if cur.Kind == KindPlan {
+		// A state written through this path is a status set by hand.
+		by := cur.SetByHand
+		if p.State != nil {
+			by = true
+		}
+		if p.SetByHand != nil {
+			by = *p.SetByHand
+		}
+		if by != cur.SetByHand {
+			next.SetByHand = by
+			changed = append(changed, "set_by_hand")
+		}
+	}
 	if p.NeedsReview != nil && *p.NeedsReview != cur.NeedsReview {
 		next.NeedsReview = *p.NeedsReview
 		changed = append(changed, "needs_review")
