@@ -126,11 +126,22 @@ An Automaton with no planning failure has no `planning_failure` object.
 | Web list | A red **Planning failed** badge on the Automaton's row; hover for the reason |
 | REST | `planning_failure` on `GET /api/autonomous/prds/{id}` and on each row of `GET /api/autonomous/prds` |
 | MCP | `autonomous_prd_get` and `autonomous_prd_list` return the same object |
-| CLI | `datawatch autonomous prd-get <id>` prints a **Planning failed** section (reason, category, rule, phrases, retries); `datawatch autonomous prd-list` prints one `planning failed:` line per failed Automaton |
+| CLI | `datawatch autonomous prd-get <id>` prints a **Planning failed** section (reason, category, rule, phrases, retries); `datawatch autonomous prd-list` prints one `planning failed:` line per failed Automaton. Both print these plain-text lines on **standard error**; standard output holds one JSON document only (see below) |
 | Chat | `autonomous get <id>` adds a "Planning failed: ..." line with the phrases; `autonomous list` adds one line per failed Automaton |
 
 A retry of a content failure with the same spec reproduces it, so do not simply
 plan again: reword the phrases the record names.
+
+**Reading the CLI in a script.** `prd-list` and `prd-get` write the JSON to
+standard output and every plain-text note (the `planning failed:` lines, the
+**Planning failed** section, the rules-review outcome, the review and parallel
+lines) to standard error. Standard output is therefore one JSON document, so
+`datawatch autonomous prd-list | jq .` works with no stripping. In a terminal
+you still see both. To keep the notes out of a pipe, redirect with
+`2>/dev/null`; to read only the notes, use `>/dev/null`. Older releases printed
+the `planning failed:` lines after the JSON on standard output, so a script that
+filtered those lines out of standard output no longer needs to, and a script
+that read them from standard output must now read standard error.
 
 ## The alert and the question
 
