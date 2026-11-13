@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.3 — Plans migration uses the real row title
+
+### Fixed
+
+- **The plans migration names each plan from its row's real title.** Registry rows whose title cell held a status note (for example `done, shipped in 9.5.92 (PRD 332c0001)`) used to become plans titled with that note. The migration now takes the title from the row's title or description text, drops leading status words, keeps one line of at most 100 characters, and names a row with no real title `Plan: (untitled row N)`. The row's status still becomes the plan's status, a plan that already exists is never renamed, and a second apply changes nothing. The preview line on the CLI, chat and REST now ends with `titles derived N, fell back M`, and the Plans how-to explains it.
+
 ## v9.172.2 — Two unfixed git CVEs accepted for agent-base
 
 ### Security
