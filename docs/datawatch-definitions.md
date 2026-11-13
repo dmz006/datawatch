@@ -3207,6 +3207,10 @@ A **plan record** of kind `plan` is the registry record of what you are working 
 
 The **plans migration** (`datawatch plans migrate [--apply]`, `POST /api/plans/migrate`, MCP `plan_migrate`, chat `autonomous plan-migrate [apply]`) builds plans from the older project plan lists (arcs) and the registry rows: one plan per plan, one plan per row that names an Automaton or Automation, one backlog plan per open row that names none. It previews unless applied, tags each plan it makes with a `migrated-from` link so a second apply changes nothing, and deletes no plan, row or setting. See [howto/plan-records.md](howto/plan-records.md#building-plans-from-arcs-and-rows).
 
+### Plans write API
+
+The **plans write API** creates, orders and links plans: `POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach`, with MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and `plan_detach`, CLI `datawatch plans`, and chat `autonomous plan`. A link held by another plan is refused with a 409 that names the holder. See [howto/plan-records.md](howto/plan-records.md#ordering-and-linking-plans).
+
 ### Plans read API
 
 The **plans read API** shows a project as plans in priority order: `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks` and `GET /api/plan-records/browse`. It reads the plan-record summary index and pages every list with `limit` and `offset`. See [howto/plan-records.md](howto/plan-records.md#reading-plans).
