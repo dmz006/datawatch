@@ -81,6 +81,7 @@ function cardRaw(v) {
 
 function list(body) {
   const sandbox = loadApp();
+  sandbox.listSetMode('inbox', 'list');
   sandbox._body = body;
   return vm.runInContext('window.triageListHtml(_body)', sandbox);
 }
