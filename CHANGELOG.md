@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **A mechanical gofmt pass over six internal packages** (operator agreed 2026-11-12): `internal/server` (23 files), `internal/memory` (21), `internal/autonomous` (18), `internal/observer` including `internal/observer/ebpf` (15 file changes spanning both directories, 4 in the `ebpf` tree), and `internal/agents` (12) are now gofmt-clean — `gofmt -l` reports none of them. It is a whitespace and ordering pass with no behavior change: the only non-blank hunks are stray blank lines removed and one import group re-sorted by gofmt (`internal/server/plugin_models.go`). No setting, endpoint, command or gate changed: `make lint` does not run gofmt, and `make fmt` (the repo-wide formatter) is unchanged.
+- **For the operator to still review:** the pass covered the six named packages only. About 83 Go files in other packages (`cmd/datawatch`, `internal/config`, `internal/llm` backends, `internal/docsindex`, `internal/mcp`, `internal/inference` and others) are still not gofmt-clean; a repo-wide pass (`make fmt`) or a scoped follow-up is still open. The story's "about 172 Go files" estimate does not match the actual change set (89 file changes across the five tasks); the verified numbers are in this entry.
+
 ## v9.157.1 — Sessions page tag filter and view modes
 
 ### Fixed
