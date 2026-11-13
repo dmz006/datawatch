@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.1 — Task-type routing table: release gaps closed
+
+### Fixed
+
+- **The task-type routing table's release gaps are closed.** The routing settings (`autonomous.task_routing.*`) now apply on every surface: a key that was missing on a path (the configure command, chat, or the config write route) is fixed and each surface has a test. A routing table that names an unknown model is refused with the same message everywhere, and the flag that allows Opus or Fable rows is honoured on REST, MCP, the CLI, chat and the web app.
+- **Routing never overwrites work already in place.** Tests now guard that a hand-set LLM survives routing, add-task and re-decompose, and that switching the active routing profile leaves running tasks and tasks already routed as they are.
+- **The Settings routing editor shows all its text in every language.** Missing routing strings in the five locale files are filled in, and duplicate card ids and routes in the editor are fixed.
+- A browser story and a release smoke section now cover the Settings routing editor, and the task routing how-to states the routing guarantees.
+
 ## v9.172.0 — Plans replace Arcs, with an ordered Plans browser
 
 ### Added
