@@ -5630,5 +5630,18 @@
   "spec_check_severity_warning": "警告",
   "spec_check_severity_error": "エラー",
   "spec_check_fixable": "この表現はデーモンが自動で修正できます。",
-  "spec_check_suggestion": "推奨される言い換え"
+  "spec_check_suggestion": "推奨される言い換え",
+  "planning_failure_title": "計画に失敗しました",
+  "planning_failure_reason": "理由:",
+  "planning_failure_category": "カテゴリ:",
+  "planning_failure_source": "ルール:",
+  "planning_failure_phrases": "該当する表現:",
+  "planning_failure_retryable": "再試行可能",
+  "planning_failure_not_retryable": "再試行不可",
+  "planning_failure_retry_counts": "再試行:",
+  "planning_failure_retry_budget": "再試行の上限:",
+  "planning_failure_badge": "計画に失敗",
+  "planning_failure_question_pending": "確認待ち: 表現を直して再計画する",
+  "planning_failure_question_fix": "表現を直して再計画する",
+  "planning_failure_question_leave": "そのままにする"
 }
