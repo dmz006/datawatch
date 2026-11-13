@@ -174,7 +174,7 @@ func TestTriageBlockedReasonDerivation(t *testing.T) {
 		notjson    string // substring that must not
 	}{
 		{
-			name: "automaton-set reason wins",
+			name:   "automaton-set reason wins",
 			status: PRDBlocked,
 			setup: func(m *Manager, prd *PRD) {
 				prd.Verdicts = []GuardrailVerdict{{
@@ -292,9 +292,9 @@ func TestTriageBlockedReasonDerivation(t *testing.T) {
 			notjson:    `"blocked_reason"`,
 		},
 		{
-			name:     "a failed record never sets the field",
-			status:   PRDFailed,
-			setup:    func(m *Manager, prd *PRD) { clearAutomatonReason(m, prd) },
+			name:       "a failed record never sets the field",
+			status:     PRDFailed,
+			setup:      func(m *Manager, prd *PRD) { clearAutomatonReason(m, prd) },
 			wantReason: "",
 			wantSource: "",
 			notjson:    `"reason_source"`,
