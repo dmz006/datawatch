@@ -237,7 +237,8 @@ func (m *Manager) recordFailureLearning(prd *PRD, unitID, category, detail strin
 // recordFailureLearning fires here, at that exact moment, matching
 // every other "genuinely exhausted" Learning write in this package.
 func (m *Manager) retryDecomposeFailure(prd *PRD, category, source, detail string) bool {
-	reason := &FailureReason{Category: category, Detail: detail, Source: source, OccurredAt: time.Now()}
+	reason := &FailureReason{Category: category, Detail: detail, Source: source, OccurredAt: time.Now(),
+		Phrases: planningFailurePhrases(prd, source, detail)}
 	if m.retryBudgetRemaining(prd, category) {
 		_ = m.consumeRetryBudget(prd, category)
 		reason.Retryable = true
@@ -288,6 +289,7 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 				Source:     source,
 				Retryable:  retryable,
 				OccurredAt: time.Now(),
+				Phrases:    planningFailurePhrases(prd, source, cause.Error()),
 			}
 		})
 	}
@@ -302,6 +304,9 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 		return
 	}
 	m.emitPRDStatus(prd, old, nil, nil)
+	// A non-retryable planning failure raises its one alert and, when the
+	// spec can be reworded by the lint, its one question.
+	m.onPlanningFailureTerminal(prd)
 }
 
 // checkPersistedDecompose re-reads the PRD and its stories from the store

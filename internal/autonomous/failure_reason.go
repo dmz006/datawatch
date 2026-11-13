@@ -98,4 +98,8 @@ type FailureReason struct {
 	// ScopeBreadthNote records why the scope-breadth read produced no answer
 	// (an infrastructure failure of the classifier). Empty otherwise.
 	ScopeBreadthNote string `json:"scope_breadth_note,omitempty"`
+	// Phrases are the exact offending texts that tripped the rule of a
+	// planning failure, taken from the validator error and the spec lint
+	// finding. Additive and omitted when empty.
+	Phrases []string `json:"phrases,omitempty"`
 }

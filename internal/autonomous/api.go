@@ -1525,6 +1525,11 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	if a.M.onBranchRefreshAnswer(c) {
 		return
 	}
+	// The answer to a planning failure question rewords the spec and plans
+	// again, or leaves it (planning_failure.go).
+	if a.M.onPlanningFailureAnswer(c) {
+		return
+	}
 	if a.resolveInfraHoldAnswer(c) {
 		return
 	}
