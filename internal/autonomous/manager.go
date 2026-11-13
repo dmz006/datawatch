@@ -1978,6 +1978,10 @@ type Manager struct {
 	// (generated_artefacts.go). The zero value is dormant.
 	genArt generatedArtefactState
 
+	// startedAt is when this Manager (the daemon) was constructed; the gate
+	// path uses it to tell a restart-killed gate from a real failure.
+	startedAt time.Time
+
 	// taskCommit — commits a task's leftover files when the uncommitted-work
 	// check rescues them. nil means DefaultTaskCommit; tests inject a fake.
 	taskCommit TaskCommitFn
@@ -3146,6 +3150,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	copy(types, builtinTypes)
 	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m := &Manager{
+		startedAt:              time.Now().UTC(),
 		cfg:                    cfg,
 		store:                  st,
 		automations:            automs,

@@ -1300,6 +1300,9 @@ type Task struct {
 	// current incident. It is reset when the task gets a fair attempt; the
 	// InfraRetries history is not.
 	InfraRetryCount int `json:"infra_retry_count,omitempty"`
+	// GateRestartRetryUsed is true once the Automaton has retried this final
+	// gate after a daemon restart killed it; a second kill is not retried.
+	GateRestartRetryUsed bool `json:"gate_restart_retry_used,omitempty"`
 	// SystemTags is the placement-derived tag set this task carries (its
 	// Automaton's project, Automation and Automaton, plus the stage the
 	// Automaton's member slot carries): derived by ObjectTagsForTask under
