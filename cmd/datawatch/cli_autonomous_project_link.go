@@ -71,7 +71,7 @@ are read and written; no session is touched.`,
 			if out == nil {
 				out = os.Stdout
 			}
-			fmt.Fprint(out, formatProjectLinkReport(rep))
+			_, _ = fmt.Fprint(out, formatProjectLinkReport(rep))
 			return nil
 		},
 	}
@@ -89,7 +89,7 @@ func formatProjectLinkReport(rep autonomous.ProjectLinkBackfillReport) string {
 	}
 	fmt.Fprintf(&b, "Project link backfill (%s) — project: %s\n", mode, orDash(rep.Project))
 	tw := tabwriter.NewWriter(&b, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "AUTOMATON\tTITLE\tPROJECT\tSOURCE\tRESULT")
+	_, _ = fmt.Fprintln(tw, "AUTOMATON\tTITLE\tPROJECT\tSOURCE\tRESULT")
 	for _, e := range rep.Entries {
 		result := "would link"
 		switch {
@@ -102,7 +102,7 @@ func formatProjectLinkReport(rep autonomous.ProjectLinkBackfillReport) string {
 		case rep.Apply:
 			result = "not written"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", e.ID, orDash(e.Title), orDash(e.Project), orDash(e.Source), result)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", e.ID, orDash(e.Title), orDash(e.Project), orDash(e.Source), result)
 	}
 	_ = tw.Flush()
 	c := rep.Counts
