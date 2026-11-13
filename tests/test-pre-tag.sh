@@ -94,7 +94,7 @@ echo "timeout \$*" >> "$LOG"
 shift 3; exec "\$@"
 EOS
 chmod +x "$BIN/nice" "$BIN/timeout"
-for t in nproc pkill sleep seq; do p="$(command -v "$t")" && ln -sf "$p" "$BIN/$t"; done
+for t in nproc sleep seq; do p="$(command -v "$t")" && ln -sf "$p" "$BIN/$t"; done
 : > "$LOG"
 PATH="$BIN" PRE_TAG_ONLY=slow-opt-in PRE_TAG_RECORD_FILE="$WORK/rec-s" PRE_TAG_SLOW_TIMEOUT=77 bash "$SCRIPT" >/dev/null 2>&1
 check "slow step runs make test-tmp-guard" 'grep -qx "make test-tmp-guard" "$LOG"'

@@ -125,7 +125,6 @@ kill_slow() {
   local p
   for p in "${SLOW_PIDS[@]:-}"; do
     [ -n "$p" ] || continue
-    pkill -TERM -P "$p" 2>/dev/null
     kill -TERM "$p" 2>/dev/null
   done
   SLOW_PIDS=()
@@ -151,10 +150,10 @@ slow_run() {
 }
 s_slow_opt_in() {
   local rc=0 t
-  for t in test-tmp-guard test-cross-build; do
-    echo "[slow-opt-in] make $t"
-    slow_run make "$t" || rc=1
-  done
+  echo "[slow-opt-in] make test-tmp-guard"
+  slow_run make test-tmp-guard || rc=1
+  echo "[slow-opt-in] make test-cross-build"
+  DW_RUN_CROSS_BUILD=1 slow_run make test-cross-build || rc=1
   if grep -qE '^perf-rollup-check:' Makefile 2>/dev/null; then
     echo "[slow-opt-in] make perf-rollup-check"
     slow_run make perf-rollup-check || rc=1

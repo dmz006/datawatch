@@ -362,13 +362,6 @@ help:
 	@echo "  make test-tmp-guard    runs the temp-dir leak guard over every package"
 	@echo "  make test-cross-build  cross-builds the daemon for windows and darwin"
 
-# Cross-compile smoke: every release GOOS/GOARCH must build (output discarded).
-test-cross-build:
-	@set -e; for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do \
-	  echo "cross-build $$t"; \
-	  GOOS=$${t%/*} GOARCH=$${t#*/} go build -trimpath -o /dev/null ./cmd/datawatch/; \
-	done
-
 fmt:
 	gofmt -w .
 

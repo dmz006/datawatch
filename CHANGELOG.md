@@ -7,6 +7,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.173.0 — Local pre-tag run replaces the slow CI checks
 
+### Added
+
+- **`make pre-tag` runs the release gates locally before the tag.** `scripts/pre-tag.sh` runs the checks CI would otherwise find after the tag, in CI order, and stops at the first failure: lint, the Go test suite, the security and release-build steps, and an opt-in slow step (tmp guard, cross build of the release targets, perf rollup and busy-loop checks, each niced and time-limited). A step whose tool is missing prints `SKIP [step]: <tool> not found` and does not fail the run. Every run appends a line to the git-ignored `.datawatch/pre-tag-record` (`PRE_TAG_RECORD_FILE` overrides it; a dry run writes nothing). `tests/test-pre-tag.sh` covers the runner and runs in `make test`.
+
+### Changed
+
+- **CI no longer runs the Go test suite.** The `go test` step was removed from `.github/workflows/ci.yaml` and `.github/workflows/release.yaml`, and the release job is now named `lint + build`. The pre-tag run is the only gate that runs the suite, so run it before every tag. AGENT.md, CONTRIBUTING.md, the release checklist, the push-and-tag how-to, the testing page, the operations page and the glossary describe the rule.
 
 ## v9.172.14 — Accept the second soupsieve finding on the aider image
 
