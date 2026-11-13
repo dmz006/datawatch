@@ -452,8 +452,9 @@ Both go through one route, `PATCH /api/plans/{ref}`, whose body holds `title`,
 - **The old title is kept as an older title**, so an old reference, a link in a
   note or `plan attach <old title>` still finds the plan. A change of letter case
   alone adds no older title.
-- **A renamed plan keeps its name.** The plan is marked as titled by hand and a
-  later `plans migrate --apply` does not overwrite the title.
+- **A renamed plan keeps its name.** The plan is marked as titled by hand, so a
+  rename survives a second `datawatch plans migrate --apply`: the migration
+  leaves the title you chose and does not put the old one back.
 - **A goal** is trimmed and is at most 2000 characters. An empty goal clears it
   (REST, CLI `--goal ""`, MCP and the web app; chat refuses an empty goal so a
   stray message cannot wipe one).
