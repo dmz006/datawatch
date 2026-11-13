@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.166.0 — A daemon restart no longer kills a running final gate
+
+### Fixed
+
+- A daemon restart no longer kills a running final gate. Gate and verifier child processes start in their own process group and survive a restart. The daemon re-attaches to a still-running gate at the next start, or reads its result file when the gate already finished, and counts no failure or retry. A gate killed by a signal within five minutes of the daemon starting is retried once without using the content budget.
+
+### Added
+
+- `autonomous.gate_drain_minutes` (default 10, 0 = do not wait): a graceful restart or stop waits up to this many minutes for running gates before exiting. The wait is bounded and kills nothing; unfinished gates re-attach at the next start. Settable through `PUT /api/config`, MCP `config_set`, comm `configure`, `datawatch config set` and Settings.
+- The restart answer reports `gates_waited` and `gates_interrupted`, and the interruption report carries `running_gates` and `running_gate_count`.
+
+### Changed
+
+- Docs: the restart how-to, the operations guide and the glossary now describe the graceful-restart wait for running final gates (`autonomous.gate_drain_minutes`, default 10, 0 = do not wait), the `running_gates` / `running_gate_count` fields of the interruption report, and the `gates_waited` / `gates_interrupted` fields of the `POST /api/restart` answer. The wait is bounded and kills nothing; unfinished gates re-attach at the next start.
+- Docs: the restart how-tos, the operations guide and the glossary now describe the final gate surviving a daemon restart: its own durable run record, re-attach at boot with no failure or retry counted, the shipped systemd unit's `KillMode=process`, and the one restart retry for a gate killed by a signal within five minutes of the daemon starting.
+
 ## v9.165.0 — Task-type routing table for Automaton tasks
 
 ### Added

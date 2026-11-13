@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.165.0 (2026-11-12).** Automaton tasks now get the right LLM by task type from an editable routing table with named profiles, a dry run and every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.166.0 (2026-11-12).** A daemon restart no longer kills a running final gate: gates keep running in their own process group, the daemon re-attaches or reads the result, and a graceful restart waits up to autonomous.gate_drain_minutes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
