@@ -11794,6 +11794,10 @@ components:
             verification_script_empty: {type: boolean, description: "Assert the task has no verification script"}
             report_path_empty: {type: boolean, description: "Assert the task has no usable report path (empty, or not a clean path under .datawatch/reports/)"}
             verification_script_unexecutable: {type: boolean, description: "Assert the task's verification script is a command string or not a runnable script file"}
+            verification_script_reason_empty: {type: boolean, description: "Assert the task states no reason for lacking a verification script"}
+            verification_script_task_files_only: {type: boolean, description: "Assert the verification script compares only against the task's own files and never the merge base"}
+            verification_script_docs_without_sync: {type: boolean, description: "Assert the verification script checks docs without running make sync-docs"}
+            kind: {type: string, description: "Assert the task kind (for example final_gate), case-insensitive"}
             files_regex: {type: string, description: "Regex a task's declared files must match (RE2)"}
             any_of: {type: array, items: {type: object}, description: "Matches when at least one sub-condition matches"}
             all_of: {type: array, items: {type: object}, description: "Matches when every sub-condition matches"}

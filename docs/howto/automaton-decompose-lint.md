@@ -139,6 +139,9 @@ and never name a particular project, repository or home directory.
 | `reads_operator_data_or_config_folders` | block | a spec that reads a home-directory dot folder (`.datawatch`, `.config`, `.ssh`, `.aws`, …) |
 | `read_only_but_writes_files` | block | a task marked `read_only` that still lists files |
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
+| `verify_script_task_files_only` | block | a verification script that compares only against the task's own files (a literal allowed-file list equal to them, or a file-listing diff of HEAD, the working tree or main) and never against `git merge-base`; a sourced helper (one level deep) that uses the merge base passes. The finding names the script path. A script that does not exist yet is skipped |
+| `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
+| `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
@@ -204,6 +207,10 @@ hold for the same task. The leaves:
 | `verification_script_empty` | assert the task declares no verification script |
 | `report_path_empty` | assert the task has no usable report path (empty, or not a clean path under `.datawatch/reports/`) |
 | `verification_script_unexecutable` | assert the task's verification script is not a runnable file (command string, or missing/not executable/no shebang when the project directory is known) |
+| `verification_script_reason_empty` | assert the task states no reason for lacking a verification script |
+| `verification_script_task_files_only` | assert the script (plus sourced helpers, one level) compares only against the task's own files and never the merge base; skipped when the script file does not exist |
+| `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
+| `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
 
