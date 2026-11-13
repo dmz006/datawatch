@@ -25,13 +25,13 @@ import (
 // Fields are deliberately string-typed where possible so the
 // log is human-readable + easy to grep/jq.
 type AuditEvent struct {
-	At      time.Time              `json:"at"`
-	Event   string                 `json:"event"` // spawn | terminate | result | bootstrap | spawn_fail | revoke | sweep
-	AgentID string                 `json:"agent_id,omitempty"`
-	Project string                 `json:"project,omitempty"`
-	Cluster string                 `json:"cluster,omitempty"`
-	State   string                 `json:"state,omitempty"`
-	Note    string                 `json:"note,omitempty"`
+	At      time.Time `json:"at"`
+	Event   string    `json:"event"` // spawn | terminate | result | bootstrap | spawn_fail | revoke | sweep
+	AgentID string    `json:"agent_id,omitempty"`
+	Project string    `json:"project,omitempty"`
+	Cluster string    `json:"cluster,omitempty"`
+	State   string    `json:"state,omitempty"`
+	Note    string    `json:"note,omitempty"`
 	// ParentAgentID (GH#201 Phase 3) threads the already-tracked
 	// Agent.ParentAgentID spawn-chain data into the audit trail
 	// itself — previously only the "spawn" event carried it, buried
@@ -90,14 +90,15 @@ func (m *MemoryAuditor) Recent(n int) []AuditEvent {
 }
 
 // AuditFormat selects the wire format for FileAuditor output.
-//   FormatJSONLines (default) — one JSON object per line, jq-friendly,
-//                                preferred for in-house pipelines + the
-//                                datawatch web UI's audit query.
-//   FormatCEF                 — ArcSight Common Event Format, a syslog-
-//                                compatible single-line format every
-//                                major SIEM (Splunk / QRadar / ArcSight /
-//                                Sentinel) parses out of the box.
-//                                Pick this when forwarding to a SIEM.
+//
+//	FormatJSONLines (default) — one JSON object per line, jq-friendly,
+//	                             preferred for in-house pipelines + the
+//	                             datawatch web UI's audit query.
+//	FormatCEF                 — ArcSight Common Event Format, a syslog-
+//	                             compatible single-line format every
+//	                             major SIEM (Splunk / QRadar / ArcSight /
+//	                             Sentinel) parses out of the box.
+//	                             Pick this when forwarding to a SIEM.
 type AuditFormat int
 
 const (
@@ -257,21 +258,22 @@ func emitWithParent(a Auditor, event, agentID, parentAgentID, project, cluster, 
 // FormatCEFLine renders an AuditEvent in ArcSight Common Event
 // Format. The wire format is:
 //
-//   CEF:0|datawatch|datawatch|<version>|<sigID>|<name>|<sev>|<extension>
+//	CEF:0|datawatch|datawatch|<version>|<sigID>|<name>|<sev>|<extension>
 //
 // The pipe-delimited header fields must escape `|` and `\`; the
 // extension's key=value pairs must escape `=`, `\`, and newlines.
 // We follow the standard escapes per the ArcSight CEF spec.
 //
 // SignatureID + Name + Severity mappings:
-//   spawn       → 100 / "AgentSpawn"        / 3 (low)
-//   spawn_fail  → 101 / "AgentSpawnFailure" / 6 (medium)
-//   terminate   → 110 / "AgentTerminate"    / 3
-//   result      → 120 / "AgentResult"       / 3
-//   bootstrap   → 130 / "AgentBootstrap"    / 4
-//   revoke      → 200 / "TokenRevoke"       / 4
-//   sweep       → 210 / "TokenSweep"        / 3
-//   anything else → 0 / "AgentEvent"        / 3
+//
+//	spawn       → 100 / "AgentSpawn"        / 3 (low)
+//	spawn_fail  → 101 / "AgentSpawnFailure" / 6 (medium)
+//	terminate   → 110 / "AgentTerminate"    / 3
+//	result      → 120 / "AgentResult"       / 3
+//	bootstrap   → 130 / "AgentBootstrap"    / 4
+//	revoke      → 200 / "TokenRevoke"       / 4
+//	sweep       → 210 / "TokenSweep"        / 3
+//	anything else → 0 / "AgentEvent"        / 3
 func FormatCEFLine(ev AuditEvent) string {
 	sigID, name, severity := cefSignature(ev.Event)
 	header := fmt.Sprintf("CEF:0|datawatch|datawatch|%s|%d|%s|%d|",

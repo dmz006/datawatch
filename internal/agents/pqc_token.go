@@ -67,11 +67,11 @@ const (
 // All four byte slices are sensitive — never logged, json:"-", zeroed
 // on Agent.GitToken-style cleanup paths.
 type PQCKeys struct {
-	KEMPrivateB64    string // worker holds this (env)
-	KEMPublicB64     string // worker holds this (env, for self-check)
-	SignPrivateB64   string // worker holds this (env)
-	SignPublicB64    string // parent holds this (verifies signature)
-	KEMSharedSecret  []byte // parent re-derives on consume; compared to worker's
+	KEMPrivateB64   string // worker holds this (env)
+	KEMPublicB64    string // worker holds this (env, for self-check)
+	SignPrivateB64  string // worker holds this (env)
+	SignPublicB64   string // parent holds this (verifies signature)
+	KEMSharedSecret []byte // parent re-derives on consume; compared to worker's
 }
 
 // GeneratePQCKeys mints fresh KEM + signing keypairs for one spawn.
@@ -115,9 +115,9 @@ func GeneratePQCKeys() (*PQCKeys, error) {
 // path (real bootstrap) and by tests / smoke scripts.
 //
 // The envelope is constructed as:
-//   1. KEM-encapsulate against the parent's KEM public → (ct, ss)
-//   2. Sign agent_id with the worker's signing private key
-//   3. Concatenate base64(ct) + "." + base64(sig)
+//  1. KEM-encapsulate against the parent's KEM public → (ct, ss)
+//  2. Sign agent_id with the worker's signing private key
+//  3. Concatenate base64(ct) + "." + base64(sig)
 //
 // Returns (envelope, ss). The parent must arrive at the same ss
 // independently by KEM-decapsulating ct with the parent's KEM

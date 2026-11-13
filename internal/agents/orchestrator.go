@@ -65,18 +65,18 @@ const (
 
 // NodeRun is a per-node runtime record.
 type NodeRun struct {
-	NodeID      string
-	State       NodeState
-	AgentID     string       // populated after spawn
-	Result      *AgentResult // populated after RecordResult
-	Error       string       // spawn or wait failure
-	StartedAt   time.Time
-	FinishedAt  time.Time
+	NodeID     string
+	State      NodeState
+	AgentID    string       // populated after spawn
+	Result     *AgentResult // populated after RecordResult
+	Error      string       // spawn or wait failure
+	StartedAt  time.Time
+	FinishedAt time.Time
 }
 
 // PlanRun is the aggregate result of Orchestrator.Run.
 type PlanRun struct {
-	Nodes map[string]*NodeRun
+	Nodes      map[string]*NodeRun
 	StartedAt  time.Time
 	FinishedAt time.Time
 }

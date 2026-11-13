@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	OnCrashFailParent          = "fail_parent"
-	OnCrashRespawnOnce         = "respawn_once"
-	OnCrashRespawnWithBackoff  = "respawn_with_backoff"
+	OnCrashFailParent         = "fail_parent"
+	OnCrashRespawnOnce        = "respawn_once"
+	OnCrashRespawnWithBackoff = "respawn_with_backoff"
 
 	respawnBackoffStart = time.Minute
 	respawnBackoffMax   = 30 * time.Minute
