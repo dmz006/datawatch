@@ -163,6 +163,30 @@ stronger one for release work.
   (see above); a running, finished or hand-edited task never changes.
 - **Delete** a profile. The active profile cannot be deleted.
 
+## The routing guarantees
+
+Five promises hold on every surface, so you can turn routing on without fear
+of losing a choice you made:
+
+1. **A hand-set LLM is never overwritten.** An LLM you set by hand on a task,
+   a story or an Automaton is never replaced by the table, and a re-decompose
+   never replaces it either.
+2. **Switching the active profile only affects tasks created afterwards.**
+   Existing tasks keep the LLM they were given, and the switch itself rewrites
+   no task.
+3. **An unknown backend or model is refused, and the message names the row.**
+   The reply gives the profile and the row at fault (for example
+   `profile "p" row "final_gate"`) and nothing from that block is stored.
+4. **A row naming an Opus or Fable model needs `allow_premium_model`.** Without
+   `allow_premium_model: true` on that row, the row is refused.
+5. **The routing config keys are settable on every surface.**
+   `autonomous.task_routing.enabled`, `autonomous.task_routing.active_profile`
+   and `autonomous.task_routing` (the whole block) can be set on REST
+   (`PUT /api/config`), MCP (`config_set`), the comm channel (the `configure`
+   verb), the CLI (`datawatch config set`) and the Settings page (Automata tab,
+   Task routing card). Each one goes through the same validation, so rules 3
+   and 4 apply to all of them.
+
 ## Export, import and matrix results
 
 A profile moves between servers as a JSON file: `format_version`, `name` and
