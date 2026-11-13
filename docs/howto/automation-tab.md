@@ -32,7 +32,7 @@ to its tab without changing the other tabs.
 
 | Sub-tab | What is on it |
 |---|---|
-| **Inbox** | What waits on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. The count badge on the tab counts only what awaits your action — it never counts the read-only cards; see [What the Inbox counts](#what-the-inbox-counts). |
+| **Inbox** | What waits on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. The count and the tab badge count only what you can act on — the open questions, the held questions and the Triage records with an action button; the read-only cards (the security failure report, and the supervisor findings) never add to it. The three lists share one [List / Tiles / Compact view switch](#the-view-switch-list-tiles-compact). Details: [What the Inbox counts](#what-the-inbox-counts). |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages appear here when they ship. A **Focus** button in the header of an Automation's page opens its timeline (see [projects-tab.md](projects-tab.md#focus-on-one-automation)). |
 | **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
 | **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
@@ -140,6 +140,52 @@ in Overview. If a selected project has nothing waiting on you, the badge is hidd
 
 This is a display rule of the web app only. REST, MCP, the CLI and the comm channel
 still return every item, unfiltered.
+
+### The view switch (List, Tiles, Compact)
+
+Above the three Inbox lists (Triage, open questions, held questions) is a
+**view switch** with three buttons — **List**, **Tiles**, **Compact** — the
+same three modes the Sessions list offers. One switch covers all three Inbox
+lists: the mode you pick applies to Triage, open questions and held questions
+together, and it is remembered on this device, the same way the Sessions list
+remembers its mode, so it comes back when you reopen the tab.
+
+- **List** — the densest view, one line per item.
+- **Tiles** — one full card per item.
+- **Compact** — smaller cards, several to a row.
+
+Until you press a button, the mode follows the window width (wide: Tiles,
+mid-width: Compact, narrow: List); once you press one, that choice wins on
+this device. Switching only repaints the lists from the data already loaded —
+nothing is fetched again, and the badge counts the same items before and
+after. The choice is stored in your browser, not on the daemon, so it does
+not follow you to another browser or phone, and clearing the browser's site
+data resets it to the defaults.
+
+The flat **Automata** list and the **Automations** list carry the same view
+switch, above their lists and next to the **Group by** dropdown described
+next.
+
+### The Group by dropdown
+
+The **Automata** and **Automations** lists carry, next to the view switch, a
+**Group by** select. The choices are **No grouping** (the default), **tag**,
+**state**, **node**, **project**, and each tag prefix — **automation:**,
+**stage:**, **kind:**, **compute:**, **peer:**, **backend:**, **lane:**,
+**role:** and **project:**. Each group draws under its header, with a
+collapse toggle, the item count and the state mix; long groups page with a
+**Show more** button. The choice, the collapsed groups and the per-group
+paging are remembered on this device, per list.
+
+The dropdown also keeps its state across a list's refreshes. When the list
+redraws — the next poll, a filter, coming back to the sub-tab — the select is
+patched in place instead of replaced while you are in it, so an open or
+focused dropdown keeps its open state and focus, and the selection you made is
+restored onto it. When a redraw does stand a new toolbar (because the mode or
+group changed), the new select is drawn with your stored group, never back to
+the default. Because the choice is stored on this device, it also comes back
+after a page reload. Whatever the refresh, the group you chose is the group
+the list shows.
 
 ### The needs-attention card
 
