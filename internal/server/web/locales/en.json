@@ -5135,5 +5135,17 @@
   "projects_manage_err_name": "Enter a project name.",
   "projects_manage_err_dir": "Enter the project directory.",
   "projects_manage_saved": "Project %1$s saved.",
-  "projects_manage_removed": "Project %1$s removed."
+  "projects_manage_removed": "Project %1$s removed.",
+  "automaton_project_label": "Project",
+  "automaton_project_source_link": "set directly on this Automaton",
+  "automaton_project_source_automation": "from its Automation",
+  "automaton_project_source_parent": "from its parent Automaton",
+  "automaton_project_source_directory": "from its directory",
+  "automaton_project_none": "No project",
+  "automaton_project_save": "Save project",
+  "automaton_project_clear": "Clear link",
+  "automaton_project_saved": "Project link saved",
+  "automaton_project_error": "Could not set the project",
+  "projects_page_without_project": "Automata without a project",
+  "projects_page_without_project_hint": "Set a project link from the Automaton detail to place one here."
 }

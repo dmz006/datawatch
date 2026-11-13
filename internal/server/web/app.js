@@ -3417,6 +3417,8 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       events.push(t('projects_event_no_unassigned'));
       if (showEmpty) body += `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
+    const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
+    if (wp.length) body += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${automataList(wp)}</div>`;
   }
   body += _projectGanttHTML(hist);
   body += _projectHistoryHTML(hist);
@@ -20204,6 +20206,41 @@ function openPRDSetPermissionModeModal(prdID, current) {
 }
 window.openPRDSetPermissionModeModal = openPRDSetPermissionModeModal;
 
+// Project link on the Automaton settings: where the Automaton's project came
+// from, the configured project names, and the save/clear call to
+// POST /api/autonomous/prds/{id}/set_project.
+function _automatonProjectSourceHTML(prd) {
+  const proj = prd && prd.project ? String(prd.project) : '';
+  const src = prd && prd.project_source ? String(prd.project_source) : 'none';
+  const keys = { link: 'automaton_project_source_link', automation: 'automaton_project_source_automation', parent: 'automaton_project_source_parent', directory: 'automaton_project_source_directory' };
+  if (!proj || !keys[src]) return escHtml(t('automaton_project_none'));
+  return escHtml(proj) + ' — ' + escHtml(t(keys[src]));
+}
+function _automatonProjectNames() {
+  return apiFetch('/api/projects').then(list => (Array.isArray(list) ? list : []).map(p => p && p.name).filter(Boolean)).catch(() => []);
+}
+function _automatonProjectSave(prdID, clear) {
+  const sel = document.getElementById('prdSettingsProject');
+  const msg = document.getElementById('prdSettingsProjectMsg');
+  const project = clear ? '' : ((sel && sel.value) || '');
+  if (msg) msg.textContent = '';
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_project', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ project: project }),
+  }).then(prd => {
+    if (clear && sel) sel.value = '';
+    const src = document.getElementById('prdSettingsProjectSource');
+    if (src && prd) src.innerHTML = _automatonProjectSourceHTML(prd);
+    showToast(t('automaton_project_saved'), 'success', 1500);
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(err => {
+    const text = (err && err.message) || String(err);
+    if (msg) msg.textContent = t('automaton_project_error') + ': ' + text;
+    showToast(t('automaton_project_error') + ': ' + text, 'error', 6000);
+  });
+}
+window._automatonProjectSave = _automatonProjectSave;
+
 // BL246 v6.6.0 — unified PRD Settings modal: type, backend, effort, model,
 // skills, guided_mode in one place. Splits "edit spec" (handled by
 // openPRDEditModal) from non-spec settings so each form stays small and
@@ -20244,10 +20281,12 @@ function openPRDSettingsModal(prdID) {
         git_pushed_sha:       (prd.git && prd.git.pushed_sha) || '',
         max_concurrent_tasks: prd.max_concurrent_tasks || 0,
         priority:             prd.priority || 0,
+        project:              prd.project_source === 'link' ? (prd.project || '') : '',
         read_dirs:            (prd.read_dirs || []).join(', '),
         write_dirs:           (prd.write_dirs || []).join(', '),
       };
-      ensureLLMModelLists().then(() => {
+      Promise.all([ensureLLMModelLists(), _automatonProjectNames()]).then(res => {
+        const projectNames = res[1];
         const notifyInherit = !(prd.notify_events || []).length;
         const neffEvents = (prd.notify_events_effective && Array.isArray(prd.notify_events_effective.events))
           ? prd.notify_events_effective.events : [];
@@ -20328,6 +20367,19 @@ function openPRDSettingsModal(prdID) {
               <label class="wizard-label">${escHtml(t('prd_settings_concurrency_label')||'Max concurrent tasks (0 = global default)')}</label>
               <input type="number" id="prdSettingsConcurrency" class="form-input" min="0" max="32" value="${cur.max_concurrent_tasks}" placeholder="0" style="width:80px;" />
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">0 or 1 = sequential · 2+ = fan out independent tasks in parallel</div>
+            </div>
+            <div class="wizard-field" style="margin-top:2px;" id="prdSettingsProjectField">
+              <label class="wizard-label" for="prdSettingsProject">${escHtml(t('automaton_project_label'))}</label>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:2px;" id="prdSettingsProjectSource">${_automatonProjectSourceHTML(prd)}</div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <select id="prdSettingsProject" class="form-select" style="flex:1;min-width:140px;">
+                  <option value="">${escHtml(t('automaton_project_none'))}</option>
+                  ${projectNames.map(n => `<option value="${escHtml(n)}" ${n===cur.project?'selected':''}>${escHtml(n)}</option>`).join('')}
+                </select>
+                <button type="button" class="btn-secondary" onclick="_automatonProjectSave(${escHtml(JSON.stringify(prdID))}, false)">${escHtml(t('automaton_project_save'))}</button>
+                <button type="button" class="btn-secondary" onclick="_automatonProjectSave(${escHtml(JSON.stringify(prdID))}, true)">${escHtml(t('automaton_project_clear'))}</button>
+              </div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px;" id="prdSettingsProjectMsg"></div>
             </div>
             <div class="wizard-field" style="margin-top:2px;">
               <label class="wizard-label">${escHtml(t('prd_settings_priority_label')||'Capacity queue priority (higher runs first)')}</label>
