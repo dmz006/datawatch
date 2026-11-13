@@ -184,6 +184,20 @@ fixed standard library. The check does not do that for you.
 The check covers the host it runs on. A federated peer, a compute node or a
 container image has its own tools; run the check on that machine to see them.
 
+## For the operator to review
+
+- **Not wired into CI.** `make check-toolchain` is part of the local pre-tag run
+  only; `build` does not depend on it. Decide whether you want it in a release
+  checklist or a scheduled run on the build host.
+- **Daily schedule is a choice.** The cron, systemd timer and `datawatch
+  schedule spawn` examples are suggestions; none is installed for you.
+- **Go updates stay manual.** The check reports that Go is behind, and the
+  update steps above are run by a person. Confirm the sha256 you verify comes
+  from the official download page.
+- **Exit code 1 means a tool is behind.** A wrapper that treats any non-zero exit
+  as a build failure will block on a stale tool; an unreachable source still
+  exits 0.
+
 ## See also
 
 - [Toolchain freshness check](toolchain-freshness-check.md) — the full reference
