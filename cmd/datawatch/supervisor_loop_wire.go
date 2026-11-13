@@ -34,7 +34,7 @@ func supervisorLoopSettingsFrom(cfg *config.Config) supervisorloop.Settings {
 // wireSupervisorLoop registers the eight mechanical steps on the coordinator's
 // idle tick and connects the escalator to the operator question queue. Run
 // records go to supervisor_loop_runs.jsonl in the data directory.
-func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Manager, cfg *config.Config, reg *inference.Registry, srv *server.HTTPServer) {
+func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Manager, aAPI *autonomouspkg.API, cfg *config.Config, reg *inference.Registry, srv *server.HTTPServer) {
 	if coord == nil || amgr == nil || cfg == nil {
 		return
 	}
@@ -56,6 +56,7 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 	hooks := server.NewSupervisorLoopHooks(amgr, cfg, settings)
 	steps := autonomouspkg.NewSupervisorLoopSteps(coord, engine, hooks)
 	coord.SetSupervisorLoopSteps(steps)
+	wireHousekeepingRepairs(coord, amgr, aAPI, cfg, steps, autonomouspkg.HousekeepingWiring{})
 	if srv != nil {
 		srv.SetSupervisorLoop(server.NewSupervisorLoopControl(steps, jobs, store))
 	}
@@ -84,4 +85,30 @@ func updateSupervisorLoopMetrics(s statspkg.SystemStats) {
 	metricsPkg.SupervisorLoopRuns.WithLabelValues("error").Set(float64(s.SupervisorLoopRunsError))
 	metricsPkg.SupervisorLoopJobsEnabled.Set(float64(s.SupervisorLoopJobsEnabled))
 	metricsPkg.SupervisorLoopLastRunAge.Set(float64(s.SupervisorLoopLastRunAgeSeconds))
+}
+
+// wireHousekeepingRepairs builds the housekeeping Repairer, installs it on the
+// Manager (so the REST, MCP, CLI, chat and web reads return live data) and on
+// the Coordinator (so it runs on the supervisor loop's schedule). base carries
+// optional ops overrides (tests pass fakes); the daemon passes the zero value.
+func wireHousekeepingRepairs(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Manager, aAPI *autonomouspkg.API, cfg *config.Config, steps *autonomouspkg.SupervisorLoopSteps, base autonomouspkg.HousekeepingWiring) *autonomouspkg.Repairer {
+	if amgr == nil || cfg == nil {
+		return nil
+	}
+	base.API = aAPI
+	base.Steps = steps
+	base.Settings = func() config.HousekeepingRepairsConfig { return cfg.Autonomous.HousekeepingRepairs }
+	base.Log = func(line string) { log.Printf("[housekeeping-repair] %s", line) }
+	base.Alert = func(level, title, body string) {
+		if sink := amgr.AlertSink(); sink != nil {
+			sink(level, title, body)
+		}
+	}
+	if base.StorePath == "" {
+		base.StorePath = filepath.Join(expandHome(cfg.DataDir), "housekeeping_repairs.json")
+	}
+	rep := autonomouspkg.NewHousekeepingRepairer(base)
+	amgr.SetHousekeepingRepairer(rep)
+	coord.SetHousekeepingRepairer(rep)
+	return rep
 }

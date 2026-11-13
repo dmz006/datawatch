@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The housekeeping repairs now run in the daemon.** They existed only as library code. The daemon start-up path now builds the repairer (`NewHousekeepingRepairer`), installs it on the Automata manager and on the coordinator, and runs it on the supervisor loop's idle tick, right after the loop's own steps. `GET /api/autonomous/housekeeping-repairs`, the `housekeeping_repairs` MCP tool, `datawatch autonomous housekeeping-repairs`, the chat verb and the Housekeeping card now return what the live repairer recorded. In the daemon the task chain and advance groups use the Automaton-store-backed repairs, and the lane fill and leftovers groups use the supervisor-step repairs; the default mode for every group is still `report`.
+- **`autonomous.housekeeping_repairs.*` can be read and changed on every configuration surface.** `PUT /api/config`, MCP `config_set`, the chat `configure` verb, `datawatch config set` and the Settings select fields now read and set each group's mode (`off`, `report`, `on`) and `grace_seconds`. A bad value is refused with one message on every surface and nothing is written; a change applies on the next pass without a restart.
+
+### Documentation
+
+- The new block is in the config reference; the testing tracker has a section for the endpoint contract and the wiring; the release smoke script checks the endpoint and a mode round trip; the MCP and Cursor MCP references and the API to MCP mapping list the `housekeeping_repairs` tool; the new locale keys are in the must-have list of the locale test.
+
+### Live check
+
+- A live smoke was **not** run against a daemon built from this change. The only running daemon reachable from this session is the operator's own, at v9.163.3, built before this change; `GET /api/autonomous/housekeeping-repairs` answers 404 there, as expected, and the repairs were not touched. The release smoke section was syntax-checked (`bash -n`) only; the functional test of the daemon wiring (report, on and off modes with fakes) and the per-surface config tests pass. Run `scripts/release-smoke.sh` on an isolated test daemon at release time.
+
 ## v9.158.0 — Lane utilization view
 
 ### Added

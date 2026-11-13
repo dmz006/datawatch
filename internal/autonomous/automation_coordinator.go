@@ -115,6 +115,9 @@ type Coordinator struct {
 	// slSteps are the supervisor loop's mechanical steps the idle tick runs
 	// (supervisor_loop_steps.go); nil until the daemon registers them.
 	slSteps *SupervisorLoopSteps
+	// hkRepairer is the housekeeping Repairer the idle tick runs after the
+	// supervisor loop's pass (housekeeping_repairs_wire.go). Guarded by mu.
+	hkRepairer *Repairer
 
 	// mp is the merge-pending pass state (merge_pending_pass.go): the
 	// in-memory comparison cache and shadow bookkeeping. Its zero value is

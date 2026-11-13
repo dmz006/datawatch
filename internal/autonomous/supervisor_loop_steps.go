@@ -224,6 +224,7 @@ func (c *Coordinator) supervisorLoopPass(ctx context.Context) {
 	steps := c.slSteps
 	c.mu.Unlock()
 	steps.RunPass(ctx)
+	c.HousekeepingPass(ctx) // housekeeping repairs run on the same schedule (housekeeping_repairs_wire.go)
 }
 
 // SetSupervisorLoopSteps registers the steps the idle tick runs. Nil turns

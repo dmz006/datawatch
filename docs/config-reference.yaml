@@ -2620,6 +2620,42 @@ autonomous:
       bug: bug
       other: maintenance
 
+  # Housekeeping repairs: the daemon repairs, or at least cleanly resolves, the
+  # basic stuck states that otherwise only the supervisor watch reports. One mode
+  # per repair group: off (the group does nothing), report (the default: record
+  # what it would do and change nothing) or on (repair). The repairs run on the
+  # supervisor loop's idle tick. A repair never merges, ships, deletes, ends or
+  # signals a session, changes a model or backend setting, or touches a security
+  # workflow. Every key is settable on every configuration channel: PUT
+  # /api/config {"autonomous.housekeeping_repairs.<name>": <value>} (GET
+  # /api/config shows the effective values under autonomous.housekeeping_repairs),
+  # CLI `datawatch config set autonomous.housekeeping_repairs.<name> <value>`,
+  # MCP `config_set` with key autonomous.housekeeping_repairs.<name> (requires
+  # mcp.allow_self_config=true), comm `configure
+  # autonomous.housekeeping_repairs.<name>=<value>`, and the web app Settings
+  # (Automata, Housekeeping repairs). An invalid value is refused on every
+  # surface with the same message and nothing is written. Read what the repairs
+  # found and did with GET /api/autonomous/housekeeping-repairs, the MCP tool
+  # housekeeping_repairs, `datawatch autonomous housekeeping-repairs`, the chat
+  # verb `autonomous housekeeping-repairs` and the Housekeeping tab card. A change
+  # takes effect on the next pass without a restart.
+  housekeeping_repairs:
+    # Stuck task chains: a dependent task blocked by a failed one, a stale docs
+    # gate and a leaked file. off, report or on. Default: report.
+    task_chain: report
+    # A judged Automaton that did not advance: advance it, or make the one
+    # repair task from the judge's findings. off, report or on. Default: report.
+    advance_judge: report
+    # Idle lanes with eligible work waiting: start the next eligible Automaton
+    # through the normal run path. off, report or on. Default: report.
+    lane_fill: report
+    # Leftover state of finished work (lease, worktree, tmux name): released only
+    # when the safe-to-delete check passes. off, report or on. Default: report.
+    leftovers: report
+    # Seconds a stuck state must persist before it is reported or repaired.
+    # Whole number, 0 or more; 0 means no grace. Default: 300.
+    grace_seconds: 300
+
   # The LLM registry entry's `billing_group` field (set in PWA Settings →
   # Compute → LLM edit, comm `llm add|update ... billing_group=<label>`, REST
   # `PUT /api/llms/{name}`, MCP `llm_add`/`llm_update`, or `datawatch llm
