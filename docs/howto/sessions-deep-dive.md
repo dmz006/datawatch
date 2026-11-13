@@ -189,20 +189,24 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
      `waiting` all work. While a search is active the page shows an
      **N of M** count (for example `3 of 21`).
    - **Filters** — one sheet holds every filter: a **Group by** select
-     (none, or by Status, Backend, Project, Tag, or Automaton), the
-     **Views** bar (memory + the saved views), a **Status** chip per real
+     (none, or by State, Node, Model, Project, Tag, or Automaton), the
+     **Views** bar (a name field, a **+ New view** button and the saved
+     views as chips), a **Status** chip per real
      state (multi-select; **All** means no filter), a **watched only**
      toggle (list only the sessions you watch) and the **Backend** chips
      (when two or more backends are in use). When any session carries a
      tag, a **Tags** sub-section adds a tag search, per-tag chips with
-     counts, a **watched only** on/off and a **Clear**. Selected values
+     counts, an **any / all** match mode and a **Clear**. Selected values
      also show up as removable chips in the compact summary line above
      the list, together with a **Clear all**.
    - **Fold all** — folds or unfolds every group at once; it appears
      while a grouping is active and the visible list has foldable groups.
    - **Tree / History** — a line below the toolbar carries the **Tree**
      and **History (N)** buttons, and the 🌐 hostname chip while a remote
-     server is active (click it to return to this server).
+     server is active (click it to return to this server). That line is
+     behind the header's 🔍 *search & filters* button (right side of the
+     header bar): hidden by default, shown after you switch it on for
+     this browser.
    - **Tags** (header icon button) — a separate surface for tags: its
      dropdown also carries a **Watched only** tick that drives the same
      watched-only list, and its **This session** section watches or un-watches
