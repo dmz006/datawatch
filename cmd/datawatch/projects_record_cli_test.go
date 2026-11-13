@@ -44,6 +44,8 @@ func (f *fakeProjectsDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	case r.Method == http.MethodGet && r.URL.Path == "/api/projects/acme":
 		_, _ = w.Write([]byte(acmeRecord))
+	case r.Method == http.MethodGet && r.URL.Path == "/api/projects/acme/plans":
+		_, _ = w.Write([]byte(`{"project":"acme","plans":[],"backlog":{"plans":[]}}`))
 	case r.Method == http.MethodGet && r.URL.Path == "/api/projects/acme/rollup":
 		f.rollupWindow = r.URL.Query().Get("window")
 		_, _ = w.Write([]byte(acmeRollup))
@@ -242,6 +244,11 @@ func TestProjectsArcsShowsWithoutPosting(t *testing.T) {
 	}
 	if f.postCount() != 0 {
 		t.Error("arcs without --set must not POST")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.paths) != 1 || f.paths[0] != "GET /api/projects/acme/plans" {
+		t.Errorf("arcs without --set must run the plans list, got %v", f.paths)
 	}
 }
 

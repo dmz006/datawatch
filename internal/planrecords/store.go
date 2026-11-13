@@ -119,8 +119,11 @@ type Store struct {
 	byUID   map[string]*Record
 	byID    map[string]string // id -> uid
 	byTitle map[string]string // project|normTitle -> uid
+	li      linkIndex         // summary index and plan <-> Automaton/Automation lookups
 	skipped []string
 }
+
+var allKinds = []Kind{KindPlan, KindRegistryRow, KindFinding}
 
 // Open opens (creating if needed) the store under dir/plan-records and
 // rebuilds the index from the files. A file that cannot be read, decrypted or
@@ -132,6 +135,7 @@ func Open(dir string, sealer Sealer, opts ...Options) (*Store, error) {
 		byUID:   map[string]*Record{},
 		byID:    map[string]string{},
 		byTitle: map[string]string{},
+		li:      newLinkIndex(),
 	}
 	if len(opts) > 0 {
 		s.opts = opts[0]
@@ -139,12 +143,12 @@ func Open(dir string, sealer Sealer, opts ...Options) (*Store, error) {
 	if s.opts.ImportConflictPolicy == "" {
 		s.opts.ImportConflictPolicy = PolicySuffix
 	}
-	for _, k := range []Kind{KindRegistryRow, KindFinding} {
+	for _, k := range allKinds {
 		if err := os.MkdirAll(filepath.Join(s.root, string(k)), 0o700); err != nil {
 			return nil, fmt.Errorf("planrecords: create store dir: %w", err)
 		}
 	}
-	for _, k := range []Kind{KindRegistryRow, KindFinding} {
+	for _, k := range allKinds {
 		s.loadKind(k)
 	}
 	return s, nil
@@ -346,6 +350,7 @@ func titleKey(project, title string) string { return project + "\x00" + NormTitl
 func (s *Store) index(rec *Record) {
 	s.byUID[rec.UID] = rec
 	s.byID[rec.ID] = rec.UID
+	s.reindexLinks(nil, rec)
 	if _, taken := s.byTitle[titleKey(rec.Project, rec.Title)]; !taken {
 		s.byTitle[titleKey(rec.Project, rec.Title)] = rec.UID
 	}
@@ -388,6 +393,10 @@ func (s *Store) Create(in Record) (Record, error) {
 	if rec.State == "" {
 		rec.State = StateOpen
 	}
+	if len(rec.Automations)+len(rec.Automata)+len(rec.Findings) > 0 || len(rec.LinkInfo) > 0 ||
+		rec.AttachKind != "" || rec.AttachRef != "" {
+		return Record{}, invalid("links are added with the attach methods, not at creation")
+	}
 	if err := rec.validate(); err != nil {
 		return Record{}, err
 	}
@@ -402,6 +411,9 @@ func (s *Store) Create(in Record) (Record, error) {
 		}
 	}
 	rec.UID = uuid.NewString()
+	if rec.Kind == KindPlan && rec.Order == 0 {
+		rec.Order = s.nextPlanOrderLocked()
+	}
 	if rec.ID == "" {
 		rec.ID = s.newID(rec.Title, rec.Kind, rec.UID)
 	} else if _, taken := s.byID[rec.ID]; taken {
@@ -486,6 +498,11 @@ func (s *Store) Update(ref string, p Patch) (Record, error) {
 	set("raised_by", &next.RaisedBy, p.RaisedBy)
 	set("shipped_version", &next.ShippedVersion, p.ShippedVersion)
 	set("review_reason", &next.ReviewReason, p.ReviewReason)
+	set("goal", &next.Goal, p.Goal)
+	if p.Order != nil && *p.Order != cur.Order {
+		next.Order = *p.Order
+		changed = append(changed, "order")
+	}
 	if p.State != nil && *p.State != cur.State {
 		next.State = *p.State
 		changed = append(changed, "state")
@@ -529,6 +546,7 @@ func (s *Store) Update(ref string, p Patch) (Record, error) {
 	}
 	stored := next
 	s.byUID[cur.UID] = &stored
+	s.reindexLinks(&cur, &stored)
 	s.audit(AuditUpdated, stored, map[string]any{"changed": changed, "state": string(stored.State)}, p.Actor)
 	return stored.clone(), nil
 }
@@ -617,4 +635,18 @@ func sortCandidates(rs []Record) {
 		}
 		return rs[i].ID < rs[j].ID
 	})
+}
+
+// nextPlanOrderLocked is the order a new plan gets: after every existing plan.
+func (s *Store) nextPlanOrderLocked() int {
+	max := 0
+	for _, sm := range s.li.sums {
+		if sm.Kind == KindPlan && sm.Order > max {
+			max = sm.Order
+		}
+	}
+	if max >= MaxOrder {
+		return MaxOrder
+	}
+	return max + 1
 }

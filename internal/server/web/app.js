@@ -3168,7 +3168,7 @@ function _projectsHashParse(hash) {
 // or '' when the hash names none or an unknown one.
 function _projectsHashSubtab(hash) {
   const m = /^#projects\/[^/]+\/([^/]+)$/.exec(String(hash || ''));
-  return m && _projectsSubtabValid(m[1]) ? m[1] : '';
+  return m && _projectsSubtabValid(m[1]) ? _projectsSubtabCanon(m[1]) : '';
 }
 function _projectsHashBuild(name, subtab) {
   if (!name) return '#projects';
@@ -3463,7 +3463,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     </summary>`;
     const docs = _projectArcDocsHTML(p, arc);
     if (!automata.length) {
-      events.push(t('projects_event_arc_empty', [arc.automation_id]));
+      events.push(t('projects_event_plan_empty', [arc.automation_id]));
       return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
     }
     return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
@@ -3472,7 +3472,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   let overviewBody = '';
   let arcsBody = '';
   let unassignedBody = '';
-  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
+  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading_plans'))}</div>`;
   if (rollErr) {
     events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
@@ -3483,9 +3483,9 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
     overviewBody = _projectRollupHTML(roll, arcs);
     if (!arcs.length) {
-      events.push(t('projects_event_no_arcs'));
-      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
-    } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+      events.push(t('projects_event_no_plans'));
+      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
+    } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
     else {
@@ -3503,8 +3503,9 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const hasEvents = events.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
   const bodies = {
-    overview: head + overviewBody + _planRecordsSlotHtml(p),
-    arcs: arcsBody,
+    overview: head + _projectOverviewSummaryHTML(p),
+    plans: (roll && !rollErr ? _projectRollupHTML(roll, (Array.isArray(roll.arcs) ? roll.arcs : [])) : '') + plansBrowserHTML(p) + arcsBody,
+    records: _projectRecordsTabHTML(p),
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
     history: _projectHistoryHTML(hist, true),
@@ -3521,21 +3522,24 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 // remembered per browser; an unknown value means overview, and events falls
 // back to overview while there are no events to show.
 const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
-const _PROJECTS_SUBTABS = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+const _PROJECTS_SUBTABS = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'policy', 'events'];
 const _PROJECTS_SUBTAB_LABELS = {
-  overview: 'projects_subtab_overview', arcs: 'projects_subtab_arcs', gantt: 'projects_subtab_gantt',
+  overview: 'projects_subtab_overview', plans: 'projects_subtab_plans', records: 'projects_subtab_records', gantt: 'projects_subtab_gantt',
   unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
   policy: 'projects_subtab_policy', events: 'projects_subtab_events',
 };
-function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(v) >= 0; }
+// 'arcs' is the old name of the Plans sub-tab; the #arcs deep link and a value
+// remembered by an older version still land on Plans.
+function _projectsSubtabCanon(v) { return v === 'arcs' ? 'plans' : v; }
+function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(_projectsSubtabCanon(v)) >= 0; }
 function _projectsRememberSubtab(v) {
   try { localStorage.setItem(_PROJECTS_SUBTAB_KEY, v || ''); } catch (_) { /* not remembered */ }
 }
 function _projectsRecallSubtab() {
-  try { const v = localStorage.getItem(_PROJECTS_SUBTAB_KEY) || ''; return _projectsSubtabValid(v) ? v : 'overview'; } catch (_) { return 'overview'; }
+  try { const v = _projectsSubtabCanon(localStorage.getItem(_PROJECTS_SUBTAB_KEY) || ''); return _projectsSubtabValid(v) ? v : 'overview'; } catch (_) { return 'overview'; }
 }
 function _projectsActiveSubtab(hasEvents) {
-  const v = _projectsSubtabValid(_projectsState.subtab) ? _projectsState.subtab : _projectsRecallSubtab();
+  const v = _projectsSubtabValid(_projectsState.subtab) ? _projectsSubtabCanon(_projectsState.subtab) : _projectsRecallSubtab();
   return (v === 'events' && !hasEvents) ? 'overview' : v;
 }
 function _projectsSubtabStripHTML(active, hasEvents) {
@@ -3544,6 +3548,8 @@ function _projectsSubtabStripHTML(active, hasEvents) {
     tabs.map(k => `<button type="button" role="tab" id="projectsSubtab_${k}" data-projects-subtab="${k}" aria-selected="${k === active ? 'true' : 'false'}" aria-controls="projectsSubtabBody" class="projects-subtab${k === active ? ' active' : ''}" onclick="selectProjectsSubtab('${k}')">${escHtml(t(_PROJECTS_SUBTAB_LABELS[k]))}</button>`).join('') + `</div>`;
 }
 function selectProjectsSubtab(k) {
+  k = _projectsSubtabCanon(k);
+  k = _projectsSubtabCanon(k);
   if (!_projectsSubtabValid(k)) k = 'overview';
   _projectsState.subtab = k;
   _projectsRememberSubtab(k);
@@ -4267,7 +4273,7 @@ function _projectGanttInnerHTML(g, ui) {
       return;
     }
     const r = it.row;
-    const label = r.kind === 'unassigned' ? t('projects_gantt_no_arc') : (r.title || r.id || '');
+    const label = r.kind === 'unassigned' ? t('projects_gantt_no_plan') : (r.title || r.id || '');
     const sp = _projectsGanttSpan(r, now);
     const toggle = it.expandable
       ? `<button type="button" class="project-gantt-toggle" aria-expanded="${it.expanded ? 'true' : 'false'}" aria-label="${escHtml(t(it.expanded ? 'projects_gantt_collapse' : 'projects_gantt_expand', [label]))}" onclick="${escHtml(`${ui.toggle}(${JSON.stringify(it.key)})`)}">${it.expanded ? '▾' : '▸'}</button>`
@@ -5204,13 +5210,620 @@ window.planRecordsImportApply = function() {
   });
 };
 
+// ── Overview summary ────────────────────────────────────────────────────────
+// The Overview sub-tab reads GET /api/projects/{name}/overview-summary and
+// nothing else: header, progress, one line per active plan, what is next, and
+// the record counts with links into Plans and Records.
+let _projectsSummary = { name: '', data: null, error: '' };
+
+function _projectsLoadSummary() {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  const mine = () => _projectsState.selected === name;
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/overview-summary').then(r => {
+    if (!mine()) return;
+    _projectsSummary = { name, data: r && typeof r === 'object' && !Array.isArray(r) ? r : {}, error: '' };
+  }).catch(err => {
+    if (!mine()) return;
+    _projectsSummary = { name, data: null, error: (err && err.message) || String(err) };
+  });
+}
+
+function _projectOverviewSummaryHTML(p) {
+  const S = _projectsSummary.name === p.name ? _projectsSummary : { data: null, error: '' };
+  if (S.error) return `<div class="project-overview-error" style="color:var(--error,#ef4444);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_failed') + ' ' + S.error)}</div>`;
+  if (!S.data) return `<div class="project-overview-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_loading'))}</div>`;
+  const d = S.data;
+  const pr = d.progress || {};
+  const au = pr.automata || {};
+  const done = Number(au.done) || 0;
+  const total = Number(au.total) || 0;
+  const pct = Number.isFinite(Number(au.percent)) ? Number(au.percent) : (total ? Math.round(done * 100 / total) : 0);
+  const pts = Math.round((Number(pr.points) || 0) * 10) / 10;
+  const bar = (pc, label) => `<div class="project-overview-bar" style="display:flex;align-items:center;gap:8px;">
+    <div class="project-overview-track"><div class="project-overview-fill" style="width:${Math.max(0, Math.min(100, pc))}%;"></div></div>
+    <span class="project-overview-barlabel">${escHtml(label)}</span></div>`;
+  const go = (k, label) => `<a href="#" class="project-overview-link" data-goto="${k}" onclick="${escHtml(`selectProjectsSubtab(${JSON.stringify(k)});return false;`)}">${escHtml(label)}</a>`;
+  const hd = d.header || {};
+  const header = `<div class="project-overview-header">${hd.dir ? `<span class="project-overview-dir">${escHtml(hd.dir)}</span>` : ''}</div>`;
+  const progress = _projectsSectionCard('overview', escHtml(t('projects_overview_progress_heading')), `<div class="project-overview-progress">
+    ${bar(pct, t('projects_overview_progress_value', [done, total, pct]))}
+    <div class="project-overview-points">${escHtml(pts + ' ' + t('projects_page_points'))}</div></div>`);
+  const lines = Array.isArray(d.active_plans) ? d.active_plans : [];
+  const stateLabel = st => { const k = { planned: 'projects_page_arc_state_planned', active: 'projects_page_arc_state_active', done: 'projects_page_arc_state_done' }[st]; return k ? t(k) : String(st || ''); };
+  const plans = `<div class="project-overview-plans"><div class="project-overview-heading">${escHtml(t('projects_overview_active_plans'))}</div>` + (lines.length
+    ? lines.map(l => { const pg = l.progress || {}; return `<div class="project-overview-plan" data-plan="${escHtml(l.id || '')}">
+        <span class="project-overview-plan-title">${escHtml(l.title || l.id || '')}</span>
+        <span class="project-overview-plan-state">${escHtml(stateLabel(l.state))}</span>
+        <span class="project-overview-plan-bar">${bar(Number(pg.percent) || 0, `${Number(pg.done) || 0}/${Number(pg.total) || 0} · ${Number(pg.percent) || 0}%`)}</span></div>`; }).join('')
+    : `<div class="project-overview-empty">${escHtml(t('projects_overview_no_active'))}</div>`) + '</div>';
+  const nx = d.next && typeof d.next === 'object' ? d.next : null;
+  const next = `<div class="project-overview-next"><div class="project-overview-heading">${escHtml(t('projects_overview_next'))}</div>` + (nx
+    ? `<div>${escHtml(nx.automaton_title || nx.automaton_id || '')} <span class="project-overview-next-plan">(${escHtml(nx.plan_title || nx.plan_id || '')})</span></div>`
+    : `<div class="project-overview-empty">${escHtml(t('projects_overview_next_none'))}</div>`) + '</div>';
+  const c = d.counts || {};
+  const n = o => Number((o || {}).total) || 0;
+  const counts = `<div class="project-overview-counts"><div class="project-overview-heading">${escHtml(t('projects_overview_counts'))}</div>
+    <div>${go('plans', t('projects_overview_count_plans', [n(c.plans)]))} · ${Number((c.plans || {}).backlog) || 0} ${escHtml(t('projects_overview_backlog'))}</div>
+    <div>${go('records', t('projects_overview_count_records', [n(c.records)]))} · ${escHtml(t('projects_overview_count_rows', [n(c.rows)]))} · ${escHtml(t('projects_overview_count_findings', [n(c.findings)]))}</div></div>`;
+  return `<div class="project-overview-summary">${header}${progress}${plans}${next}${counts}</div>`;
+}
+
+// ── Plans browser ───────────────────────────────────────────────────────────
+// The Plans sub-tab of a project page. Plans come from the plans read API
+// (GET /api/projects/{name}/plans, paged) in priority order, with the Backlog
+// group (plans with no Automaton yet) after them. Expanding a plan reads its
+// Automata in run order (GET /api/plans/{ref}/automata) and, when the Tasks
+// section is opened, its tasks one page at a time (GET /api/plans/{ref}/tasks).
+// The findings and registry rows linked to a plan come from the summary list
+// GET /api/plan-records/browse; no full record is ever read. Controls write
+// through the plans write API (reorder plans and Automata, create a plan,
+// attach an Automaton, an Automation or a finding). Which plans are expanded
+// is remembered per browser under the one localStorage key _PLANS_BROWSER_KEY.
+// The search box waits for a pause in typing on the one window-level timer
+// window._plansBrowserSearchTimer; nothing else polls.
+const _PLANS_BROWSER_KEY = 'cs_plans_browser';
+const _PLANS_PAGE = 50;
+const _PLANS_TASK_PAGE = 25;
+const _PLANS_BACKLOG_ID = '__backlog';
+const _PLANS_TASKS_PREFIX = 'tasks:';
+
+function _plansBrowserFresh(project) {
+  return {
+    project: project || '',
+    status: 'idle',     // idle | loading | ready | error | disabled
+    plans: [], total: 0,
+    backlog: [], backlogTotal: 0,
+    error: '', notice: '',
+    seq: 0,
+    q: '', stateFilter: '',
+    matchPlans: null,   // plan ids with a registry row or finding that matches q
+    detail: {},         // plan id -> { status, automata, tasks, tasksTotal, tasksStatus, error }
+    links: { status: 'idle', rows: [] },
+    busy: false,
+  };
+}
+let _plansBrowser = _plansBrowserFresh('');
+
+function _plansOpenAll() {
+  try {
+    const o = JSON.parse(localStorage.getItem(_PLANS_BROWSER_KEY) || '{}');
+    return o && typeof o === 'object' && !Array.isArray(o) ? o : {};
+  } catch (_) { return {}; }
+}
+function _plansIsOpen(project, id) {
+  const l = _plansOpenAll()[project];
+  return Array.isArray(l) && l.indexOf(id) >= 0;
+}
+function _plansSetOpen(project, id, open) {
+  try {
+    const all = _plansOpenAll();
+    const l = (Array.isArray(all[project]) ? all[project] : []).filter(x => x !== id);
+    if (open) l.push(id);
+    all[project] = l;
+    localStorage.setItem(_PLANS_BROWSER_KEY, JSON.stringify(all));
+  } catch (_) { /* not remembered */ }
+}
+
+function _plansPath(plan, tail) { return '/api/plans/' + encodeURIComponent(plan) + tail; }
+function _plansErrText(err) { return _planRecordsParseError(err).message; }
+
+// _plansBrowserLoad reads the plans page(s). more is false (first page of both
+// groups), 'plans' or 'backlog' (the next page of that group, appended).
+function _plansBrowserLoad(more) {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  if (_plansBrowser.project !== name) _plansBrowser = _plansBrowserFresh(name);
+  const st = _plansBrowser;
+  const seq = ++st.seq;
+  if (st.status === 'idle') st.status = 'loading';
+  const params = ['limit=' + _PLANS_PAGE, 'offset=' + (more === 'plans' ? st.plans.length : 0), 'backlog_offset=' + (more === 'backlog' ? st.backlog.length : 0)];
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/plans?' + params.join('&')).then(r => {
+    if (_plansBrowser !== st || seq !== st.seq) return;
+    const plans = r && Array.isArray(r.plans) ? r.plans : [];
+    const back = r && r.backlog && Array.isArray(r.backlog.plans) ? r.backlog.plans : [];
+    if (more !== 'backlog') st.plans = more === 'plans' ? st.plans.concat(plans) : plans;
+    if (more !== 'plans') st.backlog = more === 'backlog' ? st.backlog.concat(back) : back;
+    st.total = Number(((r || {}).page || {}).total) || st.plans.length;
+    st.backlogTotal = Number((((r || {}).backlog || {}).page || {}).total) || st.backlog.length;
+    st.status = 'ready'; st.error = '';
+    _plansBrowserPaint();
+  }).catch(err => {
+    if (_plansBrowser !== st || seq !== st.seq) return;
+    if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _plansBrowserPaint(); return; }
+    st.status = 'error'; st.error = _plansErrText(err);
+    _plansBrowserPaint();
+  });
+}
+
+// _plansLoadLinks reads the project's registry rows and findings as summaries
+// (one request, newest page) so a plan can list the ones linked to it.
+function _plansLoadLinks() {
+  const st = _plansBrowser;
+  if (!st.project || st.links.status === 'loading') return Promise.resolve();
+  st.links.status = 'loading';
+  return apiFetch('/api/plan-records/browse?project=' + encodeURIComponent(st.project) + '&limit=500').then(r => {
+    if (_plansBrowser !== st) return;
+    st.links = { status: 'ready', rows: r && Array.isArray(r.records) ? r.records : [] };
+    _plansBrowserPaint();
+  }).catch(() => {
+    if (_plansBrowser !== st) return;
+    st.links = { status: 'ready', rows: [] };
+  });
+}
+
+function _plansLoadDetail(plan) {
+  const st = _plansBrowser;
+  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', error: '' };
+  d.status = 'loading';
+  return apiFetch(_plansPath(plan, '/automata?limit=500')).then(r => {
+    if (_plansBrowser !== st) return;
+    d.automata = r && Array.isArray(r.automata) ? r.automata : [];
+    d.status = 'ready'; d.error = '';
+    _plansBrowserPaint();
+  }).catch(err => {
+    if (_plansBrowser !== st) return;
+    d.status = 'error'; d.error = _plansErrText(err);
+    _plansBrowserPaint();
+  });
+}
+
+function _plansLoadTasks(plan, more) {
+  const st = _plansBrowser;
+  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', error: '' };
+  d.tasksStatus = 'loading';
+  return apiFetch(_plansPath(plan, '/tasks?limit=' + _PLANS_TASK_PAGE + '&offset=' + (more ? d.tasks.length : 0))).then(r => {
+    if (_plansBrowser !== st) return;
+    const list = r && Array.isArray(r.tasks) ? r.tasks : [];
+    d.tasks = more ? d.tasks.concat(list) : list;
+    d.tasksTotal = Number(((r || {}).page || {}).total) || d.tasks.length;
+    d.tasksStatus = 'ready';
+    _plansBrowserPaint();
+  }).catch(err => {
+    if (_plansBrowser !== st) return;
+    d.tasksStatus = 'error'; d.error = _plansErrText(err);
+    _plansBrowserPaint();
+  });
+}
+
+// ── search and state filter ─────────────────────────────────────────────────
+function _plansLower(s) { return String(s || '').toLowerCase(); }
+// A plan matches the search when its title, its next Automaton, one of its
+// loaded Automata, or a registry row or finding linked to it matches. The row
+// and finding part is answered by the browse search route (matchPlans).
+function _plansMatch(st, p) {
+  if (st.stateFilter && p.state !== st.stateFilter) return false;
+  const q = _plansLower(st.q).trim();
+  if (!q) return true;
+  if (_plansLower(p.title).indexOf(q) >= 0) return true;
+  if (p.next && _plansLower(p.next.title).indexOf(q) >= 0) return true;
+  const d = st.detail[p.id];
+  if (d && d.automata.some(a => _plansLower(a.title).indexOf(q) >= 0)) return true;
+  return !!(st.matchPlans && st.matchPlans.indexOf(p.id) >= 0);
+}
+
+window.plansBrowserSearchInput = function(val) {
+  const st = _plansBrowser;
+  st.q = String(val || '');
+  clearTimeout(window._plansBrowserSearchTimer);
+  window._plansBrowserSearchTimer = setTimeout(() => {
+    const q = st.q.trim();
+    if (!q) { st.matchPlans = null; _plansBrowserPaint(); return; }
+    apiFetch('/api/plan-records/browse?project=' + encodeURIComponent(st.project) + '&limit=500&q=' + encodeURIComponent(q)).then(r => {
+      if (_plansBrowser !== st || st.q.trim() !== q) return;
+      st.matchPlans = (r && Array.isArray(r.records) ? r.records : []).map(x => x.plan_id).filter(Boolean);
+      _plansBrowserPaint();
+    }).catch(() => { if (_plansBrowser === st) { st.matchPlans = []; _plansBrowserPaint(); } });
+    _plansBrowserPaint();
+  }, 250);
+};
+window.plansBrowserSetState = function(v) { _plansBrowser.stateFilter = String(v || ''); _plansBrowserPaint(); };
+
+// ── HTML ────────────────────────────────────────────────────────────────────
+function _plansStateLabel(state) {
+  const key = 'plan_records_state_' + String(state || '');
+  const v = t(key);
+  return v === key ? String(state || '') : v;
+}
+function _plansPointsText(n) {
+  const v = Math.round((Number(n) || 0) * 10) / 10;
+  return `${v} ${t('projects_page_points')}`;
+}
+function _plansCall(fn, ...args) { return escHtml(`${fn}(${args.map(a => JSON.stringify(a)).join(',')});return false;`); }
+function _plansMoveButtons(fnUp, fnDown, canUp, canDown) {
+  const b = (cls, glyph, key, fn, on) => `<button type="button" class="btn-secondary ${cls}" aria-label="${escHtml(t(key))}" title="${escHtml(t(key))}"${on ? ` onclick="${fn}"` : ' disabled'} style="font-size:12px;padding:1px 7px;">${glyph}</button>`;
+  return `<span class="plans-browser-move" style="display:inline-flex;gap:2px;">${b('plans-move-up', '↑', 'plans_browser_move_up', fnUp, canUp)}${b('plans-move-down', '↓', 'plans_browser_move_down', fnDown, canDown)}</span>`;
+}
+
+function _plansAutomatonRowHTML(st, plan, a, idx, count) {
+  const runKey = { completed: 'plans_browser_run_completed', running: 'plans_browser_run_running', next: 'plans_browser_run_next', blocked: 'plans_browser_run_blocked', held: 'plans_browser_run_held' }[a.run];
+  const runLabel = runKey ? t(runKey) : String(a.run || '');
+  const when = a.completed_at ? ` <span style="color:var(--text2);font-size:12px;">${escHtml(t('plans_browser_completed_at', [a.completed_at.replace('T', ' ').replace(/:\d\d(\.\d+)?Z$/, ' UTC')]))}</span>` : '';
+  const nextMark = a.is_next ? ` <span class="plans-browser-next-marker" style="font-size:12px;font-weight:600;">${escHtml(t('plans_browser_next_marker'))}</span>` : '';
+  const moves = _plansMoveButtons(_plansCall('plansBrowserMoveAutomaton', plan.id, a.id, -1), _plansCall('plansBrowserMoveAutomaton', plan.id, a.id, 1), idx > 0, idx < count - 1);
+  return `<div class="plans-browser-automaton" data-automaton="${escHtml(a.id)}" data-run="${escHtml(a.run || '')}" style="display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:4px 0 4px 12px;">
+    <span class="plans-browser-run" style="font-size:12px;color:var(--text2);min-width:64px;">${escHtml(runLabel)}</span>
+    <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(a.title || a.id)}</a>${nextMark}${when}
+    <span style="color:var(--text2);font-size:12px;">${escHtml(_plansPointsText(a.points))}</span>${moves}</div>`;
+}
+
+function _plansLinkedRowHTML(r) {
+  const old = r.legacy_number ? `<span style="color:var(--text2);font-size:12px;"> ${escHtml(t('plans_browser_old_row', [r.legacy_number]))}</span>` : '';
+  return `<div class="plans-browser-linked" data-record="${escHtml(r.id)}" style="margin:2px 0 2px 12px;font-size:13px;">${escHtml(r.title || r.id)}${old} <span style="color:var(--text2);font-size:12px;">${escHtml(_plansStateLabel(r.state))}</span></div>`;
+}
+
+function _plansAttachFormHTML(st, plan) {
+  const one = (kind, ph, btn) => `<span class="plans-browser-attach plans-browser-attach-${kind}" style="display:inline-flex;gap:4px;">
+    <input type="text" class="form-input" aria-label="${escHtml(t(ph))}" placeholder="${escHtml(t(ph))}" style="font-size:12px;width:150px;">
+    <button type="button" class="btn-secondary" style="font-size:12px;padding:2px 8px;" onclick="${escHtml(`plansBrowserAttach(${JSON.stringify(plan.id)},${JSON.stringify(kind)},this.previousElementSibling.value);return false;`)}">${escHtml(t(btn))}</button></span>`;
+  const free = st.links.rows.filter(r => r.kind === 'finding' && !r.plan_id);
+  const findingSel = `<span class="plans-browser-attach plans-browser-attach-finding" style="display:inline-flex;gap:4px;">
+    <select class="form-select" aria-label="${escHtml(t('plans_browser_attach_finding_choose'))}" style="font-size:12px;max-width:200px;"><option value="">${escHtml(t('plans_browser_attach_finding_choose'))}</option>${free.map(r => `<option value="${escHtml(r.id)}">${escHtml(r.title || r.id)}</option>`).join('')}</select>
+    <button type="button" class="btn-secondary" style="font-size:12px;padding:2px 8px;" onclick="${escHtml(`plansBrowserAttach(${JSON.stringify(plan.id)},'finding',this.previousElementSibling.value);return false;`)}">${escHtml(t('plans_browser_attach_finding'))}</button></span>`;
+  return `<div class="plans-browser-attach-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px 12px;">${one('automaton', 'plans_browser_attach_automaton_ph', 'plans_browser_attach_automaton')}${one('automation', 'automation_plans_browser_attach_ph', 'automation_plans_browser_attach')}${findingSel}</div>`;
+}
+
+function _plansTasksHTML(st, plan) {
+  const d = st.detail[plan.id] || {};
+  const open = _plansIsOpen(st.project, _PLANS_TASKS_PREFIX + plan.id);
+  const head = `<a href="#" class="plans-browser-tasks-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggleTasks', plan.id)}" style="font-size:13px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(t('plans_browser_tasks'))}</a>`;
+  if (!open) return `<div class="plans-browser-tasks" style="margin:8px 0 0 12px;">${head}</div>`;
+  const tasks = Array.isArray(d.tasks) ? d.tasks : [];
+  let body;
+  if (d.tasksStatus === 'error') body = `<div role="alert" style="color:var(--error);font-size:13px;">${escHtml(t('plans_browser_failed', [d.error]))}</div>`;
+  else if (d.tasksStatus === 'loading' && !tasks.length) body = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('plans_browser_loading'))}</div>`;
+  else if (!tasks.length) body = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('plans_browser_no_tasks'))}</div>`;
+  else {
+    body = tasks.map(k => `<div class="plans-browser-task" data-task="${escHtml(k.id)}" style="font-size:13px;margin:2px 0;">${escHtml(k.title || k.id)} <span style="color:var(--text2);font-size:12px;">${escHtml(k.status || '')}${k.automaton_title ? ' · ' + escHtml(k.automaton_title) : ''}</span></div>`).join('');
+    if (tasks.length < d.tasksTotal) body += `<button type="button" class="btn-secondary plans-browser-tasks-more" style="font-size:12px;padding:3px 10px;margin-top:4px;" onclick="${_plansCall('plansBrowserTasksMore', plan.id)}">${escHtml(t('plans_browser_load_more'))}</button>`;
+  }
+  return `<div class="plans-browser-tasks" style="margin:8px 0 0 12px;">${head}<div style="margin-left:12px;">${body}</div></div>`;
+}
+
+function _plansExpandedHTML(st, plan) {
+  const d = st.detail[plan.id];
+  const autos = d && Array.isArray(d.automata) ? d.automata : [];
+  const automations = Array.isArray(plan.automation_ids) ? plan.automation_ids : [];
+  const section = (key, inner) => `<div style="font-weight:600;font-size:13px;margin:8px 0 2px 12px;">${escHtml(t(key))}</div>${inner}`;
+  const none = key => `<div style="color:var(--text2);font-size:13px;margin-left:12px;">${escHtml(t(key))}</div>`;
+  const automationsHtml = section('automation_plans_browser_heading', automations.length
+    ? automations.map(id => `<div class="plans-browser-automation" data-automation="${escHtml(id)}" style="margin:2px 0 2px 12px;font-size:13px;">${escHtml(id)}</div>`).join('')
+    : none('automation_plans_browser_none'));
+  let automataBody;
+  if (d && d.status === 'error') automataBody = `<div role="alert" style="color:var(--error);font-size:13px;margin-left:12px;">${escHtml(t('plans_browser_failed', [d.error]))}</div>`;
+  else if (!d || d.status !== 'ready') automataBody = none('plans_browser_loading');
+  else if (!autos.length) automataBody = none('plans_browser_no_automata');
+  else automataBody = autos.map((a, i) => _plansAutomatonRowHTML(st, plan, a, i, autos.length)).join('');
+  const linked = st.links.rows.filter(r => r.plan_id === plan.id);
+  const fin = linked.filter(r => r.kind === 'finding');
+  const rows = linked.filter(r => r.kind !== 'finding');
+  return `<div class="plans-browser-expanded">${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
+    ${section('plans_browser_findings', fin.length ? fin.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
+    ${section('plans_browser_rows', rows.length ? rows.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
+    ${_plansAttachFormHTML(st, plan)}</div>`;
+}
+
+function _plansPlanHTML(st, plan, idx, list, canMove) {
+  const open = _plansIsOpen(st.project, plan.id);
+  const pg = plan.progress || {};
+  const pct = Math.max(0, Math.min(100, Number(pg.percent) || 0));
+  const label = t('plans_browser_progress', [Number(pg.done) || 0, Number(pg.total) || 0, pct]);
+  const next = plan.next && plan.next.title ? `<span class="plans-browser-next" style="font-size:12px;color:var(--text2);">${escHtml(t('plans_browser_next_marker'))}: ${escHtml(plan.next.title)}</span>` : '';
+  const moves = canMove ? _plansMoveButtons(_plansCall('plansBrowserMovePlan', plan.id, -1), _plansCall('plansBrowserMovePlan', plan.id, 1), idx > 0, idx < list.length - 1) : '';
+  return `<div class="plans-browser-plan" data-plan="${escHtml(plan.id)}" data-state="${escHtml(plan.state || '')}" style="border-top:1px solid var(--border);padding:6px 0;">
+    <div class="plans-browser-head" style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;">
+      <a href="#" class="plans-browser-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggle', plan.id)}" style="font-size:14px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(plan.title || plan.id)}</a>
+      <span class="plans-browser-state" style="font-size:12px;">${escHtml(_plansStateLabel(plan.state))}</span>
+      <span class="plans-browser-bar" style="flex:1 1 160px;min-width:140px;"><div class="project-progress" role="progressbar" aria-label="${escHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" style="display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;min-width:60px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent,#3b82f6);"></div></div>
+        <span style="font-size:12px;color:var(--text2);white-space:nowrap;">${escHtml(label)}</span></div></span>
+      <span class="plans-browser-points" style="font-size:12px;color:var(--text2);">${escHtml(_plansPointsText(plan.points))}</span>${next}${moves}
+    </div>${plan.goal ? `<div class="plans-browser-goal" style="margin:2px 0 0 14px;font-size:13px;color:var(--text2);">${escHtml(plan.goal)}</div>` : ''}${open ? _plansExpandedHTML(st, plan) : ''}</div>`;
+}
+
+function _plansGroupHTML(st, list, total, group, loadMoreFn) {
+  const shown = list.filter(p => _plansMatch(st, p));
+  const filtering = !!(st.stateFilter || st.q.trim());
+  const rows = shown.map((p, i) => _plansPlanHTML(st, p, i, shown, group === 'plans' && !filtering)).join('');
+  const more = list.length < total
+    ? `<button type="button" class="btn-secondary plans-browser-more" style="font-size:12px;padding:3px 10px;margin-top:6px;" onclick="${_plansCall(loadMoreFn)}">${escHtml(t('plans_browser_load_more'))}</button>` : '';
+  return { rows, more, count: shown.length };
+}
+
+function plansBrowserListHTML(st) {
+  if (!st || st.status === 'idle' || st.status === 'loading') return `<div class="plans-browser-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('plans_browser_loading'))}</div>`;
+  if (st.status === 'disabled') return `<div class="plans-browser-off" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('plans_browser_off'))}</div>`;
+  if (st.status === 'error') return `<div class="plans-browser-error" role="alert" style="color:var(--error);font-size:13px;margin-top:10px;overflow-wrap:anywhere;">${escHtml(t('plans_browser_failed', [st.error]))}</div>`;
+  const notice = st.notice ? `<div class="plans-browser-notice" role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(st.notice)}</div>` : '';
+  const main = _plansGroupHTML(st, st.plans, st.total, 'plans', 'plansBrowserMore');
+  const back = _plansGroupHTML(st, st.backlog, st.backlogTotal, 'backlog', 'plansBrowserBacklogMore');
+  const backOpen = _plansIsOpen(st.project, _PLANS_BACKLOG_ID);
+  let html = notice + main.rows + main.more;
+  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.stateFilter && st.backlog.length)) {
+    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.stateFilter ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
+  }
+  if (st.backlogTotal > 0 || back.count) {
+    html += `<div class="plans-browser-backlog" style="margin-top:12px;">
+      <a href="#" class="plans-browser-backlog-toggle" aria-expanded="${backOpen}" onclick="${_plansCall('plansBrowserToggle', _PLANS_BACKLOG_ID)}" style="font-size:13px;font-weight:600;">${backOpen ? '▾' : '▸'} ${escHtml(t('plans_browser_backlog'))} (${st.backlogTotal})</a>
+      ${backOpen ? `<div style="font-size:12px;color:var(--text2);margin:2px 0 4px;">${escHtml(t('plans_browser_backlog_hint'))}</div>${back.rows}${back.more}` : ''}</div>`;
+  }
+  return html;
+}
+
+function plansBrowserHTML(p) {
+  const st = _plansBrowser.project === (p && p.name) ? _plansBrowser : null;
+  const stateOpts = [`<option value="">${escHtml(t('plans_browser_state_all'))}</option>`].concat(_PLAN_RECORD_STATES.registry_row.map(s => `<option value="${s}"${st && st.stateFilter === s ? ' selected' : ''}>${escHtml(_plansStateLabel(s))}</option>`)).join('');
+  const controls = `<div class="plans-browser-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
+    <input id="plansBrowserSearch" type="search" class="form-input" aria-label="${escHtml(t('plans_browser_search_label'))}" placeholder="${escHtml(t('plans_browser_search_placeholder'))}" value="${escHtml(st ? st.q : '')}" oninput="plansBrowserSearchInput(this.value)" style="flex:1;min-width:140px;font-size:12px;">
+    <select id="plansBrowserState" class="form-select" aria-label="${escHtml(t('plans_browser_filter_state'))}" style="font-size:12px;" onchange="plansBrowserSetState(this.value)">${stateOpts}</select></div>
+    <div class="plans-browser-create" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
+      <input id="plansBrowserNewTitle" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_title_ph'))}" placeholder="${escHtml(t('plans_browser_create_title_ph'))}" style="flex:1;min-width:140px;font-size:12px;">
+      <input id="plansBrowserNewGoal" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_goal_ph'))}" placeholder="${escHtml(t('plans_browser_create_goal_ph'))}" style="flex:2;min-width:160px;font-size:12px;">
+      <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="plansBrowserCreate(document.getElementById('plansBrowserNewTitle').value,document.getElementById('plansBrowserNewGoal').value);return false;">＋ ${escHtml(t('plans_browser_create_btn'))}</button></div>`;
+  return `<div class="plans-browser" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
+    ${controls}
+    <div id="plansBrowserList">${plansBrowserListHTML(st)}</div></div>`;
+}
+window.plansBrowserHTML = plansBrowserHTML;
+window.plansBrowserListHTML = plansBrowserListHTML;
+
+function _plansBrowserPaint() {
+  if (!_projectsActive()) return;
+  const el = document.getElementById('plansBrowserList');
+  if (el) el.innerHTML = plansBrowserListHTML(_plansBrowser);
+}
+
+// ── actions ─────────────────────────────────────────────────────────────────
+// A write that fails shows its message above the list and changes nothing; a
+// write that succeeds reloads what it touched.
+function _plansWrite(path, method, body) {
+  const st = _plansBrowser;
+  st.notice = '';
+  return apiFetch(path, { method, body: JSON.stringify(body) }).then(r => r || {}).catch(err => {
+    if (_plansBrowser === st) { st.notice = t('plans_browser_action_failed', [_plansErrText(err)]); _plansBrowserPaint(); }
+    return null;
+  });
+}
+function _plansReloadAfterWrite(planId) {
+  const jobs = [_plansBrowserLoad(false)];
+  if (planId && _plansIsOpen(_plansBrowser.project, planId)) jobs.push(_plansLoadDetail(planId));
+  _plansBrowser.links.status = 'idle';
+  jobs.push(_plansLoadLinks());
+  return Promise.all(jobs);
+}
+
+window.plansBrowserToggle = function(id) {
+  const st = _plansBrowser;
+  const open = !_plansIsOpen(st.project, id);
+  _plansSetOpen(st.project, id, open);
+  _plansBrowserPaint();
+  if (!open || id === _PLANS_BACKLOG_ID) return Promise.resolve();
+  const jobs = [];
+  if (!st.detail[id] || st.detail[id].status !== 'ready') jobs.push(_plansLoadDetail(id));
+  if (st.links.status === 'idle') jobs.push(_plansLoadLinks());
+  return Promise.all(jobs);
+};
+window.plansBrowserToggleTasks = function(id) {
+  const st = _plansBrowser;
+  const key = _PLANS_TASKS_PREFIX + id;
+  const open = !_plansIsOpen(st.project, key);
+  _plansSetOpen(st.project, key, open);
+  _plansBrowserPaint();
+  const d = st.detail[id];
+  if (open && (!d || d.tasksStatus === 'idle' || d.tasksStatus === 'error')) return _plansLoadTasks(id, false);
+  return Promise.resolve();
+};
+window.plansBrowserTasksMore = function(id) { return _plansLoadTasks(id, true); };
+window.plansBrowserMore = function() { return _plansBrowserLoad('plans'); };
+window.plansBrowserBacklogMore = function() { return _plansBrowserLoad('backlog'); };
+
+function _plansMoved(list, id, dir) {
+  const i = list.indexOf(id), j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return null;
+  const out = list.slice();
+  out[i] = list[j]; out[j] = id;
+  return out;
+}
+window.plansBrowserMovePlan = function(id, dir) {
+  const st = _plansBrowser;
+  const order = _plansMoved(st.plans.map(p => p.id), id, Number(dir) < 0 ? -1 : 1);
+  if (!order) return Promise.resolve();
+  return _plansWrite('/api/plans/order', 'PUT', { plans: order }).then(r => (r ? _plansBrowserLoad(false) : null));
+};
+window.plansBrowserMoveAutomaton = function(planId, autoId, dir) {
+  const st = _plansBrowser;
+  const d = st.detail[planId];
+  if (!d) return Promise.resolve();
+  const order = _plansMoved(d.automata.map(a => a.id), autoId, Number(dir) < 0 ? -1 : 1);
+  if (!order) return Promise.resolve();
+  return _plansWrite(_plansPath(planId, '/automata/order'), 'PUT', { automata: order }).then(r => (r ? Promise.all([_plansLoadDetail(planId), _plansBrowserLoad(false)]) : null));
+};
+window.plansBrowserCreate = function(title, goal) {
+  const st = _plansBrowser;
+  title = String(title || '').trim();
+  if (!title) { st.notice = t('plans_browser_title_required'); _plansBrowserPaint(); return Promise.resolve(); }
+  return _plansWrite('/api/plans', 'POST', { project: st.project, title, goal: String(goal || '').trim() }).then(r => {
+    if (!r) return null;
+    ['plansBrowserNewTitle', 'plansBrowserNewGoal'].forEach(i => { const e = document.getElementById(i); if (e) e.value = ''; });
+    return _plansReloadAfterWrite('');
+  });
+};
+window.plansBrowserAttach = function(planId, kind, value) {
+  value = String(value || '').trim();
+  if (!value) { _plansBrowser.notice = t('plans_browser_attach_needs_value'); _plansBrowserPaint(); return Promise.resolve(); }
+  return _plansWrite(_plansPath(planId, '/attach'), 'POST', { kind, id: value }).then(r => (r ? _plansReloadAfterWrite(planId) : null));
+};
+
+// _plansBrowserLoadSelected is called with the rest of the selected project's
+// loads; it reads the plans page and the records that link to them.
+function _plansBrowserLoadSelected() {
+  return _plansBrowserLoad(false).then(() => {
+    if (!_projectsActive()) return null;
+    const st = _plansBrowser;
+    const jobs = [];
+    st.plans.concat(st.backlog).forEach(p => {
+      if (!_plansIsOpen(st.project, p.id)) return;
+      jobs.push(_plansLoadDetail(p.id));
+      if (_plansIsOpen(st.project, _PLANS_TASKS_PREFIX + p.id)) jobs.push(_plansLoadTasks(p.id, false));
+    });
+    if (jobs.length) jobs.push(_plansLoadLinks());
+    return Promise.all(jobs);
+  });
+}
+
+// The Records sub-tab: the Registry and findings card, plus a mount point for
+// the records browser.
+// ── Records browser ─────────────────────────────────────────────────────────
+// The Records sub-tab browses every registry row and finding of the selected
+// project from GET /api/plan-records/browse (summaries only, paged with Load
+// more) with a search box, a kind filter and a state filter. Each row links to
+// its plan and its Automata; a link jumps to the Plans sub-tab with that plan
+// expanded. The search box waits for a pause in typing on the one window-level
+// timer window._recordsTabSearchTimer; nothing else polls.
+const _RECORDS_TAB_PAGE = 50;
+const _RECORDS_TAB_STATES = _PLAN_RECORD_STATES.registry_row.concat(_PLAN_RECORD_STATES.finding.filter(s => _PLAN_RECORD_STATES.registry_row.indexOf(s) < 0));
+
+function _recordsTabFresh(project) {
+  return { project: project || '', status: 'idle', q: '', kind: '', stateFilter: '', rows: [], total: 0, error: '', seq: 0 };
+}
+let _recordsTab = _recordsTabFresh('');
+
+function _recordsTabLoad(more) {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  if (_recordsTab.project !== name) _recordsTab = _recordsTabFresh(name);
+  const st = _recordsTab;
+  const seq = ++st.seq;
+  if (!more) st.status = 'loading';
+  const params = ['project=' + encodeURIComponent(name), 'limit=' + _RECORDS_TAB_PAGE, 'offset=' + (more ? st.rows.length : 0)];
+  if ((st.q || '').trim()) params.push('q=' + encodeURIComponent(st.q.trim()));
+  if (st.kind) params.push('kind=' + encodeURIComponent(st.kind));
+  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  return apiFetch('/api/plan-records/browse?' + params.join('&')).then(r => {
+    if (_recordsTab !== st || seq !== st.seq) return;
+    const rows = r && Array.isArray(r.records) ? r.records : [];
+    st.rows = more ? st.rows.concat(rows) : rows;
+    st.total = Number(((r || {}).page || {}).total) || st.rows.length;
+    st.status = 'ready'; st.error = '';
+    _recordsTabPaint();
+  }).catch(err => {
+    if (_recordsTab !== st || seq !== st.seq) return;
+    if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _recordsTabPaint(); return; }
+    st.status = 'error'; st.error = _planRecordsParseError(err).message;
+    _recordsTabPaint();
+  });
+}
+
+function _recordsTabStateLabel(state) {
+  const key = 'plan_records_state_' + String(state || '');
+  const v = t(key);
+  return v === key ? String(state || '') : v;
+}
+
+function _recordsTabRowHTML(r) {
+  const old = r.legacy_number ? `<span class="records-tab-old" style="color:var(--text2);font-size:12px;"> ${escHtml(t('plans_browser_old_row', [r.legacy_number]))}</span>` : '';
+  const kind = r.kind === 'finding' ? t('plan_records_view_findings') : t('plan_records_view_registry');
+  const jump = (cls, id, label) => `<a href="#" class="${cls}" data-plan="${escHtml(id)}" onclick="${_plansCall('recordsTabGoPlan', id)}">${escHtml(label)}</a>`;
+  const plan = r.plan_id ? `<span class="records-tab-plan" style="font-size:12px;">${escHtml(t('records_tab_plan'))}: ${jump('records-tab-plan-link', r.plan_id, r.plan_title || r.plan_id)}</span>` : '';
+  const ids = Array.isArray(r.automaton_ids) ? r.automaton_ids : [];
+  const autos = ids.length ? `<span class="records-tab-automata" style="font-size:12px;">${escHtml(t('records_tab_automata'))}: ${ids.map(id => (r.plan_id ? jump('records-tab-automaton-link', r.plan_id, id) : escHtml(id))).join(', ')}</span>` : '';
+  return `<div class="records-tab-row" data-record="${escHtml(r.id)}" data-kind="${escHtml(r.kind || '')}" style="border-top:1px solid var(--border);padding:6px 0;display:flex;flex-wrap:wrap;gap:2px 12px;align-items:baseline;">
+    <span class="records-tab-title" style="font-size:14px;font-weight:600;">${escHtml(r.title || r.id)}${old}</span>
+    <span class="records-tab-kind" style="font-size:12px;color:var(--text2);">${escHtml(kind)}</span>
+    <span class="records-tab-state" style="font-size:12px;">${escHtml(_recordsTabStateLabel(r.state))}</span>${plan}${autos}</div>`;
+}
+
+function recordsTabListHTML(st) {
+  if (st.status === 'disabled') return `<div class="records-tab-off" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_off'))}</div>`;
+  if (st.status === 'idle' || (st.status === 'loading' && !st.rows.length)) return `<div class="records-tab-loading" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_loading'))}</div>`;
+  if (st.status === 'error') return `<div class="records-tab-error" role="alert" style="font-size:13px;color:var(--danger,#c0392b);">${escHtml(t('records_tab_failed', [st.error]))}</div>`;
+  if (!st.rows.length) return `<div class="records-tab-empty" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_empty'))}</div>`;
+  const status = `<div class="records-tab-status" style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('records_tab_status', [st.total, st.rows.length]))}</div>`;
+  const more = st.rows.length < st.total ? `<button type="button" class="btn-secondary records-tab-more" onclick="recordsTabMore();return false;" style="margin-top:8px;">${escHtml(t('plans_browser_load_more'))}</button>` : '';
+  return status + st.rows.map(_recordsTabRowHTML).join('') + more;
+}
+
+function recordsTabHTML(p) {
+  const st = _recordsTab.project === (p && p.name) ? _recordsTab : _recordsTabFresh(p && p.name);
+  const kinds = [['', 'records_tab_kind_all'], ['registry_row', 'plan_records_view_registry'], ['finding', 'plan_records_view_findings']];
+  const kindSel = `<select class="form-select records-tab-kind-filter" aria-label="${escHtml(t('records_tab_filter_kind'))}" onchange="recordsTabSetKind(this.value)" style="font-size:12px;">${kinds.map(([v, k]) => `<option value="${v}"${st.kind === v ? ' selected' : ''}>${escHtml(t(k))}</option>`).join('')}</select>`;
+  const stateSel = `<select class="form-select records-tab-state-filter" aria-label="${escHtml(t('plan_records_filter_state'))}" onchange="recordsTabSetState(this.value)" style="font-size:12px;"><option value="">${escHtml(t('plan_records_filter_state_all'))}</option>${_RECORDS_TAB_STATES.map(s => `<option value="${s}"${st.stateFilter === s ? ' selected' : ''}>${escHtml(_recordsTabStateLabel(s))}</option>`).join('')}</select>`;
+  const box = `<input type="text" class="form-input records-tab-search" aria-label="${escHtml(t('records_tab_search_label'))}" placeholder="${escHtml(t('records_tab_search_placeholder'))}" value="${escHtml(st.q)}" oninput="recordsTabSearchInput(this.value)" style="font-size:13px;flex:1 1 200px;min-width:140px;">`;
+  return `<div class="records-tab" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
+    <div class="records-tab-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">${box}${kindSel}${stateSel}</div>
+    <div id="recordsTabList">${recordsTabListHTML(st)}</div></div>`;
+}
+window.recordsTabHTML = recordsTabHTML;
+window.recordsTabListHTML = recordsTabListHTML;
+
+function _recordsTabPaint() {
+  if (!_projectsActive()) return;
+  const el = document.getElementById('recordsTabList');
+  if (el) el.innerHTML = recordsTabListHTML(_recordsTab);
+}
+
+window.recordsTabSearchInput = function(v) {
+  const st = _recordsTab;
+  st.q = String(v || '');
+  if (window._recordsTabSearchTimer) clearTimeout(window._recordsTabSearchTimer);
+  window._recordsTabSearchTimer = setTimeout(() => { window._recordsTabSearchTimer = null; if (_recordsTab === st) _recordsTabLoad(false); }, 250);
+};
+window.recordsTabSetKind = function(v) { _recordsTab.kind = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabSetState = function(v) { _recordsTab.stateFilter = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabMore = function() { return _recordsTabLoad(true); };
+
+// recordsTabGoPlan opens the Plans sub-tab with the plan expanded.
+window.recordsTabGoPlan = function(planId) {
+  const project = _recordsTab.project || _plansBrowser.project;
+  if (!planId || !project) return Promise.resolve();
+  _plansSetOpen(project, planId, true);
+  selectProjectsSubtab('plans');
+  if (_plansBrowser.project !== project) return _plansBrowserLoadSelected();
+  const jobs = [];
+  const d = _plansBrowser.detail[planId];
+  if (!d || d.status !== 'ready') jobs.push(_plansLoadDetail(planId));
+  if (_plansBrowser.links.status === 'idle') jobs.push(_plansLoadLinks());
+  return Promise.all(jobs);
+};
+
+// The Records sub-tab: the browser, then the Registry and findings card.
+function _projectRecordsTabHTML(p) {
+  return `<div id="projectRecordsMount" data-mount="records">${recordsTabHTML(p)}</div>${_planRecordsSlotHtml(p)}`;
+}
+
 function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
     if (!_projectsActive()) return null;
     _projectsPaint();
     const gantt = _projectsLoadGantt();
+    const summary = _projectsLoadSummary().then(() => { if (_projectsActive()) _projectsPaint(); });
     const records = _planRecordsLoad(false);
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records]));
+    const recordsBrowse = _recordsTabLoad(false);
+    const plans = _plansBrowserLoadSelected();
+    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records, summary, plans, recordsBrowse]));
   });
 }
 
@@ -53639,7 +54252,7 @@ const DASH_CARD_HELP_ANCHORS = {
   'review-backlog': 'review-backlog-card',
   'defects-per-day': 'defects-per-day-card',
   'cost-report': 'cost-report-card',
-  'arc-view': 'arc-card',
+  'arc-view': 'plan-card',
   'timeline': 'automaton-timeline-card',
   'usage-allowance': 'weekly-allowance-card',
   'usage-pace': 'pace-line-card',

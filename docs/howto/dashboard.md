@@ -287,11 +287,11 @@ setting per card.
 - **Data:** `GET /api/dashboard/series/defects-per-day?days=<n>` (default `14`, `1` to `90`): defects found and fixed per UTC day from the defect intake log. A fix is a tiny fix applied without error.
 - **Off:** hidden until a defect was found or fixed in the window. Empty line: "No defects were found or fixed in this window — this card fills as defects are recorded." Opt-in.
 
-### Arc card
+### Plan card
 
-- **For:** one arc (an Automation) as its stages in order, with the shared lanes and the plan usage.
+- **For:** one plan (an Automation) as its stages in order, with the shared lanes and the plan usage.
 - **Data:** `GET /api/dashboard/arc`; plan usage in points and tokens, never dollars.
-- **Off:** opt-in; add it from Edit → Add Card. See [dashboard-arc-view.md](dashboard-arc-view.md).
+- **Off:** opt-in; add it from Edit → Add Card. See [dashboard-plan-view.md](dashboard-arc-view.md).
 
 ### Automaton Timeline card
 
@@ -438,7 +438,7 @@ confirm each before the wording is treated as final:
 - [session-telemetry.md](session-telemetry.md) — hook payload schema
 - [guardrail-library.md](guardrail-library.md) — guardrail library and profiles
 - [autonomous-planning.md](autonomous-planning.md) — Automata lifecycle
-- [dashboard-arc-view.md](dashboard-arc-view.md) — the opt-in Arc card: stages, maintenance lane, blocked stage, lanes and plan usage in points and tokens
+- [dashboard-plan-view.md](dashboard-arc-view.md) — the opt-in Plan card: stages, maintenance lane, blocked stage, lanes and plan usage in points and tokens
 - [automata-timeline.md](automata-timeline.md) — the Automata interval chart across all projects (not the 6h Gantt card on this dashboard)
 - [api/mobile-surface.md](../api/mobile-surface.md) — WebSocket events for mobile/Wear/Auto
 

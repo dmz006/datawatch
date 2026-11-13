@@ -1992,6 +1992,404 @@ paths:
         "404": {description: Plan records are turned off}
         "503": {description: Plan records are not available}
 
+  /api/projects/{name}/plans:
+    get:
+      summary: A project's plans in order, with a Backlog group
+      description: |
+        Lists the project's plans in priority order, each with its goal, state,
+        progress (Automata done out of total, with a whole-number percent for a bar),
+        points, the ids of its Automations and Automata, and a next marker naming the
+        Automaton that runs next. Plans with no Automaton yet are in the `backlog`
+        group, in priority order. Paged with `limit` and `offset` (default 50, at most
+        500); the Backlog group has its own `backlog_limit` and `backlog_offset`.
+        Answers from the plan-record summary index, never from full records. Points
+        are usage points, never API dollars. Needs the autonomous read capability when
+        called by a federated peer.
+      operationId: projectPlans
+      tags: [Autonomous]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: backlog_limit, in: query, schema: {type: integer, minimum: 1, maximum: 500}}
+        - {name: backlog_offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of plans and one page of the Backlog group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  plans: {type: array, items: {type: object}}
+                  page: {type: object}
+                  backlog: {type: object}
+        "400": {description: A paging value is not a whole number}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Unknown project, or plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/projects/{name}/overview-summary:
+    get:
+      summary: Project overview header, progress, active plans and record counts
+      description: |
+        One small answer for the top of the project overview: the header, overall
+        progress and points, one line per active plan with its state and progress
+        (percent, for a bar), what is next (the first waiting Automaton of the first
+        active plan; blocked and held ones are skipped), and record counts for plans,
+        registry rows and findings by state. Answers from the plan-record summary
+        index. Needs the autonomous read capability when called by a federated peer.
+      operationId: projectOverviewSummary
+      tags: [Autonomous]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+      responses:
+        "200":
+          description: The overview summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  header: {type: object}
+                  progress: {type: object}
+                  active_plans: {type: array, items: {type: object}}
+                  next: {type: object, nullable: true}
+                  counts: {type: object}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Unknown project, or plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/automata:
+    get:
+      summary: A plan's Automata in run order
+      description: |
+        Lists the plan's Automata in run order: completed ones first by completion
+        time, then running, then next, then blocked, then held. Blocked and held ones
+        are shown, marked `skipped`, and never carry the next marker. The `next`
+        marker covers the whole list, not only the page. Paged with `limit` and
+        `offset`. `{ref}` is a plan id, uid or exact title. Answers from the summary
+        index. Needs the autonomous read capability when called by a federated peer.
+      operationId: planAutomata
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of the plan's Automata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  progress: {type: object}
+                  next: {type: object, nullable: true}
+                  automata: {type: array, items: {type: object}}
+                  page: {type: object}
+        "400": {description: A paging value is not a whole number}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/tasks:
+    get:
+      summary: A plan's tasks, read when the plan is expanded
+      description: |
+        Lists the tasks of the plan's Automata, in the plan's run order, paged with
+        `limit` and `offset`. Tasks are not part of the summary index, so this is the
+        one plans read that opens the Automaton records, and only those of the plan
+        asked about. Call it when a plan is expanded, not for a list. Needs the
+        autonomous read capability when called by a federated peer.
+      operationId: planTasks
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  tasks: {type: array, items: {type: object}}
+                  page: {type: object}
+        "400": {description: A paging value is not a whole number}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plan-records/browse:
+    get:
+      summary: Browse all registry rows and findings
+      description: |
+        Lists every registry row and finding, newest change first (best title match
+        first when `q` is given), with the plan and the Automata each links to. Filter
+        by words in the title (`q`), `kind`, `state` and `project`; paged with `limit`
+        and `offset`. Answers from the summary index, never from full records. Needs
+        the autonomous read capability when called by a federated peer.
+      operationId: planRecordBrowse
+      tags: [Autonomous]
+      parameters:
+        - {name: q, in: query, schema: {type: string}}
+        - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: project, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records: {type: array, items: {type: object}}
+                  page: {type: object}
+        "400": {description: A filter or paging value is not allowed}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/migrate:
+    post:
+      summary: Build plans from the older project plan lists and registry rows
+      description: |
+        Turns every entry of a project's older plan list (arcs) into a plan linked to its Automation, every registry
+        row that names an Automaton or Automation into a plan linked to it, and every
+        open row that names none into a backlog plan ordered by its old row number.
+        The default is a dry run: the answer lists what would be created and linked
+        and nothing is written. `{"apply": true}` writes. A plan or link that already
+        exists is never changed, so a second apply changes nothing. No older plan-list entry, row or
+        config key is deleted. Needs the autonomous write capability when called by a
+        federated peer. An apply is recorded in the audit log.
+      operationId: plansMigrate
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                apply: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The counts and the would-create, would-link, skipped-existing and conflict lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note: {type: string}
+                  counts: {type: object, additionalProperties: {type: integer}}
+                  result: {type: object}
+        "400": {description: Bad body}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans:
+    post:
+      summary: Create a plan
+      description: |
+        Creates a plan in a registered project. The plan goes last in the plan order.
+        The title must be unique within the project; a taken title answers 409 with
+        the plan that holds it. Needs the autonomous write capability when called by
+        a federated peer.
+      operationId: planCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, title]
+              properties:
+                project: {type: string, description: A registered project alias}
+                title: {type: string}
+                goal: {type: string}
+                state: {type: string}
+      responses:
+        "201":
+          description: The stored plan, title first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+        "400": {description: Missing title, unknown project or invalid state}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "409": {description: The title is already used in the project}
+        "503": {description: Plan records are not available}
+  /api/plans/order:
+    put:
+      summary: Set the plan priority order
+      description: |
+        The plans listed take positions 1 to n in the order given; every other plan
+        keeps its relative order after them. A plan that does not exist or is listed
+        twice fails the whole call and nothing changes. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: plansOrder
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plans]
+              properties:
+                plans: {type: array, items: {type: string}, description: Plan ids or titles, first plan first}
+      responses:
+        "200":
+          description: The plans in their new order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plans: {type: array, items: {type: object}}
+        "400": {description: Empty list, or a plan listed twice}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: A listed plan does not exist, or plan records are turned off}
+        "409": {description: A reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/automata/order:
+    put:
+      summary: Set the order of a plan's Automata
+      description: |
+        The body lists every Automaton linked to the plan exactly once, first to run
+        first. The answer is the plan's run view: the Automata in run order and the
+        `next` marker, which skips blocked and held Automata. Needs the autonomous
+        write capability when called by a federated peer.
+      operationId: planAutomataOrder
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [automata]
+              properties:
+                automata: {type: array, items: {type: string}}
+      responses:
+        "200":
+          description: The plan's run view after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  progress: {type: object}
+                  next: {type: object, nullable: true}
+                  automata: {type: array, items: {type: object}}
+        "400": {description: The list is not every Automaton of the plan once}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/attach:
+    post:
+      summary: Attach an Automaton, an Automation or a finding to a plan
+      description: |
+        `kind` is `automaton`, `automation` or `finding`. An Automaton or Automation
+        id must exist; an unknown one answers 404. It joins the end of the plan's
+        order. An item already linked to a different plan, or a finding already
+        attached elsewhere, answers 409 naming the holder and nothing changes: detach
+        it first. Attaching the same item to the same plan again changes nothing.
+        Needs the autonomous write capability when called by a federated peer.
+      operationId: planAttach
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, id]
+              properties:
+                kind: {type: string, enum: [automaton, automation, finding]}
+                id: {type: string}
+      responses:
+        "200":
+          description: What was attached and the plan (or finding) after the change
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Bad kind or missing id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, Automaton, Automation or finding}
+        "409": {description: The item is linked or attached elsewhere (the answer names the holder), or the reference is ambiguous}
+        "503": {description: Plan records are not available, or the Automata manager is not available to check the id}
+  /api/plans/{ref}/detach:
+    post:
+      summary: Detach an Automaton, an Automation or a finding from a plan
+      description: |
+        The item must be linked to the plan named in the path. One linked to another
+        plan answers 409 naming that plan, so a detach never reaches into a different
+        plan. An item that is not linked answers 404. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: planDetach
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, id]
+              properties:
+                kind: {type: string, enum: [automaton, automation, finding]}
+                id: {type: string}
+      responses:
+        "200":
+          description: What was detached and the plan (or finding) after the change
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Bad kind or missing id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or the item is not linked}
+        "409": {description: The item belongs to a different plan, or the reference is ambiguous}
+        "503": {description: Plan records are not available}
   /api/autonomous/decision-records:
     post:
       summary: Create a decision record
@@ -10038,7 +10436,7 @@ paths:
                 default_branch: {type: string, description: "Project record: default git branch"}
                 arcs:
                   type: array
-                  description: "Project record: the ordered arc list. Absent keeps it; [] clears it"
+                  description: "Project record: the ordered plan list (key arcs, deprecated name). Absent keeps it; [] clears it"
                   items: {type: object}
                 target:
                   type: object
@@ -10061,18 +10459,18 @@ paths:
           content: {"text/plain": {schema: {type: string}}}
   /api/projects/{name}/rollup:
     get:
-      summary: Project roll-up of arcs, Automata, task progress, points and throughput
+      summary: Project roll-up of plans, Automata, task progress, points and throughput
       description: |
-        Groups the project's Automata by the arc whose Automation holds them.
-        Each arc reports its Automata with their session ids, task progress
+        Groups the project's Automata by the plan whose Automation holds them.
+        Each plan reports its Automata with their session ids, task progress
         (done/total), cost in usage points and throughput. Automata of this
-        project that no arc holds are in `unassigned`. An Automaton is placed in a
+        project that no plan holds are in `unassigned`. An Automaton is placed in a
         project by its own project link, then the project of the Automation holding
         it, then its parent Automaton's project, then its directory; one resolved to
         another project is never in this project. Automata without a project (no
-        link and no directory match, in no arc) are in `without_project`, which is
+        link and no directory match, in no plan) are in `without_project`, which is
         the same whichever project is asked for and is not part of `total`;
-        `total` sums the arcs and `unassigned`.
+        `total` sums the plans and `unassigned`.
         Costs are points from the billing profile's point calibration, never
         API dollars. Throughput counts Automata finished in the window and tasks
         finished in the window, per day. An Automaton is finished when it is
@@ -10190,7 +10588,7 @@ paths:
       summary: Read one project alias and its record
       description: |
         Returns the project's directory, default backend, description, policy and
-        the optional record fields (owner, repository, default branch, arcs, target,
+        the optional record fields (owner, repository, default branch, plan list (arcs), target,
         lane defaults, weekly share, branch retention and major trigger).
       operationId: projectsGet
       tags: [Singletons]
@@ -10211,13 +10609,41 @@ paths:
         "200": {description: Deleted}
         "404": {description: Unknown project}
   /api/projects/{name}/arcs:
-    put:
-      summary: Replace a project's ordered arc list
+    get:
+      summary: Deprecated - the project's arcs plus its plans
       description: |
-        Body is a JSON array of arcs, or an object `{"arcs": [...]}`. Array position
-        is the arc order. Each arc has `automation_id` (required, unique within the
+        Deprecated alias kept for older clients. Returns the same arcs data as the
+        roll-up `arcs` field, plus the project's `plans`. Use
+        `GET /api/projects/{name}/plans` instead. Sends a `Deprecation` header.
+      operationId: projectsGetArcs
+      deprecated: true
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+      responses:
+        "200":
+          description: The arcs and plans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deprecated: {type: string}
+                  project: {type: string}
+                  arcs: {type: array, items: {type: object}}
+                  plans: {type: array, items: {type: object}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Unknown project}
+        "503": {description: Automata not available}
+    put:
+      summary: Replace a project's ordered plan list (deprecated route name)
+      description: |
+        Body is a JSON array of plan entries, or an object `{"arcs": [...]}` (the key keeps its old name). Array position
+        is the plan order. Each entry has `automation_id` (required, unique within the
         project), `priority` (integer) and `state` (`planned`, `active` or `done`;
-        empty means planned). An empty list clears the arcs. Returns the project
+        empty means planned). An empty list clears the plan list. Returns the project
         record.
       operationId: projectsSetArcs
       tags: [Singletons]
@@ -10243,7 +10669,7 @@ paths:
                       type: array
                       items: {type: object}
       responses:
-        "200": {description: The project record with the new arcs}
+        "200": {description: The project record with the new plan list}
         "400": {description: Empty body, malformed JSON, duplicate or missing automation_id, or an unknown state; the message names the problem}
         "404": {description: Unknown project}
         "413": {description: Body larger than 1 MiB}
@@ -14056,7 +14482,7 @@ components:
         id: {type: string, description: "Automation ID (8-hex)"}
         name: {type: string}
         description: {type: string}
-        milestone: {type: boolean, description: "true marks the Automation as a milestone arc: when it completes, its release step is raised to major under the project's major_trigger setting"}
+        milestone: {type: boolean, description: "true marks the Automation as a milestone plan: when it completes, its release step is raised to major under the project's major_trigger setting"}
         status: {type: string, enum: [draft, active, paused, completed, blocked, cancelled]}
         entry_member_id: {type: string, description: "Member the Automation starts at"}
         current_member_id: {type: string, description: "Member the cursor is on for a linear Automation; see active_cursors for fork/join"}
@@ -14244,7 +14670,7 @@ components:
       properties:
         name: {type: string}
         description: {type: string}
-        milestone: {type: boolean, description: "Optional. true marks the Automation as a milestone arc. On create omitted means false; on update omitted keeps the stored value."}
+        milestone: {type: boolean, description: "Optional. true marks the Automation as a milestone plan. On create omitted means false; on update omitted keeps the stored value."}
         entry_member_id: {type: string, description: "Entry member ID; when omitted, the first members entry is the entry"}
         members:
           type: array

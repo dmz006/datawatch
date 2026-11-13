@@ -453,13 +453,13 @@ a set size does not change what a ship bumps (see the note at the top of
 | Layer | What decides it |
 |---|---|
 | Explicit | The Automaton's own `release_size` (`patch`, `minor`, `major` or `none`). An explicit major applies under any `major_trigger`. |
-| Milestone | The Automaton's Automation (arc) is marked `milestone`, its members are complete, and the project's `major_trigger` is `milestone`: the release steps major. |
+| Milestone | The Automaton's Automation (plan) is marked `milestone`, its members are complete, and the project's `major_trigger` is `milestone`: the release steps major. |
 | Kind map | The `release_size_map` entry for the Automaton's kind (the daemon labels Automata `feature`, `bug` or another kind of its own). A `major` entry is stored but never used: a major is never inferred from a kind. |
 | Default | kind `feature` steps minor, kind `bug` steps patch, any other kind steps no version. |
 
 The resolution never reads the diff and never infers a major: a major step
 comes from an explicit `release_size: major`, or from a completed
-`milestone` arc while `major_trigger` is `milestone`, or it does not
+`milestone` plan while `major_trigger` is `milestone`, or it does not
 happen.
 
 Separately from the size, an Automaton marked `breaking_change` is reported

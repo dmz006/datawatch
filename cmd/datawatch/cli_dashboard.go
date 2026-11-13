@@ -238,7 +238,7 @@ func newDashboardArcCmd() *cobra.Command {
 	var arcID string
 	cmd := &cobra.Command{
 		Use:   "arc",
-		Short: "Arc summary: stages, lanes, plan usage in points and tokens (GET /api/dashboard/arc)",
+		Short: "Plan summary: stages, lanes, plan usage in points and tokens (GET /api/dashboard/arc)",
 		RunE: func(*cobra.Command, []string) error {
 			path := "/api/dashboard/arc"
 			if arcID != "" {
@@ -257,7 +257,7 @@ func newDashboardArcCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&rawJSON, "json", false, "print the raw endpoint JSON")
-	cmd.Flags().StringVar(&arcID, "arc", "", "arc (Automation) id; default arc when omitted")
+	cmd.Flags().StringVar(&arcID, "arc", "", "plan (Automation) id; default plan when omitted")
 	return cmd
 }
 
@@ -312,10 +312,10 @@ func renderDashboardArc(body []byte) string {
 		return fmt.Sprintf("dashboard arc: unparseable response: %v", err)
 	}
 	if !a.Available {
-		return "Arc summary off: " + a.Reason
+		return "Plan summary off: " + a.Reason
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Arc %s (%s)\n", a.Arc.Name, a.GeneratedAt)
+	fmt.Fprintf(&b, "Plan %s (%s)\n", a.Arc.Name, a.GeneratedAt)
 	for _, s := range a.Arc.Stages {
 		fmt.Fprintf(&b, "  %-9s %d/%d done (%.1f%%)  %d running  %d blocked\n", s.Stage, s.Done, s.Total, s.Percent, s.Running, s.Blocked)
 	}

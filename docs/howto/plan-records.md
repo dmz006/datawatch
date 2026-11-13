@@ -15,8 +15,9 @@ exec_steps:
 ---
 # How-to: plan records, registry rows and findings kept by datawatch
 
-A **plan record** is one item of the plans registry (a *registry row*) or one
-problem raised by an Automaton or an operator (a *finding*), kept by the daemon
+A **plan record** is a *plan* (the thing you are working on, which links down
+to Automations and Automata), one item of the plans registry (a *registry row*)
+or one problem raised by an Automaton or an operator (a *finding*), kept by the daemon
 instead of as a numbered line in `docs/plans/README.md` or an entry in a
 findings file. Operators and Automata read and change the same records through
 the same surfaces. Terms are in
@@ -33,13 +34,15 @@ and how to turn it off.
 | `title` | The human name. Unique inside one project (case-insensitive, trimmed). |
 | `id` | A short readable id, unique in the installation. |
 | `uid` | An identifier that never changes. |
-| `kind` | `registry_row` or `finding`. |
+| `kind` | `plan`, `registry_row` or `finding`. |
 | `project` | The registered project alias the record belongs to. Fixed when the record is created. |
 | `state` | Registry rows: `open`, `planned`, `in_progress`, `blocked`, `shipped`, `done`, `deferred`, `cancelled`. Findings: `open`, `triaged`, `fixed`, `wontfix`, `duplicate`. |
 | `body` | The notes. |
 | `legacy_number` | The old registry row number, when the record came from the registry file. |
 | `shipped_by`, `shipped_version` | The Automaton id and version that shipped a row. |
 | `raised_by` | The Automaton id that raised a finding. |
+| `goal`, `order` | Plans only. The goal text, and the priority order (lowest runs first). |
+| `automations`, `automata`, `findings` | Plans only. The ids the plan links down to, in display order. They change through the link calls, never by editing the record body. |
 | `links`, `aliases` | Links, and older titles that still find the record. |
 | `needs_review`, `review_reason` | Set by an import when a conflict was resolved for you. |
 
@@ -62,7 +65,10 @@ candidates so you can repeat the call with an id.
 | MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. |
 | CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. |
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
-| PWA | The **Plan records** section of the project page in the Projects sub-tab: Registry rows and Findings views, a state filter, a search box, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The section hides itself when plan records are off. |
+| Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
+| Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
+| Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
+| PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a state filter, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The sections hide themselves when plan records are off. |
 
 Each created or changed record writes one `plan_record_created` or
 `plan_record_updated` audit event; a real import writes one
@@ -166,6 +172,30 @@ Write-through changes only the registry-row hook. It does not write record
 changes back into the plans files, and the files are not updated when a record
 is edited by hand.
 
+## Plans: links and order
+
+A plan links down: plan, then Automation, then Automaton, then tasks. A finding
+attaches to a plan or to an Automaton. Rules that are easy to trip over:
+
+- **A link is never overwritten.** An Automaton or Automation already linked to
+  a different plan is refused (the reply names the plan holding it), and so is a
+  finding already attached elsewhere. Detach it first, then attach it again.
+- **Order is a priority.** The lowest `order` runs first. Reordering plans, or
+  the Automata inside one plan, is its own change and writes a
+  `plan_record_reordered` audit event; attaching and detaching write
+  `plan_record_linked` and `plan_record_unlinked`.
+- A plan can exist with no Automaton yet. It then shows in the *backlog*.
+- Older records have none of these fields and load unchanged.
+
+## The model
+
+Work is linked down in one chain: **plan**, then **Automation**, then
+**Automata**, then tasks. A plan is the registry record of what you are working
+on; an Automation is a named chain of Automata; an Automaton is one unit of
+autonomous work. A finding attaches to a plan or to an Automaton. The word
+*record* is only for what is stored (a plan, a registry row or a finding) and
+for the **Records** page sub-tab of the project page.
+
 ## Settings
 
 All under `autonomous.plan_records.`; change them with `PUT /api/config`,
@@ -214,6 +244,16 @@ Nothing here turns on by itself. These are yours to settle:
 - **The old files.** `docs/plans/README.md` and the findings files stay in
   place as the read-only archive. Whether and when to clean them up is a later
   step you decide.
+- **The arcs are deprecated, not removed.** After `datawatch plans migrate
+  --apply` the project arcs still exist and still answer on
+  `GET /api/projects/{name}/arcs`, the roll-up and `project_set_arcs`. Decide
+  when the Projects page and your scripts move to the plans routes, and when the
+  arcs may be cleared. Nothing deletes them for you.
+- **Migration conflicts.** A title already taken by a record the migration did
+  not make is left alone and listed as a conflict; rename one side by hand and
+  run the migration again.
+- **Backlog order.** Open rows with no Automaton become backlog plans ordered by
+  their old row number. Check that this is the order you want.
 - **Mobile apps.** Android and iPhone do not show plan records yet; that is
   tracked in the datawatch-app repository.
 
@@ -227,3 +267,117 @@ Nothing here turns on by itself. These are yours to settle:
   project root.
 - **A shipped row did not appear.** Check `write_through` is on and the hook
   result in the merge run; with it off the hook edits the README as before.
+
+## Building plans from arcs and rows
+
+A plan groups work to come and links down to Automations and Automata. The
+migration builds plans from what you already have:
+
+- Every project arc becomes one plan: the title and goal come from its
+  Automation, the arc priority becomes the plan order, the arc state
+  (planned, active, done) becomes the plan state, and the plan links to that
+  Automation.
+- Every registry row whose text or links name an Automaton or Automation id
+  becomes a plan linked to it. The plan is titled `Plan: <row title>`, because a
+  title is unique inside a project and the row keeps its own.
+- Every open row that names none becomes a backlog plan, ordered by its old row
+  number. A closed row that names none is left out.
+
+It previews by default. Read the lists (would create, would link, left alone,
+conflicts), then apply:
+
+```
+datawatch plans migrate            # preview, writes nothing
+datawatch plans migrate --apply    # write
+```
+
+Every plan the migration makes carries a `migrated-from` link naming its source,
+so a second apply finds it again and changes nothing. An Automaton or
+Automation already linked to a plan is left where it is and reported as left
+alone; a title already taken by a record the migration did not make is reported
+as a conflict and left alone. No arc, row or config key is deleted. An apply
+writes one audit event (`plan_record_imported`, subject `plans migrate`) besides
+the event for each plan and link it writes.
+
+## Reading plans
+
+The plans read routes show a project as plans in priority order. They need
+`autonomous:read`, answer 404 while plan records are off, and page every list
+with `limit` (default 50, most 500) and `offset`.
+
+- `GET /api/projects/{name}/plans` lists the plans that have at least one
+  Automaton. Each row has the title, goal, state, progress (Automata done out of
+  total, with a whole-number percent for a bar), points, the ids of its
+  Automations and Automata, and a `next` marker. Plans with no Automaton yet are
+  in the `backlog` group, which pages with `backlog_limit` and `backlog_offset`.
+- `GET /api/projects/{name}/overview-summary` is the small answer for the top of
+  the project overview: header, overall progress and points, one line per active
+  plan with its state and progress, what is next, and counts of plans, registry
+  rows and findings by state.
+- `GET /api/plans/{ref}/automata` lists one plan's Automata in run order:
+  completed first (oldest completion first), then running, then next, then
+  blocked, then held. Blocked and held Automata are shown and marked `skipped`;
+  the next marker never lands on them.
+- `GET /api/plans/{ref}/tasks` lists the plan's tasks. Call it when a plan is
+  expanded. It is the one plans read that opens Automaton records, and only for
+  the plan you asked about.
+- `GET /api/plan-records/browse` lists every registry row and finding with the
+  plan and Automata each links to. Filter with `q` (words in the title), `kind`,
+  `state` and `project`.
+
+Points are usage points, never dollars; an Automaton with no figure counts as 0.
+The lists read the plan-record summary index, so they stay fast with thousands of
+records. The older `GET /api/projects/{name}/arcs` and the `arcs` field of the
+roll-up still answer, with the same arcs data and a `plans` list added; they are
+deprecated.
+
+## The Plans browser
+
+The **Plans** page sub-tab of a project shows plans in priority order, each with
+its goal, state, a progress bar of finished Automata and its points, then a
+**Backlog** group of plans with no Automaton yet. Open a plan to see its
+Automations, its Automata in run order (with the **Next** marker, skipping
+blocked and held Automata), its tasks (read only when the plan is opened, with
+**Load more**), and the findings and registry rows linked to it with their old
+row numbers. The up and down buttons reorder plans and a plan's Automata;
+**Create plan** adds one, and the attach controls link an Automaton, an
+Automation or a finding by id. The search box covers plan, Automaton, registry
+row and finding titles and the state filter narrows by plan state; reordering is
+off while either is in use. Which plans are expanded is remembered in this
+browser only. The **Overview** page sub-tab starts with a summary (active
+plans, what is next, counts), and the **Records** page sub-tab lists every
+registry row and finding. The controls call the routes in the next section.
+
+## Ordering and linking plans
+
+Every change below is on REST, CLI, MCP and chat, and in the web app except detaching (reading the ordered list is not in MCP). A plan is named by its id or its title.
+They need `autonomous:write` for a federated peer and answer 404 while plan
+records are off.
+
+| To | Web app | REST | CLI | MCP | Chat |
+|---|---|---|---|---|---|
+| See a project's plans | Plans sub-tab | `GET /api/projects/{name}/plans` | `datawatch plans list <project>` | not in MCP; `plan_record_list` lists the plan records | `autonomous plan list <project>` |
+| Create a plan | **Create plan** | `POST /api/plans` `{project, title, goal}` | `datawatch plans create <project> <title> [--goal TEXT]` | `plan_create` | `autonomous plan new <project> <title...>` |
+| Reorder plans | up and down buttons | `PUT /api/plans/order` `{plans: [...]}` | `datawatch plans reorder <plan>...` | `plan_reorder` | `autonomous plan move <project> <plan> <position>` |
+| Reorder a plan's Automata | up and down buttons on an open plan | `PUT /api/plans/{ref}/automata/order` `{automata: [...]}` | `datawatch plans reorder-automata <plan> <automaton>...` | `plan_reorder_automata` | `autonomous plan move <plan> automaton <id> <position>` |
+| Attach | **Attach** controls | `POST /api/plans/{ref}/attach` `{kind, id}` | `datawatch plans attach <plan> --automaton\|--automation\|--finding ID` | `plan_attach` | `autonomous plan attach <plan> <kind> <id>` |
+| Detach | (use REST, CLI, MCP or chat) | `POST /api/plans/{ref}/detach` `{kind, id}` | `datawatch plans detach <plan> --automaton\|--automation\|--finding ID` | `plan_detach` | `autonomous plan detach <plan> <kind> <id>` |
+
+Reordering plans: the plans you list take positions 1 to n in that order and
+every other plan follows in its old order. A plan that does not exist, or one
+listed twice, fails the whole call and nothing changes. Reordering a plan's
+Automata must list every Automaton of the plan once. The answer shows the run
+order and the **next marker**. The next marker skips blocked and held Automata,
+so moving a held Automaton to the front does not make it run next; it stays
+shown, marked skipped, until it is released.
+
+Attaching checks the id first: an unknown Automaton or Automation answers 404.
+A link is never replaced. An Automaton or Automation already linked to another
+plan, or a finding already attached elsewhere, answers 409 and names where it
+is; detach it first, then attach it. Attaching the same item to the same plan
+again changes nothing. A detach must name the plan the item is in, so it can
+never reach into a different plan.
+
+`datawatch projects arcs <name>` and the `project_set_arcs` tool stay as
+deprecated aliases. The CLI prints a note and runs the plans list; in chat,
+`arcs` is accepted in place of `plan` (`autonomous arcs list <project>`).

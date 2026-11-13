@@ -101,7 +101,7 @@ test('the arc card is defined with a label key and a body, addable but not in th
 test('before the first payload the card shows its loading line, not raw markup', () => {
   const { sandbox } = makeEnv(ARC_PAYLOAD);
   const html = evalIn(sandbox, '_dashArcCardHTML()');
-  assert.ok(html.includes('Loading the arc summary'));
+  assert.ok(html.includes('Loading the plan summary'));
   assert.ok(!html.includes('<script'));
 });
 

@@ -75,6 +75,13 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// missing from a locale the user-visible regression is obvious
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
+		"projects_subtab_plans",
+		// Plans browser: backlog group, create action, the Automation heading and the move buttons.
+		"plans_browser_backlog",
+		"plans_browser_create_btn",
+		"plans_browser_move_up",
+		"plans_browser_move_down",
+		"automation_plans_browser_heading",
 		"observer_peer_stale",
 		"settings_observer_peers",
 		"settings_observer_peer_silent_alert_minutes",

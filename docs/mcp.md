@@ -278,7 +278,8 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Agents | `agent_list/get/spawn/terminate/logs/audit` |
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
 | Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
-| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs`, `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
+| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs` (deprecated; plans replace it), `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
+| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach` (see [Plan record tools](#plan-record-tools)) |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
@@ -1790,9 +1791,11 @@ supersession rule — is walked through in
 ### Plan record tools
 
 A plan record is a registry row (one item of the plans registry) or a finding
-(a problem raised by an Automaton or an operator), kept by the daemon. The six
-tools proxy the `/api/plan-records` REST surface and answer with the title
-first and the id second. They need `autonomous:read` (`plan_record_list`,
+(a problem raised by an Automaton or an operator), kept by the daemon. The first
+six tools proxy the `/api/plan-records` REST surface and the other six work on
+plans (`plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`,
+`plan_attach`, `plan_detach`, `/api/plans`); all answer with the title first and
+the id second. They need `autonomous:read` (`plan_record_list`,
 `plan_record_get`, `plan_record_search`) or `autonomous:write`
 (`plan_record_create`, `plan_record_update`, `plan_record_import`) when called
 by a federated peer. While `autonomous.plan_records.enabled` is `false` every
@@ -1806,6 +1809,16 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_record_update` | Change a record; a field you leave out is left alone and a rename keeps the old title | `PUT /api/plan-records/{kind}/{ref}` |
 | `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
 | `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
+| `plan_migrate` | Build plans from the older project plan lists (arcs) and registry rows; previews unless `apply` is `true` | `POST /api/plans/migrate` |
+| `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`) | `POST /api/plans` |
+| `plan_reorder` | Set the plan priority order (`plans`: ids or titles, first plan first) | `PUT /api/plans/order` |
+| `plan_reorder_automata` | Set the order of a plan's Automata (`plan`, `automata`: every Automaton once); the answer shows what runs next, skipping blocked and held | `PUT /api/plans/{ref}/automata/order` |
+| `plan_attach` | Attach an Automaton, Automation or finding to a plan (`plan`, `kind`, `id`); a link held elsewhere is refused and named | `POST /api/plans/{ref}/attach` |
+| `plan_detach` | Detach one of them from the plan it is in | `POST /api/plans/{ref}/detach` |
+
+`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
+`plan_detach` need `autonomous:write` when called by a federated peer.
+`project_set_arcs` stays as a deprecated alias for the older plan list (arcs).
 
 **Parameters.** `kind` is `registry-row` or `finding` (required on create, list,
 get and update). `ref` is an id, a uid, `row <n>`, an exact title, an older
@@ -2307,7 +2320,7 @@ read tools `config:read`, the write tools `config:write`.
 
 ---
 
-## Project record, arcs and the Projects sub-tab
+## Project record, plans and the Projects sub-tab
 
 The seven project tools read and write the project record behind the web app's
 Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
@@ -2318,14 +2331,14 @@ Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 |---|---|---|
 | `project_list` | read | none |
 | `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted record field keeps its stored value) |
-| `project_set_arcs` | write | `name`, `arcs` (required, an array; order is the arc order; `[]` clears) |
+| `project_set_arcs` | write (deprecated old name and plan list; the registry plan records replace it, see `plan_migrate`) | `name`, `arcs` (required, an array; order is the plan order; `[]` clears) |
 | `project_rollup` | read | `name` (required), `window` (days, 1 to 365, default 7) |
 | `project_history` | read | `name` (required), `limit`, `cursor` |
-| `project_timeline` | read | Returns start, end, status and release per row, `depends_on` on task rows and `edges` (chain between Automata) on Automata-level and focus replies, unchanged from the daemon. Arguments: `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (arc id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one arc id or `none`, unpaged), `limit`, `cursor` |
+| `project_timeline` | read | Returns start, end, status and release per row, `depends_on` on task rows and `edges` (chain between Automata) on Automata-level and focus replies, unchanged from the daemon. Arguments: `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (plan id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one plan id or `none`, unpaged), `limit`, `cursor` |
 | `project_policy_effective` | read | `name` (required), `automaton` (optional top tier) |
 | `project_alias_delete` | write | `name` (required); the directory is not touched |
 
-Arc objects are `{"automation_id": "<id>", "priority": <int>, "state": "planned" | "active" | "done"}`.
+Plan objects are `{"automation_id": "<id>", "priority": <int>, "state": "planned" | "active" | "done"}`.
 `automation_id` is required and must be unique within the project; an empty state means `planned`.
 
 `project_rollup`, `project_history` and `project_timeline` need the autonomous read capability and the
@@ -2334,7 +2347,7 @@ usage points, never API dollars. `weekly_share`, `branch_retention_days` and
 `major_trigger` are stored and shown; the scheduler, the worktree cleanup and the
 release decision do not read the project's own values yet (see the howto).
 
-Set the arcs of the `core-api` project:
+Set the plans of the `core-api` project:
 
 ```json
 {

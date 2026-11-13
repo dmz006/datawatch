@@ -76,7 +76,7 @@ test('the Focus button renders on an arc row, an arc card and the Automation det
   const unRow = html.split('data-key="none"')[1] || '';
   assert.doesNotMatch(unRow, /project-gantt-focus/, 'the no-arc group has no Focus button');
 
-  vm.runInContext("_projectsState.subtab = 'arcs'", sb); // the arc cards sit on the Arcs page sub-tab
+  vm.runInContext("_projectsState.subtab = 'plans'", sb); // the plan cards sit on the Plans page sub-tab
   const card = vm.runInContext(`_projectPageHTML({ name: 'acme' }, { arcs: [{ automation_id: 'a1', state: 'active', priority: 1, tasks: { done: 1, total: 2 }, automata: [] }], unassigned: { automata: [] } }, '', null)`, sb);
   assert.match(card, /<summary[\s\S]*data-focus="a1"[\s\S]*<\/summary>/, 'arc card has Focus beside the Gantt');
 

@@ -23,6 +23,18 @@
 // written through a temp file and an atomic rename. The files are the source
 // of truth; the in-memory index is rebuilt from them when the store opens.
 //
+// Plans. A plan is a registry record (title, goal, state, order) that links
+// down plan -> Automation -> Automaton -> tasks. Kind "plan" carries Goal,
+// Order (priority, lowest first) and the ordered lists Automations, Automata
+// and Findings. A finding attaches to a plan or to an Automaton. The links
+// change only through AttachAutomaton, AttachAutomation, AttachFinding, the
+// Detach methods, ReorderPlans and ReorderAutomata. A link is never
+// overwritten: attaching something already linked elsewhere returns
+// *ErrLinkConflict. A summary index, kept in step on every write, answers
+// PlanOf (Automaton or Automation to plan), Plans, Backlog (plans with no
+// Automaton), ListSummaries and SearchTitles without reading a full record.
+// The new fields are optional, so older records load unchanged.
+//
 // Secure mode. When a Sealer is supplied every record is sealed with the
 // same XChaCha20-Poly1305 file sealing the other per-record data files use
 // (internal/secfile). A sealed file keeps exactly these fields readable so

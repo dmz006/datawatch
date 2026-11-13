@@ -3,22 +3,22 @@ docs:
   index: true
   topics: [dashboard, arc, stages, bugs, features, final stage, maintenance, lanes, plan usage, points, tokens]
 exec_params:
-  - {name: arc, required: false, description: "Arc (Automation) id to read; omit to read the first arc that has staged work"}
+  - {name: plan, required: false, description: "Plan (Automation) id to read; omit to read the first plan that has staged work"}
 exec_steps:
   - tool: dashboard_arc_get
-    description: Read the arc summary (stages in order, maintenance count, blocked stage, shared lanes, plan usage in points and tokens)
+    description: Read the plan summary (stages in order, maintenance count, blocked stage, shared lanes, plan usage in points and tokens)
     args:
       arc: "{{params.arc}}"
     read_only: true
 ---
 
-# The arc view on the dashboard
+# The plan view on the dashboard
 
-The **arc view** shows one arc as its stages in the order they run, so you can
-see at a glance how far along it is and what is holding it up. An arc is an
+The **plan view** shows one plan as its stages in the order they run, so you can
+see at a glance how far along it is and what is holding it up. A plan is an
 Automation: a planned run of work that moves through three stages, **bugs**
 first, then **features**, then the **final stage**. Maintenance work runs
-beside the arc in its own lane and is never a stage.
+beside the plan in its own lane and is never a stage.
 
 Next to the stages the view shows how busy the shared lanes are and how much
 of your plan you have used, in **points and tokens**. It never shows a billed
@@ -49,18 +49,20 @@ autonomous mode, no lane data or no usage calculator — reports itself
 unavailable with a reason and the rest of the view still renders. The read
 never fails the whole summary.
 
-## Which arc you see
+## Which plan you see
 
-With no arc named, the view shows the first arc that has staged work. To see a
-different arc, name it by its id: `?arc=<id>` on REST, the `arc` argument on
-MCP, `--arc <id>` on the CLI. An id that matches nothing reports that no arc
+With no plan named, the view shows the first plan that has staged work. To see a
+different plan, name it by its id: `?arc=<id>` on REST, the `arc` argument on
+MCP, `--arc <id>` on the CLI. An id that matches nothing reports that no plan
 with that id was found.
 
-The chat verb has no arc argument; it shows the default arc.
+The chat verb has no plan argument; it shows the default plan.
+
+The names `arc` (the query and argument above) and `dashboard arc` (the verb and CLI command) are the older name for the plan view and stay as deprecated aliases. The view itself is read-only; to order or link plans use [plan-records.md](plan-records.md#ordering-and-linking-plans).
 
 ## Access methods
 
-The arc view reads the same data on every surface:
+The plan view reads the same data on every surface:
 
 | Surface | How to read it |
 |---|---|
@@ -68,9 +70,9 @@ The arc view reads the same data on every surface:
 | **MCP tool** | `dashboard_arc_get` (optional `arc`) |
 | **CLI** | `datawatch dashboard arc [--arc <id>] [--json]` |
 | **Comm channel** | the `dashboard arc` verb (also spelled `dashboard-arc`) |
-| **Web UI (PWA)** | the **Arc** card on the Dashboard view |
+| **Web UI (PWA)** | the **Plan** card on the Dashboard view |
 
-There is no setting of its own. The arc view is part of the dashboard summary,
+There is no setting of its own. The plan view is part of the dashboard summary,
 so `dashboard.console.enabled` governs it: set it to false and every surface
 reports the summary as off with that reason. See
 [Operator console](dashboard-operator-console.md) for the switch.
@@ -133,13 +135,13 @@ gate. It answers GET only.
 ## MCP tool
 
 `dashboard_arc_get` returns the same body as the REST route. It takes one
-optional argument, `arc`, the arc id. It is read-only.
+optional argument, `arc`, the plan id. It is read-only.
 
 ## CLI
 
 ```console
 $ datawatch dashboard arc
-Arc Release 9.120 (2026-11-11T10:15:00Z)
+Plan Release 9.120 (2026-11-11T10:15:00Z)
   bugs      3/3 done (100.0%)  0 running  0 blocked
   features  2/5 done (40.0%)  1 running  0 blocked
   final     0/1 done (0.0%)  0 running  1 blocked
@@ -154,29 +156,29 @@ $ datawatch dashboard arc --arc <automation id>   # a specific arc
 $ datawatch dashboard arc --json                  # the raw endpoint JSON
 ```
 
-When the whole summary is off the command prints `Arc summary off:` followed
+When the whole summary is off the command prints `Plan summary off:` followed
 by the reason.
 
 ## Comm channel (chat)
 
 ```console
 > dashboard arc
-dashboard arc: arc Release 9.120 | bugs 3/3 done (100.0%), 0 running, 0 blocked | features 2/5 done (40.0%), 1 running, 0 blocked | final 0/1 done (0.0%), 0 running, 1 blocked | blocked: Cut the release is blocked: waiting on features | claude lane 1/1 | pi lane 2/2 | 41.0 of 100.0 points (41.0%) | 1200000 tokens
+dashboard arc: plan Release 9.120 | bugs 3/3 done (100.0%), 0 running, 0 blocked | features 2/5 done (40.0%), 1 running, 0 blocked | final 0/1 done (0.0%), 0 running, 1 blocked | blocked: Cut the release is blocked: waiting on features | claude lane 1/1 | pi lane 2/2 | 41.0 of 100.0 points (41.0%) | 1200000 tokens
 ```
 
-One summary line: the arc name, each stage, the blocked reason when there is
+One summary line: the plan name, each stage, the blocked reason when there is
 one, each lane, then points and tokens. When the summary is off the reply is
-`arc off (<reason>)`.
+`plan off (<reason>)`.
 
 ## Web UI (PWA)
 
-The arc view is the **Arc** card on the Dashboard view. It is not on the board
+The plan view is the **Plan** card on the Dashboard view. It is not on the board
 by default: open the dashboard, choose **Edit**, then **Add Card**, and pick
-**Arc**. Once on the board it stays in your saved layout.
+**Plan**. Once on the board it stays in your saved layout.
 
 Top to bottom the card shows:
 
-1. The arc name as its title.
+1. The plan name as its title.
 2. **Stages** — one row per stage in order (Bugs, Features, Final stage), each
    with "N of M done", the percent, a progress bar and "N running · N blocked".
    A stage with blocked work turns its bar red.
@@ -194,14 +196,14 @@ when the board is built. If a refresh fails it keeps the last data on screen.
 A part the daemon cannot read shows its reason in place of its data.
 
 Every label is translated into the five interface languages (English, German,
-Spanish, French and Japanese). The arc name and the blocked reasons are data
+Spanish, French and Japanese). The plan name and the blocked reasons are data
 from the daemon and are shown as sent. Numbers are grouped for the active
 language. The card uses the theme colours, so it follows light and dark mode,
 and it fits a phone-width screen.
 
 ## Usage is points and tokens
 
-Your plan is a flat fee with a weekly allowance, so the arc view measures usage
+Your plan is a flat fee with a weekly allowance, so the plan view measures usage
 the way the plan does:
 
 - **Points** — a share of the weekly allowance. The allowance is 100 points plus
@@ -220,10 +222,10 @@ worked out.
 
 | You want … | Where |
 |---|---|
-| The arc at a glance, always on screen | the **Arc** card on the PWA Dashboard view |
-| The arc in a terminal | `datawatch dashboard arc` (or `--json`) |
-| The arc from chat | the `dashboard arc` verb |
-| The arc from an agent or script | `dashboard_arc_get` (MCP) or `GET /api/dashboard/arc` |
+| The plan at a glance, always on screen | the **Plan** card on the PWA Dashboard view |
+| The plan in a terminal | `datawatch dashboard arc` (or `--json`) |
+| The plan from chat | the `dashboard arc` verb |
+| The plan from an agent or script | `dashboard_arc_get` (MCP) or `GET /api/dashboard/arc` |
 | The five "what needs my attention" sections | [Operator console](dashboard-operator-console.md) |
 
 ## Notes and limits
@@ -232,20 +234,20 @@ worked out.
 - Stage order is fixed: `bugs`, `features`, `final`.
 - Maintenance work never counts toward a stage or a stage's percent.
 - A stage's percent counts completed and skipped work as done.
-- One arc is shown at a time; use the arc id to pick a different one.
+- One plan is shown at a time; use the plan id to pick a different one.
 - Hiding the dashboard summary with `dashboard.console.enabled=false` hides the
-  arc view's data on every surface. The `dashboard.hide_inactive_cards` setting
-  does not hide the Arc card; it is always offered in the Add-Card picker.
+  plan view's data on every surface. The `dashboard.hide_inactive_cards` setting
+  does not hide the Plan card; it is always offered in the Add-Card picker.
 
 ## Operator review
 
-- The Arc card is opt-in and is not on the default board; add it once from Edit → Add Card.
-- Android and iPhone do not show the arc view yet; parity is tracked in `dmz006/datawatch-app`.
-- The chat verb always shows the default arc; there is no way to name another arc from chat.
+- The Plan card is opt-in and is not on the default board; add it once from Edit → Add Card.
+- Android and iPhone do not show the plan view yet; parity is tracked in `dmz006/datawatch-app`.
+- The chat verb always shows the default plan; there is no way to name another plan from chat.
 
 ## Related how-tos
 
 - [Operator console](dashboard-operator-console.md) — the dashboard's one-glance summary and its switches
-- [Dashboard](dashboard.md) — the Mission Control view the Arc card lives on
+- [Dashboard](dashboard.md) — the Mission Control view the Plan card lives on
 - [Usage calculator](usage-calculator.md) — points, the pace line and plan usage
 - [Autonomous planning](autonomous-planning.md) — Automata and Automations

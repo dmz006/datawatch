@@ -7586,6 +7586,20 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .projects-subtabs { display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; }
 .projects-subtabs button { flex-shrink: 0; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 8px 12px; font-size: 13px; cursor: pointer; }
 .projects-subtabs button.active, .projects-subtabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent, #3b82f6); font-weight: 600; }
+/* Projects Overview summary */
+.project-overview-summary { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.project-overview-dir { color: var(--text2); font-size: 12px; overflow-wrap: anywhere; }
+.project-overview-heading { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.project-overview-track { flex: 1; min-width: 60px; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.project-overview-fill { height: 100%; background: var(--accent, #3b82f6); }
+.project-overview-barlabel, .project-overview-points, .project-overview-plan-state, .project-overview-next-plan, .project-overview-empty { font-size: 12px; color: var(--text2); white-space: nowrap; }
+.project-overview-empty { white-space: normal; }
+.project-overview-plan { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 4px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.project-overview-plan-title { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.project-overview-plan-bar { flex: 1 1 160px; min-width: 140px; }
+.project-overview-counts > div { font-size: 13px; margin: 2px 0; }
+.project-overview-link { color: var(--accent, #3b82f6); }
+
 
 
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }

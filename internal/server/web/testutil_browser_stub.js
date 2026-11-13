@@ -164,7 +164,7 @@ function flushAsync(ticks = 10) {
 // every section. Extra arguments are the _projectPageHTML arguments.
 function pageAllSubtabs(sb, ...args) {
   const orig = sb._projectsActiveSubtab;
-  const keys = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+  const keys = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'policy', 'events'];
   try {
     return keys.map(k => { sb._projectsActiveSubtab = () => k; return sb._projectPageHTML(...args); }).join('\n');
   } finally { sb._projectsActiveSubtab = orig; }

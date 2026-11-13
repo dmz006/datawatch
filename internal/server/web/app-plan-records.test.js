@@ -147,7 +147,7 @@ test('the section says what it is for, offers both views, the filters and the ac
   const { sb } = load(listHandler);
   await selectAndLoad(sb, 'acme');
   const html = sb.planRecordsSectionHtml(pr(sb, '_planRecords'));
-  assert.ok(html.includes('Plan records'), 'card title');
+  assert.ok(html.includes('Registry and findings'), 'card title');
   assert.ok(html.includes('The registry rows and findings datawatch keeps for this project'), 'purpose line');
   assert.ok(html.includes('Registry rows') && html.includes('Findings'), 'two views');
   assert.ok(html.includes('planRecordsStateFilter'), 'state filter');
@@ -170,9 +170,22 @@ test('an empty view says so and what the operator can do next', async () => {
 test('the project page carries a slot for the section', async () => {
   const { sb } = load(listHandler);
   await selectAndLoad(sb, 'acme');
+  vm.runInContext("_projectsState.subtab = 'records'", sb);
   const page = sb._projectPageHTML({ name: 'acme' }, {}, '', null);
   assert.ok(page.includes('id="planRecordsSlot"'));
   assert.ok(page.includes('class="plan-records-card"'), 'section drawn once loaded');
+  assert.ok(page.indexOf('id="projectRecordsMount"') < page.indexOf('id="planRecordsSlot"'), 'the browser comes before the card');
+});
+
+test('the card lives only on the Records sub-tab', async () => {
+  const { sb } = load(listHandler);
+  await selectAndLoad(sb, 'acme');
+  for (const tab of ['overview', 'plans', 'gantt', 'unassigned', 'history', 'policy']) {
+    vm.runInContext(`_projectsState.subtab = ${JSON.stringify(tab)}`, sb);
+    const page = sb._projectPageHTML({ name: 'acme' }, {}, '', null);
+    assert.ok(!page.includes('id="planRecordsSlot"'), tab + ' has no card');
+    assert.ok(!page.includes('class="plan-records-card"'), tab + ' draws no card');
+  }
 });
 
 // ── filters and search ───────────────────────────────────────────────────────
@@ -442,9 +455,10 @@ test('while the feature is off the section draws nothing', async () => {
   await selectAndLoad(sb, 'acme');
   assert.equal(pr(sb, '_planRecords.status'), 'disabled');
   assert.equal(sb.planRecordsSectionHtml(pr(sb, '_planRecords')), '');
+  vm.runInContext("_projectsState.subtab = 'records'", sb);
   const page = sb._projectPageHTML({ name: 'acme' }, {}, '', null);
   assert.ok(page.includes('id="planRecordsSlot"></div>'), 'the slot stays empty');
-  assert.ok(!page.includes('Plan records'));
+  assert.ok(!page.includes('Registry and findings'));
 });
 
 test('a store that is not wired also draws nothing', async () => {

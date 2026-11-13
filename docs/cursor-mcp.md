@@ -135,11 +135,16 @@ Selected core tools:
 | `question_raise` | raise an operator question to this daemon's operator (the operator-question channel) |
 | `question_list` | list the daemon's stored operator questions, optionally filtered (the poll read) |
 | `project_list` | list the registered project aliases with their record fields |
-| `project_upsert` | register or update a project alias and its record (owner, repository, default branch, arcs, target, lane defaults, weekly share, branch retention, major trigger); an omitted field keeps its stored value |
-| `project_set_arcs` | replace a project's ordered arc list (`automation_id`, `priority`, `state`); `[]` clears it |
-| `project_rollup` | a project's arcs with their Automata, task progress, points and throughput (optional `window`, days) |
+| `project_upsert` | register or update a project alias and its record (owner, repository, default branch, plans, target, lane defaults, weekly share, branch retention, major trigger); an omitted field keeps its stored value |
+| `project_set_arcs` | replace a project's ordered plan list (`automation_id`, `priority`, `state`); `[]` clears it |
+| `plan_create` | create a plan in a project (`project`, `title`, optional `goal`) |
+| `plan_reorder` | set the plan priority order (`plans`, first plan first) |
+| `plan_reorder_automata` | set the run order of a plan's Automata (`plan`, `automata`) |
+| `plan_attach` / `plan_detach` | link or unlink an Automaton, Automation or finding (`plan`, `kind`, `id`) |
+| `plan_migrate` | build plans from the older plan list (arcs) and registry rows; previews unless `apply` is `true` |
+| `project_rollup` | a project's plans with their Automata, task progress, points and throughput (optional `window`, days) |
 | `project_history` | one page of a project's finished Automata, daily progress and Gantt rows (`limit`, `cursor`) |
-| `project_timeline` | one level of a project's timeline: start, end, status and dependencies per arc, Automaton and task, plus Automaton chain edges (`level`, `parent`, `automaton`, `focus`, `limit`, `cursor`) |
+| `project_timeline` | one level of a project's timeline: start, end, status and dependencies per plan, Automaton and task, plus Automaton chain edges (`level`, `parent`, `automaton`, `focus`, `limit`, `cursor`) |
 | `project_policy_effective` | a project's effective policy with the tier that supplies each setting (optional `automaton`) |
 | `project_alias_delete` | remove a project alias; the directory is not touched |
 | `question_get` | read one stored question and its current answer (the asker's return path) |

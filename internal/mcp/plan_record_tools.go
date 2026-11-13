@@ -450,5 +450,188 @@ func PlanRecordToolNames() []string {
 		"plan_record_update",
 		"plan_record_search",
 		"plan_record_import",
+		"plan_create",
+		"plan_reorder",
+		"plan_reorder_automata",
+		"plan_attach",
+		"plan_detach",
 	}
+}
+
+// ----- plans: create, reorder, attach, detach -------------------------------
+//
+// These proxy the plans write routes (internal/server/plans_write_api.go):
+// POST /api/plans, PUT /api/plans/order, PUT /api/plans/{ref}/automata/order,
+// POST /api/plans/{ref}/attach and POST /api/plans/{ref}/detach.
+
+// plansBase is the REST collection the plan tools proxy.
+const plansBase = "/api/plans"
+
+// planStringList reads a required list-of-text argument as a real array or a
+// JSON array string.
+func planStringList(op string, req mcpsdk.CallToolRequest, key string) ([]string, *mcpsdk.CallToolResult) {
+	arr, present, err := planRecordListArg(req, key)
+	if err != nil {
+		return nil, toolError(op, err)
+	}
+	if !present || len(arr) == 0 {
+		return nil, toolErrorf(op, "%s is required: a list of ids in the order they should have", key)
+	}
+	out := make([]string, 0, len(arr))
+	for _, v := range arr {
+		t, ok := v.(string)
+		if !ok || strings.TrimSpace(t) == "" {
+			return nil, toolErrorf(op, "every entry of %s must be a non-empty id or title", key)
+		}
+		out = append(out, strings.TrimSpace(t))
+	}
+	return out, nil
+}
+
+func planRefArg(op string, req mcpsdk.CallToolRequest) (string, *mcpsdk.CallToolResult) {
+	ref := strings.TrimSpace(req.GetString("plan", ""))
+	if ref == "" {
+		return "", toolErrorf(op, "plan is required: a plan id or title")
+	}
+	return ref, nil
+}
+
+func (s *Server) toolPlanCreate() mcpsdk.Tool {
+	return mcpsdk.NewTool("plan_create",
+		mcpsdk.WithDescription("Create a plan in a registered project. A plan groups work to come and links down to Automata, Automations and findings. The daemon gives it its id and puts it last in the plan order. The title must be unique within the project; a taken title is refused with the plan that holds it. Returns the stored plan, title first."),
+		mcpsdk.WithString("project", mcpsdk.Required(), mcpsdk.Description("A registered project alias")),
+		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("The plan's title, unique within the project")),
+		mcpsdk.WithString("goal", mcpsdk.Description("What the plan is for (optional)")),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+	)
+}
+
+func (s *Server) handlePlanCreate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	const op = "plan_create"
+	project := strings.TrimSpace(req.GetString("project", ""))
+	title := strings.TrimSpace(req.GetString("title", ""))
+	if project == "" {
+		return toolErrorf(op, "project is required: name a registered project alias"), nil
+	}
+	if title == "" {
+		return toolErrorf(op, "title is required"), nil
+	}
+	body := map[string]any{"project": project, "title": title}
+	if g := strings.TrimSpace(req.GetString("goal", "")); g != "" {
+		body["goal"] = g
+	}
+	out, err := s.proxyJSON(http.MethodPost, plansBase, body)
+	if err != nil {
+		return toolError(op, err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolPlanReorder() mcpsdk.Tool {
+	return mcpsdk.NewTool("plan_reorder",
+		mcpsdk.WithDescription("Set the plan priority order. The plans listed take positions 1 to n in the order given; every other plan keeps its relative order after them. A plan that does not exist or is listed twice fails the whole call and nothing changes. Returns the plans in their new order."),
+		mcpsdk.WithArray("plans", mcpsdk.Required(),
+			mcpsdk.Description("Plan ids or titles, first plan first"),
+			mcpsdk.Items(map[string]any{"type": "string"})),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+	)
+}
+
+func (s *Server) handlePlanReorder(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	const op = "plan_reorder"
+	plans, bad := planStringList(op, req, "plans")
+	if bad != nil {
+		return bad, nil
+	}
+	out, err := s.proxyJSON(http.MethodPut, plansBase+"/order", map[string]any{"plans": plans})
+	if err != nil {
+		return toolError(op, err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolPlanReorderAutomata() mcpsdk.Tool {
+	return mcpsdk.NewTool("plan_reorder_automata",
+		mcpsdk.WithDescription("Set the order of the Automata in a plan. List every Automaton linked to the plan exactly once. Returns the plan's run view: the Automata in run order and the next marker, which skips blocked and held Automata, so you can see what runs next after the change."),
+		mcpsdk.WithString("plan", mcpsdk.Required(), mcpsdk.Description("A plan id or title")),
+		mcpsdk.WithArray("automata", mcpsdk.Required(),
+			mcpsdk.Description("Every Automaton id of the plan, first to run first"),
+			mcpsdk.Items(map[string]any{"type": "string"})),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+	)
+}
+
+func (s *Server) handlePlanReorderAutomata(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	const op = "plan_reorder_automata"
+	plan, bad := planRefArg(op, req)
+	if bad != nil {
+		return bad, nil
+	}
+	ids, bad := planStringList(op, req, "automata")
+	if bad != nil {
+		return bad, nil
+	}
+	out, err := s.proxyJSON(http.MethodPut, plansBase+"/"+url.PathEscape(plan)+"/automata/order", map[string]any{"automata": ids})
+	if err != nil {
+		return toolError(op, err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// planLinkKind reads and checks the kind argument of attach and detach.
+func planLinkKind(op string, req mcpsdk.CallToolRequest) (string, *mcpsdk.CallToolResult) {
+	kind := strings.ToLower(strings.TrimSpace(req.GetString("kind", "")))
+	switch kind {
+	case "automaton", "automation", "finding":
+		return kind, nil
+	}
+	return "", toolErrorf(op, "kind must be automaton, automation or finding")
+}
+
+func (s *Server) toolPlanAttach() mcpsdk.Tool {
+	return mcpsdk.NewTool("plan_attach",
+		mcpsdk.WithDescription("Attach an Automaton, an Automation or a finding to a plan. An Automaton or Automation joins the end of the plan's order. The id is checked first: an unknown one is refused. An item that is already linked to a different plan, or a finding already attached elsewhere, is refused with the holder named and nothing changes; detach it first. Attaching the same item to the same plan again is harmless."),
+		mcpsdk.WithString("plan", mcpsdk.Required(), mcpsdk.Description("A plan id or title")),
+		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("automaton, automation or finding")),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("The Automaton id, the Automation id, or the finding's id or title")),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+	)
+}
+
+func (s *Server) handlePlanAttach(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return s.planLinkCall("plan_attach", "attach", req)
+}
+
+func (s *Server) toolPlanDetach() mcpsdk.Tool {
+	return mcpsdk.NewTool("plan_detach",
+		mcpsdk.WithDescription("Detach an Automaton, an Automation or a finding from a plan. The item must be linked to the plan named: one linked to another plan is refused with that plan named, so a detach never reaches into a different plan."),
+		mcpsdk.WithString("plan", mcpsdk.Required(), mcpsdk.Description("A plan id or title")),
+		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("automaton, automation or finding")),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("The Automaton id, the Automation id, or the finding's id or title")),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
+	)
+}
+
+func (s *Server) handlePlanDetach(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return s.planLinkCall("plan_detach", "detach", req)
+}
+
+func (s *Server) planLinkCall(op, verb string, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	plan, bad := planRefArg(op, req)
+	if bad != nil {
+		return bad, nil
+	}
+	kind, bad := planLinkKind(op, req)
+	if bad != nil {
+		return bad, nil
+	}
+	id := strings.TrimSpace(req.GetString("id", ""))
+	if id == "" {
+		return toolErrorf(op, "id is required"), nil
+	}
+	out, err := s.proxyJSON(http.MethodPost, plansBase+"/"+url.PathEscape(plan)+"/"+verb, map[string]any{"kind": kind, "id": id})
+	if err != nil {
+		return toolError(op, err), nil
+	}
+	return textOK(string(out)), nil
 }

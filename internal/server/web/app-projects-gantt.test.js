@@ -96,7 +96,7 @@ test('loading, failed and empty states say so', async () => {
   assert.match(sb._projectGanttHTML(), /Loading timeline…/);
   await sb._projectsLoadGantt();
   await flushAsync();
-  assert.match(sb._projectGanttHTML(), /No arcs or Automata with activity yet\./);
+  assert.match(sb._projectGanttHTML(), /No plans or Automata with activity yet\./);
 });
 
 test('the history load no longer carries Gantt rows', async () => {
