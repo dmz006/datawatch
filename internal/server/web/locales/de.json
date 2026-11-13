@@ -5705,5 +5705,16 @@
   "plans_browser_attach_finding_choose": "Befund auswählen",
   "plans_browser_attach_finding": "Befund zuordnen",
   "plans_browser_attach_needs_value": "Geben Sie an oder wählen Sie aus, was zugeordnet werden soll.",
-  "plans_browser_action_failed": "Die Änderung wurde nicht gespeichert: %1$s"
+  "plans_browser_action_failed": "Die Änderung wurde nicht gespeichert: %1$s",
+  "records_tab_search_label": "Einträge durchsuchen",
+  "records_tab_search_placeholder": "Titel und Text durchsuchen",
+  "records_tab_filter_kind": "Nach Art filtern",
+  "records_tab_kind_all": "Alle Arten",
+  "records_tab_loading": "Wird geladen…",
+  "records_tab_off": "Einträge sind für diesen Server ausgeschaltet.",
+  "records_tab_failed": "Einträge konnten nicht geladen werden: %1$s",
+  "records_tab_empty": "Kein Registereintrag und kein Befund passt.",
+  "records_tab_status": "%1$s Einträge; %2$s angezeigt.",
+  "records_tab_plan": "Plan",
+  "records_tab_automata": "Automaten"
 }

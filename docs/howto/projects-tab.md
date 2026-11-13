@@ -554,6 +554,12 @@ alias matches, the field is left out. See
 
 ### Plan records on the project page
 
+The **Records** sub-tab opens with a browser of every registry row and finding of the
+project, read from `GET /api/plan-records/browse`. A search box, a kind filter and a state
+filter narrow the list, and Load more pages it. Each row shows its plan and Automata as links;
+a link opens the Plans sub-tab with that plan expanded. The Registry and findings card sits
+below the browser and is no longer on the other sub-tabs.
+
 Below the history, the project page lists the project's plan records: switch
 between **Registry rows** and **Findings**, filter by state, search titles and
 text, open one to change its title, state, notes or linked Automaton, create a

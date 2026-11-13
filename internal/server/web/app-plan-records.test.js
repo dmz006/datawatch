@@ -174,6 +174,18 @@ test('the project page carries a slot for the section', async () => {
   const page = sb._projectPageHTML({ name: 'acme' }, {}, '', null);
   assert.ok(page.includes('id="planRecordsSlot"'));
   assert.ok(page.includes('class="plan-records-card"'), 'section drawn once loaded');
+  assert.ok(page.indexOf('id="projectRecordsMount"') < page.indexOf('id="planRecordsSlot"'), 'the browser comes before the card');
+});
+
+test('the card lives only on the Records sub-tab', async () => {
+  const { sb } = load(listHandler);
+  await selectAndLoad(sb, 'acme');
+  for (const tab of ['overview', 'plans', 'gantt', 'unassigned', 'history', 'policy']) {
+    vm.runInContext(`_projectsState.subtab = ${JSON.stringify(tab)}`, sb);
+    const page = sb._projectPageHTML({ name: 'acme' }, {}, '', null);
+    assert.ok(!page.includes('id="planRecordsSlot"'), tab + ' has no card');
+    assert.ok(!page.includes('class="plan-records-card"'), tab + ' draws no card');
+  }
 });
 
 // ── filters and search ───────────────────────────────────────────────────────

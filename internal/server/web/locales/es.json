@@ -5705,5 +5705,16 @@
   "plans_browser_attach_finding_choose": "Elegir un hallazgo",
   "plans_browser_attach_finding": "Asociar hallazgo",
   "plans_browser_attach_needs_value": "Escriba o elija qué asociar.",
-  "plans_browser_action_failed": "El cambio no se guardó: %1$s"
+  "plans_browser_action_failed": "El cambio no se guardó: %1$s",
+  "records_tab_search_label": "Buscar registros",
+  "records_tab_search_placeholder": "Buscar en títulos y texto",
+  "records_tab_filter_kind": "Filtrar por tipo",
+  "records_tab_kind_all": "Todos los tipos",
+  "records_tab_loading": "Cargando…",
+  "records_tab_off": "Los registros están desactivados en este servidor.",
+  "records_tab_failed": "No se pudieron cargar los registros: %1$s",
+  "records_tab_empty": "Ninguna fila del registro ni hallazgo coincide.",
+  "records_tab_status": "%1$s registros; %2$s mostrados.",
+  "records_tab_plan": "Plan",
+  "records_tab_automata": "Autómatas"
 }

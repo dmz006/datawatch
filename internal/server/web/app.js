@@ -5695,8 +5695,123 @@ function _plansBrowserLoadSelected() {
 
 // The Records sub-tab: the Registry and findings card, plus a mount point for
 // the records browser.
+// ── Records browser ─────────────────────────────────────────────────────────
+// The Records sub-tab browses every registry row and finding of the selected
+// project from GET /api/plan-records/browse (summaries only, paged with Load
+// more) with a search box, a kind filter and a state filter. Each row links to
+// its plan and its Automata; a link jumps to the Plans sub-tab with that plan
+// expanded. The search box waits for a pause in typing on the one window-level
+// timer window._recordsTabSearchTimer; nothing else polls.
+const _RECORDS_TAB_PAGE = 50;
+const _RECORDS_TAB_STATES = _PLAN_RECORD_STATES.registry_row.concat(_PLAN_RECORD_STATES.finding.filter(s => _PLAN_RECORD_STATES.registry_row.indexOf(s) < 0));
+
+function _recordsTabFresh(project) {
+  return { project: project || '', status: 'idle', q: '', kind: '', stateFilter: '', rows: [], total: 0, error: '', seq: 0 };
+}
+let _recordsTab = _recordsTabFresh('');
+
+function _recordsTabLoad(more) {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  if (_recordsTab.project !== name) _recordsTab = _recordsTabFresh(name);
+  const st = _recordsTab;
+  const seq = ++st.seq;
+  if (!more) st.status = 'loading';
+  const params = ['project=' + encodeURIComponent(name), 'limit=' + _RECORDS_TAB_PAGE, 'offset=' + (more ? st.rows.length : 0)];
+  if ((st.q || '').trim()) params.push('q=' + encodeURIComponent(st.q.trim()));
+  if (st.kind) params.push('kind=' + encodeURIComponent(st.kind));
+  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  return apiFetch('/api/plan-records/browse?' + params.join('&')).then(r => {
+    if (_recordsTab !== st || seq !== st.seq) return;
+    const rows = r && Array.isArray(r.records) ? r.records : [];
+    st.rows = more ? st.rows.concat(rows) : rows;
+    st.total = Number(((r || {}).page || {}).total) || st.rows.length;
+    st.status = 'ready'; st.error = '';
+    _recordsTabPaint();
+  }).catch(err => {
+    if (_recordsTab !== st || seq !== st.seq) return;
+    if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _recordsTabPaint(); return; }
+    st.status = 'error'; st.error = _planRecordsParseError(err).message;
+    _recordsTabPaint();
+  });
+}
+
+function _recordsTabStateLabel(state) {
+  const key = 'plan_records_state_' + String(state || '');
+  const v = t(key);
+  return v === key ? String(state || '') : v;
+}
+
+function _recordsTabRowHTML(r) {
+  const old = r.legacy_number ? `<span class="records-tab-old" style="color:var(--text2);font-size:12px;"> ${escHtml(t('plans_browser_old_row', [r.legacy_number]))}</span>` : '';
+  const kind = r.kind === 'finding' ? t('plan_records_view_findings') : t('plan_records_view_registry');
+  const jump = (cls, id, label) => `<a href="#" class="${cls}" data-plan="${escHtml(id)}" onclick="${_plansCall('recordsTabGoPlan', id)}">${escHtml(label)}</a>`;
+  const plan = r.plan_id ? `<span class="records-tab-plan" style="font-size:12px;">${escHtml(t('records_tab_plan'))}: ${jump('records-tab-plan-link', r.plan_id, r.plan_title || r.plan_id)}</span>` : '';
+  const ids = Array.isArray(r.automaton_ids) ? r.automaton_ids : [];
+  const autos = ids.length ? `<span class="records-tab-automata" style="font-size:12px;">${escHtml(t('records_tab_automata'))}: ${ids.map(id => (r.plan_id ? jump('records-tab-automaton-link', r.plan_id, id) : escHtml(id))).join(', ')}</span>` : '';
+  return `<div class="records-tab-row" data-record="${escHtml(r.id)}" data-kind="${escHtml(r.kind || '')}" style="border-top:1px solid var(--border);padding:6px 0;display:flex;flex-wrap:wrap;gap:2px 12px;align-items:baseline;">
+    <span class="records-tab-title" style="font-size:14px;font-weight:600;">${escHtml(r.title || r.id)}${old}</span>
+    <span class="records-tab-kind" style="font-size:12px;color:var(--text2);">${escHtml(kind)}</span>
+    <span class="records-tab-state" style="font-size:12px;">${escHtml(_recordsTabStateLabel(r.state))}</span>${plan}${autos}</div>`;
+}
+
+function recordsTabListHTML(st) {
+  if (st.status === 'disabled') return `<div class="records-tab-off" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_off'))}</div>`;
+  if (st.status === 'idle' || (st.status === 'loading' && !st.rows.length)) return `<div class="records-tab-loading" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_loading'))}</div>`;
+  if (st.status === 'error') return `<div class="records-tab-error" role="alert" style="font-size:13px;color:var(--danger,#c0392b);">${escHtml(t('records_tab_failed', [st.error]))}</div>`;
+  if (!st.rows.length) return `<div class="records-tab-empty" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_empty'))}</div>`;
+  const status = `<div class="records-tab-status" style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('records_tab_status', [st.total, st.rows.length]))}</div>`;
+  const more = st.rows.length < st.total ? `<button type="button" class="btn-secondary records-tab-more" onclick="recordsTabMore();return false;" style="margin-top:8px;">${escHtml(t('plans_browser_load_more'))}</button>` : '';
+  return status + st.rows.map(_recordsTabRowHTML).join('') + more;
+}
+
+function recordsTabHTML(p) {
+  const st = _recordsTab.project === (p && p.name) ? _recordsTab : _recordsTabFresh(p && p.name);
+  const kinds = [['', 'records_tab_kind_all'], ['registry_row', 'plan_records_view_registry'], ['finding', 'plan_records_view_findings']];
+  const kindSel = `<select class="form-select records-tab-kind-filter" aria-label="${escHtml(t('records_tab_filter_kind'))}" onchange="recordsTabSetKind(this.value)" style="font-size:12px;">${kinds.map(([v, k]) => `<option value="${v}"${st.kind === v ? ' selected' : ''}>${escHtml(t(k))}</option>`).join('')}</select>`;
+  const stateSel = `<select class="form-select records-tab-state-filter" aria-label="${escHtml(t('plan_records_filter_state'))}" onchange="recordsTabSetState(this.value)" style="font-size:12px;"><option value="">${escHtml(t('plan_records_filter_state_all'))}</option>${_RECORDS_TAB_STATES.map(s => `<option value="${s}"${st.stateFilter === s ? ' selected' : ''}>${escHtml(_recordsTabStateLabel(s))}</option>`).join('')}</select>`;
+  const box = `<input type="text" class="form-input records-tab-search" aria-label="${escHtml(t('records_tab_search_label'))}" placeholder="${escHtml(t('records_tab_search_placeholder'))}" value="${escHtml(st.q)}" oninput="recordsTabSearchInput(this.value)" style="font-size:13px;flex:1 1 200px;min-width:140px;">`;
+  return `<div class="records-tab" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
+    <div class="records-tab-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">${box}${kindSel}${stateSel}</div>
+    <div id="recordsTabList">${recordsTabListHTML(st)}</div></div>`;
+}
+window.recordsTabHTML = recordsTabHTML;
+window.recordsTabListHTML = recordsTabListHTML;
+
+function _recordsTabPaint() {
+  if (!_projectsActive()) return;
+  const el = document.getElementById('recordsTabList');
+  if (el) el.innerHTML = recordsTabListHTML(_recordsTab);
+}
+
+window.recordsTabSearchInput = function(v) {
+  const st = _recordsTab;
+  st.q = String(v || '');
+  if (window._recordsTabSearchTimer) clearTimeout(window._recordsTabSearchTimer);
+  window._recordsTabSearchTimer = setTimeout(() => { window._recordsTabSearchTimer = null; if (_recordsTab === st) _recordsTabLoad(false); }, 250);
+};
+window.recordsTabSetKind = function(v) { _recordsTab.kind = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabSetState = function(v) { _recordsTab.stateFilter = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabMore = function() { return _recordsTabLoad(true); };
+
+// recordsTabGoPlan opens the Plans sub-tab with the plan expanded.
+window.recordsTabGoPlan = function(planId) {
+  const project = _recordsTab.project || _plansBrowser.project;
+  if (!planId || !project) return Promise.resolve();
+  _plansSetOpen(project, planId, true);
+  selectProjectsSubtab('plans');
+  if (_plansBrowser.project !== project) return _plansBrowserLoadSelected();
+  const jobs = [];
+  const d = _plansBrowser.detail[planId];
+  if (!d || d.status !== 'ready') jobs.push(_plansLoadDetail(planId));
+  if (_plansBrowser.links.status === 'idle') jobs.push(_plansLoadLinks());
+  return Promise.all(jobs);
+};
+
+// The Records sub-tab: the browser, then the Registry and findings card.
 function _projectRecordsTabHTML(p) {
-  return `<div id="projectRecordsMount" data-mount="records"></div>${_planRecordsSlotHtml(p)}`;
+  return `<div id="projectRecordsMount" data-mount="records">${recordsTabHTML(p)}</div>${_planRecordsSlotHtml(p)}`;
 }
 
 function _projectsLoadSelected() {
@@ -5706,8 +5821,9 @@ function _projectsLoadSelected() {
     const gantt = _projectsLoadGantt();
     const summary = _projectsLoadSummary().then(() => { if (_projectsActive()) _projectsPaint(); });
     const records = _planRecordsLoad(false);
+    const recordsBrowse = _recordsTabLoad(false);
     const plans = _plansBrowserLoadSelected();
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records, summary, plans]));
+    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records, summary, plans, recordsBrowse]));
   });
 }
 

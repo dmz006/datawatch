@@ -5705,5 +5705,16 @@
   "plans_browser_attach_finding_choose": "検出事項を選択",
   "plans_browser_attach_finding": "検出事項を関連付け",
   "plans_browser_attach_needs_value": "関連付ける対象を入力または選択してください。",
-  "plans_browser_action_failed": "変更は保存されませんでした: %1$s"
+  "plans_browser_action_failed": "変更は保存されませんでした: %1$s",
+  "records_tab_search_label": "レコードを検索",
+  "records_tab_search_placeholder": "タイトルと本文を検索",
+  "records_tab_filter_kind": "種類で絞り込む",
+  "records_tab_kind_all": "すべての種類",
+  "records_tab_loading": "読み込み中…",
+  "records_tab_off": "このサーバーではレコードがオフです。",
+  "records_tab_failed": "レコードを読み込めませんでした: %1$s",
+  "records_tab_empty": "一致するレジストリ行や所見はありません。",
+  "records_tab_status": "%1$s 件のレコード、%2$s 件を表示中。",
+  "records_tab_plan": "プラン",
+  "records_tab_automata": "オートマタ"
 }
