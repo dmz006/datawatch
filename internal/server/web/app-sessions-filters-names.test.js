@@ -26,7 +26,7 @@ const TAG_UNNAMED = 'e5f6a7b8';             // operator tag, registry has nothin
 const AUTO_NAMED = '1d440001';              // Automaton with a known title
 const AUTO_NAMED_TITLE = 'Lane refill runner';
 const AUTO_UNNAMED = '9f3c0007';            // Automaton with no known title
-const PROJ_NAMED = '/home/dmz/work/alpha';  // registered project name: "Alpha Research"
+const PROJ_NAMED = '/srv/work/alpha';  // registered project name: "Alpha Research"
 const PROJ_NAMED_LABEL = 'Alpha Research';
 const PROJ_UNNAMED = '/srv/beta';           // no registered name → folder name "beta"
 
