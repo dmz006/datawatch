@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.169.0 — Visible and self-correcting Automaton planning failures
+
+### Added
+
+- **Planning failures are visible instead of silent.** An Automaton whose planning failed no longer sits as a draft with zero stories and no explanation. The failure is recorded with its reason, its category, the rule that fired, the phrases involved and its retry counts and budget, and it shows on the Automaton detail, as a "Planning failed" badge in the list, and through the REST, MCP, CLI and chat reads. An alert is raised once, and a question waits for you with the choices "Fix the wording and plan again" or "Leave it".
+- **A spec check runs when you create or revise an Automaton.** The spec text is linted for wording the planner may copy into task titles, such as fixed release numbers, tracker identifiers, private addresses and home paths. Each finding is reported with its phrase and a suggested rewording, flagged when the daemon can fix it itself. It is a warning only and never blocks the request. It is available on REST, MCP, CLI, chat and the web app.
+- **The daemon corrects a fixed release number by itself.** When a fixed release number is the only problem in a draft's spec, the daemon rewords it and plans again, and the planner prompt now lists the wording to avoid.
+- **A planning group in the housekeeping repairs.** Draft Automata with no stories whose planning failed for a reason that retrying will not change are re-planned the way the question's fix answer does when every finding is one the daemon can reword; otherwise they are reported once with an alert and left alone. The new setting is `planning` under the housekeeping repairs (`off`, `report` or `on`, default `report`).
+- A new how-to, "Planning failures, the spec check and self-correction", and updates to the operations guide, the decompose lint how-to, the housekeeping repairs how-to, the API reference and the glossary. New labels are translated in all five languages.
+
 ## v9.168.0 — The Sessions page controls sit on one tight line
 
 ### Added
