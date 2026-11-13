@@ -151,6 +151,7 @@ Selected core tools:
 | `plan_record_list` / `plan_record_get` / `plan_record_search` | List one kind, read one record, or search titles and notes across both kinds (`project`, `state`, `limit`, `offset`; the daemon caps a page at 500) |
 | `housekeeping_repairs` | Read the housekeeping repairs: per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`) the mode in effect (`off`, `report`, `on`), what a report-mode pass would do, what an on-mode pass did, and the cases that failed or were skipped as unsafe; no arguments, read-only. Change a mode with `config_set`, key `autonomous.housekeeping_repairs.<group>` |
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
+| `autonomous_prd_tasks` | One page of one Automaton's task rows (`limit`, `cursor`) |
 | `autonomous_event_kinds` | List every lifecycle event kind a subscription can match, grouped, with each kind's description and whether it wakes the supervisor by default (read-only, no parameters) |
 | `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
 | `autonomous_prd_set_project` | Link an Automaton to a configured project (`id`, `project`); an empty project clears the link and an unknown name is refused with the configured names |

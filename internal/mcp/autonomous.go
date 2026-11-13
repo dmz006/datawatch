@@ -957,17 +957,29 @@ func qualityGatesSmokePackages(v any) []string {
 
 func (s *Server) toolAutonomousPRDList() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_list",
-		mcpsdk.WithDescription("BL24 — list all PRDs, newest first. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed), with the pushed ref/sha/time (pushed) or the push reason (not_pushed). Narrow the list without changing any stored state: status takes comma-separated statuses and may include shipped — the shipped-state bucket selected by a non-empty merge commit, independent of the stored status; shipped true keeps only PRDs that carry shipped state, shipped false only ones that do not. When neither is given the full list is returned (full=1); when one is, the summary list under the in-force autonomous.shipped settings applies instead, and shipped=true matches only while enabled."),
+		mcpsdk.WithDescription("BL24 — list Automata, newest first. By default this returns the summary list: one small row per Automaton, with no task detail. Read one Automaton's tasks a page at a time with autonomous_prd_tasks. Pass full=true for whole records; with limit (or cursor) that is one page of whole records, without either it is every record, the heavy form. limit and cursor page the list: pass the next_cursor of one reply as the cursor of the next. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed) in the full form, or push_state in the summary. Narrow the list without changing any stored state: status takes comma-separated statuses and may include shipped — the shipped-state bucket selected by a non-empty merge commit, independent of the stored status; shipped true keeps only PRDs that carry shipped state, shipped false only ones that do not. When neither is given the summary list under the in-force autonomous.shipped settings applies, and shipped=true matches only while enabled."),
 		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated statuses to keep; may include shipped (the shipped-state bucket, not a stored status).")),
 		mcpsdk.WithString("shipped", mcpsdk.Enum("true", "false"), mcpsdk.Description("true: only PRDs that carry shipped state (non-empty merge commit); false: only ones that do not. Default: the autonomous.shipped.filter_default view (all / shipped / unshipped).")),
+		mcpsdk.WithBoolean("full", mcpsdk.Description("true: return whole records instead of summaries (default false). Heavy without limit.")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Rows per page, 1 or more (daemon default when omitted).")),
+		mcpsdk.WithString("cursor", mcpsdk.Description("Page cursor: the next_cursor of the previous reply.")),
 	)
 }
 func (s *Server) handleAutonomousPRDList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	shipped := strings.ToLower(strings.TrimSpace(req.GetString("shipped", "")))
 	status := strings.Trim(strings.TrimSpace(req.GetString("status", "")), ",")
 	q := url.Values{}
-	if shipped == "" && status == "" {
-		q.Set("full", "1")
+	if req.GetBool("full", false) {
+		q.Set("full", "true")
+	}
+	if n := req.GetInt("limit", 0); n != 0 {
+		if n < 1 {
+			return mcpsdk.NewToolResultError("limit must be 1 or more"), nil
+		}
+		q.Set("limit", strconv.Itoa(n))
+	}
+	if c := strings.TrimSpace(req.GetString("cursor", "")); c != "" {
+		q.Set("cursor", c)
 	}
 	if shipped != "" {
 		if shipped != "true" && shipped != "false" {
@@ -979,6 +991,44 @@ func (s *Server) handleAutonomousPRDList(_ context.Context, req mcpsdk.CallToolR
 		q.Set("status", status)
 	}
 	out, err := s.proxyGet("/api/autonomous/prds", q)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDTasks() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_tasks",
+		mcpsdk.WithDescription("Read one page of one Automaton's task rows (GET /api/autonomous/prds/{id}/tasks): identity, state, timing, the sessions that ran each task and a short error — no spec, history or verification text. The reply is {prd_id, tasks, total, next_cursor}; total counts the tasks that match the filters, ignoring the cursor. Pass next_cursor as cursor to read the next page. Use autonomous_prd_get with detail=full for specs and logs."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton id")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Tasks per page, 1 or more (default 50, max 500).")),
+		mcpsdk.WithString("cursor", mcpsdk.Description("Page cursor: the next_cursor of the previous reply.")),
+		mcpsdk.WithString("story", mcpsdk.Description("Only tasks of this story id.")),
+		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated task statuses to keep.")),
+	)
+}
+func (s *Server) handleAutonomousPRDTasks(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(req.GetString("id", ""))
+	if id == "" {
+		return mcpsdk.NewToolResultError("id is required"), nil
+	}
+	q := url.Values{}
+	if n := req.GetInt("limit", 0); n != 0 {
+		if n < 1 {
+			return mcpsdk.NewToolResultError("limit must be 1 or more"), nil
+		}
+		q.Set("limit", strconv.Itoa(n))
+	}
+	if c := strings.TrimSpace(req.GetString("cursor", "")); c != "" {
+		q.Set("cursor", c)
+	}
+	if v := strings.TrimSpace(req.GetString("story", "")); v != "" {
+		q.Set("story", v)
+	}
+	if v := strings.Trim(strings.TrimSpace(req.GetString("status", "")), ","); v != "" {
+		q.Set("status", v)
+	}
+	out, err := s.proxyGet("/api/autonomous/prds/"+url.PathEscape(id)+"/tasks", q)
 	if err != nil {
 		return nil, err
 	}

@@ -241,6 +241,7 @@ Subcommands:
 		newAutonomousConfigGetCmd(),
 		newAutonomousConfigSetCmd(),
 		newAutonomousPRDListCmd(),
+		newAutonomousPRDTasksCmd(),
 		newAutonomousPRDCreateCmd(),
 		newAutonomousPRDGetCmd(),
 		newAutonomousPRDPlanCmd(),
@@ -924,21 +925,31 @@ func printDeprecatedFields(resp []byte) {
 }
 
 func newAutonomousPRDListCmd() *cobra.Command {
-	var status, shipped string
+	var status, shipped, cursor string
+	var full bool
+	var limit int
 	cmd := &cobra.Command{
-		Use:   "prd-list",
-		Short: "List all PRDs (newest first); --status (may include shipped) or --shipped true|false narrows",
-		Long: `List all PRDs (newest first).
+		Use:     "prd-list",
+		Aliases: []string{"list"},
+		Short:   "List Automata as summaries (newest first); --full returns whole records, --status / --shipped narrow",
+		Long: `List Automata (newest first).
 
-By default this prints the full list. With --status or --shipped it
-switches to the summary list and narrows: --status takes comma-separated
-statuses and may include "shipped" (the shipped-state bucket, selected by
-the record's merge commit — not the stored status); --shipped true keeps
-only PRDs that carry shipped state, --shipped false only ones that do
-not; with neither set the server's autonomous.shipped.filter_default
-view applies (all / shipped / unshipped).`,
+By default this prints the summary list: one small row per Automaton, built
+from the summary index, with no task detail. Read one Automaton's tasks with
+"datawatch autonomous tasks <id>".
+
+--full returns whole records instead. With --limit (or --cursor) that is one
+page of whole records; without either it is every record, the heavy form.
+--limit and --cursor page the list: pass the next_cursor of one reply as the
+--cursor of the next.
+
+--status takes comma-separated statuses and may include "shipped" (the
+shipped-state bucket, selected by the record's merge commit — not the stored
+status); --shipped true keeps only Automata that carry shipped state,
+--shipped false only ones that do not; with neither set the server's
+autonomous.shipped.filter_default view applies (all / shipped / unshipped).`,
 		RunE: func(*cobra.Command, []string) error {
-			q, err := prdListQuery(status, shipped)
+			q, err := prdListQueryOpts(status, shipped, full, limit, cursor)
 			if err != nil {
 				return err
 			}
@@ -949,21 +960,31 @@ view applies (all / shipped / unshipped).`,
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "Comma-separated statuses to keep (may include shipped)")
-	cmd.Flags().StringVar(&shipped, "shipped", "", "true|false: keep only shipped / only unshipped PRDs (default: the server's autonomous.shipped.filter_default view)")
+	cmd.Flags().StringVar(&shipped, "shipped", "", "true|false: keep only shipped / only unshipped Automata (default: the server's autonomous.shipped.filter_default view)")
+	cmd.Flags().BoolVar(&full, "full", false, "Return whole records instead of summaries (heavy without --limit)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Rows per page (daemon default when omitted)")
+	cmd.Flags().StringVar(&cursor, "cursor", "", "Page cursor: the next_cursor of the previous reply")
 	return cmd
 }
 
-// prdListQuery builds the PRD list query from the --status / --shipped
-// flags. Neither set = the full list (no query, the original full=1 call
-// shape). One or the other = the server-side filtered summary list: status
-// takes comma-separated statuses and may include shipped (the shipped-state
-// bucket, selected by the record's merge commit — not the stored status);
-// shipped true keeps only PRDs that carry shipped state, false only ones
-// that do not. Status and shipped are ANDed; shipped=true remains gated by
-// autonomous.shipped enabled on the daemon.
+// prdListQuery builds the list query from --status / --shipped alone: the
+// summary list, no full flag, no paging.
 func prdListQuery(status, shipped string) (url.Values, error) {
+	return prdListQueryOpts(status, shipped, false, 0, "")
+}
+
+// prdListQueryOpts builds the Automata list query. The default is the summary
+// list (no full key). full adds full=true for whole records. limit > 0 and a
+// non-empty cursor page the list. status takes comma-separated statuses and
+// may include shipped (the shipped-state bucket, selected by the record's
+// merge commit — not the stored status); shipped true keeps only Automata that
+// carry shipped state, false only ones that do not. Status and shipped are
+// ANDed; shipped=true remains gated by autonomous.shipped enabled on the
+// daemon.
+func prdListQueryOpts(status, shipped string, full bool, limit int, cursor string) (url.Values, error) {
 	status = strings.Trim(strings.TrimSpace(status), ",")
-	switch v := strings.ToLower(strings.TrimSpace(shipped)); v {
+	sh := strings.ToLower(strings.TrimSpace(shipped))
+	switch sh {
 	case "", "all":
 		// empty: no shipped narrowing; all: the daemon default view.
 	case "true", "false":
@@ -971,20 +992,84 @@ func prdListQuery(status, shipped string) (url.Values, error) {
 	default:
 		return nil, fmt.Errorf("shipped: must be true or false (got %q); shipped means the PRD's work has landed (its merge commit is recorded), and it is independent of status", shipped)
 	}
+	if limit < 0 {
+		return nil, fmt.Errorf("limit: must be 1 or more (got %d)", limit)
+	}
 	q := url.Values{}
-	if status == "" && strings.ToLower(strings.TrimSpace(shipped)) == "" {
-		q.Set("full", "1")
-		return q, nil
+	if full {
+		q.Set("full", "true")
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if c := strings.TrimSpace(cursor); c != "" {
+		q.Set("cursor", c)
 	}
 	if status != "" {
 		q.Set("status", status)
 	}
-	switch strings.ToLower(strings.TrimSpace(shipped)) {
-	case "", "all":
-	default:
-		q.Set("shipped", strings.ToLower(strings.TrimSpace(shipped)))
+	if sh == "true" || sh == "false" {
+		q.Set("shipped", sh)
 	}
 	return q, nil
+}
+
+// prdTasksPath builds the paged-tasks path for one Automaton:
+// GET /api/autonomous/prds/{id}/tasks?limit&cursor&story&status.
+func prdTasksPath(id string, limit int, cursor, story, status string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", fmt.Errorf("automaton id is required")
+	}
+	if limit < 0 {
+		return "", fmt.Errorf("limit: must be 1 or more (got %d)", limit)
+	}
+	q := url.Values{}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if c := strings.TrimSpace(cursor); c != "" {
+		q.Set("cursor", c)
+	}
+	if v := strings.TrimSpace(story); v != "" {
+		q.Set("story", v)
+	}
+	if v := strings.Trim(strings.TrimSpace(status), ","); v != "" {
+		q.Set("status", v)
+	}
+	p := "/api/autonomous/prds/" + url.PathEscape(id) + "/tasks"
+	if len(q) > 0 {
+		p += "?" + q.Encode()
+	}
+	return p, nil
+}
+
+func newAutonomousPRDTasksCmd() *cobra.Command {
+	var limit int
+	var cursor, story, status string
+	cmd := &cobra.Command{
+		Use:     "tasks <automaton-id>",
+		Aliases: []string{"prd-tasks"},
+		Short:   "Read one page of one Automaton's tasks (--limit, --cursor)",
+		Long: `Read one page of one Automaton's task rows: identity, state, timing, the
+sessions that ran each task and a short error. The reply carries total (the
+tasks that match the filters) and next_cursor; pass next_cursor as --cursor to
+read the next page. --story narrows to one story, --status to a comma list of
+task statuses.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			p, err := prdTasksPath(args[0], limit, cursor, story, status)
+			if err != nil {
+				return err
+			}
+			return daemonGet(p)
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 0, "Tasks per page (daemon default 50, max 500)")
+	cmd.Flags().StringVar(&cursor, "cursor", "", "Page cursor: the next_cursor of the previous reply")
+	cmd.Flags().StringVar(&story, "story", "", "Only tasks of this story id")
+	cmd.Flags().StringVar(&status, "status", "", "Comma-separated task statuses to keep")
+	return cmd
 }
 
 func newAutonomousPRDCreateCmd() *cobra.Command {

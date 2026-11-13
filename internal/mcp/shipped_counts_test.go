@@ -104,8 +104,8 @@ func TestShippedMCP_PrdListStatusShippedForwarded(t *testing.T) {
 	if _, err := s.handleAutonomousPRDList(context.Background(), callReq(nil)); err != nil {
 		t.Fatalf("no selection: %v", err)
 	}
-	if len(calls) != 1 || calls[0].query != "full=1" {
-		t.Errorf("no selection proxied %+v; want /api/autonomous/prds?full=1", calls)
+	if len(calls) != 1 || calls[0].query != "" {
+		t.Errorf("no selection proxied %+v; want /api/autonomous/prds(summary list, no query)", calls)
 	}
 }
 

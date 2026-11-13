@@ -165,6 +165,7 @@ autonomous_prd_set_type
 autonomous_prd_set_verification_llm
 autonomous_prd_set_verifier_policy
 autonomous_prd_set_worker_profile
+autonomous_prd_tasks
 autonomous_progress
 autonomous_progress_trend
 autonomous_project_link_backfill
