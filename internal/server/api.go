@@ -1103,6 +1103,13 @@ type AutonomousAPI interface {
 	// writing any shipped record.
 	ShippedBackfillOnce(dryRun bool) (any, error)
 
+	// MigrateCompleted moves cancelled Automata and Automations whose work is
+	// merged to status Completed, returning the manager's
+	// CompletedMigrationReport. dryRun reports without writing; limit caps the
+	// records changed (0 = no limit); id restricts the pass to one record. It
+	// returns autonomous.ErrCompletedMigrationBusy while a final gate runs.
+	MigrateCompleted(dryRun bool, limit int, id string) (any, error)
+
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
 	// session's telemetry verdicts by the HTTP handler.

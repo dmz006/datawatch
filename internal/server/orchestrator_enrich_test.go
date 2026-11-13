@@ -233,6 +233,9 @@ func (f *fakeOrchAutonomous) RecordAutomationShipped(string, string, time.Time, 
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) ShippedBackfillOnce(bool) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) MigrateCompleted(bool, int, string) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) SetPRDRetryPolicy(string, string, map[string]int, int, *bool, *bool) (any, error) {
 	return nil, nil
 }

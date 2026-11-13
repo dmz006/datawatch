@@ -1130,6 +1130,36 @@ func (s *Server) handleAutonomousShippedBackfill(_ context.Context, req mcpsdk.C
 	return llmSetterResult(out, err)
 }
 
+// toolAutonomousCompletedMigrate + handler serve the operator/LLM "move
+// cancelled, merged Automata to Completed" action: it proxies the server's
+// POST /api/autonomous/completed/migrate endpoint.
+func (s *Server) toolAutonomousCompletedMigrate() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_completed_migrate",
+		mcpsdk.WithDescription("Move Automata (and Automations) that were cancelled but whose work is already merged to the base branch to status Completed, so they stop showing as cancelled. Never kills a session and never touches an Automaton whose work is not merged. Records are taken oldest first. A real run is refused while a final gate is running. Returns the report: considered, changed, would_complete (dry run) or completed (real run) with each record's title and merge commit, already_completed, and any errors. Set dry_run=true to list what would change without writing anything; limit caps how many records one run changes (0 or absent: no limit); id restricts the run to one Automaton or Automation."),
+		mcpsdk.WithBoolean("dry_run", mcpsdk.Description("true: list what would change without writing; false or absent: the run writes (default)")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("most records one run changes; 0 or absent means no limit")),
+		mcpsdk.WithString("id", mcpsdk.Description("optional: restrict the run to this one Automaton or Automation id")),
+	)
+}
+func (s *Server) handleAutonomousCompletedMigrate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	v := url.Values{}
+	if req.GetBool("dry_run", false) {
+		v.Set("dry_run", "true")
+	}
+	if n := req.GetInt("limit", 0); n != 0 {
+		v.Set("limit", strconv.Itoa(n))
+	}
+	if id := strings.TrimSpace(req.GetString("id", "")); id != "" {
+		v.Set("id", id)
+	}
+	path := "/api/autonomous/completed/migrate"
+	if enc := v.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	out, err := s.proxyJSON(http.MethodPost, path, nil)
+	return llmSetterResult(out, err)
+}
+
 // toolAutonomousShippedCounts + handler read the per-status shipped counts
 // (the PRD and Automation buckets) computed under the in-force
 // autonomous.shipped settings. It proxies the server's
