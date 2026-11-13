@@ -74,19 +74,27 @@ moved count under `already_completed`.
 ## 4. Relationship to the shipped status
 
 [The shipped status](automata-shipped-status.md) records *that work landed*
-and never touches a status. The migration is the one thing that does change
-the status of a merged-but-cancelled record, and it leaves the shipped fields
-alone. Operators who rely on "a shipped cancelled Automaton stays
-`cancelled`" should note that after a migration it is `completed` (and still
-shipped).
+and never touches a status. Every view — the web app chip and badges, the
+counts, the lists and the text output — already **displays** a record that
+carries a shipped record as **Completed**, even while its stored status is
+still `cancelled`; there is no separate Shipped label or bucket. The
+migration is the one thing that changes the *stored* status of a
+merged-but-cancelled record, and it leaves the shipped fields alone. After it
+the record is `completed` in the store too (and still carries its release,
+merge time and merge commit). A cancelled record whose work never merged is
+untouched and still reads Cancelled.
 
 ## 5. For the operator to review
 
+- The display change is not gated by the migration: counts and chips already
+  show merged-but-cancelled work as Completed. The migration only aligns the
+  stored status, and it needs a shipped record or a merge proof.
 - Run `--dry-run` and read each `reason` before the real run; the migration
   is not reversible from the surfaces (no un-complete verb).
 - It is a manual action: no setting makes it run on its own.
-- Mobile companion apps do not yet have a surface for it (parity tracked in
-  datawatch-app).
+- Mobile companion apps do not yet have a surface for it, and they still use
+  the old Shipped label and bucket until they pick up the Completed display
+  (parity tracked in datawatch-app).
 
 ## See also
 

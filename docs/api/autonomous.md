@@ -981,7 +981,7 @@ Fetch one Automaton in full with `GET /api/autonomous/prds/{id}`.
 |---|---|
 | `limit=<n>` | Rows per page. Default 50, maximum 500; anything below 1 or not a number returns 400. |
 | `cursor=<opaque>` | The `next_cursor` of the previous page. Pages run newest `updated_at` first, ties by id descending. An invalid cursor returns 400. `next_cursor` is absent on the last page. |
-| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. May include `shipped`, which selects the shipped bucket on the *status* axis. |
+| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. Matches the displayed status, so `completed` includes a cancelled record whose work landed. `shipped` is still accepted as a legacy alias that selects records carrying shipped state. |
 | `shipped=<true|false>` | The shipped selection: `true` keeps only records that carry shipped state (a non-empty `merge_commit`), `false` only records that do not. Absent, the server's `autonomous.shipped.filter_default` view applies. Orthogonal to `status` — set either, both, or neither. |
 | `active=1` | Keep only running, queued, waiting, approved, blocked and paused work. |
 | `q=<text>` | Case-insensitive match against title and id. |
@@ -2333,7 +2333,7 @@ The 200 reply is the record as stored. Each record writes an audit entry (`recor
 ### The shipped selection and the `shipped` status axis
 
 - `GET /api/autonomous/prds` and `GET /api/automations` accept `shipped=true` (only the records that carry shipped state) or `shipped=false` (only the ones that do not). Absent, the server's `autonomous.shipped.filter_default` view applies (`all`, `shipped` or `unshipped`).
-- `status=…` on either list may include `shipped` as one of the statuses; that selects the shipped bucket on the *status* axis.
+- `status=…` on either list matches the displayed status (`completed` includes a cancelled record whose work landed); `shipped` stays a legacy alias selecting records that carry shipped state.
 - The two axes are independent: set either, both, or neither.
 - The MCP list tools take the same parameter, strictly `"true"` or `"false"` (`autonomous_prd_list` and `automation_list`) — omit it for the default view.
 

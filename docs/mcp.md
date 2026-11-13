@@ -866,7 +866,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_shipped_backfill(dry_run=true)   # see what would be recorded
   autonomous_shipped_backfill()               # run the pass
   ```
-- **`autonomous_shipped_counts`** — read the per-status shipped counts, the PRD and Automation buckets, computed under the in-force `autonomous.shipped` settings: one count per displayed status, with the shipped bucket separated from cancelled while `enabled` + `count_separately` hold (a PRD cancelled without its work landing counts as cancelled; one whose work landed counts as shipped, while the stored status stays cancelled). The reply also carries the settings it was computed under. Read-only — it never writes a record and touches no status; the same numbers are on the dashboard's shipped card. Proxies `GET /api/autonomous/shipped/counts`; needs the autonomous read capability when called by a federated peer.
+- **`autonomous_shipped_counts`** — read the per-status shipped counts, the PRD and Automation buckets, computed under the in-force `autonomous.shipped` settings: one count per displayed status, with work that landed counted as completed while `enabled` holds (a PRD cancelled without its work landing counts as cancelled; one whose work landed counts under completed with the stored-completed ones, while its stored status stays cancelled; there is no separate shipped bucket). The reply also carries the settings it was computed under. Read-only — it never writes a record and touches no status; the same numbers are on the dashboard's shipped card. Proxies `GET /api/autonomous/shipped/counts`; needs the autonomous read capability when called by a federated peer.
 
   | Parameter | Required | Description |
   |---|---|---|
