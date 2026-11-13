@@ -86,9 +86,11 @@ sideways instead of wrapping; the active tab scrolls into view. See
 **Events and the Inbox scope.** The Events stream is not scoped by the
 project picked on the Projects sub-tab: it lists every project until you use
 the **Project** filter above. The **Inbox** badge and its cards follow the
-selected project instead, and the Overview counts everything waiting on you.
-That scope is a display rule of the web app only; the REST, CLI and comm reads
-below always return every event.
+selected project instead, and under **Overview** the badge counts everything
+waiting on you to act across all projects — the read-only cards (the security
+failure report, the supervisor watch findings) render but do not count. That
+scope and count rule is a display rule of the web app only; the REST, CLI and
+comm reads below always return every event.
 
 **On every other surface**
 
