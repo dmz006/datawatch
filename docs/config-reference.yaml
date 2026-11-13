@@ -1275,6 +1275,10 @@ autonomous:
   # Refresh an Automaton branch that has fallen behind its base. Off by default.
   # Walkthrough: docs/howto/automaton-branch-refresh.md.
   branch_refresh_enabled: false
+  # One-time project link backfill at daemon start. false: only a dry-run
+  # report is produced. true: apply it once (link Automata with no project link
+  # that match the datawatch project), then a done marker stops re-runs.
+  project_link_backfill_apply: false
   # Commits behind the base a branch may be before it is refreshed.
   # 0 or unset reads as 5.
   branch_refresh_behind_limit: 5

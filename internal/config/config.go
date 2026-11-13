@@ -3134,6 +3134,14 @@ type AutonomousConfig struct {
 	// BranchRefreshBehindLimit is how many commits behind the base a branch
 	// may be before it is refreshed. Zero reads as 5; see BranchRefreshLimit.
 	BranchRefreshBehindLimit int `yaml:"branch_refresh_behind_limit" json:"branch_refresh_behind_limit"`
+	// ProjectLinkBackfillApply controls the one-time project link backfill at
+	// daemon start. false (default): only a dry-run report is produced, and
+	// nothing is changed. true: the backfill is applied once, linking
+	// Automata that have no project link and match the datawatch project by
+	// Automation, parent or repository directory; the daemon then writes a
+	// durable done marker and does not re-run it. Automata that already carry
+	// a link are never changed.
+	ProjectLinkBackfillApply bool `yaml:"project_link_backfill_apply" json:"project_link_backfill_apply"`
 	// PollIntervalSeconds is the loop tick (default 30).
 	PollIntervalSeconds int `yaml:"poll_interval_seconds,omitempty" json:"poll_interval_seconds,omitempty"`
 	// MaxParallelTasks is deprecated and read by nothing: it never

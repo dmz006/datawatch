@@ -6633,6 +6633,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Between-task branch refresh: off by default; the behind limit's
 			// 0 reads as 5 (config.AutonomousConfig.BranchRefreshLimit).
 			"branch_refresh_enabled":      s.cfg.Autonomous.BranchRefreshEnabled,
+			// One-time project link backfill at start: false = dry-run report
+			// only, true = apply once, then a done marker stops re-runs.
+			"project_link_backfill_apply": s.cfg.Autonomous.ProjectLinkBackfillApply,
 			"branch_refresh_behind_limit": s.cfg.Autonomous.BranchRefreshBehindLimit,
 			// Snapshot-never-stage list (path patterns the autonomous
 			// snapshot must never `git add`): nil (unset) reads the built-in
@@ -9694,6 +9697,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// See https://github.com/dmz006/datawatch/issues/19.
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
+		case "autonomous.project_link_backfill_apply":
+			cfg.Autonomous.ProjectLinkBackfillApply = toBool(v)
 		// Planning routing switches; the rules, ladders and classes go
 		// through PUT /api/autonomous/planning-routing.
 		case "autonomous.planning_routing.enabled":
