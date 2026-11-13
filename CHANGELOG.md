@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- The Sessions **Filters** button now toggles its sheet: it opens the sheet, and clicking it again closes it (its `aria-expanded` follows the state). Closing still works by tapping outside the sheet, its close button, or Escape — the outside-tap close now applies to the desktop panel as well as the phone sheet. No new setting, no new localStorage key.
+
 ## v9.172.0 — Plans replace Arcs, with an ordered Plans browser
 
 ### Added
