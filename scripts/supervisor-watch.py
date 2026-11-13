@@ -397,7 +397,7 @@ def main(argv=None):
     out = sh("datawatch autonomous prd-list", 60)
     prds = []
     try:
-        prds = json.loads(out[out.index("{"):]).get("prds", [])
+        prds = json.JSONDecoder().raw_decode(out[out.index("{"):])[0].get("prds", [])
     except Exception:
         findings.append("PRD list unreadable")
     held_now, running, queued_runnable = [], [], 0
