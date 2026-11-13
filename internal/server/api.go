@@ -14604,6 +14604,16 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 	if hasRep {
 		// What this restart interrupts, counted before the restart policy runs.
 		resp["interrupts"] = rep
+		// The wait for running gates happens after this answer, in the restart
+		// function. Report what it will wait for, or leave running at once.
+		waited, left := 0, 0
+		if s.cfg != nil && config.NormalizeGateDrainMinutes(s.cfg.Autonomous.GateDrainMinutes) > 0 {
+			waited = rep.RunningGateCnt
+		} else {
+			left = rep.RunningGateCnt
+		}
+		resp["gates_waited"] = waited
+		resp["gates_interrupted"] = left
 	}
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	s.hub.Broadcast(MsgNotification, map[string]string{"message": "Daemon restarting…"})

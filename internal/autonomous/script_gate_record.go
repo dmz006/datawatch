@@ -136,6 +136,7 @@ func runGateDurable(ctx context.Context, check GateCheck, argv []string, project
 		case rec.ExitCode != nil:
 			return consumeGateRun(dir, rec, timeout), true
 		case rec.PID > 0 && gateRecordAlive(rec):
+			reportGatePID(ctx, rec.PID)
 			return waitGateRun(ctx, dir, rec, timeout), true
 		case rec.PID > 0:
 			// The process is gone and left no exit code: killed by a signal.
@@ -168,6 +169,7 @@ func runGateDurable(ctx context.Context, check GateCheck, argv []string, project
 		return GateResult{ExitCode: -1, Reason: fmt.Sprintf("gate failed to launch: %v", err)}, true
 	}
 	rec.PID = pid
+	reportGatePID(ctx, pid)
 	rec.ProcStart = rec.StartedAt
 	if st, _, ok := procStartAndState(pid); ok {
 		rec.ProcStart = st

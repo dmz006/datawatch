@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,5 +96,59 @@ func TestGuardRestartCallsRestartOnlyOnProceed(t *testing.T) {
 	g()
 	if calls != 1 {
 		t.Fatalf("restart called %d times, want 1", calls)
+	}
+}
+
+type fakeGateMgr struct {
+	fakeRestartMgr
+	res   autonomous.GateDrainResult
+	calls int
+}
+
+func (f *fakeGateMgr) DrainGates(_ context.Context, _ autonomous.Clock, _ func(string, ...any)) autonomous.GateDrainResult {
+	f.calls++
+	return f.res
+}
+
+func TestRestartGatesGuardReportListsRunningGates(t *testing.T) {
+	rep := autonomous.RestartInterruption{
+		RunningGates:   []autonomous.RunningGate{{Check: "script:verify.sh", PRDID: "p1", TaskID: "t2", PID: 77}},
+		RunningGateCnt: 1,
+	}
+	out := restartGuardReportWith(rep, "datawatch restart --force")
+	if !strings.Contains(out, "running gates (1)") || !strings.Contains(out, "script:verify.sh") || !strings.Contains(out, "pid 77") {
+		t.Fatalf("report omits the gate:\n%s", out)
+	}
+	if !strings.Contains(restartGuardReportWith(autonomous.RestartInterruption{}, "x"), "running gates (0)") {
+		t.Fatal("report must show an empty gate list")
+	}
+}
+
+func TestGateDrainBeforeExitUsesManagerAndToleratesNone(t *testing.T) {
+	if res := drainGatesBeforeExit(context.Background(), nil, autonomous.RealClock(), nil); res != (autonomous.GateDrainResult{}) {
+		t.Fatalf("nil manager: %+v", res)
+	}
+	plain := &fakeRestartMgr{}
+	if res := drainGatesBeforeExit(context.Background(), plain, autonomous.RealClock(), nil); res != (autonomous.GateDrainResult{}) {
+		t.Fatalf("manager without the wait: %+v", res)
+	}
+	g := &fakeGateMgr{res: autonomous.GateDrainResult{Waited: 2, Interrupted: 1}}
+	if res := drainGatesBeforeExit(context.Background(), g, autonomous.RealClock(), nil); res.Waited != 2 || res.Interrupted != 1 || g.calls != 1 {
+		t.Fatalf("result = %+v calls=%d", res, g.calls)
+	}
+}
+
+func TestGatesInterruptedRestartRunsGateWaitBeforeExit(t *testing.T) {
+	g := &fakeGateMgr{res: autonomous.GateDrainResult{Waited: 1}}
+	exited := 0
+	guard := guardRestartForce(func(bool) {
+		if g.calls != 1 {
+			t.Errorf("restart ran before the gate wait (calls=%d)", g.calls)
+		}
+		exited++
+	}, func() restartPolicyManager { return g }, func() restartPolicySettings { return restartSettingsFrom(config.AutonomousConfig{}) })
+	guard(true)
+	if exited != 1 || g.calls != 1 {
+		t.Fatalf("exited=%d calls=%d", exited, g.calls)
 	}
 }

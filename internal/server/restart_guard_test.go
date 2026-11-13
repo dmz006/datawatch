@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // guardReportAPI embeds the autonomous API interface (nil) and overrides only
@@ -98,5 +99,38 @@ func TestRestartGuardProceedsWithNoForceWhenNotNeeded(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatalf("restart not called when nothing needs force")
+	}
+}
+
+func TestRestartGatesResponseCountsGatesWaitedAndInterrupted(t *testing.T) {
+	rep := autonomous.RestartInterruption{
+		Policy:         "immediate",
+		RunningGates:   []autonomous.RunningGate{{Check: "script:verify.sh", PRDID: "p", TaskID: "t"}},
+		RunningGateCnt: 1,
+	}
+	for _, tc := range []struct {
+		minutes         int
+		waited, stopped int
+	}{{10, 1, 0}, {0, 0, 1}} {
+		cfg := &config.Config{}
+		cfg.Autonomous.GateDrainMinutes = tc.minutes
+		s := &Server{hub: NewHub(), cfg: cfg, autonomousMgr: guardReportAPI{rep: rep}}
+		s.restartForceFn = func(bool) {}
+		w := httptest.NewRecorder()
+		s.handleRestart(w, httptest.NewRequest(http.MethodPost, "/api/restart", nil))
+		var body struct {
+			Waited      int `json:"gates_waited"`
+			Interrupted int `json:"gates_interrupted"`
+			Interrupts  struct {
+				Gates []autonomous.RunningGate `json:"running_gates"`
+				Count int                      `json:"running_gate_count"`
+			} `json:"interrupts"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Waited != tc.waited || body.Interrupted != tc.stopped || body.Interrupts.Count != 1 || len(body.Interrupts.Gates) != 1 {
+			t.Fatalf("minutes=%d body=%s", tc.minutes, w.Body.String())
+		}
 	}
 }
