@@ -3503,8 +3503,9 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const hasEvents = events.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
   const bodies = {
-    overview: head + overviewBody + _planRecordsSlotHtml(p),
-    plans: arcsBody,
+    overview: head + _projectOverviewSummaryHTML(p),
+    plans: (roll && !rollErr ? _projectRollupHTML(roll, (Array.isArray(roll.arcs) ? roll.arcs : [])) : '') + arcsBody,
+    records: _projectRecordsTabHTML(p),
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
     history: _projectHistoryHTML(hist, true),
@@ -3521,9 +3522,9 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 // remembered per browser; an unknown value means overview, and events falls
 // back to overview while there are no events to show.
 const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
-const _PROJECTS_SUBTABS = ['overview', 'plans', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+const _PROJECTS_SUBTABS = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'policy', 'events'];
 const _PROJECTS_SUBTAB_LABELS = {
-  overview: 'projects_subtab_overview', plans: 'projects_subtab_plans', gantt: 'projects_subtab_gantt',
+  overview: 'projects_subtab_overview', plans: 'projects_subtab_plans', records: 'projects_subtab_records', gantt: 'projects_subtab_gantt',
   unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
   policy: 'projects_subtab_policy', events: 'projects_subtab_events',
 };
@@ -5209,13 +5210,80 @@ window.planRecordsImportApply = function() {
   });
 };
 
+// ── Overview summary ────────────────────────────────────────────────────────
+// The Overview sub-tab reads GET /api/projects/{name}/overview-summary and
+// nothing else: header, progress, one line per active plan, what is next, and
+// the record counts with links into Plans and Records.
+let _projectsSummary = { name: '', data: null, error: '' };
+
+function _projectsLoadSummary() {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  const mine = () => _projectsState.selected === name;
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/overview-summary').then(r => {
+    if (!mine()) return;
+    _projectsSummary = { name, data: r && typeof r === 'object' && !Array.isArray(r) ? r : {}, error: '' };
+  }).catch(err => {
+    if (!mine()) return;
+    _projectsSummary = { name, data: null, error: (err && err.message) || String(err) };
+  });
+}
+
+function _projectOverviewSummaryHTML(p) {
+  const S = _projectsSummary.name === p.name ? _projectsSummary : { data: null, error: '' };
+  if (S.error) return `<div class="project-overview-error" style="color:var(--error,#ef4444);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_failed') + ' ' + S.error)}</div>`;
+  if (!S.data) return `<div class="project-overview-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_loading'))}</div>`;
+  const d = S.data;
+  const pr = d.progress || {};
+  const au = pr.automata || {};
+  const done = Number(au.done) || 0;
+  const total = Number(au.total) || 0;
+  const pct = Number.isFinite(Number(au.percent)) ? Number(au.percent) : (total ? Math.round(done * 100 / total) : 0);
+  const pts = Math.round((Number(pr.points) || 0) * 10) / 10;
+  const bar = (pc, label) => `<div class="project-overview-bar" style="display:flex;align-items:center;gap:8px;">
+    <div class="project-overview-track"><div class="project-overview-fill" style="width:${Math.max(0, Math.min(100, pc))}%;"></div></div>
+    <span class="project-overview-barlabel">${escHtml(label)}</span></div>`;
+  const go = (k, label) => `<a href="#" class="project-overview-link" data-goto="${k}" onclick="${escHtml(`selectProjectsSubtab(${JSON.stringify(k)});return false;`)}">${escHtml(label)}</a>`;
+  const hd = d.header || {};
+  const header = `<div class="project-overview-header">${hd.dir ? `<span class="project-overview-dir">${escHtml(hd.dir)}</span>` : ''}</div>`;
+  const progress = _projectsSectionCard('overview', escHtml(t('projects_overview_progress_heading')), `<div class="project-overview-progress">
+    ${bar(pct, t('projects_overview_progress_value', [done, total, pct]))}
+    <div class="project-overview-points">${escHtml(pts + ' ' + t('projects_page_points'))}</div></div>`);
+  const lines = Array.isArray(d.active_plans) ? d.active_plans : [];
+  const stateLabel = st => { const k = { planned: 'projects_page_arc_state_planned', active: 'projects_page_arc_state_active', done: 'projects_page_arc_state_done' }[st]; return k ? t(k) : String(st || ''); };
+  const plans = `<div class="project-overview-plans"><div class="project-overview-heading">${escHtml(t('projects_overview_active_plans'))}</div>` + (lines.length
+    ? lines.map(l => { const pg = l.progress || {}; return `<div class="project-overview-plan" data-plan="${escHtml(l.id || '')}">
+        <span class="project-overview-plan-title">${escHtml(l.title || l.id || '')}</span>
+        <span class="project-overview-plan-state">${escHtml(stateLabel(l.state))}</span>
+        <span class="project-overview-plan-bar">${bar(Number(pg.percent) || 0, `${Number(pg.done) || 0}/${Number(pg.total) || 0} · ${Number(pg.percent) || 0}%`)}</span></div>`; }).join('')
+    : `<div class="project-overview-empty">${escHtml(t('projects_overview_no_active'))}</div>`) + '</div>';
+  const nx = d.next && typeof d.next === 'object' ? d.next : null;
+  const next = `<div class="project-overview-next"><div class="project-overview-heading">${escHtml(t('projects_overview_next'))}</div>` + (nx
+    ? `<div>${escHtml(nx.automaton_title || nx.automaton_id || '')} <span class="project-overview-next-plan">(${escHtml(nx.plan_title || nx.plan_id || '')})</span></div>`
+    : `<div class="project-overview-empty">${escHtml(t('projects_overview_next_none'))}</div>`) + '</div>';
+  const c = d.counts || {};
+  const n = o => Number((o || {}).total) || 0;
+  const counts = `<div class="project-overview-counts"><div class="project-overview-heading">${escHtml(t('projects_overview_counts'))}</div>
+    <div>${go('plans', t('projects_overview_count_plans', [n(c.plans)]))} · ${Number((c.plans || {}).backlog) || 0} ${escHtml(t('projects_overview_backlog'))}</div>
+    <div>${go('records', t('projects_overview_count_records', [n(c.records)]))} · ${escHtml(t('projects_overview_count_rows', [n(c.rows)]))} · ${escHtml(t('projects_overview_count_findings', [n(c.findings)]))}</div></div>`;
+  return `<div class="project-overview-summary">${header}${progress}${plans}${next}${counts}</div>`;
+}
+
+// The Records sub-tab: the Registry and findings card, plus a mount point for
+// the records browser.
+function _projectRecordsTabHTML(p) {
+  return `<div id="projectRecordsMount" data-mount="records"></div>${_planRecordsSlotHtml(p)}`;
+}
+
 function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
     if (!_projectsActive()) return null;
     _projectsPaint();
     const gantt = _projectsLoadGantt();
+    const summary = _projectsLoadSummary().then(() => { if (_projectsActive()) _projectsPaint(); });
     const records = _planRecordsLoad(false);
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records]));
+    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records, summary]));
   });
 }
 
