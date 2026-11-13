@@ -9639,6 +9639,15 @@ paths:
         `focus` returns one arc's Automata and their tasks in a single reply.
         Work still running has `last` null and `running` true. An arc with no
         Automata or no timestamps has `first` and `last` null.
+
+        Every row also carries `start`, `end` and `status`. An Automaton spans
+        its created time to its completion time, a task spans its start to its
+        completion, and an arc spans the earliest Automaton start to the latest
+        Automaton end. Rows inside an arc are ordered by completion, then
+        adjusted so a dependency sits above its dependent. Task rows carry
+        `depends_on`; `level=automata` and `focus` replies carry `edges` taken
+        from the Automation's member order and its on-complete, on-blocked and
+        on-failed links. The read never signals, stops or restarts a session.
       operationId: projectsTimeline
       tags: [Singletons]
       parameters:
@@ -9679,6 +9688,20 @@ paths:
                         running: {type: boolean}
                         has_children: {type: boolean}
                         children_count: {type: integer}
+                        start: {type: string, format: date-time, nullable: true, description: Same value as first}
+                        end: {type: string, format: date-time, nullable: true, description: Null while running}
+                        status: {type: string, enum: [completed, running, waiting, blocked, failed, cancelled]}
+                        release: {type: string, description: Release a shipped Automaton merged into}
+                        depends_on: {type: array, items: {type: string}, description: Task ids a task row waits for}
+                  edges:
+                    type: array
+                    description: Chain edges between Automata, on level=automata and focus replies
+                    items:
+                      type: object
+                      properties:
+                        from: {type: string}
+                        to: {type: string}
+                        kind: {type: string, enum: [chain]}
         "400": {description: Bad level, limit, cursor, or missing automaton}
         "404": {description: Unknown project, arc or Automaton}
         "503": {description: Automations not available}

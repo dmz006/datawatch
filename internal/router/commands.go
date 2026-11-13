@@ -1985,7 +1985,7 @@ project show <name>             project record (dir, owner, repository, branch, 
 project arcs <name>             ordered arc list of the project
 project set <name> <field> <value>  set one record field (owner, repository, default_branch, description, default_backend, major_trigger, weekly_share, branch_retention_days)
 project progress <name>         roll-up: tasks, points and throughput, total and per arc
-project timeline <name> [focus=<automation>] [level=...]  first and last time of each arc, Automaton and task
+project timeline <name> [focus=<automation>] [level=...]  start, end and status of each arc, Automaton and task, with dependencies and Automaton chain edges
 agent list                      list active agent workers
 agent spawn <proj> <cluster> [task]   spawn a new agent
 agent show <id>                 show agent detail

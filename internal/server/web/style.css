@@ -7599,7 +7599,7 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .project-gantt-preset.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .project-gantt-range { color: var(--text2); margin-left: auto; }
 .project-gantt-scroll { overflow-x: auto; max-width: 720px; -webkit-overflow-scrolling: touch; }
-.project-gantt-chart { min-width: 520px; max-width: 720px; cursor: grab; touch-action: pan-y; user-select: none; }
+.project-gantt-chart { position: relative; min-width: 520px; max-width: 720px; cursor: grab; touch-action: pan-y; user-select: none; }
 .project-gantt-row { display: flex; align-items: center; height: 22px; }
 .project-gantt-label { position: sticky; left: 0; z-index: 1; flex: 0 0 170px; width: 170px; box-sizing: border-box; background: var(--bg, var(--card, #0f1117)); display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; }
 .project-gantt-label-text { overflow: hidden; text-overflow: ellipsis; }
@@ -7609,6 +7609,15 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .project-gantt-axis .project-gantt-track { height: 16px; border-bottom: 1px solid var(--border); }
 .project-gantt-tick { position: absolute; top: 0; font-size: 9px; color: var(--text2); white-space: nowrap; }
 .project-gantt-bar { position: absolute; top: 1px; height: 12px; border-radius: 3px; }
+.project-gantt-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.project-gantt-edges { position: absolute; left: 170px; right: 0; top: 22px; width: calc(100% - 170px); pointer-events: none; overflow: visible; }
+.project-gantt-edge path { stroke: var(--text2); stroke-width: 1px; opacity: 0.7; }
+.project-gantt-edge .project-gantt-edge-tip { fill: var(--text2); stroke: none; }
+.project-gantt-edge.extra { display: none; }
+.project-gantt-edges.has-focus .project-gantt-edge { opacity: 0.25; }
+.project-gantt-edges.has-focus .project-gantt-edge.hl { display: inline; opacity: 1; }
+.project-gantt-edge.hl path { stroke: var(--accent); stroke-width: 2.5px; opacity: 1; }
+.project-gantt-edge.hl .project-gantt-edge-tip { fill: var(--accent); }
 .project-gantt-now { position: absolute; top: -1px; font-size: 9px; color: var(--text2); }
 .project-gantt-focus { flex: 0 0 auto; font-size: 10px; line-height: 1.4; padding: 0 6px; margin-left: 4px; }
 .project-focus .project-gantt-scroll { max-width: 100%; }

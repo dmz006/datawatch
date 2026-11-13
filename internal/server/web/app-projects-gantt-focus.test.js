@@ -94,8 +94,9 @@ test('focus reads once with focus=<id>, the range is first task to last task', a
   assert.match(tl[0].url, /\/api\/projects\/acme\/timeline\?focus=a1$/);
   const f = focusState(sb);
   const r = sb._projectsGanttCurrent(f, NOW);
-  assert.equal(r.start, Date.parse(ago(30)), 'starts at the first task');
-  assert.equal(r.end, Date.parse(ago(2)), 'ends at the last task');
+  const mg = (Date.parse(ago(2)) - Date.parse(ago(30))) * 0.02;
+  assert.equal(r.start, Date.parse(ago(30)) - mg, 'starts at the first task minus the 2 percent margin');
+  assert.equal(r.end, Date.parse(ago(2)) + mg, 'ends at the last task plus the margin');
   assert.match(cap.panel, /Focus: Arc one/);
   assert.match(bodyHtml(sb), new RegExp('First task ' + new Date(Date.parse(ago(30))).toLocaleDateString().replace(/[/.]/g, '\\$&') + ' – last task'));
   assert.ok(tl.every(c => c.method === 'GET'), 'a read');
@@ -157,7 +158,7 @@ test('presets, wheel zoom and drag pan move the focus range', async () => {
   assert.match(bodyHtml(sb), /data-preset="7d" aria-pressed="true" onclick="projectsFocusPreset\('7d'\)"/);
   sb.projectsFocusPreset('all');
   r = sb._projectsGanttCurrent(f, NOW);
-  assert.equal(r.start, Date.parse(ago(30)));
+  assert.ok(r.start < Date.parse(ago(30)) && Date.parse(ago(30)) - r.start < 0.03 * (r.end - r.start), '2 percent margin before the first row');
   const before = r.end - r.start;
   sb.projectsFocusWheel({ deltaY: -100, clientX: 0, preventDefault() {} });
   assert.ok(f.view.end - f.view.start < before, 'wheel up zooms in');

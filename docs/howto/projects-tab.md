@@ -229,7 +229,7 @@ are spread across them, one page sub-tab at a time.
 |---|---|---|
 | Overview | Header, Progress | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share; then tasks and Automata done, cost in points and throughput over the last seven days |
 | Arcs | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
-| Gantt | Gantt | One expandable timeline. It opens with one row per arc and a bar from the arc's first to its last task, coloured by state; work still running is drawn to now and reads "now". Click a row's arrow to open the Automata under the arc, and an Automaton's arrow to open its tasks; an arc with no activity yet reads **Planned** with no bar. Automata that no arc holds sit in the **Automata with no arc** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; the mouse wheel zooms and a drag pans the chart. Each arc row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
+| Gantt | Gantt | One expandable timeline. It opens with one row per arc and a bar from the arc's first to its last task, coloured by its status (Completed, Running, Waiting, Blocked, Failed or Cancelled); work still running is drawn to now and reads "now". Hover or focus a bar for its status, dates and, for a shipped Automaton, its release. Click a row's arrow to open the Automata under the arc, and an Automaton's arrow to open its tasks; an arc with no activity yet reads **Planned** with no bar. Automata that no arc holds sit in the **Automata with no arc** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; **All time** fits the rows that are showing, expanded Automata and tasks included, with a 2 percent margin at each end, and the mouse wheel zooms and a drag pans the chart. Rows you open later are ordered by completion, then running and waiting work by start, with a task or Automaton below the ones it depends on. **Edges** draws thin arrows between the rows that are showing: from the end of a task to the start of each task that waits for it, and from an Automaton to the Automata that follow it. Hover a bar, or tab to it, to light its own edges and dim the rest. **Edges** turns the arrows off, and **All edges** (shown while they are on) lifts the cap of 120 drawn edges, beyond which only the edges of the hovered bar show. The choice is remembered in this browser only. Each arc row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
 | Unassigned | Unassigned Automata | Automata of this project that no arc holds |
 | History | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Policy | Effective policy, Merge pipeline | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section; then the read-only merge pipeline, with an **Open settings** link at the Merge pipeline group |
@@ -350,6 +350,16 @@ datawatch projects timeline core-api --focus <arc-id>                 # one arc,
   `running` true, so a client draws it to now. An arc with no Automata or no
   recorded times has both empty. `has_children` and `children_count` say
   whether a row can be opened.
+- Each row also has `start` (the same as `first`), `end` (empty while running),
+  `status` (completed, running, waiting, blocked, failed or cancelled; a shipped
+  Automaton reads completed and its release is in `release`) and, on task rows,
+  `depends_on`. An Automaton spans its created time to its completion time; a
+  task spans its start to its completion; an arc spans the earliest Automaton
+  start to the latest Automaton end. Rows inside an arc are ordered by
+  completion, then adjusted so a dependency sits above its dependent. Automata-level and
+  focus replies also carry `edges`, a list of `{from, to, kind: "chain"}` taken
+  from the Automation's member order and its on-complete, on-blocked and
+  on-failed links, drawn through fork and join members.
 - Levels other than focus are paged: `--limit` (1 to 200, default 50) and
   `--cursor` with the `next_cursor` of the previous page.
 - Templates are left out. Reading needs the autonomous read capability, and the
@@ -388,7 +398,7 @@ REST and MCP return the same rows as JSON (`rows`, with `has_more` and
 under it with every task, in one read of the timeline with `focus=<id>`, so nothing
 is capped or paged. The range runs from the first task to the last (the header
 reads "First task … – last task …"), with the same presets, wheel zoom and drag pan
-as the Gantt; each Automaton can be collapsed and the state is remembered. An
+as the Gantt, with the same bars, hover highlight and **Edges** toggle; each Automaton can be collapsed and the state is remembered. An
 Automation with nothing started reads "This Automation has no Automata or tasks yet.
 It is planned." and is not an error. **Back** returns to the project page, or to the
 Automation page when you came from its header. From the Automation page the Focus
@@ -487,6 +497,7 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `arcs`, `gantt`, `unassigned`, `history`, `policy` or `events`; no sub-tab in the address opens **Overview** |
 | Switch between Overview, Arcs, Gantt, Unassigned, History, Policy and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
 | Change the range of the Gantt | Gantt header: **All time**, 90, 30 or 7 days; wheel to zoom, drag to pan |
+| Show or hide dependency edges | Gantt header **Edges** (on by default; also on the Focus page); **All edges** shows every drawn edge instead of the first 120; hover or tab to a bar to highlight its edges |
 | Expand or collapse a Gantt row | The arrow at the left of an arc, an Automaton or the **Automata with no arc** group; **Load more** pages a long level |
 | Focus on one Automation | **Focus** on an arc's Gantt row or card, or in the header of the Automation page; **Back** returns |
 | Page through history | **Load more** at the foot of History |
@@ -510,7 +521,7 @@ surfaces below.
 | `PUT /api/projects/{name}/arcs` | Replace the ordered arcs (a bare array or `{"arcs": [...]}`); 404 for an unknown project |
 | `GET /api/projects/{name}/rollup?window=7` | Roll-up: arcs in order, Automata, tasks, points, throughput; `window` 1 to 365 days |
 | `GET /api/projects/{name}/history?limit=50&cursor=…` | History page and Gantt rows |
-| `GET /api/projects/{name}/timeline?level=arcs\|automata\|tasks&parent=…&automaton=…&focus=…&limit=50&cursor=…` | One level of the project timeline: first and last time per arc, Automaton and task; 400 for a bad level, limit, cursor or a missing `automaton`; 404 for an unknown project, arc or Automaton |
+| `GET /api/projects/{name}/timeline?level=arcs\|automata\|tasks&parent=…&automaton=…&focus=…&limit=50&cursor=…` | One level of the project timeline: start, end, status and release per arc, Automaton and task, `depends_on` on tasks and `edges` between Automata; 400 for a bad level, limit, cursor or a missing `automaton`; 404 for an unknown project, arc or Automaton |
 | `GET /api/projects/{name}/policy/effective?automaton=<id>` | Effective policy with the tier of each setting |
 | `DELETE /api/projects/{name}` | Remove the alias; the directory is not touched |
 
@@ -587,7 +598,7 @@ Send these from Signal, Telegram or another connected channel:
 | `project show <name>` | Record fields, one per line; `-` for unset |
 | `project arcs <name>` | Arcs in order |
 | `project progress <name>` | Roll-up: tasks, points and throughput per arc |
-| `project timeline <name> [level=arcs\|automata\|tasks] [parent=<arc>\|none] [automaton=<id>] [focus=<arc>\|none] [limit=<n>] [cursor=<c>]` | One line per row: kind, title, first and last time (`now` while running); says how to continue when more rows exist |
+| `project timeline <name> [level=arcs\|automata\|tasks] [parent=<arc>\|none] [automaton=<id>] [focus=<arc>\|none] [limit=<n>] [cursor=<c>]` | One line per row: kind, title, start and end (`now` while running), then `[status]`, `depends on …` and `release …` when present; Automaton chain edges follow as `from -> to (chain)` lines; says how to continue when more rows exist |
 | `project set <name> <field> <value>` | Set one field: `owner`, `repository`, `default_branch`, `description`, `default_backend`, `major_trigger`, `weekly_share`, `branch_retention_days` |
 | `project policy <name> [automaton]` | Effective policy (see [project-automation-policy](project-automation-policy.md)) |
 
@@ -664,6 +675,16 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - **Edit keeps the record.** The page says editing keeps the policy, arcs, owner,
   target and other record fields. That follows the shipped form's behavior as
   documented in the change; confirm it on a project that has a policy and arcs.
+
+- **Gantt edges and ordering (2026-11-12).** The Gantt now draws dependency edges, an
+  **Edges** toggle and a hover highlight, fits **All time** to the visible rows, and orders
+  late-loaded rows by completion with dependencies first. The cap of 120 edges and the 2
+  percent margin are the shipped defaults, not settings. The edge choice is the browser
+  key `cs_projects_gantt_edges` (`on`, `all` or `off`), a convenience only. The new labels
+  (Edges, All edges, the six status words, Release) ship in the English, German, Spanish,
+  French and Japanese locales; a native speaker has not reviewed the four translations.
+  Android and iPhone do not draw edges yet; tracked in datawatch-app. Confirm the cap and
+  the default of edges on, and check the edge routing on a project with many dependencies.
 
 ## Related
 

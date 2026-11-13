@@ -110,3 +110,85 @@ test('the old window selector is gone', () => {
   const src = fs.readFileSync(APP, 'utf8');
   assert.doesNotMatch(src, /_PROJECTS_GANTT_WINDOWS|projectsGanttWindow|projectGanttWindow/);
 });
+
+test('span uses start/end, sort helper orders completed, running, then dependencies', () => {
+  const { sb } = load(() => ({ rows: [] }));
+  const NOW2 = Date.now();
+  const iso2 = ms => new Date(ms).toISOString();
+  const sp = sb._projectsGanttSpan({ start: iso2(NOW2 - 5000), end: null, status: 'running' }, NOW2);
+  assert.equal(sp.b, NOW2);
+  assert.equal(sp.running, true);
+  const rows = [
+    { id: 'r', status: 'running', start: iso2(NOW2 - 1000), end: null },
+    { id: 'c2', status: 'completed', start: iso2(NOW2 - 9000), end: iso2(NOW2 - 4000) },
+    { id: 'c1', status: 'completed', start: iso2(NOW2 - 9500), end: iso2(NOW2 - 6000) },
+    { id: 'w', status: 'waiting', start: iso2(NOW2 - 2000), end: null, depends_on: ['r'] },
+  ];
+  assert.equal(sb._projectsGanttSortChildren(rows, []).map(x => x.id).join(','), 'c1,c2,r,w');
+  assert.equal(sb._projectsGanttSortChildren(rows, [{ from: 'w', to: 'c1' }]).map(x => x.id).join(','), 'r,w,c1,c2', 'an edge puts a row after what it follows');
+  assert.equal(rows[0].id, 'r', 'input is not changed');
+});
+
+// ---- accuracy: spans, tight axis, status wording ----
+
+test('an arc span is its members min start to max end, never the whole window', () => {
+  const { sb } = load({ timeline: { rows: [] } });
+  const N = Date.now();
+  const a = { kind: 'arc', id: 'a', start: iso(N - 90 * DAY), end: iso(N - 30 * DAY), status: 'completed' };
+  const b = { kind: 'arc', id: 'b', start: iso(N - 10 * DAY), end: iso(N - 5 * DAY), status: 'completed' };
+  const sa = sb._projectsGanttSpan(a, N), sbb = sb._projectsGanttSpan(b, N);
+  assert.equal(sa.a, Date.parse(a.start));
+  assert.equal(sa.b, Date.parse(a.end));
+  assert.equal(sbb.a, Date.parse(b.start));
+  assert.equal(sbb.b, Date.parse(b.end));
+  assert.ok(sa.b < sbb.a, 'one arc does not stretch over the other');
+});
+
+test('the axis is tight: the rows span plus 2 percent margin at each end', () => {
+  const { sb } = load({ timeline: { rows: [] } });
+  const N = Date.now();
+  const rows = [
+    { kind: 'task', id: 't1', start: iso(N - 50 * DAY), end: iso(N - 40 * DAY), status: 'completed' },
+    { kind: 'task', id: 't2', start: iso(N - 30 * DAY), end: iso(N - 20 * DAY), status: 'completed' },
+  ];
+  const s = Date.parse(rows[0].start), e = Date.parse(rows[1].end);
+  const m = (e - s) * 0.02;
+  const r = sb._projectsGanttRangeFromRows(rows, N);
+  assert.ok(Math.abs(r.start - (s - m)) < 1, 'start = first start minus 2 percent');
+  assert.ok(Math.abs(r.end - (e + m)) < 1, 'end = last end plus 2 percent, not now');
+  const tight = sb._projectsGanttTightRange(rows, N);
+  assert.equal(tight.start, s);
+  assert.equal(tight.end, e);
+});
+
+test('a running row is drawn to now', () => {
+  const { sb } = load({ timeline: { rows: [] } });
+  const N = Date.now();
+  const sp = sb._projectsGanttSpan({ kind: 'automaton', id: 'r', start: iso(N - 3 * DAY), end: null, status: 'running' }, N);
+  assert.equal(sp.b, N);
+  assert.equal(sp.running, true);
+  const range = sb._projectsGanttRangeFromRows([{ kind: 'automaton', id: 'r', start: iso(N - 3 * DAY), end: null, status: 'running' }], N);
+  assert.ok(range.end > N, 'the margin sits after now');
+});
+
+test('bars say Completed; the merged release shows only in the hover detail', async () => {
+  const N = Date.now();
+  const row = (id, release) => ({ kind: 'arc', id, title: 'Arc ' + id, state: 'done', status: 'completed', release,
+    first: iso(N - 20 * DAY), last: iso(N - 5 * DAY), start: iso(N - 20 * DAY), end: iso(N - 5 * DAY),
+    running: false, has_children: false, children_count: 0 });
+  const { sb } = load({ timeline: { rows: [row('shipped', 'v9.9.0'), row('plain', '')] } });
+  await sb._projectsLoadGantt();
+  await flushAsync();
+  const html = sb._projectGanttHTML();
+  const titles = Array.from(html.matchAll(/class="project-gantt-bar[^"]*"[^>]*title="([^"]*)"/g)).map(m => m[1]);
+  assert.equal(titles.length, 2);
+  assert.match(titles[0], /· Completed ·/);
+  assert.match(titles[0], /Release v9\.9\.0/);
+  assert.match(titles[1], /· Completed ·/);
+  assert.doesNotMatch(titles[1], /Release/);
+  const stripped = html.replace(/title="[^"]*"/g, '');
+  assert.doesNotMatch(stripped, /v9\.9\.0/, 'the release is not in a label or legend, only the hover detail');
+  assert.doesNotMatch(stripped, /\bDone\b|\bShipped\b/, 'no old wording on bar or legend');
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
+  assert.equal(en.projects_gantt_status_completed, 'Completed');
+});
