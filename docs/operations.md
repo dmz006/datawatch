@@ -4397,7 +4397,7 @@ are not in `GET /api/config`. To reset them, clear the site data for the PWA
 (keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
 See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
 
-The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, and the lineage-tree flag `cs_session_tree_view`): no daemon setting. With no grouping, a saved tree flag applies to **List** only and any mode click clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
+The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip): no daemon setting. With no grouping, a saved tree flag applies to **List** only and any mode click clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
 
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per
@@ -4454,15 +4454,27 @@ filter in the **Filters** sheet. Each tag is one chip under its axis group
 (Kind, Role, Lane, Compute node, Project, Your tags, Other), with a search box
 and a **Show all** control; the per-Automaton, per-stage and per-task tags
 have no chip (an Automaton is picked from the **Find an Automaton** picker),
-and the selected tags also show as removable chips above the list. Chip counts
-are the sessions in the list currently loaded in the browser, not the
+and the selected tags — together with the picked **Status** and **Backend** chips — show as removable chips in the row above the list, with a **Clear all** that empties all three groups at once (both the **Status** and the **Backend** chip groups are multi-select sets: several picks match any of the picked values, a second tap on an active chip removes exactly that one, and the group's **All** chip clears the whole group). Every chip
+and picker item leads with the readable name — operator tag name, project or
+folder name, node name, Automaton title — with the id only as small secondary
+text, and **unnamed** with the id when a name cannot be resolved; a raw id is
+never the primary text and filtering keys on the tag's value as before. The
+**Compute node** group is per node: one entry per local host (under its real
+hostname) or federated peer (under its registered peer name), built from the
+sessions in the list rather than the tag inventory — a peer's sessions carry no
+`compute:` tag at all and an alias of one host merges — and the entry is never
+"local" or "all". Chip counts are the sessions in the list currently loaded in the browser, not the
 `/api/sessions/tags` inventory counts, so a tag can show a smaller number than
-the inventory. This is a display-only change: it reads no `autonomous.tags`
+the inventory. Session cards render per-record tags whose value is a bare id
+(`automaton:xxxxxxxx` and friends) as the axis word alone — the chip reads
+**Automaton** — with the full tag in the tooltip, so no card shows a raw id. This is a display-only change: it reads no `autonomous.tags`
 key, changes no tag, stored selection or filter result, and needs no migration
 or restart — a refreshed PWA shows the new filter. The tag filter rows
 elsewhere are unchanged. See
 [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-tags-filter)
 and [howto/automata-tags.md](howto/automata-tags.md) for the operator view.
+
+**Still to review (operator).** The Status/Backend multi-select behaviour described above is client-side PWA behaviour (`internal/server/web/app.js`), pinned by the PWA tests `app-sessions-filters-chips.test.js` and `app-sessions-filters-sheet.test.js`, but confirmed by code and tests only — the commits that shipped it record no live verification. Confirm on the build in use, in a running browser: pick two Status chips and the list keeps sessions matching *either* state; tap an active chip again and exactly that chip (and that state only) drops; **All** clears the group (active while nothing is picked); the same holds for the **Backend** group with the free-text search box untouched; the row above the list shows the picked Status and Backend values beside the selected tags, each removable with its ✕, and **Clear all** empties all three groups; and a device upgraded from an older build keeps its single stored status pick (it is read in as that one chip).
 
 **Placement tags on every session start (operator check).** A session
 started through `POST /api/sessions/start` (REST, the MCP `start_session`

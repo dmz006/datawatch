@@ -674,6 +674,12 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"tags_menu_placement",
 		"placement_tag_tip",
 		"sessions_group_untagged",
+		// v9.159.0 — the two labeled placement facts (tile/card) + the Model axis.
+		"sessions_runs_on",
+		"sessions_model_on",
+		"sessions_runs_on_tip",
+		"sessions_model_on_tip",
+		"sessions_group_model",
 		"dash_filter_placement_all",
 		"dash_filter_placement_axis",
 		"settings_placement_group",

@@ -206,6 +206,25 @@ test('state / node / project axes: complete, sorted, correctly counted', (t) => 
   assert.equal(odd[0].key, 'unknown');
 });
 
+// ── model axis: where the session's model is served ────────────────────────
+test('the model axis groups by the model placement, ungrouped when unknown', (t) => {
+  const sbx = freshSandbox();
+  const sessions = [
+    { id: 'pi', full_id: 'local/pi', backend_family: 'pi-prompt', compute_node_ref: 'pi-node-a' },
+    { id: 'ol', full_id: 'local/ol', backend_family: 'ollama', compute_node_ref: 'pi-node-a' },
+    { id: 'cc', full_id: 'local/cc', backend_family: 'claude-code', llm_ref: 'claude-opus-4' },
+    { id: 'sh', full_id: 'local/sh', backend_family: 'shell' }, // no known model
+  ];
+  const g = sbx._sessionsGroupSessions(sessions, { axis: 'model' });
+  // pi + ollama share the same compute node; Claude is Anthropic cloud; the
+  // shell session has no model fact, so it lands in the ungrouped bucket.
+  assert.deepEqual(plain(g.map(x => x.key)), ['Anthropic cloud', 'pi-node-a', 'ungrouped']);
+  assert.equal(g.find(x => x.key === 'pi-node-a').count, 2);
+  assert.equal(g.find(x => x.key === 'Anthropic cloud').count, 1);
+  assert.equal(g.find(x => x.key === 'ungrouped').count, 1);
+  assert.equal(sbx._sessionsGroupLabel('ungrouped', { axis: 'model' }), 'Ungrouped');
+});
+
 // ── tag axis label + registry name ───────────────────────────────────────
 test('group labels: registry name when known, raw key otherwise, ungrouped', (t) => {
   const sbx = freshSandbox();
@@ -290,10 +309,12 @@ test('group picker: axes + registry prefixes + current selection', (t) => {
   const sbx = freshSandbox();
   run(sbx, "_tagsState.list = [{ name: 'ops:cron' }, { name: 'ops:watch' }, { name: 'data:etl' }, { name: 'infra:ci' }]");
   const html = sbx.renderSessionsGroupPicker(null);
-  for (const v of ['', 'state', 'node', 'project', 'tag', 'automaton', 'tag|ops:', 'tag|data:', 'tag|infra:']) {
+  for (const v of ['', 'state', 'node', 'model', 'project', 'tag', 'automaton', 'tag|ops:', 'tag|data:', 'tag|infra:']) {
     assert.ok(html.includes(`value="${v}"`) || v === '', 'option ' + v);
   }
   assert.ok(html.includes('Tag prefix'), 'prefix optgroup label');
+  assert.ok(html.includes('value="tag|ops:"'),'prefix option present');
+  assert.ok(html.includes('Tag: ops'), 'tag-prefix options are labeled "Tag: <prefix>"');
 
   const sel = sbx.renderSessionsGroupPicker({ axis: 'tag', tagPrefix: 'ops:' });
   assert.ok(sel.includes('value="tag|ops:" selected'), 'current axis selected');
@@ -309,6 +330,53 @@ test('group picker: axes + registry prefixes + current selection', (t) => {
   sbx.setSessionGroupBy('bogus');
   assert.equal(run(sbx, 'state.sessionGroupBy'), null);
 });
+
+// One grouping, one name: the tag prefix is the tag that names the group,
+// not a second spelling of a built-in axis.
+test('group picker hides tag prefixes that duplicate a built-in axis', () => {
+  const sbx = freshSandbox();
+  run(sbx, "_tagsState.list = [{ name: 'node:a1' }, { name: 'node:b2' }, { name: 'project:alpha' }, { name: 'compute:gpu-1' }]");
+  const html = sbx.renderSessionsGroupPicker(null);
+  assert.ok(html.includes('value="tag|compute:"'), 'an ordinary prefix is offered');
+  assert.ok(html.includes('Tag: compute'), 'labeled "Tag: compute"');
+  assert.ok(!/value="tag\|node:"/.test(html), 'node: duplicates the Node axis — hidden');
+  assert.ok(!/value="tag\|project:"/.test(html), 'project: duplicates the Project axis — hidden');
+
+  // A saved choice that used a duplicate prefix reads as the built-in axis.
+  assert.equal(run(sbx, '_sessionsGroupValidate({axis:"tag", tagPrefix:"node:"}).axis'), 'node');
+  assert.equal(run(sbx, '_sessionsGroupValidate({axis:"tag", tagPrefix:"node:"}).tagPrefix'), '');
+  assert.equal(run(sbx, '_sessionsGroupValidate({axis:"tag", tagPrefix:"project:"}).axis'), 'project');
+  // An ordinary prefix passes through untouched.
+  assert.equal(run(sbx, '_sessionsGroupValidate({axis:"tag", tagPrefix:"compute:"}).axis'), 'tag');
+  assert.equal(run(sbx, '_sessionsGroupValidate({axis:"tag", tagPrefix:"compute:"}).tagPrefix'), 'compute:');
+});
+
+test('a saved tag prefix still selects its "Tag: <prefix>" entry', () => {
+  const store = makeStore();
+  store.map['dw_sessions_group_axis'] = 'compute'; // saved before the Tag prefix select
+  const { sbx, cap } = paintedSandbox(store);
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'tag|compute:', 'saved prefix restores the right entry');
+  assert.ok(cap.html.includes('value="tag|compute:" selected'), 'that entry is the selected option');
+  assert.ok(cap.html.includes('Tag: compute'), 'the entry reads "Tag: compute"');
+  // The registry lists no compute: tag at all — the entry must stay (it must
+  // not snap to "No grouping"), even across re-renders.
+  sbx.renderSessionsView();
+  assert.equal(selectedGroupOption(cap.html), 'tag|compute:');
+  sbx.setSessionGroupBy('');
+  assert.equal(selectedGroupOption(cap.html), '', 'clearing selects "No grouping"');
+});
+
+test('one grouping control: the gear placement control and its handler are gone', () => {
+  const store = makeStore();
+  const { sbx, cap } = paintedSandbox(store);
+  sbx.renderSessionsView();
+  assert.equal(sbx.setSessionsGroupAxis, undefined, 'the old gear setter is removed');
+  assert.equal(sbx._sessionsGroupControl, undefined, 'the old gear control is removed');
+  assert.ok(!cap.html.includes('group-axis-control'), 'no gear-control markup in the page');
+  const selects = cap.html.match(/<select id="sessions-group-select"/g) || [];
+  assert.equal(selects.length, 1, 'exactly one "Group by" select on the page');
+});;
 
 // ── 5. collapse persistence (per device) ─────────────────────────────────
 test('collapsed groups persist on device and survive re-render', (t) => {
@@ -625,7 +693,7 @@ test('group select choice is restored after a reload and blocked storage is tole
   assert.equal(selectedGroupOption(cap.html), 'node');
 });
 
-test('legacy placement axis and the group select share one source of truth', () => {
+test('the shared group choice: the legacy axis migrates and the select drives it', () => {
   const store = makeStore();
   store.map['dw_sessions_group_axis'] = 'ops';   // legacy saved axis
   const { sbx, cap } = paintedSandbox(store);

@@ -3,7 +3,7 @@ docs:
   index: true
   topics: [sessions, pwa, tags, automation, mcp, cli]
 exec_params:
-  - {name: group_by, required: false, description: "Group axis: tag, state, node, project or automaton"}
+  - {name: group_by, required: false, description: "Group axis: tag, state, node, model, project or automaton"}
   - {name: tag_prefix, required: false, description: "With group_by=tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group"}
 exec_steps:
   - tool: list_sessions
@@ -20,7 +20,7 @@ exec_steps:
 # How-to: Sessions — tiles, grouping and saved views
 
 The Sessions page can now be read three ways — **list**, **tiles** or
-**compact** — and cut by **group**: by tag, tag prefix, state, node, project,
+**compact** — and cut by **group**: by tag, tag prefix, state, node, model, project,
 or by the Automaton that spawned each session. A session's placement tags
 (compute:, peer:, backend:, lane:, role:, project:) make the tag axis double
 as a placement browser, and a sub-task nesting under the owning Automaton
@@ -42,7 +42,7 @@ of that:
 1. **View mode** — how each session is drawn: `list` (one card per row),
    `tiles` (a grid of work tiles that stacks left-to-right and up-down), or
    `compact` (the same tile grid drawn at a smaller size).
-2. **Group by** — none, or one axis: `tag`, `state`, `node`, `project` or
+2. **Group by** — none, or one axis: `tag`, `state`, `node`, `model`, `project` or
    `automaton`. On the tag axis you can narrow to a tag prefix, so only tags
    under that prefix form groups and everything else collects in the
    ungrouped group.
@@ -140,10 +140,23 @@ often than search:
 - **Group by** — the axis picker described under [Grouping](#grouping).
 - **Views** — your saved views: save the current cut under a name, apply,
   rename or delete one (see [Saved views](#saved-views)).
-- **Status chips** — the full set of state chips (running, waiting_input,
-  rate_limited, complete, failed, killed). The same section
-  also holds the **watched only** toggle, the **Backend** chips and, when
-  you use tags, the **Tags** filter (described next).
+- **Status chips** — one chip per state that is present in the list
+  (running, waiting, stalled, rate-limited, complete, failed, killed),
+  each with its count; a state whose count is zero stays off the sheet
+  unless you have it selected. The group is a **multi-select set**
+  (nothing picked = all): pick any number of states and the list keeps
+  the sessions matching *any* of them, tap an active chip again to
+  remove exactly that one, and the **All** chip — active while nothing is
+  picked — clears the whole group. The same section holds the
+  **watched only** toggle (plain on/off) and the **Backend** chips,
+  which are a second multi-select set over the backend families present
+  in the list with the same toggle-off and **All** behaviour; the two
+  groups apply together (a session must match a picked state *and* a
+  picked backend). The **Backend** group appears only when two or more
+  backend families are present in the list, and it never touches the
+  free-text search box. When you use tags, the section also carries the
+  **Tags**
+  filter (described next).
 - **The floating "Start session" button clears out while the sheet is
   open.** On a phone the sheet is a bottom sheet, and while it is open the
   floating **Start session** button (bottom right) is hidden — it is one of
@@ -159,6 +172,14 @@ Close the sheet by tapping outside it, by pressing its close button, or by
 pressing **Escape**. Your choices apply as you make them, so closing needs no
 separate save.
 
+While the sheet is open it is never redrawn out from under you: a list
+refresh (timer or live) updates the session list behind the sheet and
+patches only the numbers and options inside the sheet — the same controls,
+with their values, focus and scroll position kept. While a sheet control is
+engaged — an open dropdown or a search box you are typing in — even that
+in-place patch waits, then runs once when the control is released; the tag
+search boxes in particular keep focus and cursor as you type.
+
 #### The Tags filter
 
 A busy daemon carries hundreds of tags — one per Automaton, stage and task —
@@ -168,6 +189,19 @@ so the Tags section does not draw one chip per tag. It is built like this:
   insensitive; it matches the tag's value, its axis, your tag's name and the
   full tag name). Typing keeps the cursor in the box. While you search every
   matching group is open and shows all of its matches.
+- **Names lead, ids trail** — no list in the sheet leads with a raw id. A
+  chip's main text is the readable name and the id rides behind it as small
+  secondary text (the tooltip is "Name (id)", never the id alone): your
+  operator tags show their name, the **Project** group shows the registered
+  project name or the folder name (the directory path, when present, is the
+  secondary text — a path is never the main text), the **Compute node**
+  group shows the node's registered name with the recorded key as secondary
+  text, and the **Find an Automaton** picker shows the title first with the
+  id small beside it. The selected-tags chips above the list follow the same
+  rule (an Automaton shows its title, not its id). When a lookup resolves
+  to no name the chip says **unnamed** with the id small — a bare id is
+  never the primary text. Filtering is untouched: selections, match mode,
+  saved views and the tags themselves all key on the tag's value as before.
 - **Groups** — chips sit under collapsible headers in a fixed order: **Kind**,
   **Role**, **Lane**, **Compute node**, **Project**, **Your tags**, **Other**.
   Each header shows how many tags it holds for the current list (the
@@ -179,21 +213,35 @@ so the Tags section does not draw one chip per tag. It is built like this:
   looking at carry that tag (own, inherited and placement tags together), not
   the daemon-wide inventory count. A tag no listed session carries is left
   out unless you have it selected, so you can always deselect it.
+- **The Compute node group is named per node, from the list itself** — its
+  entries are built from the sessions you are looking at, not from the tag
+  inventory: one entry per node, a local host under its real hostname and a
+  federated peer under the peer name it is registered under. A list that
+  holds only peers' sessions therefore shows exactly those peers — a peer's
+  session carries no `compute:` tag of its own, so an inventory of tag
+  values cannot see it — and a local session that recorded the host under an
+  alias merges into that host's single entry with the counts summed. There
+  is no "local" or "all" entry: the group uses the same names as
+  [grouping by node](#the-node-axis-in-the-web-ui).
 - **No chips for Automatons, stages and tasks** — the per-Automaton,
   per-stage and per-task system tags (`automaton:`, `stage:`, `task:`,
   `story:`) never get a chip. Reach one Automaton through the **Automaton**
   picker under the chips instead: type in **Find an Automaton** to narrow by
   title or id, then tap a row. Rows show the title first and the id small
-  beside it; selected rows come first, and about eight rows show until you
-  narrow the search. For stages and tasks use [Grouping](#grouping).
+  beside it (an Automaton with no title in the registry shows **unnamed**
+  with the id small, never the bare id); selected rows come first, and about
+  eight rows show until you narrow the search. For stages and tasks use
+  [Grouping](#grouping).
 - **Any / all and Clear** — the match mode and the clear action sit below the
   picker and work as before.
 
-With the sheet closed, the selected tags show as a compact row of small
-chips above the session list, each with a **✕** to remove just that tag (an
-Automaton shows its title, not its id) and a **Clear all** control. The row
-is absent when no tag is selected, and a stored selection or an active tag
-filter is not changed by any of this: it is how the Tags section is drawn,
+With the sheet closed, the picked **Status** chips, picked **Backend**
+chips and selected tags show together as a compact row of small chips
+above the session list, each with a **✕** to remove just that one (an
+Automaton shows its title, not its id) and a **Clear all** control that
+empties all three groups at once. The row is absent while nothing is
+picked in any of the three groups, and a stored selection or an active tag
+filter is not changed by any of this: it is how the groups are drawn,
 with no new setting, endpoint, MCP tool, CLI command or chat verb.
 
 ## View modes
@@ -203,7 +251,12 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
 
 - **List** is the classic one-card-per-row layout. It stays the default on
   phone-width viewports (narrower than 600 px), where the dense rows read
-  better on a small screen.
+  better on a small screen. Each card carries the same labelled placement
+  facts as a tile — **Runs on** (the real host name, or the peer's name
+  when the session is federated) and **Model on** (the compute node serving
+  the model for pi and Ollama, **Anthropic cloud** for a Claude session) —
+  each line left out when it cannot be named, each with a hover title that
+  says what it means.
 - **Tiles** is the grid: work tiles that stack left-to-right as well as
   up-down, reflowing with the window width. This is the default on wider
   viewports. Each tile shows:
@@ -211,7 +264,11 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
   - a state chip (running / waiting_input / rate_limited / complete /
     failed / killed),
   - `backend · model` (e.g. `claude-code · claude-opus`),
-  - the node or peer the session runs on,
+  - **Runs on** — the real name of the host the session runs on (a federated
+    session names its peer, never the word “local”), and **Model on** — where the
+    model is served, the compute node for pi and Ollama or **Anthropic cloud** for a
+    Claude session (the line is left out when it cannot be named). Each fact
+    carries a hover title that says what it means,
   - its tags (own + inherited; more than fit collapse into a shared
     overflow chip — on a phone-width screen the tags collapse to a single
     **+N** chip, where N is how many tags are hidden),
@@ -228,7 +285,7 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
   The menu stays visible in every grid mode precisely because the tile
   carries menu items.
 - **Compact** is the same tile grid as Tiles at a smaller size: the same
-  tiles, with the same content (name, state chip, `backend · model`, node,
+  tiles, with the same content (name, state chip, `backend · model`, the Runs on and Model on facts,
   tags, last-activity time and lifecycle bar) and the same **⋯ overflow
   menu**, laid out in the same multi-column grid with smaller tiles, tighter
   padding and smaller type, so more sessions fit on screen. It never turns
@@ -270,14 +327,22 @@ This is a browser-side change only: no setting, endpoint, MCP tool, CLI
 command or chat verb changed, and the stored `cs_sessions_view_mode` value is
 read as before.
 
-### The state filter
+### The state and backend filters
 
-The page has no count line above the list. The status chips in the Filters sheet
-**filter the page to that state**, and choosing **All** clears the selection. The chip
-choice is remembered per device (`cs_session_state_chip`). Picking a
-historical state (complete, failed, killed, …) also auto-enables the History
-toggle so those sessions actually become visible instead of silently
-filtering to nothing.
+The page has no count line above the list. The **Status** and **Backend**
+chip groups in the Filters sheet work the way the Tags group works:
+each is a set (empty means "all"), several picks match any of the picked
+values, a second tap on an active chip removes exactly that chip, and the
+group's **All** chip clears the whole group. Picking a historical state
+(complete, failed, killed, …) also auto-enables the History toggle so
+those sessions actually become visible instead of silently filtering to
+nothing.
+
+The choices are remembered per device in local storage: the status set
+under `cs_session_state_chips` and the backend set under
+`cs_session_backend_sel`. A pick stored the old single-way under
+`cs_session_state_chip` by an earlier build is read in as that one chip,
+so a device moving to the new build keeps its filter.
 
 ### "Show more" paging
 
@@ -293,7 +358,7 @@ its existing load-more behaviour for the non-paged view.
 The **Group by** picker (in the Filters sheet) offers:
 
 ```
-No grouping │ State │ Node │ Project │ Tag │ Tag(automation:) │ Tag(compute:) … │ Automaton
+No grouping │ State │ Node │ Model │ Project │ Tag │ Tag(automation:) │ Tag(compute:) … │ Automaton
 ```
 
 Each option groups on exactly one thing, and a session with no match for the
@@ -322,6 +387,7 @@ placement choice saved before this change is picked up once and carried over.
 | `tag` + prefix | the first tag carrying that prefix | Only tags with the prefix (e.g. `automation:`) form groups; everything else goes to the ungrouped group. This is how you get the "just the automation cut" or "just the compute-node cut". |
 | `state` | the session's state | One group per state (running, waiting_input, complete, …) — handy for a quick "what is stuck" scan. |
 | `node` | the node that runs the session | Lists sessions from every node, this daemon and federation peers, each under the node that runs it. In the web UI a peer's session lands under the peer's name and every session of this daemon under its real hostname; the header shows the node's name. In the grouped read (REST, MCP, CLI, comm) the key is the session's hostname, and a session with no hostname of its own is keyed under this daemon's hostname because it ran here. The ungrouped group catches only a row with no node name at all. See [the node axis](#the-node-axis-in-the-web-ui). |
+| `model` | where the session's model is served | The PWA-only **Model on** fact as a group: pi/Ollama sessions gather under the compute node that serves them (the same name as the tile's Model on line), every Claude session lands under **Anthropic cloud**, and a session whose model cannot be named lands in the ungrouped group. This axis groups the model's home, not the session's host — the **node** axis does that. |
 | `project` | the datawatch project the session belongs to | Read in this order: the project of the session's Automaton (its worktree is mapped back to the repository it belongs to and matched against the registered projects); then a `project:` tag on the session (several tags: the first in sorted order); then the registered project of the session's own working folder, mapped the same way, so a session in a worktree lands with the repository's sessions. When an Automaton is known but no project resolves, the group is that Automaton's title, never the worktree folder. The working folder is used only when no project or Automaton is known (trailing slashes are dropped, so `/work/app` and `/work/app/` form one group); a session with none of these lands in the ungrouped group. The same rule applies on REST, MCP, CLI, the comm verb and the PWA. |
 | `automaton` | the Automaton the session belongs to | **Story and task nesting**: sessions sit under the Automaton block, and inside it under their story block, with the task sessions nested in their story. In the grouped read (CLI, comm) each block also carries a done/total session tally. Sessions with no Automaton land in the ungrouped group. In the web UI, an Automaton's task sessions that run on a federation peer are included too (see [the node axis](#the-node-axis-in-the-web-ui)). |
 
@@ -622,12 +688,14 @@ in your tag registry.
 | Control | Where | Per-device? | Notes |
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
+| Server picker (All / this server / each federated peer) | PWA toolbar chips | no — page-wide, not per device; defaults to the local server on load | single-select: chooses which server's sessions the page reads; **All** aggregates local + federated; not one of the sheet's filters |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
 | View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
-| State filter | PWA, Filters sheet | chip choice per device (`cs_session_state_chip`) | historical picks auto-enable History |
+| State filter | PWA, Filters sheet | status chip set per device (`cs_session_state_chips`; an older single pick in `cs_session_state_chip` is read in) | multi-select set: union of the picked states, second tap removes one chip, **All** clears the group; historical picks auto-enable History |
+| Backend filter | PWA, Filters sheet | backend chip set per device (`cs_session_backend_sel`) | multi-select set: union of the picked backend families, second tap removes one chip, **All** clears the group; leaves the search box untouched |
 | Saved views (mode + axis + prefix + filter) | PWA Filters sheet | yes (`cs_sessions_saved_views`) | save / apply / rename / delete; names trimmed and capped |
 | Tile ⋯ menu actions | PWA, per tile | no | Stop / Commands (waiting_input) / Restart / Delete / Summary (if summarizer on) / Watch / Mute |
 | Progress on tiles; done/total on automaton blocks | PWA tile bar; grouped read (CLI, comm) | no | tile bar is lifecycle-based; automaton blocks carry their done/total terminal-session tally |
@@ -660,12 +728,14 @@ in your tag registry.
 - **The list looks short and I did not filter.** Check the badge on the
   **Filters** button and the search box: a remembered search or an active
   filter narrows the list (the `N of M` count shows it). Clear the search
-  text and the status chips to see everything.
+  text and tap **All** in the **Status** and **Backend** groups (or
+  **Clear all** in the chip row above the list) to see everything.
 - **A group says N but I count fewer rows.** The group body is paged —
   expand with its **Show more** (shown/total) step; the header count is
   the full group, not the rendered page.
 - **`invalid group_by` from the API/CLI.** The axis must be exactly one of
-  `tag`, `state`, `node`, `project`, `automaton`.
+  `tag`, `state`, `node`, `project`, `automaton`. `model` is a PWA-only axis:
+  it groups the **Model on** fact on the web page and is not an API/CLI value.
 - **Project groups show a folder path instead of a project name.** The session has no `project:` placement tag and no owning Automaton project, so it falls back to its working folder. Tag the session with a `project:` tag to group it by project.
 
 ## Related guides

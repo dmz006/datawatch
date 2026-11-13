@@ -2762,7 +2762,9 @@ function tryUpdateSessionsInPlace() {
   const list = document.querySelector('.session-list');
   if (!list) return false; // no list rendered yet
   if (state.selectMode) return false; // checkbox layout differs per render
-  if (state.sessionFilter) return false; // filtered set is highly dynamic
+  if (state.sessionFilter) return false; // free-text filter is dynamic
+  if (_sessionStateSel().length) return false; // status set filter is dynamic
+  if (_sessionBackendSel().length) return false; // backend set filter is dynamic
 
   // Compute visible set the same way renderSessionsView does.
   const now = Date.now();
@@ -5240,7 +5242,7 @@ function _isPeerRow(s) {
 // read as well.
 function _sessionsNodeAxisNeedsPeers() {
   const by = _sessionsGroupValidate(state.sessionGroupBy);
-  return !!(by && (by.axis === 'node' || by.axis === 'automaton') && _sessionsLocalMode());
+  return !!(by && (by.axis === 'node' || by.axis === 'model' || by.axis === 'automaton') && _sessionsLocalMode());
 }
 // _loadPeerSessionsForNodes merges the peers' rows from the aggregated read
 // into state.sessions (this daemon's own rows are left as they are) and drops
@@ -5517,11 +5519,60 @@ function _sessionTagRegistryName(entry) {
   return (reg && reg.name) ? String(reg.name) : '';
 }
 
-// _sessionTagEntryLabel is the chip text: the value for a placement tag, the
-// registry name (else the id) for an operator tag.
+// _sessionsChipLabel is the label rule for every list in the Filters sheet
+// and the compact summary row: a human-readable name as the primary text,
+// the id only as a small secondary text; when no name is known the primary
+// text is the localized “unnamed” word and the secondary text is the id's
+// first 8 characters. A bare id is never the primary text.
+function _sessionsChipLabel(name, id) {
+  name = String((name == null) ? '' : name).trim();
+  id = String((id == null) ? '' : id).trim();
+  if (!name || name === id) {
+    return { primary: _stx('sessions_filters_unnamed', 'unnamed'), secondary: id ? id.slice(0, 8) : '' };
+  }
+  return { primary: name, secondary: id };
+}
+window._sessionsChipLabel = _sessionsChipLabel;
+
+// _sessionTagProjectParts resolves a project placement entry: the registered
+// project name when known, else the folder name — the stored value is a
+// directory, so a directory is never the primary text; the directory then
+// reads as the small secondary text.
+function _sessionTagProjectParts(value) {
+  const dir = String(value || '');
+  const folder = String(dir).split('/').filter(Boolean).pop() || dir;
+  let projName = '';
+  try {
+    const maps = _sessionsGroupTitleMaps();
+    projName = (dir && maps.project && maps.project[String(dir).replace(/\/+$/, '')]) || '';
+  } catch (_) { /* titles not loaded: the folder name is enough */ }
+  if (projName && projName !== dir) return { primary: projName, secondary: dir };
+  if (folder && folder !== dir) return { primary: folder, secondary: dir };
+  return { primary: dir, secondary: '' };
+}
+window._sessionTagProjectParts = _sessionTagProjectParts;
+
+// _sessionTagEntryLabel is the chip's label parts { primary, secondary }: the
+// value for a placement tag (a project entry resolves to the registered
+// project name or the folder name), the registry name for an operator tag.
+// A bare tag id is never the primary text.
 function _sessionTagEntryLabel(entry) {
-  if (entry.axis) return String(entry.value || entry.tag);
-  return _sessionTagRegistryName(entry) || String(entry.tag);
+  const e = entry || {};
+  if (e.axis) {
+    if (e.axis === 'project') return _sessionTagProjectParts(e.value);
+    if (e.axis === 'compute') {
+      const key = String(e.value || e.tag || '');
+      let nm = key;
+      try {
+        const maps = _sessionsGroupTitleMaps();
+        if (key && maps.node && maps.node[key]) nm = String(maps.node[key]);
+      } catch (_) { /* titles not loaded: the value is the name */ }
+      return { primary: _sessionsChipLabel(nm, '').primary, secondary: (nm !== key) ? key : '' };
+    }
+    const name = String(e.value || '');
+    return name ? _sessionsChipLabel(name, '') : _sessionsChipLabel('', String(e.tag || ''));
+  }
+  return _sessionsChipLabel(_sessionTagRegistryName(e), String(e.tag || ''));
 }
 
 // _sessionTagMatchesQuery: case-insensitive substring over value, axis,
@@ -5531,6 +5582,63 @@ function _sessionTagMatchesQuery(entry, q) {
   const hay = [entry.value, _sessionTagAxisOf(entry), _sessionTagRegistryName(entry), entry.tag].map(x => String(x || '').toLowerCase());
   return hay.some(h => h.indexOf(q) >= 0);
 }
+
+// _sessionComputeNodeNames returns the node names a session resolves to for
+// the compute axis, most authoritative first: the canonical node key
+// (_sessionsNodeKey — a peer by its peer name, a local row by the host's real
+// name, never the word 'local' or 'all'), then the value each of its tags
+// stamped as a compute node. Aliases of one host collapse onto the host's
+// real name, and peer rows resolve even when they carry no compute tag at all.
+function _sessionComputeNodeNames(s) {
+  if (!s) return [];
+  const out = [];
+  const push = v => {
+    v = String(v || '');
+    if (!v || v === 'local' || v === 'all' || v === SESSIONS_GROUP_UNGROUPED) return;
+    if (out.indexOf(v) < 0) out.push(v);
+  };
+  let nk = '';
+  try { nk = _sessionsNodeKey(s); } catch (_) { nk = ''; }
+  push(nk);
+  const lists = [s.tags, s.system_tags, s.inherited_tags];
+  for (let i = 0; i < lists.length; i++) {
+    if (!Array.isArray(lists[i])) continue;
+    const L = lists[i];
+    for (let j = 0; j < L.length; j++) {
+      const n = String(L[j] || '');
+      if (n.indexOf('compute:') === 0) push(n.slice('compute:'.length));
+    }
+  }
+  return out;
+}
+window._sessionComputeNodeNames = _sessionComputeNodeNames;
+
+// _sessionsComputeGroupEntries is the compute axis's chip entries, built from
+// the sessions themselves in state.sessions rather than from the raw
+// "compute:<value>" tag values the tag inventory reports. A peer's sessions
+// (rows tagged s.server=<peer> by the aggregated read) never carry a compute
+// tag at all, so the inventory cannot know them; and a local session whose
+// compute tag is an alias of the local host would otherwise split one node
+// into several chips. Keying each session by _sessionComputeNodeNames collapses
+// both problems to the very name the node grouping already uses: one entry per
+// node, aliases merged, peers listed by the name they are registered under.
+function _sessionsComputeGroupEntries(q) {
+  const needle = String(q || '').trim().toLowerCase();
+  const by = {};
+  (state.sessions || []).forEach(s => {
+    if (!s) return;
+    const names = _sessionComputeNodeNames(s);
+    if (!names.length) return;
+    const key = names[0];
+    if (needle && String(key).toLowerCase().indexOf(needle) < 0) return;
+    by[key] = (by[key] || 0) + 1;
+  });
+  const out = [];
+  Object.keys(by).forEach(k => out.push({ entry: { tag: 'compute:' + k, axis: 'compute', value: k }, count: by[k] }));
+  out.sort((a, b) => (b.count - a.count) || a.entry.value.localeCompare(b.entry.value));
+  return out;
+}
+window._sessionsComputeGroupEntries = _sessionsComputeGroupEntries;
 
 // _sessionTagVisibleGroups returns the chip groups for the current search:
 // [{ key, entries: [{ entry, count }] }], tags sorted by count then label,
@@ -5546,14 +5654,20 @@ function _sessionTagVisibleGroups() {
   entries.forEach(e => {
     if (!e || !e.tag || seen.has(e.tag) || _sessionTagIsSystemScoped(e)) return;
     seen.add(e.tag);
+    // The compute axis is rebuilt per node from state.sessions below; its raw
+    // "compute:<value>" tags would split the local host by alias and leave
+    // every peer out (they carry no compute tag).
+    if (_sessionTagAxisOf(e) === 'compute') return;
     const n = counts[e.tag] || 0;
     if (n === 0 && sel.indexOf(e.tag) < 0) return;
     if (!_sessionTagMatchesQuery(e, q)) return;
     (groups[_sessionTagGroupOf(e)] = groups[_sessionTagGroupOf(e)] || []).push({ entry: e, count: n });
   });
+  const compute = _sessionsComputeGroupEntries(q);
+  if (compute.length) groups.compute = compute;
   return _SESSION_TAG_GROUPS.filter(k => groups[k] && groups[k].length).map(k => ({
     key: k,
-    entries: groups[k].sort((a, b) => (b.count - a.count) || _sessionTagEntryLabel(a.entry).localeCompare(_sessionTagEntryLabel(b.entry))),
+    entries: groups[k].sort((a, b) => (b.count - a.count) || _sessionTagEntryLabel(a.entry).primary.localeCompare(_sessionTagEntryLabel(b.entry).primary)),
   }));
 }
 
@@ -5570,7 +5684,13 @@ const _SESSION_TAG_GROUP_LABELS = {
 function _sessionTagChipHTML(item) {
   const e = item.entry;
   const on = _sessionTagSelection().indexOf(e.tag) >= 0;
-  return `<button type="button" class="backend-filter-badge sessions-tag-chip ${on ? 'active' : ''}" aria-pressed="${on ? 'true' : 'false'}" title="${escHtml(t('session_tag_chip_tip', [e.tag, item.count]))}" onclick="sessionTagChipToggle('${escJsAttr(e.tag)}')">${escHtml(_sessionTagEntryLabel(e))}<span class="badge-count">${item.count}</span></button>`;
+  const lbl = _sessionTagEntryLabel(e);
+  const idText = (lbl.secondary && lbl.secondary !== lbl.primary) ? lbl.secondary : '';
+  // The tooltip starts with the name; the id rides in parentheses after it
+  // so a bare id never leads a tooltip.
+  const tipName = idText ? (lbl.primary + ' (' + idText + ')') : lbl.primary;
+  const idHtml = idText ? `<span class="sessions-chip-id">${escHtml(idText)}</span>` : '';
+  return `<button type="button" class="backend-filter-badge sessions-tag-chip ${on ? 'active' : ''}" aria-pressed="${on ? 'true' : 'false'}" title="${escHtml(t('session_tag_chip_tip', [tipName, item.count]))}" onclick="sessionTagChipToggle('${escJsAttr(e.tag)}')">${escHtml(lbl.primary)}<span class="badge-count">${item.count}</span>${idHtml}</button>`;
 }
 
 // _sessionTagResultsHTML draws only the part that changes while typing: the
@@ -5592,7 +5712,7 @@ function _sessionTagResultsHTML() {
     const head = `<button type="button" class="sessions-tag-axis-head" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" onclick="sessionTagAxisToggle('${g.key}')"><span class="sessions-tag-caret" aria-hidden="true">${open ? '&#9662;' : '&#9656;'}</span><span class="sessions-tag-axis-name">${escHtml(label)}</span><span class="badge-count">${g.entries.length}</span></button>`;
     if (!open) return `<div class="sessions-tag-axis" data-axis="${g.key}">${head}</div>`;
     const more = (!searching && g.entries.length > SESSION_TAG_AXIS_PREVIEW)
-      ? `<button type="button" class="sessions-tag-more" onclick="sessionTagAxisShowAll('${g.key}')">${escHtml(ui.expanded[g.key] ? _stx('sessions_filters_tag_show_fewer', 'Show fewer') : _stx('sessions_filters_tag_show_all', 'Show all (%1$s)').replace('%1$s', String(g.entries.length)))}</button>`
+      ? `<button type="button" class="sessions-tag-more" aria-expanded="${ui.expanded[g.key] ? 'true' : 'false'}" onclick="sessionTagAxisShowAll('${g.key}')">${escHtml(ui.expanded[g.key] ? _stx('sessions_filters_tag_show_fewer', 'Show fewer') : _stx('sessions_filters_tag_show_all', 'Show all (%1$s)').replace('%1$s', String(g.entries.length)))}</button>`
       : '';
     return `<div class="sessions-tag-axis" data-axis="${g.key}">${head}<div class="sessions-tag-chips">${shown.map(_sessionTagChipHTML).join('')}${more}</div></div>`;
   }).join('');
@@ -5620,21 +5740,33 @@ function _sessionTagAutomatonRows() {
   };
   sel.forEach(add);
   entries.forEach(e => { if (e && e.tag && _sessionTagAxisOf(e) === 'automaton') add(e.tag); });
+  // Label rule: the title as primary text, the id as small secondary text;
+  // when no title is known the primary text is “unnamed” and the secondary
+  // text the id's first 8 characters — a bare id never leads.
+  rows.forEach(r => {
+    const lbl = _sessionsChipLabel(r.title, r.id);
+    r.title = lbl.primary;
+    r.idText = lbl.secondary;
+  });
   const hit = r => !q || r.title.toLowerCase().indexOf(q) >= 0 || r.id.toLowerCase().indexOf(q) >= 0;
   const picked = rows.filter(r => sel.indexOf(r.tag) >= 0).filter(hit);
-  const rest = rows.filter(r => sel.indexOf(r.tag) < 0).filter(hit).sort((a, b) => ((a.title ? 0 : 1) - (b.title ? 0 : 1)) || (a.title || a.id).localeCompare(b.title || b.id));
+  const rest = rows.filter(r => sel.indexOf(r.tag) < 0).filter(hit).sort((a, b) => (a.title.localeCompare(b.title) || a.id.localeCompare(b.id)));
   return picked.concat(rest);
 }
 
-// _sessionTagAutomatonResultsHTML draws the picker rows (not chips): title
-// as the primary text, the id as small secondary text.
+// _sessionTagAutomatonResultsHTML draws the picker rows (not chips): the
+// title as the primary text, the id as small secondary text; “unnamed” plus
+// the id's first 8 characters when no title is known.
 function _sessionTagAutomatonResultsHTML() {
   const rows = _sessionTagAutomatonRows();
   if (!rows.length) return `<div class="sessions-tag-empty">${escHtml(_stx('sessions_filters_tag_automaton_none', 'No Automaton matches'))}</div>`;
   const sel = _sessionTagSelection();
   return rows.slice(0, Math.max(SESSION_TAG_PICKER_LIMIT, rows.filter(r => sel.indexOf(r.tag) >= 0).length)).map(r => {
     const on = sel.indexOf(r.tag) >= 0;
-    return `<button type="button" class="sessions-tag-pick ${on ? 'active' : ''}" role="option" aria-selected="${on ? 'true' : 'false'}" onclick="sessionTagChipToggle('${escJsAttr(r.tag)}')"><span class="sessions-tag-pick-title">${escHtml(r.title || r.id)}</span>${r.title ? `<span class="sessions-tag-pick-id">${escHtml(r.id)}</span>` : ''}</button>`;
+    // The tooltip starts with the title; the id rides in parentheses after
+    // it so a bare id never leads a tooltip.
+    const tip = (r.idText && r.idText !== r.title) ? (r.title + ' (' + r.idText + ')') : r.title;
+    return `<button type="button" class="sessions-tag-pick ${on ? 'active' : ''}" role="option" aria-selected="${on ? 'true' : 'false'}" title="${escHtml(tip)}" onclick="sessionTagChipToggle('${escJsAttr(r.tag)}')"><span class="sessions-tag-pick-title">${escHtml(r.title)}</span>${r.idText ? `<span class="sessions-tag-pick-id">${escHtml(r.idText)}</span>` : ''}</button>`;
   }).join('');
 }
 
@@ -5646,7 +5778,9 @@ function _sessionTagAutomatonResultsHTML() {
 function _sessionTagFilterPanelHTML() {
   const inv = state._sessionTagInventory;
   const entries = (inv && inv.loaded) ? (inv.entries || []) : [];
-  if (!entries.length) return '';
+  // The compute group comes from state.sessions, not the inventory (peers are
+  // invisible to it), so paint the sheet as soon as either source has rows.
+  if (!entries.length && !_sessionsComputeGroupEntries('').length) return '';
   const ui = _sessionTagUI();
   const sel = _sessionTagSelection();
   const phTags = _stx('sessions_filters_tag_search_ph', 'Search tags');
@@ -5699,35 +5833,214 @@ window.sessionTagAxisShowAll = function(key) {
   _sessionTagPanelRepaint();
 };
 
-// _sessionTagSelectedLabel is the summary-chip text for a selected tag: an
-// Automaton shows its title, anything else its value or registry name.
+// _sessionTagSelectedLabel is the summary-chip label parts { primary,
+// secondary } for a selected tag: an Automaton shows its title, a project
+// entry the registered project name or the folder name, anything else its
+// value or registry name. A bare id is never the primary text.
 function _sessionTagSelectedLabel(tag) {
   tag = String(tag);
   if (tag.indexOf('automaton:') === 0) {
     const id = tag.slice('automaton:'.length);
     const info = _sessionsGroupTitleInfo(id, { axis: 'automaton' }, (state.sessions || []).filter(s => s && String(s.prd_id || s.automaton_id || '') === id));
-    return info.title || id;
+    const lbl = _sessionsChipLabel(info.title, info.id || id);
+    return { primary: lbl.primary, secondary: (lbl.secondary !== lbl.primary ? lbl.secondary : '') };
   }
   const inv = state._sessionTagInventory;
   const e = ((inv && inv.entries) || []).find(x => x && x.tag === tag) || { tag };
-  if (e.axis) return String(e.value || tag);
-  const i = tag.indexOf(':');
-  return _sessionTagRegistryName(e) || (i > 0 ? tag.slice(i + 1) : tag);
+  if (e.axis) {
+    if (e.axis === 'project') return _sessionTagProjectParts(e.value);
+    const name = String(e.value || '');
+    if (name) return { primary: name, secondary: '' };
+  }
+  const lbl = _sessionsChipLabel(_sessionTagRegistryName(e), tag);
+  return { primary: lbl.primary, secondary: (lbl.secondary !== lbl.primary ? lbl.secondary : '') };
 }
 
+// v9 — Status & Backend chips are multi-select SETS (empty = all).
+// Status selection lives in state.sessionStateChips; the legacy
+// single-select state.sessionStateChip stays in step as a reader of the
+// same choice. Backend selection lives in state.sessionBackendSel — its
+// own set, never the free-text search field. Both persist in localStorage.
+const SESSIONS_STATE_CHIPS_KEY = 'cs_session_state_chips';
+const SESSIONS_BACKEND_SEL_KEY = 'cs_session_backend_sel';
+
+function _sessionStateSel() {
+  const legacy = (typeof state.sessionStateChip === 'string') ? state.sessionStateChip : '';
+  const raw = Array.isArray(state.sessionStateChips) ? state.sessionStateChips : [];
+  const arr = raw.filter(c => c === 'active' || c === 'waiting' || c === 'done' || (c && String(c) && String(c) !== 'all'));
+  // Precedence: a true multi-select (2+ chips) is authoritative; otherwise
+  // the single-select legacy reader (state.sessionStateChip) is what the
+  // operator / tests set last — it resets the group when 'all' and picks a
+  // chip when any state name.
+  if (arr.length > 1) return arr;
+  if (legacy && legacy !== 'all') return [legacy];
+  if (arr.length === 1) return arr;
+  return [];
+}
+
+function _sessionStateSave(arr) {
+  try {
+    if (arr && arr.length) localStorage.setItem(SESSIONS_STATE_CHIPS_KEY, JSON.stringify(arr));
+    else localStorage.removeItem(SESSIONS_STATE_CHIPS_KEY);
+  } catch (_) { /* storage blocked: choice lives in memory for this page */ }
+}
+
+function _sessionMatchesState(sel, st) {
+  if (!sel || !sel.length) return true;
+  for (let i = 0; i < sel.length; i++) {
+    const c = sel[i];
+    if (c === 'active') { if (st === 'running' || st === 'rate_limited') return true; }
+    else if (c === 'waiting') { if (st === 'waiting_input') return true; }
+    else if (c === 'done') { if (DONE_STATES.has(st)) return true; }
+    else if (c === st) return true;
+  }
+  return false;
+}
+
+// Human-readable label for a status chip key (chips use state keys; legacy
+// keys map to their t() strings).
+function _sessionStateChipLabel(key) {
+  const k = 'session_chip_' + key;
+  const v = t(k);
+  return (v && v !== k) ? v : String(key);
+}
+
+function _sessionBackendSel() {
+  return (Array.isArray(state.sessionBackendSel) ? state.sessionBackendSel : []).filter(b => String(b) && String(b) !== 'all');
+}
+
+function _sessionBackendSave(arr) {
+  try {
+    if (arr && arr.length) localStorage.setItem(SESSIONS_BACKEND_SEL_KEY, JSON.stringify(arr));
+    else localStorage.removeItem(SESSIONS_BACKEND_SEL_KEY);
+  } catch (_) { /* storage blocked: choice lives in memory for this page */ }
+}
+
+// Is this free-text value a backend family (used to migrate legacy saved
+// views that stored the backend filter in the search box)?
+function _sessionBackendIsFamily(bt) {
+  const s = String(bt || '').trim().toLowerCase();
+  if (!s) return false;
+  const shorts = {
+    'claude-code': 1, 'opencode': 1, 'opencode-acp': 1, 'opencode-prompt': 1,
+    'openwebui': 1, 'ollama': 1, 'aider': 1, 'pi': 1, 'pi-prompt': 1, 'goose': 1,
+    'gemini': 1, 'shell': 1, 'council-virtual': 1, // GH#172 D64
+  };
+  if (shorts[s]) return true;
+  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  for (let i = 0; i < sessions.length; i++) {
+    if (sessions[i] && String(sessions[i].backend_family).toLowerCase() === s) return true;
+  }
+  return false;
+}
+
+// setSessionStateChip — the chip entry point (inline onclick target and
+// legacy API). Multi-select semantics: add an unselected state, remove a
+// selected one (second click removes), 'all' empties the group.
+function setSessionStateChip(chip) {
+  let next;
+  if (chip === 'all') {
+    next = [];
+  } else {
+    next = _sessionStateSel().slice();
+    const i = next.indexOf(chip);
+    if (i >= 0) next.splice(i, 1); else next.push(chip);
+  }
+  state.sessionStateChips = next;
+  // Legacy single-select mirror: one selection reads as that chip, else 'all'.
+  state.sessionStateChip = (next.length === 1) ? next[0] : 'all';
+  _sessionStateSave(next);
+  state.selectedSessions.clear();
+  // GATE finding (operator 2026-05-10): if the filter selects a historical
+  // state, auto-activate History so those sessions are visible.
+  const historical = ['complete', 'failed', 'killed', 'cancelled', 'archived'];
+  if (next.some(c => historical.indexOf(c) >= 0) && !state.showHistory) state.showHistory = true;
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.setSessionStateChip = setSessionStateChip;
+
+// setBackendFilter — its own multi-select toggle; the search box is left
+// alone, so "claude-code" as a chip no longer lands in the search field.
+function setBackendFilter(backend) {
+  let next;
+  if (backend === 'all') {
+    next = [];
+  } else {
+    next = _sessionBackendSel().slice();
+    const i = next.indexOf(backend);
+    if (i >= 0) next.splice(i, 1); else next.push(backend);
+  }
+  state.sessionBackendSel = next;
+  _sessionBackendSave(next);
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.setBackendFilter = setBackendFilter;
+
+// "All" chip click for either group — clears the whole group.
+function sessionsFilterClearGroup(which) {
+  if (which === 'backend') {
+    state.sessionBackendSel = [];
+    _sessionBackendSave([]);
+  } else {
+    state.sessionStateChips = [];
+    state.sessionStateChip = 'all';
+    _sessionStateSave([]);
+  }
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.sessionsFilterClearGroup = sessionsFilterClearGroup;
+
+// Summary-row "Clear all" — every chip group at once (Status, Backend,
+// Tags), back to the empty ("all") state.
+function sessionsSummaryClearAll() {
+  state.sessionStateChips = [];
+  state.sessionStateChip = 'all';
+  _sessionStateSave([]);
+  state.sessionBackendSel = [];
+  _sessionBackendSave([]);
+  if (typeof tagBrowseClear === 'function') tagBrowseClear('session');
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window.sessionsSummaryClearAll = sessionsSummaryClearAll;
+
+// v9 — the compact row above the session list (selected Status, Backend and
+// Tag chips) — see _sessionTagSelectedSummaryHTML below.
+
 // _sessionTagSelectedSummaryHTML is the compact row above the session list:
-// one small removable chip per selected tag plus a clear-all. Empty when
-// nothing is selected.
+// one small removable chip per selected tag plus a clear-all. Each chip's
+// primary text is the human-readable name (“unnamed” plus the id's first 8
+// characters when no name is known); the id rides as small secondary text.
+// Empty when nothing is selected.
 function _sessionTagSelectedSummaryHTML() {
-  const sel = _sessionTagSelection();
-  if (!sel.length) return '';
-  const chips = sel.map(tag => {
-    const label = _sessionTagSelectedLabel(tag);
-    const rm = _stx('sessions_filters_tag_remove', 'Remove %1$s').replace('%1$s', label);
-    return `<span class="sessions-tag-sel-chip"><span class="sessions-tag-sel-text">${escHtml(label)}</span><button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" onclick="sessionTagChipToggle('${escJsAttr(tag)}')">&#10005;</button></span>`;
-  }).join('');
+  const tagSel = _sessionTagSelection();
+  const stateSel = _sessionStateSel();
+  const backendSel = _sessionBackendSel();
+  if (!tagSel.length && !stateSel.length && !backendSel.length) return '';
+  let chips = '';
+  stateSel.forEach(key => {
+    const shown = _sessionStateChipLabel(key);
+    const rm = _stx('sessions_filters_status_remove', 'Remove %1$s').replace('%1$s', shown);
+    chips += `<span class="sessions-tag-sel-chip" data-filter-chip="status:${escHtml(key)}"><span class="sessions-tag-sel-text">${escHtml(shown)}</span><button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" aria-pressed="true" onclick="setSessionStateChip('${escJsAttr(key)}')">&#10005;</button></span>`;
+  });
+  backendSel.forEach(bt => {
+    const rm = _stx('sessions_filters_backend_remove', 'Remove %1$s').replace('%1$s', bt);
+    chips += `<span class="sessions-tag-sel-chip" data-filter-chip="backend:${escHtml(bt)}"><span class="sessions-tag-sel-text">${escHtml(bt)}</span><button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" aria-pressed="true" onclick="setBackendFilter('${escJsAttr(bt)}')">&#10005;</button></span>`;
+  });
+  tagSel.forEach(tag => {
+    const lbl = _sessionTagSelectedLabel(tag);
+    const idText = (lbl.secondary && lbl.secondary !== lbl.primary) ? lbl.secondary : '';
+    // The tooltip names the tag by its name; the id rides in parentheses
+    // after it so a bare id never leads a tooltip.
+    const tipName = idText ? (lbl.primary + ' (' + idText + ')') : lbl.primary;
+    const rm = _stx('sessions_filters_tag_remove', 'Remove %1$s').replace('%1$s', tipName);
+    const idHtml = idText ? `<span class="sessions-chip-id">${escHtml(idText)}</span>` : '';
+    chips += `<span class="sessions-tag-sel-chip" data-tag="${escHtml(tag)}"><span class="sessions-tag-sel-text">${escHtml(lbl.primary)}</span>${idHtml}<button type="button" class="sessions-tag-sel-x" title="${escHtml(rm)}" aria-label="${escHtml(rm)}" aria-pressed="true" onclick="sessionTagChipToggle('${escJsAttr(tag)}')">&#10005;</button></span>`;
+  });
   const clear = _stx('sessions_filters_tag_clear_all', 'Clear all');
-  return `<div class="sessions-tag-selected" role="group" aria-label="${escHtml(_stx('sessions_filters_tag_selected', 'Selected filters'))}">${chips}<button type="button" class="sessions-tag-sel-clear" onclick="tagBrowseClear('session')">${escHtml(clear)}</button></div>`;
+  return `<div class="sessions-tag-selected" role="group" aria-label="${escHtml(_stx('sessions_filters_tag_selected', 'Selected filters'))}">${chips}<button type="button" class="sessions-tag-sel-clear" onclick="sessionsSummaryClearAll()">${escHtml(clear)}</button></div>`;
 }
 
 // sessionTagChipToggle flips one inventory tag in the session tag selection.
@@ -5769,27 +6082,39 @@ function renderSessionsView() {
     if (!state.sessionFilter) state.sessionFilter = _sessionsSearchReadStored();
   }
   const filterText = (state.sessionFilter || '').toLowerCase();
-  // v7.0.0-alpha.22 — session-state filter chips (active / waiting /
-  // done / all). Persists in localStorage so the operator's choice
-  // survives page reloads. 'all' is the legacy behavior (gated by
-  // state.showHistory).
-  if (state.sessionStateChip === undefined) {
-    let storedChip = null;
-    try { storedChip = localStorage.getItem('cs_session_state_chip'); } catch (_) { storedChip = null; }
-    state.sessionStateChip = storedChip || 'all';
+  // v7.0.0-alpha.22 (multi-select) — status filter is a SET of chips:
+  // every selected state counts, any unselected state is hidden. Empty
+  // set = 'all'. Persists in localStorage; state.sessionStateChip is the
+  // legacy single-select reader of the same choice.
+  if (!Array.isArray(state.sessionStateChips)) {
+    let stored = null;
+    try { stored = localStorage.getItem(SESSIONS_STATE_CHIPS_KEY); } catch (_) { stored = null; }
+    const storedArr = (stored) ? JSON.parse(stored).filter(x => typeof x === 'string') : null;
+    if (storedArr) state.sessionStateChips = storedArr;
+    else if (state.sessionStateChip === undefined) {
+      let legacy = null;
+      try { legacy = localStorage.getItem('cs_session_state_chip'); } catch (_) { legacy = null; }
+      state.sessionStateChip = (legacy !== null) ? legacy : 'all';
+      state.sessionStateChips = (state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
+    } else {
+      state.sessionStateChips = (state.sessionStateChip && state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
+    }
   }
-  const chip = state.sessionStateChip;
+  // Backend filter — its own multi-select set, NOT the search box text.
+  if (!Array.isArray(state.sessionBackendSel)) {
+    let stored = null;
+    try { stored = localStorage.getItem(SESSIONS_BACKEND_SEL_KEY); } catch (_) { stored = null; }
+    state.sessionBackendSel = (stored) ? (JSON.parse(stored) || []).filter(x => typeof x === 'string') : [];
+  }
+  const chip = _sessionStateSel();
   // Show active + recently completed sessions by default; "Show history" shows all
   let pool = state.showHistory ? state.sessions : [...active, ...recent];
-  if (chip === 'active') {
-    // running + rate_limited (i.e. busy doing work, not waiting on operator)
-    pool = pool.filter(s => s.state === 'running' || s.state === 'rate_limited');
-  } else if (chip === 'waiting') {
-    pool = pool.filter(s => s.state === 'waiting_input');
-  } else if (chip === 'done') {
-    pool = pool.filter(s => DONE_STATES.has(s.state));
-  } else if (chip && chip !== 'all') {
-    pool = pool.filter(s => s.state === chip);
+  if (chip.length) {
+    pool = pool.filter(s => _sessionMatchesState(chip, s.state));
+  }
+  const backendSel = _sessionBackendSel();
+  if (backendSel.length) {
+    pool = pool.filter(s => s.backend_family && backendSel.indexOf(s.backend_family) >= 0);
   }
   if (filterText.trim()) {
     pool = pool.filter(s => _sessionsSearchMatch(s, filterText));
@@ -5808,7 +6133,7 @@ function renderSessionsView() {
   // tag selection, history) starts the paging back at page one.
   let tagSel = '';
   try { tagSel = (_tagBrowse && _tagBrowse.session ? (_tagBrowse.session.sel || []).join(',') : ''); } catch (_) { tagSel = ''; }
-  const pageKey = [chip, filterText, state.sessionWatchFilter ? 'w' : 'n', state.showHistory ? 'h' : 'n', tagSel].join('|');
+  const pageKey = [chip.join(','), backendSel.join(','), filterText, state.sessionWatchFilter ? 'w' : 'n', state.showHistory ? 'h' : 'n', tagSel].join('|');
   if (state._sessionsPageKey !== pageKey) {
     state._sessionsPageKey = pageKey;
     state._sessionsPageLimit = _sessionsPageSize();
@@ -5816,21 +6141,33 @@ function renderSessionsView() {
   const paging = _sessionsPagingState(visible, state._sessionsPageLimit);
   const viewMode = _sessionsViewMode();
 
-  const filterVal = escHtml(state.sessionFilter || '');
-  // Collect unique backend types from all sessions for compact filter badges
-  const backendTypes = [...new Set(state.sessions.map(s => s.backend_family).filter(Boolean))].sort();
-  const backendShort = {
-    'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
-    'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
-    'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi-p', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
-    'council-virtual': '🎭 Council', // GH#172 D64
+  // Sheet/control stability kit (operator rule: "the filters sheet must not
+  // re-render while it is open"): every full repaint below goes through
+  // paint(). While the sheet (or the search box) is live, paint() keeps the
+  // OPERATOR'S live nodes — same value, same focus, same scroll, same
+  // listeners — and refreshes what changed in place instead: state-chip
+  // counts, the Group-by select's options, the saved-view chips. A patch
+  // that would touch a control that currently has focus is deferred and
+  // flushed exactly once when the control is released (focusout/blur/
+  // change/click/'dw-settle'). See the kit above: the _sheet* helpers.
+  const sheetSnapBefore = _sheetCapture('sessionsSheetBackdrop');
+  const searchSnapBefore = _sheetCapture('sessionFilterInput');
+  const paint = (html) => {
+    view.innerHTML = html;
+    _sheetRestore(view, searchSnapBefore, (root) => {
+      if (typeof root.value === 'string' && root.value !== filterVal) {
+        try { root.value = filterVal; } catch (_) { /* harness: no value */ }
+      }
+    });
+    if (sheetSnapBefore) _sheetRestore(view, sheetSnapBefore, _sessionsSheetLivePatch);
   };
-  const backendBadges = backendTypes.map(bt => {
-    const isActive = filterText === bt.toLowerCase();
-    const label = backendShort[bt] || bt;
-    const count = state.sessions.filter(s => s.backend_family === bt).length;
-    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
-  }).join('');
+
+  const filterVal = escHtml(state.sessionFilter || '');
+  // Backend badges — shared helper so the open sheet's in-place patch uses
+  // byte-identical markup (see _sessionsSheetLlmChips).
+  const _llmInfo = _sessionsSheetLlmChips();
+  const backendTypes = _llmInfo.types;
+  const backendBadges = _llmInfo.html;
   // B44 — search/filter icon toggle, parity with datawatch-app sessions
   // list. DEFAULT OFF (filters hidden, session list takes full window);
   // click the magnifying-glass to reveal. State persists in
@@ -5857,35 +6194,16 @@ function renderSessionsView() {
   if (state._llmFilterOpen === undefined) state._llmFilterOpen = false;
   if (state._stateFilterOpen === undefined) state._stateFilterOpen = false;
   const llmCount = backendTypes.length;
-  const llmActiveLabel = filterText && backendTypes.find(bt => bt.toLowerCase() === filterText) ? filterText : '';
+  const llmActiveLabel = backendSel.join(', ');
   const llmBtnLabel = llmActiveLabel ? `LLM: ${escHtml(llmActiveLabel)}` : `LLM (${llmCount})`;
-  // State badges — every real state, not just buckets.
-  const realStateChips = [
-    {key: 'all',          label: t('session_chip_all'),          color: 'var(--text2)'},
-    {key: 'running',      label: t('session_chip_running'),      color: 'var(--success,#10b981)'},
-    {key: 'waiting_input',label: t('session_chip_waiting'),      color: 'var(--warning,#f59e0b)'},
-    {key: 'stalled',      label: t('session_chip_stalled'),      color: 'var(--error,#ef4444)'},
-    {key: 'rate_limited', label: t('session_chip_rate_limited'), color: 'var(--error,#ef4444)'},
-    {key: 'complete',     label: t('session_chip_complete'),     color: 'var(--text2)'},
-    {key: 'failed',       label: t('session_chip_failed'),       color: 'var(--error,#ef4444)'},
-    {key: 'killed',       label: t('session_chip_killed'),       color: 'var(--text2)'},
-  ];
-  const stateCounts = {};
-  realStateChips.forEach(c => {
-    if (c.key === 'all') stateCounts.all = state.sessions.length;
-    else stateCounts[c.key] = state.sessions.filter(s => s.state === c.key).length;
-  });
-  // GATE finding (operator 2026-05-10): only show state chips that have
-  // entries in the current list — 0-count chips are confusing. 'all'
-  // always visible. The currently-active filter ALSO stays visible even
-  // if 0 (so operator can see what they picked + back out).
-  const visibleStateChips = realStateChips.filter(c => c.key === 'all' || stateCounts[c.key] > 0 || chip === c.key);
-  const stateActiveKey = (chip && chip !== 'all') ? chip : '';
-  const stateBtnLabel = stateActiveKey ? `State: ${escHtml(stateActiveKey)}` : `State (${visibleStateChips.length - 1})`;
-  const stateBadges = visibleStateChips.map(c => {
-    const isActive = chip === c.key;
-    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
-  }).join('');
+  // State chips — shared helper so the open sheet's in-place patch uses
+  // byte-identical markup (see _sessionsSheetStateChips).
+  const _stateChipInfo = _sessionsSheetStateChips();
+  const stateCounts = _stateChipInfo.counts;
+  const visibleStateChips = _stateChipInfo.chips;
+  const stateActiveKey = chip.join(' + ');
+  const stateBtnLabel = stateActiveKey ? `State: ${escHtml(stateActiveKey)}` : `State (all)`;
+  const stateBadges = _stateChipInfo.html;
   // Tag filter — chip list grouped by axis, drawn from the tag inventory
   // (GET /api/sessions/tags). Shown only while some session carries a tag:
   // an empty control would just be noise. Selection lives in
@@ -5935,7 +6253,7 @@ function renderSessionsView() {
     if (state.activeServer && state.activeServer !== 'all' && fcs && fcs.server === state.activeServer) {
       if (fcs.phase === 'error') {
         _ensureLocalHostname(); // GH#194 -- so "Back to %1$s" shows the real name on the next render if not already cached
-        view.innerHTML = `
+        paint(`
           <div class="view-content" style="position:relative;">
             <div class="empty-state">
               <span class="empty-state-icon">⚠️</span>
@@ -5943,7 +6261,7 @@ function renderSessionsView() {
               <p>${escHtml(t('fed_conn_error_body', [state.activeServer, fcs.message]) || `${state.activeServer}: ${fcs.message}`)}</p>
               <button class="btn-primary" onclick="selectServer(null)" style="margin-top:10px;">${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>
             </div>
-          </div>`;
+          </div>`);
         return;
       }
       // 'connecting' or 'loading_sessions' reach here now (GH#235 parity
@@ -5958,10 +6276,10 @@ function renderSessionsView() {
       const fcsLabel = fcs.phase === 'loading_sessions'
         ? (t('fed_conn_loading_sessions', [state.activeServer]) || `Loading sessions from ${state.activeServer}…`)
         : (t('fed_conn_connecting', [state.activeServer]) || `Connecting to ${state.activeServer}…`);
-      view.innerHTML = `
+      paint(`
         <div class="view-content" style="position:relative;">
           ${loadingEyeBlock(fcsLabel, 'panel')}
-        </div>`;
+        </div>`);
       return;
     }
     // GH#172 D60 — until the first data arrives an empty state looks like
@@ -5974,16 +6292,16 @@ function renderSessionsView() {
       const failed = sl.error
         ? `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(sl.error)}</span><button type="button" class="btn-secondary list-state-retry" onclick="loadSessionsList()">${escHtml(t('retry'))}</button></div>`
         : `<div class="list-state-loading-label" role="status">${escHtml(t('loading'))}</div>`;
-      view.innerHTML = `
+      paint(`
         <div class="view-content" style="position:relative;">
           <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
           ${failed}
           <div class="session-list">${sl.error ? '' : skeletonCard.repeat(3)}</div>
-        </div>`;
+        </div>`);
       if (!sl.error && !sl.loading) loadSessionsList();
       return;
     }
-    view.innerHTML = `
+    paint(`
       <div class="view-content" style="position:relative;">
         <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
         ${disconnectedBannerHtml}
@@ -5995,7 +6313,7 @@ function renderSessionsView() {
           <p>Tap the <strong>+</strong> button to start a session,<br>or send commands via Signal.</p>
         </div>
         ${sheetHtml}
-      </div>`;
+      </div>`);
     return;
   }
 
@@ -6030,15 +6348,15 @@ function renderSessionsView() {
             : (viewMode === 'list'
                 ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
                 : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode))));
-  const filtersActive = !!(filterText.trim() || (chip && chip !== 'all') || state.sessionWatchFilter || tagSel);
-  view.innerHTML = `<div class="view-content" style="position:relative;">
+  const filtersActive = !!(filterText.trim() || chip.length || backendSel.length || state.sessionWatchFilter || tagSel);
+  paint(`<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
     <div class="sessions-topbar">${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
     ${toggleBtn}
     ${_sessionTagSelectedSummaryHTML()}
     ${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
-    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
+    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`);
 
   // Restore filter input focus and cursor position
   if (state._sessionsSearchKeep) {
@@ -6331,7 +6649,7 @@ window.sessionsShowMore = _sessionsShowMore;
 // under their Automaton and then their story. A saved view (device-local)
 // remembers mode + group axis + session filter together.
 const SESSIONS_GROUP_UNGROUPED = 'ungrouped';
-const SESSIONS_GROUP_AXES = ['state', 'node', 'project', 'tag', 'automaton'];
+const SESSIONS_GROUP_AXES = ['state', 'node', 'model', 'project', 'tag', 'automaton'];
 const SESSIONS_COLLAPSED_KEY = 'cs_sessions_collapsed_groups';
 const SESSIONS_SAVED_VIEWS_KEY = 'cs_sessions_saved_views';
 const SESSIONS_VIEW_NAME_MAX = 80;
@@ -6342,6 +6660,11 @@ const SESSIONS_VIEW_NAME_MAX = 80;
 function _sessionsGroupValidate(by) {
   if (!by || typeof by.axis !== 'string') return null;
   if (SESSIONS_GROUP_AXES.indexOf(by.axis) < 0) return null;
+  // A tag-prefix choice that duplicates a built-in axis (node:, project:)
+  // keeps one grouping one name: it reads as that built-in axis.
+  if (by.axis === 'tag' && (by.tagPrefix === 'node:' || by.tagPrefix === 'project:')) {
+    return { axis: by.tagPrefix.slice(0, -1), tagPrefix: '' };
+  }
   return {
     axis: by.axis,
     tagPrefix: (by.axis === 'tag' && typeof by.tagPrefix === 'string') ? by.tagPrefix : '',
@@ -6379,7 +6702,9 @@ function _sessionsGroupCurrent() {
     state.sessionGroupBy = by;
     state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
   }
-  return _sessionsGroupValidate(state.sessionGroupBy);
+  const current = _sessionsGroupValidate(state.sessionGroupBy);
+  state.sessionGroupBy = current;
+  return current;
 }
 
 function _sessionsGroupSave() {
@@ -6451,6 +6776,57 @@ function _sessionsNodeKey(s) {
 }
 window._sessionsNodeKey = _sessionsNodeKey;
 
+// _sessionRunsOn and _sessionModelOn are the two placement facts a session
+// tile and card print side by side, and the two fact-based groupings an
+// operator can choose:
+//   Runs on  -- where the session's terminal runs: its peer's name when the
+//               session is federated, otherwise the host's real name. It is
+//               never the word 'local'.
+//   Model on -- where the session's model is served: the compute node name
+//               for a pi or Ollama session, the words 'Anthropic cloud' for a
+//               Claude session, and empty when unknown.
+// Both read the same session fields the 'node' grouping reads, so the value a
+// surface prints is exactly the value the operator groups or filters by. The
+// 'model' grouping axis reuses _sessionModelOn as its key.
+function _sessionRunsOn(s) {
+  const server = (typeof s.server === 'string') ? s.server : '';
+  if (server && server !== 'local' && server !== 'all') return server;
+  if (typeof s.hostname === 'string' && s.hostname) return s.hostname;
+  let lh = '';
+  try { lh = (typeof _localHostname === 'string' && _localHostname) ? _localHostname : ''; } catch (_) { lh = ''; }
+  if (lh && (!server || server === 'local')) return lh;
+  return '';
+}
+window._sessionRunsOn = _sessionRunsOn;
+
+function _sessionModelOn(s) {
+  const bf = (s && typeof s.backend_family === 'string') ? s.backend_family.toLowerCase() : '';
+  const cnr = (s && typeof s.compute_node_ref === 'string') ? s.compute_node_ref : '';
+  if (bf === 'claude-code' || bf === 'claude') return 'Anthropic cloud';
+  if (bf === 'pi' || bf === 'pi-prompt' || bf === 'ollama') return cnr;
+  return '';
+}
+window._sessionModelOn = _sessionModelOn;
+
+// _sessionPlacementFactsHTML is the shared "Runs on / Model on" pair a
+// surface embeds: two labelled, hover-titled facts (each independently
+// omitted when empty). Kept out of sessionCard/renderSessionTile so both
+// print byte-identical labels and titles from one source.
+function _sessionPlacementFactsHTML(sess, labelClass) {
+  const runsLbl = _stx('sessions_runs_on', 'Runs on');
+  const modelLbl = _stx('sessions_model_on', 'Model on');
+  const runsTip = _stx('sessions_runs_on_tip', 'The host running the terminal of this session, or its peer name when the session is federated');
+  const modelTip = _stx('sessions_model_on_tip', 'The compute node serving the model of this session, or Anthropic cloud for a Claude session');
+  const runsOn = _sessionRunsOn(sess);
+  const modelOn = _sessionModelOn(sess);
+  const facts = [];
+  if (runsOn) facts.push(`<span class="${labelClass}" title="${escHtml(runsTip)}"><span class="${labelClass}-label">${escHtml(runsLbl)}</span> ${escHtml(runsOn)}</span>`);
+  if (modelOn) facts.push(`<span class="${labelClass}" title="${escHtml(modelTip)}"><span class="${labelClass}-label">${escHtml(modelLbl)}</span> ${escHtml(modelOn)}</span>`);
+  if (!facts.length) return '';
+  return facts.join(' ');
+}
+window._sessionPlacementFactsHTML = _sessionPlacementFactsHTML;
+
 // _sessionsProjectKey is the project group key: the session's project_dir
 // with trailing slashes dropped, so one folder never splits in two over a
 // trailing slash. The server reads the same key.
@@ -6477,6 +6853,11 @@ function _sessionsGroupKeyFor(sess, by) {
       return (typeof s.state === 'string' && s.state) ? s.state : 'unknown';
     case 'node':
       return _sessionsNodeKey(s);
+    case 'model':
+      // 'Model on' fact — where the session's model is served: the compute
+      // node for pi/Ollama, 'Anthropic cloud' for Claude, ungrouped when
+      // unknown (an empty key must not become a blank group).
+      return _sessionModelOn(s) || SESSIONS_GROUP_UNGROUPED;
     case 'project':
       // The server resolves the project (owning Automaton's project, project
       // tag, registered folder match, Automaton title, folder) and sends it
@@ -6540,6 +6921,10 @@ function _sessionsGroupTitleInfo(key, by, sessions) {
     title = maps.project[id.replace(/\/+$/, '')] || '';
   } else if (by.axis === 'node') {
     title = maps.node[id] || '';
+  } else if (by.axis === 'model') {
+    // Model fact: a compute-node ref may resolve to a node name; 'Anthropic
+    // cloud' (Claude) is already the display value and passes through as-is.
+    title = maps.node[id] || '';
   }
   title = (typeof title === 'string') ? title.trim() : '';
   if (title === id) title = '';
@@ -6549,7 +6934,7 @@ function _sessionsGroupTitleInfo(key, by, sessions) {
 // _sessionsGroupTitlesEnsure loads the title lists for the active record axis
 // once, then repaints. A failed load latches so it cannot loop.
 function _sessionsGroupTitlesEnsure(by) {
-  if (!by || ['automaton', 'project', 'node'].indexOf(by.axis) < 0) return;
+  if (!by || ['automaton', 'project', 'node', 'model'].indexOf(by.axis) < 0) return;
   const maps = _sessionsGroupTitleMaps();
   if (maps.loaded[by.axis]) return;
   maps.loaded[by.axis] = true;
@@ -6874,7 +7259,12 @@ function _sessionsGroupPrefixOptions() {
   const set = {};
   names.forEach(n => {
     const i = n.indexOf(':');
-    if (i > 0) set[n.slice(0, i + 1)] = true;
+    if (i < 1) return;
+    const p = n.slice(0, i + 1);
+    // Prefixes that duplicate a built-in axis (node:, project:) are hidden:
+    // one grouping, one name — the built-in axis is the canonical one.
+    if (p === 'node:' || p === 'project:') return;
+    set[p] = true;
   });
   return Object.keys(set).sort();
 }
@@ -6888,6 +7278,7 @@ function renderSessionsGroupPicker(by) {
   const axisLabel = (axis) => ({
     state: _stx('sessions_group_state', 'State'),
     node: _stx('sessions_group_node', 'Node'),
+    model: _stx('sessions_group_model', 'Model node'),
     project: _stx('sessions_group_project', 'Project'),
     tag: _stx('sessions_group_tag', 'Tag'),
     automaton: _stx('sessions_group_automaton', 'Automaton'),
@@ -6907,13 +7298,15 @@ function renderSessionsGroupPicker(by) {
   } catch (_) { /* no placement data: registry prefixes only */ }
   // The tag registry may not be loaded (or may be empty mid-refresh); the
   // chosen prefix must stay an option or the select snaps to "No grouping".
-  if (cur && cur.axis === 'tag' && cur.tagPrefix && prefixes.indexOf(cur.tagPrefix) < 0) {
+  if (cur && cur.axis === 'tag' && cur.tagPrefix
+      && prefixes.indexOf(cur.tagPrefix) < 0
+      && cur.tagPrefix !== 'node:' && cur.tagPrefix !== 'project:') {
     prefixes.push(cur.tagPrefix);
     prefixes.sort();
   }
   if (prefixes.length) {
     prefixOpts = `<optgroup label="${escHtml(_stx('sessions_group_tag_prefixes', 'Tag prefix'))}">
-      ${prefixes.map(p => opt('tag|' + p, axisLabel('tag') + '(' + p + ')')).join('')}
+      ${prefixes.map(p => opt('tag|' + p, axisLabel('tag') + ': ' + p.replace(/:$/, ''))).join('')}
     </optgroup>`;
   }
   return `<div class="sessions-group-picker" role="group" aria-label="${escHtml(_stx('sessions_group_by', 'Group by'))}">
@@ -6922,6 +7315,7 @@ function renderSessionsGroupPicker(by) {
       ${opt('', _stx('sessions_group_none', 'No grouping'))}
       ${opt('state', axisLabel('state'))}
       ${opt('node', axisLabel('node'))}
+      ${opt('model', axisLabel('model'))}
       ${opt('project', axisLabel('project'))}
       ${opt('tag', axisLabel('tag'))}
       ${prefixOpts}
@@ -6999,6 +7393,10 @@ function saveSessionsView(name) {
     mode,
     groupBy: (by && SESSIONS_GROUP_AXES.indexOf(by.axis) >= 0) ? by : null,
     filter,
+    // v9 — multi-select: new views carry their backend-chip selection. (The
+    // legacy view shape may store a backend family inside `filter`; that is
+    // migrated on apply.)
+    backends: Array.isArray(state.sessionBackendSel) ? state.sessionBackendSel.slice() : [],
   };
   views.push(v);
   _savedViewsWrite(views);
@@ -7027,6 +7425,25 @@ function applySavedView(id) {
   }
   _sessionsGroupSave();
   state.sessionFilter = (typeof v.filter === 'string') ? v.filter : '';
+  // v9 — multi-select: the backend chips are their own set. A legacy saved
+  // view stored a backend family in the free-text filter: move it into the
+  // set (case-insensitive match) so the box isn't pre-filled with a chip
+  // value. Otherwise apply the saved set, else fall back to legacy filter
+  // text if it names a known backend family only (already handled above),
+  // else keep the set empty.
+  let backends = (Array.isArray(v.backends)) ? v.backends.slice() : [];
+  const legacyFt = String(state.sessionFilter || '').trim().toLowerCase();
+  if (legacyFt) {
+    const known = (typeof _sessionBackendIsFamily === 'function' && _sessionBackendIsFamily(legacyFt)) ? true
+      : ((state.sessions || []).some(s => s && s.backend_family && String(s.backend_family).toLowerCase() === legacyFt));
+    if (known) {
+      const real = (state.sessions || []).find(s => s && s.backend_family && String(s.backend_family).toLowerCase() === legacyFt);
+      const bt = real ? real.backend_family : legacyFt;
+      state.sessionFilter = '';
+      if (backends.indexOf(bt) < 0) backends.push(bt);
+    }
+  }
+  state.sessionBackendSel = backends;
   state._sessionsPageKey = null;
   state.selectedSessions.clear();
   _sessionsSyncPeerRows();
@@ -7092,9 +7509,8 @@ function toggleSavedViewRename(id) {
 }
 window.toggleSavedViewRename = toggleSavedViewRename;
 
-function renderSessionsViewsBar(views) {
-  const list = Array.isArray(views) ? views : _savedViews();
-  const chips = list.map(v => {
+function _savedViewsChipsHTML(list) {
+  return (Array.isArray(list) ? list : []).map(v => {
     const id = String(v.id);
     return `<span class="svs-chip" data-saved-view="${escHtml(id)}">
       <button type="button" class="svs-apply" title="${escHtml(_stx('sessions_view_apply', 'Apply'))}" onclick="applySavedView('${escHtml(id)}')">${escHtml(v.name)}</button>
@@ -7106,13 +7522,18 @@ function renderSessionsViewsBar(views) {
       <button type="button" class="svs-delete" title="${escHtml(_stx('sessions_view_delete', 'Delete'))}" onclick="deleteSavedView('${escHtml(id)}')">✕</button>
     </span>`;
   }).join('');
+}
+
+function renderSessionsViewsBar(views) {
+  const list = Array.isArray(views) ? views : _savedViews();
+  const chips = _savedViewsChipsHTML(list);
   return `<div class="sessions-saved-views">
     <span class="svs-title">${escHtml(_stx('sessions_view_title', 'Views'))}</span>
     <span class="svs-save-row" data-svs-save-row>
       <input type="text" class="svs-input" data-saved-view-name="new" maxlength="${SESSIONS_VIEW_NAME_MAX}" placeholder="${escHtml(_stx('sessions_view_name_ph', 'View name'))}">
       <button type="button" class="svs-save" onclick="submitSavedViewSave()">+ ${escHtml(_stx('sessions_view_new', 'New view'))}</button>
     </span>
-    ${chips}
+    <span id="sessionsSavedViewsChips">${chips}</span>
   </div>`;
 }
 window.renderSessionsViewsBar = renderSessionsViewsBar;
@@ -7143,6 +7564,304 @@ function renderSessionsModeToggle(mode) {
   return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
 }
 
+window.renderSessionsViewsBar = renderSessionsViewsBar;
+window._savedViewsRead = _savedViewsRead;
+window._savedViewsWrite = _savedViewsWrite;
+window._savedViewsChipsHTML = _savedViewsChipsHTML;
+
+// ── Sheet/control stability kit ─────────────────────────────────────────
+// Rule (operator: "the filters sheet must not re-render while it is open"):
+// while the sheet — or any other block that owns a select/input — is
+// in use, a refresh (WS push, timer, saved-view apply) must NEVER destroy
+// its DOM. `renderSessionsView` is the one paint path that can rebuild the
+// sheet, so every paint goes through:
+//   1. `_sheetCapture` — remember the live nodes, focus, scrolled offsets;
+//   2. the fresh paint (each former `view.innerHTML = ...` is a `paint(...)`);
+//   3. `_sheetRestore` — move the operator's live sheet back into the same
+//      position (same node ⇒ same value, same focus, same listeners),
+//      restore scroll, then refresh what changed *in place*:
+//        - state chips + Watch badge counts;
+//        - Group-by select options, keeping its selection;
+//        - saved-view chip list;
+//      and only touch a control that currently has focus (open select,
+//      focused input) if the patch is DEFERRED and flushed ONCE when the
+//      control is released (focusout / blur / change / click / 'dw-settle').
+// The search box gets the same protection via the shared kit (value +
+// focus + caret, deferred the same way). Other live panels (daemon log
+// status, settings auto-lanes status, burn-guard card, presence dot) only
+// rewrite text nodes and keep their controls, and reuse this kit's defer
+// rule where a patch could race an in-use control.
+function _sheetFind(root, pred) {
+  if (!root || typeof pred !== 'function') return null;
+  try { if (pred(root)) return root; } catch (_) { /* keep walking */ }
+  const kids = root.children || [];
+  for (let i = 0; i < kids.length; i++) {
+    const hit = _sheetFind(kids[i], pred);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function _sheetEngaged(root) {
+  if (!root) return false;
+  if (root.__dwEngaged) return true;
+  try {
+    const a = (typeof document !== 'undefined') ? document.activeElement : null;
+    if (!a) return false;
+    if (a === root) return true;
+    if (typeof root.contains === 'function' && root.contains(a)) return true;
+  } catch (_) { /* no DOM */ }
+  return false;
+}
+
+// Engagement tracking: a focus landing inside the block marks it engaged
+// (open select, input being typed); focus leaving clears the flag and
+// flushes any patches that were deferred for exactly this reason.
+function _sheetHook(root) {
+  if (!root || root.__dwHooked || typeof root.addEventListener !== 'function') return;
+  root.__dwHooked = true;
+  const inBlock = (el) => {
+    if (!el) return false;
+    if (el === root) return true;
+    if (typeof root.contains === 'function') { try { return !!root.contains(el); } catch (_) { /* fall through */ } }
+    return true; // unknown target: keep the block engaged (safe side)
+  };
+  try {
+    root.addEventListener('focusin', (e) => {
+      const target = e && (e.target || e);
+      if (inBlock(target)) {
+        root.__dwEngaged = true;
+        try { if (target && target !== root) root.__dwFocusEl = target; } catch (_) { /* ignore */ }
+      }
+    });
+  } catch (_) { /* no DOM */ }
+  try {
+    root.addEventListener('focusout', (e) => {
+      const next = e && (e.relatedTarget || null);
+      if (inBlock(next)) return; // focus moved to another control in the block
+      root.__dwEngaged = false;
+      _sheetSettleFire(root);
+    });
+  } catch (_) { /* no DOM */ }
+}
+
+function _sheetSettleFire(root) {
+  const q = (root && root.__dwPending) || [];
+  if (root) root.__dwPending = [];
+  for (let i = 0; i < q.length; i++) {
+    try { q[i](root); } catch (_) { /* one bad patch must not block the rest */ }
+  }
+}
+
+function _sheetWireSettle(root) {
+  if (!root || root.__dwSettleWired || typeof root.addEventListener !== 'function') return;
+  root.__dwSettleWired = true;
+  for (const ev of ['focusout', 'blur', 'change', 'click', 'dw-settle']) {
+    try { root.addEventListener(ev, () => _sheetSettleFire(root)); } catch (_) { /* no DOM */ }
+  }
+}
+
+// Defers while a control inside `root` is engaged (focused): `fn` runs now
+// otherwise it is queued and flushed exactly once on release (see
+// _sheetHook/_sheetWireSettle). Patches always go through the LIVE root
+// node — never replacing its selects/inputs, only rewriting their text,
+// options and chip rows.
+function _sheetPatch(root, fn) {
+  if (!root || typeof fn !== 'function') return false;
+  _sheetHook(root);
+  if (_sheetEngaged(root)) {
+    (root.__dwPending = root.__dwPending || []).push(fn);
+    _sheetWireSettle(root);
+    return false;
+  }
+  // Patch signature: patchFn(root) — the live node the patch writes into.
+  try { fn(root); } catch (_) { /* patch failed; the next paint retries */ }
+  return true;
+}
+
+function _sheetCapture(rootId, rootOverride) {
+  let root = rootOverride || null;
+  if (!root) { try { root = document.getElementById(rootId); } catch (_) { root = null; } }
+  if (!root) return null;
+  const snap = { id: rootId, root, scrolls: [] };
+  const targets = [root].concat(root.children || []);
+  for (let k = 0; k < targets.length; k++) {
+    const el = targets[k];
+    try { if (el && typeof el.scrollTop === 'number') snap.scrolls.push({ el, top: el.scrollTop }); } catch (_) { /* ignore */ }
+  }
+  try {
+    let a = null;
+    if (typeof document !== 'undefined') a = document.activeElement;
+    snap.focusEl = null;
+    if (a && (a === root || (typeof root.contains === 'function' && root.contains(a)))) {
+      snap.focusEl = a;
+      snap.wasFocused = true;
+    }
+    if (typeof root.value === 'string') {
+      snap.value = root.value;
+      try {
+        if (typeof root.selectionStart === 'number' && typeof root.selectionEnd === 'number') {
+          snap.selStart = root.selectionStart;
+          snap.selEnd = root.selectionEnd;
+        }
+      } catch (_) { /* ignore */ }
+    }
+    _sheetHook(root);
+  } catch (_) { /* keep the structural capture */ }
+  return snap;
+}
+
+function _sheetRestore(view, snap, patchFn) {
+  if (!snap || !snap.root) return null;
+  const root = snap.root;
+  let fresh = null;
+  try { fresh = document.getElementById(snap.id); } catch (_) { fresh = null; }
+  if (fresh !== root) {
+    // The repaint made a replacement node — move the operator's live node
+    // back into the same position so its value, focus, listeners and DOM
+    // identity all survive.
+    if (fresh && fresh.parentNode && typeof fresh.parentNode.replaceChild === 'function') {
+      fresh.parentNode.replaceChild(root, fresh);
+    } else {
+      try { if (root.parentNode && typeof root.remove === 'function') root.remove(); } catch (_) { /* not connected */ }
+      if (view && typeof view.appendChild === 'function') view.appendChild(root);
+    }
+  }
+  // Restore scrolled offsets (a repaint resets them to 0).
+  for (const s of (snap.scrolls || [])) {
+    try { if (s.el) s.el.scrollTop = s.top; } catch (_) { /* harness: no scroll */ }
+  }
+  // Re-focus (and the caret, for inputs) — the repaint drops it.
+  if (snap.focusEl && typeof snap.focusEl.focus === 'function') {
+    try {
+      snap.focusEl.focus();
+      if (typeof snap.focusEl.setSelectionRange === 'function' && typeof snap.selStart === 'number' && typeof snap.selEnd === 'number') {
+        const n = String(snap.focusEl.value || '').length;
+        snap.focusEl.setSelectionRange(Math.min(snap.selStart, n), Math.min(snap.selEnd, n));
+      }
+    } catch (_) { /* harness: focus is a no-op */ }
+  }
+  if (typeof patchFn === 'function') _sheetPatch(root, patchFn);
+  return root;
+}
+
+// Shared chip markup so the full paint and the in-place patch always agree
+// byte-for-byte (the patch skips the write when they already do).
+function _sessionsSheetWatchBtnHTML() {
+  const watchOn = !!state.sessionWatchFilter;
+  return `<button type="button" class="backend-filter-badge ${watchOn ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(_stx('session_watch_filter_tip', 'Show watched only'))}" aria-pressed="${watchOn ? 'true' : 'false'}">&#128065; ${state.watchedSessions ? state.watchedSessions.size : 0}</button>`;
+}
+
+function _sessionsSheetStateChips() {
+  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  const sel = _sessionStateSel();
+  const allLabel = _stx('sessions_filters_all', 'All');
+  // State badges — every real state, not just buckets (item 4).
+  const realStateChips = [
+    {key: 'all',          label: t('session_chip_all'),          color: 'var(--text2)'},
+    {key: 'running',      label: t('session_chip_running'),      color: 'var(--success,#10b981)'},
+    {key: 'waiting_input',label: t('session_chip_waiting'),      color: 'var(--warning,#f59e0b)'},
+    {key: 'stalled',      label: t('session_chip_stalled'),      color: 'var(--error,#ef4444)'},
+    {key: 'rate_limited', label: t('session_chip_rate_limited'), color: 'var(--error,#ef4444)'},
+    {key: 'complete',     label: t('session_chip_complete'),     color: 'var(--text2)'},
+    {key: 'failed',       label: t('session_chip_failed'),       color: 'var(--error,#ef4444)'},
+    {key: 'killed',       label: t('session_chip_killed'),       color: 'var(--text2)'},
+  ];
+  const stateCounts = {};
+  realStateChips.forEach(c => {
+    if (c.key === 'all') stateCounts.all = sessions.length;
+    else stateCounts[c.key] = sessions.filter(s => s.state === c.key).length;
+  });
+  // GATE finding (operator 2026-05-10): only show state chips that have
+  // entries in the current list — 0-count chips are confusing. A selected
+  // chip ALSO stays visible even if 0 (so operator can see what they
+  // picked + back out). 'all' is a separate button up front (multi-select
+  // set: empty set === all).
+  const visibleStateChips = realStateChips.filter(c => c.key !== 'all' && (stateCounts[c.key] > 0 || sel.indexOf(c.key) >= 0));
+  const allBtn = `<button class="backend-filter-badge ${sel.length === 0 ? 'active' : ''}" type="button" onclick="sessionsFilterClearGroup('status')" title="${escHtml(allLabel)} (${stateCounts.all||0})" aria-pressed="${sel.length === 0 ? 'true' : 'false'}">${escHtml(allLabel)}<span class="badge-count">${stateCounts.all||0}</span></button>`;
+  const html = visibleStateChips.map(c => {
+    const isActive = sel.indexOf(c.key) >= 0;
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" type="button" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" aria-pressed="${isActive ? 'true' : 'false'}" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
+  }).join('');
+  return { chips: visibleStateChips, counts: stateCounts, html: allBtn + html };
+}
+
+function _sessionsSheetLlmChips() {
+  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  // Unique backend families, same order as the pre-refactor renderer.
+  const types = [...new Set(sessions.map(s => s.backend_family).filter(Boolean))].sort();
+  const sel = _sessionBackendSel();
+  const allLabel = _stx('sessions_filters_all', 'All');
+  const backendShort = {
+    'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
+    'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
+    'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi-p', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
+    'council-virtual': '🎭 Council', // GH#172 D64
+  };
+  const allBtn = `<button class="backend-filter-badge ${sel.length === 0 ? 'active' : ''}" type="button" onclick="sessionsFilterClearGroup('backend')" title="${escHtml(allLabel)}" aria-pressed="${sel.length === 0 ? 'true' : 'false'}">${escHtml(allLabel)}</button>`;
+  const html = types.map(bt => {
+    const isActive = sel.indexOf(bt) >= 0;
+    const label = backendShort[bt] || bt;
+    const count = sessions.filter(s => s.backend_family === bt).length;
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" type="button" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})" aria-pressed="${isActive ? 'true' : 'false'}">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
+  }).join('');
+  return { types, html: allBtn + html };
+}
+
+// The single in-place refresh of an OPEN sheet: text/counts/options are
+// updated inside the stable containers; selects and inputs keep their
+// node, value, focus and scroll (see the kit above).
+function _sessionsSheetLivePatch(root) {
+  // 1. Group-by select: same node, options synced, selection kept.
+  const sel = _sheetFind(root, (el) => el && el.id === 'sessions-group-select');
+  if (sel && typeof sel.value === 'string') {
+    try {
+      const fresh = (typeof renderSessionsGroupPicker === 'function')
+        ? renderSessionsGroupPicker(_sessionsGroupCurrent()) : '';
+      const m = /<select\b[^>]*>([\s\S]*?)<\/select>/.exec(fresh || '');
+      if (m) {
+        const keep = sel.value;
+        if (String(sel.innerHTML) !== m[1]) sel.innerHTML = m[1];
+        try { sel.value = keep; } catch (_) { /* selection already current */ }
+      }
+    } catch (_) { /* select stays as-is */ }
+  }
+  // 2. State chips + Watch button (stable container, counts patch in place).
+  const st = _sheetFind(root, (el) => el && el.id === 'sessionsSheetStateChips');
+  if (st && typeof st.innerHTML === 'string') {
+    const html = _sessionsSheetStateChips().html + _sessionsSheetWatchBtnHTML();
+    if (String(st.innerHTML) !== html) { try { st.innerHTML = html; } catch (_) { /* ignore */ } }
+  }
+  // 3. Backend chips (render only paints them with >1 backend; match that).
+  const ll = _sheetFind(root, (el) => el && el.id === 'sessionsSheetLlmChips');
+  if (ll && typeof ll.innerHTML === 'string') {
+    const info = _sessionsSheetLlmChips();
+    if (info.types.length > 1 && String(ll.innerHTML) !== info.html) {
+      try { ll.innerHTML = info.html; } catch (_) { /* ignore */ }
+    }
+  }
+  // 4. Saved-view chip list (rename rows + inputs are stable nodes; only
+  //    the chip list itself changes, and only when the operator changed it).
+  const sv = _sheetFind(root, (el) => el && el.id === 'sessionsSavedViewsChips');
+  if (sv && typeof sv.innerHTML === 'string') {
+    let html = null;
+    try { html = _savedViewsChipsHTML(Array.isArray(_savedViews()) ? _savedViews() : []); } catch (_) { html = null; }
+    if (html != null && String(sv.innerHTML) !== html) { try { sv.innerHTML = html; } catch (_) { /* ignore */ } }
+  }
+}
+
+window._sheetFind = _sheetFind;
+window._sheetEngaged = _sheetEngaged;
+window._sheetHook = _sheetHook;
+window._sheetPatch = _sheetPatch;
+window._sheetCapture = _sheetCapture;
+window._sheetRestore = _sheetRestore;
+window._sheetSettleFire = _sheetSettleFire;
+window._sessionsSheetWatchBtnHTML = _sessionsSheetWatchBtnHTML;
+window._sessionsSheetStateChips = _sessionsSheetStateChips;
+window._sessionsSheetLlmChips = _sessionsSheetLlmChips;
+window._sessionsSheetLivePatch = _sessionsSheetLivePatch;
+
 // ── Filters sheet ───────────────────────────────────────────────────────
 // Open state lives in state._sessionsSheetOpen so every re-render redraws the
 // sheet in place. The Escape listener exists only while the sheet is open.
@@ -7150,10 +7869,10 @@ function _sessionsActiveFilterCount() {
   let n = 0;
   try {
     if (_sessionsGroupCurrent()) n++;
-    const chip = state.sessionStateChip;
-    if (chip && chip !== 'all') n++;
-    const ft = String(state.sessionFilter || '').trim().toLowerCase();
-    if (ft && (state.sessions || []).some(s => s && s.backend_family && String(s.backend_family).toLowerCase() === ft)) n++;
+    // v9 — each filter group (Status, Backend, search text, Watch) counts
+    // once when non-empty.
+    if (_sessionStateSel().length) n++;
+    if (_sessionBackendSel().length) n++;
     const sel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session && _tagBrowse.session.sel) ? _tagBrowse.session.sel : [];
     if (sel.length) n++;
     if (state.sessionWatchFilter) n++;
@@ -7169,16 +7888,57 @@ function _sessionsFiltersButtonHTML() {
   return `<button type="button" class="sessions-filters-btn${n > 0 ? ' active' : ''}" id="sessionsFiltersBtn" onclick="sessionsFiltersOpen()" title="${escHtml(tip)}" aria-label="${escHtml(label)}" aria-haspopup="dialog" aria-expanded="${state._sessionsSheetOpen ? 'true' : 'false'}"><span aria-hidden="true">&#9776;</span><span class="sessions-filters-label">${escHtml(label)}</span>${badge}</button>`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Sessions Filters sheet — chip / toggle group checklist (audited 2026-11-09).
+// Everything this sheet renders, its KIND, and what the Kind requires.
+//
+//   KIND definitions:
+//   • Selection group — the Status/Backend standard: several values allowed
+//     (an empty set means "all"); a second click on an active chip clears that
+//     one chip; an "All" chip (or an equivalent Clear action) clears the whole
+//     group; and the current selection shows up in the compact summary line
+//     above the list. aria-pressed on each chip.
+//   • Single-choice    — exactly one value; picking the default choice resets it.
+//   • On/off toggle    — a boolean; a second click on "on" returns it to "off"
+//     (the default). aria-pressed on the control.
+//   • Disclosure       — expands/collapses a block; aria-expanded reflects it.
+//   All are native <button>/<select>, so keyboard Enter/Space (and arrow keys
+//   for the select) work without extra handlers.
+//
+//   Group                      Kind              Notes
+//   ─────────────────────────  ────────────────  ─────────────────────────────
+//   Group by                   single-choice     a native <select>; default =
+//                                                "No grouping" (pick it to reset)
+//   Saved Views                actions           apply / rename / delete — not a
+//                                                filter toggle, so out of scope
+//   Status (state) chips       selection group   "All" clears it; in summary;
+//                                                setSessionStateChip
+//   Watched-only               on/off            off is default; aria-pressed
+//   Backend (LLM) chips        selection group   "All" clears it; in summary;
+//                                                setBackendFilter
+//   Tag chips                  selection group   multi-axis; second click clears;
+//                                                Clear / "Clear all" empties;
+//                                                in summary; sessionTagChipToggle
+//   Tag axis headers           disclosure        aria-expanded; collapse/reopen
+//   Tag "Show all / fewer"     disclosure        aria-expanded (matches headers)
+//   Automaton picker           selection listbox role=listbox of role=option;
+//                                                aria-selected; second click clears
+//   Tag any/all mode           single-choice (on/off) "any" is default; second
+//                                                click returns to it; aria-pressed
+//   Compact summary line       (all selection      one removable chip per picked
+//      groups)                    groups)          value + "Clear all"
+// ─────────────────────────────────────────────────────────────────────────────
 function _sessionsSheetHTML(parts) {
   if (!state._sessionsSheetOpen) return '';
   const p = parts || {};
   const title = _stx('sessions_filters_title', 'Filters');
   const close = _stx('sessions_filters_close', 'Close');
   const sec = (h, body) => body ? `<section class="sessions-sheet-sec"><h4>${escHtml(h)}</h4>${body}</section>` : '';
-  const watchOn = !!state.sessionWatchFilter;
-  const watchBtn = `<button type="button" class="backend-filter-badge ${watchOn ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(_stx('session_watch_filter_tip', 'Show watched only'))}" aria-pressed="${watchOn ? 'true' : 'false'}">&#128065; ${state.watchedSessions ? state.watchedSessions.size : 0}</button>`;
-  const statusBody = `<div class="state-filter-chips sessions-sheet-chips">${p.stateBadges || ''}${watchBtn}</div>`
-    + (p.llmBadges ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_backend', 'Backend'))}</div><div class="backend-filter-badges sessions-sheet-chips">${p.llmBadges}</div>` : '')
+  // Stable container ids: while the sheet is open, a refresh patches these
+  // nodes in place (_sessionsSheetLivePatch) instead of rebuilding the
+  // sheet, so an open select / focused input is never destroyed.
+  const statusBody = `<div class="state-filter-chips sessions-sheet-chips" id="sessionsSheetStateChips">${p.stateBadges || ''}${_sessionsSheetWatchBtnHTML()}</div>`
+    + (p.llmBadges ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_backend', 'Backend'))}</div><div class="backend-filter-badges sessions-sheet-chips" id="sessionsSheetLlmChips">${p.llmBadges}</div>` : '')
     + (p.tagPanel ? `<div class="sessions-sheet-sub">${escHtml(_stx('sessions_filters_tags', 'Tags'))} ${p.tagHelp || ''}</div>${p.tagPanel}` : '');
   const groupBody = renderSessionsGroupPicker(p.groupBy);
   return `<div class="sessions-sheet-backdrop" id="sessionsSheetBackdrop" onclick="sessionsFiltersBackdrop(event)">
@@ -7275,7 +8035,11 @@ function renderSessionTile(sess, nowMs) {
   }
   menu += _tileMenuItem('👁', _stx('session_action_watch', 'Watch for updates'), `toggleSessionWatch('${escHtml(fullId)}')`);
   menu += _tileMenuItem('🔕', _stx('session_action_mute', 'Mute notifications'), `toggleSessionMute('${escHtml(fullId)}')`);
-  const node = sess.hostname || sess.server || sess.compute_node_ref || '';
+  // Two placement facts, not one guessed node: where the session's terminal
+  // runs (never the word local, the peer's name when federated) and where
+  // its model is served (the compute node for pi/Ollama, 'Anthropic cloud'
+  // for Claude). Each is labelled and carries a hover title explaining it.
+  const tileFacts = _sessionPlacementFactsHTML(sess, 'session-tile-fact');
   return renderWorkTile({
     id: shortId,
     rootId: 'sess-tile-' + fullId,
@@ -7290,7 +8054,7 @@ function renderSessionTile(sess, nowMs) {
     progress: _sessionTileProgress(sess),
     updatedAt: sess.updated_at || sess.last_activity,
     nowMs: now,
-    bodyHtml: node ? `<div class="session-tile-node">${escHtml(node)}</div>` : '',
+    bodyHtml: tileFacts ? `<div class="session-tile-node session-tile-facts">${tileFacts}</div>` : '',
     menuHtml: menu,
   });
 }
@@ -7360,33 +8124,8 @@ function toggleGlobalScheduleDropdown() {
   if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
 }
 
-function setBackendFilter(backend) {
-  // Toggle: click same badge to clear, click different to set
-  if ((state.sessionFilter || '').toLowerCase() === backend.toLowerCase()) {
-    state.sessionFilter = '';
-  } else {
-    state.sessionFilter = backend;
-  }
-  state.selectedSessions.clear();
-  renderSessionsView();
-}
-
-// v7.0.0-alpha.22 — session-state filter chips. Persists in localStorage.
-function setSessionStateChip(chip) {
-  state.sessionStateChip = chip;
-  try { localStorage.setItem('cs_session_state_chip', chip); } catch (_) { /* storage blocked: choice lives in memory */ }
-  state.selectedSessions.clear();
-  // GATE finding (operator 2026-05-10): if filter selects a historical
-  // state (complete/failed/killed/cancelled/archived), auto-activate the
-  // History toggle so those sessions actually become visible. Without
-  // this, picking 'killed' shows zero results because historical
-  // sessions are filtered out unless History is on.
-  const historicalStates = new Set(['complete', 'failed', 'killed', 'cancelled', 'archived']);
-  if (historicalStates.has(chip) && !state.showHistory) {
-    state.showHistory = true;
-  }
-  renderSessionsView();
-}
+// v9 — setBackendFilter / setSessionStateChip now live by the sessions
+// chip helpers (multi-select sets), not here.
 
 function toggleHistory() {
   state.showHistory = !state.showHistory;
@@ -7752,6 +8491,7 @@ function sessionCard(sess, idx, total) {
           </div>
           <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);flex-wrap:wrap;">
             <span class="id" style="font-family:var(--mono,monospace);font-size:11px;background:var(--bg3,#1f2937);color:var(--text);padding:2px 7px;border-radius:4px;border:1px solid var(--border);font-weight:600;letter-spacing:0.3px;" title="Session ID">${escHtml(shortId)}</span>
+            ${_sessionPlacementFactsHTML(sess, 'card-fact')}
             ${isCouncil ? `<span class="council-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;color:#f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="${escHtml(t('session_council_badge_tip')||'Council debate persona session')}">🎭 ${escHtml(t('session_council_badge')||'Council')}</span>` : ''}
             ${llmDisplay ? `<span class="backend-badge" style="font-size:10px;border:1px solid var(--accent2,#60a5fa);padding:2px 7px;border-radius:8px;background:rgba(96,165,250,0.12);color:var(--accent2,#60a5fa);font-weight:600;" title="LLM/backend: ${escHtml(llmDisplay)}">${escHtml(llmDisplay)}</span>` : ''}
             ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
@@ -47365,7 +48105,7 @@ function _alertsBuildHtml(result) {
 
   const topBar = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
-      <span style="font-weight:700;font-size:14px;min-width:0;overflow-wrap:anywhere;" title="Alerts in this tab (matches the 'all' chip)">🔔 ${escHtml(t(headingKey, headingVars))}</span>
+      <span style="font-weight:700;font-size:14px;min-width:0;overflow-wrap:anywhere;" title="${escHtml(t('alerts_heading_tip') || 'Alerts in this tab (matches the All chip)')}">🔔 ${escHtml(t(headingKey, headingVars))}</span>
       <span style="display:flex;gap:0;flex-wrap:wrap;">
         ${chipBtn('all', t('alert_chip_all')||'all', catCounts.all, 'var(--text2)')}
         ${chipBtn('prompt', '🟡 ' + (t('alert_chip_prompt')||'prompts'), catCounts.prompt, 'var(--warning,#f59e0b)')}
@@ -57124,7 +57864,11 @@ function _tagErrorText(err) {
 
 function _tagChipHTML(tg) {
   const c = tg.color || 'var(--accent2,#60a5fa)';
-  return `<span class="tag-chip" data-tag-id="${escHtml(tg.id)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:${escHtml(c)}22;color:${escHtml(c)};border:1px solid ${escHtml(c)};font-weight:600;">${escHtml(tg.name)}</span>`;
+  // A bare-id system tag ("automaton:1d440001") shows the axis word only;
+  // the full tag stays in the tooltip. Readable names are unchanged.
+  const parts = _placementChipParts(tg.name);
+  const title = parts.idLike ? ` title="${escHtml(tg.name)}"` : '';
+  return `<span class="tag-chip" data-tag-id="${escHtml(tg.id)}"${title} style="font-size:10px;padding:1px 7px;border-radius:8px;background:${escHtml(c)}22;color:${escHtml(c)};border:1px solid ${escHtml(c)};font-weight:600;">${escHtml(parts.label)}</span>`;
 }
 
 function _tagChipsHTML(prd) {
@@ -57262,6 +58006,26 @@ function _placementTagName(name) {
   return (ax && n.length > ax.length + 1) ? n : null;
 }
 
+// _placementChipParts splits an "axis:value" tag name into its chip label and
+// the full tag. Per-record system axes (automaton, stage, task, story) carry
+// a bare id as their value, and a raw id like "1d440001" means nothing next to
+// a card, so those chips show only the axis word ("Automaton") and keep the
+// full tag in the tooltip. Values that are already readable words
+// (lane:gpu, kind:research, role:reviewer, compute:dev box, ...) render
+// unchanged, chip text and tooltip alike.
+function _placementChipParts(name) {
+  const n = String(name || '');
+  const i = n.indexOf(':');
+  if (i <= 0) return { label: n, idLike: false };
+  const axis = n.slice(0, i);
+  const value = n.slice(i + 1);
+  if (_SESSION_TAG_SYSTEM_AXES.indexOf(axis) < 0) return { label: n, idLike: false };
+  // A bare identifier (letters, digits, dots, dashes, underscores), nothing
+  // else: readable values with a space or other text stay as-is.
+  if (!/^[A-Za-z0-9._-]+$/.test(value)) return { label: n, idLike: false };
+  return { label: axis.charAt(0).toUpperCase() + axis.slice(1), idLike: true };
+}
+
 // _placementAxisOrder orders axes canonically (compute, peer, backend, lane,
 // role, project, then custom axes alphabetically).
 function _placementAxisOrder(names) {
@@ -57369,7 +58133,12 @@ function _sessionTagChipList(sess) {
   const tip = _tagT('tag_inherited_tip', 'Inherited from the Automaton; change it there');
   const inheritedChips = inherited.map(tg => {
     const c = tg.color || 'var(--accent2,#60a5fa)';
-    return `<span class="tag-chip tag-chip-inherited" data-tag-id="${escHtml(tg.id)}" title="${escHtml(tip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:transparent;color:${escHtml(c)};border:1px dashed ${escHtml(c)};font-weight:600;opacity:0.8;">${escHtml(tg.name)} <span class="tag-chip-inherited-label" style="font-weight:400;font-size:9px;">${escHtml(label)}</span></span>`;
+    // A bare-id system tag inherits the axis-word rule too; the tooltip then
+    // carries the full tag instead of the inherited hint (the chip still says
+    // "inherited").
+    const parts = _placementChipParts(tg.name);
+    const chipTip = parts.idLike ? tg.name : tip;
+    return `<span class="tag-chip tag-chip-inherited" data-tag-id="${escHtml(tg.id)}" title="${escHtml(chipTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:transparent;color:${escHtml(c)};border:1px dashed ${escHtml(c)};font-weight:600;opacity:0.8;">${escHtml(parts.label)} <span class="tag-chip-inherited-label" style="font-weight:400;font-size:9px;">${escHtml(label)}</span></span>`;
   });
   // Placement (system) tags: machine-derived axis tags, skipped when already
   // rendered via the own/inherited rows (same name).
@@ -57377,7 +58146,12 @@ function _sessionTagChipList(sess) {
   const systemNames = (Array.isArray(sess.system_tags) ? sess.system_tags : []).map(_placementTagName).filter(n => n && !shownNames.has(n));
   const sysTip = _tagT('placement_tag_tip', 'Placement tag — set by the machine');
   const systemChips = systemNames.map(n => {
-    return `<span class="tag-chip tag-chip-placement" data-placement="1" title="${escHtml(sysTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;color:var(--success,#10b981);background:color-mix(in srgb, var(--success,#10b981) 12%, transparent);border:1px solid var(--success,#10b981);font-weight:700;">⚙️ ${escHtml(n)}</span>`;
+    // A bare-id axis tag (automaton:1d440001, stage:ab12, task:3) reads as
+    // the axis word only; the full tag lives in the tooltip. Readable values
+    // (lane:gpu, kind:research, role:reviewer, ...) are unchanged.
+    const parts = _placementChipParts(n);
+    const chipTip = parts.idLike ? n : sysTip;
+    return `<span class="tag-chip tag-chip-placement" data-placement="1" title="${escHtml(chipTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;color:var(--success,#10b981);background:color-mix(in srgb, var(--success,#10b981) 12%, transparent);border:1px solid var(--success,#10b981);font-weight:700;">⚙️ ${escHtml(parts.label)}</span>`;
   });
   return own.map(_tagChipHTML).concat(inheritedChips, systemChips);
 }
@@ -57633,6 +58407,16 @@ function _sessionTagFilter(sessions) {
   if (!keys.length) return sessions;
   const mode = _tagBrowseMode('session');
   const test = (s, key) => {
+    // Compute chips name the node a session runs on, not a raw tag value: a
+    // peer entry matches its own rows (which never carry a compute tag) and
+    // the local entry matches the local rows even when their compute tag is
+    // an alias of the host name. Resolved via _sessionComputeNodeNames so the
+    // filter and the group entries agree on every name they can show.
+    const k = String(key);
+    if (k.indexOf('compute:') === 0) {
+      const node = k.slice('compute:'.length);
+      if (node) { let names; try { names = _sessionComputeNodeNames(s); } catch (_) { names = []; } if (names.indexOf(node) >= 0) return true; }
+    }
     const own = Array.isArray(s.tags) ? s.tags : [];
     const inherited = Array.isArray(s.inherited_tags) ? s.inherited_tags : [];
     const set = _tagBrowseItemSet({ tags: own.concat(inherited) }, tree);
