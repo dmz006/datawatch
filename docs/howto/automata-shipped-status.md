@@ -283,7 +283,7 @@ pass to run at every daemon start.
 ## 7. What shipped does not do
 
 - It does not change a stored status, ever — recording and backfill both
-  leave it alone, in either direction (a shipped completed stays
+  leave it alone (the separate [Completed migration](automata-completed-migration.md) is what moves a merged cancelled record to `completed`), in either direction (a shipped completed stays
   `completed`; a shipped cancelled stays `cancelled`).
 - It does not push, merge or move any branch: it records facts about
   merges that happened.
@@ -292,6 +292,7 @@ pass to run at every daemon start.
   best-effort, and a failed record never fails a merge that succeeded.
 
 ## See also
+- [Show finished Automata as Completed](automata-completed-migration.md) — the separate migration that moves a merged-but-cancelled record to `completed`
 
 - [Autonomous planning](autonomous-planning.md) — the Automaton lifecycle the shipped state sits alongside
 - [Automation chains](automation-chains.md) — the Automation records the shipped state covers

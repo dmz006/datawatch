@@ -1026,6 +1026,10 @@ A bad value is never applied: a negative whole number (for example -2) or non-nu
 
 In outcomes 2 and 3 the Automaton is `needs_review`, not `blocked` and not running: the review's findings are attached so the operator sees what was found, and lane fill does not self-approve and auto-run a held Automaton — an approval is what moves it along.
 
+### Cancelled Automata whose work already merged
+
+An Automaton cancelled after its branch merged reads `cancelled` although its work landed. Run `datawatch autonomous completed-migrate --dry-run`, read each reason, then run it for real (`--limit N` to go in steps, `--id <id>` for one record). Records without a shipped record or a merge proof stay cancelled. A real run is refused (409) while a final gate runs; no session is touched and the completion time is the merge time, not now. There is no setting and no automatic run, and no surface to undo it. See [howto/automata-completed-migration.md](howto/automata-completed-migration.md).
+
 ### Blocked or needs-review Automaton: fix, commit, rejudge
 
 When the completion review has blocked an Automaton, or holds it in `needs_review` after the retries were spent (or with auto-fix turned off), and the fix is already in the work, you do not need to cancel the Automaton, add a task and reset it. Re-run the review on the new work instead:

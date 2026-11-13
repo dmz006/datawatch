@@ -97,6 +97,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automation list](#automation-list)
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
   - [Shipped](#shipped)
+  - [Completed migration](#completed-migration)
 - [Dashboard](#dashboard)
   - [Network card (work map)](#network-card-work-map)
   - [Lane pulse](#lane-pulse)
@@ -789,6 +790,10 @@ Automation needs a backend for each workload: an **execution** backend (at least
 [howto/llm-registry.md](howto/llm-registry.md)
 
 ---
+
+### Completed migration
+
+The **completed migration** moves Automata (and Automations) that ended `cancelled` but whose work is already merged on the default branch to **Completed**, so finished work stops showing as cancelled. Evidence is a shipped record or the read-only merge proof of the `automaton/<id>` branch; records with neither stay cancelled. The completion time is the merge time (shipped record) or the merge commit's commit time, never the run time, and each change is logged as a `completed_migration` decision. It never touches a session. Run it with a dry run first: CLI `datawatch autonomous completed-migrate`, REST `POST /api/autonomous/completed/migrate`, MCP `autonomous_completed_migrate`, comm `autonomous completed-migrate`. Unlike [Shipped](#shipped), which never changes a status, this does. See [howto/automata-completed-migration.md](howto/automata-completed-migration.md).
 
 ## Dashboard
 
