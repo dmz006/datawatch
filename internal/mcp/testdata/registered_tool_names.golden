@@ -354,6 +354,7 @@ guardrail_profile_delete
 guardrail_profile_get
 guardrail_profile_list
 guardrail_profile_update
+housekeeping_repairs
 identity_backups
 kill_session
 list_orphaned_sessions

@@ -23600,6 +23600,12 @@ const GENERAL_CONFIG_FIELDS = [
     // through GET and PUT /api/autonomous/rules-context.
     { label: 'Rules and context', labelKey: 'settings_rules_context_title', docsKey: 'settings_rules_context_title', type: 'group' },
     { type: 'rules_context_card' },
+    // Housekeeping repairs — one mode per repair group (off, report or on; default report).
+    { label: 'Housekeeping repairs', labelKey: 'settings_housekeeping_repairs_group', hintKey: 'settings_housekeeping_repairs_group_hint', type: 'group' },
+    { key: 'autonomous.housekeeping_repairs.task_chain', label: 'Task chain repairs', labelKey: 'settings_housekeeping_task_chain', helpKey: 'settings_housekeeping_task_chain_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.housekeeping_repairs.advance_judge', label: 'Judged Automaton advance repairs', labelKey: 'settings_housekeeping_advance_judge', helpKey: 'settings_housekeeping_advance_judge_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Platform context — the toggle and the project note. Reads GET /api/config and writes
     // through PUT /api/config (platform_context.enabled, platform_context.note).
     { label: 'Platform context', labelKey: 'settings_platform_context_title', docsKey: 'settings_platform_context_title', type: 'group' },
@@ -37707,6 +37713,53 @@ function _automationUnlandedWorkLoader() {
   });
 }
 
+// ── Housekeeping repairs card ────────────────────────────────────────────────
+// housekeepingRepairsCardHtml(data) draws GET /api/autonomous/housekeeping-repairs:
+// { grace_seconds, groups: [{group, mode, would, did, failed, skipped_unsafe}] }.
+// Each group shows its mode, what it would do (report mode) and what it did.
+const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers'];
+const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers' };
+const HOUSEKEEPING_MODE_LABELS = { off: 'housekeeping_repairs_mode_off', report: 'housekeeping_repairs_mode_report', on: 'housekeeping_repairs_mode_on' };
+function _housekeepingRecs(list) {
+  return (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');
+}
+function _housekeepingRecLine(keyPrefix, r, text) {
+  const when = _triageTime(r.at);
+  return `<div class="housekeeping-repair-rec" style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t(keyPrefix, [String(r.subject || ''), text || '', when || '']))}</div>`;
+}
+window.housekeepingRepairsCardHtml = function(data) {
+  const d = (data && typeof data === 'object') ? data : {};
+  const byGroup = {};
+  (Array.isArray(d.groups) ? d.groups : []).forEach(g => { if (g && g.group) byGroup[g.group] = g; });
+  const rows = HOUSEKEEPING_GROUPS.map(name => {
+    const g = byGroup[name] || { group: name, mode: 'report' };
+    const mode = ['off', 'report', 'on'].includes(g.mode) ? g.mode : 'report';
+    const would = _housekeepingRecs(g.would), did = _housekeepingRecs(g.did);
+    const failed = _housekeepingRecs(g.failed), skipped = _housekeepingRecs(g.skipped_unsafe);
+    const lines = [];
+    would.slice(0, 5).forEach(r => lines.push(_housekeepingRecLine('housekeeping_repairs_would_line', r, r.found)));
+    did.slice(0, 5).forEach(r => lines.push(_housekeepingRecLine('housekeeping_repairs_did_line', r, r.done || r.found)));
+    failed.slice(0, 5).forEach(r => lines.push(_housekeepingRecLine('housekeeping_repairs_failed_line', r, r.found)));
+    skipped.slice(0, 5).forEach(r => lines.push(_housekeepingRecLine('housekeeping_repairs_skipped_line', r, r.found)));
+    const empty = lines.length ? '' : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('housekeeping_repairs_nothing'))}</div>`;
+    return `<div class="housekeeping-repair-group" data-group="${escHtml(name)}" data-mode="${escHtml(mode)}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+      `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t(HOUSEKEEPING_GROUP_LABELS[name]))} — ${escHtml(t(HOUSEKEEPING_MODE_LABELS[mode]))}</div>` +
+      `<div style="font-size:11px;color:var(--text2);">${escHtml(t('housekeeping_repairs_counts', [would.length, did.length, failed.length, skipped.length]))}</div>` +
+      lines.join('') + empty + `</div>`;
+  }).join('');
+  return `<div class="prd-capacity-card housekeeping-repairs-card" style="min-width:0;"><div class="cap-title">${escHtml(t('housekeeping_repairs_card_title'))}${_housekeepingHelpLink('housekeeping_repairs_card', 'housekeeping_repairs_help_link')}</div>` +
+    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('housekeeping_repairs_purpose'))} ${escHtml(t('housekeeping_repairs_grace', [Number(d.grace_seconds) || 0]))}</div>${rows}</div>`;
+};
+
+function _automationHousekeepingRepairsLoader() {
+  return window._listLoaders.automation_housekeeping_repairs || listLoader({
+    key: 'automation_housekeeping_repairs', el: 'automationHousekeepingRepairsCard', url: '/api/autonomous/housekeeping-repairs', pollMs: 30000,
+    failedText: msg => t('housekeeping_repairs_failed', [msg]),
+    active: () => !!document.getElementById('automationHousekeepingRepairsCard'),
+    render: data => window.housekeepingRepairsCardHtml(data),
+  });
+}
+
 // _cleanupSkipReasonText names a skip reason in the operator's language and
 // falls back to the raw reason name when no label exists for it.
 function _cleanupSkipReasonText(reason) {
@@ -42225,6 +42278,15 @@ function _automationPlaceholderHTML(id) {
 // starts and stops the shared loader. Each card hides itself when it has no value.
 registerAutomationCardSlot('progress', { id: 'automationProgressHeadline', order: 105, html: '<div id="metricCardRow" class="metric-cards"><div id="automationProgressHeadline" style="display:none;"></div><div id="automationCostBillingCard" style="display:none;"></div><div id="automationCompletionForecastCard" style="display:none;"></div></div>',
   mount: _metricCardsStart, stop: _metricCardsStop });
+// The Housekeeping repairs card sits above the Unlanded work card and is
+// polled only while the Housekeeping sub-tab is shown.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationHousekeepingRepairsCard',
+  order: 90,
+  html: _automationPlaceholderHTML('automationHousekeepingRepairsCard'),
+  mount: () => listLoaderAll([_automationHousekeepingRepairsLoader()]),
+  stop: () => _automationStopLoaders(['automation_housekeeping_repairs']),
+});
 // The Unlanded work card fills the Housekeeping slot: hidden until the list
 // has a row, and polled only while the Housekeeping sub-tab is shown.
 registerAutomationCardSlot('housekeeping', {

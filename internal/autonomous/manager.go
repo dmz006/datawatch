@@ -1367,6 +1367,8 @@ var builtinTypes = []AutomatonType{
 // Manager is the public façade for the autonomous package.
 type Manager struct {
 	mu sync.Mutex
+	// housekeepingRepairer feeds the housekeeping repairs read view. Guarded by mu.
+	housekeepingRepairer *Repairer
 	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
 	// Guarded by mu; nil means no usage is reported.
 	laneUtilUsage LaneUtilizationUsageSource

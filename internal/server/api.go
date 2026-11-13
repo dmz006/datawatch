@@ -6708,6 +6708,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// unset block shows its defaults. Validated by ValidateTagSetting.
 			"tags":      tagSettingsForDisplay(s.cfg.Autonomous.Tags),
 			"auto_tags": autoTagsSettingsForDisplay(s.cfg.Autonomous.AutoTags),
+			// Housekeeping repairs (autonomous.housekeeping_repairs) — the effective
+			// mode per group (off|report|on) and the grace seconds.
+			"housekeeping_repairs": housekeepingRepairsSettingsForDisplay(s.cfg.Autonomous.HousekeepingRepairs),
 			// Defect queue (autonomous.defect_queue) — effective block values and
 			// per-project overrides. Validated by ValidateDefectQueueSetting.
 			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
@@ -7179,6 +7182,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// shared validator before anything is applied, so a bad value rejects the
 	// whole PUT and the comm, MCP and CLI surfaces show the same message.
 	if verr := firstAutoTagsSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Housekeeping repairs (autonomous.housekeeping_repairs.*): same shared
+	// validator, so a bad mode rejects the whole PUT with one message on every
+	// surface and nothing is written.
+	if verr := firstHousekeepingRepairsSettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9884,6 +9894,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig before this runs; Set stores the
 			// normalized value and leaves the block unchanged on a refusal.
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
+		case "autonomous.housekeeping_repairs.task_chain", "autonomous.housekeeping_repairs.advance_judge",
+			"autonomous.housekeeping_repairs.lane_fill", "autonomous.housekeeping_repairs.leftovers",
+			"autonomous.housekeeping_repairs.grace_seconds":
+			// Validated in handlePutConfig before this runs. The Repairer reads
+			// the block live through its Settings hook, so no restart is needed.
+			applyHousekeepingRepairsKey(cfg, k, v)
 		case "autonomous.auto_tags.enabled", "autonomous.auto_tags.automation_template",
 			"autonomous.auto_tags.stage_template", "autonomous.auto_tags.kind_template",
 			"autonomous.auto_tags.kind_labels":

@@ -52,7 +52,7 @@ const PLACEHOLDERS = {
   automations: ['automationReleaseArcCard', 'automationGanttCard'],
   resources: ['automationLaneUtilizationCard', 'automationVerifierSlotsCard'],
   progress: ['automationAllProjectsGanttCard'],
-  housekeeping: ['automationStaleWorktreesCard'],
+  housekeeping: ['automationHousekeepingRepairsCard', 'automationStaleWorktreesCard'],
 };
 
 // The Progress tab's headline row holds two more cards, and the cost chart cards follow them; all hidden until they have a value.
@@ -133,7 +133,7 @@ test('card ownership: each tab body holds exactly its fixed cards then its place
       seen.set(c, id);
     });
   }
-  assert.equal(seen.size, 4 + 2 + 4 + 1 + 3 + 8 + 1, 'total distinct card ids (fixed 14 + placeholders 8 + cost charts 1)');
+  assert.equal(seen.size, 4 + 2 + 4 + 1 + 3 + 9 + 1, 'total distinct card ids (fixed 14 + placeholders 9 + cost charts 1)');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[0], 'automationQuestionsCard', 'open questions card is first on Inbox');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[2], 'automationTriageCard', 'triage card follows the question and held cards');
 });
@@ -167,7 +167,7 @@ test('slots: a slot registered on resources appears only there, after the fixed 
       assert.match(body, new RegExp('<div id="' + p + '" class="prd-capacity-slot" style="display:none;[^"]*"></div>'), p + ' is a hidden empty placeholder on ' + tab);
     }
   }
-  assert.equal(Object.values(PLACEHOLDERS).flat().length, 6, 'six placeholders');
+  assert.equal(Object.values(PLACEHOLDERS).flat().length, 7, 'seven placeholders');
 });
 
 test('inbox badge: summed count from the existing routes, aria-label, hidden at zero, kept when another tab is shown', async () => {
