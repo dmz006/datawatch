@@ -25,13 +25,13 @@ func (a Attachment) IsImage() bool {
 
 // Message represents an inbound message from any messaging backend.
 type Message struct {
-	ID          string      // opaque message ID (may be empty)
-	GroupID     string      // channel/group this came from
-	GroupName   string      // human-readable group name (optional)
-	Sender      string      // sender identifier (phone, user ID)
-	SenderName  string      // display name (optional)
-	Text        string      // message body
-	Backend     string      // which backend produced this
+	ID          string       // opaque message ID (may be empty)
+	GroupID     string       // channel/group this came from
+	GroupName   string       // human-readable group name (optional)
+	Sender      string       // sender identifier (phone, user ID)
+	SenderName  string       // display name (optional)
+	Text        string       // message body
+	Backend     string       // which backend produced this
 	Attachments []Attachment // optional file attachments (voice, audio, etc.)
 }
 

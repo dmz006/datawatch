@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	maxLabelLen = 60  // max bytes per DNS label (leaving room for overhead)
+	maxLabelLen = 60 // max bytes per DNS label (leaving room for overhead)
 	cmdLiteral  = "cmd"
 )
 

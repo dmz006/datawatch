@@ -42,9 +42,9 @@ func TestHasCRLF(t *testing.T) {
 	cases := map[string]bool{
 		"a@example.com":              false,
 		"":                           false,
-		"a\r\nBcc: evil@example.com":       true,
-		"a\nBcc: evil@example.com":         true,
-		"a\rBcc: evil@example.com":         true,
+		"a\r\nBcc: evil@example.com": true,
+		"a\nBcc: evil@example.com":   true,
+		"a\rBcc: evil@example.com":   true,
 		"normal multi\nline is fine": true, // hasCRLF doesn't distinguish context -- callers decide what to check
 	}
 	for in, want := range cases {
