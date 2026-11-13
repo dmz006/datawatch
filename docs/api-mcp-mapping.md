@@ -152,6 +152,7 @@ documenting coverage gaps and the reasoning behind them.
 | `PUT /api/plan-records/{kind}/{ref}` | `plan_record_update` | Complete | partial update; `project`, `kind` and `legacy_number` cannot change; a rename keeps the old title as an alias |
 | `GET /api/plan-records/search` | `plan_record_search` | Complete | `q` required; optional `kind`, `project`, `state`, `limit`, `offset` |
 | `POST /api/plan-records/import` | `plan_record_import` | Complete | `dry_run=true` previews and writes nothing; MCP args `project`, `source`, `conflict_policy`, `dry_run` (default `true`) |
+| `POST /api/plans/migrate` | `plan_migrate` | Complete | previews unless `apply` is `true`; builds plans from project arcs and registry rows; never changes an existing plan or link |
 | `GET /api/autonomous/tags/registry` | — | Not in MCP | Keeper-to-peer protocol route that serves the keeper's snapshot to peers. Not an operator action; the status tool shows this daemon's registry object instead |
 | `POST /api/autonomous/tags/registry/write` | — | Not in MCP | Keeper-to-peer protocol route that applies one forwarded tag write on the keeper. Not an operator action; peers call it, operators use the tag routes on the peer |
 | `POST /api/autonomous/prds/{id}/set_tags` | `autonomous_prd_set_tags` | Complete | body `{tag_ids[], primary_tag_id?}`, MCP args `tag_ids_json` and `primary_tag_id`; replaces the list (empty clears), and `primary_tag_id` alone keeps the tags |

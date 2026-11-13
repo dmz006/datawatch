@@ -828,6 +828,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPlanRecordUpdate(), tracked(s.handlePlanRecordUpdate))
 	mcpSrv.AddTool(s.toolPlanRecordSearch(), tracked(s.handlePlanRecordSearch))
 	mcpSrv.AddTool(s.toolPlanRecordImport(), tracked(s.handlePlanRecordImport))
+	mcpSrv.AddTool(s.toolPlanMigrate(), tracked(s.handlePlanMigrate))
 	mcpSrv.AddTool(s.toolAutonomousRepoCIWatch(), tracked(s.handleAutonomousRepoCIWatch))
 	mcpSrv.AddTool(s.toolQuestionStats(), tracked(s.handleQuestionStats))
 	mcpSrv.AddTool(s.toolQuestionQuality(), tracked(s.handleQuestionQuality))

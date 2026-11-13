@@ -62,6 +62,7 @@ candidates so you can repeat the call with an id.
 | MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. |
 | CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. |
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
+| Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
 | PWA | The **Plan records** section of the project page in the Projects sub-tab: Registry rows and Findings views, a state filter, a search box, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The section hides itself when plan records are off. |
 
 Each created or changed record writes one `plan_record_created` or
@@ -227,3 +228,34 @@ Nothing here turns on by itself. These are yours to settle:
   project root.
 - **A shipped row did not appear.** Check `write_through` is on and the hook
   result in the merge run; with it off the hook edits the README as before.
+
+## Building plans from arcs and rows
+
+A plan groups work to come and links down to Automations and Automata. The
+migration builds plans from what you already have:
+
+- Every project arc becomes one plan: the title and goal come from its
+  Automation, the arc priority becomes the plan order, the arc state
+  (planned, active, done) becomes the plan state, and the plan links to that
+  Automation.
+- Every registry row whose text or links name an Automaton or Automation id
+  becomes a plan linked to it. The plan is titled `Plan: <row title>`, because a
+  title is unique inside a project and the row keeps its own.
+- Every open row that names none becomes a backlog plan, ordered by its old row
+  number. A closed row that names none is left out.
+
+It previews by default. Read the lists (would create, would link, left alone,
+conflicts), then apply:
+
+```
+datawatch plans migrate            # preview, writes nothing
+datawatch plans migrate --apply    # write
+```
+
+Every plan the migration makes carries a `migrated-from` link naming its source,
+so a second apply finds it again and changes nothing. An Automaton or
+Automation already linked to a plan is left where it is and reported as left
+alone; a title already taken by a record the migration did not make is reported
+as a conflict and left alone. No arc, row or config key is deleted. An apply
+writes one audit event (`plan_record_imported`, subject `plans migrate`) besides
+the event for each plan and link it writes.

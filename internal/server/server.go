@@ -610,6 +610,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/decision-records", api.handleDecisionRecords)                       // decision records: create and list (exact path wins over the subtree)
 	apiMux.HandleFunc("/api/autonomous/decision-records/", api.handleDecisionRecords)                      // decision records: one by id, update, withdraw
 	apiMux.HandleFunc("/api/plan-records/", api.handlePlanRecords)                                         // plan records: registry rows, findings, search, import
+	apiMux.HandleFunc("/api/plans/migrate", api.handlePlansMigrate)                                         // plans migrate: dry run by default, {apply:true} writes plans from arcs and registry rows
 	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                           // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                              // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
 	apiMux.HandleFunc("/api/supervisor-loop/jobs", api.handleSupervisorLoopJobs)                           // supervisor loop jobs: style, backend, model, enabled, last outcome
