@@ -1396,14 +1396,14 @@ func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 }
 
 func newAutonomousPRDEditTaskCmd() *cobra.Command {
-	var taskID, newSpec, reportPath string
+	var taskID, newSpec, reportPath, verificationScript, verificationScriptReason string
 	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "prd-edit-task <prd-id> --task <task-id> [--spec <new-spec>] [--read-only[=false]] [--report-path <path>]",
-		Short: "Rewrite a task's spec, read-only mark or report path before approving",
+		Use:   "prd-edit-task <prd-id> --task <task-id> [--spec <new-spec>] [--read-only[=false]] [--report-path <path>] [--verification-script <path>] [--verification-script-reason <text>]",
+		Short: "Rewrite a task's spec, read-only mark, report path, verification script or script exemption reason before approving",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := prdEditTaskCLIBody(cmd, taskID, newSpec, readOnly, reportPath)
+			body, err := prdEditTaskCLIBody(cmd, taskID, newSpec, readOnly, reportPath, verificationScript, verificationScriptReason)
 			if err != nil {
 				return err
 			}
@@ -1414,6 +1414,8 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (omit to keep the spec) — the full spec text: to edit the existing spec, read it first (prd-get's default full view returns the whole spec, uncut); a spec carrying a capped view's truncation marker is refused here and by the daemon")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only (changes no files; may skip the tree lock); --read-only=false clears it; omit to leave unchanged")
 	cmd.Flags().StringVar(&reportPath, "report-path", "", "the one repo-relative report path a read-only task may write (under .datawatch/reports/); requires the task to be read-only")
+	cmd.Flags().StringVar(&verificationScript, "verification-script", "", "the task's verification script: one repo-relative script file (for example scripts/verify.sh), not a command string; also added to the task's generated files")
+	cmd.Flags().StringVar(&verificationScriptReason, "verification-script-reason", "", "why the task carries no verification script (the exemption the plan check accepts in place of a script); may be given with or without --verification-script")
 	_ = cmd.MarkFlagRequired("task")
 	return cmd
 }
@@ -1421,11 +1423,12 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 // prdEditTaskCLIBody builds the edit_task request body. The read_only key is
 // sent only when the --read-only flag was given, so an unset flag leaves the
 // task's mark unchanged; the report_path key is sent only when --report-path
-// was given non-empty (an empty path is the same as none).
-func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly bool, reportPath string) ([]byte, error) {
+// was given non-empty (an empty path is the same as none); the
+// verification_script and verification_script_reason keys follow the same rule.
+func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly bool, reportPath, verificationScript, verificationScriptReason string) ([]byte, error) {
 	roSet := cmd.Flags().Changed("read-only")
-	if newSpec == "" && !roSet && reportPath == "" {
-		return nil, fmt.Errorf("nothing to edit: pass --spec, --read-only and/or --report-path")
+	if newSpec == "" && !roSet && reportPath == "" && verificationScript == "" && verificationScriptReason == "" {
+		return nil, fmt.Errorf("nothing to edit: pass --spec, --read-only, --report-path, --verification-script and/or --verification-script-reason")
 	}
 	if newSpec != "" {
 		// Text copied out of a capped view carries the truncation
@@ -1445,6 +1448,12 @@ func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly boo
 	}
 	if reportPath != "" {
 		body["report_path"] = reportPath
+	}
+	if verificationScript != "" {
+		body["verification_script"] = verificationScript
+	}
+	if verificationScriptReason != "" {
+		body["verification_script_reason"] = verificationScriptReason
 	}
 	return json.Marshal(body)
 }

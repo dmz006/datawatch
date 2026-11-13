@@ -1382,14 +1382,19 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			NewSpec    string `json:"new_spec"`
 			ReadOnly   *bool  `json:"read_only,omitempty"`
 			ReportPath string `json:"report_path,omitempty"`
-			Actor      string `json:"actor"`
+			// VerificationScript is one repo-relative script file;
+			// VerificationScriptReason is the stated exemption for a task
+			// with no script. Empty leaves each unchanged.
+			VerificationScript       string `json:"verification_script,omitempty"`
+			VerificationScriptReason string `json:"verification_script_reason,omitempty"`
+			Actor                    string `json:"actor"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.TaskID == "" || (req.NewSpec == "" && req.ReadOnly == nil && req.ReportPath == "") {
-			http.Error(w, "task_id and at least one of new_spec / read_only / report_path required", http.StatusBadRequest)
+		if req.TaskID == "" || (req.NewSpec == "" && req.ReadOnly == nil && req.ReportPath == "" && req.VerificationScript == "" && req.VerificationScriptReason == "") {
+			http.Error(w, "task_id and at least one of new_spec / read_only / report_path / verification_script / verification_script_reason required", http.StatusBadRequest)
 			return
 		}
 		if msg, refuse := truncationRefusal("new_spec", req.NewSpec); refuse {
@@ -1399,12 +1404,16 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.EditTask(id, req.TaskID, req.NewSpec, req.ReadOnly, req.ReportPath, req.Actor)
+		updated, err := s.autonomousMgr.EditTask(id, req.TaskID, req.NewSpec, req.ReadOnly, req.ReportPath, req.VerificationScript, req.VerificationScriptReason, req.Actor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "edit_task", "automaton", id, map[string]any{"task_id": req.TaskID}) // GH#201 Phase 4
+		s.audit(r.Context(), "edit_task", "automaton", id, map[string]any{ // GH#201 Phase 4
+			"task_id":                    req.TaskID,
+			"verification_script":        req.VerificationScript,
+			"verification_script_reason": req.VerificationScriptReason,
+		})
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	case "edit_story":

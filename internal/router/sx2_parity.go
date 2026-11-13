@@ -686,7 +686,7 @@ func (r *Router) handleAutonomousListVerb(args []string) {
 
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|event-log [kind=K] [project=P] [q=TEXT] [limit=1..10] [before=CURSOR]|event-kinds [group=G]|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|plan-coverage <id>|generated-artefacts [set <key> <on|off>]|change-record <id>|regenerate <id> <kind>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> [read_only=true|false] [<new-spec>]|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-node <automaton> <task> <node|clear>|set-story-node <automaton> <story> <node|clear>|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec> [--parent <automaton-id>]|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|lane-fill [limit]|lane-utilization [window]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|onboarding-report [text|json]|merge-shadow|merge-pipeline [show|set-record|clear-record|validate]|triage [automation-id]|checks [automaton-id]|ship [automaton-id]|rules [automaton-id]|rules set <key> <value> [project-dir]|restart-interruptions|decisions [automaton-id]|planning-routing [show|test|scorecard]|task-routing [show|profile list|profile use <name>|automaton <id>|dry-run <id> [profile]]|decision-records [automaton-id]|decision-record <id>|decision-record create <json>|decision-record withdraw <id> [reason]|plan-records [registry-row|finding] [project=P] [state=S]|plan-record get <ref>|plan-record create <json>|plan-record update <ref> <json>|plan-record search <text>|plan-record import [dry-run]|repo-ci-watch|supervisor-watch|housekeeping-repairs|supervisor jobs|supervisor runs [job=X] [outcome=Y] [limit=N]|supervisor wake [status|set key=value ...]|peer-events [status|start <peer> <queue> [since=N]|stop <peer>]|supervisor run job=NAME [input=X] [candidates=A,B]|merge|safe-to-delete|cleanup|lint config|lint config-set key=value|lint dry-run <id>|lint findings <id>|uncommitted-work [automaton-id]|unlanded-work [keep|archive-branch|delete-worktree <branch> [confirm]]|protected-paths [automaton-id]|authorize-paths <automaton-id> <path> [<path>...]|authorize-paths <automaton-id> clear|request-watch [session <id>|automaton <id>]|host-load|merged-members [automation-id]|pending-items [waiting|attached|done] [automation-id]|pending-item-add <title...> [ref=<label>]|pending-item-attach <item-id> <automaton-id>|pending-items-refresh|overlap <text>|security-failure [run-id]|tags [counts]|tags sweep [dry-run]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|session-tags list|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions|requirements-report [text|json]|model-pull-consent-get|model-pull-consent-set model=<name> [deny=<name> ...] [publisher=<p> ...]|branch-refresh <id> enabled|disabled|inherit|branch-refresh-stats|node-versions <name>|standard-tasks}"
+	help := "usage: autonomous {status|list|event-log [kind=K] [project=P] [q=TEXT] [limit=1..10] [before=CURSOR]|event-kinds [group=G]|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|plan-coverage <id>|generated-artefacts [set <key> <on|off>]|change-record <id>|regenerate <id> <kind>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> [read_only=true|false] [report_path=<path>] [verification_script=<path>] [verification_script_reason=<text>] [<new-spec>]|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-node <automaton> <task> <node|clear>|set-story-node <automaton> <story> <node|clear>|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec> [--parent <automaton-id>]|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|lane-fill [limit]|lane-utilization [window]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|onboarding-report [text|json]|merge-shadow|merge-pipeline [show|set-record|clear-record|validate]|triage [automation-id]|checks [automaton-id]|ship [automaton-id]|rules [automaton-id]|rules set <key> <value> [project-dir]|restart-interruptions|decisions [automaton-id]|planning-routing [show|test|scorecard]|task-routing [show|profile list|profile use <name>|automaton <id>|dry-run <id> [profile]]|decision-records [automaton-id]|decision-record <id>|decision-record create <json>|decision-record withdraw <id> [reason]|plan-records [registry-row|finding] [project=P] [state=S]|plan-record get <ref>|plan-record create <json>|plan-record update <ref> <json>|plan-record search <text>|plan-record import [dry-run]|repo-ci-watch|supervisor-watch|housekeeping-repairs|supervisor jobs|supervisor runs [job=X] [outcome=Y] [limit=N]|supervisor wake [status|set key=value ...]|peer-events [status|start <peer> <queue> [since=N]|stop <peer>]|supervisor run job=NAME [input=X] [candidates=A,B]|merge|safe-to-delete|cleanup|lint config|lint config-set key=value|lint dry-run <id>|lint findings <id>|uncommitted-work [automaton-id]|unlanded-work [keep|archive-branch|delete-worktree <branch> [confirm]]|protected-paths [automaton-id]|authorize-paths <automaton-id> <path> [<path>...]|authorize-paths <automaton-id> clear|request-watch [session <id>|automaton <id>]|host-load|merged-members [automation-id]|pending-items [waiting|attached|done] [automation-id]|pending-item-add <title...> [ref=<label>]|pending-item-attach <item-id> <automaton-id>|pending-items-refresh|overlap <text>|security-failure [run-id]|tags [counts]|tags sweep [dry-run]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|session-tags list|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions|requirements-report [text|json]|model-pull-consent-get|model-pull-consent-set model=<name> [deny=<name> ...] [publisher=<p> ...]|branch-refresh <id> enabled|disabled|inherit|branch-refresh-stats|node-versions <name>|standard-tasks}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -993,18 +993,18 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous request-revision", prettyJSON(out))
 	case "edit-task", "edit_task":
-		const editTaskUsage = "usage: autonomous edit-task <prd-id> <task-id> [read_only=true|false] [report_path=<path>] [<new-spec…>]"
+		const editTaskUsage = "usage: autonomous edit-task <prd-id> <task-id> [read_only=true|false] [report_path=<path>] [verification_script=<path>] [verification_script_reason=<text|\"quoted text\">] [<new-spec…>]"
 		if len(args) < 4 {
 			r.reply("autonomous edit-task failed", editTaskUsage)
 			return
 		}
-		rest, readOnly, reportPath, tokErr := takeTaskTokens(args[3:])
+		rest, tok, tokErr := takeEditTaskTokens(args[3:])
 		if tokErr != nil {
 			r.reply("autonomous edit-task failed", tokErr.Error())
 			return
 		}
 		newSpec := strings.TrimSpace(strings.Join(rest, " "))
-		if newSpec == "" && readOnly == nil && reportPath == "" {
+		if newSpec == "" && tok.readOnly == nil && tok.reportPath == "" && tok.verificationScript == "" && tok.verificationScriptReason == "" {
 			r.reply("autonomous edit-task failed", editTaskUsage)
 			return
 		}
@@ -1016,11 +1016,17 @@ func (r *Router) handleAutonomous(cmd Command) {
 		if newSpec != "" {
 			editBody["new_spec"] = newSpec
 		}
-		if readOnly != nil {
-			editBody["read_only"] = *readOnly
+		if tok.readOnly != nil {
+			editBody["read_only"] = *tok.readOnly
 		}
-		if reportPath != "" {
-			editBody["report_path"] = reportPath
+		if tok.reportPath != "" {
+			editBody["report_path"] = tok.reportPath
+		}
+		if tok.verificationScript != "" {
+			editBody["verification_script"] = tok.verificationScript
+		}
+		if tok.verificationScriptReason != "" {
+			editBody["verification_script_reason"] = tok.verificationScriptReason
 		}
 		body, _ := json.Marshal(editBody)
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/edit_task", string(body))
@@ -2062,13 +2068,43 @@ func takeReadOnlyToken(args []string) ([]string, *bool, error) {
 	return rest, ro, err
 }
 
+// taskTokens are the option tokens an edit-task or add-task command can carry
+// ahead of its free text. A nil readOnly or an empty string means the token was
+// absent.
+type taskTokens struct {
+	readOnly                 *bool
+	reportPath               string
+	verificationScript       string
+	verificationScriptReason string
+}
+
 // takeTaskTokens strips leading read_only=<bool> and report_path=<path>
 // tokens (in either order) from args and returns the remaining words plus the
 // parsed values (flag nil / path empty when absent). Any other word ends the
 // token run and starts the positional text.
 func takeTaskTokens(args []string) ([]string, *bool, string, error) {
-	var ro *bool
-	var reportPath string
+	rest, tok, err := takeTaskTokenRun(args, false)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return rest, tok.readOnly, tok.reportPath, nil
+}
+
+// takeEditTaskTokens is takeTaskTokens for edit-task: it also takes
+// verification_script=<path> and verification_script_reason=<text> in any
+// order among the leading tokens.
+func takeEditTaskTokens(args []string) ([]string, taskTokens, error) {
+	return takeTaskTokenRun(args, true)
+}
+
+// takeTaskTokenRun is the shared leading-token loop. withScript turns on the
+// two verification script keys; without it they end the token run like any
+// other word. The reason is split on whitespace like every other word, so a
+// reason with spaces is written in double quotes
+// (verification_script_reason="docs only change"); an unterminated quote is an
+// error rather than a silently shortened reason.
+func takeTaskTokenRun(args []string, withScript bool) ([]string, taskTokens, error) {
+	var tok taskTokens
 tokens:
 	for len(args) > 0 {
 		k, v, ok := strings.Cut(args[0], "=")
@@ -2077,19 +2113,40 @@ tokens:
 		}
 		k = strings.TrimSpace(k)
 		v = strings.TrimSpace(v)
-		switch k {
-		case "read_only", "read-only":
+		switch {
+		case k == "read_only" || k == "read-only":
 			b, err := strconv.ParseBool(v)
 			if err != nil {
-				return nil, nil, "", fmt.Errorf("read_only must be true or false, got %q", v)
+				return nil, taskTokens{}, fmt.Errorf("read_only must be true or false, got %q", v)
 			}
-			ro = &b
-		case "report_path":
-			reportPath = v
+			tok.readOnly = &b
+		case k == "report_path":
+			tok.reportPath = v
+		case withScript && k == "verification_script":
+			tok.verificationScript = v
+		case withScript && k == "verification_script_reason":
+			if strings.HasPrefix(v, `"`) {
+				words := []string{v}
+				for !closesQuotedValue(strings.Join(words, " ")) {
+					args = args[1:]
+					if len(args) == 0 {
+						return nil, taskTokens{}, fmt.Errorf("verification_script_reason has an opening quote with no closing quote")
+					}
+					words = append(words, args[0])
+				}
+				v = strings.Trim(strings.Join(words, " "), `"`)
+			}
+			tok.verificationScriptReason = v
 		default:
 			break tokens
 		}
 		args = args[1:]
 	}
-	return args, ro, reportPath, nil
+	return args, tok, nil
+}
+
+// closesQuotedValue reports whether s, which starts with a double quote, also
+// ends with one (and is longer than the opening quote alone).
+func closesQuotedValue(s string) bool {
+	return len(s) >= 2 && strings.HasSuffix(s, `"`)
 }
