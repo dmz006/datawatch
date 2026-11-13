@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, protected paths, rules file, CODEOWNERS, workflows, hold, approve, reject, authorised paths, base commit, rules review]
+  topics: [autonomous, automation, automaton, protected paths, rules file, CODEOWNERS, workflows, hold, approve, reject, authorised paths, base commit, rules review, checkpoint, worker progress note, CHECKPOINT.md]
 exec_params:
   - {name: automaton_id, required: false, description: "Automaton ID to narrow the read to, or to authorise paths for"}
   - {name: action, required: false, description: "Protected-paths action to set: hold, warn, block or off"}
@@ -368,6 +368,46 @@ the worker or by hand — and it is answered exactly like any other protected
 path: **Approve this change** if you want it, or authorise the rules file for
 the Automaton so its tasks pass.
 
+## Worker progress notes no longer touch the rules file
+
+The rules file is protected by default, and for a while the gate's most
+frequent hit was a routine one: a worker appending a progress note to the
+Checkpoints section of the rules file (this repository used to hold its
+operating notes in `CLAUDE.md`), so almost every task ended in a
+protected-path question over a note, not a rule change.
+
+The source is closed now. Every worker prompt that gets its rules and context
+block also gets a short, fixed rule (see
+[the no-checkpoints rule](automata-rules-and-context.md#the-no-checkpoints-rule)):
+the Checkpoints and progress-note sections of `AGENT.md`, `CLAUDE.md` and any
+configured rules file are written only by the human operator and by the
+supervisor, and a worker that needs a progress note writes it to
+`CHECKPOINT.md` at the root of its working directory instead. `CHECKPOINT.md`
+is one of the daemon's own marker files, not work: new worktrees ignore it and
+the uncommitted-work checks skip it (see
+[the completion marker file](automaton-uncommitted-work.md)).
+
+What this changes for you:
+
+- a routine worker progress note no longer reaches the gate — the note lives
+  in `CHECKPOINT.md`, which is not on the protected list;
+- the Checkpoints sections of `AGENT.md` and `CLAUDE.md` are yours and the
+  supervisor's. Workers that add, edit or remove entries there are disobeying
+  their prompt, and the daemon does not write them either;
+- the gate is unchanged and still the enforcer: a worker that edits the rules
+  file anyway — the note or a real rule change — is still held like any
+  other protected-path change, and the rules review still reads the rules
+  from the base commit.
+
+**Still to review (operator):** the no-checkpoints rule is instruction text
+in the worker prompt, not a gate. It has been verified against the prompt
+(assembled worker prompts carry it exactly once, and the planning prompt
+does not), but a live run in which a worker's progress note lands in
+`CHECKPOINT.md` and raises no protected-path question is not yet confirmed on
+a daemon in use. If a task is still held on a checkpoint append after this,
+read the held paths — with the default list, only the rules file itself can
+cause it — and answer or authorise as before.
+
 ## How the judge reads the rules
 
 The rules review is opt-in: it runs when `rules-review` is in the Automaton's
@@ -440,7 +480,10 @@ list. When a search for one finds nothing, try the other.
   is silent.
 - **The gate looks at paths, not meaning.** A task that changes a protected
   file in a harmless way is held like one that weakens it. Read the paths and
-  decide.
+  decide. The no-checkpoints rule is what keeps the one formerly routine
+  harmless way — a worker's progress note appended to the rules file — out of
+  the gate in the first place; it is a prompt instruction, not a gate, so a
+  worker that defies it is still held.
 - **Nothing here is a permission wall.** The gate acts after a worker attempt
   and never reverts, resets or rewrites by itself. Reject it is the only
   answer that puts a file back.
@@ -450,6 +493,7 @@ list. When a search for one finds nothing, try the other.
 | Symptom | Likely cause and fix |
 |---|---|
 | A task is held and you did not expect it | Read the held paths with `datawatch autonomous protected-paths`. If the path is on the list by mistake, change the list; if the Automaton is meant to edit it, authorise the path for it |
+| A hold names the rules file and it looks like a progress note | The worker wrote the note into the rules file despite the no-checkpoints rule (worker notes belong in `CHECKPOINT.md`). **Reject it** to put the file back; the state the note carried is still in `CHECKPOINT.md` and the session record |
 | A path you listed is not protected | An explicit list replaces the defaults, and an entry is matched whole: `docs/plans/*.md` does not match `docs/plans/sub/a.md`, and a `*` never crosses a slash. Use the directory form `docs/plans/` for everything below it |
 | Nothing is ever held | The action may be `off` or `warn`; read `action` in the status. Check the Automaton has a task directory, and look for a `protected_paths_check_skipped` decision |
 | A task is blocked and no question was raised | The action is `block`. Authorise the path or edit the task, then reset it |
