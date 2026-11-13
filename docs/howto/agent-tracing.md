@@ -175,13 +175,19 @@ sensitive text.
 
 ## 8. Retention
 
-The default is `tracing.retention_days: 0`: events are kept **forever** and
-pruning is a no-op. If an operator sets a positive value, events older than
-`tracing.retention_days` are pruned. A session
+The default is `tracing.retention_days: 0`: events are kept **forever**
+and pruning is a no-op. If an operator sets a positive value, the daemon
+prunes once at startup and then once a day (every 24 hours): events older
+than `tracing.retention_days` are removed. A session
 whose events have all expired is removed; a session with newer events is
 rewritten without the old ones. Lowering the value applies at the next prune;
 raising it never brings back what was pruned. Trace files are plain files, one per
 session, under the data directory's `trace/` folder.
+
+Deleting a session also drops its trace, matched on the exact session id —
+sessions whose ids only share a prefix keep theirs. Ending, killing or
+archiving a session never does; its trace stays until retention or deletion
+removes it.
 
 ## 9. Troubleshooting
 
