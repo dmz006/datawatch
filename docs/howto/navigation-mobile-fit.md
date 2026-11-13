@@ -209,6 +209,15 @@ What is not covered:
 - The wrapping rules name specific rows and classes. A new filter row that uses a different class does not wrap until its class is added to the rule in `internal/server/web/style.css`.
 - Android and iPhone are not changed by this; their layout is the mobile app's own.
 
+### For the operator to review
+
+These points are not settled by the tests and need a look on a real phone:
+
+- **Pixel check.** Open each page listed under [Page layout at phone width](#page-layout-at-phone-width) at 360, 390 and 412 px and confirm there is no sideways page scroll. The node test cannot prove this.
+- **Settings sections.** Settings sections keep their own inner padding on purpose. Confirm that mix looks right next to the 12 px 14 px card padding on the other pages.
+- **Dashboard wide and tall cards.** At phone width a card's wide or tall grid size is ignored. Confirm no card needs the larger size on a phone.
+- **Mobile apps.** Android and iPhone are not changed; if the same inconsistency shows there, it is tracked in the mobile app's own repository, not here.
+
 ## Other modes
 
 The probe has two more modes. Both run through the same environment variables as the gate, and both are run directly rather than through `make`:
