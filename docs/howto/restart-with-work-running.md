@@ -229,12 +229,40 @@ and review before relying on them (the *Still to review (operator)* notes in
 
 The read-only report is `GET /api/autonomous/restart-interruptions` (also the `restart_interruptions` MCP tool, `datawatch autonomous restart-interruptions`, and the chat verb `autonomous restart-interruptions`): the same lists it names in the refusal, plus `needs_force`, which is set while any of them is in flight. A non-forced restart is refused while `needs_force` is set, and every refusal below reuses the report as is.
 
+## Waiting for running final gates
+
+A final gate can run for many minutes. A graceful restart or stop therefore
+waits for the gates running at that moment before the daemon exits.
+
+- **What is waited for.** The final gate checks running now. The interruption
+  report lists them as `running_gates` (check, Automaton, task, process id) and
+  `running_gate_count`; both are always present, the list empty when none.
+- **How long.** Up to `autonomous.gate_drain_minutes` (default `10`; `0` = do
+  not wait; a negative value is refused). The daemon polls until the last gate
+  ends, and holds new gates back while it waits.
+- **When the wait runs out.** The daemon exits anyway. Nothing is signalled or
+  killed: the unfinished gates keep running and re-attach at the next start
+  (see [Verifying, judging, and verification scripts](#verifying-judging-and-verification-scripts)).
+  The log line gives how many gates it waited for and how many were still
+  running.
+- **The REST answer.** `POST /api/restart` returns `gates_waited` (gates this
+  restart waits for) and `gates_interrupted` (gates left running at once because
+  the wait is off).
+- **Setting it.** YAML `autonomous.gate_drain_minutes`; CLI
+  `datawatch autonomous config-set '{"gate_drain_minutes":20}'`; REST
+  `PUT /api/config` with `{"autonomous.gate_drain_minutes": 20}`; MCP
+  `autonomous_config_set`; comm channel `configure autonomous.gate_drain_minutes=20`;
+  and the PWA Settings **Automata** tab daemon task settings.
+
+The wait is separate from `autonomous.restart_policy`, which decides when a
+restart starts; this wait happens just before exit.
+
 ## Forcing a restart past running work
 
 A restart that would interrupt running Automata work is refused unless it is
 forced. The refusal names what would be interrupted: the planning Automata,
-the verifying tasks, the running judges, the running tasks and the live
-sessions, with their ids and the restart policy in force. Nothing is stopped.
+the verifying tasks, the running judges, the running tasks, the running final
+gates and the live sessions, with their ids and the restart policy in force. Nothing is stopped.
 
 | Surface | Refused without force | Force |
 |---------|-----------------------|-------|

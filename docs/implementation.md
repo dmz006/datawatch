@@ -609,6 +609,10 @@ text is never flagged in any mode. A failed Automaton accepts a spec edit
 `autonomous_config_set`, comm `configure`, CLI `autonomous config-set`, and the PWA
 Settings → Automate → Task scope lint select. See `docs/operations.md`.
 
+### Gate drain (`autonomous.gate_drain_minutes`)
+
+Minutes a graceful restart or stop waits for running final gates before the daemon exits. Default 10; 0 = do not wait; a negative value is rejected on every write path. Parsing lives in `internal/config/gate_drain.go`; the wait and the `running_gates` report are in `internal/autonomous/restart_policy.go` and `internal/autonomous/running_gates.go`. The wait is bounded and signals nothing: unfinished gates keep running and re-attach at the next start. See [howto/restart-with-work-running.md](howto/restart-with-work-running.md#waiting-for-running-final-gates).
+
 ### Planning restart policy (`autonomous.planning_restart_policy`)
 
 What a daemon restart does to an Automaton still in planning. `reattach` (default, and
