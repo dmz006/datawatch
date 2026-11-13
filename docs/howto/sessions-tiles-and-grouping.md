@@ -177,13 +177,22 @@ The toggle in the toolbar row has three buttons: **List**, **Tiles**,
   viewport width. In **list** mode the sessions stay a row list: the one
   card per row layout, one session per row.
 
-Two details worth knowing:
+Three details worth knowing:
 
 - The choice is **per device**. It is stored in this browser's local
   storage (`cs_sessions_view_mode`) and does not travel with federation
   peers or other devices. Each of your devices keeps its own mode.
 - In **tiles** mode the grid keeps following the viewport width on resizes,
   so rotating a tablet re-lays the tiles out without a reload.
+- **Stale stored state cannot break the toggle.** The remembered mode is
+  validated against the three known modes whenever it is read — on page
+  load and when a saved view applies one. A value left over from an older
+  datawatch version or a hand-edited local storage is not one of the three,
+  so it is ignored and the page falls back to the viewport default (list
+  below 600 px, tiles at 600 px and wider), which the toggle shows as the
+  active button. All three buttons still switch the mode and re-draw the
+  list, and your next choice overwrites the stale value — no site-data
+  reset is needed.
 
 ### The status counts
 
@@ -538,7 +547,7 @@ in your tag registry.
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
-| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize |
+| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; a stale stored value is ignored and the viewport default applies, so the toggle always shows one active button |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
@@ -558,6 +567,14 @@ in your tag registry.
 - **I see a tile, not a row, and I want rows back.** Switch the mode toggle
   to **List** — the choice sticks on that device. On phones the default is
   already List.
+- **The mode toggle looks broken after an upgrade (no button active, or a
+  click does nothing).** That is a stale value in the browser's local
+  storage from an older version. The page now validates the remembered mode
+  on load and falls back to the viewport default (list below 600 px, tiles
+  at 600 px and wider), so a reload is enough and the toggle shows that
+  mode as active; your next choice overwrites the stale value. If it still
+  looks wrong after a reload, clear the site data for the daemon address
+  (key `cs_sessions_view_mode`).
 - **My saved view isn't on my other device.** Saved views are per device
   by design; recreate it from the Views section of the Filters sheet. The *data* it reads (groups,
   counts, mixes) is identical on every channel and every peer.
