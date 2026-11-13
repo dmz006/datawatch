@@ -1991,10 +1991,10 @@ project policy <name> [automaton]  effective project policy with per-setting sou
 automaton project <id> <name|clear>  link an Automaton to a configured project (clear removes the link)
 automaton project-backfill [apply]  report which unlinked Automata belong to the datawatch project; apply writes the links
 project show <name>             project record (dir, owner, repository, branch, ...)
-project arcs <name>             ordered arc list of the project
+project plans <name>            ordered plan list of the project (arcs is the deprecated old name)
 project set <name> <field> <value>  set one record field (owner, repository, default_branch, description, default_backend, major_trigger, weekly_share, branch_retention_days)
-project progress <name>         roll-up: tasks, points and throughput, total and per arc
-project timeline <name> [focus=<automation>] [level=...]  start, end and status of each arc, Automaton and task, with dependencies and Automaton chain edges
+project progress <name>         roll-up: tasks, points and throughput, total and per plan
+project timeline <name> [focus=<automation>] [level=...]  start, end and status of each plan, Automaton and task, with dependencies and Automaton chain edges
 agent list                      list active agent workers
 agent spawn <proj> <cluster> [task]   spawn a new agent
 agent show <id>                 show agent detail
@@ -2030,7 +2030,7 @@ stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 audit self-config [limit=N]      query self-config audit log: allowed + denied config-write attempts
 dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
-dashboard arc                    arc summary — stages, lanes, plan usage in points and tokens
+dashboard arc                    plan summary — stages, lanes, plan usage in points and tokens
 dashboard work-map               work map of projects, Automata, tasks and sessions
 dashboard lane-pulse [window]    lane busy/waiting/idle traces and burn panel (window like 6h)
 dashboard series <name> [value]  lane-utilization, throughput-forecast, verifier-health, release-train, review-backlog, defects-per-day
@@ -2353,11 +2353,11 @@ func dashboardArcOneLiner(body string) (string, error) {
 		return "", err
 	}
 	if !a.Available {
-		return "arc off (" + a.Reason + ")", nil
+		return "plan off (" + a.Reason + ")", nil
 	}
 	parts := []string{}
 	if a.Arc.Name != "" {
-		parts = append(parts, "arc "+a.Arc.Name)
+		parts = append(parts, "plan "+a.Arc.Name)
 	}
 	for _, s := range a.Arc.Stages {
 		parts = append(parts, fmt.Sprintf("%s %d/%d done (%.1f%%), %d running, %d blocked", s.Stage, s.Done, s.Total, s.Percent, s.Running, s.Blocked))

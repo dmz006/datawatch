@@ -65,8 +65,8 @@ func (s *Server) toolDashboardConsoleGet() mcpsdk.Tool {
 
 func (s *Server) toolDashboardArcGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("dashboard_arc_get",
-		mcpsdk.WithDescription("Arc summary — the same data as GET /api/dashboard/arc. One arc as its stages in order (bugs, features, final) with total, done, running, blocked and percent, a separate maintenance count, a plain-language blocked-stage reason, shared lane usage, and plan usage in points and tokens. Points and tokens only, never dollars."),
-		mcpsdk.WithString("arc", mcpsdk.Description("optional arc (Automation) id; omit for the default arc")),
+		mcpsdk.WithDescription("Plan summary — the same data as GET /api/dashboard/arc. One plan as its stages in order (bugs, features, final) with total, done, running, blocked and percent, a separate maintenance count, a plain-language blocked-stage reason, shared lane usage, and plan usage in points and tokens. Points and tokens only, never dollars."),
+		mcpsdk.WithString("arc", mcpsdk.Description("optional plan (Automation) id; omit for the default plan")),
 	)
 }
 

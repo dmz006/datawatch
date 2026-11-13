@@ -137,7 +137,7 @@ func newPlansMigrateCmd() *cobra.Command {
 	var apply, jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "migrate",
-		Short: "Build plans from project arcs and registry rows (previews unless --apply)",
+		Short: "Build plans from the older project plan lists and registry rows (previews unless --apply)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out, err := daemonJSONBody(http.MethodPost, "/api/plans/migrate", map[string]any{"apply": apply})

@@ -27,7 +27,7 @@ func TestDashboardArcOneLiner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"arc Release arc", "bugs 2/4 done (50.0%)", "blocked: Login is blocked", "claude lane 1/2", "12.5 of 100.0 points", "1500 tokens"} {
+	for _, want := range []string{"plan Release arc", "bugs 2/4 done (50.0%)", "blocked: Login is blocked", "claude lane 1/2", "12.5 of 100.0 points", "1500 tokens"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line lacks %q:\n%s", want, line)
 		}

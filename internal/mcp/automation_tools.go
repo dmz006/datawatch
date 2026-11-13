@@ -71,7 +71,7 @@ func (s *Server) toolAutomationCreate() mcpsdk.Tool {
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("Optional verification backend default.")),
 		mcpsdk.WithString("verification_model", mcpsdk.Description("Optional verification model default.")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("Optional verification effort default.")),
-		mcpsdk.WithBoolean("milestone", mcpsdk.Description("Optional. true marks this Automation as a milestone arc: when it completes, its release step is raised to major under the project's major_trigger setting. Omitted means false.")),
+		mcpsdk.WithBoolean("milestone", mcpsdk.Description("Optional. true marks this Automation as a milestone plan: when it completes, its release step is raised to major under the project's major_trigger setting. Omitted means false.")),
 	)
 }
 
@@ -166,7 +166,7 @@ func (s *Server) toolAutomationUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("New verification backend default.")),
 		mcpsdk.WithString("verification_model", mcpsdk.Description("New verification model default.")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("New verification effort default.")),
-		mcpsdk.WithBoolean("milestone", mcpsdk.Description("New milestone flag: true marks this Automation as a milestone arc, false clears it. Omitted keeps the stored value.")),
+		mcpsdk.WithBoolean("milestone", mcpsdk.Description("New milestone flag: true marks this Automation as a milestone plan, false clears it. Omitted keeps the stored value.")),
 	)
 }
 

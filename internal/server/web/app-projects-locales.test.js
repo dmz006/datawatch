@@ -19,9 +19,9 @@ const TRANSLATED = LANGS.filter(l => l !== 'en');
 // English on purpose. Anything else identical to English is a missing
 // translation.
 const SAME_IN_LANGUAGE = {
-  de: ['projects_subtab_gantt', 'projects_page_repository', 'projects_page_arcs', 'projects_manage_col_name', 'projects_manage_field_name'],
+  de: ['projects_subtab_gantt', 'projects_page_repository', 'projects_manage_col_name', 'projects_manage_field_name'],
   es: ['projects_subtab_gantt'],
-  fr: ['projects_subtab_gantt', 'projects_subtab_arcs', 'projects_field_description', 'projects_page_arcs', 'projects_page_points', 'projects_manage_col_description', 'projects_manage_field_description'],
+  fr: ['projects_subtab_gantt', 'projects_subtab_plans', 'projects_subtab_arcs', 'projects_page_plans', 'projects_page_arcs', 'projects_field_description', 'projects_page_points', 'projects_manage_col_description', 'projects_manage_field_description'],
   ja: [],
 };
 
@@ -105,7 +105,7 @@ test('app.js references only projects_ keys that exist in en.json', () => {
 
 // The Projects sub-tab strip: seven tab labels plus the strip's aria-label.
 const SUBTAB_KEYS = [
-  'projects_subtab_overview', 'projects_subtab_arcs', 'projects_subtab_gantt',
+  'projects_subtab_overview', 'projects_subtab_plans', 'projects_subtab_gantt',
   'projects_subtab_unassigned', 'projects_subtab_history', 'projects_subtab_policy',
   'projects_subtab_events', 'projects_subtabs_label',
 ];
