@@ -180,8 +180,29 @@ every problem listed and nothing applied:
   `allow_premium_model: true`. Opus and Fable are never used unless a row
   names one.
 
-On a REST config write through `PUT /api/config`, a name that fails is skipped
-and reported and the rest of the change still applies.
+### When a config write is refused
+
+A routing change made as a config key (`autonomous.task_routing` for the whole
+block, or `autonomous.task_routing.active_profile` and `.enabled` on their own)
+goes through `PUT /api/config`. The whole block is checked against the live LLM
+registry first, so an unknown backend or model is refused there too, and the
+reply names the profile and row at fault. A key that fails is **skipped, not
+stored**, and the rest of the change still applies. The reply is still HTTP 200,
+so read it:
+
+- `skipped` lists the keys that were not stored (for example
+  `autonomous.task_routing`, or `autonomous.task_routing.active_profile` when
+  the named profile does not exist);
+- `skipped_reason` says why;
+- `skipped_problems` lists every problem found, each naming its row, such as
+  `profile "p" row "final_gate"` and what is wrong with it.
+
+Every surface that writes config shows that report in place of a confirmation:
+`config_set` on MCP returns an error, `datawatch config set` exits with an
+error and the chat `configure` verb replies with it. Each line begins
+`not stored:`. A refused block leaves the live table exactly as it was. The
+dedicated routing routes (`PUT /api/autonomous/task-routing`, profile save and
+import) refuse a bad table with an HTTP 400 instead.
 
 ## Seeing what was decided
 
@@ -213,8 +234,8 @@ Two reads are available per Automaton:
 | Surface | How |
 |---------|-----|
 | YAML | Edit the `autonomous.task_routing` block in `datawatch.yaml` (see `docs/config-reference.yaml`), then reload. |
-| REST API | `GET` and `PUT /api/autonomous/task-routing` read and replace the table (the read includes its validation result). `GET` and `POST /api/autonomous/task-routing/profiles` list and save profiles; `PUT .../active-profile` switches; `DELETE .../profiles/{name}` deletes; `GET .../profiles/{name}/export` and `POST .../profiles/import` move a profile as JSON (`?name=` and `?overwrite=true` on import). `GET /api/autonomous/prds/{id}/task-routing` is the per-Automaton read and `POST .../prds/{id}/task-routing/dry-run` is the no-write dry run. `PUT /api/config` with `autonomous.task_routing.*` still works. |
-| MCP | `task_routing_get`, `task_routing_set`, `task_routing_profile_list`, `task_routing_profile_save`, `task_routing_profile_activate`, `task_routing_profile_delete`, `task_routing_profile_export`, `task_routing_profile_import`, `task_routing_automaton` and `task_routing_dry_run`. `get_config` (section `autonomous`) and `config_set` also reach the block. |
+| REST API | `GET` and `PUT /api/autonomous/task-routing` read and replace the table (the read includes its validation result). `GET` and `POST /api/autonomous/task-routing/profiles` list and save profiles; `PUT .../active-profile` switches; `DELETE .../profiles/{name}` deletes; `GET .../profiles/{name}/export` and `POST .../profiles/import` move a profile as JSON (`?name=` and `?overwrite=true` on import). `GET /api/autonomous/prds/{id}/task-routing` is the per-Automaton read and `POST .../prds/{id}/task-routing/dry-run` is the no-write dry run. `PUT /api/config` with `autonomous.task_routing.*` still works, with the validation and `skipped` report described under Refusal rules. |
+| MCP | `task_routing_get`, `task_routing_set`, `task_routing_profile_list`, `task_routing_profile_save`, `task_routing_profile_activate`, `task_routing_profile_delete`, `task_routing_profile_export`, `task_routing_profile_import`, `task_routing_automaton` and `task_routing_dry_run`. `get_config` (section `autonomous`) and `config_set` also reach the block; `config_set` returns an error when the daemon did not store the key. |
 | CLI | `datawatch autonomous task-routing` with `show`, `set` (a whole table from `--file`, or one row with `--type` and the `--worker-backend`, `--worker-model`, `--verify-backend`, `--verify-model`, `--effort` and `--second-choice` flags), `profile list\|save\|activate\|delete\|export\|import`, `automaton <id>` and `dry-run <id> [--profile NAME]`. Add `--json` for the raw response. |
 | Comm channel | `autonomous task-routing show`, `profile list`, `profile use <name>`, `automaton <id>` and `dry-run <id> [profile]`. Only `profile use` writes. Saving, deleting, importing and exporting profiles and editing rows are not chat verbs; use the CLI, REST, MCP or the web app. |
 | Web app | Settings, Automata tab, **Task routing** card: turn routing on, pick the active profile, edit every row, save the table, save, delete, export and import a profile, and preview what a draft Automaton would get. In an Automaton's detail view each task shows its task type and the row that decided its LLM (or the reason none did): a column in the task header on wide screens and a line under the title on phones. |
@@ -240,6 +261,7 @@ permission, like the planning routing routes.
 - **Premium models need your approval per row.** A row naming an Opus or Fable model is refused unless that row sets `allow_premium_model`. Review every such row before saving.
 - **Switching the active profile only affects tasks created afterwards.** Tasks already created keep what they were given; re-run decompose or edit the task to change them.
 - **The mobile apps do not show routing yet.** The Settings card and the per-task column are in the web app only; mobile parity is tracked separately.
+- **A config write that is skipped is not an error code.** `PUT /api/config` answers 200 and lists what it did not store in `skipped`, `skipped_reason` and `skipped_problems`. A script that checks only the status code will miss a refused routing block; read `skipped`, or use the dedicated routing routes, which return 400.
 - **Docs and the live daemon can differ.** If a tool or command named here is missing on your daemon, it is older than this change; update it before relying on this guide.
 
 See also: [Automata planning routing](automata-planning-routing.md),
