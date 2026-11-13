@@ -343,6 +343,7 @@ filter_add
 filter_delete
 filter_list
 filter_toggle
+gate_repairs
 generated_artefacts_get
 get_alerts
 get_config

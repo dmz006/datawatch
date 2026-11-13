@@ -87,6 +87,11 @@ type RepairRecord struct {
 	Found   string    `json:"found"`
 	Done    string    `json:"done,omitempty"`
 	Undo    string    `json:"undo,omitempty"`
+	// Before and After are the stored text pair of a repair that edited a
+	// file (the gate repair engine's script edits are named by their
+	// before/after texts here).
+	Before string `json:"before,omitempty"`
+	After  string `json:"after,omitempty"`
 }
 
 // RepairerHooks are the pieces the wiring supplies; every field may be nil.
