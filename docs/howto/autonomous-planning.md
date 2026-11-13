@@ -296,7 +296,11 @@ command like `go build ./... && go test ./...` is not a script), or a
 `report_path` under `.datawatch/reports/` where it writes its verdict. The
 plan-coverage gate and the decompose lint both refuse a read-only task with
 neither, whether it is read-only by the marker or by the `read_only` flag,
-because a failure of it would otherwise leave nothing to inspect.
+because a failure of it would otherwise leave nothing to inspect. If the plan
+came back without one, set it on the task in place with `prd-edit-task
+--verification-script <path>` (or the **Verification script** field of the task
+editor) instead of re-decomposing; the path must be one repo-relative script
+file and is added to the task's generated files.
 
 A task that does change files needs no marker; it lists them instead, for
 example `internal/config/config.go` and `internal/config/config_test.go` for a
