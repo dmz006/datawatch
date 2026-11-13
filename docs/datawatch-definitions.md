@@ -2902,7 +2902,7 @@ The settings below are the six keys of the block. Each is set on every surface (
 
 **Project record** — the optional fields a project alias can carry beyond its directory: owner, repository, default branch, arcs, target, lane defaults, weekly share, branch retention and major trigger. An absent field keeps its stored value on every write.
 
-**Arc** — one planned slot in a project's order: an Automation (its `automation_id`), a `priority` that sets its place on the page, and a `state` of `planned`, `active` or `done`. The arc list is replaced as a whole. An arc is an Automation, not an Automaton.
+**Arc** (deprecated; a plan replaces it, see [Plan record](#plan-record)) — one planned slot in a project's order: an Automation (its `automation_id`), a `priority` that sets its place on the page, and a `state` of `planned`, `active` or `done`. The arc list is replaced as a whole. An arc is an Automation, not an Automaton.
 
 **Project target** — the outcome a project works toward: a name and a definition of done, the point at which the target counts as reached.
 
@@ -3190,6 +3190,30 @@ The **Helm version pin** is `scripts/helm-version.txt`, a file holding one `vX.Y
 ## Plan records
 
 A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. Records are read and changed through REST (`/api/plan-records`), the MCP `plan_record_*` tools, `datawatch plan-record`, the `autonomous plan-record` chat verbs and the Plan records section of the Projects page. See [howto/plan-records.md](howto/plan-records.md) and [operations.md](operations.md#plan-records-store-and-import).
+
+### Plan record
+
+A **plan record** of kind `plan` is the registry record of what you are working on. It has a title, a goal, a state and an `order`, and it links down to Automations and Automata and holds the findings attached to it. A plan with no Automaton yet is in the *backlog*. See [howto/plan-records.md](howto/plan-records.md#plans-links-and-order).
+
+### Plan links
+
+**Plan links** are the ids a plan keeps in `automations`, `automata` and `findings`. A link is never overwritten: attaching an Automaton or Automation that another plan already holds, or a finding attached elsewhere, is refused and names the holder. Detach it first.
+
+### Plan order
+
+**Plan order** is the `order` number of a plan: the lowest runs first. Reordering writes a `plan_record_reordered` audit event.
+
+### Plans migration
+
+The **plans migration** (`datawatch plans migrate [--apply]`, `POST /api/plans/migrate`, MCP `plan_migrate`, chat `autonomous plan-migrate [apply]`) builds plans from the project arcs and the registry rows: one plan per arc, one plan per row that names an Automaton or Automation, one backlog plan per open row that names none. It previews unless applied, tags each plan it makes with a `migrated-from` link so a second apply changes nothing, and deletes no arc, row or setting. See [howto/plan-records.md](howto/plan-records.md#building-plans-from-arcs-and-rows).
+
+### Plans read API
+
+The **plans read API** shows a project as plans in priority order: `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks` and `GET /api/plan-records/browse`. It reads the plan-record summary index and pages every list with `limit` and `offset`. See [howto/plan-records.md](howto/plan-records.md#reading-plans).
+
+### Next marker
+
+The **next marker** on a plan's Automata points at the Automaton that runs next. It never lands on a blocked or held Automaton; those are shown and marked `skipped`.
 
 ### Registry row record
 

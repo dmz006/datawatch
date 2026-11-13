@@ -15,8 +15,9 @@ exec_steps:
 ---
 # How-to: plan records, registry rows and findings kept by datawatch
 
-A **plan record** is one item of the plans registry (a *registry row*) or one
-problem raised by an Automaton or an operator (a *finding*), kept by the daemon
+A **plan record** is a *plan* (the thing you are working on, which links down
+to Automations and Automata), one item of the plans registry (a *registry row*)
+or one problem raised by an Automaton or an operator (a *finding*), kept by the daemon
 instead of as a numbered line in `docs/plans/README.md` or an entry in a
 findings file. Operators and Automata read and change the same records through
 the same surfaces. Terms are in
@@ -33,13 +34,15 @@ and how to turn it off.
 | `title` | The human name. Unique inside one project (case-insensitive, trimmed). |
 | `id` | A short readable id, unique in the installation. |
 | `uid` | An identifier that never changes. |
-| `kind` | `registry_row` or `finding`. |
+| `kind` | `plan`, `registry_row` or `finding`. |
 | `project` | The registered project alias the record belongs to. Fixed when the record is created. |
 | `state` | Registry rows: `open`, `planned`, `in_progress`, `blocked`, `shipped`, `done`, `deferred`, `cancelled`. Findings: `open`, `triaged`, `fixed`, `wontfix`, `duplicate`. |
 | `body` | The notes. |
 | `legacy_number` | The old registry row number, when the record came from the registry file. |
 | `shipped_by`, `shipped_version` | The Automaton id and version that shipped a row. |
 | `raised_by` | The Automaton id that raised a finding. |
+| `goal`, `order` | Plans only. The goal text, and the priority order (lowest runs first). |
+| `automations`, `automata`, `findings` | Plans only. The ids the plan links down to, in display order. They change through the link calls, never by editing the record body. |
 | `links`, `aliases` | Links, and older titles that still find the record. |
 | `needs_review`, `review_reason` | Set by an import when a conflict was resolved for you. |
 
@@ -169,6 +172,21 @@ Write-through changes only the registry-row hook. It does not write record
 changes back into the plans files, and the files are not updated when a record
 is edited by hand.
 
+## Plans: links and order
+
+A plan links down: plan, then Automation, then Automaton, then tasks. A finding
+attaches to a plan or to an Automaton. Rules that are easy to trip over:
+
+- **A link is never overwritten.** An Automaton or Automation already linked to
+  a different plan is refused (the reply names the plan holding it), and so is a
+  finding already attached elsewhere. Detach it first, then attach it again.
+- **Order is a priority.** The lowest `order` runs first. Reordering plans, or
+  the Automata inside one plan, is its own change and writes a
+  `plan_record_reordered` audit event; attaching and detaching write
+  `plan_record_linked` and `plan_record_unlinked`.
+- A plan can exist with no Automaton yet. It then shows in the *backlog*.
+- Older records have none of these fields and load unchanged.
+
 ## Settings
 
 All under `autonomous.plan_records.`; change them with `PUT /api/config`,
@@ -217,6 +235,16 @@ Nothing here turns on by itself. These are yours to settle:
 - **The old files.** `docs/plans/README.md` and the findings files stay in
   place as the read-only archive. Whether and when to clean them up is a later
   step you decide.
+- **The arcs are deprecated, not removed.** After `datawatch plans migrate
+  --apply` the project arcs still exist and still answer on
+  `GET /api/projects/{name}/arcs`, the roll-up and `project_set_arcs`. Decide
+  when the Projects page and your scripts move to the plans routes, and when the
+  arcs may be cleared. Nothing deletes them for you.
+- **Migration conflicts.** A title already taken by a record the migration did
+  not make is left alone and listed as a conflict; rename one side by hand and
+  run the migration again.
+- **Backlog order.** Open rows with no Automaton become backlog plans ordered by
+  their old row number. Check that this is the order you want.
 - **Mobile apps.** Android and iPhone do not show plan records yet; that is
   tracked in the datawatch-app repository.
 

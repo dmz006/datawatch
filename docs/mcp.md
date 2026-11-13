@@ -2326,7 +2326,7 @@ Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 |---|---|---|
 | `project_list` | read | none |
 | `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted record field keeps its stored value) |
-| `project_set_arcs` | write | `name`, `arcs` (required, an array; order is the arc order; `[]` clears) |
+| `project_set_arcs` | write (deprecated; plans replace arcs, see `plan_migrate`) | `name`, `arcs` (required, an array; order is the arc order; `[]` clears) |
 | `project_rollup` | read | `name` (required), `window` (days, 1 to 365, default 7) |
 | `project_history` | read | `name` (required), `limit`, `cursor` |
 | `project_timeline` | read | Returns start, end, status and release per row, `depends_on` on task rows and `edges` (chain between Automata) on Automata-level and focus replies, unchanged from the daemon. Arguments: `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (arc id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one arc id or `none`, unpaged), `limit`, `cursor` |

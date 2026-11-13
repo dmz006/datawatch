@@ -1637,12 +1637,21 @@ Project + cluster profile CRUD (F10 sprint 2).
 | `policy show\|set\|unset` | The per-project policy tier; `policy show <name> --effective [--automaton <id>]` resolves each setting with its tier. See [howto/project-automation-policy](howto/project-automation-policy.md) |
 | `show <name> [--window N]` | The record plus the roll-up: arcs, Automata, tasks, points and throughput |
 | `set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags given; the other fields keep their stored value |
-| `arcs <name> [--set id:priority:state,…]` | Print the arcs in order, or replace them (`--set ""` clears) |
+| `arcs <name> [--set id:priority:state,…]` | Print the arcs in order, or replace them (`--set ""` clears). Deprecated: plans replace arcs, see `datawatch plans migrate [--apply]` and [howto/plan-records](howto/plan-records.md#building-plans-from-arcs-and-rows) |
 | `history <name> [--limit N] [--cursor …]` | One page of finished Automata, daily progress and Gantt rows |
 | `timeline <name> [--level arcs\|automata\|tasks] [--parent <arc>\|none] [--automaton <id>] [--focus <arc>\|none] [--limit N] [--cursor …]` | One level of the project timeline: start, end and status (completed, running, waiting, blocked, failed or cancelled) per arc, Automaton and task, with task dependencies and Automaton chain edges (the CLI prints the daemon reply unchanged); chat: `project timeline <name> [level=…] [parent=…] [automaton=…] [focus=…] [limit=…] [cursor=…]`. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline) |
 
 The target's definition of done and the lane defaults are set through REST or MCP
 (`project_upsert`), not by a flag.
+
+### `datawatch plans migrate [--apply]`
+
+Builds plans from the project arcs and the registry rows. Without `--apply` it
+previews (would create, would link, left alone, conflicts) and writes nothing.
+It deletes no arc, row or setting, and a second `--apply` changes nothing. Same
+call on REST `POST /api/plans/migrate`, MCP `plan_migrate`, chat
+`autonomous plan-migrate [apply]`. See
+[howto/plan-records](howto/plan-records.md#building-plans-from-arcs-and-rows).
 
 ### `datawatch cooldown <subcommand>`
 

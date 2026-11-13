@@ -27,7 +27,7 @@ exec_steps:
     description: Set the record fields of a project. Pass the whole record you want to keep; an absent record field keeps its stored value. Owner, repository and default branch are set here with the target, lane defaults and weekly share
     args: {name: core-api, dir: /srv/projects/core-api, owner: platform-team, target: {name: "Core API 2.0", definition_of_done: "All v1 endpoints served by v2 and the v1 routes removed"}, lane_defaults: {lane: gpu, backend: claude-code, model: qwen3.8:27b}, weekly_share: 40, branch_retention_days: 14}
   - tool: project_set_arcs
-    description: Replace the ordered arc list of a project. The array order is the arc order; each arc has an automation id, a priority and a state (planned, active or done). Sending an empty list clears the arcs
+    description: Deprecated, plans replace arcs (see plan_migrate). Replace the ordered arc list of a project. The array order is the arc order; each arc has an automation id, a priority and a state (planned, active or done). Sending an empty list clears the arcs
     args: {name: core-api, arcs: [{automation_id: a1b2c3d4, priority: 1, state: active}, {automation_id: e5f6a7b8, priority: 2, state: planned}]}
   - tool: autonomous_prd_set_project
     description: Set or clear the explicit project link of an Automaton. The project must be a configured project name; an empty project clears the link. Only the Automaton record changes and the change is written to its decision log
@@ -72,6 +72,8 @@ Three words are used in this guide, and only these three:
 - **Automaton**: one unit of autonomous work.
 - **Automata**: more than one Automaton.
 - **Automation**: a named chain of Automata, run in order. An arc *is* an Automation.
+- **Plan**: the registry record of what you are working on. Arcs are deprecated in favor of plans: `datawatch plans migrate` builds plans from the arcs and
+  registry rows, and the arcs routes keep answering meanwhile. See [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows).
 
 ```
 Project  "core-api"
@@ -181,6 +183,8 @@ Expected output: the daemon's JSON answer `{"status":"ok","name":"core-api"}`.
 defaults** have no CLI flag yet; set them with REST or MCP (step 5).
 
 ### 3. Replace the arc list
+
+> Deprecated: plans replace arcs. Run `datawatch plans migrate` to preview plans built from the arcs; see [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows). This step keeps working until you retire the arcs.
 
 An arc is an Automation in the project's order. `--set` takes `id:priority:state`
 entries, comma-separated. The state is `planned`, `active` or `done`; an empty
