@@ -332,3 +332,298 @@ func TestTaskRoutingDecomposeTailAppliesToAllTasks(t *testing.T) {
 		t.Errorf("routing: %q %q", st.Tasks[0].Backend, st.Tasks[1].Backend)
 	}
 }
+
+// materializeTasks adds tasks to the story the way the planner does (directly
+// in the store, no AddTask path) and returns pointers to them.
+func materializeTasks(m *Manager, prd *PRD, st *Story, titles ...string) []*Task {
+	var out []*Task
+	m.Store().WithLock(func() {
+		for i, title := range titles {
+			st.Tasks = append(st.Tasks, Task{
+				ID: "mat-" + string(rune('a'+len(st.Tasks))) + string(rune('0'+i)), StoryID: st.ID, PRDID: prd.ID, Title: title,
+			})
+		}
+		for i := len(st.Tasks) - len(titles); i < len(st.Tasks); i++ {
+			out = append(out, &st.Tasks[i])
+		}
+	})
+	return out
+}
+
+func TestTaskRoutingHandSetTaskLLMSurvivesNormalRun(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	tasks := materializeTasks(m, prd, st, "Write unit tests")
+	task := tasks[0]
+	// Hand set through the operator path (decision-log entry by "op").
+	if _, _, err := m.SetTaskLLM(prd.ID, task.ID, "claude-code", "", "haiku", "op"); err != nil {
+		t.Fatal(err)
+	}
+	m.ApplyTaskRoutingToPRD(prd)
+	got, _ := findTaskInPRD(prd, task.ID)
+	if got.Backend != "claude-code" || got.Model != "haiku" {
+		t.Fatalf("hand-set task LLM overwritten: %q/%q", got.Backend, got.Model)
+	}
+	if got.TaskRouting != nil && got.TaskRouting.Applied {
+		t.Fatalf("hand-set task marked as routed: %+v", got.TaskRouting)
+	}
+	for _, d := range prd.Decisions {
+		if d.Kind == "task_routing" && strings.Contains(d.Note, "task="+task.ID) {
+			t.Fatalf("router logged a decision for a hand-set task: %+v", d)
+		}
+	}
+}
+
+func TestTaskRoutingHandSetFieldsWithoutDecisionSurviveNormalRun(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	tasks := materializeTasks(m, prd, st, "Write unit tests")
+	m.Store().WithLock(func() { tasks[0].Backend, tasks[0].Model = "claude-code", "opus-hand" })
+	m.ApplyTaskRoutingToPRD(prd)
+	if tasks[0].Backend != "claude-code" || tasks[0].Model != "opus-hand" {
+		t.Fatalf("hand-set fields overwritten: %q/%q", tasks[0].Backend, tasks[0].Model)
+	}
+}
+
+func TestTaskRoutingHandSetStoryLLMSurvivesNormalRun(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	m.Store().WithLock(func() { st.Backend, st.Model = "pi-prompt", "ollama/story-hand" })
+	tasks := materializeTasks(m, prd, st, "Write unit tests", "Implement the engine")
+	if n := m.ApplyTaskRoutingToPRD(prd); n != 0 {
+		t.Fatalf("routed %d tasks under a hand-set story LLM", n)
+	}
+	for _, task := range tasks {
+		if task.Backend != "" || task.Model != "" {
+			t.Fatalf("story LLM overridden by task fields: %q/%q", task.Backend, task.Model)
+		}
+		if st.Backend != "pi-prompt" || st.Model != "ollama/story-hand" {
+			t.Fatalf("story LLM changed: %q/%q", st.Backend, st.Model)
+		}
+	}
+}
+
+func TestTaskRoutingHandSetAutomatonLLMSurvivesNormalRun(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	m.Store().WithLock(func() { prd.Backend, prd.Model = "claude-code", "sonnet-hand" })
+	tasks := materializeTasks(m, prd, st, "Write unit tests", "Implement the engine")
+	if n := m.ApplyTaskRoutingToPRD(prd); n != 0 {
+		t.Fatalf("routed %d tasks under a hand-set Automaton LLM", n)
+	}
+	for _, task := range tasks {
+		if task.Backend != "" || task.Model != "" {
+			t.Fatalf("Automaton LLM overridden by task fields: %q/%q", task.Backend, task.Model)
+		}
+	}
+	if prd.Backend != "claude-code" || prd.Model != "sonnet-hand" {
+		t.Fatalf("Automaton LLM changed: %q/%q", prd.Backend, prd.Model)
+	}
+}
+
+func TestTaskRoutingHandSetAddTaskNeverOverwritten(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	// A story LLM set by hand: a task added later is not routed over it.
+	m.Store().WithLock(func() { st.Backend, st.Model = "claude-code", "story-hand" })
+	task := addRoutedTask(t, m, prd.ID, st.ID, "Write unit tests", "")
+	if task.Backend != "" || task.Model != "" || (task.TaskRouting != nil && task.TaskRouting.Applied) {
+		t.Fatalf("add-task routed over a hand-set story LLM: %q/%q %+v", task.Backend, task.Model, task.TaskRouting)
+	}
+	m.Store().WithLock(func() { st.Backend, st.Model = "", "" })
+	// An Automaton LLM set by hand.
+	m.Store().WithLock(func() { prd.Backend = "claude-code" })
+	task2 := addRoutedTask(t, m, prd.ID, st.ID, "Write regression tests", "")
+	if task2.Backend != "" || task2.Model != "" || (task2.TaskRouting != nil && task2.TaskRouting.Applied) {
+		t.Fatalf("add-task routed over a hand-set Automaton LLM: %q/%q", task2.Backend, task2.Model)
+	}
+	m.Store().WithLock(func() { prd.Backend = "" })
+	// A task LLM set by hand on a task, then ApplyTaskRouting (the add-task call).
+	task3 := addRoutedTask(t, m, prd.ID, st.ID, "Write more tests", "")
+	if _, _, err := m.SetTaskLLM(prd.ID, task3.ID, "claude-code", "", "hand-model", "op"); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := findTaskInPRD(prd, task3.ID)
+	if dec := m.ApplyTaskRouting(prd, cur); dec.Applied {
+		t.Fatalf("ApplyTaskRouting re-routed a hand-set task: %+v", dec)
+	}
+	cur, _ = findTaskInPRD(prd, task3.ID)
+	if cur.Backend != "claude-code" || cur.Model != "hand-model" {
+		t.Fatalf("hand-set task LLM overwritten on the add-task path: %q/%q", cur.Backend, cur.Model)
+	}
+}
+
+func TestTaskRoutingHandSetRedecomposeKeepsSurvivingTaskLLM(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	tasks := materializeTasks(m, prd, st, "Write unit tests", "Update the docs")
+	handTask, routedTask := tasks[0], tasks[1]
+	m.ApplyTaskRoutingToPRD(prd)
+	if routedTask.Backend != "pi-prompt" || !routedTask.TaskRouting.Applied {
+		t.Fatalf("first decompose did not route: %q %+v", routedTask.Backend, routedTask.TaskRouting)
+	}
+	if _, _, err := m.SetTaskLLM(prd.ID, handTask.ID, "claude-code", "", "hand-opus", "op"); err != nil {
+		t.Fatal(err)
+	}
+	// The table changes, then the planner re-runs: surviving tasks stay, a
+	// new task is materialized, and the decompose tail applies routing again.
+	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
+	setProfileRow(m, "default", config.TaskTypeDocsSet, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
+	materializeTasks(m, prd, st, "Write more unit tests")
+	m.ApplyTaskRoutingToPRD(prd)
+
+	h, _ := findTaskInPRD(prd, handTask.ID)
+	if h.Backend != "claude-code" || h.Model != "hand-opus" {
+		t.Errorf("re-decompose overwrote hand-set task LLM: %q/%q", h.Backend, h.Model)
+	}
+	if h.TaskRouting != nil && h.TaskRouting.Applied {
+		t.Errorf("hand-set task now carries a routed record: %+v", h.TaskRouting)
+	}
+	r, _ := findTaskInPRD(prd, routedTask.ID)
+	if r.Backend != "claude-code" || r.Model != "sonnet" || !r.TaskRouting.Applied {
+		t.Errorf("router-owned task not re-routed on re-decompose: %q/%q %+v", r.Backend, r.Model, r.TaskRouting)
+	}
+	// A further pass changes nothing and logs nothing.
+	n := len(prd.Decisions)
+	m.ApplyTaskRoutingToPRD(prd)
+	if len(prd.Decisions) != n {
+		t.Errorf("second pass appended %d decisions", len(prd.Decisions)-n)
+	}
+}
+
+func TestTaskRoutingHandSetRedecomposeKeepsStoryAndAutomatonLLM(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	tasks := materializeTasks(m, prd, st, "Write unit tests")
+	m.ApplyTaskRoutingToPRD(prd)
+	routed := tasks[0]
+	if routed.Backend != "pi-prompt" {
+		t.Fatalf("not routed first: %q", routed.Backend)
+	}
+	// The operator sets the story and Automaton LLM after the first routing.
+	m.Store().WithLock(func() {
+		st.Backend, st.Model = "claude-code", "story-hand"
+		prd.Backend, prd.Model = "claude-code", "auto-hand"
+	})
+	fresh := materializeTasks(m, prd, st, "Write regression tests")
+	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
+	m.ApplyTaskRoutingToPRD(prd)
+	if fresh[0].Backend != "" || fresh[0].Model != "" {
+		t.Errorf("new task routed over hand-set story/Automaton LLM: %q/%q", fresh[0].Backend, fresh[0].Model)
+	}
+	if st.Backend != "claude-code" || st.Model != "story-hand" || prd.Backend != "claude-code" || prd.Model != "auto-hand" {
+		t.Errorf("story/Automaton LLM changed: %q/%q %q/%q", st.Backend, st.Model, prd.Backend, prd.Model)
+	}
+	// The earlier routed task is not rewritten by a table that no longer may decide.
+	if routed.Backend != "pi-prompt" || routed.Model != "ollama/qwen3.8:27b" {
+		t.Errorf("routed task rewritten once blocked: %q/%q", routed.Backend, routed.Model)
+	}
+}
+
+func TestTaskRoutingHandSetEditedRoutedTaskNotRerouted(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	tasks := materializeTasks(m, prd, st, "Write unit tests", "Write regression tests")
+	m.ApplyTaskRoutingToPRD(prd)
+	edited, plain := tasks[0], tasks[1]
+	// Hand set to the SAME values the router wrote: only the decision log
+	// tells them apart, and it must still protect the task.
+	if _, _, err := m.SetTaskLLM(prd.ID, edited.ID, edited.Backend, string(edited.Effort), edited.Model, "op"); err != nil {
+		t.Fatal(err)
+	}
+	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
+	m.ApplyTaskRoutingToPRD(prd)
+	if edited.Backend != "pi-prompt" || edited.Model != "ollama/qwen3.8:27b" {
+		t.Errorf("hand-set (same values) task re-routed: %q/%q", edited.Backend, edited.Model)
+	}
+	if plain.Backend != "claude-code" || plain.Model != "sonnet" {
+		t.Errorf("router-owned task not re-routed: %q/%q", plain.Backend, plain.Model)
+	}
+}
+
+// TestTaskRoutingProfileSwitchKeepsRunningAndRoutedLLMs creates tasks under
+// profile A (one later running, one left routed), switches the active
+// profile to B through SetActiveProfile, and checks that neither task's LLM,
+// backend or model moves, that the dry run reports profile B without
+// changing a task, and that only a task created after the switch takes B's
+// row.
+func TestTaskRoutingProfileSwitchKeepsRunningAndRoutedLLMs(t *testing.T) {
+	m, prd, st := routingFixture(t)
+	running := addRoutedTask(t, m, prd.ID, st.ID, "Write unit tests", "")
+	routed := addRoutedTask(t, m, prd.ID, st.ID, "Add more tests", "")
+	if running.Backend != "pi-prompt" || routed.Backend != "pi-prompt" {
+		t.Fatalf("profile A routing: %q %q", running.Backend, routed.Backend)
+	}
+	m.Store().WithLock(func() {
+		r, _ := findTaskInPRD(prd, running.ID)
+		r.Status = TaskInProgress
+		r.SessionID = "live-session"
+	})
+	type llm struct{ backend, model, effort, profile string }
+	snap := func() map[string]llm {
+		p, _ := m.Store().SnapshotPRD(prd.ID)
+		out := map[string]llm{}
+		for si := range p.Story {
+			for ti := range p.Story[si].Tasks {
+				tk := p.Story[si].Tasks[ti]
+				l := llm{tk.Backend, tk.Model, string(tk.Effort), ""}
+				if tk.TaskRouting != nil {
+					l.profile = tk.TaskRouting.Profile
+				}
+				out[tk.ID] = l
+			}
+		}
+		return out
+	}
+	before := snap()
+	decisionsBefore := func() int { p, _ := m.Store().SnapshotPRD(prd.ID); return len(p.Decisions) }()
+
+	// Switch to profile B, which routes the tests row elsewhere.
+	cfg := m.Config()
+	cfg.TaskRouting, _ = SaveProfile(cfg.TaskRouting, "B", nil)
+	cfg.TaskRouting.Profiles["B"][config.TaskTypeTests] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"}
+	cfg.TaskRouting, _ = SetActiveProfile(cfg.TaskRouting, "B")
+	m.SetConfig(cfg)
+
+	after := snap()
+	for id, b := range before {
+		if after[id] != b {
+			t.Errorf("task %s changed by the profile switch: %+v -> %+v", id, b, after[id])
+		}
+	}
+	if decisionsBefore != func() int { p, _ := m.Store().SnapshotPRD(prd.ID); return len(p.Decisions) }() {
+		t.Error("profile switch appended a decision")
+	}
+
+	// Dry run shows profile B and writes nothing.
+	out, err := m.TaskRoutingDryRun(prd.ID, "")
+	if err != nil || len(out) != 2 {
+		t.Fatalf("dry run: %v %v", err, out)
+	}
+	for _, e := range out {
+		if e.Profile != "B" {
+			t.Errorf("dry run entry %s shows profile %q, want B", e.TaskID, e.Profile)
+		}
+	}
+	for _, e := range out {
+		if e.TaskID == routed.ID && (!e.WouldApply || e.Result == nil || e.Result.WorkerBackend != "claude-code") {
+			t.Errorf("dry run for the routed task does not show profile B's row: %+v", e)
+		}
+		if e.TaskID == running.ID && e.WouldApply {
+			t.Errorf("dry run would apply to a running task: %+v", e)
+		}
+	}
+	if got := snap(); len(got) != len(after) {
+		t.Fatalf("dry run changed the task set")
+	} else {
+		for id, a := range after {
+			if got[id] != a {
+				t.Errorf("dry run changed task %s: %+v -> %+v", id, a, got[id])
+			}
+		}
+	}
+	if n := func() int { p, _ := m.Store().SnapshotPRD(prd.ID); return len(p.Decisions) }(); n != decisionsBefore {
+		t.Error("dry run appended a decision")
+	}
+
+	// A task created after the switch takes profile B's row.
+	nt := addRoutedTask(t, m, prd.ID, st.ID, "Write integration tests", "")
+	if nt.Backend != "claude-code" || nt.Model != "sonnet" || nt.TaskRouting == nil || nt.TaskRouting.Profile != "B" {
+		t.Errorf("new task not routed by profile B: %q %q %+v", nt.Backend, nt.Model, nt.TaskRouting)
+	}
+	if final := snap(); final[running.ID] != before[running.ID] || final[routed.ID] != before[routed.ID] {
+		t.Error("adding a task after the switch changed an earlier task")
+	}
+}
