@@ -78,8 +78,11 @@ uncommitted changes.
 
 Open the **Automation** view and stay on the **Overview** sub-tab. The
 **Automata checks** card lists the mode of each check and the findings;
-the **Automata ship status** card lists the ship modes, the tag format, the
-remote, the CI workflows and the outcomes. Both cards are read-only and
+the **Automata ship status** card says in a line what shipping is, shows
+**Push**, **Tag** and **CI watch** as three small tiles with their mode
+words, carries the tag format, the remote and the CI workflow names on a
+short second line, and reads the outcomes as rows of the Automaton's title
+and the result sentence. Both cards are read-only and
 refresh every 30 seconds. The small link beside each title opens the
 definition.
 

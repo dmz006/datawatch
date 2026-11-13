@@ -18,7 +18,7 @@ button with a short explanation and a link to the matching guide.
 | **Usage calculator** (one card at the top) | **Weekly allowance**, **Pace line** and **Burn per day**: one card — a verdict sentence over three graphs of a fixed size. The same three graphs are on the usage page and can be added to a dashboard. See [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs). |
 | **Lane fill** | One row per lane. Each row shows the lane's **node** (or *Node: not reported*), its state and what it runs. The bar is full when the lane works, half when it waits on a verifier and empty when it is idle. See [automation-lane-fill.md](automation-lane-fill.md). |
 | **Capacity and queue** | The pools and their usage, any usage back-off, budgets and the Automata waiting for capacity. See [automata-capacity.md](automata-capacity.md). |
-| **Automata ship status** | The push, tag and release steps. See [automata-checks-and-ship.md](automata-checks-and-ship.md). |
+| **Automata ship status** | A line saying what shipping is, the push, tag and CI watch steps as tiles with their mode words, the tag format, remote and CI workflow names, and the outcomes. See [automata-checks-and-ship.md](automata-checks-and-ship.md). |
 
 The infrastructure retries and the Automata checks cards are on the
 [Events tab](automata-events.md), not here.

@@ -168,6 +168,7 @@ var pendingTranslationKeys = map[string]bool{
 	// Checks and ship status cards: English until the app translation lands.
 	"checks_card_title":     true,
 	"ship_card_title":       true,
+	"ship_card_explain":     true,
 	"checks_ship_read_only": true,
 	"checks_failed":         true,
 	"ship_failed":           true,

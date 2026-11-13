@@ -38174,9 +38174,10 @@ function _checksShipFindingsHtml(findings) {
   return shown + more;
 }
 
-function _checksShipCardShell(cls, titleKey, helpKey, lines, findings) {
+function _checksShipCardShell(cls, titleKey, helpKey, lines, findings, findingsHtml) {
+  const body = (findingsHtml !== undefined) ? findingsHtml : _checksShipFindingsHtml(findings);
   const head = `<div class="cap-title">${escHtml(t(titleKey))}${_checksShipHelpLink(helpKey)}</div>`;
-  return `<div class="prd-capacity-card ${cls}" style="min-width:0;">${head}${_cleanupLine(t('checks_ship_read_only'))}${lines.join('')}${_checksShipFindingsHtml(findings)}</div>`;
+  return `<div class="prd-capacity-card ${cls}" style="min-width:0;">${head}${_cleanupLine(t('checks_ship_read_only'))}${lines.join('')}${body}</div>`;
 }
 
 window.checksCardHtml = function(status) {
@@ -38192,19 +38193,84 @@ window.checksCardHtml = function(status) {
   return _checksShipCardShell('checks-card', 'checks_card_title', 'checks_findings_card', lines, s.findings);
 };
 
+// _shipStepTile draws one compact tile for a ship step: the plain step name
+// on top and the mode word below it. off, shadow and on all read as words
+// through _checksShipModeText; an unknown value shows as given.
+function _shipStepTile(labelKey, mode) {
+  return `<div class="ship-step-tile" role="listitem" style="flex:1 1 90px;max-width:150px;min-width:0;border:1px solid rgba(128,128,128,.35);border-radius:8px;padding:5px 10px;text-align:center;overflow-wrap:anywhere;">` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t(labelKey))}</div>` +
+    `<div style="font-size:13px;font-weight:600;overflow-wrap:anywhere;">${escHtml(_checksShipModeText(mode))}</div></div>`;
+}
+
+// _shipStepTiles is the push / tag / CI-watch row: three wrapping tiles, so
+// on a phone width they stack into two rows instead of squeezing the words.
+function _shipStepTiles(p) {
+  return `<div class="ship-step-tiles" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(128,128,128,.25);">` +
+    _shipStepTile('ship_tile_push', p.push) +
+    _shipStepTile('ship_tile_tag', p.tag) +
+    _shipStepTile('ship_tile_ci_watch', p.ci_watch) +
+    '</div>';
+}
+
+// _shipMetaLine is the short secondary line: tag format, remote and the CI
+// workflow names, each part omitted when it is empty. Tag format, remote and
+// workflows are where the steps point, not what they did — one line.
+function _shipMetaLine(p) {
+  const wf = Array.isArray(p.ci_workflows) ? p.ci_workflows.map(String).filter(w => w !== '').join(', ') : '';
+  const parts = [];
+  if (p.tag_format) parts.push(t('ship_meta_format', [String(p.tag_format)]));
+  if (p.remote) parts.push(t('ship_meta_remote', [String(p.remote)]));
+  if (wf) parts.push(t('ship_meta_workflows', [wf]));
+  return parts.length ? _cleanupLine(parts.join(' · ')) : '';
+}
+
+// _shipFindingsLabel resolves the plain Automaton title a finding's prd id
+// names in the Automata list the page already holds; '' when unknown, and
+// the caller keeps the id only as the last-resort fallback.
+function _shipFindingsLabel(prdId) {
+  const id = String(prdId || '');
+  if (!id) return '';
+  let title = '';
+  if (typeof _automataTitle === 'function') title = _automataTitle(id);
+  if (!title && typeof _automataState !== 'undefined' && _automataState && Array.isArray(_automataState.allPrds)) {
+    const prd = _automataState.allPrds.find(x => x && x.id === id);
+    if (prd && typeof prd.title === 'string' && prd.title.trim()) title = prd.title;
+  }
+  return (typeof title === 'string' && title.trim() && title.trim() !== id) ? title.trim() : '';
+}
+
+// _shipFindingsHtml is the ship card's findings rows: newest first (the body
+// arrives sorted; the bound keeps it so), each row the Automaton's title and
+// the outcome sentence the daemon recorded. No source names, no policy
+// vocabulary — the finding text already says what happened.
+function _shipFindingsHtml(findings) {
+  const list = Array.isArray(findings) ? findings.filter(f => f && typeof f === 'object') : [];
+  if (!list.length) return `<div class="checks-ship-empty ship-finding-empty" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);color:var(--text2);">${escHtml(t('checks_ship_no_findings'))}</div>`;
+  const shown = list.slice(0, CHECKS_SHIP_MAX_FINDINGS).map(f => {
+    const when = _triageTime(f.at);
+    const label = _shipFindingsLabel(f.prd_id) || String(f.prd_id || '');
+    return `<div class="checks-ship-finding ship-finding" style="padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
+      `<span style="color:var(--text2);">${escHtml(when)}</span> <strong>${escHtml(label)}</strong> ${escHtml(String(f.text || ''))}</div>`;
+  }).join('');
+  const more = list.length > CHECKS_SHIP_MAX_FINDINGS ? _cleanupLine(t('checks_ship_more', [list.length - CHECKS_SHIP_MAX_FINDINGS])) : '';
+  return shown + more;
+}
+
+// shipCardHtml is reworked around reading: one plain-language line says what
+// shipping is (push, tag, CI watch and what each mode means), the three
+// steps are compact tiles of step name and mode word, the tag format / remote /
+// workflow names are one short secondary line, and the recorded outcomes are
+// rows of Automaton title and sentence, newest first. It is kept — unlike a
+// bare policy dump — because it carries recorded outcomes and an explanation.
 window.shipCardHtml = function(status) {
   const s = (status && typeof status === 'object' && !Array.isArray(status)) ? status : {};
   const p = (s.policy && typeof s.policy === 'object') ? s.policy : {};
-  const wf = Array.isArray(p.ci_workflows) ? p.ci_workflows.map(String).join(', ') : '';
   const lines = [
-    _cleanupLine(t('ship_policy_push', [_checksShipModeText(p.push)])),
-    _cleanupLine(t('ship_policy_tag', [_checksShipModeText(p.tag)])),
-    _cleanupLine(t('ship_policy_ci_watch', [_checksShipModeText(p.ci_watch)])),
-    _cleanupLine(t('ship_policy_tag_format', [String(p.tag_format || '')])),
-    _cleanupLine(t('ship_policy_remote', [String(p.remote || '')])),
-    _cleanupLine(wf ? t('ship_policy_ci_workflows', [wf]) : t('ship_policy_ci_workflows_none')),
+    _cleanupLine(t('ship_card_explain')),
+    _shipStepTiles(p),
+    _shipMetaLine(p),
   ];
-  return _checksShipCardShell('ship-card', 'ship_card_title', 'ship_status_card', lines, s.findings);
+  return _checksShipCardShell('ship-card', 'ship_card_title', 'ship_status_card', lines, s.findings, _shipFindingsHtml(s.findings));
 };
 
 // ── Trace card (session view and Automaton view) ────────────────────────────
