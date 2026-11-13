@@ -1,0 +1,61 @@
+# toolchain.yaml — the development tools whose installed version scripts/check-toolchain.sh
+# compares with the newest stable release. Development tooling only.
+#
+# Line-oriented on purpose so bash can parse it with plain shell (no yq):
+#   - a line starting with "- name:" begins a new entry
+#   - every other line is an indented "key: value" pair of the current entry
+#   - the value is everything after the first ": " (one pair of single quotes is stripped)
+#   - lines starting with # and blank lines are ignored
+#
+# Keys:
+#   name          tool name and the command looked up with `command -v`
+#   version_cmd   command that prints the installed version (only this is ever run)
+#   version_sed   sed -E expression (used as `sed -nE`) that prints the semver; first line wins
+#   target_file   go only: file whose `go` directive gives the target line (major.minor, read at runtime)
+#   newest_kind   go-dl     the go.dev/dl JSON feed; newest stable release of the target line
+#                 github    GitHub releases API `latest` endpoint (tag_name)
+#                 goproxy   Go module proxy `@latest` endpoint (Version)
+#   newest_url    HTTPS URL of that source (read only)
+
+- name: go
+  version_cmd: go version
+  version_sed: 's/^[^0-9]*([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/p'
+  target_file: go.mod
+  newest_kind: go-dl
+  newest_url: https://go.dev/dl/?mode=json
+
+- name: gosec
+  version_cmd: gosec -version
+  version_sed: 's/^Version:[[:space:]]*v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
+  newest_kind: github
+  newest_url: https://api.github.com/repos/securego/gosec/releases/latest
+
+- name: govulncheck
+  version_cmd: govulncheck -version
+  version_sed: 's/^Scanner:[[:space:]]*govulncheck@v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
+  newest_kind: goproxy
+  newest_url: https://proxy.golang.org/golang.org/x/vuln/@latest
+
+- name: gitleaks
+  version_cmd: gitleaks version
+  version_sed: 's/^[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
+  newest_kind: github
+  newest_url: https://api.github.com/repos/gitleaks/gitleaks/releases/latest
+
+- name: golangci-lint
+  version_cmd: golangci-lint --version
+  version_sed: 's/^[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
+  newest_kind: github
+  newest_url: https://api.github.com/repos/golangci/golangci-lint/releases/latest
+
+- name: trivy
+  version_cmd: trivy --version
+  version_sed: 's/^Version:[[:space:]]*v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
+  newest_kind: github
+  newest_url: https://api.github.com/repos/aquasecurity/trivy/releases/latest
+
+- name: goreleaser
+  version_cmd: goreleaser --version
+  version_sed: 's/^GitVersion:[[:space:]]*v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p'
+  newest_kind: github
+  newest_url: https://api.github.com/repos/goreleaser/goreleaser/releases/latest
