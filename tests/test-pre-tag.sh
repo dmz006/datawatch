@@ -54,6 +54,98 @@ check "record line format (second)" 'tail -1 "$REC" | grep -Eq "$re2"'
 
 check "skip message for missing tool" 'echo "$out2" | grep -qx "SKIP \[golangci-lint\]: golangci-lint not found"'
 
+# 5. skip messages for every security / release-build tool when absent
+for pair in govulncheck:govulncheck gosec:gosec gitleaks:gitleaks goreleaser-snapshot:goreleaser docker-agent-base:docker; do
+  id="${pair%%:*}"; tl="${pair##*:}"
+  o="$(PATH="$BIN" PRE_TAG_ONLY="$id" PRE_TAG_RECORD_FILE="$WORK/rec-skip" bash "$SCRIPT" 2>&1)"
+  check "skip message for $id" 'echo "$o" | grep -qx "SKIP \[$id\]: $tl not found"'
+done
+
+# 6. tool present: invocations mirror CI (flags + baseline file)
+stub govulncheck; stub gitleaks; stub goreleaser
+stub gosec 'echo "{\"Issues\":[]}"; exit 0'
+: > "$LOG"
+for id in govulncheck gosec gitleaks goreleaser-snapshot; do
+  PATH="$BIN" PRE_TAG_ONLY="$id" PRE_TAG_RECORD_FILE="$WORK/rec-mirror" bash "$SCRIPT" >/dev/null 2>&1
+done
+check "govulncheck ./..." 'grep -qx "govulncheck ./..." "$LOG"'
+check "gosec CI flags" 'grep -q -- "gosec -exclude=.* -exclude-dir=.claude -severity=high -confidence=medium -fmt=json -quiet ./..." "$LOG"'
+check "gitleaks CI flags" 'grep -qx "gitleaks detect --source . --redact --exit-code 1" "$LOG"'
+check "goreleaser snapshot flags" 'grep -qx "goreleaser release --snapshot --clean" "$LOG"'
+
+# 7. gosec baseline diff: more findings than .gosec-baseline.json fails
+base_n="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["total"])' "$ROOT/.gosec-baseline.json")"
+stub gosec "python3 -c 'import json;print(json.dumps({\"Issues\":[{\"rule_id\":\"G999\"}]*($base_n+1)}))'"
+o="$(PATH="$BIN" PRE_TAG_ONLY=gosec PRE_TAG_RECORD_FILE="$WORK/rec-g" bash "$SCRIPT" 2>&1)"; rc=$?
+check "gosec net-new findings fail" '[ "$rc" -ne 0 ] && echo "$o" | grep -q "net-new findings exceed baseline"'
+stub gosec 'exit 0'
+o="$(PATH="$BIN" PRE_TAG_ONLY=gosec PRE_TAG_RECORD_FILE="$WORK/rec-g" bash "$SCRIPT" 2>&1)"; rc=$?
+check "gosec empty output fails" '[ "$rc" -ne 0 ]'
+
+# 8. slow-opt-in uses nice -n 19 and timeout, runs both make targets
+cat > "$BIN/nice" <<EOS
+#!/bin/bash
+echo "nice \$*" >> "$LOG"
+shift 2; exec "\$@"
+EOS
+cat > "$BIN/timeout" <<EOS
+#!/bin/bash
+echo "timeout \$*" >> "$LOG"
+shift 3; exec "\$@"
+EOS
+chmod +x "$BIN/nice" "$BIN/timeout"
+for t in nproc pkill sleep seq; do p="$(command -v "$t")" && ln -sf "$p" "$BIN/$t"; done
+: > "$LOG"
+PATH="$BIN" PRE_TAG_ONLY=slow-opt-in PRE_TAG_RECORD_FILE="$WORK/rec-s" PRE_TAG_SLOW_TIMEOUT=77 bash "$SCRIPT" >/dev/null 2>&1
+check "slow step runs make test-tmp-guard" 'grep -qx "make test-tmp-guard" "$LOG"'
+check "slow step runs make test-cross-build" 'grep -qx "make test-cross-build" "$LOG"'
+check "slow step uses nice -n 19" 'grep -q "^nice -n 19 timeout" "$LOG"'
+check "slow step uses hard timeout" 'grep -q "^timeout -k 30 77 make test-tmp-guard" "$LOG"'
+check "slow step trap covers EXIT INT TERM" 'grep -q "^trap .kill_slow; write_record. EXIT" "$SCRIPT" && grep -q "^trap .kill_slow; exit 130. INT" "$SCRIPT" && grep -q "^trap .kill_slow; exit 143. TERM" "$SCRIPT"'
+check "worker cap is max(1, nproc/4)" 'grep -q "nproc 2>/dev/null || echo 4) / 4" "$SCRIPT" && grep -q "n=1" "$SCRIPT"'
+
+# trap kills children: a hanging slow command dies when the script is TERMed
+cat > "$BIN/make" <<EOS
+#!/bin/bash
+echo "\$\$" > "$WORK/child.pid"; exec sleep 300
+EOS
+chmod +x "$BIN/make"
+PATH="$BIN" PRE_TAG_ONLY=slow-opt-in PRE_TAG_RECORD_FILE="$WORK/rec-k" bash "$SCRIPT" >/dev/null 2>&1 &
+spid=$!
+for _ in $(seq 1 50); do [ -s "$WORK/child.pid" ] && break; sleep 0.1; done
+cpid="$(cat "$WORK/child.pid" 2>/dev/null)"
+kill -TERM "$spid" 2>/dev/null; wait "$spid" 2>/dev/null; sleep 0.5
+check "TERM kills slow child" '[ -n "$cpid" ] && ! kill -0 "$cpid" 2>/dev/null'
+kill "$cpid" 2>/dev/null
+stub make
+
+# 9. docker-agent-base changed-since-last-tag gate (throwaway repo)
+R="$WORK/repo"; mkdir -p "$R/scripts" "$R/security" "$R/.github/workflows" "$R/docker/dockerfiles"
+cp "$SCRIPT" "$R/scripts/pre-tag.sh"
+(
+  cd "$R" && git init -q && git config user.email t@t && git config user.name t
+  echo a > docker/dockerfiles/Dockerfile.agent-base; echo a > security/accepted-risks.yml
+  echo a > .github/workflows/containers.yaml; echo a > README
+  git add -A && git commit -qm init
+)
+stub docker
+dab() { : > "$LOG"; ( cd "$R" && PATH="$BIN" PRE_TAG_ONLY=docker-agent-base PRE_TAG_RECORD_FILE="$WORK/rec-d" bash scripts/pre-tag.sh 2>&1 ); }
+o="$(dab)"
+check "no tag: docker-agent-base runs" 'grep -q "^docker build" "$LOG"'
+( cd "$R" && git tag v1.0.0 )
+o="$(dab)"
+check "no change since tag: skipped with message" '! grep -q "^docker build" "$LOG" && echo "$o" | grep -q "SKIP \[docker-agent-base\]: .* since v1.0.0"'
+( cd "$R" && echo b > README && git commit -qam readme )
+dab >/dev/null
+check "unrelated change still skipped" '! grep -q "^docker build" "$LOG"'
+for f in docker/dockerfiles/Dockerfile.agent-base .github/workflows/containers.yaml security/accepted-risks.yml; do
+  ( cd "$R" && echo changed >> "$f" )
+  dab >/dev/null
+  check "change to $f triggers build" 'grep -q "^docker build" "$LOG"'
+  ( cd "$R" && git checkout -q -- "$f" )
+done
+
+
 # 4. .gitignore covers the record
 check "record is git-ignored" '(cd "$ROOT" && git check-ignore -q .datawatch/pre-tag-record)'
 
