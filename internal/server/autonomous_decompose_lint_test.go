@@ -36,8 +36,8 @@ type decomposeLintSpy struct {
 	setLintErr   error
 	setLintCalls int
 
-	getPRDVal  any
-	getPRDOK   bool
+	getPRDVal   any
+	getPRDOK    bool
 	getPRDCalls int
 
 	dryRun      any
@@ -249,9 +249,9 @@ func prdWithLintRecord() map[string]any {
 		"id":  "prd-1",
 		"prd": "Story X",
 		"decompose_lint": map[string]any{
-			"mode":                 "enforce",
-			"attempts":             2,
-			"linted_at":            "2026-01-01T00:00:00Z",
+			"mode":                    "enforce",
+			"attempts":                2,
+			"linted_at":               "2026-01-01T00:00:00Z",
 			"decompose_lint_findings": []any{map[string]any{"rule": "no-verification-less-tasks", "task": "T1", "severity": "block", "message": "no verification"}},
 		},
 	}

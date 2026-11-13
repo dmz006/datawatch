@@ -367,7 +367,7 @@ func requirementsConfigGetSurface(req config.AutonomousRequirementsConfig) map[s
 	out := make([]string, 0, len(capabilities))
 	out = append(out, capabilities...)
 	return map[string]any{
-		"min_ollama":  min,
+		"min_ollama":   min,
 		"capabilities": out,
 	}
 }

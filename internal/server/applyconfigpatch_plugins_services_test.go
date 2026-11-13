@@ -23,15 +23,15 @@ func newPluginServicesServer(t *testing.T) *Server {
 func TestApplyConfigPatch_PluginServicesKeys(t *testing.T) {
 	cfg := &config.Config{}
 	patch := map[string]interface{}{
-		"plugins.services.health_interval_seconds":            float64(90),
-		"plugins.services.backlog_growth_pulls":               float64(5),
-		"plugins.services.node_load_ratio":                    2.5,
-		"plugins.services.small_model_max_params_billions":    float64(7),
-		"plugins.services.small_model_context_tokens":         float64(16384),
+		"plugins.services.health_interval_seconds":         float64(90),
+		"plugins.services.backlog_growth_pulls":            float64(5),
+		"plugins.services.node_load_ratio":                 2.5,
+		"plugins.services.small_model_max_params_billions": float64(7),
+		"plugins.services.small_model_context_tokens":      float64(16384),
 		// per_service as a single object...
 		"plugins.services.per_service": map[string]interface{}{
-			"a string value":   "attach_only",
-			"an object value":  map[string]interface{}{"lifecycle_mode": "managed"},
+			"a string value":  "attach_only",
+			"an object value": map[string]interface{}{"lifecycle_mode": "managed"},
 		},
 		// ...and as one dynamic key per plugin.
 		"plugins.services.per_service.vault": "attach_only",
@@ -68,13 +68,13 @@ func TestApplyConfigPatch_PluginServicesKeys(t *testing.T) {
 func TestApplyConfigPatch_PluginServicesRefusesBadValues(t *testing.T) {
 	cfg := &config.Config{}
 	patch := map[string]interface{}{
-		"plugins.services.health_interval_seconds":       float64(4),  // below the minimum
-		"plugins.services.backlog_growth_pulls":          float64(-1), // negative
-		"plugins.services.node_load_ratio":               float64(-1), // negative
-		"plugins.services.small_model_max_params_billions": float64(0), // zero = unset
-		"plugins.services.small_model_context_tokens":    float64(-1),  // negative
-		"plugins.services.per_service.mcp":               "nope",      // misspelled mode
-		"plugins.services.per_service.bad":               map[string]interface{}{"lifecycle_mode": "attach"},
+		"plugins.services.health_interval_seconds":         float64(4),  // below the minimum
+		"plugins.services.backlog_growth_pulls":            float64(-1), // negative
+		"plugins.services.node_load_ratio":                 float64(-1), // negative
+		"plugins.services.small_model_max_params_billions": float64(0),  // zero = unset
+		"plugins.services.small_model_context_tokens":      float64(-1), // negative
+		"plugins.services.per_service.mcp":                 "nope",      // misspelled mode
+		"plugins.services.per_service.bad":                 map[string]interface{}{"lifecycle_mode": "attach"},
 	}
 	applyConfigPatch(cfg, patch)
 	svc := cfg.Plugins.Services
@@ -101,13 +101,13 @@ func TestApplyConfigPatch_PluginServicesRefusesBadValues(t *testing.T) {
 func TestValidatePluginServicesPatch(t *testing.T) {
 	// A fully valid block passes, on stored defaults.
 	if err := validatePluginServicesPatch(config.PluginServicesConfig{}, map[string]interface{}{
-		"plugins.services.health_interval_seconds":        float64(90),
-		"plugins.services.backlog_growth_pulls":           float64(4),
-		"plugins.services.node_load_ratio":                2.5,
+		"plugins.services.health_interval_seconds":         float64(90),
+		"plugins.services.backlog_growth_pulls":            float64(4),
+		"plugins.services.node_load_ratio":                 2.5,
 		"plugins.services.small_model_max_params_billions": float64(7),
-		"plugins.services.small_model_context_tokens":     float64(16384),
-		"plugins.services.per_service":                    map[string]interface{}{"mcp": "attach_only", "ollama": map[string]interface{}{"lifecycle_mode": "managed"}},
-		"plugins.services.per_service.vault":              "attach_only",
+		"plugins.services.small_model_context_tokens":      float64(16384),
+		"plugins.services.per_service":                     map[string]interface{}{"mcp": "attach_only", "ollama": map[string]interface{}{"lifecycle_mode": "managed"}},
+		"plugins.services.per_service.vault":               "attach_only",
 	}); err != nil {
 		t.Fatalf("a valid block must pass: %v", err)
 	}
