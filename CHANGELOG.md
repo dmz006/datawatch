@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.168.0 — The ship status card explains itself instead of listing setting names
+
+The **Automata ship status** card in the web app now reads as a card an operator can understand without the setting names.
+
+- A line under the title says what shipping is — pushing the branch, tagging it and following the CI runs — and what the three mode words mean (off, shadow recording only, on).
+- **Push**, **Tag** and **CI watch** are three small tiles with the plain step name and the mode word; the tiles wrap on a phone width.
+- The tag format, the remote and the CI workflow names sit on one short second line, with empty parts dropped rather than reading “none”.
+- The outcomes read as rows of the Automaton's title and the result sentence, newest first, bounded as before; where the title is not loaded the short id stands in.
+- The card keeps its title, its read-only note and its definition link, and still refreshes every 30 seconds. The REST, MCP, CLI and chat ship status reads are unchanged.
+
 ## v9.167.0 — Match Automata to a project by explicit link first, directory as fallback
 
 The Projects page now decides which project an Automaton belongs to by an explicit link first, and by its directory only as the last fallback.

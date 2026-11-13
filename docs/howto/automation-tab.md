@@ -198,8 +198,10 @@ never blanks the cards.
   [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs)) —
   the capacity and queue card (the pools and their usage, any usage back-off,
   budgets, and the Automata waiting for capacity), the lane fill card (one row
-  per lane, with its node) and the Automata ship status card (the push, tag and
-  release steps). The infrastructure retries and the Automata checks cards
+  per lane, with its node) and the Automata ship status card (a line saying
+  what shipping is, tiles for the push, tag and CI watch steps with their mode
+  words, the tag format, remote and CI workflow names, and the outcomes;
+  see [automata-checks-and-ship.md](automata-checks-and-ship.md#see-the-findings)). The infrastructure retries and the Automata checks cards
   (the four report-only checks) are in the Events tab.
 - **Progress and cost:** the Progress card (with the kind table, work left and
   completion range; see [automata-progress.md](automata-progress.md)), the
