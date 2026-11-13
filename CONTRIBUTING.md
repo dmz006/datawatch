@@ -169,6 +169,16 @@ chore(deps): update gorilla/websocket to v1.5.3
 7. Push to your fork and open a PR using the PR template.
 8. One maintainer review is required before merge.
 
+### Local pre-tag checks
+
+Two slow checks are opt-in. Run both before tagging a release; `make help` lists them.
+
+- `make test-tmp-guard` — runs the temp-dir leak guard over every package.
+- `make test-cross-build` — cross-builds the daemon for windows and darwin.
+
+A plain `go test ./...` skips both and prints a skip message that names the make
+target to run. Whether CI and the release workflow run them is decided separately.
+
 All contributions are welcome. This is a solo-maintainer project — please be patient
 with review turnaround.
 
