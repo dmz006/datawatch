@@ -96,12 +96,12 @@ not remove. Use it to clear the leftovers of a killed run.
 fresh, private temp directory and fails the run — naming the surviving entry and
 the responsible package — if any scratch directory is left behind.
 The guard is opt-in: a plain `go test ./...` skips it with a message naming
-the target. `make test-tmp-guard` runs it in full mode over every package in the
+the target (the target sets `DW_RUN_TMP_GUARD=1`). `make test-tmp-guard` runs it in full mode over every package in the
 repository.
 
 `make test-cross-build` is the other opt-in local pre-tag check. It
 cross-compiles the daemon (`./cmd/datawatch/`) for windows/amd64, windows/arm64
-and darwin/arm64 (`TestMainBuildsForReleaseTargets` in `tests/ci`), and is
+and darwin/arm64 (`TestMainBuildsForReleaseTargets` in `tests/ci`; the target sets `DW_RUN_CROSS_BUILD=1`), and is
 skipped by a plain `go test ./...` with a message naming the target. Whether CI
 and the release workflow run either check is decided separately.
 
