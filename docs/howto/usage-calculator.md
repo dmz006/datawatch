@@ -206,7 +206,7 @@ otherwise). The two label keys are locale keys in all five locales; `none` is no
 a key and has no text. The calculator's advice itself is unchanged: it is still
 points of the weekly allowance, and only the labels follow the billing mode.
 
-**The web usage cards do not draw these labels yet.** They fetch the same advice
+**The web usage calculator card and the three dashboard graph cards do not draw these labels yet.** They fetch the same advice
 payload but do not read `unit_labels`, so today the field is for REST and MCP
 clients only. Until the cards read it, the cards show what they showed before.
 

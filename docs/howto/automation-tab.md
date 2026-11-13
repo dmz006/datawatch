@@ -34,8 +34,8 @@ to its tab without changing the other tabs.
 |---|---|
 | **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting; see [What the Inbox counts](#what-the-inbox-counts). |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages appear here when they ship. A **Focus** button in the header of an Automation's page opens its timeline (see [projects-tab.md](projects-tab.md#focus-on-one-automation)). |
-| **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
-| **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
+| **Resources** | The **Usage calculator** card at the top — one card: a verdict sentence and three fixed-size graphs (weekly allowance, pace line, burn per day) — then the capacity and queue card, the lane fill rows with their node, and the Automata ship status card; see [automata-resources.md](automata-resources.md) and [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
+| **Progress and cost** | The Progress card (the kind table, work left and completion range; see [automata-progress.md](automata-progress.md)), the three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the four titled cost chart cards (cost over time, tool usage, retries and failure categories, combined report; see [cost-report.md](cost-report.md#the-chart-cards-on-the-automata-page)). The all-projects Gantt appears here when it ships. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
 | *(Setup and policy, removed)* | The sub-tab no longer exists. The onboarding and requirements report, the supervisor loop runs and counts, the release readiness bar, the model request watch and the merge shadow now show on the Events tab, and only while they have something to show. The merge pipeline, decision records folder, usage reading and extra credit settings are in **Settings → General → Automata**. The placement axes and the tag sweep are under **Settings → General → Automata → Placement tags**; see [automata-tags](automata-tags.md). |
 | **Housekeeping** | An action list: the **Unlanded work** card (archived Automaton branches whose work is not on the default branch, each with a recommendation and Keep, Archive branch and Delete worktree buttons; Delete worktree writes a backup bundle first), the uncommitted work card with a **Commit** button that shows the diff and takes a message. The safe-to-delete report, the cleanup history, the skipped-by-reason counts and the **Fix permissions** button (for removals the file system refused) moved to the Cleanup card on the Events tab. |
 
@@ -192,14 +192,22 @@ never blanks the cards.
   [Questions](#questions-rest-only-for-now)), the held-question card and the
   security failure card. The supervisor watch card is in the Events tab. The badge on the tab
   counts what is waiting on you.
-- **Resources:** the three usage cards in a row (weekly allowance, pace line,
-  burn per day), the capacity and queue card (the pools and their usage, any
-  usage back-off, budgets, and the Automata waiting for capacity), the lane fill
-  card (one row per lane, with its node) and the Automata ship status
-  card (the push, tag and release steps). The infrastructure retries and the
-  Automata checks cards (the four report-only checks) are in the Events tab.
-- **Progress and cost:** the Progress card, with the kind table, work left and
-  completion range.
+- **Resources:** the **Usage calculator** card at the top — one card: a
+  verdict sentence and three fixed-size graphs (weekly allowance, pace line,
+  burn per day; see
+  [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs)) —
+  the capacity and queue card (the pools and their usage, any usage back-off,
+  budgets, and the Automata waiting for capacity), the lane fill card (one row
+  per lane, with its node) and the Automata ship status card (the push, tag and
+  release steps). The infrastructure retries and the Automata checks cards
+  (the four report-only checks) are in the Events tab.
+- **Progress and cost:** the Progress card (with the kind table, work left and
+  completion range; see [automata-progress.md](automata-progress.md)), the
+  three metric cards (Progress, Cost, Forecast; see
+  [automata-cost.md](automata-cost.md)) and the four titled cost chart cards —
+  cost over time, tool usage, retries and failure categories, combined report;
+  a card with no data is not drawn and its reason is at the top of the Events
+  tab (see [cost-report.md](cost-report.md#the-chart-cards-on-the-automata-page)).
 - **Setup and policy (removed):** its cards are on the Events tab (see
   [automata-events.md](automata-events.md#status-cards-on-the-events-tab)) and
   its configuration is in Settings under Automata.

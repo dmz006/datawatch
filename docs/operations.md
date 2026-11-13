@@ -710,7 +710,7 @@ tasks in any status, stay locked.
 
 The usage calculator advises how many lanes the weekly provider allowance can
 carry. It never stops or slows a lane. Keys live under `usage.calculator.`;
-`usage.calculator.variant` (kept for compatibility; the PWA now always draws the three usage cards),
+`usage.calculator.variant` (kept for compatibility; the PWA now always draws the one usage calculator card with its three graphs),
 `policy`, `safety_points` (default 5), `cost_per_task_points`, `baseline_per_24h`,
 `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone` (a zone name, never a
 fixed offset) and `keeper` (the federation peer that keeps the shared
@@ -7984,7 +7984,7 @@ report never sums dollars and points: each row and the report body carry
 `claude-code` allowance. The usage advice payload carries one unit label key per
 backend (`unit_labels`, keyed by LLM name; `usage_unit_dollars` and
 `usage_unit_points` are locale keys in all five locales, `none` has no label); the
-web usage cards do not read it yet. See
+the web usage calculator card and the three dashboard graph cards do not read it yet. See
 [howto/llm-registry.md](howto/llm-registry.md#what-the-billing-mode-changes),
 [howto/cost-report.md](howto/cost-report.md#dollars-and-points-are-never-added-together),
 [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards) and
