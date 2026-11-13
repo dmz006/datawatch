@@ -228,11 +228,17 @@ to
   - the error panel, when a remote server cannot be reached and no
     sessions are loaded, offers an explicit **Back to \<hostname\>**
     button;
-  - a clickable **🌐 \<name\>** indicator on the **Sessions toolbar** —
-    it appears while a remote server is the active one and clicking it
-    returns you to local data; it is the `.server-indicator` chip in
-    `renderSessionsView` in `internal/server/web/app.js`
-    (`onclick="selectServer(null)"`), covered by the PWA test
+  - the **Sessions toolbar** now carries a **server select** in its one-line
+    top bar (an **All servers** entry, **This server**, one entry per
+    peer) — picking **This server** (or any other entry) goes through the
+    same `selectServer()` path as the header dropdown;
+  - a clickable **🌐 \<name\>** indicator on the line below the Sessions toolbar,
+    next to **Tree** and **History** (it lives on the Sessions page
+    toolbar, not the one-line top bar) — it appears while a remote server
+    is the active one and clicking it returns you to local data; it is the
+    `.server-indicator` chip in `renderSessionsView` in
+    `internal/server/web/app.js` (`onclick="selectServer(null)"`), covered
+    by the PWA test
     `internal/server/web/app-select-server-controls.test.js`;
   - on the **Servers card** under Settings → Comms → Remote Servers, the
     row for the active remote server carries a **Back to \<hostname\>**

@@ -30,13 +30,17 @@ same groups, counts and state mixes.
 
 ## What it is
 
-The Sessions page keeps all of its controls in **one toolbar row**: a search
-box, a **Filters** button (with a badge counting what is active), the
-**List / Tiles / Compact** toggle, and — only while a federated server is the
-active one — the clickable **🌐 <name>** indicator that returns you to this
-server when clicked (the full server picker is the header dropdown shared by
-every page; see [multi-servers](multi-servers.md#switch-between-servers-header-dropdown)). Behind the Filters button
-sit the grouping and saved-view controls. Three independent dials come out
+The Sessions page keeps all of its main controls in **one compact toolbar
+line** that never splits into multiple rows, at any width: a **server
+select** (All servers, this server, one entry per enabled peer), a
+**search** box, a **Filters** button (with a badge counting what is active),
+a **Fold all** button (while a grouping with openable groups is active) and
+a **view mode select** with the three modes **List / Tiles / Compact**. One
+line below the toolbar, the **Tree** and **History** buttons sit with the
+clickable **🌐 <name>** indicator that appears only while a federated server
+is the active one and returns you to this server when clicked (see
+[multi-servers](multi-servers.md#switch-between-servers-header-dropdown)). Behind the Filters
+button sit the grouping and saved-view controls. Three independent dials come out
 of that:
 
 1. **View mode** — how each session is drawn: `list` (one card per row),
@@ -61,9 +65,11 @@ daemon, REST, MCP, CLI and comm channel behave exactly as before.
 ```
 header (fixed, every page):   …  [ ▾ All servers │ This server │ server-a │ server-b ]
 
-Sessions (toolbar row):
-┌─[ Search…  ]  [ Filters (2) ]  [ 🌐 server-a ]   [ List │ Tiles │ Compact ]
-│  (the 🌐 indicator shows only while a federated server is active)
+Sessions (one toolbar line, at phone and wide widths):
+┌─[ ▾ All servers ] [ Search…  ] [ Filters (2) ] [ ⊟ Fold all ] [ ▾ Tiles ]
+│  (⊟ Fold all shows only while a grouping is active; the line below the
+│   toolbar carries Tree and History — and the 🌐 server-a indicator,
+│   shown only while a federated server is active)
 │  ● running 4   ● waiting_input 2   ● complete 11   ● failed 1   ● killed 3
 │  ────────────────────────────────────────────────────────────
 │  ▾ automation:lane-fill        4  (running 2, waiting_input 1, complete 1)
@@ -96,9 +102,11 @@ per-device UI preference or a read-only API parameter.
 ## Setup
 
 There is nothing to configure. Open the PWA, go to **Sessions**, and the
-toolbar row is already at the top of the list: the search box, the
-**Filters** button, the mode toggle — and the 🌐 indicator, while a federated
-server is the active one. **Group by** and
+one-line toolbar is already at the top of the list: the **server select**,
+the search box, the **Filters** button and the **view mode select** (List /
+Tiles / Compact), plus the **Fold all** button while a grouping is active. The
+**Tree** and **History** buttons sit on the line below the toolbar, with
+the 🌐 indicator while a federated server is the active one. **Group by** and
 the saved **Views** are inside the Filters sheet.
 
 If you only need one of the three, jump to the matching section:
@@ -110,8 +118,19 @@ If you only need one of the three, jump to the matching section:
 
 ## The toolbar row
 
-Everything you need to find sessions sits in one row at the top of the page:
+Everything you need to find sessions sits in one non-splitting line at the
+top of the page, at any width, in this order: **server select**, **search**,
+**Filters**, **Fold all** (while grouping) and the **view mode select**:
 
+- **Server select** — the line starts with the Sessions page's own server
+dropdown (an **All servers** entry, **This server**, and one entry per
+enabled peer, a peer whose reachability check failed marked
+** (unreachable)**): picking an entry re-renders the page you're on against
+that server (its sessions, its counts, its search text), and picking the
+active one is a no-op. It is the same shared picker as the header dropdown
+— choosing an entry in one updates the other, and both ride on the one
+page-wide selection. See [multi-servers: Switch between
+servers](multi-servers.md#switch-between-servers-header-dropdown).
 - **Search box** — type to narrow the list. It matches a session's name, its
   id, its backend, its tag text and its state, so `claude`, `a1f2`,
   `automation:` or `waiting` all work. While a search is active the page
@@ -122,15 +141,18 @@ Everything you need to find sessions sits in one row at the top of the page:
 - **Filters button** — opens the Filters sheet (below). A badge on the
   button shows how many filters are active, so you can tell at a glance that
   the list is narrowed even with the sheet closed.
-- **🌐 indicator & server dropdown** — while a federated server is the active
-  one, the row starts with a clickable **🌐 <name>** indicator; clicking it
-  returns you to this server. The full server picker is the header dropdown
-  shared by every page (an **All servers** entry, **This server**, and one
-  entry per enabled peer): picking an entry re-renders the page you're on
-  against that server (its sessions, its counts, its search text), and
-  picking the active one is a no-op. See [multi-servers: Switch between
-  servers](multi-servers.md#switch-between-servers-header-dropdown).
-- **List / Tiles / Compact** — the mode toggle, described next.
+- **Fold all** — present only while a grouping is active and at least two
+  groups are openable: a compact icon button (tooltip **Fold every group**,
+  and **Unfold every group** once everything is folded) that folds or
+  unfolds every group at once. It replaces the former separate fold row
+  under the list, so there is no second row of controls for folding.
+- **View mode select** — the **List / Tiles / Compact** control, now a
+dropdown that shows the mode in use and replaces the three-button mode
+toggle. Described next under [View modes](#view-modes).
+- **One line below the toolbar** — the **Tree** and **History** buttons sit
+  on their own line, with the clickable **🌐 <name>** indicator while a
+  federated server is the active one: clicking it returns you to this
+  server (picking **This server** in either server dropdown does the same).
 
 ### The Filters sheet
 
@@ -246,8 +268,8 @@ with no new setting, endpoint, MCP tool, CLI command or chat verb.
 
 ## View modes
 
-The toggle in the toolbar row has three buttons: **List**, **Tiles**,
-**Compact**.
+The **view mode select** in the toolbar line offers three choices: **List**,
+**Tiles** and **Compact**.
 
 - **List** is the classic one-card-per-row layout. It stays the default on
   phone-width viewports (narrower than 600 px), where the dense rows read
@@ -319,9 +341,10 @@ off. That is fixed in two ways:
 
 - A saved Tree choice no longer overrides Tiles or Compact; the tree shows
   only while the mode is **List**.
-- Clicking any mode button (List, Tiles or Compact) switches the Tree choice
-  off, so the mode you click is the layout you get. To see the lineage tree
-  again, choose **List** and press **Tree**.
+- Choosing any mode in the select (List, Tiles or Compact) switches the
+  Tree choice off, so the mode you pick is the layout you get. To see the
+  lineage tree again, choose **List** and press **Tree** on the line below
+  the toolbar.
 
 This is a browser-side change only: no setting, endpoint, MCP tool, CLI
 command or chat verb changed, and the stored `cs_sessions_view_mode` value is
@@ -395,8 +418,9 @@ Group mechanics, in every mode:
 
 - **Collapse / expand.** Each group header is collapsible: tap it to fold or
   unfold the group. Your fold state is remembered per device and per axis +
-  prefix, so a grouping you live in stays the way you left it. A **fold-all**
-  control next to the groups folds or unfolds every group at once.
+  prefix, so a grouping you live in stays the way you left it. The
+  **Fold all** button in the toolbar line folds or unfolds every group at
+  once (it appears while a grouping with openable groups is active).
 - **Count and state mix.** The header shows the group's session count and a
   per-state mix (e.g. `4 (running 2, waiting_input 1, complete 1)`), so you
   can read "how much of this group is alive" without expanding it.
@@ -505,8 +529,10 @@ same groups, the same counts and state mixes, wherever you read them:
 
 ### PWA (web UI)
 
-The Sessions page controls above: the one toolbar row (search, Filters with
-its badge, the 🌐 indicator while a federated server is active, mode toggle), the Filters sheet (Group by with the
+The Sessions page controls above: the one-line toolbar (server select,
+search, Filters with its badge, Fold all while grouping is active, view mode
+select) and the Tree / History line (with the 🌐 indicator while a federated
+server is active), the Filters sheet (Group by with the
 tag-prefix entries, Views, status chips, and the grouped, searchable Tags
 filter with the Automaton picker and the selected-filter row), Show
 more paging, collapsible group headers with the fold-all control and the
@@ -688,11 +714,11 @@ in your tag registry.
 | Control | Where | Per-device? | Notes |
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
-| Server picker (All / this server / each federated peer) | PWA toolbar chips | no — page-wide, not per device; defaults to the local server on load | single-select: chooses which server's sessions the page reads; **All** aggregates local + federated; not one of the sheet's filters |
+| Server picker (All / this server / each federated peer) | PWA toolbar select (and the header dropdown) | no — page-wide, not per device; defaults to the local server on load | one shared picker: the toolbar select and the header dropdown are the same selection, so choosing an entry in one updates the other; **All** aggregates local + federated; not one of the sheet's filters |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
 | View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
-| Collapse a group, fold all | PWA group header, fold-all control | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | body still renders in the active mode |
+| Collapse a group, fold all | PWA group header, **Fold all** button in the toolbar line | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | Fold all appears only while a grouping with openable groups is active; body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
 | State filter | PWA, Filters sheet | status chip set per device (`cs_session_state_chips`; an older single pick in `cs_session_state_chip` is read in) | multi-select set: union of the picked states, second tap removes one chip, **All** clears the group; historical picks auto-enable History |
 | Backend filter | PWA, Filters sheet | backend chip set per device (`cs_session_backend_sel`) | multi-select set: union of the picked backend families, second tap removes one chip, **All** clears the group; leaves the search box untouched |
@@ -719,9 +745,9 @@ in your tag registry.
   (see [View mode with no grouping, and the Tree toggle](#view-mode-with-no-grouping-and-the-tree-toggle)).
   If you still see list rows in Tiles or Compact, confirm the PWA is the
   current build (hard reload) before looking at storage.
-- **I see a tile, not a row, and I want rows back.** Switch the mode toggle
-  to **List** — the choice sticks on that device. On phones the default is
-  already List.
+- **I see a tile, not a row, and I want rows back.** Choose **List** in the
+  view mode select — the choice sticks on that device. On phones the default
+  is already List.
 - **My saved view isn't on my other device.** Saved views are per device
   by design; recreate it from the Views section of the Filters sheet. The *data* it reads (groups,
   counts, mixes) is identical on every channel and every peer.
