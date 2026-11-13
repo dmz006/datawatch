@@ -11,10 +11,20 @@ import (
 // Kind is the kind of a plan record.
 type Kind string
 
-// The two record kinds.
+// The record kinds. A plan is a registry record that links down to
+// Automations, Automata and findings; a registry row is a numbered work item
+// from the old registry; a finding is a problem attached to a plan or an
+// Automaton.
 const (
+	KindPlan        Kind = "plan"
 	KindRegistryRow Kind = "registry_row"
 	KindFinding     Kind = "finding"
+)
+
+// What a finding can be attached to.
+const (
+	AttachPlan      = "plan"
+	AttachAutomaton = "automaton"
 )
 
 // State is where a record is in its life. The valid set depends on the kind.
@@ -54,6 +64,9 @@ const (
 	MaxReasonRunes    = 1000
 	MaxProjectRunes   = 64
 	MaxIDRunes        = 64
+	MaxGoalRunes      = 2000
+	MaxLinkedItems    = 500
+	MaxOrder          = 1_000_000
 )
 
 // Link points a record at something else (an Automaton, a doc, an issue).
@@ -85,6 +98,23 @@ type Record struct {
 	NeedsReview    bool     `json:"needs_review,omitempty"`
 	ReviewReason   string   `json:"review_reason,omitempty"`
 
+	// Plan fields (kind plan only). Order is the priority order, lowest first;
+	// Automations, Automata and Findings are the links down, in display order.
+	// They change only through the store's Attach, Detach and Reorder methods.
+	Goal        string   `json:"goal,omitempty"`
+	Order       int      `json:"order,omitempty"`
+	Automations []string `json:"automations,omitempty"`
+	Automata    []string `json:"automata,omitempty"`
+	Findings    []string `json:"findings,omitempty"`
+	// LinkInfo keeps the title and state last reported for a linked Automaton
+	// or Automation, keyed "automaton:<id>" or "automation:<id>", so lists and
+	// search never read the linked item itself.
+	LinkInfo map[string]LinkInfo `json:"link_info,omitempty"`
+
+	// Finding fields (kind finding only): what the finding is attached to.
+	AttachKind string `json:"attach_kind,omitempty"`
+	AttachRef  string `json:"attach_ref,omitempty"`
+
 	// Actor names who made the change for the audit event. It is never stored.
 	Actor string `json:"-"`
 }
@@ -103,8 +133,18 @@ type Patch struct {
 	AddAliases     []string
 	NeedsReview    *bool
 	ReviewReason   *string
+	// Goal and Order apply to plans only.
+	Goal  *string
+	Order *int
 	// Actor names who made the change for the audit event.
 	Actor string
+}
+
+// LinkInfo is the title and state last reported for a linked Automaton or
+// Automation.
+type LinkInfo struct {
+	Title string `json:"title,omitempty"`
+	State string `json:"state,omitempty"`
 }
 
 var (
@@ -113,13 +153,13 @@ var (
 	rowRefRe  = regexp.MustCompile(`^(?i)row\s+#?(\d+)$`)
 )
 
-// ValidKind reports whether k is one of the two record kinds.
-func ValidKind(k Kind) bool { return k == KindRegistryRow || k == KindFinding }
+// ValidKind reports whether k is one of the record kinds.
+func ValidKind(k Kind) bool { return k == KindPlan || k == KindRegistryRow || k == KindFinding }
 
 // States returns the valid states for a kind, in display order.
 func States(k Kind) []State {
 	switch k {
-	case KindRegistryRow:
+	case KindRegistryRow, KindPlan:
 		return []State{StateOpen, StatePlanned, StateInProgress, StateBlocked, StateShipped, StateDone, StateDeferred, StateCancelled}
 	case KindFinding:
 		return []State{StateOpen, StateTriaged, StateFixed, StateWontfix, StateDuplicate}
@@ -140,7 +180,7 @@ func ValidState(k Kind, s State) bool {
 // IsClosed reports whether the state ends the record's life (closed_at is set).
 func IsClosed(k Kind, s State) bool {
 	switch k {
-	case KindRegistryRow:
+	case KindRegistryRow, KindPlan:
 		return s == StateShipped || s == StateDone || s == StateCancelled
 	case KindFinding:
 		return s == StateFixed || s == StateWontfix || s == StateDuplicate
@@ -196,7 +236,7 @@ func validateLinks(ls []Link) error {
 // validate checks a whole record (after defaults were applied).
 func (r *Record) validate() error {
 	if !ValidKind(r.Kind) {
-		return invalid("kind must be registry_row or finding, got %q", r.Kind)
+		return invalid("kind must be plan, registry_row or finding, got %q", r.Kind)
 	}
 	if r.Project == "" || runesOver(r.Project, MaxProjectRunes) || !projectRe.MatchString(r.Project) {
 		return invalid("project must be a registered project alias (letters, digits, . _ -; max %d)", MaxProjectRunes)
@@ -242,7 +282,63 @@ func (r *Record) validate() error {
 			return invalid("an alias must be a non-empty title of at most %d characters", MaxTitleRunes)
 		}
 	}
+	if err := r.validatePlanFields(); err != nil {
+		return err
+	}
 	return validateLinks(r.Links)
+}
+
+func validateRefList(name string, ids []string) error {
+	if len(ids) > MaxLinkedItems {
+		return invalid("too many %s (max %d)", name, MaxLinkedItems)
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" || runesOver(id, MaxLinkRefRunes) {
+			return invalid("an entry in %s must be a non-empty reference of at most %d characters", name, MaxLinkRefRunes)
+		}
+		if seen[id] {
+			return invalid("%s lists %q twice", name, id)
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
+// validatePlanFields checks the plan and finding fields added to the model.
+// Every one is optional, so an older record without them stays valid.
+func (r *Record) validatePlanFields() error {
+	if r.Order < 0 || r.Order > MaxOrder {
+		return invalid("order must be between 0 and %d", MaxOrder)
+	}
+	if runesOver(r.Goal, MaxGoalRunes) {
+		return invalid("goal longer than %d characters", MaxGoalRunes)
+	}
+	planOnly := r.Goal != "" || r.Order != 0 || len(r.Automations) > 0 || len(r.Automata) > 0 ||
+		len(r.Findings) > 0 || len(r.LinkInfo) > 0
+	if planOnly && r.Kind != KindPlan {
+		return invalid("goal, order and links down apply to plans only")
+	}
+	for name, ids := range map[string][]string{"automations": r.Automations, "automata": r.Automata, "findings": r.Findings} {
+		if err := validateRefList(name, ids); err != nil {
+			return err
+		}
+	}
+	if r.AttachKind != "" || r.AttachRef != "" {
+		if r.Kind != KindFinding {
+			return invalid("attach_kind and attach_ref apply to findings only")
+		}
+		if (r.AttachKind != AttachPlan && r.AttachKind != AttachAutomaton) || strings.TrimSpace(r.AttachRef) == "" ||
+			runesOver(r.AttachRef, MaxLinkRefRunes) {
+			return invalid("a finding attaches to a plan or an Automaton, with a reference")
+		}
+	}
+	for k, v := range r.LinkInfo {
+		if runesOver(k, MaxLinkRefRunes+16) || runesOver(v.Title, MaxTitleRunes) || runesOver(v.State, MaxLinkKindRunes) {
+			return invalid("link info too long")
+		}
+	}
+	return nil
 }
 
 // clone returns a deep copy so callers cannot alter the index.
@@ -252,6 +348,22 @@ func (r Record) clone() Record {
 	}
 	if r.Aliases != nil {
 		r.Aliases = append([]string(nil), r.Aliases...)
+	}
+	if r.Automations != nil {
+		r.Automations = append([]string(nil), r.Automations...)
+	}
+	if r.Automata != nil {
+		r.Automata = append([]string(nil), r.Automata...)
+	}
+	if r.Findings != nil {
+		r.Findings = append([]string(nil), r.Findings...)
+	}
+	if r.LinkInfo != nil {
+		m := make(map[string]LinkInfo, len(r.LinkInfo))
+		for k, v := range r.LinkInfo {
+			m[k] = v
+		}
+		r.LinkInfo = m
 	}
 	return r
 }

@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Plan records can now link down to Automations, Automata and findings, and carry a goal and a priority order. A plan is a record of its own kind; a finding attaches to a plan or to an Automaton. An Automaton or Automation already linked to a different plan is refused rather than moved, and the store can show an Automaton's plan from its summary index without reading full records. Plans can be reordered, and so can the Automata inside a plan. A plan with no Automaton is the backlog. Title search covers plans, Automata, Automations, registry rows and findings, with a state filter. Older records load unchanged.
+
 ## v9.167.0 — Match Automata to a project by explicit link first, directory as fallback
 
 The Projects page now decides which project an Automaton belongs to by an explicit link first, and by its directory only as the last fallback.
