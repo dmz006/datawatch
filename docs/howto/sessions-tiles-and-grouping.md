@@ -544,6 +544,42 @@ automation:` in the CLI and `list_sessions {group_by: "tag", tag_prefix:
 session serve" cut of the list — and the same goes for any prefix present
 in your tag registry.
 
+## When the Tiles, Compact and List buttons do nothing: Reset browser state
+
+If the view-mode buttons on the Sessions page stop responding — no button
+active, or a tap does nothing — the browser is still running a saved copy of
+the app from before the last release. Two things already happen for you:
+
+- **The app upgrades itself.** Each release ships its own service worker and
+  cache (registered at `/sw.js?v=<release>`); when the new worker activates
+  it deletes the older caches and the page reloads **at most once per
+  upgrade**. The reload waits while you are mid-thing (typing in an input,
+  the terminal focused, an unsent draft) and then applies itself; the
+  "Update available — tap to reload" banner is the manual tap for the
+  meantime.
+- **Bad saved settings are dropped to their defaults.** Every saved value on
+  the page (view mode, grouping, filters, saved views, search) is validated
+  on load; an unrecognized one — left over from an older release or a
+  corrupt write — falls back to the default and is removed from storage, and
+  one bad value never blocks the rest.
+
+If a page still behaves like the old release, the manual fix is in
+**Settings → About**:
+
+- The Version card shows the release this page was **loaded with** next to
+  the release the daemon reports. A mismatch between the two means you are
+  still on the old copy.
+- The **Reset browser state** button clears this app's saved settings and
+  cached files in this browser — its own storage keys, its caches and its
+  service worker — and then reloads the page fresh; the reload always
+  happens, exactly once, even if one of the cleanup steps fails. It is a
+  browser-state reset, not a server action: it never touches running
+  sessions, Automata or any server data, and any other saved keys under the
+  daemon address are left as they are.
+
+(For a stuck cache the legacy console escape hatch `forcePWAUpdate()` still
+works too — it performs the same reset and hard reload.)
+
 ## All options, on one screen
 
 | Control | Where | Per-device? | Notes |
@@ -576,8 +612,11 @@ in your tag registry.
   on load and falls back to the viewport default (list below 600 px, tiles
   at 600 px and wider), so a reload is enough and the toggle shows that
   mode as active; your next choice overwrites the stale value. If it still
-  looks wrong after a reload, clear the site data for the daemon address
-  (key `cs_sessions_view_mode`).
+  looks wrong after a reload, tap **Reset browser state** in Settings →
+  About (see
+  [the section above](#when-the-tiles-compact-and-list-buttons-do-nothing-reset-browser-state))
+  — or clear the site data for the daemon address (key
+  `cs_sessions_view_mode`).
 - **My saved view isn't on my other device.** Saved views are per device
   by design; recreate it from the Views section of the Filters sheet. The *data* it reads (groups,
   counts, mixes) is identical on every channel and every peer.
