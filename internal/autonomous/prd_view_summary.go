@@ -46,9 +46,9 @@ type SummaryView struct {
 
 	// Shipped flags that the record carries shipped state (a non-empty merge
 	// commit): a fact about the record, independent of any setting.
-	// EffectiveStatus is the record's *display* state: "shipped" (state
-	// present and the autonomous.shipped.enabled setting on), otherwise the
-	// stored status. The stored Status never moves because of shipped state.
+	// EffectiveStatus is the record's *display* state: "completed" (shipped
+	// record present and the autonomous.shipped.enabled setting on),
+	// otherwise the stored status. The stored Status never moves because of shipped state.
 	Shipped         bool   `json:"shipped"`
 	EffectiveStatus string `json:"effective_status"`
 
@@ -147,12 +147,8 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		ReadOnlyTasks: prd.ReadOnlyTasks,
 		Speedup:       prd.Speedup,
 
-		MergedInRelease: prd.MergedInRelease,
-		MergedAt:        prd.MergedAt,
-		MergeCommit:     prd.MergeCommit,
-		ShippedSource:   prd.ShippedSource,
 		// Display state assuming the shipped surface is enabled (built
-		// without a config here): shipped records show "shipped". The REST
+		// without a config here): shipped records show "completed". The REST
 		// layer folds the live autonomous.shipped.enabled setting in via
 		// ApplyShippedSettings.
 		Shipped:         prd.IsShipped(),
@@ -182,6 +178,13 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		view.Cost += prd.Decisions[i].CostUSD
 	}
 	view.ReviewNeeded = reviewNeededEntries(prd)
+	// Release detail is returned only when the work was merged code.
+	if prd.IsShipped() {
+		view.MergedInRelease = prd.MergedInRelease
+		view.MergedAt = prd.MergedAt
+		view.MergeCommit = prd.MergeCommit
+		view.ShippedSource = prd.ShippedSource
+	}
 
 	for i := range prd.Story {
 		story := &prd.Story[i]
@@ -204,7 +207,7 @@ func BuildSummaryView(prd *PRD) SummaryView {
 
 // ApplyShippedSettings folds the autonomous.shipped.enabled setting into the
 // view's display state: with the shipped surface enabled a record that
-// carries shipped state displays as "shipped"; with it disabled the display
+// carries shipped state displays as "completed"; with it disabled the display
 // state falls back to the stored status even though the record still carries
 // the shipped fields. The Shipped flag and the four shipped fields never
 // change — they describe the record, not the settings.
@@ -213,7 +216,7 @@ func (v *SummaryView) ApplyShippedSettings(enabled bool) {
 		return
 	}
 	if enabled && v.Shipped {
-		v.EffectiveStatus = ShippedDisplayStatus
+		v.EffectiveStatus = CompletedDisplayStatus
 		return
 	}
 	v.EffectiveStatus = string(v.Status)

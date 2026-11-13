@@ -20,7 +20,9 @@
 // plan has no point figure and reads as 0; points_priced says whether any
 // Automaton was priced.
 //
-// Throughput: an Automaton counts as finished when its status is completed and
+// Throughput: an Automaton counts as finished when its displayed status is
+// completed (a record carrying a shipped record counts, even when its stored
+// status is still cancelled) and
 // its last update falls in the window (an Automaton has no completion
 // timestamp of its own, so UpdatedAt is the closest record). A task counts
 // when it is completed and its CompletedAt falls in the window. Both are
@@ -113,6 +115,10 @@ type rollupInput struct {
 	Points     map[string]float64
 	WindowDays int
 	Now        time.Time
+	// ShippedEnabled is the in-force autonomous.shipped.enabled setting. When
+	// set, an Automaton carrying a shipped record displays and counts as
+	// completed even if its stored status is still cancelled.
+	ShippedEnabled bool
 }
 
 // parseRollupWindow reads the window query value. Empty means the default.
@@ -214,9 +220,10 @@ func buildProjectRollup(in rollupInput) projectRollup {
 // the group's throughput. The group's task and finished counts are set here so
 // finishGroup only has to sum points and divide.
 func rollupAutomatonFor(p *autonomous.PRD, auto string, in rollupInput, inWindow func(*time.Time) bool, g *rollupGroup) rollupAutomaton {
+	display := autonomous.PRDEffectiveDisplayStatus(p, in.ShippedEnabled)
 	ra := rollupAutomaton{
-		ID: p.ID, Title: p.Title, Status: string(p.Status),
-		AutomationID: auto, Finished: p.Status == autonomous.PRDCompleted,
+		ID: p.ID, Title: p.Title, Status: display,
+		AutomationID: auto, Finished: display == autonomous.CompletedDisplayStatus,
 		SessionIDs: []string{},
 	}
 	if in.SessionIDs != nil {
@@ -318,15 +325,16 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	resp := buildProjectRollup(rollupInput{
-		Project:     name,
-		Dir:         entry.Dir,
-		Arcs:        entry.Arcs,
-		PRDs:        mgr.Store().ListPRDs(),
-		Automations: mgr.ListAutomations(),
-		SessionIDs:  mgr.PRDSessionIDs,
-		Points:      s.costRollupPoints(mgr, now, windowDays),
-		WindowDays:  windowDays,
-		Now:         now,
+		Project:        name,
+		Dir:            entry.Dir,
+		Arcs:           entry.Arcs,
+		PRDs:           mgr.Store().ListPRDs(),
+		Automations:    mgr.ListAutomations(),
+		SessionIDs:     mgr.PRDSessionIDs,
+		Points:         s.costRollupPoints(mgr, now, windowDays),
+		WindowDays:     windowDays,
+		Now:            now,
+		ShippedEnabled: s.shippedSettings().EffectiveEnabled(),
 	})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

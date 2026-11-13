@@ -576,7 +576,7 @@ func (r *Router) automationShipped(args []string) {
 		r.send(resp)
 		return
 	}
-	r.send(fmt.Sprintf("automation %s shipped: merge_commit %s (status %s, version %d)", a.ID, a.MergeCommit, a.Status, a.Version))
+	r.send(fmt.Sprintf("automation %s shipped record saved: merge_commit %s (status %s, version %d)", a.ID, a.MergeCommit, a.Status, a.Version))
 }
 
 // automationBudgetReply is the part of an Automation REST record that the

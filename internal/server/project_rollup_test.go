@@ -296,3 +296,37 @@ func TestProjectRollup_HandlerReturnsUnassignedAutomata(t *testing.T) {
 		t.Errorf("session_ids must be [] when there are none")
 	}
 }
+
+func TestCompletedDisplayRollupThroughput(t *testing.T) {
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-24 * time.Hour)
+	mk := func(id string, st autonomous.PRDStatus, commit string) *autonomous.PRD {
+		return &autonomous.PRD{ID: id, Status: st, MergeCommit: commit, UpdatedAt: recent, AutomationID: "arc"}
+	}
+	in := rollupInput{
+		Project: "p", Dir: "/x",
+		Arcs: []config.ProjectArc{{AutomationID: "arc"}},
+		PRDs: []*autonomous.PRD{
+			mk("done", autonomous.PRDCompleted, ""),
+			mk("merged-cancelled", autonomous.PRDCancelled, "abc"),
+			mk("plain-cancelled", autonomous.PRDCancelled, ""),
+		},
+		WindowDays: 7, Now: now, ShippedEnabled: true,
+	}
+	got := buildProjectRollup(in)
+	if n := got.Total.Throughput.AutomataFinished; n != 2 {
+		t.Errorf("finished = %d, want 2 (completed + merged-cancelled)", n)
+	}
+	for _, a := range got.Arcs[0].Automata {
+		if a.ID == "merged-cancelled" && (a.Status != "completed" || !a.Finished) {
+			t.Errorf("merged-cancelled line = %+v", a)
+		}
+		if a.ID == "plain-cancelled" && a.Finished {
+			t.Errorf("plain cancelled counted as finished")
+		}
+	}
+	in.ShippedEnabled = false
+	if n := buildProjectRollup(in).Total.Throughput.AutomataFinished; n != 1 {
+		t.Errorf("surface off finished = %d, want 1", n)
+	}
+}

@@ -923,8 +923,9 @@ func newAutonomousPRDListCmd() *cobra.Command {
 
 By default this prints the full list. With --status or --shipped it
 switches to the summary list and narrows: --status takes comma-separated
-statuses and may include "shipped" (the shipped-state bucket, selected by
-the record's merge commit — not the stored status); --shipped true keeps
+statuses, matched against the displayed status (an Automaton whose work
+landed shows as "completed"); "shipped" is still accepted and selects
+records that carry a shipped record; --shipped true keeps
 only PRDs that carry shipped state, --shipped false only ones that do
 not; with neither set the server's autonomous.shipped.filter_default
 view applies (all / shipped / unshipped).`,

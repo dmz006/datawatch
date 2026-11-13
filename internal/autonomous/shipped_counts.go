@@ -1,4 +1,4 @@
-// Shipped-state display, counting and filtering primitives.
+// Completed display, shipped-state counting and filtering primitives.
 //
 // Shipped state is orthogonal to a record's lifecycle status: a PRD or
 // Automation that carries shipped state (a non-empty merge commit) keeps the
@@ -7,26 +7,27 @@
 // (counts, filters, the view's effective status) all derive from those two
 // facts plus the autonomous.shipped settings:
 //
-//   - effective display status: "shipped" when the record carries shipped
+//   - effective display status: "completed" when the record carries shipped
 //     state and the shipped surface is enabled (autonomous.shipped.enabled),
 //     otherwise the stored status;
 //   - counts: one bucket per displayed status. When the shipped surface is
-//     enabled and autonomous.shipped.count_separately is set, shipped records
-//     group under "shipped" instead of their stored status — a
-//     cancelled-but-shipped record lands in "shipped", not "cancelled"; a
-//     record cancelled without shipped state lands in "cancelled". With
-//     count_separately off, every record counts under its stored status;
+//     enabled, records carrying shipped state group under "completed"
+//     together with stored-completed records — a cancelled-but-shipped
+//     record lands in "completed", never "cancelled" and never a second
+//     "shipped" bucket; a record cancelled without shipped state lands in
+//     "cancelled";
 //   - shipped selection (list filters): "shipped" keeps only records that
 //     carry shipped state, "unshipped" only those without, "all" applies no
 //     shipped selection.
 
 package autonomous
 
-// ShippedDisplayStatus is the displayed/counted status of a record that
-// carries shipped state while the shipped surface is enabled. It is not a
-// stored PRDStatus or AutomationStatus value — the stored status never
-// moves when shipped state is recorded.
-const ShippedDisplayStatus = "shipped"
+// CompletedDisplayStatus is the displayed/counted status of a record that
+// carries a shipped record (merged code) while the shipped surface is
+// enabled: the work finished, so it shows as Completed — also when its
+// stored status is still cancelled and has not been migrated yet. The
+// release, merge time and merge commit stay available as detail fields.
+const CompletedDisplayStatus = "completed"
 
 // PRDEffectiveDisplayStatus reports the status a PRD displays as: shipped
 // when it carries shipped state and the shipped surface is enabled,
@@ -36,7 +37,7 @@ func PRDEffectiveDisplayStatus(p *PRD, shippedEnabled bool) string {
 		return ""
 	}
 	if shippedEnabled && p.IsShipped() {
-		return ShippedDisplayStatus
+		return CompletedDisplayStatus
 	}
 	return string(p.Status)
 }
@@ -50,43 +51,45 @@ func AutomationEffectiveDisplayStatus(a *Automation, shippedEnabled bool) string
 		return ""
 	}
 	if shippedEnabled && a.IsShipped() {
-		return ShippedDisplayStatus
+		return CompletedDisplayStatus
 	}
 	return string(a.Status)
 }
 
-// prdCountStatus is the status bucket a PRD counts under: the shipped bucket
-// when the shipped surface is enabled AND the counts separate shipped from
-// the stored statuses, otherwise the stored status.
-func prdCountStatus(p *PRD, shippedEnabled, countSeparately bool) string {
+// prdCountStatus is the status bucket a PRD counts under: the completed
+// bucket when the shipped surface is enabled and the PRD carries a shipped
+// record (the count_separately setting no longer splits a second bucket),
+// otherwise the stored status.
+func prdCountStatus(p *PRD, shippedEnabled, _ bool) string {
 	if p == nil {
 		return ""
 	}
-	if shippedEnabled && countSeparately && p.IsShipped() {
-		return ShippedDisplayStatus
+	if shippedEnabled && p.IsShipped() {
+		return CompletedDisplayStatus
 	}
 	return string(p.Status)
 }
 
 // automationCountStatus is the status bucket an Automation counts under
 // (same rule as prdCountStatus for Automation records).
-func automationCountStatus(a *Automation, shippedEnabled, countSeparately bool) string {
+func automationCountStatus(a *Automation, shippedEnabled, _ bool) string {
 	if a == nil {
 		return ""
 	}
-	if shippedEnabled && countSeparately && a.IsShipped() {
-		return ShippedDisplayStatus
+	if shippedEnabled && a.IsShipped() {
+		return CompletedDisplayStatus
 	}
 	return string(a.Status)
 }
 
 // CountPRDStates returns one count per displayed PRD status across prds.
-// With shippedEnabled and countSeparately both set, every shipped PRD counts
-// under "shipped" — including PRDs whose stored status is cancelled, which
-// count as shipped there and not as cancelled — while an unshipped PRD
-// counts under its stored status exactly as before. shippedEnabled or
-// countSeparately off folds every PRD back into its stored-status bucket.
-// nil entries are skipped (they never count).
+// With shippedEnabled set, every PRD carrying a shipped record counts under
+// "completed" together with stored-completed PRDs — including PRDs whose
+// stored status is still cancelled, which never count as cancelled — while
+// an unshipped PRD counts under its stored status. shippedEnabled off folds
+// every PRD back into its stored-status bucket. countSeparately is kept for
+// signature stability; it no longer creates a second bucket. nil entries are
+// skipped (they never count).
 func CountPRDStates(prds []*PRD, shippedEnabled, countSeparately bool) map[string]int {
 	out := make(map[string]int)
 	for _, p := range prds {
