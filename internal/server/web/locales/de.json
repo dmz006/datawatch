@@ -5640,5 +5640,9 @@
   "automaton_project_saved": "Projektverknüpfung gespeichert",
   "automaton_project_error": "Projekt konnte nicht gesetzt werden",
   "projects_page_without_project": "Automaten ohne Projekt",
-  "projects_page_without_project_hint": "Eine Projektverknüpfung lässt sich in den Details des Automaten setzen, um ihn hier einzuordnen."
+  "projects_page_without_project_hint": "Eine Projektverknüpfung lässt sich in den Details des Automaten setzen, um ihn hier einzuordnen.",
+  "cost_charts_other": "Anderes",
+  "cost_charts_topn_label": "Serien",
+  "cost_charts_topn_all": "Alle",
+  "cost_charts_legend_toggle": "Diese Serie ein- oder ausblenden"
 }

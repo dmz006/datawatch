@@ -160,26 +160,45 @@ test('groupings are Project, Automation and Automaton, and the controls name the
   assert.ok(html.includes('id="costChartsGroup"') && html.includes('id="costChartsWindow"') && html.includes('id="costChartsMetric"'));
 });
 
-// ── bounded size ────────────────────────────────────────────────────────────
-test('drawing is bounded: at most six lines, sixty points per line and eight table rows', () => {
+// ── bounded size: the Top-N control ────────────────────────────────────────
+test('drawing is bounded: the Top-N control offers 5, 10, 20 and all, defaults to 10, and the rest fold into an Other line and row', () => {
   const { sb } = load();
+  assert.deepEqual(Array.from(run(sb, 'COST_CHARTS_TOPN_OPTIONS')), [5, 10, 20, 0], '5 / 10 / 20 / all');
+  assert.equal(run(sb, 'COST_CHARTS_TOPN_DEFAULT'), 10, 'default ten');
+  assert.equal(run(sb, 'COST_CHARTS_MAX_POINTS'), 60, 'points per line stay at sixty');
   const b = days(200);
   const many = [];
-  for (let i = 0; i < 10; i++) many.push(seriesGroup('g' + i, b, () => 10 + i));
+  for (let i = 0; i < 12; i++) many.push(seriesGroup('g' + i, b, () => 10 + i));
   const data = fullData();
   data.cost = { body: series(many, b, []) };
   const html = render(sb, data);
   const cost = cardHtml(html, 'costChartsCostCard');
-  assert.equal(count(cost, /<polyline/g), 6, 'six lines of ten groups');
-  assert.ok(cost.includes('Showing the top 6 of 10 groups.'));
+  assert.equal(count(cost, /<polyline/g), 11, 'ten lines plus the Other line of the two remaining groups');
+  assert.ok(cost.includes('Showing the top 10 of 12 groups.'), 'the chart says it is bounded');
+  assert.ok(cost.includes('Other</span>'), 'the folded groups are named Other in the legend');
   const pts = cost.match(/<polyline[^>]*points="([^"]*)"/)[1].trim().split(/\s+/);
   assert.ok(pts.length <= 60, 'points per line ' + pts.length);
   const rep = cardHtml(html, 'costChartsReportCard');
-  assert.equal(count(rep.split('<tfoot>')[0], /<tr>/g), 8, 'eight rows plus none more');
-  assert.ok(rep.includes('Showing 8 of '), 'the table says it is bounded');
-  assert.equal(run(sb, 'COST_CHARTS_MAX_LINES'), 6);
-  assert.equal(run(sb, 'COST_CHARTS_MAX_POINTS'), 60);
-  assert.equal(run(sb, 'COST_CHARTS_MAX_ROWS'), 8);
+  assert.equal(count(rep.split('<tfoot>')[0], /<tr>/g), 11, 'ten rows plus the Other row');
+  assert.ok(rep.includes('Showing 10 of 14 rows.'), 'the table says it is bounded (12 cost groups plus alpha and beta)');
+  // Choosing "all" draws every group and names each one; choosing 5 folds seven into Other.
+  const allHtml = render(sb, data, { topN: 0 });
+  const allCost = cardHtml(allHtml, 'costChartsCostCard');
+  assert.equal(count(allCost, /<polyline/g), 12, 'all draws all twelve');
+  assert.ok(!allCost.includes('Showing the top'), 'no bound note with all');
+  const fiveHtml = render(sb, data, { topN: 5 });
+  const fiveCost = cardHtml(fiveHtml, 'costChartsCostCard');
+  assert.equal(count(fiveCost, /<polyline/g), 6, 'five lines plus Other');
+  assert.ok(fiveCost.includes('Showing the top 5 of 12 groups.'));
+  // A series the operator hides keeps its name in the legend, struck through, and stays out of the drawing.
+  const { sb: sb2 } = load();
+  const base = fullData();
+  sb2.window.costChartsToggleSeries('cost', 'beta');
+  const st2 = Object.assign({ group: 'project', window: '7d', metric: 'tokens' }, run(sb2, '_costChartsState'));
+  assert.equal(st2.hidden.cost.beta, true, 'the toggle recorded the hidden series');
+  const oneCost = cardHtml(sb2.window.costChartsCardsHtml(base, st2), 'costChartsCostCard');
+  assert.equal(count(oneCost, /<polyline/g), 1, 'only alpha is drawn');
+  assert.ok(oneCost.includes('cost-charts-legend-tile-off') && oneCost.includes('<span>beta</span>'), 'beta keeps its name, struck through');
 });
 
 // ── money axes ──────────────────────────────────────────────────────────────

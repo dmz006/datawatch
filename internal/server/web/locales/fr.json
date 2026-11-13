@@ -5640,5 +5640,9 @@
   "automaton_project_saved": "Lien de projet enregistré",
   "automaton_project_error": "Impossible de définir le projet",
   "projects_page_without_project": "Automates sans projet",
-  "projects_page_without_project_hint": "Définissez un lien de projet depuis le détail de l'automate pour le placer ici."
+  "projects_page_without_project_hint": "Définissez un lien de projet depuis le détail de l'automate pour le placer ici.",
+  "cost_charts_other": "Autre",
+  "cost_charts_topn_label": "Séries",
+  "cost_charts_topn_all": "Toutes",
+  "cost_charts_legend_toggle": "Afficher ou masquer cette série"
 }

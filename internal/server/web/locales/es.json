@@ -5640,5 +5640,9 @@
   "automaton_project_saved": "Vínculo de proyecto guardado",
   "automaton_project_error": "No se pudo establecer el proyecto",
   "projects_page_without_project": "Autómatas sin proyecto",
-  "projects_page_without_project_hint": "Define un vínculo de proyecto desde el detalle del autómata para ubicarlo aquí."
+  "projects_page_without_project_hint": "Define un vínculo de proyecto desde el detalle del autómata para ubicarlo aquí.",
+  "cost_charts_other": "Otro",
+  "cost_charts_topn_label": "Series",
+  "cost_charts_topn_all": "Todas",
+  "cost_charts_legend_toggle": "Mostrar u ocultar esta serie"
 }
