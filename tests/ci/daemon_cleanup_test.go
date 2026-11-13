@@ -353,7 +353,8 @@ esac
 			case <-time.After(30 * time.Second):
 				_ = cmd.Process.Kill()
 				select {
-				case <-doneCh:
+				case err := <-doneCh:
+					_ = err
 				case <-time.After(10 * time.Second):
 				}
 				t.Fatalf("driver did not end within 30s on mode %s", tc.mode)

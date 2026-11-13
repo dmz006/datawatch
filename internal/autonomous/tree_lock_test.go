@@ -324,7 +324,8 @@ func TestTreeLockBlocksSecondHolderThenReleases(t *testing.T) {
 	// stolen the lock.
 	time.Sleep(400 * time.Millisecond)
 	select {
-	case <-second:
+	case err := <-second:
+		_ = err
 		t.Fatal("second holder acquired while t1 still held")
 	default:
 	}

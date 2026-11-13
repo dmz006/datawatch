@@ -278,7 +278,8 @@ func (s *nodeStory) stop() {
 	s.mu.Unlock()
 	for _, done := range runs {
 		select {
-		case <-done:
+		case err := <-done:
+			_ = err
 		case <-time.After(storyWait):
 			s.t.Errorf("executor run did not stop")
 		}

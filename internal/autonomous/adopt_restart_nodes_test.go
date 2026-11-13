@@ -235,7 +235,8 @@ func TestAdoptRestart_NewRequestAvoidsAdoptedNode(t *testing.T) {
 
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err
 	case <-time.After(10 * time.Second):
 		t.Fatal("waiting admission did not return after cancel")
 	}
