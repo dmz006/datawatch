@@ -366,7 +366,9 @@ type projectRollupView struct {
 	PointsPriced bool              `json:"points_priced"`
 	Arcs         []rollupGroupView `json:"arcs"`
 	Unassigned   rollupGroupView   `json:"unassigned"`
-	Total        rollupGroupView   `json:"total"`
+	// WithoutProject is the Automata without a project; not in Total.
+	WithoutProject rollupGroupView `json:"without_project"`
+	Total          rollupGroupView `json:"total"`
 }
 
 type rollupGroupView struct {
@@ -414,6 +416,7 @@ func formatProjectProgress(name, rawBody string) string {
 		fmt.Sprintf("  throughput: %d automata, %d tasks finished (%.2f automata/day, %.2f tasks/day)",
 			v.Total.Throughput.AutomataFinished, v.Total.Throughput.TasksFinished,
 			v.Total.Throughput.AutomataPerDay, v.Total.Throughput.TasksPerDay),
+		"  finished means completed, or cancelled or archived with its work branch on the default branch, or shipped; a task counts from its own completion time",
 	}
 	for _, a := range v.Arcs {
 		state := a.State
@@ -426,6 +429,10 @@ func formatProjectProgress(name, rawBody string) string {
 	if len(v.Unassigned.Automata) > 0 {
 		lines = append(lines, fmt.Sprintf("  unassigned: %d automata, tasks %d/%d",
 			len(v.Unassigned.Automata), v.Unassigned.Tasks.Done, v.Unassigned.Tasks.Total))
+	}
+	if len(v.WithoutProject.Automata) > 0 {
+		lines = append(lines, fmt.Sprintf("  without a project: %d automata, tasks %d/%d",
+			len(v.WithoutProject.Automata), v.WithoutProject.Tasks.Done, v.WithoutProject.Tasks.Total))
 	}
 	return strings.Join(lines, "\n")
 }

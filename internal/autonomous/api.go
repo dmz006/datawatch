@@ -2700,3 +2700,26 @@ func (a *API) RegenerateGeneratedArtefact(prdID, kind string) (*GeneratedArtefac
 	}
 	return res, err
 }
+
+// SetPRDProject sets or clears the explicit project link of an Automaton.
+func (a *API) SetPRDProject(prdID, project string) (*PRD, error) {
+	prd, err := a.M.SetPRDProject(prdID, project)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return prd, nil
+}
+
+// EffectiveProject reports an Automaton's effective project and its source.
+func (a *API) EffectiveProject(prdID string) (string, string) { return a.M.EffectiveProject(prdID) }
+
+// ProjectLinkBackfill runs one backfill pass; apply false is a dry run.
+func (a *API) ProjectLinkBackfill(apply bool) ProjectLinkBackfillReport {
+	return a.M.ProjectLinkBackfill(apply)
+}
+
+// LatestProjectLinkBackfill returns the latest backfill report, if any.
+func (a *API) LatestProjectLinkBackfill() (ProjectLinkBackfillReport, bool) {
+	return a.M.LatestProjectLinkBackfill()
+}

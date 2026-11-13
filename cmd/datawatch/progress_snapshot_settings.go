@@ -11,7 +11,15 @@ import (
 func progressSnapshotSettings(cfg *config.Config) autonomous.ProgressSnapshotSettings {
 	p := cfg.Autonomous.Progress
 	since, _ := p.SinceTime()
+	var projects map[string]string
+	if len(cfg.Projects) > 0 {
+		projects = make(map[string]string, len(cfg.Projects))
+		for name, e := range cfg.Projects {
+			projects[name] = e.Dir
+		}
+	}
 	return autonomous.ProgressSnapshotSettings{
+		Projects:      projects,
 		RetentionDays: p.EffectiveSnapshotRetentionDays(),
 		Lanes:         p.EffectiveLanes(),
 		GapHours:      p.EffectiveInactiveGapHours(),

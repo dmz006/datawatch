@@ -153,6 +153,8 @@ Selected core tools:
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
 | `autonomous_event_kinds` | List every lifecycle event kind a subscription can match, grouped, with each kind's description and whether it wakes the supervisor by default (read-only, no parameters) |
 | `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
+| `autonomous_prd_set_project` | Link an Automaton to a configured project (`id`, `project`); an empty project clears the link and an unknown name is refused with the configured names |
+| `autonomous_project_link_backfill` | Report which Automata without a project link belong to the datawatch project (dry run by default); `apply=true` writes the links |
 | `autonomous_progress` | Read the progress metrics object: counts by kind, throughput, utilization, remaining work and the completion range; optional `automation_id`, `tag_id`, `since`, `until` |
 | `autonomous_progress_trend` | Read the progress trend from the saved daily snapshots; optional `days` (1 to 365, default 30) |
 | `autonomous_overlap_search` | Search before create: the Automata, registry rows and unmerged branches that already cover a plan's `title` and `spec`, best match first, with the threshold and mode in force; optional `limit` (1 to 50, default 10); read-only |

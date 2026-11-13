@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -22,6 +23,16 @@ type TimelineFilter struct {
 	Stage     string `json:"stage,omitempty"`
 	Kind      string `json:"kind,omitempty"`
 	Tag       string `json:"tag,omitempty"`
+
+	// Projects maps configured project names to directories. When set, the
+	// Project filter matches an Automaton the membership resolver places in
+	// the named project (or in the project whose directory is named); when
+	// unset it compares the Automaton's directory.
+	Projects map[string]string `json:"-"`
+	// Automations are the Automation records the resolver reads.
+	Automations []*Automation `json:"-"`
+
+	index *AutomatonProjectIndex
 }
 
 // TimelineInterval is a span in which a member or Automaton was blocked or
@@ -98,6 +109,9 @@ func timelineMinFinished() int { return 2 }
 func BuildTimeline(now time.Time, prds []*PRD, filter TimelineFilter) TimelineResult {
 	res := TimelineResult{Today: now, Projects: []TimelineProject{}}
 	byProject := map[string][]TimelineAutomaton{}
+	if len(filter.Projects) > 0 && filter.Project != "" {
+		filter.index = NewAutomatonProjectIndex(prds, filter.Automations, filter.Projects)
+	}
 	for _, p := range prds {
 		if p == nil || !timelineMatchPRD(p, filter) {
 			continue
@@ -142,8 +156,25 @@ func BuildTimeline(now time.Time, prds []*PRD, filter TimelineFilter) TimelineRe
 	return res
 }
 
+// timelineInProject applies the Project filter: through the membership
+// resolver when it is available, else by the Automaton's directory.
+func timelineInProject(p *PRD, f TimelineFilter) bool {
+	if f.index == nil {
+		return p.ProjectDir == f.Project
+	}
+	name := f.index.Of(p.ID).Project
+	if name == "" {
+		return false
+	}
+	if name == f.Project {
+		return true
+	}
+	dir := strings.TrimSpace(f.Projects[name])
+	return dir != "" && filepath.Clean(dir) == filepath.Clean(f.Project)
+}
+
 func timelineMatchPRD(p *PRD, f TimelineFilter) bool {
-	if f.Project != "" && p.ProjectDir != f.Project {
+	if f.Project != "" && !timelineInProject(p, f) {
 		return false
 	}
 	if f.Automaton != "" && p.ID != f.Automaton && p.Title != f.Automaton {

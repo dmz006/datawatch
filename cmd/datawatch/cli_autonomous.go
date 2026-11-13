@@ -180,6 +180,8 @@ Subcommands:
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug, other or maintenance
+  prd-set-project <id> <project|"">  Link an Automaton to a configured project (empty clears)
+  project-link-backfill [--apply] Report (or with --apply write) project links for unlinked Automata
   shipped record <id> --release R --commit C  Record the shipped state (--at, --source, --automation optional)
   prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
@@ -290,6 +292,8 @@ Subcommands:
 		// BL221 Phase 4 — type registry, Guided Mode, skills.
 		newAutonomousPRDSetTypeCmd(),
 		newAutonomousPRDSetKindCmd(),
+		newAutonomousPRDSetProjectCmd(),
+		newAutonomousProjectLinkBackfillCmd(),
 		newAutonomousPRDSetReleaseSizeCmd(),
 		newAutonomousPRDSetBreakingChangeCmd(),
 		newAutonomousPRDSetLanePreferenceCmd(),

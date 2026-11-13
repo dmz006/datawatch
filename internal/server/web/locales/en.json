@@ -1031,6 +1031,7 @@
   "projects_rollup_points_unpriced": "Not priced: the backends are not on a bundled plan",
   "projects_rollup_throughput_label": "Throughput, last %1$s days",
   "projects_rollup_throughput_value": "%1$s Automata finished (%2$s per day) · %3$s tasks finished (%4$s per day)",
+  "projects_rollup_throughput_help": "An Automaton counts as finished when it is completed, when it is cancelled or archived and its work is already on the project's default branch, or when it carries a shipped record. A task counts when it was completed in the window, whatever the Automaton's final status.",
   "projects_history_heading": "History",
   "projects_gantt_heading": "Gantt",
   "projects_gantt_loading": "Loading timeline…",
@@ -5627,5 +5628,17 @@
   "task_routing_export_failed": "Export failed: %1$s",
   "task_routing_imported": "Profile imported",
   "task_routing_detail_row": "row %1$s",
-  "task_routing_detail_reason": "no row: %1$s"
+  "task_routing_detail_reason": "no row: %1$s",
+  "automaton_project_label": "Project",
+  "automaton_project_source_link": "set directly on this Automaton",
+  "automaton_project_source_automation": "from its Automation",
+  "automaton_project_source_parent": "from its parent Automaton",
+  "automaton_project_source_directory": "from its directory",
+  "automaton_project_none": "No project",
+  "automaton_project_save": "Save project",
+  "automaton_project_clear": "Clear link",
+  "automaton_project_saved": "Project link saved",
+  "automaton_project_error": "Could not set the project",
+  "projects_page_without_project": "Automata without a project",
+  "projects_page_without_project_hint": "Set a project link from the Automaton detail to place one here."
 }

@@ -78,7 +78,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge | child_inherit | task_routing
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge | child_inherit | task_routing | project_link_backfill
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -270,6 +270,10 @@ type PRD struct {
 	Spec       string           `json:"spec"` // raw operator input
 	Title      string           `json:"title,omitempty"`
 	ProjectDir string           `json:"project_dir"`
+	// Project is the explicit project link: the name of a configured project.
+	// When set it decides which project this Automaton belongs to, ahead of any
+	// directory match. Empty on older records.
+	Project string `json:"project,omitempty"`
 	// v5.26.19 — operator-reported: "Prd should be based on directory or
 	// profile, should be able to check out repo and do work" + "Prd
 	// should also support using cluster profiles". When ProjectProfile

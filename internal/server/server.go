@@ -495,6 +495,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Shipped-state backfill: POST /api/autonomous/shipped/backfill
 	// [?dry_run=true] — one pass over the base repository's main branch.
 	apiMux.HandleFunc("/api/autonomous/shipped/backfill", api.handleAutonomousShippedBackfill)
+	// Project link backfill: GET latest report, POST {"apply":bool}.
+	apiMux.HandleFunc("/api/autonomous/project-link-backfill", api.handleAutonomousProjectLinkBackfill)
 	// Shipped-state read: GET /api/autonomous/shipped/counts — the per-state
 	// count pair (PRD + Automation buckets) under the in-force
 	// autonomous.shipped settings; shipped is a status-like bucket only while

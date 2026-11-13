@@ -3878,6 +3878,94 @@ paths:
       responses:
         "200": {description: Updated PRD}
 
+  /api/autonomous/prds/{id}/set_project:
+    post:
+      summary: Link an Automaton to a project
+      description: |
+        Sets the explicit project link of an Automaton to a configured project.
+        An empty `project` clears the link, after which the Automaton is
+        matched through its Automation, its parent or its directory. A project
+        name that is not configured is refused with 400 and a message that
+        lists the configured project names. The change is saved and recorded
+        in the Automaton's decision log. Only the Automaton record changes; no
+        session is touched. Needs the autonomous write capability when called
+        by a federated peer. Audited as `set_project`. The Automaton read view
+        reports the effective project as `project` and how it was found as
+        `project_source`.
+      operationId: autonomousPRDSetProject
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project]
+              properties:
+                project: {type: string, description: "Configured project name; empty clears the link"}
+      responses:
+        "200": {description: "Updated Automaton, with project and project_source"}
+        "400": {description: "Unknown project (the message lists the configured project names) or a bad body"}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+
+  /api/autonomous/project-link-backfill:
+    get:
+      summary: Read the latest project link backfill report
+      description: |
+        Returns the report of the most recent project link backfill pass, dry
+        run or apply: one entry per Automaton that had no project link, with
+        the target project, how it was found (`automation`, `parent` or
+        `directory`), whether the link was written, and the reason for a skip,
+        plus the counts. 404 when no pass has run since the daemon started.
+        Needs the autonomous read capability when called by a federated peer.
+      operationId: autonomousProjectLinkBackfillGet
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The latest report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectLinkBackfillReport"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No report yet}
+    post:
+      summary: Run one project link backfill pass
+      description: |
+        Matches every Automaton that has no project link to the datawatch
+        project through its Automation, its parent or its repository
+        directory. With `apply` false or absent the pass is a dry run: it only
+        computes and stores the report. With `apply` true each match gets its
+        link written and one decision-log entry; Automata that already carry a
+        link are never changed, Automata that match nothing are reported as
+        skipped, and one failed write does not stop the rest. A second apply
+        finds nothing to do. Only Automaton records are read and written; no
+        session is touched. Needs the autonomous write capability when called
+        by a federated peer. Audited as `project_link_backfill`.
+      operationId: autonomousProjectLinkBackfillRun
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                apply: {type: boolean, default: false, description: "true writes the links; false is a dry run"}
+      responses:
+        "200":
+          description: The pass's report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectLinkBackfillReport"
+        "400": {description: Bad body}
+        "403": {description: Federated peer lacks the autonomous write capability}
+
   /api/autonomous/prds/{id}/set_kind:
     post:
       summary: Set the kind of an Automaton
@@ -9588,8 +9676,13 @@ paths:
         (done/total), cost in usage points and throughput. Automata of this
         project that no arc holds are in `unassigned`; `total` sums everything.
         Costs are points from the billing profile's point calibration, never
-        API dollars. Throughput counts Automata (completed, last updated in the
-        window) and tasks (completed, completed in the window) per day.
+        API dollars. Throughput counts Automata finished in the window and tasks
+        finished in the window, per day. An Automaton is finished when it is
+        completed, when it is cancelled or archived and its work branch is already
+        on the project's default branch, or when it carries a shipped record; its
+        finish time is the merge or ship time when known, else its last update. A
+        task counts from its own completion time, whatever the Automaton's final
+        status, and never twice.
       operationId: projectsRollup
       tags: [Singletons]
       parameters:
@@ -11981,6 +12074,34 @@ components:
         task_title: {type: string}
         category: {type: string, enum: [missing, weakened, too_large, wrong_dependency, fragile_verification, out_of_scope]}
         detail: {type: string, description: "One specific, actionable sentence"}
+    ProjectLinkBackfillReport:
+      type: object
+      description: The outcome of one project link backfill pass over the Automata.
+      properties:
+        apply: {type: boolean, description: "true when the pass was allowed to write"}
+        generated_at: {type: string, format: date-time}
+        project: {type: string, description: "The project the Automata were matched to; empty when none is configured"}
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string, description: Automaton id}
+              title: {type: string}
+              source: {type: string, enum: [automation, parent, directory], description: "How the project was found; empty on a skipped Automaton"}
+              project: {type: string}
+              applied: {type: boolean, description: "true once the link was written and saved"}
+              skipped: {type: boolean}
+              reason: {type: string, description: "Why the Automaton was left alone"}
+              error: {type: string, description: "Set when writing this Automaton failed"}
+        counts:
+          type: object
+          properties:
+            scanned: {type: integer}
+            matched: {type: integer}
+            applied: {type: integer}
+            skipped: {type: integer}
+            failed: {type: integer}
     AutonomousPRD:
       type: object
       description: |
@@ -11991,6 +12112,8 @@ components:
         id: {type: string}
         spec: {type: string}
         status: {type: string}
+        project: {type: string, description: "Read-only: the project this Automaton belongs to (empty when none), resolved from its own link, its Automation, its parent or its directory"}
+        project_source: {type: string, enum: [link, automation, parent, directory, none], description: "Read-only: how the project was found"}
         rules_review_outcome: {$ref: '#/components/schemas/RulesReviewOutcome'}
         notify_events: {type: array, items: {type: string}, description: "Lifecycle event kinds that notify for this Automaton; absent or empty means inherit from the guardrail profile, then the global default"}
         notify_events_effective:

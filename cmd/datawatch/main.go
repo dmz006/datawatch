@@ -6927,6 +6927,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
 			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
+			// autonomous.project_link_backfill_apply (default off) — one-time
+			// project link backfill: dry-run report only unless set, then a
+			// durable done marker stops re-runs. Reads and writes Automaton
+			// records only; no session is touched.
+			amgr.SetProjectLinkProjectsFn(func() map[string]autonomouspkg.ProjectLinkProject {
+				out := make(map[string]autonomouspkg.ProjectLinkProject, len(cfg.Projects))
+				for n, e := range cfg.Projects {
+					out[n] = autonomouspkg.ProjectLinkProject{Dir: e.Dir, Repository: e.Repository}
+				}
+				return out
+			})
+			amgr.StartProjectLinkBackfill(cfg.Autonomous.ProjectLinkBackfillApply)
 			// autonomous.ship — install the configured push/tag/ci_watch modes so
 			// the ship step honours off and shadow instead of the built-in default.
 			autonomouspkg.SetShipConfig(cfg.Autonomous.Ship)

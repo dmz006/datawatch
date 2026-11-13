@@ -2656,6 +2656,17 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_priority", "automaton", id, map[string]any{"priority": req.Priority}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Per-Automaton project link: a configured project name (empty clears).
+	case "set_project":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		s.handleSetPRDProject(w, r, id)
+
 	// Per-Automaton kind: feature, bug, other or maintenance (empty = derive again).
 	case "set_kind":
 		if r.Method != http.MethodPost {

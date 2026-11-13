@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline]
+  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline, project-link, project-membership, automata-without-a-project, backfill, set-project, project-source]
 exec_steps:
   - tool: project_list
     description: List the registered projects. Each entry carries its directory, its default backend and its stored policy. Read-only
@@ -29,6 +29,13 @@ exec_steps:
   - tool: project_set_arcs
     description: Replace the ordered arc list of a project. The array order is the arc order; each arc has an automation id, a priority and a state (planned, active or done). Sending an empty list clears the arcs
     args: {name: core-api, arcs: [{automation_id: a1b2c3d4, priority: 1, state: active}, {automation_id: e5f6a7b8, priority: 2, state: planned}]}
+  - tool: autonomous_prd_set_project
+    description: Set or clear the explicit project link of an Automaton. The project must be a configured project name; an empty project clears the link. Only the Automaton record changes and the change is written to its decision log
+    args: {id: a1b2c3d4, project: core-api}
+  - tool: autonomous_project_link_backfill
+    description: Report which Automata with no project link belong to the datawatch project. The default is a dry run that writes nothing; pass apply true to write the links
+    args: {apply: false}
+    read_only: true
 ---
 
 # How-to: the Projects sub-tab
@@ -198,6 +205,12 @@ under each arc with their task progress, cost in points and throughput over the
 last seven days. Ask for another window through REST or MCP (`window`, 1 to 365
 days).
 
+Throughput counts an Automaton as finished when it is completed, when it is
+cancelled or archived and its work branch is already on the project's default
+branch, or when it carries a shipped record. Its finish time is the merge or ship
+time when known, else its last update. A task counts from its own completion time
+in the window, whatever the Automaton's final status, and never twice.
+
 Costs are **points** from the billing profile, never API dollars. A project with
 no priced Automaton shows the note that the backends are not on a bundled plan.
 
@@ -230,7 +243,7 @@ are spread across them, one page sub-tab at a time.
 | Overview | Header, Progress | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share; then tasks and Automata done, cost in points and throughput over the last seven days |
 | Arcs | Arcs | Each arc with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click an arc to open the Automata and sessions under it. An **active** arc opens by default |
 | Gantt | Gantt | One expandable timeline. It opens with one row per arc and a bar from the arc's first to its last task, coloured by its status (Completed, Running, Waiting, Blocked, Failed or Cancelled); work still running is drawn to now and reads "now". Hover or focus a bar for its status, dates and, for a shipped Automaton, its release. Click a row's arrow to open the Automata under the arc, and an Automaton's arrow to open its tasks; an arc with no activity yet reads **Planned** with no bar. Automata that no arc holds sit in the **Automata with no arc** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; **All time** fits the rows that are showing, expanded Automata and tasks included, with a 2 percent margin at each end, and the mouse wheel zooms and a drag pans the chart. Rows you open later are ordered by completion, then running and waiting work by start, with a task or Automaton below the ones it depends on. **Edges** draws thin arrows between the rows that are showing: from the end of a task to the start of each task that waits for it, and from an Automaton to the Automata that follow it. Hover a bar, or tab to it, to light its own edges and dim the rest. **Edges** turns the arrows off, and **All edges** (shown while they are on) lifts the cap of 120 drawn edges, beyond which only the edges of the hovered bar show. The choice is remembered in this browser only. Each arc row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
-| Unassigned | Unassigned Automata | Automata of this project that no arc holds |
+| Unassigned | Unassigned Automata, Automata without a project | Automata of this project that no arc holds. Below them, Automata with no project link and no directory match are listed once in a separate `without_project` group, the same whichever project you open and not counted in any total (see [Which Automata belong to a project](#which-automata-belong-to-a-project)), with a hint to set a link from the Automaton detail |
 | History | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
 | Policy | Effective policy, Merge pipeline | Read-only summary of the project's policy, with an **Open settings** link that opens Settings on the Automata tab at the Project policy section; then the read-only merge pipeline, with an **Open settings** link at the Merge pipeline group |
 | Events | Notes, event stream | Notes for empty sections (no arcs, no unassigned Automata), an Automaton with no sessions, a failed roll-up and a missing weekly share, with the event stream filtered to this project below them. This page sub-tab is not in the strip while the project has no notes |
@@ -413,6 +426,98 @@ the list is the only way to change the state, so send the whole list:
 ```bash
 datawatch projects arcs core-api --set a1b2c3d4:1:done,e5f6a7b8:2:active,c9d0e1f2:3:planned
 ```
+
+### Which Automata belong to a project
+
+Every roll-up decides membership the same way: the project's page, its arcs, the
+Gantt rows, the History list, the daily progress snapshots, the cost and progress
+grouping and the project filter in **Events**. An Automaton is placed in the
+first project that matches, in this order:
+
+1. **Its own project link**: the name of a configured project, set on the Automaton.
+2. **The link of the Automation holding it.** A member without its own link
+   inherits the Automation's link.
+3. **Its parent Automaton's project**, found by the same two steps up the parent
+   chain (a spawned child follows its parent; the walk is capped and cannot loop).
+4. **Its directory.** The Automaton's project directory is matched to a project's
+   directory. A git worktree maps to its repository, so work done in a worktree
+   counts toward the project that owns the repository.
+
+A link always wins over a directory match, so an Automaton linked to `core-api`
+is never counted under another project because it ran in that project's folder.
+A link naming a project that is not configured is ignored and the next step
+applies. An Automaton an arc holds stays in that arc's project's roll-up as
+before. An Automaton that resolves to another project is never in this one.
+Template Automata are never counted.
+
+An Automaton no step places is in the **Automata without a project** group.
+Each appears there once with its own tasks, points and throughput. The group is
+not part of any project's `total`, so a project's totals never include work that
+belongs to nobody.
+
+### Link an Automaton to a project
+
+The link is the first thing the roll-up checks, so setting it is the surest way
+to place an Automaton. The name must be a configured project; an unknown name is
+refused and the message lists the configured names. An empty name clears the
+link, and the Automaton is then placed by its Automation, its parent or its
+directory. Each change is written to the Automaton's decision log and touches
+only the Automaton record, never a session.
+
+| Where | How |
+|---|---|
+| Web app | Open the Automaton, then **Settings**. The **Project** field says where the current project came from (set directly on this Automaton, from its Automation, from its parent Automaton, from its directory, or no project). Pick a project and choose **Save project**, or choose **Clear link** |
+| REST | `POST /api/autonomous/prds/{id}/set_project` with `{"project":"core-api"}`; send `""` to clear. A 400 names the configured projects, a 404 means the Automaton is unknown |
+| CLI | `datawatch autonomous prd-set-project <id> core-api`; use `""` or `clear` as the name to clear |
+| MCP | `autonomous_prd_set_project` with `id` and `project` |
+| Chat | `automaton project <id> <name>` or `automaton project <id> clear` (also `autonomous project ...`) |
+
+The Automaton read reply (`GET /api/autonomous/prds/{id}`) carries `project`,
+the project the Automaton belongs to, and `project_source`, how it was found:
+`link`, `automation`, `parent`, `directory` or `none`.
+
+### Link existing Automata in one pass
+
+Automata created before the link existed have none. The **backfill** finds the
+ones that belong to the `datawatch` project and links them. It matches only that
+project: the project named `datawatch`, or, if none has that name, the first
+configured project whose directory or repository is the datawatch repository.
+It tries the Automation's project, then the parent's project, then the
+repository directory (a worktree maps to its repository). An Automaton that
+already has a link is never changed, a template is never touched, and an
+Automaton that matches nothing is listed as skipped and left alone.
+
+The default is a **dry run**: it produces the report and writes nothing.
+
+```bash
+datawatch autonomous project-link-backfill           # dry run: print the report table
+datawatch autonomous project-link-backfill --apply   # write the links
+```
+
+The report lists each Automaton with its project, how it matched
+(`automation`, `parent` or `directory`) and the result (would link, linked,
+skipped with the reason, or failed), then the counts: scanned, matched, applied,
+skipped and failed. A failure on one Automaton is recorded and the rest go on.
+Each Automaton the backfill links gets one decision-log entry of kind
+`project_link_backfill` (a link set by hand is `project_link_set`), so you can see
+when and why it was placed. A second `--apply` finds nothing to do, because every
+matched Automaton now carries a link.
+
+The same pass is on REST (`POST /api/autonomous/project-link-backfill` with
+`{"apply":true}`; omit `apply` or send `false` for a dry run; `GET` on the same
+path returns the latest report, or 404 if none has run yet), MCP
+(`autonomous_project_link_backfill`, `apply` true to write) and chat
+(`automaton project-backfill`, or `automaton project-backfill apply`).
+
+The daemon also runs it once at start. With
+`autonomous.project_link_backfill_apply: false` (the default) that run is a dry
+run only and the report is kept for `GET`. With `true` the run is applied, and
+when every write succeeded the daemon writes a done marker
+(`project_link_backfill.done` in the autonomous data directory) so later starts
+only produce the dry-run report. To run it again after the marker exists, use the
+CLI, REST, MCP or chat command above; delete the marker to let the start-up run
+apply again. The setting is in `docs/config-reference.yaml`, and can be changed
+with `datawatch config set autonomous.project_link_backfill_apply true`.
 
 ## Reading the fields
 
@@ -617,6 +722,8 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | There is no **Events** page sub-tab | It is left out of the strip while the project has no notes. An `#projects/<name>/events` address or a remembered **Events** choice opens **Overview** in that case |
 | The page opens a page sub-tab I did not pick | The last choice is remembered in this browser. Choose **Overview**, or open `#projects/<name>`, which always opens **Overview** |
 | An arc shows no Automata | Its Automation has no member Automata yet, or the Automata are of another project |
+| An Automaton is missing from a project's page, or appears under a different one | Membership follows the order in [Which Automata belong to a project](#which-automata-belong-to-a-project). Its own link or its Automation's link beats its directory. Look for it under **Automata without a project** if nothing placed it, then set its link as in [Link an Automaton to a project](#link-an-automaton-to-a-project) |
+| The backfill report lists an Automaton as skipped | It matched no datawatch source (Automation, parent or directory), or no project that is the datawatch project is configured. Link it by hand, or add the project first |
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each arc needs a unique id; an arc whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
 | `set --branch-retention-days -1` is refused | Retention cannot be negative |
@@ -685,6 +792,30 @@ the lane defaults. Use REST, MCP or the CLI for those.
   French and Japanese locales; a native speaker has not reviewed the four translations.
   Android and iPhone do not draw edges yet; tracked in datawatch-app. Confirm the cap and
   the default of edges on, and check the edge routing on a project with many dependencies.
+
+- **The Automation link has no control.** Setting a link works on an Automaton
+  from the web app, REST, MCP, the CLI and chat. An Automation also carries a
+  `project` field that its members inherit, but no surface added with this change
+  sets it. Confirm whether the operator wants one, or whether linking each
+  Automaton is enough.
+- **The backfill only knows `datawatch`.** It links Automata to the datawatch
+  project and nothing else. Work belonging to other projects keeps resting on
+  its directory until it is linked by hand. Check the dry-run report before
+  turning on `autonomous.project_link_backfill_apply`, and confirm a project named
+  `datawatch` (or one whose directory is the datawatch repository) is configured.
+- **Roll-up behavior is from tests.** The order above, the backfill and the
+  `without_project` group follow the resolver and its tests, not a check on a
+  live daemon. Open a project that has worktree-based or spawned Automata and
+  confirm the page, History and Events agree.
+- **Mobile apps.** The Project field in Automaton settings and the
+  *Automata without a project* group on the project page are web-only; the
+  Android and iPhone apps need the matching control and must ignore the new
+  `project_source` and `without_project` fields without error (tracked in
+  datawatch-app).
+- **Totals changed for some projects.** A project that used to count an
+  Automaton by directory alone no longer does if that Automaton is linked to
+  another project. Expect a project's totals to shift once links are set or the
+  backfill is applied.
 
 ## Related
 

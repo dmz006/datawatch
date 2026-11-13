@@ -296,3 +296,132 @@ func TestProjectRollup_HandlerReturnsUnassignedAutomata(t *testing.T) {
 		t.Errorf("session_ids must be [] when there are none")
 	}
 }
+
+// rollupTask builds a completed task finished at when.
+func rollupTask(id string, when *time.Time) autonomous.Task {
+	return autonomous.Task{ID: id, Status: autonomous.TaskCompleted, CompletedAt: when}
+}
+
+func TestBuildProjectRollup_FinishedCounting(t *testing.T) {
+	dir := "/srv/acme"
+	in2h := rollupNow.Add(-2 * time.Hour)
+	in3h := rollupNow.Add(-3 * time.Hour)
+	old := rollupNow.Add(-20 * 24 * time.Hour)
+
+	prds := []*autonomous.PRD{
+		// completed in the window
+		{ID: "done", ProjectDir: dir, Status: autonomous.PRDCompleted, UpdatedAt: in2h},
+		// cancelled after its work merged: counted, at the merge time
+		{ID: "merged", ProjectDir: dir, Status: autonomous.PRDCancelled, UpdatedAt: old,
+			Git:   autonomous.GitWorkflow{Branch: "auto/merged"},
+			Story: []autonomous.Story{{ID: "s", Tasks: []autonomous.Task{rollupTask("t1", &in3h), rollupTask("t1b", &old)}}}},
+		// cancelled, branch not merged: not counted, its task still is
+		{ID: "unmerged", ProjectDir: dir, Status: autonomous.PRDCancelled, UpdatedAt: in2h,
+			Git:   autonomous.GitWorkflow{Branch: "auto/unmerged"},
+			Story: []autonomous.Story{{ID: "s", Tasks: []autonomous.Task{rollupTask("t2", &in2h)}}}},
+		// archived with a shipped record
+		{ID: "shipped", ProjectDir: dir, Status: autonomous.PRDArchived, UpdatedAt: old,
+			MergeCommit: "abc123", MergedAt: &in3h},
+		// completed long ago: outside the window
+		{ID: "ancient", ProjectDir: dir, Status: autonomous.PRDCompleted, UpdatedAt: old},
+		// the same Automaton listed twice: counted once, its task once
+		{ID: "dup", ProjectDir: dir, Status: autonomous.PRDRunning, UpdatedAt: in2h,
+			Story: []autonomous.Story{{ID: "s", Tasks: []autonomous.Task{rollupTask("t3", &in2h)}}}},
+	}
+	prds = append(prds, prds[len(prds)-1])
+
+	got := buildProjectRollup(rollupInput{
+		Project: "acme", Dir: dir, PRDs: prds, WindowDays: 7, Now: rollupNow,
+		Merged: func(p *autonomous.PRD) (bool, time.Time) {
+			if p.ID == "merged" {
+				return true, in3h
+			}
+			return false, time.Time{}
+		},
+	})
+	th := got.Total.Throughput
+	// done, merged, shipped
+	if th.AutomataFinished != 3 {
+		t.Errorf("automata finished = %d, want 3", th.AutomataFinished)
+	}
+	// t1 (in window), t2, t3 once; t1b is outside the window
+	if th.TasksFinished != 3 {
+		t.Errorf("tasks finished = %d, want 3", th.TasksFinished)
+	}
+	finished := map[string]bool{}
+	for _, a := range got.Total.Automata {
+		finished[a.ID] = a.Finished
+	}
+	for id, want := range map[string]bool{"done": true, "merged": true, "unmerged": false, "shipped": true, "ancient": true, "dup": false} {
+		if finished[id] != want {
+			t.Errorf("automaton %s finished = %v, want %v", id, finished[id], want)
+		}
+	}
+	if len(got.Total.Automata) != 6 {
+		t.Errorf("duplicate Automaton listed twice: %d lines, want 6", len(got.Total.Automata))
+	}
+}
+
+func TestBuildProjectRollup_MergeTimeFallsBackToLastUpdate(t *testing.T) {
+	dir := "/srv/acme"
+	recent := rollupNow.Add(-1 * time.Hour)
+	p := &autonomous.PRD{ID: "m", ProjectDir: dir, Status: autonomous.PRDArchived, UpdatedAt: recent}
+	merged := func(*autonomous.PRD) (bool, time.Time) { return true, time.Time{} }
+	got := buildProjectRollup(rollupInput{Project: "acme", Dir: dir, PRDs: []*autonomous.PRD{p},
+		WindowDays: 7, Now: rollupNow, Merged: merged})
+	if got.Total.Throughput.AutomataFinished != 1 {
+		t.Fatalf("merge time unknown should use the last update, got %d", got.Total.Throughput.AutomataFinished)
+	}
+	p.UpdatedAt = rollupNow.Add(-30 * 24 * time.Hour)
+	got = buildProjectRollup(rollupInput{Project: "acme", Dir: dir, PRDs: []*autonomous.PRD{p},
+		WindowDays: 7, Now: rollupNow, Merged: merged})
+	if got.Total.Throughput.AutomataFinished != 0 {
+		t.Fatalf("old last update is outside the window, got %d", got.Total.Throughput.AutomataFinished)
+	}
+}
+
+func TestBuildProjectRollup_WorktreeAutomatonWithLink(t *testing.T) {
+	recent := rollupNow.Add(-1 * time.Hour)
+	wt := &autonomous.PRD{
+		ID: "wt", ProjectDir: "/srv/work/.datawatch/prd-worktrees/wt1", Status: autonomous.PRDCancelled,
+		UpdatedAt: recent, Git: autonomous.GitWorkflow{Branch: "auto/wt"},
+		Story: []autonomous.Story{{ID: "s", Tasks: []autonomous.Task{rollupTask("t", &recent)}}},
+	}
+	in := rollupInput{
+		Project: "acme", Dir: "/srv/acme", PRDs: []*autonomous.PRD{wt}, WindowDays: 7, Now: rollupNow,
+		Merged: func(*autonomous.PRD) (bool, time.Time) { return true, recent },
+	}
+	// no link and a worktree directory: not this project's
+	if got := buildProjectRollup(in); got.Total.Throughput.AutomataFinished != 0 || len(got.Total.Automata) != 0 {
+		t.Fatalf("unlinked worktree Automaton must not count: %+v", got.Total)
+	}
+	wt.Project = "acme"
+	got := buildProjectRollup(in)
+	if got.Total.Throughput.AutomataFinished != 1 || got.Total.Throughput.TasksFinished != 1 {
+		t.Fatalf("linked worktree Automaton: %+v", got.Total.Throughput)
+	}
+}
+
+func TestBuildProjectRollup_ResolverOrderAndWithoutProject(t *testing.T) {
+	projects := map[string]string{"acme": "/srv/acme", "other": "/srv/other"}
+	linkedElsewhere := &autonomous.PRD{ID: "x1", ProjectDir: "/srv/acme", Project: "other", Status: autonomous.PRDDraft}
+	byDir := &autonomous.PRD{ID: "x2", ProjectDir: "/srv/acme", Status: autonomous.PRDDraft}
+	orphan := &autonomous.PRD{ID: "x3", ProjectDir: "/nowhere", Status: autonomous.PRDDraft}
+	in := rollupInput{Project: "acme", Dir: "/srv/acme", Projects: projects,
+		PRDs: []*autonomous.PRD{linkedElsewhere, byDir, orphan}, WindowDays: 7, Now: rollupNow}
+	got := buildProjectRollup(in)
+	if len(got.Unassigned.Automata) != 1 || got.Unassigned.Automata[0].ID != "x2" {
+		t.Fatalf("unassigned: %+v", got.Unassigned.Automata)
+	}
+	if len(got.WithoutProject.Automata) != 1 || got.WithoutProject.Automata[0].ID != "x3" {
+		t.Fatalf("without_project: %+v", got.WithoutProject.Automata)
+	}
+	if len(got.Total.Automata) != 1 {
+		t.Fatalf("without_project must not be in total: %+v", got.Total.Automata)
+	}
+	in.Project, in.Dir = "other", "/srv/other"
+	got = buildProjectRollup(in)
+	if len(got.WithoutProject.Automata) != 1 || len(got.Unassigned.Automata) != 1 || got.Unassigned.Automata[0].ID != "x1" {
+		t.Fatalf("other project: %+v %+v", got.Unassigned.Automata, got.WithoutProject.Automata)
+	}
+}

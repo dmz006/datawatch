@@ -85,6 +85,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"projects_manage_save_action",
 		"projects_manage_cancel_action",
 		"projects_manage_remove_action",
+		// Project link control and the Automata-without-a-project section.
+		"automaton_project_label",
+		"automaton_project_save",
+		"projects_page_without_project",
+		"projects_page_without_project_hint",
 		// b4220001 — PWA splash dwell settings and the previous-version line.
 		"splash_version_previous",
 		"settings_splash_min_seconds",

@@ -144,6 +144,7 @@ autonomous_prd_set_memory_harvest
 autonomous_prd_set_memory_seed
 autonomous_prd_set_notify_events
 autonomous_prd_set_priority
+autonomous_prd_set_project
 autonomous_prd_set_quality_gates
 autonomous_prd_set_release_size
 autonomous_prd_set_skills
@@ -166,6 +167,7 @@ autonomous_prd_set_verifier_policy
 autonomous_prd_set_worker_profile
 autonomous_progress
 autonomous_progress_trend
+autonomous_project_link_backfill
 autonomous_protected_paths
 autonomous_release_readiness
 autonomous_repo_ci_watch

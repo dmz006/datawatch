@@ -1066,6 +1066,7 @@
   "projects_rollup_points_unpriced": "価格なし: バックエンドは同梱プランに含まれていません",
   "projects_rollup_throughput_label": "スループット（過去 %1$s 日）",
   "projects_rollup_throughput_value": "完了 %1$s 件（1日あたり %2$s）· タスク完了 %3$s 件（1日あたり %4$s）",
+  "projects_rollup_throughput_help": "オートマトンは、完了している場合、キャンセルまたはアーカイブされていてその作業がプロジェクトのデフォルトブランチに既に入っている場合、または出荷記録がある場合に完了として数えます。タスクは、オートマトンの最終ステータスに関わらず、期間内に完了したものを数えます。",
   "projects_history_heading": "履歴",
   "projects_gantt_heading": "ガントチャート",
   "projects_gantt_loading": "タイムラインを読み込み中…",
@@ -5627,5 +5628,17 @@
   "task_routing_export_failed": "Export failed: %1$s",
   "task_routing_imported": "Profile imported",
   "task_routing_detail_row": "row %1$s",
-  "task_routing_detail_reason": "no row: %1$s"
+  "task_routing_detail_reason": "no row: %1$s",
+  "automaton_project_label": "プロジェクト",
+  "automaton_project_source_link": "このオートマトンに直接設定",
+  "automaton_project_source_automation": "所属する Automation から",
+  "automaton_project_source_parent": "親のオートマトンから",
+  "automaton_project_source_directory": "ディレクトリから",
+  "automaton_project_none": "プロジェクトなし",
+  "automaton_project_save": "プロジェクトを保存",
+  "automaton_project_clear": "リンクを解除",
+  "automaton_project_saved": "プロジェクトのリンクを保存しました",
+  "automaton_project_error": "プロジェクトを設定できませんでした",
+  "projects_page_without_project": "プロジェクトのないオートマトン",
+  "projects_page_without_project_hint": "オートマトンの詳細でプロジェクトのリンクを設定すると、ここから移動します。"
 }

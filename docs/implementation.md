@@ -3038,6 +3038,10 @@ bucket, not a stored status value.
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
 
+## Project link backfill (`autonomous.project_link_backfill_apply`)
+
+`autonomous.project_link_backfill_apply` (bool, default `false`; `docs/config-reference.yaml`, `datawatch config set`, `PUT /api/config`) controls the pass that runs once at daemon start after the stores load. `false` produces only a dry-run report, kept as the latest report for `GET /api/autonomous/project-link-backfill`. `true` applies it: every non-template Automaton with an empty `project` that resolves to the datawatch project through its Automation, its parent or its repository directory gets the link and a `project_link_backfill` decision; when no write failed a `project_link_backfill.done` marker is written to the autonomous data directory and later starts only dry-run. Automata that already carry a link are never changed. The explicit link of one Automaton is set with `POST /api/autonomous/prds/{id}/set_project` (decision kind `project_link_set`, unknown names refused); the effective project and its source are added to the read reply as `project` and `project_source`. Operator-facing behavior: [`docs/howto/projects-tab.md`](howto/projects-tab.md#link-existing-automata-in-one-pass).
+
 ## Secret scan before push (`git.secret_scan`)
 
 - `internal/config/config.go`: `GitSecretScanConfig` (`mode`, `detectors`, `allow_list.paths`, `allow_list.fingerprints`), `ValidateGitSecretScanMode`, `ValidateGitSecretScanDetectors` and `GitConfig.EffectiveSecretScanDetectors`.

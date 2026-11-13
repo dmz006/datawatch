@@ -1066,6 +1066,7 @@
   "projects_rollup_points_unpriced": "Non chiffré : les backends ne sont pas inclus dans une offre groupée",
   "projects_rollup_throughput_label": "Débit, %1$s derniers jours",
   "projects_rollup_throughput_value": "%1$s terminés (%2$s par jour) · %3$s tâches terminées (%4$s par jour)",
+  "projects_rollup_throughput_help": "Un automate compte comme terminé lorsqu'il est achevé, lorsqu'il est annulé ou archivé et que son travail est déjà sur la branche par défaut du projet, ou lorsqu'il porte un enregistrement de livraison. Une tâche compte si elle a été terminée dans la période, quel que soit l'état final de l'automate.",
   "projects_history_heading": "Historique",
   "projects_gantt_heading": "Diagramme de Gantt",
   "projects_gantt_loading": "Chargement de la chronologie…",
@@ -5627,5 +5628,17 @@
   "task_routing_export_failed": "Export failed: %1$s",
   "task_routing_imported": "Profile imported",
   "task_routing_detail_row": "row %1$s",
-  "task_routing_detail_reason": "no row: %1$s"
+  "task_routing_detail_reason": "no row: %1$s",
+  "automaton_project_label": "Projet",
+  "automaton_project_source_link": "défini directement sur cet automate",
+  "automaton_project_source_automation": "depuis son Automation",
+  "automaton_project_source_parent": "depuis son automate parent",
+  "automaton_project_source_directory": "depuis son répertoire",
+  "automaton_project_none": "Aucun projet",
+  "automaton_project_save": "Enregistrer le projet",
+  "automaton_project_clear": "Retirer le lien",
+  "automaton_project_saved": "Lien de projet enregistré",
+  "automaton_project_error": "Impossible de définir le projet",
+  "projects_page_without_project": "Automates sans projet",
+  "projects_page_without_project_hint": "Définissez un lien de projet depuis le détail de l'automate pour le placer ici."
 }

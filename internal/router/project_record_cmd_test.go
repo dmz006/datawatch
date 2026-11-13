@@ -164,6 +164,7 @@ func TestFormatProjectProgress(t *testing.T) {
 		"Progress for project acme (7-day window)",
 		"total: 3 automata, tasks 4/13, points 3.5",
 		"throughput: 1 automata, 2 tasks finished (0.14 automata/day, 0.29 tasks/day)",
+		"finished means completed, or cancelled or archived with its work branch on the default branch, or shipped",
 		"arc auto-1 [active]: 2 automata, tasks 4/10",
 		"unassigned: 1 automata, tasks 0/3",
 	} {
@@ -349,5 +350,16 @@ func TestFormatProjectTimelineNewFields(t *testing.T) {
 		if !strings.Contains(projectTimelineUsage, want) {
 			t.Errorf("usage lacks %q", want)
 		}
+	}
+}
+
+func TestFormatProjectProgressWithoutProject(t *testing.T) {
+	body := `{"window_days":7,"points_priced":false,"arcs":[],"unassigned":{"automata":[]},` +
+		`"without_project":{"automata":[{"id":"a"},{"id":"b"}],"tasks":{"done":1,"total":4}},"total":{"automata":[]}}`
+	if got := formatProjectProgress("acme", body); !strings.Contains(got, "without a project: 2 automata, tasks 1/4") {
+		t.Fatalf("missing without a project line: %s", got)
+	}
+	if got := formatProjectProgress("acme", `{"window_days":7,"arcs":[],"total":{"automata":[]}}`); strings.Contains(got, "without a project") {
+		t.Fatalf("empty group must not print: %s", got)
 	}
 }

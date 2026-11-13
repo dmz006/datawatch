@@ -1406,6 +1406,8 @@ type Manager struct {
 	cfg          Config
 	store        *Store
 	automations  *AutomationStore
+	// projectLink is the project link backfill state (project_link_backfill.go).
+	projectLink projectLinkBackfillState
 	// Capability minimum-version enforcement (capability_requirements.go):
 	// per-capability -> per-node enablement and flag state. Guarded by mu;
 	// nil until EnableCapability/RecheckCapability first touch it.

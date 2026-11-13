@@ -111,6 +111,8 @@ func (s *Server) handleAutonomousEvents(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		sc := buildProjectEventScope(projectEventInput{
+			Project:     projectName,
+			Projects:    rollupProjectDirs(s.cfg.Projects),
 			Dir:         entry.Dir,
 			Arcs:        entry.Arcs,
 			PRDs:        mgr.Store().ListPRDs(),
