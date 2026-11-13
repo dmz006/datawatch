@@ -3493,7 +3493,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
     const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
-    if (wp.length) body += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${automataList(wp)}</div>`;
+    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${automataList(wp)}</div>`;
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
