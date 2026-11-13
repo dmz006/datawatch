@@ -1012,7 +1012,24 @@ func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToo
 		body["parent_prd_id"] = parent
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds", body)
-	return llmSetterResult(out, err)
+	return withSpecCheckText(llmSetterResult(out, err))
+}
+
+// withSpecCheckText adds the spec-check lines as a second text item after
+// the JSON reply (which already carries the spec_check array), so a reader
+// of the plain text sees the same lines every other surface prints.
+func withSpecCheckText(res *mcpsdk.CallToolResult, err error) (*mcpsdk.CallToolResult, error) {
+	if err != nil || res == nil || res.IsError || len(res.Content) == 0 {
+		return res, err
+	}
+	tc, ok := res.Content[0].(mcpsdk.TextContent)
+	if !ok {
+		return res, err
+	}
+	if block := autonomous.SpecCheckBlockFromReply([]byte(tc.Text)); block != "" {
+		res.Content = append(res.Content, mcpsdk.NewTextContent(block))
+	}
+	return res, err
 }
 
 func (s *Server) toolAutonomousPRDSetKind() mcpsdk.Tool {
@@ -1403,7 +1420,7 @@ func (s *Server) handleAutonomousPRDRequestRevision(_ context.Context, req mcpsd
 	if err != nil {
 		return nil, err
 	}
-	return textOK(string(out)), nil
+	return withSpecCheckText(textOK(string(out)), nil)
 }
 
 func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {

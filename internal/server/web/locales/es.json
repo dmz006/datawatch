@@ -5625,5 +5625,10 @@
   "task_routing_export_failed": "Export failed: %1$s",
   "task_routing_imported": "Profile imported",
   "task_routing_detail_row": "row %1$s",
-  "task_routing_detail_reason": "no row: %1$s"
+  "task_routing_detail_reason": "no row: %1$s",
+  "spec_check_title": "Revisión de la especificación: texto que el planificador podría copiar en los títulos de tareas",
+  "spec_check_severity_warning": "aviso",
+  "spec_check_severity_error": "error",
+  "spec_check_fixable": "El daemon puede corregir esta redacción por sí mismo.",
+  "spec_check_suggestion": "Reformulación sugerida"
 }

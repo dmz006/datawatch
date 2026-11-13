@@ -5625,5 +5625,10 @@
   "task_routing_export_failed": "Export failed: %1$s",
   "task_routing_imported": "Profile imported",
   "task_routing_detail_row": "row %1$s",
-  "task_routing_detail_reason": "no row: %1$s"
+  "task_routing_detail_reason": "no row: %1$s",
+  "spec_check_title": "Spec check: wording the planner may copy into task titles",
+  "spec_check_severity_warning": "warning",
+  "spec_check_severity_error": "error",
+  "spec_check_fixable": "The daemon can fix this wording itself.",
+  "spec_check_suggestion": "Suggested rewording"
 }

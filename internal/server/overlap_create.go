@@ -200,3 +200,45 @@ func (b *bufferedReply) writeTo(w http.ResponseWriter) {
 	}
 	_, _ = w.Write(b.body.Bytes())
 }
+
+// writeReplyWithFields writes the Automaton reply with extra top-level
+// fields added to it. A reply that is not a 200 JSON object is sent as it
+// is. The create and revise replies use it to carry spec_check.
+func (s *Server) writeReplyWithFields(w http.ResponseWriter, r *http.Request, prd any, extra map[string]any) {
+	buf := &bufferedReply{header: http.Header{}}
+	s.writeAutonomousResult(buf, r, prd, "", "", "")
+	var fields map[string]json.RawMessage
+	if (buf.status != 0 && buf.status != http.StatusOK) || json.Unmarshal(buf.body.Bytes(), &fields) != nil || fields == nil {
+		buf.writeTo(w)
+		return
+	}
+	for k, v := range extra {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			http.Error(w, k+": "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		fields[k] = raw
+	}
+	out, err := json.Marshal(fields)
+	if err != nil {
+		http.Error(w, "reply: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	buf.body.Reset()
+	buf.body.Write(append(out, '\n'))
+	buf.header.Del("Content-Length")
+	buf.writeTo(w)
+}
+
+// prdSpecText returns the spec text of an Automaton reply value, "" when
+// it has none.
+func prdSpecText(prd any) string {
+	if isNilPRD(prd) {
+		return ""
+	}
+	if p, err := toPRD(prd); err == nil && p != nil {
+		return p.Spec
+	}
+	return ""
+}

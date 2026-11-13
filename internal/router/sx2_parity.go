@@ -991,7 +991,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous request-revision failed", err.Error())
 			return
 		}
-		r.reply("autonomous request-revision", prettyJSON(out))
+		r.reply("autonomous request-revision", prettyJSON(out)+specCheckChatText(out))
 	case "edit-task", "edit_task":
 		const editTaskUsage = "usage: autonomous edit-task <prd-id> <task-id> [read_only=true|false] [report_path=<path>] [<new-spec…>]"
 		if len(args) < 4 {
@@ -1399,7 +1399,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous create failed", err.Error())
 			return
 		}
-		r.reply("autonomous create", prettyJSON(out))
+		r.reply("autonomous create", prettyJSON(out)+specCheckChatText(out))
 	// BL221 (v6.2.0) Phase 3 — scan commands
 	case "scan":
 		if len(args) < 2 {
@@ -2092,4 +2092,13 @@ tokens:
 		args = args[1:]
 	}
 	return args, ro, reportPath, nil
+}
+
+// specCheckChatText is the spec-check findings of a create or revise reply
+// as plain chat text, set after a blank line; "" when the spec is clean.
+func specCheckChatText(reply string) string {
+	if block := autonomous.SpecCheckBlockFromReply([]byte(reply)); block != "" {
+		return "\n\n" + block
+	}
+	return ""
 }
