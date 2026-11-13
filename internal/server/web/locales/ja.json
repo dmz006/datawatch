@@ -5583,6 +5583,8 @@
   "housekeeping_repairs_skipped_line": "危険のためスキップ — {0}: {1} {2}",
   "housekeeping_repairs_nothing": "見つかったものはありません。",
   "housekeeping_repairs_failed": "ハウスキーピング修復を読み込めませんでした: {0}",
+  "housekeeping_questions_card_title": "未解決の質問",
+  "housekeeping_questions_help_link": "ヘルプ：ハウスキーピングの「未解決の質問」カード",
   "task_routing_title": "Task routing",
   "task_routing_desc": "オートマトンの各タスク種別を処理し検証する LLM を選択します。有効なプロファイルは、その後に作成されたタスクに適用されます。",
   "task_routing_enabled": "タスク種別ごとにオートマトンのタスクをルーティング",

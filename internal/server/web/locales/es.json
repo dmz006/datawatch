@@ -5583,6 +5583,8 @@
   "housekeeping_repairs_skipped_line": "Omitido por inseguro — {0}: {1} {2}",
   "housekeeping_repairs_nothing": "No se encontró nada.",
   "housekeeping_repairs_failed": "No se pudieron cargar las reparaciones de mantenimiento: {0}",
+  "housekeeping_questions_card_title": "Preguntas abiertas",
+  "housekeeping_questions_help_link": "Ayuda: la tarjeta «Preguntas abiertas» del mantenimiento",
   "task_routing_title": "Task routing",
   "task_routing_desc": "Elija qué LLM trabaja en cada tipo de tarea de un Autómata y la verifica. El perfil activo se aplica a las tareas creadas después.",
   "task_routing_enabled": "Enrutar las tareas del Autómata por tipo de tarea",

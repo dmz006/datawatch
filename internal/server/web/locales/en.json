@@ -5583,6 +5583,8 @@
   "housekeeping_repairs_skipped_line": "Skipped as unsafe — {0}: {1} {2}",
   "housekeeping_repairs_nothing": "Nothing found.",
   "housekeeping_repairs_failed": "Could not load Housekeeping repairs: {0}",
+  "housekeeping_questions_card_title": "Open questions",
+  "housekeeping_questions_help_link": "Help: the open questions card in Housekeeping",
   "task_routing_title": "Task routing",
   "task_routing_desc": "Choose which LLM works on and verifies each task type of an Automaton. The active profile applies to tasks created afterwards.",
   "task_routing_enabled": "Route Automaton tasks by task type",

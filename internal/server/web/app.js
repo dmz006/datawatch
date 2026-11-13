@@ -1567,6 +1567,9 @@ function handleMessage(msg) {
       if (document.getElementById('automationQuestionsCard') &&
           typeof window.refreshAutomationQuestions === 'function') {
         window.refreshAutomationQuestions();
+        // The Housekeeping card mirrors the same live list; its loader only
+        // exists while its sub-tab is shown, so this is a no-op otherwise.
+        if (typeof window.refreshAutomationQuestionsHousekeeping === 'function') window.refreshAutomationQuestionsHousekeeping();
         const qr = (msg.data && typeof msg.data === 'object') ? msg.data : {};
         const _qstr = (v) => ((typeof v === 'string' || typeof v === 'number') ? String(v).trim() : '');
         const qname = _qstr(qr.label) || _qstr(qr.id);
@@ -14078,6 +14081,7 @@ const DOCS_LINKS_BY_KEY = {
   unlanded_work_card: 'howto/automaton-worktree-cleanup.md#unlanded-branches-finished-work-that-never-reached-the-default-branch',
   uncommitted_work_commit: 'howto/automaton-uncommitted-work.md',
   cleanup_permission_fix: 'howto/automaton-worktree-cleanup.md#skipped-by-reason-permission-errors-and-the-fix',
+  housekeeping_questions_card: 'howto/automation-tab.md#questions',
   // Checks and ship status cards (Automation Overview) and their Settings groups.
   checks_findings_card: DOCS_DEFINITIONS + '#checks',
   ship_status_card: DOCS_DEFINITIONS + '#ship-steps',
@@ -42360,6 +42364,17 @@ registerAutomationCardSlot('housekeeping', {
   mount: () => listLoaderAll([_automationUnlandedWorkLoader()]),
   stop: () => _automationStopLoaders(['automation_unlanded_work']),
 });
+// The open-questions card mirrors the Inbox card's live list (see
+// _automationHkQuestionsLoader) below the Unlanded work card; polled only
+// while the Housekeeping sub-tab is shown, with unique element ids so it
+// never collides with the Inbox card's.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationHkQuestionsCard',
+  order: 110,
+  html: _automationPlaceholderHTML('automationHkQuestionsCard'),
+  mount: () => listLoaderAll([_automationHkQuestionsLoader()]),
+  stop: () => _automationStopLoaders(['automation_hk_questions']),
+});
 // The safe-to-delete report and the cleanup status render under the event
 // stream on the Automata Events sub-tab (the Housekeeping sub-tab keeps only
 // its action cards). Both keep their loaders and poll only while the Events
@@ -44302,15 +44317,15 @@ const _automationQuestionsState = { searchText: '', history: false, historyList:
 window._automationQuestionsState = _automationQuestionsState;
 let _automationQuestionsSearchTimer = null;
 
-// _automationQuestionsListFetch is the loader's fetch override. It builds the
-// full URL itself (the loader's url field is the no-search form) so a paused
-// search is committed on Enter as well as after the input pause. A 503 from
-// the list route means the questions switch is off: resolve a disabled
-// sentinel instead of failing, so the card paints only the disabled text.
-function _automationQuestionsListFetch(opts) {
-  // In history mode the same search field filters both decided states:
-  // the text parameter rides on each of the two state requests.
-  const text = (_automationQuestionsState.searchText || '').trim();
+// _automationQuestionsFetchCore is the one definition of the questions list
+// route, token, active-server proxy prefix, the 503-disabled sentinel and the
+// history merge. 'text' is the already-trimmed search text ('' asks for the
+// whole list). It builds the full URL itself (a loader's url field is the
+// no-search form) so a paused search is committed on Enter as well as after
+// the input pause. A 503 from the list route means the questions switch is
+// off: resolve a disabled sentinel instead of failing, so the card paints
+// only the disabled text.
+function _automationQuestionsFetchCore(text, opts) {
   const textQ = text ? '&text=' + encodeURIComponent(text) : '';
   const token = localStorage.getItem('cs_token') || '';
   const headers = { 'Content-Type': 'application/json' };
@@ -44328,6 +44343,8 @@ function _automationQuestionsListFetch(opts) {
       return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
     });
   };
+  // In history mode the same search text rides on both decided-state
+  // requests (answered + withdrawn).
   if (_automationQuestionsState.history) {
     // History: the two decided states on the same route, merged and
     // dated, newest first (the history ordering is the card's own).
@@ -44344,6 +44361,11 @@ function _automationQuestionsListFetch(opts) {
     });
   }
   return one('state=open&limit=50' + textQ);
+}
+// _automationQuestionsListFetch is the Inbox card's loader fetch override:
+// the shared search field's text rides on the request.
+function _automationQuestionsListFetch(opts) {
+  return _automationQuestionsFetchCore((_automationQuestionsState.searchText || '').trim(), opts);
 }
 
 // _automationQuestionsLoadQuality reads queue_preview_lines from
@@ -44473,6 +44495,14 @@ window.questionsCardHtml = function(body) {
   return `<div class="questions-queue-list">${list.map(_automationQuestionsRowHtml).join('')}</div>`;
 };
 
+// _automationQuestionsOpenBody is the one scope cut + renderer for the live
+// open-question list: the decoded API body ({count, questions} or the 503
+// disabled sentinel), the Inbox project scope, and the shared row renderer. The
+// Inbox card and the Housekeeping card both paint this, so the two sub-tabs
+// can never disagree over which questions are open.
+function _automationQuestionsOpenBody(body) {
+  return window.questionsCardHtml(_inboxScopeData('automation_questions', body));
+}
 // _automationQuestionsLoader polls the open question list beside the capacity,
 // lane fill and triage cards. Its failed state is the list loader's banner,
 // like the capacity card.
@@ -44485,7 +44515,51 @@ function _automationQuestionsLoader() {
     onData: data => _automationInboxCountSet('automation_questions', data),
     render: body => _automationQuestionsState.history
       ? window.questionsHistoryHtml(body)
-      : window.questionsCardHtml(_inboxScopeData('automation_questions', body)),
+      : _automationQuestionsOpenBody(body),
+  });
+}
+
+// ── Housekeeping open-questions card ─────────────────────────────────────────
+// _automationHkQuestionsLoader polls the same live open-question list the Inbox
+// card shows — same route (GET /api/questions?state=open&limit=50) through the
+// shared _automationQuestionsFetchCore, and the same scope cut + row renderer
+// through _automationQuestionsOpenBody — under its own unique element ids and
+// its own list loader, so the two cards never share an id and each loader stops
+// on leaving its sub-tab (the slot's mount/stop and _automationStopLoaders).
+//
+// The Inbox search box is Inbox-only: it lives in the Inbox card's HTML and the
+// shared state it writes drives only the Inbox card. This mirror never reads
+// _automationQuestionsState.searchText — its fetch passes '' (the whole live
+// list), so its text can never diverge from the Inbox card's. It DOES inherit
+// the Inbox scope: with one project selected, the Housekeeping card shows only
+// that project's open questions; in the overview it shows all of them.
+//
+// The card follows the other Housekeeping slot cards (repairs, Unlanded
+// work): it renders as a hidden empty placeholder shell (the registry
+// "placeholder" shape) and the loader reveals it and paints the card —
+// title, help link and the shared open-body rows — when the list arrives.
+function _automationHkQuestionsCardHtml(body) {
+  return `<div class="cap-title" style="font-weight:600;font-size:13px;margin-bottom:6px;">${escHtml(t('housekeeping_questions_card_title'))}${_housekeepingHelpLink('housekeeping_questions_card', 'housekeeping_questions_help_link')}</div>` +
+    `<div id="automationHkQuestionsBody" class="questions-body">${_automationQuestionsOpenBody(body)}</div>`;
+}
+function _automationHkQuestionsLoader() {
+  return window._listLoaders.automation_hk_questions || listLoader({
+    key: 'automation_hk_questions', el: 'automationHkQuestionsCard', url: '/api/questions?state=open&limit=50', pollMs: 5000,
+    fetch: (url, opts) => _automationQuestionsFetchCore('', opts),
+    failedText: msg => t('automation_questions_failed', [msg]),
+    // Only live while the card's sub-tab is shown: the card's element exists
+    // exactly while the Housekeeping body is mounted (unique id, not the
+    // Inbox one).
+    active: () => !!(typeof document !== 'undefined' && document.getElementById && document.getElementById('automationHkQuestionsCard')),
+    render: body => {
+      const h = _automationHkQuestionsCardHtml(body);
+      // The shell is display:none until the list arrives; painting it means
+      // it has content (rows, the empty message, or the 503 note), so it can
+      // be shown. Same reveal rule as the Unlanded work card.
+      const el = typeof document !== 'undefined' && document.getElementById ? document.getElementById('automationHkQuestionsCard') : null;
+      if (el) el.style.display = '';
+      return h;
+    },
   });
 }
 
@@ -44522,6 +44596,15 @@ window.onAutomationQuestionsSearchKeydown = onAutomationQuestionsSearchKeydown;
 // poll tick.
 window.refreshAutomationQuestions = function() {
   const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl) ctl.load();
+};
+// window.refreshAutomationQuestionsHousekeeping is the live-refresh entry point
+// for the Housekeeping mirror: it refreshes the same open list under the
+// card's own loader. It is a no-op unless that sub-tab is shown (its loader
+// exists only while the Housekeeping sub-tab is mounted), so the live WS
+// refresh task can always call it and it lands exactly where the card is.
+window.refreshAutomationQuestionsHousekeeping = function() {
+  const ctl = window._listLoaders && window._listLoaders.automation_hk_questions;
   if (ctl) ctl.load();
 };
 
