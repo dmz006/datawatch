@@ -378,6 +378,35 @@ the worker or by hand — and it is answered exactly like any other protected
 path: **Approve this change** if you want it, or authorise the rules file for
 the Automaton so its tasks pass.
 
+## Checkpoint entries in the rules file
+
+The rules file is protected, and the workers are told to keep it that way. A
+worker that needs a progress note is told to write it to `CHECKPOINT.md` at
+the root of its working directory instead — never to `AGENT.md` or
+`CLAUDE.md` (see
+[the no-checkpoints rule](automata-rules-and-context.md#the-no-checkpoints-rule)).
+Checkpoint and progress entries that you or the supervisor write to the rules
+file by hand are your own work — the gate does not touch them, exactly as
+before.
+
+If a worker adds a checkpoint entry to the rules file anyway, the gate deals
+with that one case itself, before any hold, warn or block is decided:
+
+- **the entry is the file's only change** against the base commit — the gate
+  removes the entry from the working copy and lets the task go on. There is
+  no question and no alert. It records one decision on the Automaton named
+  **`protected_paths_checkpoint_reverted`** (its note reads *task <id>: removed
+  a worker checkpoint entry from <path>*), so you can see in the Automaton's
+  decision list that it happened — that is the only trace of it, and the note's
+  content still lives in `CHECKPOINT.md` and the session record;
+- **the file also holds any other change** — the normal hold, warn or block
+  applies to the file, and the gate leaves it exactly as the worker wrote it,
+  so nothing is lost.
+
+What counts as an entry the gate may remove, and the cases where it leaves
+the file alone, are spelt out in
+[the checkpoint-entry revert](#the-checkpoint-entry-revert) below.
+
 ## Worker progress notes no longer touch the rules file
 
 The rules file is protected by default, and for a while the gate's most
@@ -546,7 +575,10 @@ list. When a search for one finds nothing, try the other.
   the no-checkpoints rule by appending its entry is not held when the entry is
   the file's entire change against the base — the gate strips it out and
   records `protected_paths_checkpoint_reverted` — and is held when it changed
-  anything else in the file.
+  anything else in the file. Only an entry shaped as a dated `## YYYY-MM-DD`
+  heading in `AGENT.md`, `CLAUDE.md` or your configured rules file is
+  auto-removed at all — a note in any other file, or any other note without
+  that shape, reaches the gate as a normal change.
 - **Nothing here is a permission wall.** The gate acts after a worker
   attempt and — apart from the
   [checkpoint-entry revert](#the-checkpoint-entry-revert), which only strips a
