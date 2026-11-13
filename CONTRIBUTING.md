@@ -112,6 +112,13 @@ Steps:
 
 - **Go:** `go build -o datawatch ./cmd/datawatch/ && go test ./...` from the
   repo root.
+- **Before a tag:** `make pre-tag` must pass on the build host. It replaces `go test` in the
+  CI and release workflows and appends its result to the gitignored
+  `.datawatch/pre-tag-record`.
+- **New work ships with tests:** include unit and functional tests and the relevant smoke
+  script with every change.
+- **E2E and sandbox smoke:** this run is the operator's major-release step. It is not a
+  product feature and is not part of a contribution.
 - **PWA JS (`internal/server/web/`):** there is no bundler or framework for
   this code (every file is a classic `<script>`), but regression tests for
   it use Node's built-in test runner — zero dependencies, ships with Node

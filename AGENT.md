@@ -64,7 +64,7 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
 1. **Unit/integration tests** (Go `_test.go` files): Protocol correctness, encode/decode round-trips,
    error handling, edge cases. These run via `go test` and are automated.
 
-2. **Live connection tests**: Actually start the interface, connect a real or simulated client,
+2. **Live connection tests** (new work also carries its relevant smoke script; `make pre-tag` must pass before a tag): Actually start the interface, connect a real or simulated client,
    send a command, verify the response appears in a session or output. Document what was tested,
    how, and what was observed. Mark "Validated" only when a live test has been performed.
 
@@ -131,6 +131,14 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
   second number and reset patch — `0.1.3` → `0.2.0`
 - **Major bump** (breaking changes, explicit user request): increment the first number and reset
   minor/patch — `0.2.0` → `1.0.0`
+- **Pre-tag rule.** `make pre-tag` must pass on the build host before a tag is created. It runs
+  every gate in order, stops at the first failure, and replaces `go test` in the CI and release
+  workflows. Its result is appended to the gitignored `.datawatch/pre-tag-record`. Never tag
+  from a commit whose last record line is not `result=pass`.
+- **Tests ship with the work.** New work carries its unit and functional tests and the relevant
+  smoke script before it ships.
+- **The e2e and sandbox smoke run is the operator's major-release step.** It is not a product
+  feature and is not part of `make pre-tag`.
 - Include the new version in the commit message subject, e.g. `v0.1.3: fix signal groupID filter`
 - Never push without bumping the version — a version mismatch between the binary and the running
   daemon causes confusing support issues.
@@ -196,6 +204,10 @@ N/A with a one-line reason (never silently skipped):
   security, capability gating, or anything else where a unit test can mock away the
   actual bug (per this project's own established discipline — BL406 Phase 0's live
   smoke caught two real bugs unit tests missed entirely).
+- [ ] New work carries its own unit and functional tests and the relevant smoke script.
+  `make pre-tag` is run on the build host before any tag; it replaces `go test` in CI and
+  release and records its result in the gitignored `.datawatch/pre-tag-record`. The e2e and
+  sandbox smoke run stays the operator's major-release step.
 - [ ] `go test ./...` and `node --test internal/server/web/*.test.js` both green,
   not just the phase's own new tests.
 - [ ] **General documentation checklist** (AGENT.md, above) — all 8 items checked or
@@ -2207,25 +2219,6 @@ backend was used.
 *These guardrails apply when Claude operates on this repository. They do not restrict what
 users can instruct datawatch sessions to do within their own project directories.*
 
-
-<!-- rtk-instructions -->
-# RTK (Rust Token Killer) - Token-Optimized Commands
-
-**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it.
-If not, it passes through unchanged. This means RTK is always safe to use.
-
-```bash
-# Always use rtk prefix, even in chains:
-rtk go build && rtk go test ./...
-rtk cargo build
-rtk git status && rtk git diff
-rtk git log
-```
-
-**Key savings:** Build 80-90%, Test 90-99%, Git 59-80%, Files 60-75%.
-Run `rtk gain` to view token savings statistics.
-<!-- /rtk-instructions -->
-
 ## Memory & Intelligence
 
 This project has datawatch episodic memory enabled. Use it proactively.
@@ -2286,49 +2279,3 @@ memory_recall "recent work this codebase"
 - Build, test, and release procedures
 - Known patterns and gotchas to avoid
 - Directory structure and key files
-
-<!-- cross-session-communication-rule -->
-# Cross-Session Communication Rule (datawatch)
-
-A future session reading this may be on a different host or in a
-different container than the session that wrote it. Claude Code's own
-native session-to-session messaging (SendMessage/ListAgents) only
-works between sessions sharing one Claude Code install on one
-machine, and it is not recorded anywhere datawatch's own audit trail
-can see. For anything that should be audited, or anything that might
-need to reach a session on another host, use datawatch's own tools
-instead — they are federation-aware and every write lands in
-`audit.log`.
-
-## Use datawatch's tools for
-
-- **Durable facts, decisions, or context another session should
-  inherit** — `memory_remember` to save, `memory_recall` to retrieve.
-- **A running conversation between two or more sessions, including
-  ones on other hosts** — `memory_discussion_write`/
-  `memory_discussion_recall` (synced to the discussion's registered
-  peers automatically); `discussion_subscribe` to get new entries
-  pushed to you instead of polling.
-- **Replying to the session that spawned you** — `reply_to_parent`,
-  not a raw SendMessage back up the chain.
-- **Handing a finished task's findings to the next task in the same
-  story** — `memory_handoff`.
-
-## Available tools
-
-| Tool | Purpose |
-|------|---------|
-| `memory_discussion_write` | Write to a shared, cross-host discussion scope |
-| `memory_discussion_recall` | Read a discussion scope, optionally by semantic query |
-| `discussion_subscribe` | Get new discussion entries pushed to this session |
-| `reply_to_parent` | Reply to the session that spawned this one |
-| `memory_handoff` | Pass a task-completion summary to the next task in the story |
-
-## When native cross-session messaging is still fine
-
-Ephemeral, same-host coordination that nobody needs to audit or
-retrieve later — e.g. "is session X still running?" — doesn't need to
-go through datawatch. The rule is about anything durable, auditable,
-or that might cross a host boundary, not every message between
-sessions.
-<!-- /cross-session-communication-rule -->

@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: pre-tag build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -336,6 +336,7 @@ test:
 	bash tests/test-tidy-plans.sh
 	bash tests/test-plans-registry-archive.sh
 	bash tests/test-plans-tidy-daily.sh
+	bash tests/test-pre-tag.sh
 	python3 scripts/tests/test_dismissed_alerts_watch.py
 	python3 scripts/tests/test_codeql_alert_gate.py
 
@@ -361,8 +362,19 @@ help:
 	@echo "  make test-tmp-guard    runs the temp-dir leak guard over every package"
 	@echo "  make test-cross-build  cross-builds the daemon for windows and darwin"
 
+# Cross-compile smoke: every release GOOS/GOARCH must build (output discarded).
+test-cross-build:
+	@set -e; for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do \
+	  echo "cross-build $$t"; \
+	  GOOS=$${t%/*} GOARCH=$${t#*/} go build -trimpath -o /dev/null ./cmd/datawatch/; \
+	done
+
 fmt:
 	gofmt -w .
+
+# Run every pre-tag gate in CI order, stop at the first failure.
+pre-tag:
+	bash scripts/pre-tag.sh
 
 # Rebuild the MCP channel TypeScript and copy the output into the Go embed path.
 # Run this after editing channel/index.ts, then rebuild/install datawatch.

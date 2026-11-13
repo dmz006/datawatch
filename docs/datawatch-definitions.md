@@ -3344,3 +3344,8 @@ The **plan records switch** is `autonomous.plan_records.enabled` (default on). W
 ### Derived project alias
 
 The **derived project alias** is the read-only `project` field on an Automaton or Automation as returned by the REST views. It is worked out on every read from the registered project aliases (the registry behind `GET /api/projects`, alias name to directory): the explicit project profile when it names a registered alias, otherwise the longest registered alias directory that contains the record's project directory, otherwise the field is left out. Nothing is stored or rewritten. See [howto/projects-tab.md](howto/projects-tab.md#reading-the-fields).
+
+### Pre-tag run
+
+The **pre-tag run** is `make pre-tag` (`scripts/pre-tag.sh`): every release gate run locally in CI order, stopping at the first failure, so a code failure shows up on the build host before the tag is pushed. It is the only gate that runs `go test`: CI (`ci.yaml`, `release.yaml`) no longer does. Each run appends a line with the commit, date, step count, result and seconds to `.datawatch/pre-tag-record`. A step with a missing tool is skipped, not failed. See [operations.md](operations.md#pre-tag-run-make-pre-tag) and [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
+

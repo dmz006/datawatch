@@ -8163,3 +8163,14 @@ The plans-and-backlog records that used to live as numbered rows in `docs/plans/
 ## Projects Overview sub-tabs (web app)
 
 Under **Automata → Projects**, choosing **Overview** in the picker shows the cross-project in-flight sub-tabs (Inbox, Automations, Resources, Progress and cost, Housekeeping) in a strip styled like the project page sub-tabs. Each sub-tab responds to a click or tap, shows its own body, and is remembered in the browser value `cs_projects_subtab` (shared with the project page sub-tabs; restored after a refresh when it names an Overview sub-tab). Nothing is stored or served by the daemon: no setting, no REST, MCP, CLI or chat form, and no address for an Overview sub-tab. If an operator reports dead Overview sub-tabs, check the browser has loaded the current web app (hard refresh) and that browser storage is not blocked (a blocked store only loses the memory, not the clicks). Android and iPhone are not covered by this change; track parity in datawatch-app. See [howto/projects-tab.md](howto/projects-tab.md#the-overview-sub-tabs).
+
+## Pre-tag run (`make pre-tag`)
+
+`make pre-tag` runs `scripts/pre-tag.sh`: the release gates that CI would otherwise find after the tag, run locally in CI order, stopping at the first failure. The Go test suite (`go test ./... -count=1`) no longer runs in CI: the step was removed from `.github/workflows/ci.yaml` and `.github/workflows/release.yaml`, and the release job is now named `lint + build` (formerly `go test + lint`). This run is the only gate that runs it, so run it before every tag; CI still runs lint, the build and the security and release jobs. The step list and knobs are in [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
+
+- **Record.** Every run, pass or fail, appends `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>` to `.datawatch/pre-tag-record` (override with `PRE_TAG_RECORD_FILE`). The file is git-ignored. A dry run (`PRE_TAG_DRY_RUN=1`) writes nothing.
+- **Missing tools.** A step whose tool is absent prints `SKIP [step]: <tool> not found` and does not fail the run. Install `golangci-lint`, `govulncheck`, `gosec`, `gitleaks`, `goreleaser`, `docker` and `python3` on the build host or those gates are not checked.
+- **Slow steps.** `slow-opt-in` runs `make test-tmp-guard`, `make test-cross-build` (all five release targets build), the perf rollup check and the busy-loop checks. Each is niced, limited to a quarter of the CPUs (at least one), killed after `PRE_TAG_SLOW_TIMEOUT` seconds (default 21600) and killed if the script is interrupted.
+- **Test daemons.** `go test` runs with `TMUX` and `TMUX_TMPDIR` removed; the runner starts no daemon of its own.
+- **Tests.** `tests/test-pre-tag.sh` runs in `make test`.
+
