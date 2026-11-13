@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Session detail fills the whole page, no blank band under the input.** The session page (Tmux/Channel/Status tabs, opened from a local session or a peer's) used to render the terminal and the input row inside a shorter box, leaving a blank strip as tall as the list-page footer clearance under the input row. The page is now one flex column that fills from the header to the keyboard-aware bottom (same for iOS safe areas, and it still shrinks above the software keyboard via the existing visualViewport handling), with no extra space reserved. Resizing the window or zooming the browser re-fits the terminal pane with the existing resize handlers, and no new timers were added.
+
 ## v9.162.1 — Cancelled tasks are skipped, not blocking
 
 ### Fixed
