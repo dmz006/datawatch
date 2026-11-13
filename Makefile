@@ -342,8 +342,8 @@ test:
 # Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
 # mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
 # (except internal/session, which would run a copy of the guard) one at a
-# time, attributing any temp-dir survivor to the package that left it. The
-# normal `go test ./...` run of the same test keeps the small default list.
+# time, attributing any temp-dir survivor to the package that left it.
+# DW_RUN_TMP_GUARD=1 opts in; a plain `go test ./...` skips the test.
 test-tmp-guard:
 	DW_RUN_TMP_GUARD=1 DW_LEAK_GUARD_FULL=1 go test -count=1 -timeout 20h ./internal/session/ -run TestNoNewTmpLeakEntries
 
