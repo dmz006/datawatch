@@ -87,6 +87,30 @@ commit that adds it, same as any other rule change.
   host-arch binary; minor (`X.Y.0`) and major (`X.0.0`) need the full
   cross-compiled set with all 5 assets attached to the GitHub release.
 
+## 4a. Pre-tag run (local gates before the tag)
+
+- [ ] Run `make pre-tag` (or `bash scripts/pre-tag.sh`) on the build host
+  **before** tagging. It runs the CI gates in CI order and stops at the
+  first failure, so a code failure is found locally instead of after the
+  tag push. Steps: fmt, vet, golangci-lint, build, `go mod tidy`, `go test`,
+  PWA tests, docs sync, howto coverage, internal-ref and local-leak
+  checks, version bump, unscoped-tmux, Dockerfile/toolchain/trivy/certifi
+  pins, accepted risks, `.trivyignore` regeneration, govulncheck, gosec
+  (against `.gosec-baseline.json`), gitleaks, goreleaser snapshot, the
+  slow opt-in set (`test-tmp-guard`, `test-cross-build`, perf rollup and
+  busy-loop checks, niced and time-capped) and the agent-base image build.
+- [ ] A step whose tool is not installed prints `SKIP [step]: <tool> not
+  found` and does not fail. Read the SKIP lines: a skipped gate was not
+  checked. `docker-agent-base` skips itself when no Dockerfile, containers
+  workflow or `security/accepted-risks.yml` changed since the last tag.
+- [ ] Each run appends one line to `.datawatch/pre-tag-record` (git-ignored):
+  `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>`. Tag only
+  when the last line is for the commit being tagged and says `result=pass`.
+- [ ] Knobs: `PRE_TAG_DRY_RUN=1` lists the steps and runs nothing;
+  `PRE_TAG_ONLY=a,b` runs only the named steps; `PRE_TAG_RECORD_FILE`
+  moves the record; `PRE_TAG_SLOW_TIMEOUT` caps each slow command
+  (seconds, default 21600).
+
 ## 5. Git
 
 - [ ] Stage files **explicitly by name** — never `git add -A` / `git add
