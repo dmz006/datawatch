@@ -179,7 +179,7 @@ repo-relative paths or glob patterns). Its shell tests live in
   target `check-internal-refs`, and the `lint` target depends on it, so `make lint` runs
   the check as part of every lint pass.
 - It is a hard gate in both workflows: `ci.yaml` runs `bash scripts/check-no-internal-refs.sh`
-  on every push, and the release workflow's `go test + lint` job runs
+  on every push, and the release workflow's `lint + build` job runs
   `make check-internal-refs` (the dedicated step right before golangci-lint) before
   anything is released.
 - The merge helper `scripts/merge-branches-bump-version.sh` also runs `make check-internal-refs`

@@ -8089,7 +8089,7 @@ The plans-and-backlog records that used to live as numbered rows in `docs/plans/
 
 ## Pre-tag run (`make pre-tag`)
 
-`make pre-tag` runs `scripts/pre-tag.sh`: the release gates that CI would otherwise find after the tag, run locally in CI order, stopping at the first failure. The slow and duplicated CI checks are meant to be replaced by this run, so check the CI workflows still cover anything you rely on before removing one. The step list and knobs are in [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
+`make pre-tag` runs `scripts/pre-tag.sh`: the release gates that CI would otherwise find after the tag, run locally in CI order, stopping at the first failure. The Go test suite (`go test ./... -count=1`) no longer runs in CI: the step was removed from `.github/workflows/ci.yaml` and `.github/workflows/release.yaml`, and the release job is now named `lint + build` (formerly `go test + lint`). This run is the only gate that runs it, so run it before every tag; CI still runs lint, the build and the security and release jobs. The step list and knobs are in [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
 
 - **Record.** Every run, pass or fail, appends `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>` to `.datawatch/pre-tag-record` (override with `PRE_TAG_RECORD_FILE`). The file is git-ignored. A dry run (`PRE_TAG_DRY_RUN=1`) writes nothing.
 - **Missing tools.** A step whose tool is absent prints `SKIP [step]: <tool> not found` and does not fail the run. Install `golangci-lint`, `govulncheck`, `gosec`, `gitleaks`, `goreleaser`, `docker` and `python3` on the build host or those gates are not checked.
