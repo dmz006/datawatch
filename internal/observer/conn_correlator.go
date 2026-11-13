@@ -468,8 +468,8 @@ func CorrelateAcrossPeers(byPeer map[string][]Envelope, localPeerName string) {
 		Port uint16
 	}
 	type listenHit struct {
-		Peer    string
-		EnvIdx  int
+		Peer     string
+		EnvIdx   int
 		Wildcard bool
 	}
 	listeners := make(map[listenKey][]listenHit, 64)

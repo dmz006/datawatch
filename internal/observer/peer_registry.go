@@ -25,14 +25,14 @@ import (
 // PeerEntry is one row in the registry — what gets persisted to
 // peers.json + returned by /api/observer/peers (TokenHash redacted).
 type PeerEntry struct {
-	Name        string         `json:"name"`
-	TokenHash   string         `json:"token_hash,omitempty"`
-	Shape       string         `json:"shape,omitempty"`            // "B" or "C"
-	HostInfo    map[string]any `json:"host_info,omitempty"`
-	Version     string         `json:"version,omitempty"`
-	RegisteredAt time.Time     `json:"registered_at"`
-	LastPushAt  time.Time      `json:"last_push_at,omitempty"`
-	LastPayload *StatsResponse `json:"-"`
+	Name         string         `json:"name"`
+	TokenHash    string         `json:"token_hash,omitempty"`
+	Shape        string         `json:"shape,omitempty"` // "B" or "C"
+	HostInfo     map[string]any `json:"host_info,omitempty"`
+	Version      string         `json:"version,omitempty"`
+	RegisteredAt time.Time      `json:"registered_at"`
+	LastPushAt   time.Time      `json:"last_push_at,omitempty"`
+	LastPayload  *StatsResponse `json:"-"`
 }
 
 // PeerRegistry holds the registered Shape B / C peers.
