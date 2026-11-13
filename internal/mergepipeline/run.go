@@ -128,6 +128,9 @@ type Runner struct {
 	// Notifier receives the notify built-in's message; nil makes that hook
 	// fail rather than drop the notification.
 	Notifier Notifier
+	// Completer marks the Automaton Completed for the mark_completed
+	// built-in; nil makes that hook fail rather than skip silently.
+	Completer Completer
 	// VersionFiles carry `var Version = "X.Y.Z"`; they come from the
 	// operator's autonomous.merge_pipeline.version_files setting. None means
 	// the release-version step fails rather than guess at a path.
@@ -447,10 +450,11 @@ const postShipStepSource = "post_ship"
 // Built-in post-ship hook names, matching the setting vocabulary in
 // internal/config.
 const (
-	builtinRegistryRow = "registry_row"
-	builtinParityIssue = "parity_issue"
-	builtinTag         = "tag"
-	builtinNotify      = "notify"
+	builtinRegistryRow   = "registry_row"
+	builtinParityIssue   = "parity_issue"
+	builtinTag           = "tag"
+	builtinNotify        = "notify"
+	builtinMarkCompleted = "mark_completed"
 )
 
 // runPostShipHooks runs the configured post-ship hooks when the block is on
@@ -516,6 +520,8 @@ func (s *runState) builtinPostShipHook(ctx context.Context, builtin, version str
 		return RunTag(ctx, s.r.Ship, dir, version)
 	case builtinNotify:
 		return RunNotify(ctx, s.r.Notifier, project, version, cfg)
+	case builtinMarkCompleted:
+		return s.runMarkCompleted(ctx, version)
 	}
 	return "", builtinErr("unknown built-in post-ship hook %q", builtin)
 }

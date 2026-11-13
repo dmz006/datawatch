@@ -731,3 +731,17 @@ func TestMergePipelineReleaseApprovalValidateLoaded(t *testing.T) {
 		t.Errorf("error %q does not name the key", err)
 	}
 }
+
+func TestMarkCompletedBuiltinPassesVocabularyValidation(t *testing.T) {
+	s := PostShipConfig{Hooks: []PostShipHook{{Name: "done", Builtin: PostShipHookBuiltinMarkCompleted, Enabled: true}}}
+	if err := s.Validate(); err != nil {
+		t.Fatalf("mark_completed needs no target and must validate: %v", err)
+	}
+	if PostShipHookBuiltinMarkCompleted != "mark_completed" {
+		t.Errorf("name %q", PostShipHookBuiltinMarkCompleted)
+	}
+	bad := PostShipConfig{Hooks: []PostShipHook{{Name: "x", Builtin: "warp", Enabled: true}}}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "mark_completed") {
+		t.Errorf("the unknown-name error must list mark_completed: %v", err)
+	}
+}

@@ -22329,7 +22329,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.version_scheme', label: 'Version scheme (semver; default semver)', labelKey: 'settings_merge_pipeline_version_scheme', helpKey: 'settings_merge_pipeline_version_scheme_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['semver'], optionLabelKeys: { semver: 'merge_pipeline_scheme_semver' }, default: 'semver', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.version_scheme', this)" },
     // Post-ship hooks — what runs once a merge pipeline succeeds. Off by default;
     // every hook is disabled until you switch it on. The four builtins are
-    // registry_row, parity_issue, tag and notify; the registry, companion
+    // registry_row, parity_issue, tag, notify and mark_completed; the registry, companion
     // repository and templates are the targets of the first three. A hook can
     // instead carry any shell command, which the daemon runs with `bash -c`.
     { label: 'Post-ship hooks', labelKey: 'post_ship_card_title', docsKey: 'post_ship_card_title', type: 'group' },
@@ -25165,7 +25165,8 @@ function saveJSONMapSetting(key, el) {
 // enabled builtin (except tag), the max — and an error toast carries its
 // message back.
 const POST_SHIP_HOOKS_MAX = 20;
-const POST_SHIP_BUILTINS = ['registry_row', 'parity_issue', 'tag', 'notify'];
+const POST_SHIP_BUILTINS = ['registry_row', 'parity_issue', 'tag', 'notify', 'mark_completed'];
+const POST_SHIP_BUILTIN_LABEL_KEYS = { mark_completed: 'post_ship_builtin_mark_completed' };
 
 function _postShipHooksStatus(msg, ok) {
   const el = document.getElementById('post_ship_hooks_status');
@@ -25184,7 +25185,7 @@ function _postShipRowHTML(h, i) {
     + `</select>`;
   const action = isBuiltin
     ? `<select class="form-select" style="font-size:11px;width:auto;" onchange="_postShipSetBuiltin(${i}, this.value)">`
-      + POST_SHIP_BUILTINS.map(b => `<option value="${b}"${h.builtin === b ? ' selected' : ''}>${escHtml(b)}</option>`).join('')
+      + POST_SHIP_BUILTINS.map(b => `<option value="${b}"${h.builtin === b ? ' selected' : ''}>${escHtml(POST_SHIP_BUILTIN_LABEL_KEYS[b] ? t(POST_SHIP_BUILTIN_LABEL_KEYS[b]) : b)}</option>`).join('')
       + `</select>`
     : `<input type="text" class="form-input" style="font-size:11px;flex:1;min-width:120px;" value="${escHtml(h.command)}" placeholder="${escHtml(t('post_ship_hook_command_placeholder'))}" onchange="_postShipSetCommand(${i}, this.value)" />`;
   return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">

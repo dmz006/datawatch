@@ -3922,6 +3922,7 @@
   "post_ship_hook_up": "monter",
   "post_ship_hook_down": "descendre",
   "post_ship_hook_remove": "retirer",
+  "post_ship_builtin_mark_completed": "Marquer l'automate comme terminé (mark_completed)",
   "post_ship_save": "Enregistrer les hooks",
   "post_ship_saved": "Hooks enregistrés",
   "post_ship_save_failed": "L'enregistrement des hooks a échoué",
