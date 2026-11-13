@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.10 — A pasted message with attachments is now submitted
+
+### Fixed
+
+- **A message sent to a session with attachments is now submitted.** A message pasted into a Claude Code session (for example from the web app with attachments) could land in the input box without being submitted, because Enter was pressed before the session had accepted the paste. The daemon now waits up to 1.5 seconds for the pasted text or its `[Pasted text #N]` placeholder to show in the pane, presses Enter once, and, for pasted, multi-line or long input, presses Enter again at most twice while the text is still unsent. The delivery sequence is covered by tests over a fake terminal. No new setting, endpoint or field.
+
+### Documentation
+
+- **Sending a message to a session is documented as wait, Enter, verify.** The Sessions deep-dive how-to gains "How a sent message is submitted", the operations guide gains "Message submission to a session", and the glossary gains a "Message submission" entry. The `schedule_settle_ms` comments, `datawatch session send` and the sessions API page point to it.
+
 ## v9.172.9 — Projects Overview sub-tabs respond and use the Projects look
 
 ### Fixed
