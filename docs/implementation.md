@@ -210,8 +210,20 @@ the lock holder. The watched call keeps waiting and returns normally once the lo
 Internal loops (reaper, limit sync) use plain `Snapshot`.
 
 Reactive usage back-off (`internal/autonomous/backoff.go`): an in-memory per-backend flag
-that holds autonomous dispatch (never interactive starts) after a rate/usage limit.
-Each entry carries `backend`, `until`, `reason` (the free-form text), `source`
+that holds autonomous **worker** dispatch (never interactive starts) after a rate/usage
+limit. The hold has one carve-out: the review roles — guardrail judges, verifiers and
+decompose/planning sessions — are admitted on a held backend through the **review
+reserve** (`internal/autonomous/backoff_reserve.go`, installed on the capacity ledger as
+the role-aware back-pressure gate), bounded by `autonomous.backoff_reserve_for_review`
+(live session slots, default 1; 0 disables the reserve) and optionally
+`autonomous.backoff_reserve_tokens_per_hour` (rolling one-hour token budget, default 0 =
+none). A review request that cannot fit waits with the back-off-classified reason
+`pool llm:<backend> backpressure: back-off, review reserve in use`; new worker requests
+are refused for the whole flag. Each admission and refusal is audited as
+`autonomous_usage_backoff_reserve_admitted` / `autonomous_usage_backoff_reserve_refused`
+(`internal/audit/events.go`). Both keys are read live at decision time and are
+YAML-only configuration (no REST, MCP, CLI, comm or PWA surface). Each flag entry
+carries `backend`, `until`, `reason` (the free-form text), `source`
 (`rate_limit` | `operator` | `burn_guard`) and `reset_known`; a flag set by a ladder
 rung (the burn guard's `hold_claude` hold, via `Backoff.SetWithRung`) additionally
 carries `rung` with the rung's name — omitted in the JSON on plain rate-limit and
@@ -225,7 +237,14 @@ description names `rung` beside `reset_known`. Config: `autonomous.usage_backoff
 path) and `autonomous.backoff_max_wait_minutes`
 (default 60; whole minutes, a value below 1 is treated as 60). Operator surfaces:
 `/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
-`usage_backoff`. See `docs/howto/automata-capacity.md`.
+`usage_backoff`. See `docs/howto/automata-capacity.md` and `docs/howto/usage-backoff.md`.
+
+A related admission fix, in the same area: a task's guardrail judge no longer queues
+behind the task's own worker lease. When a judge starts it inherits that lease (holder
+`judge:<unit>`, `internal/autonomous/judge_capacity.go` `JudgeAdmit.WorkerHolder`): on
+a node with a verifier pool the worker lease is released and the judge takes a
+`node-verify:<node>` slot; otherwise the lease is re-keyed to the judge's holder in
+place. No fresh slot is taken and the task is never counted twice.
 
 Usage calculator settings (`internal/config/usage_calculator.go`): the `usage.calculator`
 block holds `variant` (`pace-gauge` | `lane-planner` | `burn-ledger` | `all`, default `all`),

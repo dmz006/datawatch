@@ -310,6 +310,14 @@ pool set than the worker's, the hand-off is refused and the verifier is
 admitted separately with its own lease; a second slot is never stacked on
 top of the first.
 
+The guardrail judge takes the same hand-off: when a task's judge starts it
+inherits the task's own worker lease (holder `judge:<task>`) instead of
+acquiring a fresh slot, so it can never queue behind the very lease it was
+about to inherit. On a node with a verifier pool the worker lease is simply
+released and the judge takes a `node-verify:<node>` slot; otherwise the
+lease is re-keyed to `judge:<task>` in place — no fresh slot, no window
+in which a sibling can take it, and the task is never counted twice.
+
 ## An idle verifier is the verifier's own incident
 
 When a task moves to verification and the verifier session goes idle — no
@@ -498,19 +506,22 @@ An alert is raised when a task has waited 30 minutes.
 ## Reactive usage backoff
 
 When a backend runs out of usage (a rate limit or a weekly cap), starting
-more autonomous work on it only burns retries. A usage back-off flag holds
-autonomous dispatch to that one backend until the limit lifts. The flag is
-per backend, and it survives a daemon restart (see
+more autonomous worker work on it only burns retries. A usage back-off flag
+holds new **worker** sessions on that one backend until the limit lifts. The
+flag is per backend, and it survives a daemon restart (see
 [Across a daemon restart](#across-a-daemon-restart)); backing off
 `claude-code` never affects `pi` or `ollama`. The implementation lives in
 `internal/autonomous/backoff.go`; the design is in
 `docs/plans/2026-10-14-concurrency-and-budget-design.md`.
 
-The flag only pauses autonomous dispatch. It never blocks an interactive
-session start, so you can still open a session on a backed-off backend by
-hand. While a flag is active, tasks and decompose runs that would use that
+The flag only pauses autonomous worker dispatch. It never blocks an
+interactive session start, so you can still open a session on a backed-off
+backend by hand. While a flag is active, new worker tasks that would use that
 backend wait with a visible wait reason (like any capacity wait) instead of
-failing or burning their retry budget, and they resume when it clears.
+failing or burning their retry budget, and they resume when it clears. The
+review roles — guardrail judges, verifiers and decompose/planning sessions —
+are a separate matter: they may still be admitted on that backend through the
+[review reserve](#the-review-reserve), unless the reserve is full.
 
 ### Automatic set and clear
 
@@ -539,6 +550,33 @@ full window, so a long outage costs one probe per window rather than a
 retry storm. If you know the real reset time, set the flag yourself with
 `until` or an exact number of minutes (below) instead of waiting for the
 maximum to expire.
+
+### The review reserve
+
+A back-off is a worker-side hold, not a total blackout. While the flag is up,
+the review roles — **guardrail judges, verifiers, and decompose/planning
+sessions** — may still be admitted on the held backend through its
+**review reserve**: a bounded number of live session slots, plus optionally a
+rolling one-hour token budget, decided at admission time by
+`internal/autonomous/backoff_reserve.go` (installed on the capacity ledger as
+the role-aware back-pressure gate). Two keys bound it:
+
+- `autonomous.backoff_reserve_for_review` — the reserve's live slots. Default
+  `1`. `0` disables the reserve: every new session on the held backend, review
+  roles included, is refused (the pre-reserve behavior).
+- `autonomous.backoff_reserve_tokens_per_hour` — a rolling one-hour token
+  budget for reserve admissions on that backend. Default `0` (no token
+  budget); enforced only when token usage is reported.
+
+A live verifier or planner session on the backend already holds one of the
+reserve's slots. A review request that cannot get a slot waits with
+`pool llm:<backend> backpressure: back-off, review reserve in use` —
+classified as a back-off wait, so it shows the flag's reset time — and starts
+when the flag clears. Every admission and refusal is audited as
+`autonomous_usage_backoff_reserve_admitted` /
+`autonomous_usage_backoff_reserve_refused` (see [Audit trail](#audit-trail)).
+Both keys are read live at decision time, need no restart, and are YAML-only
+configuration (no REST, MCP, CLI, comm or PWA surface).
 
 ### Manual set, clear and status
 
@@ -582,13 +620,16 @@ Each restored flag is recorded three ways so you can see why work is waiting:
 - an `autonomous_usage_backoff_restored` audit event (see
   [Audit trail](#audit-trail)).
 
-New Automaton work for a restored backend waits in the capacity queue with the
+New worker work for a restored backend waits in the capacity queue with the
 usual `backoff: ...` wait reason and starts by itself when the flag clears.
 A boot-resume decision for an Automaton on that backend carries a sentence
-saying so. Sessions already running on the backend are adopted as always;
-restoring a flag never ends, restarts or signals one. Because the flag lives
-in the registry, clearing it by hand (any surface above) also removes it from
-the file, so a cleared flag does not come back on the next restart.
+saying so. Review roles keep their [review reserve](#the-review-reserve)
+path while the restored flag is up; the reserve's own state (the rolling
+token stamps) is in memory and does not survive the restart. Sessions
+already running on the backend are adopted as always; restoring a flag never
+ends, restarts or signals one. Because the flag lives in the registry,
+clearing it by hand (any surface above) also removes it from the file, so a
+cleared flag does not come back on the next restart.
 
 ### Pattern staleness and manual recheck
 
@@ -905,6 +946,8 @@ of the wait is known, the time it ends.
 | Node busy | `waiting for node gpu-1: 1/1 engines in use, held by t-3f9a1c` | Every engine on the compute node is in use. |
 | Back-off, reset time known | `backend claude-code backed off until 14:30 UTC (resets in 42m)` | The backend ran out of usage and told datawatch when it lifts. |
 | Back-off, reset time unknown | `backend claude-code backed off until 15:12 UTC (reset time unknown; next attempt allowed then, in 1h)` | The backend gave no reset time, so datawatch holds it for the maximum back-off and then lets one attempt through. |
+| Back-off, review reserve in use | `pool llm:claude-code backpressure: back-off, review reserve in use` | The backend is backed off and a review role (judge, verifier or planning session) asked for its review reserve: the live slot is held by another review session, the one-hour token budget is spent, or `autonomous.backoff_reserve_for_review` is `0`. New worker sessions on that backend wait on the back-off itself. |
+| Last slot held for queued worker(s) | `pool llm:claude-code: last slot held for queued worker(s) t-3f9a1c` | A pool's last free slot is reserved for a worker queued on the same pool, so a verifier asking for that pool must let the worker go first. The verifier is admitted when the worker drains, or via its own `node-verify:<node>` pool or the review reserve. |
 | Budget window full | `budget window full: claude-code spent $50.12 of $50.00 ceiling; window rolls over at 2026-10-26T09:00:00-04:00 (in 86h20m)` | The LLM's dollar window is full. With a peer's spend counted, the text splits it: `spent $52.40 (local $50.12, peers $2.28) of $50.00 ceiling`. If the window frees up only as spend ages out, it ends `window rolls over at when peer spend ages out`. |
 | Global cooldown | `global cooldown until 14:30 UTC (in 12m)` | The daemon-wide rate-limit cooldown is active. When its end is not known the text is `global cooldown active`. |
 | Awaiting external | `await_external: CI run on the branch` | The worker parked itself on an outside condition (see "Park on an external condition"). A bare `await_external` means it gave no condition. A long condition is cut at 400 characters. |
@@ -1109,6 +1152,7 @@ the cause changes.
 | `autonomous_usage_backoff_cleared` | `operator` (or the caller's own actor) | the backend, or `all` | `backend` |
 | `autonomous_usage_backoff_auto_cleared` | `autonomous` | the backend | `backend`, `until` (RFC 3339) |
 | `autonomous_usage_backoff_restored` | `autonomous` | the backend | `backend`, `until` (RFC 3339), `source` (`rate_limit` or `operator`); written at daemon start for each flag read back from disk |
+| `autonomous_usage_backoff_reserve_admitted` / `autonomous_usage_backoff_reserve_refused` | `autonomous` | the backend | one entry per review-reserve verdict (admission or refusal); `backend`, `role` (`verifier` or `planner`), `slots`, `used_slots`, `tokens_used`, `token_cap`, `at` (RFC 3339) |
 | `autonomous_budget_ceiling_wait` | `autonomous` | the LLM | `llm`, `spend_usd`, `ceiling_usd`, `rolls_over_at` (RFC 3339, only when known) |
 | `autonomous_budget_window_resumed` | `autonomous` | the LLM | `llm`, `spend_usd`, `ceiling_usd` |
 | `autonomous_budget_window_rollover` | `autonomous` | the LLM | `previous_spend_usd`, `ceiling_usd`, `new_window_start` (RFC 3339) |

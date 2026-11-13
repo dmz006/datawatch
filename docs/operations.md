@@ -6476,7 +6476,14 @@ boot-resume pass, so a restart does not release work into a limit that is still
 in force. Expired flags are dropped; a corrupt file is logged and ignored. Each
 restored flag writes a boot-resume entry (`backoff_restored`), a warning alert
 (**Back-off restored after restart**) and an `autonomous_usage_backoff_restored`
-audit event. Restoring never ends or signals a session. Deleting the file while
+audit event. Restoring never ends or signals a session. The review reserve is
+separate: while a restored flag is up, the review roles (guardrail judges,
+verifiers, planning) still get their bounded admission path on that backend,
+built from the YAML-only keys `autonomous.backoff_reserve_for_review` (default
+`1`; `0` disables it) and `autonomous.backoff_reserve_tokens_per_hour`
+(default `0` = no one-hour token budget). The reserve's own state — the rolling
+token stamps and its in-flight verdicts — is in memory only and does not
+survive a restart. Deleting the file while
 the daemon is stopped forgets all flags; clear a single flag with
 `datawatch usage-backoff clear <backend>` instead.
 
@@ -6491,10 +6498,12 @@ flush) still restores the last flag written by a set or clear, and decide
 whether a flag restored with an unknown reset time should keep its original
 window or restart the maximum wait.
 
-**Reading the history.** Nine actions record the capacity and budget
+**Reading the history.** Eleven actions record the capacity and budget
 machinery: `autonomous_capacity_wait`, `autonomous_capacity_admitted`,
 `autonomous_usage_backoff_set`, `autonomous_usage_backoff_cleared`,
 `autonomous_usage_backoff_auto_cleared`, `autonomous_usage_backoff_restored`,
+`autonomous_usage_backoff_reserve_admitted`,
+`autonomous_usage_backoff_reserve_refused`,
 `autonomous_budget_ceiling_wait`,
 `autonomous_budget_window_resumed` and `autonomous_budget_window_rollover`.
 Each is written once per change, not once per poll. All four surfaces take
