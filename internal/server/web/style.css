@@ -7589,6 +7589,39 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 
 
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
+/* ── Projects cards: shared Cards / Tiles / Compact renderer (app.js) ─────
+   The three-mode switch reuses the Sessions .sessions-mode-toggle /
+   .sessions-mode-btn rules; only the card bodies are new. */
+.project-cards { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.project-cards-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.project-cards-compact { gap: 0; }
+.project-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel, #111114); }
+.project-card-title { font-size: 14px; font-weight: 600; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-title:hover { color: var(--accent2); text-decoration: underline; }
+.project-card-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.project-card-badge { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; line-height: 1.5; background: var(--border); color: var(--text2); white-space: nowrap; }
+.project-card-badge-info { background: rgba(59,130,246,.15); color: #2563eb; }
+.project-card-badge-ok { background: rgba(34,197,94,.15); color: #16a34a; }
+.project-card-badge-warn { background: rgba(245,158,11,.18); color: #b45309; }
+.project-card-badge-error { background: rgba(239,68,68,.15); color: #dc2626; }
+.project-card-badge-neutral { background: var(--border); color: var(--text2); }
+.project-card-badge-cancelled { background: rgba(148,163,184,.25); color: var(--text2); text-decoration: line-through; }
+.project-card-age { margin-left: auto; color: var(--text2); font-size: 11px; white-space: nowrap; }
+.project-card-details { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+.project-card-detail { font-size: 12px; color: var(--text2); word-break: break-all; min-width: 0; }
+.project-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.project-card-action { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.project-card-action:hover { border-color: var(--accent2); color: var(--accent2); }
+.project-card-card .project-card-card-actions { margin-top: 8px; }
+.project-card-tile .project-card-tile-line { display: flex; align-items: baseline; gap: 6px; }
+.project-card-tile .project-card-tile-age { margin-top: 4px; }
+.project-card-tile .project-card-tile-details { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.project-card-tile .project-card-detail-inline { font-size: 11px; color: var(--text2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-tile .project-card-detail-more { font-size: 11px; color: var(--text2); }
+.project-card-tile .project-card-tile-actions { margin-top: 6px; }
+.project-card-tile .project-card-action { padding: 1px 7px; font-size: 11px; }
+.project-cards-compact .project-card { display: flex; align-items: center; gap: 8px; border-left: none; border-right: none; border-radius: 0; padding: 4px 10px; }
+.project-cards-compact .project-card-title { flex: 1 1 auto; min-width: 0; font-size: 13px; }
 .obs-row-nowrap { flex-wrap: nowrap; }
 .obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }
 .obs-fluid { min-width: 0; max-width: 100%; box-sizing: border-box; }
@@ -8074,3 +8107,4 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .prd-task-routing-col { display: none; }
   .prd-task-routing-line { display: block; }
 }
+

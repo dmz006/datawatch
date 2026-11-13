@@ -21,7 +21,7 @@ const TRANSLATED = LANGS.filter(l => l !== 'en');
 const SAME_IN_LANGUAGE = {
   de: ['projects_subtab_gantt', 'projects_page_repository', 'projects_page_arcs', 'projects_manage_col_name', 'projects_manage_field_name'],
   es: ['projects_subtab_gantt'],
-  fr: ['projects_subtab_gantt', 'projects_subtab_arcs', 'projects_field_description', 'projects_page_arcs', 'projects_page_points', 'projects_manage_col_description', 'projects_manage_field_description'],
+  fr: ['projects_subtab_gantt', 'projects_subtab_arcs', 'projects_field_description', 'projects_page_arcs', 'projects_page_points', 'projects_manage_col_description', 'projects_manage_field_description', 'projects_view_compact'],
   ja: [],
 };
 

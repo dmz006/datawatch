@@ -3204,8 +3204,10 @@ function _projectsPaint() {
   const selected = known ? sel : _PROJECTS_OVERVIEW;
   if (selected === _PROJECTS_OVERVIEW) {
     // Overview is the cross-project in-flight view; it draws the whole
-    // #view, so the picker goes back on top of it afterwards.
-    view.innerHTML = '<div id="projectsOverviewBody">' + _automationBodyHTML() + '</div>';
+    // #view, so the picker goes back on top of it afterwards. The card
+    // renderer (shared Cards / Tiles / Compact sub-tab) sits between the
+    // picker and the automation board.
+    view.innerHTML = '<div id="projectsOverviewBody">' + _projectsCardSectionHTML(list || []) + _automationBodyHTML() + '</div>';
     _automationMount();
     view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
   } else {
@@ -3216,6 +3218,352 @@ function _projectsPaint() {
   }
   _tabStripsRevealAll();
 }
+
+// ── Projects cards: shared Cards / Tiles / Compact renderer ───────────────────
+// One shared card renderer for the Projects view, modelled on the Sessions
+// view modes: the three modes (cards, tiles, compact) draw the same items,
+// the choice is remembered on this device in one localStorage key (every
+// read/write in try/catch), and phone widths default to the compact mode.
+// The toggle reuses the Sessions .sessions-mode-toggle / .sessions-mode-btn
+// CSS; only the card bodies below get new rules in style.css.
+//
+// An item is a plain object: {id, title, badge, badgeKind, status, age,
+// details[], actions[], link}. badge/badgeKind win over status; shipped and
+// merged work never get a cancelled badge. actions[].onclick is
+// caller-escaped (the renderWorkTile convention); every other free value is
+// escHtml-escaped by the renderer.
+const PROJECTS_CARD_MODES = ['cards', 'tiles', 'compact'];
+const PROJECTS_CARD_MODE_KEY = 'cs_projects_view_mode';
+const PROJECTS_CARD_PHONE_WIDTH = 600;   // matches the window.innerWidth < 600 convention elsewhere
+const PROJECTS_CARD_TEXT_MAX = 100;      // long titles/details are cut here, full value kept in title="..."
+const PROJECTS_BADGE_KINDS = ['ok', 'info', 'neutral', 'warn', 'error', 'cancelled'];
+
+// status → badge for records that report a status instead of an explicit badge.
+const PROJECTS_STATUS_BADGES = {
+  shipped: { key: 'projects_badge_shipped', kind: 'ok' },
+  merged: { key: 'projects_badge_merged', kind: 'ok' },
+  active: { key: 'projects_badge_active', kind: 'info' },
+  planned: { key: 'projects_badge_planned', kind: 'neutral' },
+  failed: { key: 'projects_badge_failed', kind: 'error' },
+  cancelled: { key: 'projects_badge_cancelled', kind: 'cancelled' },
+};
+
+function _projectsCardModeNormalize(mode) {
+  return PROJECTS_CARD_MODES.indexOf(mode) >= 0 ? mode : null;
+}
+
+// _projectsCardModeDefault picks the first-visit mode from the viewport:
+// phones open compact, wider screens open the full cards. An unknown width
+// (no window metrics) keeps the full cards rather than the phone layout.
+function _projectsCardModeDefault(width) {
+  const w = Number(width);
+  if (!Number.isFinite(w) || w <= 0) return 'cards';
+  return w < PROJECTS_CARD_PHONE_WIDTH ? 'compact' : 'cards';
+}
+
+function _projectsCardModeRead(lse) {
+  let v = null;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.getItem === 'function') v = ls.getItem(PROJECTS_CARD_MODE_KEY);
+  } catch (_) { v = null; }
+  return (typeof v === 'string' && v) ? v : null;
+}
+
+function _projectsCardModeStore(mode, lse) {
+  const m = _projectsCardModeNormalize(mode);
+  if (!m) return;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(PROJECTS_CARD_MODE_KEY, m);
+  } catch (_) { /* storage blocked: the choice lives in memory for this page */ }
+}
+
+function _projectsCardMode() {
+  if (PROJECTS_CARD_MODES.indexOf(state.projectsCardMode) >= 0) return state.projectsCardMode;
+  const stored = _projectsCardModeNormalize(_projectsCardModeRead());
+  if (stored) { state.projectsCardMode = stored; return stored; }
+  state.projectsCardMode = _projectsCardModeDefault(_tileViewportWidth());
+  return state.projectsCardMode;
+}
+
+// _projectsCardSetMode remembers the choice (try/catch) and repaints the
+// Projects page only while it is the active tab, like the Sessions switch.
+function _projectsCardSetMode(mode) {
+  const m = _projectsCardModeNormalize(mode);
+  if (!m) return false;
+  state.projectsCardMode = m;
+  _projectsCardModeStore(m);
+  if (_projectsActive()) _projectsPaint();
+  return true;
+}
+
+// _projectsCardShipped: shipped or merged, by status or by an explicit flag.
+function _projectsCardShipped(item) {
+  const it = (item && typeof item === 'object') ? item : {};
+  const st = String(it.status === undefined || it.status === null ? '' : it.status).trim().toLowerCase();
+  return st === 'shipped' || st === 'merged' || it.shipped === true || it.merged === true;
+}
+
+// _projectsCardBadgeInfo resolves the one badge for an item. An explicit
+// badge (badge/badgeKind) wins; status fills the gap. Shipped or merged
+// work never gets the cancelled badge: the rule drops it entirely rather
+// than restyling it.
+function _projectsCardBadgeInfo(item) {
+  const it = (item && typeof item === 'object') ? item : {};
+  let key = null, kind = '';
+  if (it.badge !== undefined && it.badge !== null && String(it.badge) !== '') {
+    key = String(it.badge);
+    if (it.badgeKind !== undefined && it.badgeKind !== null && String(it.badgeKind) !== '') kind = String(it.badgeKind);
+  } else if (it.status !== undefined && it.status !== null && String(it.status) !== '') {
+    const def = PROJECTS_STATUS_BADGES[String(it.status).trim().toLowerCase()];
+    if (def) { key = def.key; kind = def.kind; }
+  }
+  if (!key) return null;
+  if (PROJECTS_BADGE_KINDS.indexOf(kind) < 0) kind = 'neutral';
+  if (_projectsCardShipped(it) && kind === 'cancelled') return null;
+  return { key, kind };
+}
+
+function _projectsCardBadgeHTML(info) {
+  if (!info) return '';
+  return `<span class="project-card-badge project-card-badge-${info.kind}">${escHtml(_stx(info.key, info.key))}</span>`;
+}
+
+// _projectsCardText cuts long values with an ellipsis; the full value stays
+// available for the title attribute.
+function _projectsCardText(value) {
+  const s = String(value === undefined || value === null ? '' : value).trim();
+  if (!s || s.length <= PROJECTS_CARD_TEXT_MAX) return { text: s, full: s, truncated: false };
+  return { text: s.slice(0, PROJECTS_CARD_TEXT_MAX - 1).replace(/[\s,.;:]+$/, '') + '…', full: s, truncated: true };
+}
+
+// _projectsCardAgeInfo splits a moment (number ms or seconds, or a
+// parseable date string) into its relative parts. Falsy or unparseable ages
+// read as none, and a future one reads as "just now".
+function _projectsCardAgeInfo(age, nowMs) {
+  const n = Number(nowMs) || Date.now();
+  let at = NaN;
+  if (age !== undefined && age !== null && age !== '') {
+    if (typeof age === 'number' || /^-?\d+(\.\d+)?$/.test(String(age).trim())) {
+      const v = Number(age);
+      at = v >= 1e12 ? v : v * 1000;
+    } else {
+      at = Date.parse(age);
+    }
+  }
+  if (!Number.isFinite(at)) return null;
+  const secs = Math.round((n - at) / 1000);
+  if (secs < 60) return { unit: 'now' };
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return { unit: 'minutes', count: mins };
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return { unit: 'hours', count: hours };
+  return { unit: 'days', count: Math.round(hours / 24) };
+}
+
+function _projectsCardAgeText(age, nowMs) {
+  const a = _projectsCardAgeInfo(age, nowMs);
+  if (!a) return '';
+  if (a.unit === 'now') return _stx('projects_age_now', 'just now');
+  const def = {
+    minutes: ['projects_age_minutes', 'm ago'],
+    hours: ['projects_age_hours', 'h ago'],
+    days: ['projects_age_days', 'd ago'],
+  }[a.unit] || ['projects_age_minutes', 'm ago'];
+  const s = t(def[0], [a.count]);
+  if (s === def[0]) return a.count + def[1]; // no bundle loaded: fall back to the English label
+  return s;
+}
+
+// _projectsCardDetailInfo normalizes one detail: a string, or {label, value}
+// (a {text} alias is accepted). Blank details are dropped.
+function _projectsCardDetailInfo(d) {
+  if (d === undefined || d === null) return null;
+  if (typeof d === 'string') {
+    const text = d.trim();
+    return text ? { label: '', value: text } : null;
+  }
+  if (typeof d === 'object') {
+    const label = String(d.label === undefined || d.label === null ? '' : d.label).trim();
+    const raw = (d.value === undefined || d.value === null) ? d.text : d.value;
+    const value = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (!label && !value) return null;
+    return { label, value };
+  }
+  const s = String(d);
+  return s ? { label: '', value: s } : null;
+}
+
+// _projectsCardActionInfo: {label, onclick, kind?}. onclick stays
+// caller-escaped (inline handlers are compiled after the HTML-decode, so the
+// caller owns that string — the same convention as renderWorkTile's onOpen).
+function _projectsCardActionInfo(a) {
+  if (!a || typeof a !== 'object') return null;
+  const label = String(a.label === undefined || a.label === null ? '' : a.label).trim();
+  if (!label) return null;
+  const onclick = String(a.onclick === undefined || a.onclick === null ? '' : a.onclick);
+  const kind = String(a.kind === undefined || a.kind === null ? '' : a.kind).trim();
+  return { label, onclick, kind };
+}
+
+// _projectsCardLink: a safe link for the title. Scheme URLs (http/https),
+// site-relative paths and in-page anchors qualify; anything else (incl.
+// javascript: and bare words) is not rendered as a link.
+function _projectsCardLink(link) {
+  const s = String(link === undefined || link === null ? '' : link).trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.charAt(0) === '/' || s.charAt(0) === '#') return s;
+  return '';
+}
+
+// renderProjectCard draws one item in one mode:
+//   cards    — title row with badge and age, the detail list, an actions row;
+//   tiles    — a dense grid tile: title + badge, the first two details inline
+//              (the rest behind a +N chip), age, actions;
+//   compact  — one line: badge, truncated title, age.
+// All three modes draw the same item; only the layout weight changes.
+function renderProjectCard(item, mode) {
+  const it = (item && typeof item === 'object') ? item : {};
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const id = String(it.id === undefined || it.id === null ? '' : it.id).trim();
+  const idAttr = id ? ` data-project-id="${escHtml(id)}"` : '';
+  const title = _projectsCardText(it.title);
+  const badge = _projectsCardBadgeHTML(_projectsCardBadgeInfo(it));
+  const age = _projectsCardAgeText(it.age, it.nowMs);
+  const ageHTML = age ? `<span class="project-card-age">${escHtml(age)}</span>` : '';
+  const url = _projectsCardLink(it.link);
+  const titleHTML = title.text
+    ? (url
+      ? `<a class="project-card-title" href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escHtml(title.full)}">${escHtml(title.text)}</a>`
+      : `<span class="project-card-title" title="${escHtml(title.full)}">${escHtml(title.text)}</span>`)
+    : '';
+  // Detail rows, shared by all three modes (full kept for the title attr).
+  const src = Array.isArray(it.details) ? it.details : [];
+  const rows = [];
+  for (const d of src) {
+    const info = _projectsCardDetailInfo(d);
+    if (!info) continue;
+    const shown = _projectsCardText(info.value);
+    const prefix = info.label ? escHtml(info.label) + ': ' : '';
+    rows.push({ full: (info.label ? info.label + ': ' : '') + info.value, text: prefix + escHtml(shown.text) });
+  }
+  // Actions, shared by all three modes (rendering differs slightly).
+  const actions = Array.isArray(it.actions) ? it.actions : [];
+  const buttons = [];
+  for (const a of actions) {
+    const info = _projectsCardActionInfo(a);
+    if (!info) continue;
+    buttons.push(`<button type="button" class="project-card-action${info.kind ? ' project-card-action-' + info.kind : ''}" onclick="${info.onclick}">${escHtml(info.label)}</button>`);
+  }
+  const actionsHTML = buttons.join('');
+  if (m === 'tiles') {
+    const shown = rows.slice(0, 2).map(r => `<span class="project-card-detail-inline" title="${escHtml(r.full)}">${r.text}</span>`).join('');
+    const more = rows.length > 2 ? `<span class="project-card-detail-more">+${rows.length - 2}</span>` : '';
+    return `<div class="project-card project-card-tile"${idAttr}>` +
+      `<div class="project-card-tile-line">${titleHTML}${badge}</div>` +
+      (ageHTML ? `<div class="project-card-tile-age">${ageHTML}</div>` : '') +
+      (shown || more ? `<div class="project-card-tile-details">${shown}${more}</div>` : '') +
+      (actionsHTML ? `<div class="project-card-tile-actions">${actionsHTML}</div>` : '') +
+    `</div>`;
+  }
+  if (m === 'compact') {
+    return `<div class="project-card project-card-compact"${idAttr}>` + badge + titleHTML + ageHTML + `</div>`;
+  }
+  // Cards (the full layout).
+  const detailsHTML = rows.length ? `<ul class="project-card-details">` + rows.map(r => `<li class="project-card-detail" title="${escHtml(r.full)}">${r.text}</li>`).join('') + `</ul>` : '';
+  return `<article class="project-card project-card-card"${idAttr}>` +
+    `<header class="project-card-head">${titleHTML}${badge}${ageHTML}</header>` +
+    detailsHTML +
+    (actionsHTML ? `<footer class="project-card-card-actions">${actionsHTML}</footer>` : '') +
+  `</article>`;
+}
+
+// renderProjectCards lays out a list in one mode; the container carries the
+// mode so the CSS (and a live switch) can style each grid differently.
+function renderProjectCards(items, mode) {
+  const list = Array.isArray(items) ? items : [];
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const body = list.map(it => renderProjectCard(it, m)).join('');
+  return `<div class="project-cards project-cards-${m}" data-project-mode="${m}">${body}</div>`;
+}
+
+// renderProjectsCardToggle: the three-mode switch. It reuses the Sessions
+// toggle CSS classes (.sessions-mode-toggle / .sessions-mode-btn); only the
+// project-scoped aria/label text is new.
+function renderProjectsCardToggle(mode) {
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const defs = [
+    { key: 'cards', label: _stx('projects_view_cards', 'Cards'), icon: '▭' },
+    { key: 'tiles', label: _stx('projects_view_tiles', 'Tiles'), icon: '▦' },
+    { key: 'compact', label: _stx('projects_view_compact', 'Compact'), icon: '▤' },
+  ];
+  const btns = defs.map(d =>
+    `<button type="button" class="sessions-mode-btn${m === d.key ? ' active' : ''}" data-icon="${d.icon}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="projectsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
+  ).join('');
+  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('projects_view_toggle', 'Projects view mode'))}">${btns}</div>`;
+}
+
+// _projectCardItemsFromList maps the picker's project records to card items:
+// the name is the title, dir / backend / description are read-only details.
+function _projectCardItemsFromList(list) {
+  const rows = Array.isArray(list) ? list : [];
+  const out = [];
+  for (const p of rows) {
+    if (!p || !p.name) continue;
+    const details = [];
+    const dir = String(p.dir || '').trim();
+    if (dir) details.push({ label: t('projects_manage_field_dir'), value: dir });
+    const backend = String(p.default_backend || '').trim();
+    if (backend) details.push({ label: t('projects_manage_field_backend'), value: backend });
+    const desc = String(p.description || '').trim();
+    if (desc) details.push(desc);
+    out.push({ id: p.name, title: p.name, details });
+  }
+  return out;
+}
+
+// _projectsCardSectionHTML: the cards sub-tab block for the Projects Overview
+// (mode toggle + cards). An empty list draws nothing, so a first visit is
+// unchanged apart from the new switch.
+function _projectsCardSectionHTML(list) {
+  const items = _projectCardItemsFromList(list);
+  if (!items.length) return '';
+  const m = _projectsCardMode();
+  return `<div id="projectsCards" data-projects-cards="block" style="margin:4px 0 14px;">` +
+    renderProjectsCardToggle(m) +
+    renderProjectCards(items, m) +
+  `</div>`;
+}
+
+window.PROJECTS_CARD_MODES = PROJECTS_CARD_MODES;
+window.PROJECTS_CARD_MODE_KEY = PROJECTS_CARD_MODE_KEY;
+window.PROJECTS_CARD_PHONE_WIDTH = PROJECTS_CARD_PHONE_WIDTH;
+window.PROJECTS_CARD_TEXT_MAX = PROJECTS_CARD_TEXT_MAX;
+window.PROJECTS_BADGE_KINDS = PROJECTS_BADGE_KINDS;
+window.PROJECTS_STATUS_BADGES = PROJECTS_STATUS_BADGES;
+window._projectsCardModeNormalize = _projectsCardModeNormalize;
+window._projectsCardModeDefault = _projectsCardModeDefault;
+window._projectsCardModeRead = _projectsCardModeRead;
+window._projectsCardModeStore = _projectsCardModeStore;
+window._projectsCardMode = _projectsCardMode;
+window._projectsCardSetMode = _projectsCardSetMode;
+window.projectsSetViewMode = _projectsCardSetMode;
+window._projectsCardShipped = _projectsCardShipped;
+window._projectsCardBadgeInfo = _projectsCardBadgeInfo;
+window._projectsCardBadgeHTML = _projectsCardBadgeHTML;
+window._projectsCardText = _projectsCardText;
+window._projectsCardAgeInfo = _projectsCardAgeInfo;
+window._projectsCardAgeText = _projectsCardAgeText;
+window._projectsCardDetailInfo = _projectsCardDetailInfo;
+window._projectsCardActionInfo = _projectsCardActionInfo;
+window._projectsCardLink = _projectsCardLink;
+window.renderProjectCard = renderProjectCard;
+window.renderProjectCards = renderProjectCards;
+window.renderProjectsCardToggle = renderProjectsCardToggle;
+window._projectCardItemsFromList = _projectCardItemsFromList;
+window._projectsCardSectionHTML = _projectsCardSectionHTML;
 
 function _projectsPickerHTML(list, selected, err) {
   const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
