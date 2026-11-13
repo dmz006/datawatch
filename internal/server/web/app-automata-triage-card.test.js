@@ -4,6 +4,10 @@
 //     the record's status, the reason, the Automaton kind chip, the owner
 //     chip when automation_name is set, and the action buttons. Retry needs
 //     a task_id, Resolve review needs merge_pending, Cancel is always there.
+//     A blocked card additionally shows its full (unclamped) reason, a small
+//     source label for a recognized reason_source, and one concrete "how to
+//     unblock" line; the card's action buttons each carry a short line
+//     saying what they do.
 //   - window.triageListHtml(body) draws a card per record, or the empty
 //     placeholder when the body has no records.
 //   - every value is escaped and the output never shows 'undefined' or 'NaN'.
@@ -90,6 +94,132 @@ test('card: blocked record shows the blocked headline and blocked_reason', () =>
   assert.ok(html.includes('Blocked: Needs the signing key'), 'blocked headline');
   assert.ok(html.includes('Needs the signing key'), 'blocked_reason shown as reason');
   assert.ok(!html.includes('Stopped: the task'), 'not the failed headline');
+});
+
+// ── blocked card guidance ───────────────────────────────────────────
+
+test('card: a blocked reason is shown in full, without the two-line clamp', () => {
+  const sandbox = loadApp();
+  const reason = 'First line of the block reason.\nSecond line of the block reason.\nThird line of the block reason.\nFourth line of the block reason.';
+  const html = sandbox.triageCardHtml(blockedRecord({ blocked_reason: reason }));
+  for (const line of reason.split('\n')) assert.ok(html.includes(line), 'full line shown: ' + line);
+  assert.ok(!html.includes('-webkit-line-clamp'), 'no clamp on the blocked card');
+});
+
+test('card: a failed reason keeps the two-line clamp', () => {
+  const sandbox = loadApp();
+  const html = sandbox.triageCardHtml(failedRecord());
+  assert.ok(html.includes('-webkit-line-clamp:2'), 'failed card clamped');
+});
+
+test('card: a blocked record shows the source label for every recognized source', () => {
+  const sandbox = loadApp();
+  const sources = {
+    blocked_reason: EN.triage_reason_source_blocked_reason,
+    verdict: EN.triage_reason_source_verdict,
+    task_error: EN.triage_reason_source_task_error,
+    task_review: EN.triage_reason_source_task_review,
+  };
+  for (const [source, label] of Object.entries(sources)) {
+    const html = sandbox.triageCardHtml(blockedRecord({ reason_source: source }));
+    assert.ok(html.includes('class="triage-reason-source"'), 'source label line: ' + source);
+    assert.ok(html.includes(label), 'source label text: ' + source);
+  }
+});
+
+test('card: a blocked record without a recognized source shows no source label', () => {
+  const sandbox = loadApp();
+  const html = sandbox.triageCardHtml(blockedRecord({ reason_source: 'mystery' }));
+  assert.ok(!html.includes('triage-reason-source'), 'no source label line');
+  const none = sandbox.triageCardHtml(blockedRecord({}));
+  assert.ok(!none.includes('triage-reason-source'), 'no label without a reason_source');
+});
+
+test('card: a blocked record shows the unblock hint for its reason source', () => {
+  const sandbox = loadApp();
+  const hints = {
+    blocked_reason: EN.triage_unblock_blocked_reason,
+    verdict: EN.triage_unblock_verdict,
+    task_error: EN.triage_unblock_error,
+    task_review: EN.triage_unblock_review,
+  };
+  for (const [source, hint] of Object.entries(hints)) {
+    const html = sandbox.triageCardHtml(blockedRecord({ reason_source: source }));
+    assert.ok(html.includes('class="triage-unblock"'), 'unblock line: ' + source);
+    assert.ok(html.includes(hint), 'unblock text: ' + source);
+  }
+});
+
+test('card: a failed record shows the error unblock hint but no source label', () => {
+  const sandbox = loadApp();
+  const html = sandbox.triageCardHtml(failedRecord());
+  assert.ok(html.includes('class="triage-unblock"'), 'unblock line present');
+  assert.ok(html.includes(EN.triage_unblock_error), 'error hint');
+  assert.ok(!html.includes('triage-reason-source'), 'no source label on failed');
+});
+
+test('card: a record with no reason text shows the no-reason line and no hint', () => {
+  const sandbox = loadApp();
+  const html = sandbox.triageCardHtml(blockedRecord({ blocked_reason: '', reason_source: 'task_review' }));
+  assert.ok(html.includes(EN.triage_reason_none), 'honest no-reason line');
+  assert.ok(html.includes('check the task output'), 'next step named even without a reason');
+  assert.ok(!html.includes('class="triage-unblock"'), 'no hint without a reason');
+});
+
+test('card: merge-pending and empty records carry no blocked guidance', () => {
+  const sandbox = loadApp();
+  const merge = sandbox.triageCardHtml({ prd_id: 'p', status: 'merge_pending', branch: 'x', reason_source: 'verdict', session_end_reason: 's' });
+  assert.ok(!merge.includes('triage-reason-source'), 'no label on merge_pending');
+  assert.ok(!merge.includes('class="triage-unblock"'), 'no hint on merge_pending');
+  const empty = sandbox.triageCardHtml({});
+  assert.ok(!empty.includes('triage-reason-source'), 'no label on an empty record');
+  assert.ok(!empty.includes('class="triage-unblock"'), 'no hint on an empty record');
+});
+
+test('card: the guidance lines sit between the reason and the waiting time', () => {
+  const sandbox = loadApp();
+  const html = sandbox.triageCardHtml(blockedRecord({ reason_source: 'verdict', first_seen_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString() }));
+  const at = (cls) => html.indexOf(cls);
+  const order = [at('triage-reason"'), at('triage-reason-source'), at('triage-unblock'), at('triage-wait')];
+  for (const i of order) assert.ok(i >= 0, 'part missing: ' + html);
+  for (let i = 1; i < order.length; i++) assert.ok(order[i - 1] < order[i], 'part out of order');
+});
+
+// ── button explanations ─────────────────────────────────────────────
+
+test('card: the action buttons each carry a short explanation', () => {
+  const sandbox = loadApp();
+  const html = sandbox.triageCardHtml(blockedRecord({
+    task_id: 'task-9', reason_source: 'task_review', notes: [{ source: 'review', text: 'held' }],
+  }));
+  assert.ok(html.includes(EN.triage_btn_desc_retry), 'Retry explanation');
+  assert.ok(html.includes(EN.triage_btn_desc_resolve_review), 'Resolve review explanation');
+  assert.ok(html.includes(EN.triage_btn_desc_cancel), 'Cancel explanation');
+  assert.ok(html.includes('class="triage-btn-desc"'), 'desc span present');
+});
+
+test('card: every explanation appears exactly under its button', () => {
+  const sandbox = loadApp();
+  const html = sandbox.triageCardHtml(blockedRecord({
+    task_id: 'task-9', reason_source: 'task_review', notes: [{ source: 'review', text: 'held' }],
+  }));
+  const retryBtn = html.split('data-action="retry"')[1].split('</button>')[0];
+  assert.ok(retryBtn.includes(EN.triage_btn_desc_retry), 'desc inside the retry button');
+  const resolveBtn = html.split('data-action="resolve-review"')[1].split('</button>')[0];
+  assert.ok(resolveBtn.includes(EN.triage_btn_desc_resolve_review), 'desc inside the resolve button');
+  const cancelBtn = html.split('data-action="cancel"')[1].split('</button>')[0];
+  assert.ok(cancelBtn.includes(EN.triage_btn_desc_cancel), 'desc inside the cancel button');
+  const openBtn = html.split('data-action="open-detail"')[1].split('</button>')[0];
+  assert.ok(!openBtn.includes('triage-btn-desc'), 'Open details stays bare');
+});
+
+test('card: a hostile reason_source value is never rendered as markup', () => {
+  const sandbox = loadApp();
+  const payload = '<img src=x onerror="alert(1)" class="triage-unblock">';
+  const html = sandbox.triageCardHtml(blockedRecord({ reason_source: payload }));
+  assert.ok(!html.includes('<img'), 'no live tag');
+  assert.ok(!/class="triage-unblock"/.test(html), 'hostile source names no unblock line');
+  assert.ok(!html.includes('triage-reason-source'), 'hostile source names no label');
 });
 
 test('card: empty record renders the triage_reason_none text', () => {

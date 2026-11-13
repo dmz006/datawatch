@@ -128,7 +128,7 @@ test('panel: sections with no data are left out', () => {
   assert.ok(!html.includes('undefined') && !html.includes('NaN'), html);
 });
 
-test('panel: the four action buttons, same as the card', () => {
+test('panel: the four action buttons, same as the card but without explanation lines', () => {
   const sandbox = loadApp();
   const html = detailHtml(sandbox, failedRecord({ status: 'merge_pending', branch: 'feat/x' }));
   for (const action of ['open-detail', 'retry', 'resolve-review', 'cancel']) {
@@ -136,6 +136,24 @@ test('panel: the four action buttons, same as the card', () => {
   }
   assert.ok(html.includes('data-prd-id="prd-1"'));
   assert.ok(html.includes('data-task-id="task-1"'));
+  assert.ok(!html.includes('triage-btn-desc'), 'the panel keeps the bare buttons');
+  assert.ok(html.includes(EN.triage_action_retry), 'retry label still there');
+  assert.ok(html.includes(EN.triage_action_cancel), 'cancel label still there');
+});
+
+test("panel: a blocked record shows the full reason, without the card's source and hint lines", () => {
+  const sandbox = loadApp();
+  const html = detailHtml(sandbox, failedRecord({
+    status: 'blocked', error: '',
+    blocked_reason: 'first sentence.\nsecond sentence.\nthird sentence.',
+    reason_source: 'verdict',
+  }));
+  for (const line of ['first sentence.', 'second sentence.', 'third sentence.']) {
+    assert.ok(html.includes(line), `full reason line: ${line}`);
+  }
+  assert.ok(!html.includes('-webkit-line-clamp'), 'reason is not clamped');
+  assert.ok(html.includes(EN.triage_reason_source_verdict) === false, 'no card source label in the panel');
+  assert.ok(!html.includes('class="triage-unblock"'), 'no card unblock hint in the panel');
 });
 
 test('panel: buttons dispatch to the card helpers', () => {
