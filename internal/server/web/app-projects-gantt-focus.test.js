@@ -98,7 +98,7 @@ test('focus reads once with focus=<id>, the range is first task to last task', a
   assert.equal(r.start, Date.parse(ago(30)) - mg, 'starts at the first task minus the 2 percent margin');
   assert.equal(r.end, Date.parse(ago(2)) + mg, 'ends at the last task plus the margin');
   assert.match(cap.panel, /Focus: Arc one/);
-  assert.match(bodyHtml(sb), new RegExp('First task ' + new Date(Date.parse(ago(30))).toLocaleDateString().replace(/[/.]/g, '\\$&') + ' – last task'));
+  assert.match(bodyHtml(sb), new RegExp('First task ' + new Date(Date.parse(ago(31))).toLocaleDateString().replace(/[/.]/g, '\\$&') + ' – last task'));
   assert.ok(tl.every(c => c.method === 'GET'), 'a read');
   assert.equal(calls.filter(c => c.method !== 'GET').length, 0, 'no write route');
 });

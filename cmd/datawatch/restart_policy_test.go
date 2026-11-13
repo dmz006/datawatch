@@ -115,7 +115,7 @@ func TestRestartGatesGuardReportListsRunningGates(t *testing.T) {
 		RunningGates:   []autonomous.RunningGate{{Check: "script:verify.sh", PRDID: "p1", TaskID: "t2", PID: 77}},
 		RunningGateCnt: 1,
 	}
-	out := restartGuardReportWith(rep, "datawatch restart --force")
+	out := restartGuardReportWith(rep, "datawatch restart --force") // service-scope-ok fixture string: expected report text, never executed
 	if !strings.Contains(out, "running gates (1)") || !strings.Contains(out, "script:verify.sh") || !strings.Contains(out, "pid 77") {
 		t.Fatalf("report omits the gate:\n%s", out)
 	}
