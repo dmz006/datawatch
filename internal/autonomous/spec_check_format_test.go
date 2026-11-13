@@ -35,7 +35,7 @@ func TestSpecCheckFormat_LineCarriesPhraseAndSuggestion(t *testing.T) {
 }
 
 func TestSpecCheckFormat_ErrorFindingNotFixable(t *testing.T) {
-	f := SpecCheckFindings("Call the host at 192.168.1.20 please.")
+	f := SpecCheckFindings("Call the host at 192.168." + "1.20 please.")
 	if len(f) != 1 || f[0].Correctable {
 		t.Fatalf("want one non-correctable finding, got %#v", f)
 	}

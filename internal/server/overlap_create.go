@@ -138,36 +138,6 @@ func (l apiAutomatonLister) ListAutomata() []autonomous.OverlapAutomaton {
 	return out
 }
 
-// writeCreateReplyWithWarnings writes the create reply with a top-level
-// overlap_warnings array. The reply is built by writeAutonomousResult into a
-// buffer first, so the view rules and every other field stay as they are,
-// and only the one key is added.
-func (s *Server) writeCreateReplyWithWarnings(w http.ResponseWriter, r *http.Request, prd any, warnings []autonomous.OverlapWarning) {
-	buf := &bufferedReply{header: http.Header{}}
-	s.writeAutonomousResult(buf, r, prd, "", "", "")
-
-	var fields map[string]json.RawMessage
-	if (buf.status != 0 && buf.status != http.StatusOK) || json.Unmarshal(buf.body.Bytes(), &fields) != nil || fields == nil {
-		buf.writeTo(w)
-		return
-	}
-	list, err := json.Marshal(warnings)
-	if err != nil {
-		http.Error(w, "overlap warnings: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	fields["overlap_warnings"] = list
-	out, err := json.Marshal(fields)
-	if err != nil {
-		http.Error(w, "overlap warnings: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	buf.body.Reset()
-	buf.body.Write(append(out, '\n'))
-	buf.header.Del("Content-Length")
-	buf.writeTo(w)
-}
-
 // bufferedReply is an http.ResponseWriter that keeps the status, the headers
 // and the body of a reply so the body can be changed before it is sent.
 type bufferedReply struct {

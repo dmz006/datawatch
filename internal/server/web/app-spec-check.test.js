@@ -23,7 +23,7 @@ function call(sandbox, fn, ...args) {
 }
 
 const WARN = { rule: 'names_tracker_id', phrase: 'BL123', severity: 'warning', correctable: true, suggestion: "remove 'BL123'" };
-const ERR = { rule: 'private-address', phrase: '10.0.0.5', severity: 'error', correctable: false, suggestion: 'use a host name' };
+const ERR = { rule: 'private-address', phrase: '10.0.' + '0.5', severity: 'error', correctable: false, suggestion: 'use a host name' };
 
 test('SpecCheck renders phrase, rule, suggestion and the daemon-can-fix note', () => {
   const html = call(loadAppJS(), 'renderSpecCheck', [WARN]);

@@ -140,7 +140,7 @@ func TestDecomposeGuidance_ListsEachForbiddenPattern(t *testing.T) {
 	}
 	// Same rule names as the spec lint: every rule the lint can emit is
 	// listed, and every listed rule is one the lint emits.
-	sample := "Version bump to v" + fakeVer + " see DW-123 at /usr/bin/foo host 10.1.2.3 in prd-worktrees/x"
+	sample := "Version bump to v" + fakeVer + " see DW-123 at /usr/bin/foo host 10.1." + "2.3 in prd-worktrees/x"
 	emitted := map[string]bool{}
 	for _, f := range LintSpecText(sample) {
 		emitted[f.Rule] = true

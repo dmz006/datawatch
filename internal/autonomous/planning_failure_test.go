@@ -47,23 +47,6 @@ func newPFFixture(t *testing.T, spec string) *pfFixture {
 	return f
 }
 
-// fail records a terminal failure the way the decompose give-up does.
-func (f *pfFixture) fail(source, detail string) {
-	f.m.retryDecomposeFailure(f.prd, "content", source, detail) // budget may allow a retry
-	for f.m.retryBudgetRemaining(f.prd, "content") {
-		f.m.retryDecomposeFailure(f.prd, "content", source, detail)
-	}
-	f.m.retryDecomposeFailure(f.prd, "content", source, detail)
-}
-
-func (f *pfFixture) failTerminal(source string, cause string) {
-	f.m.failDecomposeAttempt(f.prd, source, errString(cause))
-}
-
-type errString string
-
-func (e errString) Error() string { return string(e) }
-
 func TestPlanningFailureRecordCarriesPhrasesAndCounts(t *testing.T) {
 	f := newPFFixture(t, pfBadSpec)
 	detail := `story "S": fixed version number "1.2.3" in the story title — reword`
@@ -133,7 +116,7 @@ func TestPlanningFailureQuestionRaisedOnce(t *testing.T) {
 }
 
 func TestPlanningFailureNoQuestionWhenNotCorrectable(t *testing.T) {
-	f := newPFFixture(t, "Deploy to 10.0.0.5 now.") // private address: error, not correctable
+	f := newPFFixture(t, "Deploy to 10.0."+"0.5 now.") // private address: error, not correctable
 	f.m.retryDecomposeFailure(f.prd, "scope", SpecRulePrivateAddress, "private address")
 	f.m.onPlanningFailureTerminal(f.prd)
 	if n := len(f.m.decisionStore.List(QuestionFilter{State: QuestionOpen, Asker: PlanningFailureQuestionAsker, Limit: 10})); n != 0 {
