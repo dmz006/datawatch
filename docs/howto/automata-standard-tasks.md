@@ -107,7 +107,7 @@ Each standard task has a **mode**, set per template in `autonomous.task_template
 |---|---|
 | `llm` | A worker session runs the task as a normal task, verifier included. For `final_gate` the daemon's script gate performs it instead, so no session is spent |
 | `daemon` | The daemon performs the task itself and completes it with no model session, no verifier and no retry loop |
-| `off` | The task is not appended to the story at all. For `final_gate`, `off` means the story has no closing gate |
+| `off` | The task is not appended to the story at all. For `final_gate`, `off` means the Automaton has no closing gate |
 
 ```yaml
 autonomous:

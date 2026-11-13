@@ -286,7 +286,7 @@ decides *who* runs the task when it is appended to a story:
 |---|---|
 | `llm` | a worker session runs the task as a normal LLM task — except `final_gate`: the [script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) performs it and closes it, so `llm` no longer spends a session there either |
 | `daemon` | the daemon performs the task itself — no model session, no worker — and records it as done |
-| `off` | the template is **not appended** to the story at all (the task does not appear) — for `final_gate`, off means the story has no closing gate at all |
+| `off` | the template is **not appended** to the story at all (the task does not appear) — for `final_gate`, off means the Automaton has no closing gate at all |
 
 The mode is set per-template with `autonomous.task_templates.mode` (a
 map of template id → mode string):
@@ -504,8 +504,9 @@ are skipped when it does not exist yet.
 
 There is **one** final gate per Automaton, on the **last** story, depending on
 every task of every story. The standard-task pack applies it once there; a
-planner-written `final_gate` on any earlier story is dropped when the pack is
-applied, and a plan that still places one there is rejected at decompose. The
+planner-written `final_gate` on any earlier story is silently dropped when the
+pack is applied (the other tasks' `depends_on` entries on it are removed too);
+no decompose-lint rule rejects such a plan. The
 planner is told not to write a per-story gate: a story-level check is plain
 task verification, and the one real gate closes the Automaton.
 
