@@ -2495,7 +2495,7 @@
   "prd_task_read_only_badge_tip": "Tarea de solo lectura: no modifica archivos",
   "prd_task_verif_script_label": "Script de verificación",
   "prd_task_verif_script_reason_label": "Motivo de la exención del script",
-  "prd_task_verif_script_hint": "Un archivo de script relativo al repositorio que el Automaton ejecuta para comprobar esta tarea, no un comando.",
+  "prd_task_verif_script_hint": "Un archivo de script relativo al repositorio que se ejecuta para comprobar esta tarea, no un comando.",
   "pi_progress_loading": "Loading…",
   "pi_progress_last_event": "Last event",
   "pi_progress_turns": "Turns",

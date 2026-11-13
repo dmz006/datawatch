@@ -2495,7 +2495,7 @@
   "prd_task_read_only_badge_tip": "読み取り専用タスク：ファイルを変更しません",
   "prd_task_verif_script_label": "検証スクリプト",
   "prd_task_verif_script_reason_label": "スクリプト免除の理由",
-  "prd_task_verif_script_hint": "このタスクの確認のために Automaton が実行する、リポジトリ相対のスクリプトファイルです。コマンドではありません。",
+  "prd_task_verif_script_hint": "このタスクの確認のために実行される、リポジトリ相対のスクリプトファイルです。コマンドではありません。",
   "pi_progress_loading": "Loading…",
   "pi_progress_last_event": "Last event",
   "pi_progress_turns": "Turns",

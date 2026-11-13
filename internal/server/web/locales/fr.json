@@ -2495,7 +2495,7 @@
   "prd_task_read_only_badge_tip": "Tâche en lecture seule : ne modifie aucun fichier",
   "prd_task_verif_script_label": "Script de vérification",
   "prd_task_verif_script_reason_label": "Motif de dispense du script",
-  "prd_task_verif_script_hint": "Un fichier de script relatif au dépôt que l'Automaton exécute pour vérifier cette tâche, et non une commande.",
+  "prd_task_verif_script_hint": "Un fichier de script relatif au dépôt, exécuté pour vérifier cette tâche, et non une commande.",
   "pi_progress_loading": "Loading…",
   "pi_progress_last_event": "Last event",
   "pi_progress_turns": "Turns",
