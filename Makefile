@@ -6,7 +6,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
 .PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
-        registry-up registry-down sync-docs \
+        registry-up registry-down sync-docs help check-toolchain \
         security-registry-gen security-registry-check \
         test-tmp-guard \
         test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-shared-nav test-e2e-all test-e2e-clean
@@ -21,6 +21,24 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
 sync-docs:
 	@SKIP=$$(grep -vE '^\s*(#|$$)' docs/_embed_skip.txt 2>/dev/null | awk '{printf "--exclude=%s ", $$0}'); \
 	rsync -a --delete --include='*/' --include='*.md' --include='*.png' --include='*.svg' --include='*.jpg' --include='*.gif' --exclude='*' $$SKIP docs/ internal/server/web/docs/
+
+# Build-host toolchain freshness check (development tool, part of the local
+# pre-tag run; not a CI target, and `build` does not depend on it). Exits 0 when
+# everything is current or a source is unreachable, 1 when Go or a tool is behind.
+check-toolchain:
+	bash scripts/check-toolchain.sh
+
+# List the main targets. Development convenience only.
+help:
+	@printf '%s\n' \
+	  'Main targets:' \
+	  '  build            build the datawatch binary' \
+	  '  test             run the Go test suite' \
+	  '  lint             run the repository lint checks' \
+	  '  fmt              format the Go sources' \
+	  '  sync-docs        copy docs/ into the embedded web docs' \
+	  '  check-toolchain  build host toolchain freshness check; part of the local pre-tag run' \
+	  '  clean            remove build output'
 
 # BL398/GH#197 (2026-10-08) — security-acceptance registry, shared
 # format with datawatch-app. Edit security/accepted-risks.yml, then:
