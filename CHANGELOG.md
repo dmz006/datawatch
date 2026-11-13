@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.171.1 — Release scan passes again
+
+### Security
+
+- **The container scan accepts one unfixed `git` finding in the agent image.** CVE-2026-105437 (a heap overflow in git's three-way merge, no fixed Debian package yet) was failing the blocking scan of the agent image and with it every release build. It is recorded as an accepted risk that expires in 30 days, marked untraced, with the reasoning for why the image only clones and pushes written into the entry.
+
 ## v9.171.0 — Stable verification scripts by default
 
 ### Added

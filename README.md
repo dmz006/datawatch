@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.171.0 (2026-11-13).** The planner now writes verification scripts that stay stable as other tasks land, the decompose lint flags the drift-prone ones, every Automaton has one final gate with a script, and a task's script is editable. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.171.1 (2026-11-13).** The release scan accepts one unfixed `git` finding in the agent image, so release builds pass again. The previous release made the planner write verification scripts that stay stable as other tasks land, the decompose lint flags the drift-prone ones, every Automaton has one final gate with a script, and a task's script is editable. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
