@@ -2301,6 +2301,32 @@ To enable the service worker, use a certificate the browser trusts:
 Then hard-reload the page (or run `forcePWAUpdate()` in the browser console)
 and the service worker registers normally.
 
+### PWA updates on a datawatch release
+
+An installed PWA picks up a new datawatch release without manual cache
+clearing:
+
+- The service worker is registered at **`/sw.js?v=<release>`** — a distinct
+  worker URL per release — and its cache name is derived from the same
+  version, so each release owns its own cache. If the page registers before
+  it has learned the release number, it registers bare and adopts the
+  versioned URL as soon as the version is known.
+- When a new release is installed, the new worker activates, purges the
+  older caches and takes over the open tabs: the page reloads **at most once
+  per upgrade**, and only when you are not mid-thing (typing in an input,
+  the terminal focused, an unsent draft, or still active within the last 30
+  seconds).
+- If you are mid-thing the reload is deferred: an "Update available — tap to
+  reload" banner appears at the bottom of the page and reloads as soon as
+  you go idle. Tap the banner's **Reload** button to apply it immediately.
+- The manual escape hatch for a stuck cache is still `forcePWAUpdate()` in
+  the browser console (unregisters the service worker, drops its caches and
+  reloads with bypass).
+- On origins where the service worker cannot register (for example a
+  self-signed certificate the browser does not trust — see the section
+  above), the PWA behaves as a plain web app and a normal reload is
+  enough.
+
 ---
 
 ### Prompt and Input Logging

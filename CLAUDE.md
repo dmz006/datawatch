@@ -153,6 +153,12 @@ Overall average: **60-90% token reduction** on common development operations.
 
 ## Checkpoints
 
+## 2026-11-09 22:40 — COMPLETED — docs set for the stale-Sessions-state defect
+- Task `edb30003-tpl-docs_set` (PRD 14310001): completed the docs set the code commits `f4812a7ce` (SW versioning) + `13664d208` (view-mode validation) require; the prior docs set `3c69e59a0` covered the stored-view-mode half, this commit covers the service-worker half.
+- Edits (commit `3b789356e`, 5 files, +46/−1): `docs/operations.md` new *PWA updates on a datawatch release* section; `docs/howto/sessions-tiles-and-grouping.md` cross-ref in the stale-state bullet + new troubleshooting entry; `docs/datawatch-definitions.md` new *PWA update (service worker versioning)* entry; `docs/pwa-setup.md` troubleshooting entry; `CHANGELOG.md` Unreleased → Fixed entry.
+- Gates: `scripts/check-docs-sync.sh` ok; `bash scripts/check-no-internal-refs.sh` PASS; anchor `#pwa-updates-on-a-datawatch-release` verified; wording matched against `sw.js` (activate purge + once-only navigate on genuine upgrades) and `app.js` (`_swTakeAutoReloadSlot`, `_canAutoReload` idle guard, deferred banner) — no code changes.
+- Operator-review flags: behavior is a no-op on untrusted-TLS origins (SW can't register; normal reload path remains); auto-reload defers while typing/terminal focused/unsent draft or active within 30 s; `forcePWAUpdate()` remains the manual escape hatch.
+
 ## 2026-11-09 08:40 — COMPLETED — validate every saved Sessions setting/state
 - **Goal:** no fragile `localStorage` read on the Sessions page may throw; every saved value is validated, one bad key never blocks the others, malformed/old values fall back to the default and are dropped from storage.
 - **Code (`internal/server/web/app.js`):** added a shared block before `const state = {` — `_safeStored(key, read, fallback, ls?)` (try/catch around **and** including the storage capability check so a blocked/throwing storage degrades to the fallback; reader returns a value or `null`; a `null` result removes the key, logs one `console.info` `"saved value for <key> was unrecognized; using the default and dropping it"`, uses the fallback — no toast), `_storedStrArrayRead`, `_sessionsRenderGuard(label, fn)`, `_storedWrite(key, value)`, plus known-value sets `SESSIONS_STATE_CHIP_KEYS` and `SESSIONS_SEARCH_MAX_LEN = 500`.

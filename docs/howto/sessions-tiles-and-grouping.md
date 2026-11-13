@@ -192,7 +192,10 @@ Three details worth knowing:
   below 600 px, tiles at 600 px and wider), which the toggle shows as the
   active button. All three buttons still switch the mode and re-draw the
   list, and your next choice overwrites the stale value — no site-data
-  reset is needed.
+  reset is needed. The companion half of the fix: since the service worker
+  is now registered per release (`/sw.js?v=<release>`), a reload after an
+  upgrade always fetches the new app code, not an old cached copy — see the
+  *PWA updates on a datawatch release* section of [operations.md](../operations.md#pwa-updates-on-a-datawatch-release).
 
 ### The status counts
 
@@ -578,6 +581,14 @@ in your tag registry.
 - **My saved view isn't on my other device.** Saved views are per device
   by design; recreate it from the Views section of the Filters sheet. The *data* it reads (groups,
   counts, mixes) is identical on every channel and every peer.
+- **The page still looks like the old version after an upgrade.** New
+  releases ship a versioned service worker (`/sw.js?v=<release>`) with its
+  own cache, so an upgrade normally applies itself: the page reloads at
+  most once per upgrade, and when you are mid-thing (typing, terminal
+  focused, an unsent draft) the "Update available — tap to reload" banner
+  waits until you are idle. The manual escape hatch is `forcePWAUpdate()`
+  in the browser console — see the *PWA updates on a datawatch release*
+  section of [operations.md](../operations.md#pwa-updates-on-a-datawatch-release).
 - **The list looks short and I did not filter.** Check the badge on the
   **Filters** button and the search box: a remembered search or an active
   filter narrows the list (the `N of M` count shows it). Clear the search
