@@ -126,8 +126,19 @@ The table never touches:
 - a task that has started, finished or has a live session. Applying never
   kills, restarts or signals a session.
 
-A planner re-run re-applies the table only to tasks the router itself routed
-and nobody edited.
+A planner re-run (re-decompose) re-applies the table only to tasks the router
+itself routed and nobody edited, and only if they have not started. This holds
+on every path that routes a task:
+
+- **Normal run and add-task.** A task LLM, story LLM or Automaton LLM you set by
+  hand is kept; a task added later by hand is not routed over a story or
+  Automaton LLM you set. Setting a task to the very same values the router
+  wrote still counts as hand set, because the decision log records who made
+  the change.
+- **Re-decompose.** Tasks that survive keep their hand-set LLM, a hand-set story
+  or Automaton LLM set after the first routing is still honored, and a new task
+  is routed like any other. A further pass with nothing changed writes nothing
+  and logs nothing.
 
 ## Rows, profiles and the second choice
 
@@ -145,8 +156,11 @@ stronger one for release work.
   current table; with rows it stores those. A profile of the same name is
   replaced.
 - **Activate** a saved profile. It takes effect **only on tasks created
-  afterwards**. Tasks already created keep what they have and running tasks
-  are untouched.
+  afterwards**. Tasks already created keep what they have, running tasks
+  are untouched, and the switch itself rewrites no task. A dry run after the
+  switch reports the new profile and still writes nothing. A later
+  re-decompose can re-route a task the router routed that has not started
+  (see above); a running, finished or hand-edited task never changes.
 - **Delete** a profile. The active profile cannot be deleted.
 
 ## Export, import and matrix results
