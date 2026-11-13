@@ -68,7 +68,7 @@ func (f *tmFake) AddTaskReadOnly(string, string, string, string, string, []strin
 	f.mark("AddTaskReadOnly")
 	return nil, nil
 }
-func (f *tmFake) EditTask(string, string, string, *bool, string, string) (any, error) {
+func (f *tmFake) EditTask(string, string, string, *bool, string, string, string, string) (any, error) {
 	f.mark("EditTask")
 	return nil, nil
 }

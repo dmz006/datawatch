@@ -44,7 +44,7 @@ func readOnlyOf(t *testing.T, mgr *Manager, prdID, taskID string) (bool, string)
 
 func TestEditTaskSetsAndClearsReadOnlyKeepingSpec(t *testing.T) {
 	mgr, id := newReadOnlyFlagManager(t, PRDNeedsReview)
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "", "", "operator"); err != nil {
 		t.Fatalf("EditTask set: %v", err)
 	}
 	ro, spec := readOnlyOf(t, mgr, id, "t1")
@@ -52,14 +52,14 @@ func TestEditTaskSetsAndClearsReadOnlyKeepingSpec(t *testing.T) {
 		t.Fatalf("after set: read_only=%v spec=%q, want true and the old spec", ro, spec)
 	}
 	// A spec-only edit leaves the flag alone.
-	if _, err := mgr.EditTask(id, "t1", "new spec", nil, "", "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "new spec", nil, "", "", "", "operator"); err != nil {
 		t.Fatalf("EditTask spec: %v", err)
 	}
 	ro, spec = readOnlyOf(t, mgr, id, "t1")
 	if !ro || spec != "new spec" {
 		t.Fatalf("after spec edit: read_only=%v spec=%q, want true and the new spec", ro, spec)
 	}
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(false), "", "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(false), "", "", "", "operator"); err != nil {
 		t.Fatalf("EditTask clear: %v", err)
 	}
 	if ro, _ := readOnlyOf(t, mgr, id, "t1"); ro {
@@ -69,14 +69,14 @@ func TestEditTaskSetsAndClearsReadOnlyKeepingSpec(t *testing.T) {
 
 func TestEditTaskNeedsSomethingToEdit(t *testing.T) {
 	mgr, id := newReadOnlyFlagManager(t, PRDNeedsReview)
-	if _, err := mgr.EditTask(id, "t1", "", nil, "", "operator"); err == nil {
+	if _, err := mgr.EditTask(id, "t1", "", nil, "", "", "", "operator"); err == nil {
 		t.Fatal("expected an error when neither spec nor read_only is given")
 	}
 }
 
 func TestEditTaskReadOnlyHonoursStatusGates(t *testing.T) {
 	mgr, id := newReadOnlyFlagManager(t, PRDRunning)
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "operator"); err == nil || !strings.Contains(err.Error(), "locked") {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "", "", "operator"); err == nil || !strings.Contains(err.Error(), "locked") {
 		t.Fatalf("running PRD edit err = %v, want a locked error", err)
 	}
 	if ro, _ := readOnlyOf(t, mgr, id, "t1"); ro {

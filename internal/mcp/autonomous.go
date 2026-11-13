@@ -1414,6 +1414,8 @@ func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
 		mcpsdk.WithString("new_spec", mcpsdk.Description("New spec text (omit to leave the spec unchanged when only changing read_only) — the full spec text: read the existing spec first from autonomous_prd_get with detail=full, which returns task specs whole and uncut; a spec carrying a capped view's truncation marker is refused (the daemon answers the same refusal with a 400)")),
 		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only (it changes no files, so it may skip the tree lock) or clear the mark. Omit to leave unchanged.")),
 		mcpsdk.WithString("report_path", mcpsdk.Description("Optional: the one repo-relative file the read-only task may write, under .datawatch/reports/. The task must be read_only (set it via read_only in the same call if needed) or it is rejected.")),
+		mcpsdk.WithString("verification_script", mcpsdk.Description("Optional: the task's verification script, one repo-relative script file (for example scripts/verify.sh). A command string, an absolute path, a path with a .. segment or the project root is rejected. The path is also added to the task's files_generated when not yet listed. Omit to leave unchanged.")),
+		mcpsdk.WithString("verification_script_reason", mcpsdk.Description("Optional: why the task carries no verification script (the exemption the plan check accepts in place of a script), for example a documentation-only change. Can be set with or without verification_script. Omit to leave unchanged.")),
 	)
 }
 func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1436,6 +1438,12 @@ func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallT
 	}
 	if v := req.GetString("report_path", ""); v != "" {
 		editBody["report_path"] = v
+	}
+	if v := req.GetString("verification_script", ""); v != "" {
+		editBody["verification_script"] = v
+	}
+	if v := req.GetString("verification_script_reason", ""); v != "" {
+		editBody["verification_script_reason"] = v
 	}
 	body, _ := json.Marshal(editBody)
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/edit_task", body)
