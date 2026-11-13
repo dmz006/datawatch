@@ -273,7 +273,7 @@ reach the verifier and pass it, instead of being rejected at pre-start.
 | `changelog_entry` | `daemon` | a changelog entry for the feature (`CHANGELOG.md`) |
 | `parity_issue_draft` | `daemon` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
 | `docs_set` | `llm` | the feature's docs into shape, over the story's own files |
-| `final_gate` | `llm` | a **read-only** closing task that the **daemon itself** now performs — [the script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) runs it and closes it, no model session: the declared checks run, and the verdict and evidence go to the report its `report_path` names under `.datawatch/reports/`. It carries **no** verification script of its own; the report is its output |
+| `final_gate` | `llm` | a **read-only** closing task, applied **once per Automaton** (on the last story, depending on every task), that the **daemon itself** now performs — [the script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) runs it and closes it, no model session: the declared checks run, and the verdict and evidence go to the report its `report_path` names under `.datawatch/reports/`. The template carries no verification script of its own; the report is its output. A planner-written `final_gate` must declare a verification script, a `verification_script_reason` or a report path (lint rule `final_gate_without_script`) |
 | `version_bump_left_to_merge` | `daemon` | a plain *note* that the release version is the next patch above main, resolved at merge — never an edit of the tree; in daemon mode the daemon records the note as the decision and completes the task, no session |
 | `bounded_load_step` | `daemon` | a posture *note* — the task's spec is the bounded-load-step rule text so it can be found in search and the audit; writes no files |
 
@@ -473,7 +473,41 @@ There is no per-project mode — the `mode` map is global, per standard-task id.
       enabled: true     # on, even if the global were off
 ```
 
+### Stable verification scripts: what the planner is told to write
+
+The planner prompt carries one shared helper contract so the scripts it
+writes keep passing after earlier tasks land. A generated script must:
+
+1. run `make sync-docs` itself as its first step when it checks docs, the
+   embedded docs copy (`internal/server/web/docs`) or how-to coverage;
+2. use an allowed-file list that is **cumulative from the start** — every
+   file any story of the Automaton may touch, the standard tasks' generated
+   files (changelog draft, parity-issue draft and its hash file, docs, the
+   registry plan files), gofmt targets and docs files — never one task's own
+   file list;
+3. compare against the **merge base** (`git diff --name-only $(git merge-base
+   HEAD main)` plus untracked files), never the working tree, the current
+   main or one task's own files;
+4. run gofmt only on the listed changed Go files, never a whole package or
+   directory.
+
+The planner is also told to plan exactly one final gate, as the last task,
+and to give every `final_gate` a `verification_script` (also listed in
+`files_generated`) or an explicit `verification_script_reason`. The decompose
+lint enforces the same three rules on what comes back — see
+`verify_script_task_files_only`, `verify_script_docs_without_sync` and
+`final_gate_without_script` in the rule table above. All three block; the
+two script-content rules read the script file from the project directory and
+are skipped when it does not exist yet.
+
 ### The script gate: the final gate no longer spends a session
+
+There is **one** final gate per Automaton, on the **last** story, depending on
+every task of every story. The standard-task pack applies it once there; a
+planner-written `final_gate` on any earlier story is dropped when the pack is
+applied, and a plan that still places one there is rejected at decompose. The
+planner is told not to write a per-story gate: a story-level check is plain
+task verification, and the one real gate closes the Automaton.
 
 A `final_gate` used to be model labor: a worker session, a verifier, and
 the report they wrote. The daemon needed no model for any of that, so it
@@ -497,12 +531,13 @@ performs the verification*.
    `autonomous.project_gate_command` (the first set one wins); it runs as a
    single command through `sh`, alone; or
 3. (only if neither of the above is available) the `verification_script`
-   of **every** other task in the story, in story order, until the first
-   failure.
+   of **every** other task of **every story of the Automaton**, in story
+   order, until the first failure. Standard-task (template) tasks and other
+   final gates are skipped, so the gate never runs itself or a sibling.
 
 Steps 1 and 2 are exclusive — a command or the task's own script replaces the
 story's scripts, it does not add to them — while step 3 runs all the scripts
-it finds, each with the time still left on the shared deadline.
+it finds across the whole Automaton, each with the time still left on the shared deadline.
 
 Every script the gate runs must resolve inside the project's
 `.datawatch/verify/` — anything outside (or the project root itself) is
@@ -540,8 +575,8 @@ decision record is added either way saying what the gate did.
 
 The rule of thumb: declare what the gate should check — the gate command
 per project or globally for the canonical entry point, or precise scripts
-under `.datawatch/verify/` on the story's tasks — and the story's closing
-gate stops spending a session.
+under `.datawatch/verify/` on the Automaton's tasks — and the Automaton's
+closing gate stops spending a session.
 
 ## 6. Decompose guidance — text or file
 
@@ -676,5 +711,5 @@ standard tasks are defined."
 6. Once the decompose looks right, **set the gate up**: declare the
    closing check the final gate should run — the project gate command (per
    project or globally) or a script under `.datawatch/verify/` — so the
-   story's final gate runs it with the daemon doing it and closes without
-   a session.
+   Automaton's one final gate runs it with the daemon doing it and closes
+   without a session.
