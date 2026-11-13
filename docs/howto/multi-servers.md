@@ -23,7 +23,7 @@ them — or select "All" to see aggregated data from every server at once.
 
 ## What it is
 
-Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and is now the one header dropdown in the fixed app header (this change):
+Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and was replaced, in [v9.160.1](../../CHANGELOG.md), by the one header dropdown in the fixed app header; this change adds the **remembered choice** described below: 
 
 | Surface | What was added |
 |---------|---------------|
@@ -192,8 +192,9 @@ panels aggregate under **All servers** (`/api/autonomous/prds/aggregated`,
 `/api/cost/aggregated`); the other panels have no aggregated variant.
 
 > **Confirm this on your setup before relying on it.** The in-place switch
-> is recorded under **[Unreleased] → Fixed** in the
-> [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry records
+> is recorded under **v9.112.9 — “Switch the page to the selected
+> federated host in the server picker”** (### Fixed, found 2026-11-08) in
+> the [changelog](../../CHANGELOG.md), and its entry records
 > that no live verification had been run when it was recorded. It is
 > implemented in this tree's `internal/server/web/app.js` — `selectServer`
 > re-renders the tab you're on, and the **Automata** re-render spans the
