@@ -185,6 +185,31 @@ At boot the daemon does not re-run it:
 The script's timeout is enforced from its recorded start time, so a script
 that outlives the daemon still ends on time even across the restart.
 
+**A final gate survives a stop of the daemon.** The final gate (the script or
+command that runs the whole verification at the end of an Automaton) keeps its
+own run record, one per check and project directory, in the same run root as
+the verification scripts. A final gate task that was running when the daemon
+went down is not failed and does not use a retry: at boot it is put back to
+`pending` with no failure, and its gate run re-attaches to the record — it waits
+on a live gate, or takes a finished result once. A daemon that is only stopping
+never turns a gate into a failure: the gate keeps running and the next attempt
+picks it up.
+
+The shipped systemd unit (`install/systemd/datawatch.service`) sets
+`KillMode=process`, so a `systemctl stop` or `restart` ends only the daemon and
+leaves the gate (and any verifier) running in the unit's control group. If you
+run your own unit file, add the same line, or the service manager ends the gate
+with the daemon.
+
+**One retry for a gate killed by a signal after a restart.** If a final gate is
+still killed by a signal and the daemon started less than five minutes before
+the kill, the Automaton reruns the gate once. This retry is outside the task's
+retry budget and counts no attempt; the task records that it was used
+(`gate_restart_retry_used`), the decision log names the daemon restart as the
+cause, and the gate report notes the retry. A second signal kill, a kill more
+than five minutes after the daemon started, a timeout and a nonzero exit code
+are real failures and go through the normal failure path.
+
 A run is only waited on while its process is genuinely the script: the daemon
 checks the process table for the same start time as the record. If that start
 time cannot be read, or is implausibly large, the process is not trusted and
