@@ -248,3 +248,24 @@ test('the Records sub-tab holds the Registry and findings card and a mount point
   const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
   assert.equal(en.plan_records_title, 'Registry and findings');
 });
+
+test('Projects Overview sub-tabs use the Projects strip, switch on click and survive a refresh', async () => {
+  const ids = ['inbox', 'automations', 'resources', 'progress', 'housekeeping'];
+  const { sb, out, storage } = await open({ hash: '#projects' });
+  assert.match(out.view, /class="projects-subtabs"/);
+  assert.doesNotMatch(out.view, /automation-subtabs/, 'the Automation bar classes are gone from Overview');
+  assert.equal((out.view.match(/class="projects-subtabs"/g) || []).length, 1);
+  assert.deepEqual(buttons(out.view), ids);
+  for (const id of ids) {
+    run(sb, `selectProjectsOverviewSubtab('${id}')`);
+    assert.equal(run(sb, '_automationState.subtab'), id);
+    assert.equal(run(sb, '_automataState.tab'), 'projects');
+    assert.match(out.view, new RegExp(`data-projects-subtab="${id}"[^>]*>`));
+    assert.match(out.view, new RegExp(`class="projects-subtab active" aria-selected="true" data-projects-subtab="${id}"`));
+    assert.equal(storage.getItem(KEY), id, 'the choice is kept in the existing remembered value');
+  }
+  // A fresh page load with the stored value opens the same sub-tab.
+  const again = await open({ hash: '#projects', storage });
+  assert.equal(run(again.sb, '_automationState.subtab'), 'housekeeping');
+  assert.match(again.out.view, /class="projects-subtab active" aria-selected="true" data-projects-subtab="housekeeping"/);
+});
