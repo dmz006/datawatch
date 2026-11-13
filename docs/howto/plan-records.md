@@ -62,6 +62,7 @@ candidates so you can repeat the call with an id.
 | MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. |
 | CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. |
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
+| Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
 | Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
 | PWA | The **Plan records** section of the project page in the Projects sub-tab: Registry rows and Findings views, a state filter, a search box, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The section hides itself when plan records are off. |
 
@@ -259,3 +260,35 @@ alone; a title already taken by a record the migration did not make is reported
 as a conflict and left alone. No arc, row or config key is deleted. An apply
 writes one audit event (`plan_record_imported`, subject `plans migrate`) besides
 the event for each plan and link it writes.
+
+## Reading plans
+
+The plans read routes show a project as plans in priority order. They need
+`autonomous:read`, answer 404 while plan records are off, and page every list
+with `limit` (default 50, most 500) and `offset`.
+
+- `GET /api/projects/{name}/plans` lists the plans that have at least one
+  Automaton. Each row has the title, goal, state, progress (Automata done out of
+  total, with a whole-number percent for a bar), points, the ids of its
+  Automations and Automata, and a `next` marker. Plans with no Automaton yet are
+  in the `backlog` group, which pages with `backlog_limit` and `backlog_offset`.
+- `GET /api/projects/{name}/overview-summary` is the small answer for the top of
+  the project overview: header, overall progress and points, one line per active
+  plan with its state and progress, what is next, and counts of plans, registry
+  rows and findings by state.
+- `GET /api/plans/{ref}/automata` lists one plan's Automata in run order:
+  completed first (oldest completion first), then running, then next, then
+  blocked, then held. Blocked and held Automata are shown and marked `skipped`;
+  the next marker never lands on them.
+- `GET /api/plans/{ref}/tasks` lists the plan's tasks. Call it when a plan is
+  expanded. It is the one plans read that opens Automaton records, and only for
+  the plan you asked about.
+- `GET /api/plan-records/browse` lists every registry row and finding with the
+  plan and Automata each links to. Filter with `q` (words in the title), `kind`,
+  `state` and `project`.
+
+Points are usage points, never dollars; an Automaton with no figure counts as 0.
+The lists read the plan-record summary index, so they stay fast with thousands of
+records. The older `GET /api/projects/{name}/arcs` and the `arcs` field of the
+roll-up still answer, with the same arcs data and a `plans` list added; they are
+deprecated.

@@ -145,6 +145,9 @@ type Patch struct {
 type LinkInfo struct {
 	Title string `json:"title,omitempty"`
 	State string `json:"state,omitempty"`
+	// CompletedAt is when the linked Automaton finished (RFC 3339), when the
+	// caller knows it. The plan's run order uses it to put finished work first.
+	CompletedAt string `json:"completed_at,omitempty"`
 }
 
 var (

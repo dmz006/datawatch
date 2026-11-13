@@ -67,6 +67,10 @@ type Summary struct {
 	// AttachKind and AttachRef say what a finding is attached to.
 	AttachKind string `json:"attach_kind,omitempty"`
 	AttachRef  string `json:"attach_ref,omitempty"`
+	// Goal is the plan's goal (kind plan only), clipped to MaxGoalRunes.
+	Goal string `json:"goal,omitempty"`
+	// LinkedAutomata are the Automaton ids a registry row or finding links to.
+	LinkedAutomata []string `json:"linked_automata,omitempty"`
 }
 
 // PlanRef names the plan an Automaton or Automation belongs to.
@@ -97,19 +101,38 @@ type linkIndex struct {
 	// linked maps "automaton:<id>" / "automation:<id>" to the owning plan.
 	linked       map[string]linkEntry
 	planAutomata map[string][]string // plan uid -> linked Automaton ids, in order
+	// planAutomations maps a plan uid to its linked Automation ids, in order.
+	planAutomations map[string][]string
+	// rowPlan maps a registry row id to the uid of the plan made from it.
+	rowPlan map[string]string
 }
 
 func newLinkIndex() linkIndex {
 	return linkIndex{
-		sums:         map[string]Summary{},
-		linked:       map[string]linkEntry{},
-		planAutomata: map[string][]string{},
+		sums:            map[string]Summary{},
+		linked:          map[string]linkEntry{},
+		planAutomata:    map[string][]string{},
+		planAutomations: map[string][]string{},
+		rowPlan:         map[string]string{},
 	}
 }
 
 func linkKey(kind, id string) string { return kind + ":" + id }
 
 func summarize(r *Record) Summary {
+	sm := summarizeBase(r)
+	sm.Goal = r.Goal
+	if r.Kind != KindPlan {
+		for _, l := range r.Links {
+			if l.Kind == linkAutomaton && strings.TrimSpace(l.Ref) != "" {
+				sm.LinkedAutomata = append(sm.LinkedAutomata, strings.TrimSpace(l.Ref))
+			}
+		}
+	}
+	return sm
+}
+
+func summarizeBase(r *Record) Summary {
 	return Summary{
 		UID: r.UID, ID: r.ID, Kind: r.Kind, Project: r.Project, State: r.State, Title: r.Title,
 		Order: r.Order, LegacyNumber: r.LegacyNumber, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -137,6 +160,12 @@ func (s *Store) reindexLinks(old, next *Record) {
 				}
 			}
 			delete(li.planAutomata, old.UID)
+			delete(li.planAutomations, old.UID)
+			for _, l := range old.Links {
+				if l.Kind == linkRegistryRow && li.rowPlan[l.Ref] == old.UID {
+					delete(li.rowPlan, l.Ref)
+				}
+			}
 		}
 	}
 	li.sums[next.UID] = summarize(next)
@@ -157,7 +186,12 @@ func (s *Store) reindexLinks(old, next *Record) {
 		return kept
 	}
 	li.planAutomata[next.UID] = add(linkAutomaton, next.Automata)
-	add(linkAutomation, next.Automations)
+	li.planAutomations[next.UID] = add(linkAutomation, next.Automations)
+	for _, l := range next.Links {
+		if l.Kind == linkRegistryRow && l.Ref != "" {
+			li.rowPlan[l.Ref] = next.UID
+		}
+	}
 }
 
 // planOrderKey sorts plans: lowest order first, an unset order last, then

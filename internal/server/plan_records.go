@@ -12,6 +12,7 @@
 //	GET  /api/plan-records/findings/{ref}       — one record (autonomous:read)
 //	PUT  /api/plan-records/findings/{ref}       — change a record (autonomous:write)
 //	GET  /api/plan-records/search?q=            — search both kinds (autonomous:read)
+//	GET  /api/plan-records/browse               — rows and findings with plan and Automaton links, paged (autonomous:read)
 //	POST /api/plan-records/import[?dry_run=true] — import the archive (autonomous:write)
 //
 // There is no delete route: a record is closed by changing its state.
@@ -193,6 +194,10 @@ func parsePlanRecordsPath(path string) planRecordsRoute {
 		if !hasTail {
 			return planRecordsRoute{shape: "search"}
 		}
+	case "browse":
+		if !hasTail {
+			return planRecordsRoute{shape: "browse"}
+		}
 	case "import":
 		if !hasTail {
 			return planRecordsRoute{shape: "import"}
@@ -246,7 +251,7 @@ func (s *Server) handlePlanRecords(w http.ResponseWriter, r *http.Request) {
 		allowed = []string{http.MethodGet, http.MethodPost}
 	case "item":
 		allowed = []string{http.MethodGet, http.MethodPut}
-	case "search":
+	case "search", "browse":
 		allowed = []string{http.MethodGet}
 	case "import":
 		allowed = []string{http.MethodPost}
@@ -291,6 +296,8 @@ func (s *Server) handlePlanRecords(w http.ResponseWriter, r *http.Request) {
 		s.handlePlanRecordGet(w, r, route.kind, route.ref)
 	case "search":
 		s.handlePlanRecordSearch(w, r)
+	case "browse":
+		s.handlePlanRecordBrowse(w, r)
 	case "import":
 		s.handlePlanRecordImport(w, r)
 	}
