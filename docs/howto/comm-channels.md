@@ -246,6 +246,11 @@ documented inline in the auto-generated `datawatch init` template.
   `operator_chat: <id>` to enforce.
 - **Email roundtrip is async.** Don't expect <2s replies; configure
   IMAP poll interval (default 30s) for snappier RTT.
+- **Email with no recipient.** A send that names no recipient goes to
+  the configured `email.to` address. A recipient or sender containing a
+  newline is refused before any SMTP connection is opened, so a bad
+  address fails at once instead of waiting on a network timeout. Full
+  detail: [`../messaging-backends.md`](../messaging-backends.md) § Email.
 
 ## Linked references
 
