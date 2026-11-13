@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -168,5 +169,113 @@ func TestConfirmPromptSubmitted_ActivityOnSecondPoll(t *testing.T) {
 	}
 	if got := f.Count("send-keys"); got != 1 {
 		t.Fatalf("send-keys calls = %d, want exactly 1", got)
+	}
+}
+
+func enterCount(f *FakeTmux) int { return f.Count("enter") }
+
+func newSubmitFake(session string) *FakeTmux {
+	f := NewFakeTmux()
+	f.SubmitFlow = true
+	f.Pane[session] = ""
+	return f
+}
+
+const idleBox = "──────\n❯ \n──────"
+
+// A short single-line message: tail visible, one Enter, no verify wait.
+func TestSubmitPastedInput_ShortMessageFastPath(t *testing.T) {
+	tc := useTestClock(t)
+	f := newSubmitFake("s")
+	f.PaneScript["s"] = []string{"──────\n❯ hello world\n──────"}
+	if err := f.SendKeysWithSettle("s", "hello world\n", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := enterCount(f); got != 1 {
+		t.Fatalf("Enter count = %d, want 1", got)
+	}
+	if tc.sleeps != 0 {
+		t.Errorf("fast path slept %d times (%v), want 0", tc.sleeps, tc.slept)
+	}
+}
+
+// Placeholder appears late: poll waits, then exactly one Enter when the
+// placeholder is gone after it.
+func TestSubmitPastedInput_WaitsForPlaceholderThenOneEnter(t *testing.T) {
+	useTestClock(t)
+	f := newSubmitFake("s")
+	ph := "──────\n❯ [Pasted text #1 +40 lines]\n──────"
+	f.PaneScript["s"] = []string{idleBox, idleBox, ph, "⏺ working on it\n✻ Thinking"}
+	if err := f.SendKeysWithSettle("s", strings.Repeat("line\n", 40)+"final words here", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := enterCount(f); got != 1 {
+		t.Fatalf("Enter count = %d, want 1 (calls: %v)", got, f.CallsSnapshot())
+	}
+}
+
+// First Enter swallowed: placeholder still there, one retry, then it clears.
+func TestSubmitPastedInput_RetriesWhileUnsent(t *testing.T) {
+	useTestClock(t)
+	f := newSubmitFake("s")
+	ph := "──────\n❯ [Pasted text #1 +40 lines]\n──────"
+	f.PaneScript["s"] = []string{ph, ph, "⏺ ok"}
+	if err := f.SendKeysWithSettle("s", strings.Repeat("x\n", 40)+"tail text", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := enterCount(f); got != 2 {
+		t.Fatalf("Enter count = %d, want 2", got)
+	}
+}
+
+// Placeholder never clears: retries are capped.
+func TestSubmitPastedInput_RetryCapped(t *testing.T) {
+	useTestClock(t)
+	f := newSubmitFake("s")
+	f.PaneScript["s"] = []string{"──────\n❯ [Pasted text #1 +40 lines]\n──────"}
+	if err := f.SendKeysWithSettle("s", strings.Repeat("x\n", 40)+"tail text", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := enterCount(f), 1+pasteMaxEnterRetries; got != want {
+		t.Fatalf("Enter count = %d, want %d", got, want)
+	}
+}
+
+// Assistant activity on screen stops any further Enter.
+func TestSubmitPastedInput_NoRetryOnAssistantActivity(t *testing.T) {
+	useTestClock(t)
+	f := newSubmitFake("s")
+	f.PaneScript["s"] = []string{
+		"❯ [Pasted text #1 +40 lines]",
+		"❯ [Pasted text #1 +40 lines]\n⏺ Reading files\n✻ Thinking",
+	}
+	if err := f.SendKeysWithSettle("s", strings.Repeat("x\n", 40)+"tail text", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := enterCount(f); got != 1 {
+		t.Fatalf("Enter count = %d, want 1", got)
+	}
+}
+
+// Multi-line input without a placeholder: text still in the input box
+// after Enter triggers a retry; empty input is a bare Enter, no polling.
+func TestSubmitPastedInput_TextStillInInputBoxRetries(t *testing.T) {
+	tc := useTestClock(t)
+	f := newSubmitFake("s")
+	stuck := "──────\n❯ second line of text\n──────"
+	f.PaneScript["s"] = []string{stuck, stuck, "⏺ done"}
+	if err := f.SendKeysWithSettle("s", "first\nsecond line of text", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := enterCount(f); got != 2 {
+		t.Fatalf("Enter count = %d, want 2", got)
+	}
+	f2 := newSubmitFake("s")
+	before := tc.sleeps
+	if err := f2.SendKeysWithSettle("s", "\n", 0); err != nil {
+		t.Fatal(err)
+	}
+	if enterCount(f2) != 1 || f2.Count("capture-visible") != 0 || tc.sleeps != before {
+		t.Errorf("empty input: want bare Enter with no capture/sleep, calls=%v", f2.CallsSnapshot())
 	}
 }
