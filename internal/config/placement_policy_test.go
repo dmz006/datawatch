@@ -145,12 +145,12 @@ func TestComputePlacementValidateRejectsBadValues(t *testing.T) {
 func TestComputePlacementLoadRejectsBadYAML(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
-		"compute_placement:\n  missing_model: maybe\n":        "missing_model",
-		"compute_placement:\n  mem_headroom_pct: -1\n":        "mem_headroom_pct",
-		"compute_placement:\n  mem_headroom_pct: 250\n":       "mem_headroom_pct",
-		"compute_placement:\n  disk_headroom_gb: -2\n":        "disk_headroom_gb",
-		"compute_placement:\n  ask_timeout_minutes: -3\n":     "ask_timeout_minutes",
-		"compute_placement:\n  assume_model_size_gb: -4\n":    "assume_model_size_gb",
+		"compute_placement:\n  missing_model: maybe\n":     "missing_model",
+		"compute_placement:\n  mem_headroom_pct: -1\n":     "mem_headroom_pct",
+		"compute_placement:\n  mem_headroom_pct: 250\n":    "mem_headroom_pct",
+		"compute_placement:\n  disk_headroom_gb: -2\n":     "disk_headroom_gb",
+		"compute_placement:\n  ask_timeout_minutes: -3\n":  "ask_timeout_minutes",
+		"compute_placement:\n  assume_model_size_gb: -4\n": "assume_model_size_gb",
 	}
 	for yamlBody, wantKey := range cases {
 		path := writePlacementTestFile(t, dir, "bad.yaml", yamlBody)

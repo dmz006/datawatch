@@ -52,7 +52,7 @@ func TestPlacementConfigDefaults(t *testing.T) {
 	// The templates are the derivation package's own templates, so the config
 	// block and the derivation cannot drift apart.
 	def := placementtags.DefaultSettings()
-	pairs := []struct{
+	pairs := []struct {
 		axis string
 		got  string
 		def  string

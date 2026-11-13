@@ -22,10 +22,10 @@ type OllamaStats struct {
 
 // RunningModel is a currently loaded/running model on the Ollama server.
 type RunningModel struct {
-	Name       string  `json:"name"`
-	SizeVRAM   int64   `json:"size_vram"`   // bytes in VRAM
-	SizeBytes  int64   `json:"size_bytes"`  // total model size
-	ExpiresAt  string  `json:"expires_at,omitempty"`
+	Name      string `json:"name"`
+	SizeVRAM  int64  `json:"size_vram"`  // bytes in VRAM
+	SizeBytes int64  `json:"size_bytes"` // total model size
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 // ModelInfo is a model installed on the Ollama server.

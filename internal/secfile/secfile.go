@@ -26,7 +26,7 @@ import (
 const (
 	magic    = "DWDAT1\n" // v1 (AES-256-GCM) — read-only backward compat
 	magicV2  = "DWDAT2\n" // v2 (XChaCha20-Poly1305)
-	nonceLen = 24          // XChaCha20 nonce size
+	nonceLen = 24         // XChaCha20 nonce size
 )
 
 // IsEncrypted reports whether data was written by this package (v1 or v2).
