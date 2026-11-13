@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings]
+  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings, planning failure, spec lint, release version, reword question]
 exec_params:
   - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow (default) or enforce"}
   - {name: max_retries, required: false, description: "Enforce retry budget: whole number 0–5 (default 2, 0 = never auto-retry)"}
@@ -556,6 +556,111 @@ in the prompt automatically; once you set `decompose_guidance`, yours wins
 until you clear it (clear it by writing an empty string through the same
 surface).
 
+**The forbidden-pattern list is always added.** Whatever the block above
+resolves to — your text, your file, the generated block or nothing at all —
+the planner's prompt also carries one fixed list, "Never put these in a
+story or task title, description or spec", with one short correct
+alternative per line. It is not configurable and `decompose_guidance` does
+not replace it. The five lines use the same rule names the spec lint and
+the decompose checks report:
+
+| Rule | Never put | Say instead |
+|---|---|---|
+| `release-version-fixed` | a fixed release number | "the next patch above main" |
+| `names_tracker_id` | a tracker id | describe the work itself |
+| `system-binary-path` | a real system path | the command name, resolved at runtime with `command -v` |
+| `private-address` | a private address | "the target host" or a configured host name |
+| `worktree-path` | a worktree path | a repo-relative path |
+
+## 6a. Planning failures: what you see, what the daemon fixes, what it asks
+
+A decompose can still fail for a content reason (a tracker id in a task
+title, a fixed release number, a path to a system binary). The change
+described here makes that failure explicit and, where it is only a
+wording problem, self-correcting, so an Automaton does not sit as a draft
+with zero stories and no explanation.
+
+**1. The daemon corrects fixed release numbers itself.** When the
+`release-version-fixed` check is the **only** content failure of a plan,
+the daemon rewrites each fixed three-part number in a release story or
+release task (title, description or spec) instead of sending the plan back
+to the planner: a number introduced by the word "version" or "release" is
+replaced together with that word by "the release", and a bare number
+becomes "the next patch above main". It only does this when every other
+plan check passes on the corrected plan; otherwise the plan takes the
+ordinary path (retry or failure) untouched. Each correction is written to
+the Automaton's decision log as one `auto_correct` line that lists every
+change as `old phrase -> new phrase` with its story and task, and the
+decompose failure record is cleared as a success clears it. The version
+itself is still chosen at merge time as the next patch above main (see
+[howto/merge-pipeline.md](merge-pipeline.md#how-the-release-version-is-chosen)).
+
+**2. A failed planning attempt names its rule and its phrases.** When
+planning gives up, the record on the Automaton (the last decompose
+failure) holds the reason, the category, the source rule and the **exact
+phrases** that tripped it (at most 20), whether it is retryable, the
+retry counts per category and the retry budget of that category, and when
+it happened. Retrying a content failure with the same spec reproduces it,
+so do not simply re-run: reword the phrase named in the record.
+
+**3. A non-retryable failure raises one alert.** The alert is a warning
+titled "Automaton could not be planned: <title>"; its body gives the
+category, the rule, the reason and the phrases. It is raised once per
+recorded failure (the daemon records that it raised it on the Automaton's
+decision log, so a restart does not raise it again). A retryable failure
+raises nothing; it is retried within its budget first.
+
+**4. When wording is the whole problem, the daemon asks.** If the spec lint
+(below) finds problems in the spec and the daemon can reword **every** one
+of them, it raises one question on the ordinary question store, asked by
+`planning` for that Automaton, with two options: **Fix the wording and plan
+again** and **Leave it** (the default). The question lists each suggested
+rewording. It is raised once per failure and is not raised a second time
+while an open question already carries the same Automaton, rule and
+phrases.
+
+- **Fix the wording and plan again** rewrites the spec with the suggestions
+  (a fixed release number becomes "the next patch above main", or "the
+  release" when "version"/"release" introduced it; a tracker id is removed;
+  a real system path becomes the command name), applies it as a revision
+  and plans again in the background. If the spec has nothing the lint can
+  reword, nothing changes and the refusal is logged.
+- **Leave it** changes nothing; the failure stays on the Automaton.
+
+The answer is recorded on the decision log (`planning_failure_answer`),
+quoting which option the operator chose.
+
+**The spec lint.** The suggestions come from a lint that runs the same
+content checks as the decompose, but over the spec text itself, so a
+phrase is caught before it is copied into a task title. It is
+deterministic and cheap: no model, no session. Each finding carries the
+rule, the exact phrase, a severity, whether the daemon can correct it and a
+suggested rewording:
+
+| Rule | Severity | Daemon can reword |
+|---|---|---|
+| `release-version-fixed` | warning | yes |
+| `names_tracker_id` | warning | yes |
+| `system-binary-path` | warning | yes |
+| `private-address` | error | no — name a configured host or a placeholder |
+| `worktree-path` | error | no — use a repo-relative path |
+
+A spec with even one finding the daemon cannot reword gets the alert but
+**no question**: only you can choose the host name or the path.
+
+**What this never does.** It never touches, kills or signals a session; it
+never changes a spec without your answer (the release-number correction
+works on the stored plan, not on your spec); and it never raises the
+alert or question for a failure that is still within its retry budget.
+
+> **Operator review:** this section describes the planning failure record,
+> alert, question and spec lint as shipped in the daemon. They are not yet
+> shown on the PWA, REST, MCP, CLI or comm channel as a dedicated view —
+> the alert goes to the ordinary alert channels and the question appears in
+> the question list. The locale keys the surfaces will need are named in the
+> daemon (`PlanningFailureLocaleKeys`). Confirm before relying on a
+> dedicated surface.
+
 ## 7. Reading the findings and the standard-task list — every surface
 
 A finding is `{rule_id, severity, message, story, task, matched}` — the
@@ -639,8 +744,10 @@ standard tasks are defined."
 
 ## 8. What it will never do
 
-- **Never fails a decompose.** A failing pass attaches findings to the
-  stored plan; a failed retry keeps the last good plan.
+- **Never fails a decompose on its own.** A failing lint pass attaches
+  findings to the stored plan; a failed retry keeps the last good plan.
+  (A decompose that fails a content check is a planning failure — see
+  [section 6a](#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks).)
 - **Never calls the planner in shadow or in a dry run.** Retries are
   enforce-only; the dry run lints the stored plan and mutates nothing.
 - **Never applies standard tasks in off mode.** Off is a complete no-op —
