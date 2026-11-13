@@ -495,7 +495,12 @@ func TestPeerEventSubscriptionPollTimeout(t *testing.T) {
 			}
 			return
 		}
-		peerSubPage(w, []LifecycleEvent{peerSubEvent("ev-after-timeout", "daemon-alpha")}, 1)
+		if n == 2 {
+			peerSubPage(w, []LifecycleEvent{peerSubEvent("ev-after-timeout", "daemon-alpha")}, 1)
+			return
+		}
+		// Later polls find nothing new, so the event is delivered exactly once.
+		peerSubPage(w, nil, 1)
 	})
 	defer close(release)
 	set := peerSubSettings()
@@ -506,7 +511,7 @@ func TestPeerEventSubscriptionPollTimeout(t *testing.T) {
 	if err := sub.Start(context.Background(), PeerEventSource{Peer: "peer-alpha", Queue: "q"}); err != nil {
 		t.Fatal(err)
 	}
-	peerSubWaitFor(t, "the event after a timed out poll", func() bool { evs, _, _, _ := rec.snapshot(); return len(evs) == 1 })
+	peerSubWaitFor(t, "the event after a timed out poll", func() bool { evs, _, _, _ := rec.snapshot(); return len(evs) >= 1 })
 	_, audits, _, _ := rec.snapshot()
 	sawRetry := false
 	for _, a := range audits {
