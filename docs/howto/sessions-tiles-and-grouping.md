@@ -141,11 +141,7 @@ servers](multi-servers.md#switch-between-servers-header-dropdown).
 - **Filters button** — opens the Filters sheet (below). A badge on the
   button shows how many filters are active, so you can tell at a glance that
   the list is narrowed even with the sheet closed.
-- **Fold all** — present only while a grouping is active and at least two
-  groups are openable: a compact icon button (tooltip **Fold every group**,
-  and **Unfold every group** once everything is folded) that folds or
-  unfolds every group at once. It replaces the former separate fold row
-  under the list, so there is no second row of controls for folding.
+- **Fold all** — an icon button (⊟ while at least one group can be folded, ⊞ once everything is folded; tooltip **Fold every group**, and **Unfold every group** after) that appears while a grouping is active and the visible list has foldable groups. It is a compact icon button, not a text button, and it folds or unfolds every group at once. It replaces the former separate fold row under the list, so there is no second row of controls for folding.
 - **View mode select** — the **List / Tiles / Compact** control, now a
 dropdown that shows the mode in use and replaces the three-button mode
 toggle. Described next under [View modes](#view-modes).
@@ -265,6 +261,33 @@ empties all three groups at once. The row is absent while nothing is
 picked in any of the three groups, and a stored selection or an active tag
 filter is not changed by any of this: it is how the groups are drawn,
 with no new setting, endpoint, MCP tool, CLI command or chat verb.
+
+### The one-line rule on the other pages
+
+The toolbar is an instance of a one-line rule: a page's server select, its
+search box (taking the free width) and its compact controls sit on one
+non-wrapping line under the page heading. When a page has no page-level
+search or filters, or its controls need more room than a phone-width
+non-wrapping line allows, the page is left as it is and the reason is
+recorded in the code next to the page's header render. The rule was
+inspected for the four adjacent pages, and on each of them the fallback
+applied — their layouts are unchanged:
+
+- **Alerts** — it has the shared header server select and always-visible
+  search/filter controls, but the labelled filter chips, the search input,
+  the labelled sort toggle, the icon action buttons and the server select
+  together exceed one phone-width non-wrapping line → the page keeps its
+  current layout, filter logic and handlers.
+- **Automata** — its search and filter controls exist only inside the
+  toggle-driven filter bar (a sheet), so there is no always-visible
+  page-level line to tighten into one → the filter bar stays
+  toggle-driven, its logic unchanged.
+- **Observer** — a scrolling settings page with no page-level search or
+  filters; the Memory Browser's controls are scoped to that section →
+  unchanged.
+- **Dashboard** — its stat bar is already one non-wrapping line carrying
+  the placement filter and the icon-sized buttons, there is no text search
+  and no room for another line → unchanged.
 
 ## View modes
 
