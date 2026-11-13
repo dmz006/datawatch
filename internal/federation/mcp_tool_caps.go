@@ -123,6 +123,8 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_set_memory_seed":               CapAutonomousWrite,
 	"autonomous_prd_set_notify_events":             CapAutonomousWrite,
 	"autonomous_prd_set_priority":                  CapAutonomousWrite,
+	"autonomous_prd_set_project":                   CapAutonomousWrite,
+	"autonomous_project_link_backfill":             CapAutonomousWrite, // dry run records the report, apply writes Automaton links
 	"autonomous_prd_set_kind":                      CapAutonomousWrite,
 	"autonomous_prd_set_release_size":              CapAutonomousWrite,
 	"autonomous_prd_set_breaking_change":           CapAutonomousWrite,
@@ -780,7 +782,7 @@ var nonConfigWriteTools = map[string]bool{
 	"autonomous_prd_scan_fix": true, "autonomous_prd_scan_results": true, "autonomous_prd_scan_rules": true, "autonomous_prd_set_continue_on_story_failure": true,
 	"autonomous_prd_set_failure_escalation": true, "autonomous_prd_set_git": true, "autonomous_prd_set_guided_mode": true, "autonomous_prd_set_kind": true,
 	"autonomous_prd_set_lane_preference": true, "autonomous_prd_set_llm": true, "autonomous_prd_set_memory_harvest": true, "autonomous_prd_set_memory_seed": true,
-	"autonomous_prd_set_notify_events": true, "autonomous_prd_set_priority": true, "autonomous_prd_set_quality_gates": true, "autonomous_prd_set_skills": true,
+	"autonomous_prd_set_notify_events": true, "autonomous_prd_set_priority": true, "autonomous_prd_set_project": true, "autonomous_project_link_backfill": true, "autonomous_prd_set_quality_gates": true, "autonomous_prd_set_skills": true,
 	"autonomous_prd_set_story_llm": true, "autonomous_prd_set_story_thinking_level": true, "autonomous_prd_set_story_verification_llm": true, "autonomous_prd_set_tags": true,
 	"autonomous_prd_set_branch_refresh": true, "autonomous_prd_set_task_effort_ceiling": true, "autonomous_prd_set_task_llm": true, "autonomous_prd_set_task_project_dir": true, "autonomous_prd_set_task_thinking_level": true,
 	"autonomous_prd_set_task_verification_llm": true, "autonomous_prd_set_task_verifier_policy": true, "autonomous_prd_set_thinking_level": true, "autonomous_prd_set_type": true,

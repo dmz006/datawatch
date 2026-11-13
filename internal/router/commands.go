@@ -1421,6 +1421,13 @@ func Parse(text string) Command {
 	case lower == "standard tasks" || lower == "standard-tasks":
 		return Command{Type: CmdAutonomous, Text: "standard-tasks"}
 
+	// "automaton project <id> <name|clear>" and "automaton project-backfill
+	// [apply]" are the project link verbs; they route through the same
+	// handler as "autonomous project ..." and "autonomous project-backfill ...".
+	case strings.HasPrefix(lower, "automaton project ") || strings.HasPrefix(lower, "automaton project-backfill") ||
+		lower == "automaton project":
+		return Command{Type: CmdAutonomous, Text: strings.TrimSpace(text[len("automaton"):])}
+
 	case lower == "autonomous" || strings.HasPrefix(lower, "autonomous ") ||
 		lower == "prd" || strings.HasPrefix(lower, "prd "):
 		// BL197 — autonomous PRD lifecycle over chat. The verb +
@@ -1976,6 +1983,8 @@ profile cluster list            list cluster profiles
 profile <kind> show <name>      show a profile (kind: project|cluster)
 profile <kind> smoke <name>     run profile validation smoke test
 project policy <name> [automaton]  effective project policy with per-setting sources
+automaton project <id> <name|clear>  link an Automaton to a configured project (clear removes the link)
+automaton project-backfill [apply]  report which unlinked Automata belong to the datawatch project; apply writes the links
 project show <name>             project record (dir, owner, repository, branch, ...)
 project arcs <name>             ordered arc list of the project
 project set <name> <field> <value>  set one record field (owner, repository, default_branch, description, default_backend, major_trigger, weekly_share, branch_retention_days)
