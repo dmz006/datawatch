@@ -8165,3 +8165,122 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   }
   .phone-page .dboard-card[data-cs] { grid-column: span 1 !important; }
 }
+
+/* ── Phone: Dashboard header counters and filter rows ──
+   On a phone the Dashboard stat bar is a wrapping flex row: the title, the
+   counters and the buttons flow onto a second line instead of squeezing each
+   counter into a narrow column. Each counter is one unbreakable unit
+   (white-space: nowrap), so "51 sess", "3 active" and "$521.32 today" never
+   split mid-value; the long burn-rate summary takes its own full line and wraps
+   only between its parts. Every filter row wraps, with children that shrink
+   (min-width: 0, max-width: 100%) instead of running off the right edge.
+   The only overflow guard is on the page container itself. Desktop layout is
+   outside this query and unchanged. */
+@media (max-width: 600px), (pointer: coarse) {
+  .phone-page {
+    overflow-x: hidden;
+  }
+  .dboard-stat-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    column-gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .dboard-stat-bar > * {
+    min-width: 0;
+  }
+  #dashStatSessions,
+  #dashStatTasks,
+  #dashStatGuardrails {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  #dashStatBurnRate {
+    flex: 1 1 100%;
+    white-space: normal;
+    border-left: none !important;
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+  #dashStatBurnRate > span {
+    white-space: nowrap;
+  }
+  #dashPlacementFilter {
+    max-width: 100%;
+    margin-left: 0 !important;
+    box-sizing: border-box;
+  }
+  #dashPlacementSelect {
+    min-width: 0;
+    max-width: 100% !important;
+  }
+  .dboard-stat-bar > a,
+  .dboard-stat-bar > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Filter rows: wrap, gap, shrinkable children. */
+  .timeline-card-filters,
+  .automata-filter-bar,
+  .plan-records-controls,
+  .plans-browser-controls,
+  .records-tab-controls,
+  .cost-charts-controls,
+  .list-controls,
+  .trace-filters,
+  .page-controls,
+  .obs-filter-row,
+  .automation-controls,
+  .project-gantt-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .timeline-card-filters > *,
+  .automata-filter-bar > *,
+  .plan-records-controls > *,
+  .plans-browser-controls > *,
+  .records-tab-controls > *,
+  .cost-charts-controls > *,
+  .list-controls > *,
+  .trace-filters > *,
+  .page-controls > *,
+  .obs-filter-row > *,
+  .automation-controls > *,
+  .project-gantt-toolbar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .timeline-card-filters > select,
+  .plan-records-controls > select,
+  .plans-browser-controls > select,
+  .records-tab-controls > select,
+  .cost-charts-controls > select,
+  .list-controls > select,
+  .trace-filters > select,
+  .automata-filter-bar > select {
+    flex: 1 1 140px;
+    width: auto;
+    text-overflow: ellipsis;
+  }
+  .plan-records-controls > input,
+  .plans-browser-controls > input,
+  .records-tab-controls > input,
+  .automata-filter-bar > input {
+    flex: 1 1 140px;
+    width: auto;
+  }
+
+  /* Wide fixed-width content scrolls inside its own wrapper instead of
+     widening the page. */
+  .project-gantt-scroll {
+    max-width: 100%;
+  }
+}
