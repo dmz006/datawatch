@@ -2413,8 +2413,9 @@ paths:
       summary: Preview the plan status roll-up (what would change)
       description: |
         Shows what the roll-up would change, and writes nothing. A plan's status is
-        derived from the states last reported for the Automata and Automations linked
-        to it: no linked work leaves the plan alone; any failed or blocked item makes
+        derived from the state recorded on each link to an Automaton or Automation
+        (the state seen when it was attached, and `shipped` when it is recorded as
+        shipped; not the live state): no linked work leaves the plan alone; any failed or blocked item makes
         it `blocked`; any running item keeps it `open`; all items shipped makes it
         `shipped`; all items finished makes it `done`; anything else keeps it `open`.
         A plan whose status was set by hand is never changed: it is listed with
