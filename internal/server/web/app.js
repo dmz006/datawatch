@@ -796,6 +796,8 @@ function _daemonVersionNoteFrame(version, serverName) {
       // The SW may have been registered before the version was known (bare
       // /sw.js); adopt the versioned script URL now (no-op if it already is).
       _swAdoptDaemonVersion(version);
+      // The notice (if painted) keys off this state — keep it current.
+      try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
     }
     return;
   }
@@ -804,6 +806,7 @@ function _daemonVersionNoteFrame(version, serverName) {
   seen[key] = version;
   _loadUiConfig();
   _onDaemonVersionChange(version);
+  try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
 }
 
 // The daemon serving this page (the primary), captured at boot from a
@@ -13298,6 +13301,20 @@ function renderSettingsView() {
                serving this page. Informational only — never the update banner,
                never touches _onDaemonVersionChange. -->
           <div id="aboutVersionSkewNote" style="display:none;padding:0 0 8px;font-size:12px;color:var(--text2);"></div>
+          <!-- Loaded-version notice + Reset browser state (2026-11-09). The
+               notice shows the release this page's assets were loaded with
+               (window.__DW_VERSION__, baked into the HTML at request time)
+               next to the daemon version (state._daemonVersion); a
+               mismatch gets its own skew wording. The button clears only
+               what this app owns in this browser — cs_/dw_ localStorage
+               keys, the sessionStorage reload markers, every Cache Storage
+               cache, every service worker — and reloads once. It is never
+               a server action: no session is ever touched. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+            <div id="aboutLoadedVersionNotice" style="font-size:12px;color:var(--text2);">—</div>
+            <button class="btn-secondary" style="font-size:12px;" onclick="confirmResetBrowserState()">${escHtml(t('settings_reset_browser_state') || 'Reset browser state')}</button>
+            <div style="font-size:11px;color:var(--text2);">${escHtml(t('settings_reset_browser_state_hint') || "Clears this app's saved settings and cached files in this browser, then reloads. It never touches running sessions.")}</div>
+          </div>
           <!-- Which server every About sub-section (this Version card, the
                API block, the Config Viewer block) above/below actually
                describes. The single shared "Showing:" label for the whole
@@ -13838,6 +13855,9 @@ function renderSettingsView() {
   if (aboutCanvas && window.DWSplashArt) {
     window._aboutSplashStopFn = window.DWSplashArt.startScene(aboutCanvas, { compact: true });
   }
+  // Loaded-version notice — the card just re-rendered, paint it now (both
+  // versions are usually known by the time the About tab opens).
+  if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice();
 }
 
 // v5.26.56 — Container Workers (F10) config panel. Operator-asked:
@@ -16839,6 +16859,9 @@ function loadVersionInfo() {
           noteEl.innerHTML = '';
         }
       }
+      // Loaded-version notice — the daemon version may just have been
+      // confirmed (or corrected for a peer); repaint if the card is up.
+      try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
     })
     .catch(e => {
       loadAboutShowingServer();
@@ -28461,27 +28484,209 @@ function registerServiceWorker() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Settings → About — loaded-version notice + Reset browser state (2026-11-09)
+//
+// The notice compares two releases: the one this page's assets were loaded
+// with (window.__DW_VERSION__, stamped into the HTML at request time — see
+// index.html) and the daemon version already tracked for the update banner
+// (state._daemonVersion, see _daemonVersionNoteFrame). Same release → one
+// quiet line. Different → skew wording (informational, like the existing
+// federated-peer skew note). Unknown halves read "not recorded yet".
+function _aboutLoadedPageVersion() {
+  try {
+    const v = (typeof window !== 'undefined' && window.__DW_VERSION__) ? String(window.__DW_VERSION__).trim() : '';
+    if (!v || v.indexOf('%') !== -1) return ''; // unbaked placeholder — treat as unknown
+    return v;
+  } catch (_) { return ''; }
+}
+window._aboutLoadedPageVersion = _aboutLoadedPageVersion;
+
+function renderAboutLoadedVersionNotice() {
+  let el = null;
+  try { el = (typeof document !== 'undefined') ? document.getElementById('aboutLoadedVersionNotice') : null; } catch (_) { return; }
+  if (!el) return; // About tab not rendered — nothing to paint
+  const pageVer = _aboutLoadedPageVersion();
+  const daemonVer = (typeof state !== 'undefined' && state && state._daemonVersion) ? String(state._daemonVersion).trim() : '';
+  if (pageVer && daemonVer && pageVer !== daemonVer) {
+    el.textContent = t('about_loaded_version_skew', [pageVer, daemonVer])
+      || `This page was loaded with v${pageVer}, a different release than v${daemonVer}, the one the daemon reports. Reset browser state clears this browser's copies of the app and reloads it fresh.`;
+  } else if (pageVer && daemonVer) {
+    el.textContent = t('about_loaded_version_match', [pageVer, daemonVer])
+      || `Loaded with v${pageVer} — the daemon reports the same release, v${daemonVer}.`;
+  } else if (pageVer) {
+    el.textContent = t('about_loaded_version_daemon_unknown', [pageVer])
+      || `Loaded with v${pageVer}. The daemon version is not recorded yet.`;
+  } else {
+    el.textContent = t('about_loaded_version_pending')
+      || 'Version information appears here once the page and daemon versions are known.';
+  }
+}
+window.renderAboutLoadedVersionNotice = renderAboutLoadedVersionNotice;
+
+// Reset browser state: clears ONLY what this app owns in this browser and
+// reloads exactly once:
+//   * localStorage keys with the cs_ / dw_ prefixes (app settings, the
+//     token, splash records) — every other key in this origin's storage is
+//     left exactly as it is;
+//   * the sessionStorage reload markers (the once-only auto-reload slot and
+//     the index.html _dw_reloaded_for_<version> one-shots) — other session
+//     keys (e.g. the alert-muted flag) are left alone;
+//   * every Cache Storage cache (the app shell and data caches);
+//   * every registered service worker in this scope.
+// Deliberately a browser-state reset, not a server action: no fetch, no
+// WebSocket, no session endpoint is ever touched, so no session can be
+// affected. Every step is individually fault-tolerant and the reload is
+// ALWAYS reached exactly once — even when a cache delete or worker
+// unregistration throws. Pure over injected deps (localStorage /
+// sessionStorage / caches / serviceWorker / reload) so node:test can drive
+// it with fakes — no browser required.
+const BROWSER_STATE_STORAGE_PREFIXES = ['cs_', 'dw_'];
+// Exact keys this app owns that do not carry a cs_/dw_ prefix: the locale
+// override (setLocaleOverride, app.js — read at boot, same app only).
+const BROWSER_STATE_STORAGE_EXACT_KEYS = ['datawatch.locale'];
+const BROWSER_STATE_SESSION_MARKER_KEYS = ['cs_sw_autoreload_done'];
+const BROWSER_STATE_SESSION_MARKER_PREFIXES = ['_dw_reloaded_for_'];
+
+function _ownedStorageKeys(store, prefixes, exactKeys) {
+  const out = [];
+  const exact = exactKeys || [];
+  for (const k of exact) {
+    try { if (store.getItem(k) !== null) out.push(k); } catch (_) { out.push(k); }
+  }
+  const n = store.length;
+  for (let i = 0; i < n; i++) {
+    const k = store.key(i);
+    if (k === null || k === undefined) continue;
+    const ks = String(k);
+    if (out.indexOf(ks) >= 0) continue;
+    for (const p of prefixes) {
+      if (ks.indexOf(p) === 0) { out.push(ks); break; }
+    }
+  }
+  return out;
+}
+
+function _ownedSessionMarkerKeys(store) {
+  const out = [];
+  for (const k of BROWSER_STATE_SESSION_MARKER_KEYS) {
+    try { if (store.getItem(k) !== null) out.push(k); } catch (_) { out.push(k); }
+  }
+  const n = store.length;
+  for (let i = 0; i < n; i++) {
+    const k = store.key(i);
+    if (k === null || k === undefined) continue;
+    const ks = String(k);
+    for (const p of BROWSER_STATE_SESSION_MARKER_PREFIXES) {
+      if (ks.indexOf(p) === 0 && out.indexOf(ks) === -1) { out.push(ks); break; }
+    }
+  }
+  return out;
+}
+
+async function resetBrowserState(deps) {
+  deps = deps || {};
+  const prefixes = (Array.isArray(deps.keyPrefixes) && deps.keyPrefixes.length)
+    ? deps.keyPrefixes.map(String)
+    : BROWSER_STATE_STORAGE_PREFIXES;
+  const store = deps.localStorage || (typeof localStorage !== 'undefined' ? localStorage : null);
+  const session = deps.sessionStorage || (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+  const cacheManager = deps.caches || (typeof caches !== 'undefined' ? caches : null);
+  const swController = deps.serviceWorker
+    || (typeof navigator !== 'undefined' && navigator && typeof navigator.serviceWorker !== 'undefined' ? navigator.serviceWorker : null);
+  const doReload = typeof deps.reload === 'function'
+    ? deps.reload
+    : (() => { try { window.location.reload(); } catch (_) { location.reload(); } });
+
+  const result = { removedStorageKeys: 0, removedSessionMarkers: 0, deletedCaches: 0, unregisteredWorkers: 0, reloaded: false };
+
+  // 1. localStorage — only the keys this app owns (cs_ / dw_ prefixes plus
+  //    the exact-key locale override); every other key stays put.
+  if (store) {
+    let keys = [];
+    try { keys = _ownedStorageKeys(store, prefixes, BROWSER_STATE_STORAGE_EXACT_KEYS); } catch (_) { keys = []; }
+    for (const k of keys) {
+      try { store.removeItem(k); result.removedStorageKeys++; } catch (_) {}
+    }
+  }
+
+  // 2. sessionStorage — only the reload markers.
+  if (session) {
+    let markers = [];
+    try { markers = _ownedSessionMarkerKeys(session); } catch (_) { markers = []; }
+    for (const k of markers) {
+      try { session.removeItem(k); result.removedSessionMarkers++; } catch (_) {}
+    }
+  }
+
+  // 3. Cache Storage — delete every cache. A failing delete must not stop
+  //    the rest: the reload below still happens, and the fresh install's
+  //    activate step sweeps stale caches as a second pass.
+  if (cacheManager && typeof cacheManager.keys === 'function') {
+    let names = [];
+    try { names = await cacheManager.keys(); } catch (_) { names = []; }
+    for (const name of (names || [])) {
+      let ok = false;
+      try { ok = await cacheManager.delete(name); } catch (_) { ok = false; }
+      if (ok) result.deletedCaches++;
+    }
+  }
+
+  // 4. Service workers — unregister every registration in this scope.
+  if (swController && typeof swController.getRegistrations === 'function') {
+    let regs = [];
+    try { regs = await swController.getRegistrations(); } catch (_) { regs = []; }
+    for (const reg of (regs || [])) {
+      let ok = false;
+      try { ok = await reg.unregister(); } catch (_) { ok = false; }
+      if (ok) result.unregisteredWorkers++;
+    }
+  }
+
+  // 5. Reload — exactly once, always reached, even when every step above
+  //    failed. A clean page from the server is the whole point of the
+  //    button; a half-reset browser would be worse than no reset at all.
+  try { doReload(); result.reloaded = true; } catch (_) { /* reload itself failed; nothing left to do */ }
+
+  return result;
+}
+window.resetBrowserState = resetBrowserState;
+
+// The About-card button. One click: pressing the button IS the
+// confirmation — no second confirm step, no dialog. Ends with the same
+// hard reload the legacy forcePWAUpdate used (full refresh splash, which
+// also bypasses the HTTP cache).
+async function confirmResetBrowserState() {
+  let reloaded = false;
+  const doReload = () => {
+    if (reloaded) return; // exactly one reload, whatever else throws
+    reloaded = true;
+    try { if (typeof window !== 'undefined' && typeof window.performFullPageRefresh === 'function') { window.performFullPageRefresh({ eyeBolt: false }); return; } } catch (_) {}
+    try { window.location.reload(); } catch (_) { location.reload(); }
+  };
+  try {
+    await resetBrowserState({ reload: doReload });
+  } catch (_) {
+    doReload();
+  }
+}
+window.confirmResetBrowserState = confirmResetBrowserState;
+
 // GATE alpha.36 (operator 2026-05-10): manual escape hatch for stuck
 // PWA caches. Unregisters every SW + drops every cache + reloads with
 // bypass. Operator can fire this from the dev console
 // (window.forcePWAUpdate()) or via the long-press refresh hint.
+// Reuses resetBrowserState (owned storage keys, reload markers, all
+// caches, all workers) and finishes with the same hard reload it always
+// used. resetBrowserState never throws and always runs its reload exactly
+// once, so the legacy try/catch-then-reload shape is preserved.
 window.forcePWAUpdate = async function() {
   try {
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
-    }
-    if ('caches' in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-    }
-  } catch (e) { console.warn('forcePWAUpdate cleanup error:', e); }
-  // Hard reload bypassing HTTP cache too.
-  // bl434 row 6 (eye-only): cache-bust reload, not a session connect — the
-  // eye keeps the deliberate gesture from reading as a broken page.
-  // Audit (b42f0003): deliberate operator action (manual PWA cache escape
-  // hatch) — never triggered by a federated-server switch.
-  performFullPageRefresh({ eyeBolt: false });
+    await resetBrowserState({ reload: () => performFullPageRefresh({ eyeBolt: false }) });
+  } catch (e) {
+    console.warn('forcePWAUpdate cleanup error:', e);
+    performFullPageRefresh({ eyeBolt: false });
+  }
 };
 
 // ── Alerts view ───────────────────────────────────────────────────────────────
