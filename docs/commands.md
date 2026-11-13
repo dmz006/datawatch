@@ -1635,7 +1635,7 @@ Project + cluster profile CRUD (F10 sprint 2).
 | `set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags given; the other fields keep their stored value |
 | `arcs <name> [--set id:priority:state,…]` | Print the arcs in order, or replace them (`--set ""` clears) |
 | `history <name> [--limit N] [--cursor …]` | One page of finished Automata, daily progress and Gantt rows |
-| `timeline <name> [--level arcs\|automata\|tasks] [--parent <arc>\|none] [--automaton <id>] [--focus <arc>\|none] [--limit N] [--cursor …]` | One level of the project timeline: start, end and status per arc, Automaton and task, with task dependencies and Automaton chain edges (the CLI prints the daemon reply unchanged); chat: `project timeline <name> [level=…] [parent=…] [automaton=…] [focus=…] [limit=…] [cursor=…]`. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline) |
+| `timeline <name> [--level arcs\|automata\|tasks] [--parent <arc>\|none] [--automaton <id>] [--focus <arc>\|none] [--limit N] [--cursor …]` | One level of the project timeline: start, end and status (completed, running, waiting, blocked, failed or cancelled) per arc, Automaton and task, with task dependencies and Automaton chain edges (the CLI prints the daemon reply unchanged); chat: `project timeline <name> [level=…] [parent=…] [automaton=…] [focus=…] [limit=…] [cursor=…]`. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline) |
 
 The target's definition of done and the lane defaults are set through REST or MCP
 (`project_upsert`), not by a flag.
