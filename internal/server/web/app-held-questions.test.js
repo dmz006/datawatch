@@ -41,6 +41,7 @@ const HELD_KEYS = [
   'held_question_empty',
   'held_question_recommended',
   'held_question_default_hold',
+  'held_question_default_value',
   'held_question_answer',
   'held_question_open_automaton',
   'held_question_open_task',
@@ -130,18 +131,23 @@ test('inbox body: the held-questions card renders directly under the queue card,
   assert.ok(iQueues < iHeldCard, 'queue card comes before the held card');
 });
 
+// The report (internal/server/held_questions.go) carries the Automaton's
+// title and id as title/prd_id, the question's own text as text, plus
+// question_id, task_id, state, reason, recommended_option and default.
 const entry = (extra) => Object.assign({
   question_id: 'q_102',
-  question_text: 'Which backend for the fine-tune run?',
-  automaton_title: 'Fine-tune pipeline',
-  automaton_id: 'prd_42',
+  text: 'Which backend for the fine-tune run?',
+  title: 'Fine-tune pipeline',
+  prd_id: 'prd_42',
+  automation_id: 'auto_3',
   task_id: 'task_7',
   state: 'review_held',
   reason: 'Blocked on an unanswered decision',
   recommended_option: 'Use B200',
+  default: 'hold',
 }, extra);
 
-test('render with items: title, ids, task, reason, recommended, hold-default, link and answer control', () => {
+test('render with items: title, ids, task, text, reason, recommended, default, link and answer control', () => {
   const sandbox = loadApp();
   const en = bundle('en');
   sandbox._hqBody = { mode: 'shadow', held_states: [], open: [entry()], shadow: [] };
@@ -150,18 +156,46 @@ test('render with items: title, ids, task, reason, recommended, hold-default, li
   assert.ok(html.includes('held-question-automaton') && html.includes('prd_42'), 'Automaton id chip rendered');
   assert.ok(html.includes('held-question-task') && html.includes('task_7'), 'held task rendered');
   assert.ok(html.includes('held-question-state') && html.includes('review_held'), 'held state id rendered');
+  assert.ok(html.includes('held-question-text') && html.includes('Which backend for the fine-tune run?'), 'the question\'s own text renders as the main line');
+  assert.ok(html.includes('-webkit-line-clamp:3'), 'the text line is clamped to three lines');
   assert.ok(html.includes('Blocked on an unanswered decision'), 'one-line reason rendered');
   assert.ok(html.includes(en.held_question_recommended.replace('%1$s', 'Use B200')), 'recommended option rendered');
-  assert.ok(html.includes(en.held_question_default_hold), 'forced hold-on-default line rendered');
+  assert.ok(html.includes(en.held_question_default_value.replace('%1$s', 'hold')), 'the entry\'s default value shown explicitly');
   assert.ok(html.includes('javascript:void(0)') && html.includes('data-automaton="prd_42"') && html.includes('data-task="task_7"'),
     'detail link carries the Automaton and task ids');
   assert.ok(html.includes(en.held_question_open_task), 'link names the task (opens the Automaton detail)');
   assert.ok(html.includes("if (typeof window.openQuestion === 'function') window.openQuestion('q_102')"),
     'answer button reuses the existing answer control (guarded hand-off)');
   assert.ok(!/PRD/i.test([en.held_question_title, en.held_question_answer, en.held_question_open_task,
-    en.held_question_default_hold, en.held_question_recommended, en.held_question_empty,
+    en.held_question_default_hold, en.held_question_default_value, en.held_question_recommended, en.held_question_empty,
     en.held_question_shadow_title, en.held_question_settings_mode, en.held_question_settings_states].join(' ')),
     'the rendered keys carry no PRD wording');
+});
+
+test('default line: the entry\'s default when present, the forced hold-on-default line otherwise', () => {
+  const en = bundle('en');
+  const box = loadApp();
+  box._row = entry();
+  assert.ok(vm.runInContext('window.heldQuestionRowHtml(_row)', box)
+    .includes(en.held_question_default_value.replace('%1$s', 'hold')),
+    'an explicit default value renders');
+  box._row = entry({ default: 'Use B200' });
+  assert.ok(vm.runInContext('window.heldQuestionRowHtml(_row)', box)
+    .includes(en.held_question_default_value.replace('%1$s', 'Use B200')),
+    'a non-hold default renders by value');
+  box._row = entry({ default: undefined });
+  const noDef = vm.runInContext('window.heldQuestionRowHtml(_row)', box);
+  assert.ok(noDef.includes(en.held_question_default_hold), 'no default -> the forced hold-on-default line');
+  assert.ok(!noDef.includes(en.held_question_default_value), 'and no default-value line');
+});
+
+test('old field names: automaton_title/automaton_id still render as fallbacks', () => {
+  const box = loadApp();
+  box._row = { question_id: 'q_7', automaton_title: 'Legacy pipeline', automaton_id: 'prd_9' };
+  const html = vm.runInContext('window.heldQuestionRowHtml(_row)', box);
+  assert.ok(html.includes('Legacy pipeline'), 'legacy title fallback renders');
+  assert.ok(html.includes('prd_9'), 'legacy id fallback renders');
+  assert.ok(html.includes('data-automaton="prd_9"'), 'the detail link uses the fallback id');
 });
 
 test('mode off: badge reads off; shadow mode badge and would-be list render', () => {
@@ -243,6 +277,8 @@ test('link contract: the detail link opens the Automaton detail via the guarded 
 
   const rowNoQuestion = vm.runInContext('window.heldQuestionRowHtml({automaton_id: "prd_42", task_id: "task_7"})', box);
   assert.ok(!rowNoQuestion.includes('held-question-answer'), 'no question id -> no answer button');
+  const noQTag = /<div class="held-question-row"[^>]*>/.exec(rowNoQuestion)[0];
+  assert.ok(!noQTag.includes('onclick='), 'no question id -> the row div itself opens nothing');
 
   const rowNoId = vm.runInContext('window.heldQuestionRowHtml({question_id: "q_9"})', box);
   assert.ok(rowNoId.includes("window.openQuestion('q_9')"), 'answer hand-off still works without an Automaton id');
