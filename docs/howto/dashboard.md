@@ -26,6 +26,8 @@ described below. Cards are arranged on a grid you can change, and the
 cards read their data from the daemon's REST endpoints, refreshed while the
 view is open.
 
+> **On a phone**: the header counters wrap onto more lines (each counter stays whole), the cards fill one full-width column and filter rows wrap instead of running off the right edge. See [Page layout at phone width](navigation-mobile-fit.md#page-layout-at-phone-width).
+
 > **Pre-conditions**: The dashboard surfaces live data from multiple subsystems. For the full experience:
 > - Sessions and LLM cards require an LLM backend. See [llm-registry.md](llm-registry.md).
 > - The Network and Work map cards need live sessions or Automaton tasks. See [autonomous-planning.md](autonomous-planning.md).

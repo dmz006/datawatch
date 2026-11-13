@@ -2828,6 +2828,22 @@ suppressed after the channel connects (`channel_ready: true`). This eliminates t
 rapid `running ↔ waiting_input` cycling caused by screen-scraping Claude's animated
 terminal. See `docs/claude-channel.md` for details.
 
+### Phone page layout (all views)
+
+At phone width (a viewport of 600 px or less, or a touch screen) every
+top-level PWA page shares the Sessions list's geometry: one 12 px side
+gutter, full-width cards (12 px 14 px padding, 8 px gap) and no sideways
+page scroll. The Dashboard stat bar wraps with each counter kept whole and
+the burn-rate summary on its own line, and the filter and control rows
+wrap instead of overflowing. The values are the CSS custom properties
+`--phone-gutter`, `--phone-card-padding` and `--phone-gap` in
+`internal/server/web/style.css`.
+
+There is no config, API or migration and desktop layout is unchanged.
+Because the PWA is embedded in the daemon binary, rebuild and restart the
+daemon and hard-refresh the PWA tab to serve it. Operator how-to:
+[`howto/navigation-mobile-fit.md`](howto/navigation-mobile-fit.md#page-layout-at-phone-width).
+
 ### Alerts tab (help link, state row, refresh)
 
 The PWA's Alerts tab was tidied for a narrow phone viewport (operator

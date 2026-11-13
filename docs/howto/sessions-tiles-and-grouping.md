@@ -277,7 +277,9 @@ search or filters, or its controls need more room than a phone-width
 non-wrapping line allows, the page is left as it is and the reason is
 recorded in the code next to the page's header render. The rule was
 inspected for the four adjacent pages, and on each of them the fallback
-applied — their layouts are unchanged:
+applied — their toolbars are unchanged (the pages do share the Sessions
+list's side gutter and card width at phone width; see
+[Page layout at phone width](navigation-mobile-fit.md#page-layout-at-phone-width)):
 
 - **Alerts** — it has the shared header server select and always-visible
   search/filter controls, but the labelled filter chips, the search input,
@@ -291,9 +293,11 @@ applied — their layouts are unchanged:
 - **Observer** — a scrolling settings page with no page-level search or
   filters; the Memory Browser's controls are scoped to that section →
   unchanged.
-- **Dashboard** — its stat bar is already one non-wrapping line carrying
-  the placement filter and the icon-sized buttons, there is no text search
-  and no room for another line → unchanged.
+- **Dashboard** — there is no text search, so the one-line rule does not
+  apply. At phone width its stat bar wraps onto more lines (each counter
+  stays whole, the burn-rate summary takes its own line) instead of being
+  one non-wrapping line; see
+  [Page layout at phone width](navigation-mobile-fit.md#page-layout-at-phone-width).
 
 ## View modes
 

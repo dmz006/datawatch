@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation
+
+- **Phone layout docs describe the shared page layout.** The navigation how-to, the Dashboard how-to, the Sessions list how-to, the operations guide and the glossary now say that, at phone width, every page shares the Sessions list's side gutter, card width and spacing, that the Dashboard header counters wrap with each counter kept whole, and that filter rows wrap. The Sessions list how-to no longer says the Dashboard stat bar is one non-wrapping line. Documentation only: no code or setting changed.
+
 ## v9.172.5 — Sessions deep-dive how-to corrections
 
 ### Fixed
