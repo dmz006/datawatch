@@ -263,6 +263,10 @@ type ProtectedPathHold struct {
 
 // PRD is the operator-supplied feature description.
 type PRD struct {
+	// Archive is the marker of an archived Automaton: its bulky parts (decision
+	// log, session history, raw judge text) live in the archive file the marker
+	// names. Nil on every live record. See prd_archive.go.
+	Archive *ArchiveRef `json:"archive,omitempty"`
 	// Truncated is set only on the capped copy the default detail GET
 	// returns (see CapPRDText). It is never stored.
 	Truncated  []TruncatedField `json:"truncated,omitempty"`

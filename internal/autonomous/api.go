@@ -849,6 +849,18 @@ func (a *API) TasksForSelection(prd *PRD, sel ObjectTagSelection) TasksView {
 	return FilterTasksView(BuildTasksView(prd), sel)
 }
 
+// ReadAutomatonArchive loads the archive of one Automaton on request.
+func (a *API) ReadAutomatonArchive(id string) (*PRDArchive, error) {
+	return a.M.ReadAutomatonArchive(id)
+}
+
+// PlanAutomatonArchive is the archive dry-run report; it writes nothing.
+func (a *API) PlanAutomatonArchive() ArchivePlan { return a.M.PlanAutomatonArchive() }
+
+// RunAutomatonArchive archives every eligible finished Automaton after a
+// verified backup.
+func (a *API) RunAutomatonArchive() (ArchiveReport, error) { return a.M.RunAutomatonArchive() }
+
 func (a *API) ListPRDs() []any {
 	return a.M.PRDsWithNotifyEffective(a.M.Store().ListPRDs())
 }

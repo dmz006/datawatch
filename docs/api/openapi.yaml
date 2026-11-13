@@ -5259,6 +5259,85 @@ paths:
                   next_cursor: {type: string}
         "400": {description: Bad limit or cursor}
         "404": {description: Unknown Automaton}
+  /api/autonomous/prds/{id}/archive:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Read the archive of one finished Automaton
+      description: "Read on ask. Returns the parts that were moved out of the live record when the Automaton was archived: the decision log, every task's session history (history notes, session decisions, attempts, events, infra retries, runner evidence), long task errors and the raw judge text of every verdict. Reads only that Automaton's archive file. Requires the autonomous read capability."
+      operationId: autonomousPRDArchive
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: integer}
+                  id: {type: string}
+                  decisions: {type: array, items: {type: object}}
+                  memory_report: {type: string}
+                  verdict_raw_judge: {type: array, items: {type: string}}
+                  stories: {type: array, items: {type: object}, description: "Raw judge text of each story's verdicts, by story index"}
+                  tasks: {type: array, items: {type: object}, description: "The parts moved out of each task, by story and task index"}
+        "404": {description: Unknown Automaton, or an Automaton that is not archived}
+        "500": {description: The archive file is missing or does not match its marker}
+  /api/autonomous/archive:
+    post:
+      summary: Archive finished Automata (dry run by default)
+      description: "A finished Automaton is completed, shipped or cancelled and older than autonomous.archive.retention_days. The default is a dry run: the report names which Automata would be archived, with the bytes before and after, and writes nothing. With dry_run false the run first copies each touched record to a backup directory and verifies every copy by size and SHA-256, stopping without any change when one does not verify. It then archives one Automaton at a time and verifies each archive before rewriting the live record. An Automaton with a running task, an open session or an unmerged branch it still needs is skipped, never forced. No data is deleted, counts and lists read the same afterwards, and a second run archives nothing more. Requires the autonomous write capability."
+      operationId: autonomousArchive
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean, default: true, description: "true or absent: report only. false: take the verified backup and archive."}
+      responses:
+        "200":
+          description: The dry-run plan, or the run report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dry_run: {type: boolean}
+                  retention_days: {type: integer}
+                  eligible:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        bytes_before: {type: integer}
+                        bytes_after: {type: integer}
+                        archive_bytes: {type: integer}
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        reason: {type: string}
+                  not_finished: {type: integer}
+                  already_archived: {type: integer}
+                  bytes_before: {type: integer}
+                  bytes_after: {type: integer}
+                  archive_bytes: {type: integer}
+                  archived: {type: array, items: {type: object}, description: "Run only: the Automata archived"}
+                  failed: {type: array, items: {type: object}, description: "Run only: the Automata whose archive failed, with the reason"}
+                  backup_dir: {type: string, description: "Run only: where the verified backup sits"}
+                  backup_files: {type: integer}
+                  backup_bytes: {type: integer}
+        "400": {description: Unreadable body}
+        "409": {description: The run was refused or stopped before any change (a backup copy did not verify, or the daemon cannot yet tell whether a session is open)}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:

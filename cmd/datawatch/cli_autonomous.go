@@ -336,6 +336,7 @@ Subcommands:
 		newAutonomousSubscriptionTestCmd(),
 		newAutonomousEventsCmd(),
 		newAutonomousEventLogCmd(),
+		newAutonomousArchiveCmd(),
 		newAutonomousPeerEventsCmd(),
 		newAutonomousEventKindsCmd(),
 		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
