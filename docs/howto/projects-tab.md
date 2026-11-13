@@ -53,8 +53,8 @@ Projects is the first sub-tab of the **Automata** view, to the left of
 
 Once you pick a project, its page is split into its own strip of **page
 sub-tabs** (labelled **Project sections** for screen readers), and only one body
-shows at a time: **Overview**, **Plans**, **Gantt**, **Unassigned**, **History**,
-**Policy** and, when there is something to show, **Events**. They are the
+shows at a time: **Overview**, **Plans**, **Records**, **Gantt**, **Unassigned**,
+**History**, **Policy** and, when there is something to show, **Events**. They are the
 sub-tabs of one project's page, not of the Automata view; this guide says "page
 sub-tab" for them and "sub-tab" for **Projects** itself. See
 [The page sub-tabs](#the-page-sub-tabs).
@@ -67,18 +67,24 @@ The rest of the project record (owner, target, plans, lane defaults, weekly shar
 branch retention, major trigger) is changed from the CLI, REST, MCP and the comm
 channel, as shown below.
 
-Three words are used in this guide, and only these three:
+Four words are used in this guide for work, and only these four:
 
 - **Automaton**: one unit of autonomous work.
 - **Automata**: more than one Automaton.
-- **Automation**: a named chain of Automata, run in order. A plan *is* an Automation.
-- **Plan**: the registry record of what you are working on. The older project plan list (arcs) is deprecated in favor of these records: `datawatch plans migrate` builds plans from that list and
-  registry rows, and the plans routes keep answering meanwhile. See [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows).
+- **Automation**: a named chain of Automata, run in order.
+- **Plan**: the registry record of what you are working on. A plan links down:
+  plan, then Automation, then Automata, then tasks. A finding attaches to a plan
+  or to an Automaton. The word *record* is used only for what is stored (the
+  registry rows and findings) and for the **Records** sub-tab. The older project
+  plan list (arcs) is deprecated in favor of plan records: `datawatch plans migrate`
+  previews plans built from that list and the registry rows, and `--apply` writes
+  them; the older routes keep answering meanwhile. See
+  [plan-records.md](plan-records.md#building-plans-from-arcs-and-rows).
 
 ```
 Project  "core-api"
- ├─ Plan 1 priority 1  active   ── Automation a1b2c3d4 ── Automata ── sessions
- ├─ Plan 2 priority 2  planned  ── Automation e5f6a7b8 ── Automata ── sessions
+ ├─ Plan 1 priority 1  active   ── Automation a1b2c3d4 ── Automata ── tasks ── sessions
+ ├─ Plan 2 priority 2  planned  ── Automation e5f6a7b8 ── Automata ── tasks ── sessions
  └─ Unassigned Automata (of this project, held by no plan)
 ```
 
@@ -244,8 +250,9 @@ are spread across them, one page sub-tab at a time.
 
 | Page sub-tab | Blocks on it | What they show |
 |---|---|---|
-| Overview | Header, Progress | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share; then tasks and Automata done, cost in points and throughput over the last seven days |
+| Overview | Header, Progress | Description, directory, default backend, owner, repository, default branch, target name, definition of done, lane defaults, weekly share; then tasks and Automata done, cost in points and throughput over the last seven days. A summary shows the active plans with their state and progress, what is next, and counts of plans, registry rows and findings (the counts link to the Plans and Records sub-tabs) |
 | Plans | Plans browser, then the roll-up plans | **Plans browser:** plans in priority order, each with its goal, state, a progress bar of finished Automata and its points. The **up** and **down** buttons on a plan row move it and save the new order. Click a plan to open it: its Automations, then its Automata in run order (finished first by completion time, then running, next, blocked and held; the **Next** marker skips blocked and held Automata) with their own up and down buttons, a **Tasks** section that reads tasks only when you open it and has **Load more**, and the findings and registry rows linked to the plan with their old row numbers. A **Backlog** group after the plans holds plans with no Automaton yet, in old row number order. The search box looks through plan, Automaton, registry row and finding titles, the state filter narrows by plan state, and reordering is turned off while either is in use. Under each open plan, attach an Automaton, an Automation or a finding by id (a finding can also be picked from a list); a link held by another plan is refused with the holder named. **Create plan** at the top adds a plan with a title and a goal. Which plans and Tasks sections are open is remembered in this browser only. **Roll-up plans:** each plan with its priority, Automation id, state (Planned, Active, Done), a task bar and its points. Click a plan to open the Automata and sessions under it. An **active** plan opens by default |
+| Records | Records browser, Registry and findings | Every registry row and finding of the project with the plan and Automata each links to. A search box, a kind filter and **Load more** narrow and page the list; a plan link opens the Plans sub-tab with that plan expanded. "Record" here names the stored registry rows and findings only; the work itself is always a plan, an Automation or an Automaton |
 | Gantt | Gantt | One expandable timeline. It opens with one row per plan and a bar from the plan's first to its last task, coloured by its status (Completed, Running, Waiting, Blocked, Failed or Cancelled); work still running is drawn to now and reads "now". Hover or focus a bar for its status, dates and, for a shipped Automaton, its release. Click a row's arrow to open the Automata under the plan, and an Automaton's arrow to open its tasks; a plan with no activity yet reads **Planned** with no bar. Automata that no plan holds sit in the **Automata with no plan** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; **All time** fits the rows that are showing, expanded Automata and tasks included, with a 2 percent margin at each end, and the mouse wheel zooms and a drag pans the chart. Rows you open later are ordered by completion, then running and waiting work by start, with a task or Automaton below the ones it depends on. **Edges** draws thin arrows between the rows that are showing: from the end of a task to the start of each task that waits for it, and from an Automaton to the Automata that follow it. Hover a bar, or tab to it, to light its own edges and dim the rest. **Edges** turns the arrows off, and **All edges** (shown while they are on) lifts the cap of 120 drawn edges, beyond which only the edges of the hovered bar show. The choice is remembered in this browser only. Each plan row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
 | Unassigned | Unassigned Automata, Automata without a project | Automata of this project that no plan holds. Below them, Automata with no project link and no directory match are listed once in a separate `without_project` group, the same whichever project you open and not counted in any total (see [Which Automata belong to a project](#which-automata-belong-to-a-project)), with a hint to set a link from the Automaton detail |
 | History | History | Finished and archived Automata, daily progress snapshots, newest first, with **Load more** |
@@ -284,8 +291,8 @@ not a project, and it has no page sub-tabs.
 
 #### The page sub-tabs
 
-- **Seven in a fixed order.** Overview, Plans, Gantt, Unassigned, History, Policy
-  and Events, left to right.
+- **Eight in a fixed order.** Overview, Plans, Records, Gantt, Unassigned, History,
+  Policy and Events, left to right.
 - **One body at a time.** Choose a page sub-tab to show its body; the others are
   not drawn. The strip scrolls sideways on a phone, so every sub-tab stays
   reachable on a narrow screen.
@@ -304,7 +311,7 @@ not a project, and it has no page sub-tabs.
   chat or configuration form. It applies to whichever project you open next, and a
   browser that blocks storage opens **Overview** each time.
 - **Addressable.** The address of a page sub-tab is `#projects/<name>/<subtab>`,
-  where `<subtab>` is `arcs`, `gantt`, `unassigned`, `history`, `policy` or
+  where `<subtab>` is `plans` (the old `arcs` still opens it), `records`, `gantt`, `unassigned`, `history`, `policy` or
   `events`. `#projects/<name>` opens **Overview**, and so does an address that
   names an unknown page sub-tab. Opening `#projects` with no project name keeps
   the remembered page sub-tab. Choosing a page sub-tab rewrites the address in
@@ -430,6 +437,30 @@ the list is the only way to change the state, so send the whole list:
 ```bash
 datawatch projects arcs core-api --set a1b2c3d4:1:done,e5f6a7b8:2:active,c9d0e1f2:3:planned
 ```
+
+### Order and link plans
+
+The **Plans** page sub-tab does this with buttons. The same changes are on every
+other surface; a plan is named by its id or its title:
+
+```bash
+datawatch plans list core-api                        # plans in priority order, then the backlog
+datawatch plans create core-api "Release 9.x" --goal "Ship the next minor"
+datawatch plans reorder "Release 9.x" "Docs refresh" # these take positions 1 and 2
+datawatch plans reorder-automata "Release 9.x" a1b2c3d4 e5f6a7b8
+datawatch plans attach "Release 9.x" --automaton a1b2c3d4
+datawatch plans detach "Release 9.x" --automaton a1b2c3d4
+datawatch plans migrate                              # dry run: nothing is written
+datawatch plans migrate --apply                      # build plans from the older plan list and registry rows
+```
+
+MCP has `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`,
+`plan_detach` and `plan_migrate`; chat has `autonomous plan list|new|move|attach|detach`
+and `autonomous plan-migrate [apply]`. A link held by another plan is refused and
+the holder is named; detach first. The older `datawatch projects arcs`,
+`project_set_arcs` and `PUT /api/projects/{name}/arcs` are deprecated aliases
+that keep working. Full tables:
+[plan-records.md](plan-records.md#ordering-and-linking-plans).
 
 ### Which Automata belong to a project
 
@@ -609,8 +640,8 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Open the sub-tab | Bottom navigation **Automata**, then the **Projects** sub-tab (first, left of **Automation**); the old Projects link and `#projects` land here |
 | Pick a project | **Project** picker at the top (the same Overview picker as before); **Overview** is the cross-project view |
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
-| Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `plans` (the old `arcs` still works), `gantt`, `unassigned`, `history`, `policy` or `events`; no sub-tab in the address opens **Overview** |
-| Switch between Overview, Plans, Gantt, Unassigned, History, Policy and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
+| Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `plans` (the old `arcs` still works), `records`, `gantt`, `unassigned`, `history`, `policy` or `events`; no sub-tab in the address opens **Overview** |
+| Switch between Overview, Plans, Records, Gantt, Unassigned, History, Policy and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
 | Change the range of the Gantt | Gantt header: **All time**, 90, 30 or 7 days; wheel to zoom, drag to pan |
 | Show or hide dependency edges | Gantt header **Edges** (on by default; also on the Focus page); **All edges** shows every drawn edge instead of the first 120; hover or tab to a bar to highlight its edges |
 | Expand or collapse a Gantt row | The arrow at the left of a plan, an Automaton or the **Automata with no plan** group; **Load more** pages a long level |
@@ -782,7 +813,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - **Remembered page sub-tab is global.** The remembered page sub-tab is one value
   per browser, not per project, so it carries over when you open another project.
 - **Screenshots and translations.** This page has no screenshots of the old single
-  page to replace. The seven labels and the "Project sections" label ship in the
+  page to replace. The eight labels and the "Project sections" label ship in the
   English, German, Spanish, French and Japanese locales; a native speaker has not
   reviewed the four translations.
 - **Empty-state link.** The empty Projects picker used to show an **Open Settings**

@@ -2408,14 +2408,14 @@ paths:
         "503": {description: Plan records are not available}
   /api/plans/migrate:
     post:
-      summary: Build plans from project arcs and registry rows
+      summary: Build plans from the older project plan list (arcs) and registry rows
       description: |
-        Turns every project arc into a plan linked to its Automation, every registry
+        Turns every entry of the older project plan list (arcs) into a plan linked to its Automation, every registry
         row that names an Automaton or Automation into a plan linked to it, and every
         open row that names none into a backlog plan ordered by its old row number.
         The default is a dry run: the answer lists what would be created and linked
         and nothing is written. `{"apply": true}` writes. A plan or link that already
-        exists is never changed, so a second apply changes nothing. No arc, row or
+        exists is never changed, so a second apply changes nothing. No plan list entry, row or
         config key is deleted. Needs the autonomous write capability when called by a
         federated peer. An apply is recorded in the audit log.
       operationId: plansMigrate
@@ -9864,11 +9864,11 @@ paths:
       responses: {"200": {description: OK}}
   /api/dashboard/arc:
     get:
-      summary: Arc summary — stages in order (bugs, features, final) with progress, the maintenance lane, any blocked stage, shared lane usage and plan usage in points and tokens (needs dashboard:read)
+      summary: Plan summary (older name arc) — stages in order (bugs, features, final) with progress, the maintenance lane, any blocked stage, shared lane usage and plan usage in points and tokens (needs dashboard:read)
       operationId: dashboardArc
       tags: [Singletons]
       parameters:
-        - {name: arc, in: query, required: false, schema: {type: string}, description: Arc (Automation) id; default is the first arc with staged work}
+        - {name: arc, in: query, required: false, schema: {type: string}, description: Plan (Automation) id; default is the first plan with staged work}
       responses: {"200": {description: "OK; a part this daemon cannot read reports available=false with a reason, never a 5xx"}}
   /api/analytics:
     get:
@@ -10067,10 +10067,10 @@ paths:
           content: {"text/plain": {schema: {type: string}}}
   /api/projects/{name}/rollup:
     get:
-      summary: Project roll-up of arcs, Automata, task progress, points and throughput
+      summary: Project roll-up of plans, Automata, task progress, points and throughput
       description: |
-        Groups the project's Automata by the arc whose Automation holds them.
-        Each arc reports its Automata with their session ids, task progress
+        Groups the project's Automata by the plan whose Automation holds them.
+        Each plan reports its Automata with their session ids, task progress
         (done/total), cost in usage points and throughput. Automata of this
         project that no arc holds are in `unassigned`; `total` sums everything. The `arcs`
         field is deprecated; `plans` carries the project's plans from the plan-record index.
@@ -10146,7 +10146,7 @@ paths:
         "503": {description: Automations not available}
   /api/projects/{name}/timeline:
     get:
-      summary: Project timeline with first and last time per arc, Automaton and task
+      summary: Project timeline with first and last time per plan, Automaton and task
       description: |
         Returns one level of the project's timeline at a time so a client does not
         fetch every task up front. `level=arcs` (default) gives one row per arc
@@ -10290,7 +10290,7 @@ paths:
         "404": {description: Unknown project}
   /api/projects/{name}/arcs:
     get:
-      summary: Deprecated - the project's arcs plus its plans
+      summary: Deprecated - the older project plan list (arcs) plus its plans
       description: |
         Deprecated alias kept for older clients. Returns the same arcs data as the
         roll-up `arcs` field, plus the project's `plans`. Use
