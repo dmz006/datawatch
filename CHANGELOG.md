@@ -5,6 +5,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.163.0 — Sessions Filters sheet: names, multi-select chips, one grouping control
+
+### Added
+
+- **Two labelled placement facts on every session tile and card.** Each shows **Runs on**, the real name of the host the session runs on (never the word “local”; a federated session names its peer), and **Model on**, where its model is served: the compute node for pi and Ollama, or “Anthropic cloud” for a Claude session. The model line is left out when it cannot be named, and each fact has a hover tip saying what it means. This is a display change on the PWA; no setting, endpoint, command or record field was added.
+- **A “Model node” grouping and filter.** Alongside State, Node, Project, Tag and Automaton, the Sessions page can group by the node that serves the model: pi and Ollama sessions gather under their compute node, Claude sessions under “Anthropic cloud”, and sessions with no known model sit in the Ungrouped bucket.
+- Strings for the new labels and tips in English, German, Spanish, French and Japanese, including a translated hover tip for the Alerts heading, which was English only.
+
+### Changed
+
+- **The Status and Backend chips in the Sessions Filters sheet are multi-select.** Pick any number of states or backends, tap an active chip again to remove just that one, and the **All** chip clears the group. The two groups apply together, the Backend group never touches the search box, and the picked chips also show as removable chips above the list with a **Clear all**.
+- **Every filter chip and picker leads with a name.** Tags, projects, nodes and Automata show their readable name with the id as small secondary text, or “unnamed” with the id when no name is known, so a bare id is never the primary text. A session card's Automaton chip reads “Automaton” without the id, and the full tag stays in its tooltip.
+- **The Compute node filter lists each node once under its real name.** A node is never listed as “local” or “all”, aliases of one host merge into one entry, and a federated peer appears under the name it is registered with.
+- **One Group by dropdown.** The labelled **Group by** picker in the Filters sheet is the only grouping control, and tag-prefix entries that duplicate a built-in axis are listed once.
+
+### Fixed
+
+- **The Sessions Filters sheet no longer re-renders while it is open.** Refreshes (the presence heartbeat, live updates, the stale-banner flip, “show more” paging, saved-view renames) used to redraw the sheet and destroy the open Group by dropdown, the focused search box, scroll positions and any open picker. The repaint now keeps the live control nodes, with the same value, focus and scroll, and refreshes counts and text in place. A change that would touch a focused control waits and is applied once when the control is released.
+
+### Documentation
+
+- **Sessions tiles and grouping how-to.** Covers the Runs on and Model on facts, the Model node grouping, the multi-select chip groups, name-first chips and the stable Filters sheet.
+
 ## v9.162.3 — Tidy the Alerts page on a phone
 
 ### Fixed

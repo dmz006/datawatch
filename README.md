@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.162.3 (2026-11-12).** The Alerts page is tidied for a phone: the help control sits in the page header, the ticking Last updated line is gone from the list cards, clipped alert cards are fixed and the counts agree. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.163.0 (2026-11-12).** The Sessions Filters sheet lists nodes and peers by real name, every chip leads with a name instead of an id, Status and Backend chips are multi-select, there is one Group by dropdown with a new Model node grouping, tiles and cards show Runs on and Model on, and an open control is no longer redrawn. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
