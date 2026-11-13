@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Docs: the restart how-tos, the operations guide and the glossary now describe the final gate surviving a daemon restart: its own durable run record, re-attach at boot with no failure or retry counted, the shipped systemd unit's `KillMode=process`, and the one restart retry for a gate killed by a signal within five minutes of the daemon starting.
+
 ## v9.163.3 — Session detail page fills the window with no blank band
 
 ### Fixed

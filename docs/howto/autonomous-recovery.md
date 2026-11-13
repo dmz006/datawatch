@@ -437,6 +437,13 @@ order, stopping at the first hit:
   time, so it ends on time even across the restart.
 - **The script ended while the daemon was down and its exit code is on disk,
   not yet delivered** → the result is used once, as the script result.
+- **A final gate task was running** → it goes back to `pending` with no
+  failure and no retry counted, and its gate re-attaches to its own run record
+  (waits on a live gate, or takes a finished result once). If the gate is then
+  killed by a signal within five minutes of the daemon starting, it is rerun
+  once, outside the retry budget; a second kill is a real failure. The shipped
+  systemd unit uses `KillMode=process` so a stop of the service leaves the gate
+  running.
 - **Nothing usable survives** → the old behaviour resumes: a finished worker
   is re-verified once; a task with no worker result and no usable verdict is
   reset to `pending` and relaunched.
