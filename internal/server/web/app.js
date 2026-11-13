@@ -36416,6 +36416,15 @@ const TRIAGE_BUDGET_ROWS = [
   ['scope', 'triage_budget_scope'],
   ['policy', 'triage_budget_policy'],
 ];
+// TRIAGE_REASON_SOURCE_KEYS maps a blocked record's reason_source to the
+// locale key of the small source label drawn under its reason. A source not
+// listed here (including 'none') gets no label: there is nothing to explain.
+const TRIAGE_REASON_SOURCE_KEYS = {
+  blocked_reason: 'triage_reason_source_blocked_reason',
+  verdict: 'triage_reason_source_verdict',
+  task_error: 'triage_reason_source_task_error',
+  task_review: 'triage_reason_source_task_review',
+};
 // _triageKey returns the locale key for an API value, or '' for anything that
 // is not one of the map's keys (including inherited names such as "constructor").
 function _triageKey(map, v) {
@@ -36485,15 +36494,19 @@ function _triageInReview(record) {
 }
 // _triageButtons renders the action row. Retry needs a task; Resolve review
 // needs a merge-pending record or a task held for review; Cancel is always
-// there.
-function _triageButtons(record, prdID, taskID) {
+// there. With withDescs (the card) each of those three draws a short line
+// naming what it actually does; the detail panel keeps the bare buttons.
+function _triageButtons(record, prdID, taskID, withDescs) {
   const id = escHtml(prdID);
   const taskAttr = taskID ? ` data-task-id="${escHtml(taskID)}"` : '';
-  const btn = (action, key) => `<button type="button" class="btn-secondary triage-btn triage-btn-${action}" data-action="${action}" data-prd-id="${id}"${taskAttr} data-status="${escHtml(record.status || '')}">${escHtml(t(key))}</button>`;
+  const desc = (key) => (withDescs
+    ? `<span class="triage-btn-desc" style="display:block;margin-top:3px;font-size:11px;font-weight:400;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t(key))}</span>`
+    : '');
+  const btn = (action, key, descKey) => `<button type="button" class="btn-secondary triage-btn triage-btn-${action}" data-action="${action}" data-prd-id="${id}"${taskAttr} data-status="${escHtml(record.status || '')}">${escHtml(t(key))}${descKey ? desc(descKey) : ''}</button>`;
   const parts = [btn('open-detail', 'triage_action_open_details')];
-  if (taskID) parts.push(btn('retry', 'triage_action_retry'));
-  if (record.status === 'merge_pending' || _triageInReview(record)) parts.push(btn('resolve-review', 'triage_action_resolve_review'));
-  parts.push(btn('cancel', 'triage_action_cancel'));
+  if (taskID) parts.push(btn('retry', 'triage_action_retry', 'triage_btn_desc_retry'));
+  if (record.status === 'merge_pending' || _triageInReview(record)) parts.push(btn('resolve-review', 'triage_action_resolve_review', 'triage_btn_desc_resolve_review'));
+  parts.push(btn('cancel', 'triage_action_cancel', 'triage_btn_desc_cancel'));
   return `<div class="triage-actions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-width:0;">${parts.join('')}</div>`;
 }
 // _automationHelpLinkHtml is the '?' help affordance on an Inbox card. It opens
@@ -36522,8 +36535,26 @@ window.triageCardHtml = function(record) {
   const chips = `<div class="triage-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-width:0;">${kindChip}${ownerChip}</div>`;
   const reason = M.triageReason(record);
   const reasonText = reason.text || t(reason.key);
-  const reasonHtml = `<div class="triage-reason" style="margin-top:6px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(reasonText)}</div>`;
-  return `<div class="prd-capacity-card triage-card" data-prd-id="${escHtml(prdID)}" style="min-width:0;">${head}${headline}${chips}${reasonHtml}${_triageWaitLine(record)}${_triageButtons(record, prdID, taskID)}</div>`;
+  // A blocked card shows its full reason — the block reason is the decision
+  // the operator is waiting on. Failed and merge-pending cards keep the
+  // two-line clamp; their full text is in the detail panel.
+  const isBlocked = record.status === 'blocked';
+  const clampStyle = isBlocked ? '' : 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
+  const reasonHtml = `<div class="triage-reason" style="margin-top:6px;color:var(--text2);${clampStyle}overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(reasonText)}</div>`;
+  // A blocked card adds the source label under its reason and — when the
+  // record carries a reason — one concrete next step. A blocked record with
+  // no reason adds neither: its honest no-reason line already names the
+  // next step.
+  let guidanceHtml = '';
+  if (isBlocked) {
+    const srcKey = _triageKey(TRIAGE_REASON_SOURCE_KEYS, record.reason_source);
+    if (srcKey) guidanceHtml += `<div class="triage-reason-source" style="margin-top:2px;font-size:11px;opacity:.8;overflow-wrap:anywhere;">${escHtml(t(srcKey))}</div>`;
+  }
+  // The failed and blocked cards both carry one concrete next step; the
+  // source label above is for blocked cards only.
+  const hint = M.triageUnblockHint(record);
+  if (hint) guidanceHtml += `<div class="triage-unblock" style="margin-top:4px;overflow-wrap:anywhere;">${escHtml(t(hint.key))}</div>`;
+  return `<div class="prd-capacity-card triage-card" data-prd-id="${escHtml(prdID)}" style="min-width:0;">${head}${headline}${chips}${reasonHtml}${guidanceHtml}${_triageWaitLine(record)}${_triageButtons(record, prdID, taskID, true)}</div>`;
 };
 // _triageCardClick is the single delegated handler for every triage card.
 // Buttons dispatch their action; a click elsewhere on the card opens details.
