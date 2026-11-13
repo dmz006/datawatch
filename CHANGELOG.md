@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.12 — Encryption audit: the encryption docs match the code
+
+### Documentation
+
+- **The encryption page and the pages that repeat it now match the code.** `docs/encryption.md` was rewritten against the 2026-11-13 encryption audit: it names the current config format and key settings, the real file names (session records under `sessions.d/`, `schedule.json`, `output.log.enc`), and states that memory encryption follows `--secure` (there is no memory encryption setting). It now lists what `--secure` covers, what is still plain, what cannot be encrypted, that there is no password-change or key-rotation command, that `export --all` misses the current session records and the schedule store, and that the vault key file sits beside the vault. The operations, setup, memory, secrets and cross-agent memory pages, the glossary and the README no longer say that all data is encrypted. No behavior changed.
+- **Three more encryption claims corrected.** The secrets how-to no longer tells operators to run `datawatch secrets export` and `secrets import <file>` (neither exists); it describes moving values with `secrets get` and `secrets set`, and separates `secrets migrate`. The devices API page no longer says `devices.json` is encrypted through a `secrets.encryption_enabled` setting (there is none; the file is plain). The profiles page links the encryption page.
+
 ## v9.172.11 — Email empty-recipient test is instant and deterministic
 
 ### Fixed
