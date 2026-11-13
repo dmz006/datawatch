@@ -191,9 +191,10 @@ func readOneProc(pid int) (ProcRecord, uint64, bool) {
 
 // extractContainerID pulls a container hash from a cgroup line.
 // Handles common cgroup-v2 formats:
-//   0::/docker/<hash>
-//   0::/system.slice/docker-<hash>.scope
-//   0::/kubepods.slice/kubepods-<qos>.slice/.../cri-containerd-<hash>.scope
+//
+//	0::/docker/<hash>
+//	0::/system.slice/docker-<hash>.scope
+//	0::/kubepods.slice/kubepods-<qos>.slice/.../cri-containerd-<hash>.scope
 func extractContainerID(cgroupLine string) string {
 	// Look for the longest 64-hex token.
 	best := ""
