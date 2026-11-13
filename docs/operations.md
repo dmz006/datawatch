@@ -6942,6 +6942,37 @@ The walkthrough is [howto/automaton-decompose-lint.md](howto/automaton-decompose
 
 ---
 
+## Planning failures (a draft that could not be planned)
+
+An Automaton whose planning gave up is a draft with no stories; the
+reason is recorded on it, not lost. Read the record before you retry:
+it names the rule, the exact phrases (at most 20), the category,
+whether it can be retried, the retry counts per category and the budget
+of that category.
+
+- **Release numbers are corrected by the daemon.** If a fixed release
+  number is the only content failure of a plan, the daemon rewrites it to
+  "the release" or "the next patch above main" and logs one `auto_correct`
+  decision line (`old -> new`, with story and task) instead of failing.
+  It does so only when every other plan check passes on the corrected
+  plan.
+- **A non-retryable failure raises one warning alert**, "Automaton could
+  not be planned: <title>", once per recorded failure, and survives a
+  restart without repeating. A retryable failure raises nothing until its
+  retry budget is spent.
+- **A reword question is asked when the daemon can fix every finding.**
+  Answer **Fix the wording and plan again** to rewrite the spec with the
+  spec lint's suggestions and plan again, or **Leave it** (the default) to
+  change nothing. A spec with a private address or a worktree path needs
+  your hand: the alert is raised and no question is asked.
+- **The planner's prompt carries a forbidden-pattern list** (fixed release
+  number, tracker id, system path, private address, worktree path) after
+  the decompose guidance; it is not configurable.
+- Nothing here touches, kills or signals a session, and no new setting is
+  added: the retry budget is the existing `retry_policy`.
+
+Details and the question's wording: [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks).
+
 ## Model request progress (a hung request told from a slow one)
 
 A worker or verifier session can wait a long time on one model request, and a hung request looks the same from outside as a slow one. When the session's model runs on a registered compute node, the daemon watches the request and reports whether the node still shows signs of work. It is observation only: it makes no model call and never ends a worker, retries on another backend or unloads a model. The walkthrough is [howto/model-request-progress.md](howto/model-request-progress.md).
