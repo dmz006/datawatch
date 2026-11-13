@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.171.0 — Stable verification scripts by default
+
+### Added
+
+- **Verification scripts are stable by default.** The planner's prompt now carries five habits for the verification script of every file-changing task: run `make sync-docs` first in any docs check, build the allowed-file list from everything the whole Automaton may touch (a cumulative allowed-file helper snippet the planner is given), and compare against the merge base instead of only the task's own files. A script that passed the day it was written no longer fails once other tasks of the same Automaton land.
+- **New decompose lint rules for verification scripts.** The rule pack grows to thirteen rules, nine of them blocking. New findings cover a task with no verification script and no stated reason (`verification_script_reason_empty`), a script that compares only against the task's own files (`verification_script_task_files_only`), and a docs check that does not run `make sync-docs` first (`verification_script_docs_without_sync`). Each finding names the script and the rule, and a custom rule can match on the task kind.
+- **One final gate per Automaton, and it always has a script.** The plan check requires the final gate to carry a usable verification script, or a stated exemption reason when the project's own gate command is the closing check.
+- **A task's verification script and its exemption reason can be edited.** The task edit path on REST, MCP, the CLI, chat and the web app task editor takes `verification_script` and `verification_script_reason`, and an omitted field stays unchanged.
+- A new how-to, "Write verification scripts that stay stable", and updates to the decompose lint and planning how-tos, the operations guide, the API reference and the glossary. New labels are translated in all five languages.
+
 ## v9.170.1 — Gantt focus test date fix
 
 ### Docs
