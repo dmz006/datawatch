@@ -1055,6 +1055,10 @@ Capability-based access control (CBAC) for federation peers — remote datawatch
 
 Per-channel registries: Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, Generic webhooks, DNS channel, imap-mcp. Each row exposes connect/disconnect, status, and per-channel settings (e.g. Signal device link QR, Telegram bot token, Slack workspace OAuth). Channels in red are inactive; tap to reconnect.
 
+#### Email notification backend (SMTP)
+
+The `email` backend is outbound-only: it sends session notifications over SMTP using the `email.*` settings. When a send names no recipient it uses the configured `email.to` address. A recipient or sender containing a newline is rejected before any network connection is made. Its unit tests, including the empty-recipient fallback, run against a local in-process fake SMTP server, so they need no network and never wait on a connection timeout. See [`messaging-backends.md`](messaging-backends.md) § Email. For inbound email commands see the imap-mcp channel below.
+
 #### imap-mcp email command channel (v8.9.23)
 
 The `imap_mcp` backend bridges datawatch to a running [imap-mcp](https://github.com/dmz006/imap-mcp) instance, letting operators send commands to datawatch via email. Trust enforcement (allowlist / DKIM / DMARC / HMAC replay-nonce) lives entirely in imap-mcp; datawatch acts only on `inbound.command` events that have already passed imap-mcp's trust gates.

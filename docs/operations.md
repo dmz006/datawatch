@@ -2902,6 +2902,10 @@ curl -X POST 'https://localhost:8443/api/reload?subsystem=filters' \
 reload filters
 ```
 
+### Email notifications: recipient and test notes
+
+The `email` backend sends to the recipient named in the send; with none, it uses the configured `email.to`. A recipient or sender containing a newline is refused before any SMTP connection, so that failure is immediate rather than a timeout. If an email test appears to hang, check that it uses the local fake SMTP server (`startFakeSMTPServer` in `internal/messaging/backends/email/backend_test.go`) and not a real host. Details: [`messaging-backends.md`](messaging-backends.md) § Email.
+
 ### Claude Auto-Accept Disclaimer (v5.27.2)
 
 **Config key:** `session.claude_auto_accept_disclaimer` (default: `false`)
