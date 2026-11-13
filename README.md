@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.172.8 (2026-11-13).** A plain go test run now skips the cross-build check and the temporary-folder leak guard, and make test-cross-build and make test-tmp-guard run them before a release. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.172.9 (2026-11-13).** The Projects Overview sub-tabs now respond to a click or tap, use the same look as the project page sub-tabs, and remember the chosen sub-tab. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

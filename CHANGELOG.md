@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.9 — Projects Overview sub-tabs respond and use the Projects look
+
+### Fixed
+
+- **The Projects Overview sub-tabs respond to a click or tap.** Under Overview on the Projects page the in-flight sub-tabs (Inbox, Automations, Resources, Progress and cost, Housekeeping) did nothing when chosen. Choosing one now shows its body, marks it selected, and keeps the Inbox count live.
+- **The Overview sub-tabs use the Projects look.** The strip now matches the project page sub-tabs instead of the Automation view's second row, and the choice is remembered in this browser (the same stored value as the project page sub-tabs) and restored on refresh. A remembered value that does not belong to the Overview strip is ignored and Inbox opens. The strip has no address of its own, so the address stays `#projects`.
+- The Projects tab how-to and the glossary describe the Overview sub-tabs, with tests for the clicks, classes and memory. This is a display rule of the web app only: no setting and no REST, MCP, CLI or chat change.
+
 ## v9.172.8 — Two slow tests behind opt-in make targets
 
 ### Fixed
