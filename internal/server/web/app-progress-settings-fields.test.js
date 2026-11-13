@@ -57,3 +57,22 @@ test('every settings_progress_ locale key is used by a declared field', () => {
     assert.deepEqual(keys.sort(), [...used].sort(), `${lang} progress keys match the declared fields`);
   }
 });
+
+test('archive settings are declared with localized labels and hints in every locale', () => {
+  const fields = autonomousFields();
+  const want = {
+    'autonomous.archive.retention_days': ['settings_archive_retention_days', 'number'],
+    'autonomous.archive.enabled': ['settings_archive_enabled', 'toggle'],
+  };
+  for (const [key, [labelKey, type]] of Object.entries(want)) {
+    const f = fields.find((x) => x.key === key);
+    assert.ok(f, `${key} declared`);
+    assert.equal(f.type, type);
+    assert.equal(f.labelKey, labelKey);
+    for (const lang of LOCALES) {
+      const b = bundle(lang);
+      assert.ok(b[labelKey] && b[labelKey].trim(), `${labelKey} missing in ${lang}`);
+      assert.ok(b[f.helpKey] && b[f.helpKey].trim(), `${f.helpKey} missing in ${lang}`);
+    }
+  }
+});

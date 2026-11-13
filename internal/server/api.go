@@ -7004,6 +7004,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"since":                   s.cfg.Autonomous.Progress.Since,
 				"snapshot_retention_days": s.cfg.Autonomous.Progress.SnapshotRetentionDays,
 			},
+			"archive": map[string]interface{}{
+				"enabled":        s.cfg.Autonomous.Archive.EffectiveEnabled(),
+				"retention_days": s.cfg.Autonomous.Archive.RetentionDays,
+			},
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -7661,6 +7665,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// Progress engine parameters: every autonomous.progress.* value is checked
 	// before anything is applied, so one bad value rejects the whole PUT.
 	if verr := validateProgressPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Archive settings: checked before anything is applied.
+	if verr := validateArchivePatch(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -10252,6 +10261,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, err := parseProgressWhole("autonomous.progress.snapshot_retention_days", v); err == nil {
 				cfg.Autonomous.Progress.SnapshotRetentionDays = n
 			}
+		case "autonomous.archive.retention_days":
+			// Validated in handlePutConfig; 0 = the default of 30 days.
+			if n, err := parseProgressWhole("autonomous.archive.retention_days", v); err == nil {
+				cfg.Autonomous.Archive.RetentionDays = n
+			}
+		case "autonomous.archive.enabled":
+			if b, err := parseArchiveEnabled(v); err == nil {
+				cfg.Autonomous.Archive.Enabled = &b
+			}
 		case "pin_check_seconds":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -11646,6 +11664,39 @@ func parseProgressGapHours(v interface{}) (float64, error) {
 		return 0, errors.New(msg)
 	}
 	return f, nil
+}
+
+// parseArchiveEnabled reads autonomous.archive.enabled from a JSON bool or
+// the text true/false (the CLI and chat channel send strings).
+func parseArchiveEnabled(v interface{}) (bool, error) {
+	switch x := v.(type) {
+	case bool:
+		return x, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "true", "on", "yes":
+			return true, nil
+		case "false", "off", "no":
+			return false, nil
+		}
+	}
+	return false, errors.New("autonomous.archive.enabled: must be true or false")
+}
+
+// validateArchivePatch checks every autonomous.archive.* key present in a PUT
+// /api/config body and returns the first problem.
+func validateArchivePatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.archive.retention_days"]; ok {
+		if _, err := parseProgressWhole("autonomous.archive.retention_days", v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.archive.enabled"]; ok {
+		if _, err := parseArchiveEnabled(v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateProgressPatch checks every autonomous.progress.* key present in a
