@@ -31,9 +31,9 @@ var testStallEnd = session.EndReason{Caller: "test.stall", Reason: "test stall r
 // fakeStallStore records RecordTaskAttemptSnapshot and
 // RecordTaskSkippedSnapshotPaths calls into the same log.
 type fakeStallStore struct {
-	events    *[]string
-	refs      []string
-	skipped   [][]autonomouspkg.SnapshotSkippedPath
+	events           *[]string
+	refs             []string
+	skipped          [][]autonomouspkg.SnapshotSkippedPath
 	recordSkippedErr error
 }
 

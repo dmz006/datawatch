@@ -189,10 +189,10 @@ func TestAutonomousLintCLI_ConfigSetSendsMergedBlock(t *testing.T) {
 	}
 	put := (*calls)[1].body
 	for _, want := range []string{
-		`"decompose_lint"`,    // framed as the decompose_lint block
+		`"decompose_lint"`, // framed as the decompose_lint block
 		`"mode":"enforce"`,
 		`"max_retries":2`,
-		"bare_verbs",    // the live rule pack the override did not touch
+		"bare_verbs",       // the live rule pack the override did not touch
 		`"disabled_rules"`, // the untouched field passes through
 	} {
 		if !strings.Contains(put, want) {

@@ -301,8 +301,8 @@ func newUsageRemainingWorkCmd() *cobra.Command {
 // the same config set path as `datawatch config set` (PUT /api/config), so
 // the daemon validates both settings exactly the way it would for any key:
 //
-//	 usage auto-lanes status
-//	 usage auto-lanes set --on | --off [--max N]
+//	usage auto-lanes status
+//	usage auto-lanes set --on | --off [--max N]
 func newUsageAutoLanesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auto-lanes",
