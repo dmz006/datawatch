@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.172.1 (2026-11-13).** The task-type routing settings now apply on every surface, routing never overwrites a hand-set LLM or running tasks, and the Settings routing editor shows all its text in every language. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.172.2 (2026-11-13). Security: two unfixed git CVEs in the agent-base image are accepted for 30 days. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -4286,3 +4286,37 @@ entries:
     expires: "2026-12-13"
     validated_by: "claude-session"
     reason: "The Trivy scan of agent-base in the Release workflow lists CVE-2026-105437 (HIGH) on git 1:2.39.5-0+deb12u3 as affected with no fixed version; the Debian security tracker (read 2026-11-13) lists bookworm (deb12u3 and bookworm-security deb12u2), trixie and sid as vulnerable with no fixed version (sid source is unfixed); untraced so the 30-day cap applies; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+
+  - id: cve/CVE-2026-111760
+    kind: container
+    package: "git, git-man"
+    version: "1:2.39.5-0+deb12u3"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "CVE-2026-111760 is an integer truncation in git's index path handling: a very long path validates as one name and is written as a shorter one, so an attacker-controlled repository can replace a submodule's .git file with a symlink to a directory holding malicious config or hooks, and git then runs attacker code during a RECURSIVE clone. NOT traced inside a built image (no docker run was done); the analysis is from reading the Debian tracker, upstream advisories and the source. The datawatch worker bootstrap in internal/agents/worker_clone.go runs a plain non-recursive git clone (no --recurse-submodules, no submodule update) of the operator-configured project URL, plus checkout, rev-parse, pull --ff-only, remote set-url and push. Nothing in docker, internal, cmd, scripts or .github runs git fast-import or fast-export. The build-time clone of the pinned gh tag happens only in the ghbuilder stage, not in the runtime image. Residual risk that is NOT ruled out: an agent session (an LLM coding session) running inside agent-base can run any git command, including a recursive clone of an untrusted third-party repository, or git submodule update --init --recursive, on such a repository. The image has no baked gitconfig and none is claimed as a mitigation. Both CVEs share Debian bug 1153670; upstream fixed them in git 2.56.1 and the 2.55.1, 2.54.1, 2.53.1, 2.52.1, 2.51.3 and 2.50.2 backports, which Debian has not packaged yet."
+    first_added: "2026-11-13"
+    added: "2026-11-13"
+    expires: "2026-12-13"
+    validated_by: "claude-session"
+    reason: "The Release scan of agent-base 9.171.1 lists CVE-2026-111760 (HIGH) on git and git-man 1:2.39.5-0+deb12u3 as affected with no fixed version; the Debian security tracker (read 2026-11-13) lists bookworm, bookworm-security, trixie, forky and sid as vulnerable with no fix; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew or build git from source in a pinned stage."
+
+  - id: cve/CVE-2026-114466
+    kind: container
+    package: "git, git-man"
+    version: "1:2.39.5-0+deb12u3"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "CVE-2026-114466 is in git fast-import and fast-export: the rewrite-submodules-from/to features (arbitrary file read) and export-pack-edges (file create or append) are not blocked for an untrusted stream, so it matters only when git processes an untrusted fast-import stream. NOT traced inside a built image (no docker run was done); the analysis is from reading the Debian tracker, upstream advisories and the source. The datawatch worker bootstrap in internal/agents/worker_clone.go runs a plain non-recursive git clone (no --recurse-submodules, no submodule update) of the operator-configured project URL, plus checkout, rev-parse, pull --ff-only, remote set-url and push. Nothing in docker, internal, cmd, scripts or .github runs git fast-import or fast-export. The build-time clone of the pinned gh tag happens only in the ghbuilder stage, not in the runtime image. Residual risk that is NOT ruled out: an agent session (an LLM coding session) running inside agent-base can run any git command, including a recursive clone of an untrusted third-party repository, or feed an untrusted stream to git fast-import. The image has no baked gitconfig and none is claimed as a mitigation. Both CVEs share Debian bug 1153670; upstream fixed them in git 2.56.1 and the 2.55.1, 2.54.1, 2.53.1, 2.52.1, 2.51.3 and 2.50.2 backports, which Debian has not packaged yet."
+    first_added: "2026-11-13"
+    added: "2026-11-13"
+    expires: "2026-12-13"
+    validated_by: "claude-session"
+    reason: "The Release scan of agent-base 9.171.1 lists CVE-2026-114466 (HIGH) on git and git-man 1:2.39.5-0+deb12u3 as affected with no fixed version; the Debian security tracker (read 2026-11-13) lists bookworm, bookworm-security, trixie, forky and sid as vulnerable with no fix; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew or build git from source in a pinned stage."

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.2 — Two unfixed git CVEs accepted for agent-base
+
+### Security
+
+- **CVE-2026-111760 and CVE-2026-114466 in git and git-man are accepted for 30 days.** Both are HIGH, affect the agent-base image (Debian git 1:2.39.5-0+deb12u3) and have no fix in any Debian suite yet; they were blocking the Release image scan. CVE-2026-111760 can run attacker code during a recursive clone of a hostile repository, and CVE-2026-114466 lets an untrusted git fast-import stream read or write files. Datawatch's own worker bootstrap does a plain non-recursive clone and never uses fast-import, but an agent session inside the image could still run a recursive clone of an untrusted repository, so the risk is not removed. The entries are untraced and expire 2026-12-13; the image's package upgrade picks up a Debian fix when one ships, and near expiry the acceptance is renewed or git is built from source.
+
 ## v9.172.1 — Task-type routing table: release gaps closed
 
 ### Fixed
