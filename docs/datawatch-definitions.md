@@ -651,6 +651,10 @@ Every PRD / autonomous workflow your daemon has spawned. Filtered by state pill 
 
 The **Tags** filter selects Automata by tag with match ANY (default) or match ALL; an empty selection lists everything. The flat list view also has a **List / Tiles / Compact** toggle and a **Group by** select (see *List modes and group-by*). See [howto/automata-tags.md](howto/automata-tags.md) and the *Tag selection* glossary entry.
 
+**Summary list and Load more** — the Automata list loads one page of 50 summary rows (counts and identity, no story or task text) from the daemon's in-memory summary index, so the tab opens quickly however much text the Automata hold. **Load more** fetches the next 50; opening a row fetches that one Automaton in full. See [howto/automata-tab-loading.md](howto/automata-tab-loading.md) and [howto/list-endpoints-and-paging.md](howto/list-endpoints-and-paging.md).
+
+**Archived Automaton** — a completed, shipped or cancelled Automaton older than `autonomous.archive.retention_days` (default 30) whose bulky parts (decision log, task session history, long errors, memory report, raw judge text) were moved to one archive file. The live record keeps its identity, status, counts and every story and task title, so lists, counts and cost read as before; nothing is deleted. `autonomous.archive.enabled` (default true) lets the daemon archive on its own; `datawatch autonomous archive` reports a dry run and `--apply` does it after a verified backup. See [operations.md](operations.md) (*What the archive does*).
+
 ### Launch Automaton form
 
 The "+" FAB on the Automata view launches a wizard.

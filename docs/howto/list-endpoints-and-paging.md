@@ -134,6 +134,14 @@ Tasks are never part of the list. `GET /api/autonomous/prds/{id}/tasks` returns
 one page of that Automaton's task rows (`limit`, `cursor`, `story`, `status`),
 reading only that Automaton; an unknown Automaton is a 404.
 
+The same rules apply on the other channels. `datawatch autonomous list` prints
+the summary list by default; `--full` returns whole records, `--limit` and
+`--cursor` page it, and `datawatch autonomous tasks <id>` reads one Automaton's
+tasks. The MCP `autonomous_prd_list` tool takes `full`, `limit` and `cursor`,
+and `autonomous_prd_tasks` pages the tasks. A finished Automaton that has been
+archived still lists and counts the same, because its list row comes from the
+index; see [automata-tab-loading.md](automata-tab-loading.md#finished-automata-and-the-archive).
+
 ## Getting the full record
 
 | Want | Endpoint |
