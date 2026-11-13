@@ -346,6 +346,20 @@ gate with nothing runnable — fails it.
 - **A read-only task may write exactly one file: its report, and any other change still fails.** The only write a read-only task is allowed is to the one `report_path` it carries, and that path has to live under `.datawatch/reports/`. The read-only tree check that runs after the task compares the tree before and after and sets aside only `.datawatch/` (in which the report lives) plus that one report path. If the task leaves an extra report file under the older `docs/plans/reports/` location, that file is moved under `.datawatch/reports/` and the move is recorded as the decision for the write, so the report file itself does not fail the task. Any other change the task left behind still fails it, and the daemon records that read-only violation, naming the file.
 - **Automata decomposed with the old template pack keep working.** This change alters what a fresh template application produces, not what already exists: an Automaton whose stories already carry the old pack's closing tasks keeps running, and the two old standard tasks — the final gate and the release version note — can still be cancelled or removed like any other task, without disturbing the rest of the story.
 
+## Verification scripts that stay stable
+
+The planner is told to write each verification script so it keeps passing as
+the other tasks of the Automaton land: run `make sync-docs` first in any docs
+check, build the allowed-file list from every file the Automaton may touch (the
+cumulative allowed-file helper), compare against the merge base, never run a
+formatter over a whole folder, and plan **one** final gate, as the last task,
+with a script or an explicit `verification_script_reason`. Three decompose-lint
+rules flag a plan that breaks this, naming the script and the rule id, and the
+script gate now runs every task's script across the whole Automaton when the
+final gate has none of its own. Fix a flagged task in place with the task edit
+(`verification_script` / `verification_script_reason`) instead of re-decomposing.
+The full guide is [Verification scripts that stay stable](automaton-verification-scripts.md).
+
 ## Choose the verifier per task, story or Automaton
 
 After a task runs, a verifier LLM judges the work. By default every
