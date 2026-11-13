@@ -5635,6 +5635,48 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "405": {description: "Method not allowed"}
         "503": {description: "autonomous disabled"}
+  /api/autonomous/completed/migrate:
+    post:
+      summary: Move cancelled, merged Automata to Completed
+      description: |
+        One pass that moves every cancelled Automaton (and Automation) whose
+        work is already merged to the base branch to status `completed`, so it
+        stops showing as cancelled. It never kills a session, and an Automaton
+        whose work is not merged is left unchanged. Records are taken oldest
+        first. Parameters may be sent in the query string or a JSON body
+        (the query wins). `dry_run=true` lists what would change without
+        writing; `limit` caps how many records one run changes (0 or absent: no
+        limit); `id` restricts the run to one Automaton or Automation. A real
+        run is refused with 409 while a final gate is running; a dry run
+        still reports. Audited as `completed_migrate`.
+      operationId: autonomousCompletedMigrate
+      tags: [Autonomous]
+      parameters:
+        - {name: dry_run, in: query, required: false, schema: {type: boolean, default: false}, description: "List what would change without writing. A value that cannot be parsed is a 400."}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}, description: "Most records one run changes; 0 means no limit. A negative or non-numeric value is a 400."}
+        - {name: id, in: query, required: false, schema: {type: string}, description: "Restrict the run to this one Automaton or Automation."}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean}
+                limit: {type: integer, minimum: 0}
+                id: {type: string}
+      responses:
+        "200":
+          description: "The pass's report: `dry_run`, `busy`, `considered`, `changed`, `would_complete` (dry run), `completed` (real run), `already_completed`"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Unparseable `dry_run`, bad `limit`, or the pass could not run"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+        "409": {description: "A final gate is running; try again when it has finished"}
+        "503": {description: "autonomous disabled"}
   /api/autonomous/shipped/backfill:
     post:
       summary: Run one shipped-state backfill pass

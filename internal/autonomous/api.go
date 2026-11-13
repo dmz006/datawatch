@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -2486,6 +2487,19 @@ func (a *API) RecordAutomationShipped(id, release string, mergedAt time.Time, co
 // writing any shipped record.
 func (a *API) ShippedBackfillOnce(dryRun bool) (any, error) {
 	report, err := a.M.BackfillShipped(context.Background(), ShippedBackfillOpts{DryRun: dryRun})
+	if err != nil {
+		return nil, err
+	}
+	return report, nil
+}
+
+// MigrateCompleted runs one cancelled-to-Completed migration pass (the REST
+// and MCP surfaces funnel through this entry point and from it through
+// Manager.MigrateCompleted, the single implementation). It never kills a
+// session. dryRun reports without writing; limit caps the records changed
+// (0 = no limit); id restricts the pass to one record.
+func (a *API) MigrateCompleted(dryRun bool, limit int, id string) (any, error) {
+	report, err := a.M.MigrateCompleted(context.Background(), CompletedMigrationOpts{DryRun: dryRun, Limit: limit, ID: strings.TrimSpace(id)})
 	if err != nil {
 		return nil, err
 	}

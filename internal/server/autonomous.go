@@ -17,6 +17,8 @@
 //   GET    /api/autonomous/prds/{id}/plan_coverage
 //                                                 read the stored plan coverage record + the filters in effect now
 //   GET    /api/autonomous/learnings           extracted learnings (paginated)
+//   POST   /api/autonomous/completed/migrate [?dry_run=&limit=&id=]
+//                                                 move cancelled, merged Automata to Completed
 //   POST   /api/autonomous/shipped/backfill [?dry_run=true]
 //                                                 shipped-state backfill pass over the base repo's main branch
 
@@ -4658,6 +4660,86 @@ func (s *Server) handleAutonomousShippedBackfill(w http.ResponseWriter, r *http.
 	}
 	s.audit(r.Context(), "shipped_backfill", "autonomous", "",
 		map[string]any{"dry_run": dryRun, "report": report})
+	writeJSONOK(w, report)
+}
+
+// handleAutonomousCompletedMigrate serves POST
+// /api/autonomous/completed/migrate. It moves cancelled Automata and
+// Automations whose work is merged to status Completed and never kills a
+// session. Parameters come from the query string or a JSON body (the query
+// wins): dry_run (bool; reports without writing), limit (non-negative int;
+// the most records one run changes, 0 = no limit) and id (optional single
+// record). A bad dry_run or limit is a 400; a run refused because a final
+// gate is running is a 409; the response is the manager's report.
+func (s *Server) handleAutonomousCompletedMigrate(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		DryRun json.RawMessage `json:"dry_run"`
+		Limit  json.RawMessage `json:"limit"`
+		ID     string          `json:"id"`
+	}
+	if r.Body != nil {
+		if raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20)); len(bytes.TrimSpace(raw)) > 0 {
+			if err := json.Unmarshal(raw, &body); err != nil {
+				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	q := r.URL.Query()
+	dryStr := strings.Trim(strings.TrimSpace(string(body.DryRun)), `"`)
+	if dryStr == "null" {
+		dryStr = ""
+	}
+	if v := q.Get("dry_run"); v != "" {
+		dryStr = v
+	}
+	limStr := strings.Trim(strings.TrimSpace(string(body.Limit)), `"`)
+	if limStr == "null" {
+		limStr = ""
+	}
+	if v := q.Get("limit"); v != "" {
+		limStr = v
+	}
+	id := strings.TrimSpace(body.ID)
+	if v := strings.TrimSpace(q.Get("id")); v != "" {
+		id = v
+	}
+	dryRun := false
+	if dryStr != "" {
+		d, err := strconv.ParseBool(dryStr)
+		if err != nil {
+			http.Error(w, "dry_run must be a boolean ('true' or 'false')", http.StatusBadRequest)
+			return
+		}
+		dryRun = d
+	}
+	limit := 0
+	if limStr != "" {
+		n, err := strconv.Atoi(limStr)
+		if err != nil || n < 0 {
+			http.Error(w, "limit must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+	report, err := s.autonomousMgr.MigrateCompleted(dryRun, limit, id)
+	if err != nil {
+		if errors.Is(err, autonomous.ErrCompletedMigrationBusy) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "completed_migrate", "autonomous", id,
+		map[string]any{"dry_run": dryRun, "limit": limit, "report": report})
 	writeJSONOK(w, report)
 }
 
