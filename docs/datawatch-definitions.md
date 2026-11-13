@@ -99,6 +99,8 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automation list](#automation-list)
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
   - [Shipped](#shipped)
+  - [Completed](#completed)
+  - [Completed migration](#completed-migration)
 - [Dashboard](#dashboard)
   - [Network card (work map)](#network-card-work-map)
   - [Lane pulse](#lane-pulse)
@@ -731,16 +733,18 @@ Reads: PWA (kind chips, project, search, Load more); REST `GET /api/autonomous/e
 
 > **Version: v8.8.0+**
 
+**Shipped** is not a status and not a label an operator sees on a finished record: finished work reads **Completed**. Shipped is only the name of the release detail (release, merge time, merge commit, source) and of the record shown when you hover the Completed chip, for work that was merged code.
+
 "Shipped" is what **happened to the work** after a PRD or Automation finished, not a status of the PRD or Automation itself. When the daemon merges the work into a release, it stamps the record with the release name (`merged_in_release`), the merge time (`merged_at`) and the merge commit (`merge_commit`). The record keeps the status it had when the work landed (a cancelled PRD can still be shipped — its cancellation is historical, the work still reached the release), and the card's border color and action buttons still follow that stored status.
 
-The shipped-state surfaces in the PWA everywhere a status is shown:
+The shipped-state surfaces in the PWA everywhere a status is shown. **A record that carries shipped state displays as Completed — there is no "Shipped" label, chip text, filter badge or count bucket.**
 
-- **Shipped chip.** Wherever the status pill is rendered (the Automata list, the PRD detail header, the Automations list and detail), a shipped record instead shows the green chip: **"Shipped in \<release>"** when a release name is recorded, plain **"Shipped"** when not. The chip takes precedence over the status pill — a cancelled-but-merged record shows **Shipped**, not Cancelled. The chip tooltip carries the merge time and merge commit.
-- **Detail views.** The PRD and Automation detail views show the shipped line: the ship label plus `merged_at` and the merge commit hash.
-- **Filter badge.** The Automata and Automations filter bars carry a **Shipped** status badge (in addition to "all" and the usual statuses). Selecting it shows only the records that carry the shipped-state — decided by the merged commit, never by the stored status, so a cancelled-and-merged record shows under it and the "unshipped" view never matches it. The badge counts honor the count rule below.
-- **Counts.** When `autonomous.shipped.count_separately` is on (the default), the shipped records pull their count out of their stored status (so "cancelled" no longer includes shipped ones) and group under the separate **shipped** badge, keeping shipped and cancelled side by side. The dashboard also shows the total shipped record count when it is greater than zero.
+- **Completed chip.** Wherever the status pill is rendered (the Automata list, the PRD detail header, the Automations list and detail), a shipped record instead shows the green chip, whose text is the ordinary **Completed** label. The chip takes precedence over the status pill — a cancelled-but-merged record shows **Completed**, not Cancelled. The chip tooltip adds the release, merge time and merge commit when the record has a merge commit.
+- **Detail.** The release (`merged_in_release`), merge time (`merged_at`), merge commit (`merge_commit`) and source (`shipped_source`) stay on the record and are returned only for a record that carries a merge commit; the separate shipped line in the detail views is gone.
+- **Filter badge.** The Automata and Automations filter bars have no Shipped badge. Shipped records are selected by the **Completed** badge, because the status filter matches the displayed status. `status=shipped` is still accepted by the REST list as a legacy alias, and `shipped=true|false` still selects on shipped state.
+- **Counts.** Records that carry shipped state count in the **completed** bucket together with stored-completed records, so finished work is never counted as cancelled. `autonomous.shipped.count_separately` is kept for compatibility and no longer creates a second bucket. The dashboard shows the shipped total as a Completed count when it is greater than zero.
 
-Behavior is server-configured under `autonomous.shipped` — `enabled` (toggle the whole surface, default on), `show_chip` (the chip visibility, default on), `filter_default` (the starting filter selection — `all`, `shipped` or `unshipped` — default `all`), and `count_separately` (the separate-counts rule, default on) — and is reported with the shipped record counts at `/api/autonomous/shipped/counts`; the list endpoints take the selection as `shipped=true|false` and honor `filter_default` when it is absent.
+Behavior is server-configured under `autonomous.shipped` — `enabled` (toggle the whole surface, default on), `show_chip` (the chip visibility, default on), `filter_default` (the starting filter selection — `all`, `shipped` or `unshipped` — default `all`), and `count_separately` (kept for compatibility; it no longer creates a separate bucket, default on) — and is reported with the shipped record counts at `/api/autonomous/shipped/counts`; the list endpoints take the selection as `shipped=true|false` and honor `filter_default` when it is absent.
 
 ## Automation
 
@@ -758,11 +762,11 @@ Opening a card draws the chain as a pipeline strip: a status dot on every member
 
 An Automaton or Automation can carry **shipped state**: the record of the work having landed — the release version it landed in, when it merged, and the main-branch merge commit that proves it. Shipped state is separate from the lifecycle status: recording it never changes the status, so a PRD you cancelled *after* its work merged is both cancelled (you stopped it) and shipped (the work landed); a PRD cancelled before any merge is only cancelled. That is the shipped-vs-cancelled separation: two different questions, and both answers can be true at once.
 
-A record with shipped state **displays as shipped** in views that report an effective status, and — while the shipped surface separates the counts — takes its own **shipped** bucket in the status counts, instead of the stored status it keeps in the store. A shipped-but-cancelled PRD shows under shipped, not cancelled; a cancelled PRD whose work never landed is still under cancelled.
+A record with shipped state **displays as Completed** in views that report an effective status, and counts in the **completed** bucket of the status counts, together with the records whose stored status is completed; it keeps the stored status it has in the store. A shipped-but-cancelled PRD shows as Completed, never as cancelled and never as a separate "shipped" bucket; a cancelled PRD whose work never landed still shows as Cancelled. The [Completed migration](#completed-migration) is what changes the stored status.
 
 Recording the state names where it came from: the **merge step** (the work landed as part of the merge), or a **backfill** (a deliberately run pass over the base repository's main branch finds the `automaton/<id>` merge commits, works out the release each one landed in, and fills in the missing records — safe to re-run, it fills only what is missing and skips what is already there). Run it with `?dry_run` first to see what would be recorded without writing anything.
 
-The five settings under **Settings → Automate → Shipped** (config block `autonomous.shipped`) — the shipped-state master switch, the chip display, the default list view, the separate-counted shipped bucket, and the backfill-at-start switch — decide what the read surfaces report. Every read surface — the web lists and the Shipped dashboard card (server-served), the REST API, the MCP tools, the CLI and the comm channel — reports the same state from the same stored fields; the PWA client does not yet render a shipped chip, offering no shipped selection (the companion-app parity item).
+The five settings under **Settings → Automate → Shipped** (config block `autonomous.shipped`) — the shipped-state master switch, the chip display, the default list view, the (now inert) separate-count switch, and the backfill-at-start switch — decide what the read surfaces report. Every read surface — the web lists and chip, the Shipped dashboard card payload (server-served), the REST API, the MCP tools, the CLI and the comm channel — reports the same state from the same stored fields, with shipped work shown as Completed. The companion apps still show the old Shipped label until they follow (the companion-app parity item).
 
 **See also:**
 [howto/automata-shipped-status.md](howto/automata-shipped-status.md) ·
@@ -793,6 +797,14 @@ Automation needs a backend for each workload: an **execution** backend (at least
 [howto/llm-registry.md](howto/llm-registry.md)
 
 ---
+
+### Completed
+
+**Completed** is the status an Automaton or Automation shows when its work finished. It covers work that completed normally and work that was cancelled *after* its branch merged: once a record carries a merge commit it reads Completed in every count, list and chip, never Cancelled. **Cancelled** means abandoned work only. The daemon's own `mark_completed` post-ship step and the merge helper's `completed_mark` step mark a merged Automaton Completed right after the ship, and the [Completed migration](#completed-migration) fixes older records. See [howto/automata-shipped-status.md](howto/automata-shipped-status.md).
+
+### Completed migration
+
+The **completed migration** moves Automata (and Automations) that ended `cancelled` but whose work is already merged on the default branch to **Completed**, so finished work stops showing as cancelled. Evidence is a shipped record or the read-only merge proof of the `automaton/<id>` branch; records with neither stay cancelled. The completion time is the merge time (shipped record) or the merge commit's commit time, never the run time, and each change is logged as a `completed_migration` decision. It never touches a session, refuses to run while a final gate is running, and is safe to repeat. Run it with a dry run first: CLI `datawatch autonomous completed-migrate`, REST `POST /api/autonomous/completed/migrate`, MCP `autonomous_completed_migrate`, comm `autonomous completed-migrate`. Unlike [Shipped](#shipped), which never changes a stored status (it only changes how a merged record is displayed: Completed), this does. See [howto/automata-completed-migration.md](howto/automata-completed-migration.md).
 
 ## Dashboard
 
@@ -2640,7 +2652,7 @@ Every key of the block can be overridden for one project under `autonomous.merge
 
 ### Post-ship hooks
 
-The post-ship hooks are the hook steps a project runs after the ship — after the merge pipeline's push and deploy have succeeded, in the order the project lists them. They are off by default. A post-ship hook is either one of the four builtins (`registry_row` updates a registry row, `parity_issue` files a parity issue through the ship runner, `tag` adds a version tag that is not there yet, `notify` sends a rendered template) with its built-in target, or a `command` the daemon runs in the project. Each hook has its own `enabled` switch. A failed hook records its result in the merge run record and, only for a run that belongs to an Automaton, leaves one triage note with source `post_ship`; it never changes the ship, never undoes the deploy and never stops the hooks after it. The block and the hook list are readable and writable from every settings surface: YAML, the `GET`/`PUT /api/config` and merge-pipeline reads, `autonomous_merge_pipeline_get` and `autonomous_config_set` on MCP, `datawatch autonomous merge-pipeline post-ship set|show` on the command line, `configure` and `help` on the comm channel, and the Post-ship hooks card in the PWA settings. See [howto/post-ship-hooks.md](howto/post-ship-hooks.md) for the walkthrough and [flow/post-ship-hook-flow.md](flow/post-ship-hook-flow.md) for the flow.
+The post-ship hooks are the hook steps a project runs after the ship — after the merge pipeline's push and deploy have succeeded, in the order the project lists them. They are off by default. A post-ship hook is either one of the five builtins (`registry_row` updates a registry row, `parity_issue` files a parity issue through the ship runner, `tag` adds a version tag that is not there yet, `notify` sends a rendered template, `mark_completed` marks the shipped Automaton Completed and needs no target) with its built-in target, or a `command` the daemon runs in the project. Each hook has its own `enabled` switch. A failed hook records its result in the merge run record and, only for a run that belongs to an Automaton, leaves one triage note with source `post_ship`; it never changes the ship, never undoes the deploy and never stops the hooks after it. The block and the hook list are readable and writable from every settings surface: YAML, the `GET`/`PUT /api/config` and merge-pipeline reads, `autonomous_merge_pipeline_get` and `autonomous_config_set` on MCP, `datawatch autonomous merge-pipeline post-ship set|show` on the command line, `configure` and `help` on the comm channel, and the Post-ship hooks card in the PWA settings. See [howto/post-ship-hooks.md](howto/post-ship-hooks.md) for the walkthrough and [flow/post-ship-hook-flow.md](flow/post-ship-hook-flow.md) for the flow.
 
 **`autonomous.merge_pipeline.post_ship`** — the settings block: `enabled` (default `false`), `hooks` (the ordered list, up to 20, each a builtin with its target or a `command` with its own `enabled`), and the built-in targets `registry_row_repo_id` and `registry_row_path` (default `parity/`), `parity_issue_automaton`, `tag_ref`, `notify_backend` and `notify_template` (all unset by default; an unset target keeps that builtin disabled until it is set). Per-project: the same keys under `autonomous.merge_pipeline.projects.<project>.post_ship`.
 

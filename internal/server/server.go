@@ -492,6 +492,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/attention", api.handleAutonomousAttention)
 	// Standard task listing: GET /api/autonomous/standard-tasks[?project=…].
 	apiMux.HandleFunc("/api/autonomous/standard-tasks", api.handleAutonomousStandardTasks)
+	// Cancelled-to-Completed migration: POST /api/autonomous/completed/migrate
+	// [?dry_run=&limit=&id=].
+	apiMux.HandleFunc("/api/autonomous/completed/migrate", api.handleAutonomousCompletedMigrate)
 	// Shipped-state backfill: POST /api/autonomous/shipped/backfill
 	// [?dry_run=true] — one pass over the base repository's main branch.
 	apiMux.HandleFunc("/api/autonomous/shipped/backfill", api.handleAutonomousShippedBackfill)

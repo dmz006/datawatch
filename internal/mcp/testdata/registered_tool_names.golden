@@ -57,6 +57,7 @@ automation_update
 autonomous_attention_list
 autonomous_branch_refresh_stats
 autonomous_cleanup_status
+autonomous_completed_migrate
 autonomous_config_get
 autonomous_config_set
 autonomous_decision_record_create

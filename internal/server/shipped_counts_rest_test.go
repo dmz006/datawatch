@@ -105,11 +105,11 @@ func TestShippedCountsREST_SeparatesShippedFromCancelled(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	wantPRDs := map[string]int{"running": 1, "completed": 1, "shipped": 2}
+	wantPRDs := map[string]int{"running": 1, "completed": 3}
 	if !reflect.DeepEqual(body.PRDs, wantPRDs) {
 		t.Errorf("prds = %v; want %v", body.PRDs, wantPRDs)
 	}
-	wantAutos := map[string]int{"active": 1, "shipped": 1}
+	wantAutos := map[string]int{"active": 1, "completed": 1}
 	if !reflect.DeepEqual(body.Automations, wantAutos) {
 		t.Errorf("automations = %v; want %v", body.Automations, wantAutos)
 	}
@@ -120,8 +120,8 @@ func TestShippedCountsREST_SeparatesShippedFromCancelled(t *testing.T) {
 
 // TestShippedCountsREST_CountSeparatelyOffFoldsBack: with
 // autonomous.shipped.count_separately=false every record counts under its
-// stored status again — the shipped bucket disappears and the shipped-yet-
-// cancelled PRD folds back into "cancelled".
+// stored status again — but finished work still counts as completed, never
+// as cancelled.
 func TestShippedCountsREST_CountSeparatelyOffFoldsBack(t *testing.T) {
 	s := newShipRESTServer(t, func(cfg *config.Config) {
 		cfg.Autonomous.Shipped.CountSeparately = shipBool(false)
@@ -134,10 +134,10 @@ func TestShippedCountsREST_CountSeparatelyOffFoldsBack(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if want := map[string]int{"running": 2, "completed": 1, "cancelled": 1}; !reflect.DeepEqual(body.PRDs, want) {
+	if want := map[string]int{"running": 1, "completed": 3}; !reflect.DeepEqual(body.PRDs, want) {
 		t.Errorf("prds = %v; want %v", body.PRDs, want)
 	}
-	if want := map[string]int{"active": 2}; !reflect.DeepEqual(body.Automations, want) {
+	if want := map[string]int{"active": 1, "completed": 1}; !reflect.DeepEqual(body.Automations, want) {
 		t.Errorf("automations = %v; want %v", body.Automations, want)
 	}
 	if body.Settings.CountSeparately {
@@ -227,8 +227,8 @@ func TestShippedPRDListREST_ShippedSelection(t *testing.T) {
 		if row["shipped"] != true {
 			t.Errorf("%s: shipped flag = %v; want true", want, row["shipped"])
 		}
-		if row["effective_status"] != "shipped" {
-			t.Errorf("%s: effective_status = %v; want shipped", want, row["effective_status"])
+		if row["effective_status"] != "completed" {
+			t.Errorf("%s: effective_status = %v; want completed", want, row["effective_status"])
 		}
 	}
 	// shipped=true must have kept the cancelled-shipped PRD with its stored
@@ -264,8 +264,8 @@ func TestShippedPRDListREST_StatusShippedBucket(t *testing.T) {
 		t.Fatalf("status=shipped kept %d PRDs (%v); want both shipped-state PRDs", len(rows), rows)
 	}
 	for id, row := range rows {
-		if row["effective_status"] != "shipped" {
-			t.Errorf("%s: effective_status = %v; want shipped", id, row["effective_status"])
+		if row["effective_status"] != "completed" {
+			t.Errorf("%s: effective_status = %v; want completed", id, row["effective_status"])
 		}
 	}
 }
@@ -300,8 +300,8 @@ func TestShippedPRDListREST_ShippedDisabledSelectionIsEmpty(t *testing.T) {
 		t.Fatalf("shipped surface off: shipped=true kept %d PRDs (%v); want none — nothing displays on shipped", len(rows), rows)
 	}
 	for id, row := range shipListIDSet(t, s, "?shipped=false") {
-		if row["effective_status"] == "shipped" {
-			t.Errorf("%s: effective_status = shipped while disabled", id)
+		if row["effective_status"] == "completed" && row["status"] != "completed" {
+			t.Errorf("%s: effective_status = completed while disabled", id)
 		}
 	}
 }
@@ -372,11 +372,11 @@ func TestShippedCardData_SeparatesShippedFromCancelled(t *testing.T) {
 	if !ok {
 		t.Fatalf("shippedCardData() = %T; want a payload map", s.shippedCardData())
 	}
-	wantPRDs := map[string]int{"running": 1, "completed": 1, "shipped": 2}
+	wantPRDs := map[string]int{"running": 1, "completed": 3}
 	if !reflect.DeepEqual(raw["prds"], wantPRDs) {
 		t.Errorf("card prds = %v; want %v", raw["prds"], wantPRDs)
 	}
-	wantAutos := map[string]int{"active": 1, "shipped": 1}
+	wantAutos := map[string]int{"active": 1, "completed": 1}
 	if !reflect.DeepEqual(raw["automations"], wantAutos) {
 		t.Errorf("card automations = %v; want %v", raw["automations"], wantAutos)
 	}
@@ -384,8 +384,8 @@ func TestShippedCardData_SeparatesShippedFromCancelled(t *testing.T) {
 	s = newShipRESTServer(t, func(cfg *config.Config) {
 		cfg.Autonomous.Shipped.CountSeparately = shipBool(false)
 	})
-	if raw = s.shippedCardData().(map[string]any); !reflect.DeepEqual(raw["prds"], map[string]int{"running": 2, "completed": 1, "cancelled": 1}) {
-		t.Errorf("card prds (count_separately off) = %v; want stored-status buckets", raw["prds"])
+	if raw = s.shippedCardData().(map[string]any); !reflect.DeepEqual(raw["prds"], map[string]int{"running": 1, "completed": 3}) {
+		t.Errorf("card prds (count_separately off) = %v; want completed bucket", raw["prds"])
 	}
 }
 
@@ -395,4 +395,3 @@ func TestShippedCardData_NilManagerNoPayload(t *testing.T) {
 		t.Errorf("shippedCardData() without a manager = %v; want nil", got)
 	}
 }
-

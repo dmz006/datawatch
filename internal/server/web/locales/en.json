@@ -3944,6 +3944,7 @@
   "post_ship_hook_up": "move up",
   "post_ship_hook_down": "move down",
   "post_ship_hook_remove": "remove",
+  "post_ship_builtin_mark_completed": "Mark the Automaton Completed (mark_completed)",
   "post_ship_save": "Save hooks",
   "post_ship_saved": "Hooks saved",
   "post_ship_save_failed": "Saving the hooks failed",

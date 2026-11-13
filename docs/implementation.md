@@ -2949,10 +2949,22 @@ bucket, not a stored status value.
   record the four fields on the matching PRDs (source `backfill`); an
   Automation is recorded once every non-skipped member is shipped, using
   its latest member merge. Idempotent per recorded `merge_commit`.
+- **`internal/autonomous/completed_migration.go`** — the completed migration:
+  moves cancelled Automata and Automations whose work is merged (a shipped
+  record or the read-only merge proof of `automaton/<id>`) to `completed`,
+  with the merge time as the completion time; one `completed_migration`
+  decision-log line per record (what, why, how to undo); idempotent; refused
+  while a final gate runs; `MarkPRDCompleted` is the single-record write the
+  merge pipeline's `mark_completed` post-ship step and the migration share.
+  It never touches a session.
 - **`internal/autonomous/manager.go`** — entry points:
   `ShippedBackfillOnce(dryRun)` (the single pass used by every surface)
   and `StartShippedBackfill(enabled)` (daemon start, non-blocking
   goroutine when `autonomous.shipped.backfill_on_start` is on).
+- **Post-ship step.** `mark_completed` is the fifth post-ship built-in
+  (`internal/mergepipeline/posthook_builtins.go`); the merge helper's
+  `completed_mark` step in `scripts/merge-shipped-record.sh` reaches the same
+  result through `completed-migrate --id`.
 - **Surfaces**
   - REST (registered in `internal/server/server.go`):
     `POST /api/autonomous/prds/{id}/shipped` body
@@ -2961,23 +2973,26 @@ bucket, not a stored status value.
     `POST /api/automations/{id}/shipped`;
     `GET /api/autonomous/shipped/counts`;
     `POST /api/autonomous/shipped/backfill` (`?dry_run=true` for the
-    report without writing). The `shipped=true|false` filter on
+    report without writing); `POST /api/autonomous/completed/migrate`
+    (`dry_run`, `limit`, `id`; 409 while a final gate runs). The `shipped=true|false` filter on
     `GET /api/autonomous/prds` and `GET /api/automations` with the
     `filter_default` fallback (see `shippedSelectionFromQuery` in
     `internal/server/autonomous.go`).
   - MCP (`internal/mcp/autonomous.go`, `internal/mcp/automation_tools.go`):
     `autonomous_shipped_record`, `autonomous_shipped_backfill`,
-    `autonomous_shipped_counts`; `shipped` filter on
+    `autonomous_shipped_counts`, `autonomous_completed_migrate`; `shipped` filter on
     `autonomous_prd_list` and `automation_list`.
   - CLI: `cmd/datawatch/cli_autonomous_shipped.go` —
     `datawatch autonomous shipped record|backfill|counts`
     (`--release --commit --at --source --automation --dry-run`);
+    `cmd/datawatch/cli_autonomous_completed.go` —
+    `datawatch autonomous completed-migrate [--dry-run] [--limit N] [--id ID]`;
     `--shipped true|false` on the PRD/Automation list commands;
     `datawatch automation shipped <id>`.
   - Comm channel (`internal/router/sx2_parity.go`): `shipped <id>
     --commit <sha>` (aliases `shipped-record`, `shipped_record`,
-    `record-shipped`, `record_shipped`), `shipped-backfill` and
-    `shipped-counts`.
+    `record-shipped`, `record_shipped`), `shipped-backfill`,
+    `shipped-counts` and `completed-migrate`.
   - Web app: the shipped state is served to the client on the same
     shapes the PWA already reads — the PRD/Automation list entries carry
     the four shipped fields plus the effective display status, the
@@ -3037,6 +3052,13 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+- `internal/autonomous` completed-migration tests,
+  `internal/server/autonomous_completed_migrate_test.go`,
+  `internal/mcp/autonomous_completed_migrate_test.go`,
+  `cmd/datawatch/cli_autonomous_completed_test.go`,
+  `internal/router/sx2_parity_completed_migrate_test.go` and
+  `internal/mergepipeline/mark_completed_test.go` — the migration on every
+  surface and the `mark_completed` step.
 
 ## Project link backfill (`autonomous.project_link_backfill_apply`)
 

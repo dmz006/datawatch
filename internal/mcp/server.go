@@ -781,6 +781,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetWorkerProfile(), tracked(s.handleAutonomousPRDSetWorkerProfile))
 	mcpSrv.AddTool(s.toolAutonomousShippedRecord(), tracked(s.handleAutonomousShippedRecord))
 	mcpSrv.AddTool(s.toolAutonomousShippedBackfill(), tracked(s.handleAutonomousShippedBackfill))
+	mcpSrv.AddTool(s.toolAutonomousCompletedMigrate(), tracked(s.handleAutonomousCompletedMigrate))
 	mcpSrv.AddTool(s.toolAutonomousShippedCounts(), tracked(s.handleAutonomousShippedCounts))
 	mcpSrv.AddTool(s.toolAutonomousDefectIntake(), tracked(s.handleAutonomousDefectIntake))
 	mcpSrv.AddTool(s.toolAutonomousDefectBatches(), tracked(s.handleAutonomousDefectBatches))

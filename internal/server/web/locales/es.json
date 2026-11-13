@@ -3944,6 +3944,7 @@
   "post_ship_hook_up": "subir",
   "post_ship_hook_down": "bajar",
   "post_ship_hook_remove": "quitar",
+  "post_ship_builtin_mark_completed": "Marcar el autómata como Completado (mark_completed)",
   "post_ship_save": "Guardar hooks",
   "post_ship_saved": "Hooks guardados",
   "post_ship_save_failed": "Falló al guardar los hooks",

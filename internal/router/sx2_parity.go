@@ -540,9 +540,13 @@ const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit
 // shippedBackfillUsage is the comm-channel usage line for the shipped backfill.
 const shippedBackfillUsage = "usage: autonomous shipped-backfill [dry_run=true]   (one shipped-state backfill pass from the base repository's main-branch history)"
 
+// completedMigrateUsage is the comm-channel usage line for the
+// cancelled-to-Completed migration.
+const completedMigrateUsage = "usage: autonomous completed-migrate [dry_run=true] [limit=N] [id=<id>]   (move cancelled Automata whose work is already merged to Completed; limit 0 = no limit)"
+
 // autonomousListUsage is the comm-channel usage line for the narrowable PRD
 // list.
-const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>]   (no filter = the full list; shipped may appear in status)"
+const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>]   (no filter = the full list; status matches the displayed status, so an Automaton whose work landed shows as completed)"
 
 // handleAutonomousShippedVerb serves the shipped-record comm verb for both
 // surfaces: it records the shipped state of a PRD (default) or an Automation
@@ -626,10 +630,66 @@ func (r *Router) handleAutonomousShippedBackfillVerb(args []string) {
 	r.reply("autonomous shipped-backfill", prettyJSON(out))
 }
 
+// handleAutonomousCompletedMigrateVerb serves the completed-migrate comm
+// verb: POST /api/autonomous/completed/migrate with dry_run, limit and id
+// taken from key=value tokens, replying with the daemon's report. A busy
+// refusal (a final gate is running) replies with the daemon's message.
+func (r *Router) handleAutonomousCompletedMigrateVerb(args []string) {
+	const title = "autonomous completed-migrate"
+	q := url.Values{}
+	for _, tok := range args[1:] {
+		i := strings.IndexByte(tok, '=')
+		if i <= 0 {
+			r.reply(title+" failed", completedMigrateUsage)
+			return
+		}
+		k := strings.ToLower(strings.TrimSpace(tok[:i]))
+		v := strings.TrimSpace(tok[i+1:])
+		switch k {
+		case "dry_run", "dry-run":
+			if strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "on") {
+				q.Set("dry_run", "true")
+			} else if !strings.EqualFold(v, "false") && v != "0" && !strings.EqualFold(v, "off") {
+				r.reply(title+" failed", completedMigrateUsage)
+				return
+			}
+		case "limit":
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				r.reply(title+" failed", completedMigrateUsage)
+				return
+			}
+			if n > 0 {
+				q.Set("limit", strconv.Itoa(n))
+			}
+		case "id":
+			if v == "" {
+				r.reply(title+" failed", completedMigrateUsage)
+				return
+			}
+			q.Set("id", v)
+		default:
+			r.reply(title+" failed", completedMigrateUsage)
+			return
+		}
+	}
+	path := "/api/autonomous/completed/migrate"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	out, err := r.commJSON(http.MethodPost, path, "")
+	if err != nil {
+		msg := strings.TrimPrefix(err.Error(), "HTTP 409: ")
+		r.reply(title+" failed", strings.TrimSpace(msg))
+		return
+	}
+	r.reply(title, prettyJSON(out))
+}
+
 // handleAutonomousShippedCountsVerb serves the shipped-counts comm verb:
 // GET /api/autonomous/shipped/counts — the per-status PRD and Automation
 // count buckets computed under the in-force autonomous.shipped settings
-// (shipped separated from cancelled while enabled + count_separately hold),
+// (shipped work counted as completed, never cancelled, while enabled),
 // with the effective settings echoed. Read-only.
 func (r *Router) handleAutonomousShippedCountsVerb(args []string) {
 	out, err := r.commGet("/api/autonomous/shipped/counts", nil)
@@ -1622,6 +1682,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.handleAutonomousShippedCountsVerb(args)
 	case "shipped-backfill", "shipped_backfill":
 		r.handleAutonomousShippedBackfillVerb(args)
+	case "completed-migrate", "completed_migrate":
+		r.handleAutonomousCompletedMigrateVerb(args)
 	case "lane-fill", "lane_fill", "set-lane-preference", "set_lane_preference":
 		r.handleLaneFillVerb(verb, args)
 	case "lane-utilization", "lane_utilization":

@@ -3944,6 +3944,7 @@
   "post_ship_hook_up": "上へ",
   "post_ship_hook_down": "下へ",
   "post_ship_hook_remove": "削除",
+  "post_ship_builtin_mark_completed": "オートマトンを完了にする (mark_completed)",
   "post_ship_save": "フックを保存",
   "post_ship_saved": "フックを保存しました",
   "post_ship_save_failed": "フックの保存に失敗しました",

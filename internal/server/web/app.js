@@ -19608,10 +19608,10 @@ function renderPrdPushState(prd) {
 // moment the work landed (a cancelled one stays cancelled AND shows the
 // Shipped chip), and the card's border/action buttons still follow the
 // stored status. The chip therefore takes precedence over the status pill
-// (a cancelled-but-merged record shows "Shipped" instead of "Cancelled"),
-// and the "shipped" filter badge is a selection over the shipped-state,
-// distinct from the status badges, both honoring the autonomous.shipped
-// settings.
+// (a cancelled-but-merged record shows "Completed" instead of "Cancelled"),
+// and the shipped/unshipped selection (the REST shipped=true|false query)
+// is no longer a labelled status: shipped records fold into the Completed
+// badge and its count. Both honor the autonomous.shipped settings.
 //
 // Settings (enabled, show_chip, filter_default "all"|"shipped"|
 // "unshipped", count_separately) arrive from GET
@@ -19638,13 +19638,28 @@ function shippedCarriesState(rec) {
 }
 window.shippedCarriesState = shippedCarriesState;
 
-// shippedChipLabel — "Shipped in <merged_in_release>", plain "Shipped" when
-// no release name is recorded.
-function shippedChipLabel(rec) {
-  const release = String((rec && rec.merged_in_release) || '').trim();
-  return release ? t('shipped_in_release', [release]) : t('shipped_chip');
+// shippedChipLabel — the chip text is the existing Completed status label
+// (reused, never duplicated). completedKey picks the surface's own key;
+// Automation records pass 'automation_status_completed'.
+function shippedChipLabel(rec, completedKey) {
+  return t(completedKey || 'prd_status_completed');
 }
 window.shippedChipLabel = shippedChipLabel;
+
+// shippedChipTip — the hover detail. The release and merge commit show only
+// when the record has a merge commit; a shipped-flag-only record hovers as
+// plain Completed.
+function shippedChipTip(rec, completedKey) {
+  const tip = [shippedChipLabel(rec, completedKey)];
+  const commit = String((rec && rec.merge_commit) || '').trim();
+  if (!commit) return tip.join(' — ');
+  const release = String(rec.merged_in_release || '').trim();
+  if (release) tip.push(t('shipped_in_release', [release]));
+  if (rec.merged_at) tip.push(t('shipped_merged_at') + ': ' + rec.merged_at);
+  tip.push(t('shipped_merge_commit') + ': ' + commit);
+  return tip.join(' — ');
+}
+window.shippedChipTip = shippedChipTip;
 
 // shippedChipHtml — the chip itself. Honors show_chip and enabled; carries
 // the release + merge metadata in the tooltip and the shipped_chip docs
@@ -19807,30 +19822,14 @@ function automationToggleMilestone(id) {
 }
 window.automationToggleMilestone = automationToggleMilestone;
 
-function shippedChipHtml(rec) {
+function shippedChipHtml(rec, completedKey) {
   if (!_shippedState.enabled || !_shippedState.show_chip) return '';
   if (!shippedCarriesState(rec)) return '';
-  const tip = [shippedChipLabel(rec)];
-  if (rec.merged_at) tip.push(t('shipped_merged_at') + ': ' + rec.merged_at);
-  const commit = String(rec.merge_commit || '').trim();
-  if (commit) tip.push(t('shipped_merge_commit') + ': ' + commit);
-  const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', 'Shipped') : '';
-  return `<span class="shipped-chip state state-badge-shipped" title="${escHtml(tip.join(' — '))}">${escHtml(shippedChipLabel(rec))}${docs}</span>`;
+  const label = shippedChipLabel(rec, completedKey);
+  const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', label) : '';
+  return `<span class="shipped-chip state state-badge-shipped" title="${escHtml(shippedChipTip(rec, completedKey))}">${escHtml(label)}${docs}</span>`;
 }
 window.shippedChipHtml = shippedChipHtml;
-
-// shippedDetailLineHtml — the detail-view line: the shipped label plus
-// merged_at and the merge commit hash (shortened).
-function shippedDetailLineHtml(rec) {
-  if (!shippedCarriesState(rec)) return '';
-  const bits = [escHtml(shippedChipLabel(rec))];
-  if (rec.merged_at) bits.push(escHtml(t('shipped_merged_at') + ': ' + rec.merged_at));
-  const commit = String(rec.merge_commit || '').trim();
-  if (commit) bits.push(escHtml(t('shipped_merge_commit') + ': ' + commit.slice(0, 12)));
-  const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', 'Shipped') : '';
-  return `<div class="shipped-detail-line p" style="color:var(--text2)">${bits.join(' · ')}${docs}</div>`;
-}
-window.shippedDetailLineHtml = shippedDetailLineHtml;
 
 // shippedFilterSelection — reads a statusFilter Set/array for the shipped
 // selection: "shipped", "unshipped" or "all".
@@ -19858,10 +19857,10 @@ function shippedRecordMatches(rec, selection, enabled) {
 }
 window.shippedRecordMatches = shippedRecordMatches;
 
-// shippedCountStates — mirrors the Go shipped state-counts rule: when the
-// surface is enabled and count_separately is set, shipped records group
-// under "shipped" and the rest under their own statuses, so shipped and
-// cancelled stay separate in the badge counts.
+// shippedCountStates — when the surface is enabled and count_separately is
+// set, records that carry a shipped record group under "completed" (the
+// Completed badge), and the rest under their own statuses, so finished
+// work is no longer counted as Cancelled.
 function shippedCountStates(records, enabled, countSeparately) {
   const out = {};
   const list = Array.isArray(records) ? records : [];
@@ -19869,7 +19868,7 @@ function shippedCountStates(records, enabled, countSeparately) {
   for (const rec of list) {
     if (!rec) continue;
     let s = rec.status || 'draft';
-    if (sep && shippedCarriesState(rec)) s = 'shipped';
+    if (sep && shippedCarriesState(rec)) s = 'completed';
     out[s] = (out[s] || 0) + 1;
   }
   return out;
@@ -23994,7 +23993,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.version_scheme', label: 'Version scheme (semver; default semver)', labelKey: 'settings_merge_pipeline_version_scheme', helpKey: 'settings_merge_pipeline_version_scheme_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['semver'], optionLabelKeys: { semver: 'merge_pipeline_scheme_semver' }, default: 'semver', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.version_scheme', this)" },
     // Post-ship hooks — what runs once a merge pipeline succeeds. Off by default;
     // every hook is disabled until you switch it on. The four builtins are
-    // registry_row, parity_issue, tag and notify; the registry, companion
+    // registry_row, parity_issue, tag, notify and mark_completed; the registry, companion
     // repository and templates are the targets of the first three. A hook can
     // instead carry any shell command, which the daemon runs with `bash -c`.
     { label: 'Post-ship hooks', labelKey: 'post_ship_card_title', docsKey: 'post_ship_card_title', type: 'group' },
@@ -26834,7 +26833,8 @@ function saveJSONMapSetting(key, el) {
 // enabled builtin (except tag), the max — and an error toast carries its
 // message back.
 const POST_SHIP_HOOKS_MAX = 20;
-const POST_SHIP_BUILTINS = ['registry_row', 'parity_issue', 'tag', 'notify'];
+const POST_SHIP_BUILTINS = ['registry_row', 'parity_issue', 'tag', 'notify', 'mark_completed'];
+const POST_SHIP_BUILTIN_LABEL_KEYS = { mark_completed: 'post_ship_builtin_mark_completed' };
 
 function _postShipHooksStatus(msg, ok) {
   const el = document.getElementById('post_ship_hooks_status');
@@ -26853,7 +26853,7 @@ function _postShipRowHTML(h, i) {
     + `</select>`;
   const action = isBuiltin
     ? `<select class="form-select" style="font-size:11px;width:auto;" onchange="_postShipSetBuiltin(${i}, this.value)">`
-      + POST_SHIP_BUILTINS.map(b => `<option value="${b}"${h.builtin === b ? ' selected' : ''}>${escHtml(b)}</option>`).join('')
+      + POST_SHIP_BUILTINS.map(b => `<option value="${b}"${h.builtin === b ? ' selected' : ''}>${escHtml(POST_SHIP_BUILTIN_LABEL_KEYS[b] ? t(POST_SHIP_BUILTIN_LABEL_KEYS[b]) : b)}</option>`).join('')
       + `</select>`
     : `<input type="text" class="form-input" style="font-size:11px;flex:1;min-width:120px;" value="${escHtml(h.command)}" placeholder="${escHtml(t('post_ship_hook_command_placeholder'))}" onchange="_postShipSetCommand(${i}, this.value)" />`;
   return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -41092,7 +41092,6 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
         <code>${escHtml(id)}</code>
         ${lastActivity ? `<span title="${escHtml(t('prd_last_activity_tip')||'Last activity')}">${escHtml(lastActivity)}</span>` : ''}
       </div>
-      ${shippedDetailLineHtml(prd)}
       ${window.reviewTimedOutBadgeHtml ? `<div style="margin-bottom:8px;">${window.reviewTimedOutBadgeHtml(prd)}</div>` : ''}
       ${window.judgeOutcomeCardHtml ? `<div style="margin-bottom:8px;">${window.judgeOutcomeCardHtml(prd)}</div>` : ''}
       ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;">
@@ -45541,7 +45540,7 @@ function buildAutomationCardHTML(automation, ctx) {
     extraClass: 'automation-card',
     onOpen: open,
     statusClass,
-    statusHtml: shippedChipHtml(a) || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
+    statusHtml: shippedChipHtml(a, 'automation_status_completed') || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
     badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)) + automationMilestoneBadgeHtml(a) + planProjectChipHtml(a),
     title: a.name,
     titleClass: 'automation-card-title',
@@ -46262,7 +46261,7 @@ function buildAutomationDetailHTML(automation, ctx) {
   return `<div class="automation-detail-header">
       <button type="button" class="automation-detail-back" onclick="automationDetailBack()">← ${escHtml(t('automation_back'))}</button>
       <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
-      <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a) || escHtml(statusLabel)}</span>
+      <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a, 'automation_status_completed') || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
       ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}${a.id ? projectsFocusButtonHtml(a.id, a.name, 'automation') : ''}
     </div>${desc}<div class="automation-detail-project" style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_project_label'))}: ${planProjectValueHtml(a)}</div>${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
@@ -55391,7 +55390,7 @@ function _dashUpdateStatBar() {
       if (brTot > 0) parts.push(`<span style="color:var(--success,#10b981);font-weight:700;">$${brTot.toFixed(2)} today</span>`);
       parts.push(`<span style="color:var(--accent);">${runningCount} running</span>`);
       if (automataCount > 0) parts.push(`<span style="color:var(--text2);">${automataCount} automata</span>`);
-      if (shippedTotal > 0) parts.push(`<span style="color:var(--shipped, #34d399);font-weight:600;">${shippedTotal} ${escHtml(t('shipped_chip'))}</span>`);
+      if (shippedTotal > 0) parts.push(`<span style="color:var(--shipped, #34d399);font-weight:600;">${shippedTotal} ${escHtml(t('prd_status_completed'))}</span>`);
       elBR.innerHTML = parts.join(' · ');
       elBR.style.display = '';
     } else {
@@ -59852,27 +59851,23 @@ function _tagFacetsHTML(scope, tagsOpen) {
     }
   }
   let statusCounts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends], projects: [...sc.projects] }, tree), 'status');
-  // count_separately: shipped records pull out of their stored-status
-  // counts and group under the "shipped" badge, so shipped and cancelled
-  // stay side by side (the Go state-counts rule).
-  if (_shippedState.enabled) {
+  // count_separately: records that carry a shipped record pull out of their
+  // stored-status counts and group under the Completed badge, so finished
+  // work is never counted as Cancelled.
+  if (_shippedState.enabled && _shippedState.count_separately) {
     let shippedN = 0;
     const shippedByStatus = {};
     for (const it of gated) {
       if (!it || !shippedCarriesState(it)) continue;
       shippedN++;
-      if (_shippedState.count_separately) {
-        const s = it.status || 'draft';
-        shippedByStatus[s] = (shippedByStatus[s] || 0) + 1;
-      }
+      const s = it.status || 'draft';
+      shippedByStatus[s] = (shippedByStatus[s] || 0) + 1;
     }
-    if (_shippedState.count_separately) {
-      for (const s in shippedByStatus) {
-        statusCounts[s] = Math.max(0, (statusCounts[s] || 0) - shippedByStatus[s]);
-        if (statusCounts[s] === 0) delete statusCounts[s];
-      }
+    for (const s in shippedByStatus) {
+      statusCounts[s] = Math.max(0, (statusCounts[s] || 0) - shippedByStatus[s]);
+      if (statusCounts[s] === 0) delete statusCounts[s];
     }
-    statusCounts['shipped'] = (statusCounts['shipped'] || 0) + shippedN;
+    statusCounts['completed'] = (statusCounts['completed'] || 0) + shippedN;
   }
   const badge = (s, label, onclick, extra) => {
     const on = statusSel.includes(s);
@@ -59882,11 +59877,9 @@ function _tagFacetsHTML(scope, tagsOpen) {
   if (scope === 'automata') {
     const act = _TAG_AUTOMATA_STATUS_BADGES.active.map(s => badge(s, t('automata_status_' + s) || s, 'toggleAutomataStatusFilter')).join('');
     const hist = _TAG_AUTOMATA_STATUS_BADGES.history.map(s => badge(s, t('automata_status_' + s) || s, 'toggleAutomataStatusFilter', ' style="opacity:0.7;"')).join('');
-    const shippedBadge = _shippedState.enabled ? badge('shipped', t('shipped_chip'), 'toggleAutomataStatusFilter') : '';
-    statusBadges = act + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + shippedBadge + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + hist;
+    statusBadges = act + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + hist;
   } else {
-    const shippedBadge = _shippedState.enabled ? badge('shipped', t('shipped_chip'), 'toggleAutomationStatusFilter') : '';
-    statusBadges = _AUTOMATION_STATUSES.map(s => badge(s, t('automation_status_' + s), 'toggleAutomationStatusFilter')).join('') + shippedBadge;
+    statusBadges = _AUTOMATION_STATUSES.map(s => badge(s, t('automation_status_' + s), 'toggleAutomationStatusFilter')).join('');
   }
   return tagGroup + backendGroup + projectGroup + `<div class="automata-badge-group tag-facet-statuses">${statusBadges}</div>`;
 }

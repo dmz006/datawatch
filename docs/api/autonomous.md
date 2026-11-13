@@ -16,7 +16,7 @@ Disabled by default — opt in by setting `autonomous.enabled: true`.
 |---|---|
 | YAML  | `autonomous:` block in `~/.datawatch/config.yaml` |
 | REST  | `/api/autonomous/*` (bearer-authenticated) |
-| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_request_watch`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_request_watch`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_completed_migrate`, `autonomous_shipped_counts` |
 | CLI   | `datawatch autonomous <subcmd>` |
 | Comm  | `rest GET /api/autonomous/status` etc. via the comm `rest` passthrough (Signal/Slack/Telegram/Matrix/etc.) |
 
@@ -88,6 +88,7 @@ POST   /api/autonomous/prds/{id}/shipped   record the Automaton's shipped state;
 POST   /api/automations/{id}/shipped       record the Automation's shipped state (same body)
 GET    /api/autonomous/shipped/counts      per-status shipped counts (PRD + Automation buckets) plus the in-force autonomous.shipped settings
 POST   /api/autonomous/shipped/backfill[?dry_run=true]  one backfill pass over the base repository's default-branch merge history; dry_run scans and reports without writing
+POST   /api/autonomous/completed/migrate[?dry_run=true&limit=N&id=ID]  move cancelled Automata and Automations whose work is already merged to Completed; dry_run reports without writing; 409 while a final gate runs; never touches a session
 GET    /api/dashboard/cards/shipped        live payload for the dashboard Shipped card (system card in the factory layout); the companion app renders it through the parity item below
 
 # Guardrail Library + Profiles
@@ -1009,7 +1010,7 @@ Fetch one Automaton in full with `GET /api/autonomous/prds/{id}`.
 |---|---|
 | `limit=<n>` | Rows per page. Default 50, maximum 500; anything below 1 or not a number returns 400. |
 | `cursor=<opaque>` | The `next_cursor` of the previous page. Pages run newest `updated_at` first, ties by id descending. An invalid cursor returns 400. `next_cursor` is absent on the last page. |
-| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. May include `shipped`, which selects the shipped bucket on the *status* axis. |
+| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. Matches the displayed status, so `completed` includes a cancelled record whose work landed. `shipped` is still accepted as a legacy alias that selects records carrying shipped state. |
 | `shipped=<true|false>` | The shipped selection: `true` keeps only records that carry shipped state (a non-empty `merge_commit`), `false` only records that do not. Absent, the server's `autonomous.shipped.filter_default` view applies. Orthogonal to `status` — set either, both, or neither. |
 | `active=1` | Keep only running, queued, waiting, approved, blocked and paused work. |
 | `q=<text>` | Case-insensitive match against title and id. |
@@ -2384,7 +2385,7 @@ The 200 reply is the record as stored. Each record writes an audit entry (`recor
 ### The shipped selection and the `shipped` status axis
 
 - `GET /api/autonomous/prds` and `GET /api/automations` accept `shipped=true` (only the records that carry shipped state) or `shipped=false` (only the ones that do not). Absent, the server's `autonomous.shipped.filter_default` view applies (`all`, `shipped` or `unshipped`).
-- `status=…` on either list may include `shipped` as one of the statuses; that selects the shipped bucket on the *status* axis.
+- `status=…` on either list matches the displayed status (`completed` includes a cancelled record whose work landed); `shipped` stays a legacy alias selecting records that carry shipped state.
 - The two axes are independent: set either, both, or neither.
 - The MCP list tools take the same parameter, strictly `"true"` or `"false"` (`autonomous_prd_list` and `automation_list`) — omit it for the default view.
 
@@ -2429,6 +2430,18 @@ The reply is the same in both modes:
 ```
 
 400 when the repository is absent on the serving machine, or while `autonomous.shipped.enabled` is off (the reply names the key). The same pass is MCP `autonomous_shipped_backfill` (`dry_run` optional; the federation write cap applies), the CLI `datawatch autonomous shipped backfill [--dry-run]`, and the comm verb `autonomous shipped-backfill [dry_run=true]`. `backfill_on_start` runs it once at every daemon start.
+
+### Completed migration
+
+```
+POST /api/autonomous/completed/migrate                       # writes
+POST /api/autonomous/completed/migrate?dry_run=true          # reports without writing
+POST /api/autonomous/completed/migrate?limit=20&id=a1b2c3d4  # at most 20 records; one record
+```
+
+Moves Automata and Automations that ended `cancelled` but whose work is already merged on the default branch to `completed`, so finished work stops reading as cancelled. `dry_run`, `limit` (0 = no limit; oldest first) and `id` come from the query or a JSON body (the query wins); a bad `dry_run` or `limit` is a 400. Evidence is a shipped record or the read-only merge proof of the `automaton/<id>` branch; a record with neither is left cancelled. The completion time is the merge time, never the run time. Each moved record gets one `completed_migration` decision-log line saying what changed, why, and how to undo it. It is idempotent (records already Completed count under `already_completed`) and it never starts, stops or signals a session.
+
+Reply keys: `considered`, `changed`, `would_complete` (dry run) or `completed` (real run), `already_completed`, `left_cancelled`, `left_other`, `deferred`, `errors`. A real run while a final gate is running is refused with 409; a dry run still reports, with `busy: true`. Needs the autonomous write capability. The same call is MCP `autonomous_completed_migrate` (`dry_run`, `limit`, `id`), the CLI `datawatch autonomous completed-migrate [--dry-run] [--limit N] [--id ID]`, and the comm verb `autonomous completed-migrate dry_run=true limit=N id=ID`. See [howto/automata-completed-migration.md](../howto/automata-completed-migration.md).
 
 ### Settings
 

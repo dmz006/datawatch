@@ -22,9 +22,8 @@ import (
 )
 
 // dashShippedCardID is the dashboard card that shows the shipped-state read
-// surfaces (shipped.go): per-status counts with shipped separated from
-// cancelled while the autonomous.shipped surface is enabled +
-// count_separately holds.
+// surfaces (shipped.go): per-status counts with shipped work counted as
+// completed rather than cancelled while the autonomous.shipped surface is enabled.
 const dashShippedCardID = "shipped"
 
 // dashCard is a single card in the layout.
@@ -270,10 +269,9 @@ func (s *Server) dashCardGetHandler(w http.ResponseWriter, r *http.Request, id s
 
 // shippedCardData is the live shipped card payload (shipped.go): the
 // per-status PRD and Automation counts under the in-force
-// autonomous.shipped settings — shipped separated from cancelled while
-// enabled + count_separately hold; with count_separately off a
-// shipped-yet-cancelled record folds back into "cancelled" — plus those
-// settings. A server without the autonomous manager gets a nil payload
+// autonomous.shipped settings — records carrying a shipped record count
+// under "completed" with the stored-completed ones while the surface is
+// enabled, never as cancelled — plus those settings. A server without the autonomous manager gets a nil payload
 // (the card then renders with no data). The buckets are computed on every
 // read and never persisted; the layout file keeps cards data-less.
 func (s *Server) shippedCardData() any {
@@ -281,7 +279,7 @@ func (s *Server) shippedCardData() any {
 		return nil
 	}
 	ship := s.shippedSettings()
-	sep := ship.EffectiveEnabled() && ship.EffectiveCountSeparately()
+	sep := ship.EffectiveEnabled()
 	prds := map[string]int{}
 	for _, raw := range s.autonomousMgr.ListPRDs() {
 		p, err := toPRD(raw)
