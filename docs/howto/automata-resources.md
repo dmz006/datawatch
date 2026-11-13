@@ -4,7 +4,7 @@ docs:
   topics: [automata, resources, lanes, usage, capacity, ui]
 ---
 
-# Automata resources: lanes and the usage cards
+# Automata resources: lanes and the usage card
 
 The **Resources** sub-tab of the Automation view shows what your Automata are
 running on and how much of the weekly allowance is left. It is read-only:
@@ -15,7 +15,7 @@ button with a short explanation and a link to the matching guide.
 
 | Card | What it tells you |
 |---|---|
-| **Usage cards** (a row at the top) | **Weekly allowance**, **Pace line** and **Burn per day**: three small cards of a fixed size. The same cards are on the usage page and can be added to a dashboard. See [usage-calculator.md](usage-calculator.md#the-usage-page-a-verdict-and-three-cards). |
+| **Usage calculator** (one card at the top) | **Weekly allowance**, **Pace line** and **Burn per day**: one card — a verdict sentence over three graphs of a fixed size. The same three graphs are on the usage page and can be added to a dashboard. See [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs). |
 | **Lane fill** | One row per lane. Each row shows the lane's **node** (or *Node: not reported*), its state and what it runs. The bar is full when the lane works, half when it waits on a verifier and empty when it is idle. See [automation-lane-fill.md](automation-lane-fill.md). |
 | **Capacity and queue** | The pools and their usage, any usage back-off, budgets and the Automata waiting for capacity. See [automata-capacity.md](automata-capacity.md). |
 | **Automata ship status** | The push, tag and release steps. See [automata-checks-and-ship.md](automata-checks-and-ship.md). |

@@ -720,7 +720,7 @@ readings). Settings apply without a restart.
 |--------|-----|
 | **YAML config** | `usage.calculator.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.calculator.<key> <value>`; `datawatch usage advice` |
-| **Web UI** | The usage page (one verdict sentence and three fixed-size cards: weekly allowance, pace line, burn per day), the same cards on the Resources sub-tab and as dashboard cards; every setting is in Settings → General → Automata |
+| **Web UI** | The usage page (one card: a verdict sentence and three fixed-size graphs — weekly allowance, pace line, burn per day), the same three graphs on the Resources sub-tab and as dashboard cards; every setting is in Settings → General → Automata |
 | **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
 | **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
 
@@ -757,7 +757,7 @@ its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which
 |--------|-----|
 | **YAML config** | `usage.burn_guard.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.burn_guard.<key> <value>`; `datawatch usage burn-guard status|run|config`; `datawatch automation set-effort-ceiling <id> docs=low` |
-| **Web UI** | Settings > Usage burn guard; the burn guard card on the usage page and the Monitor tab |
+| **Web UI** | Settings → General → Automata → Usage burn guard (the burn guard card on the usage page is read-only and links there); the **Burn guard** stat card on the usage page and in the Monitor panel |
 | **REST API** | `PUT /api/config` with `{"usage.burn_guard.<key>": value}`; `GET /api/usage/burn-guard`, `GET`/`PUT /api/usage/burn-guard/config`, `POST /api/usage/burn-guard/run` |
 | **MCP** | `burn_guard_*` tools; `automation_set_effort_ceiling` |
 | **Comm channel** | `configure usage.burn_guard.<key>=<value>`; `usage burn-guard`; `automation set-effort-ceiling` |
