@@ -572,6 +572,23 @@ func TestProjectTimeline_GanttAutomatonSpanFirstTaskStartToLastTaskEnd(t *testin
 		wantRunning: true,
 		wantStatus:  tlStatusRunning,
 	}, {
+		name: "running automaton between tasks has a null end",
+		p: tlPRD("c", autonomous.PRDRunning, -30, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-15)),
+			tlTask("k2", autonomous.TaskPending, tlTime(-12), nil)),
+		wantStart:   tlTime(-20),
+		wantRunning: true,
+		wantStatus:  tlStatusRunning,
+	}, {
+		name: "active automaton between completed tasks has a null end",
+		p: tlPRD("g", autonomous.PRDActive, -30, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-15)),
+			tlTask("k2", autonomous.TaskCompleted, tlTime(-14), tlTime(-10)),
+			tlTask("k3", autonomous.TaskPending, nil, nil)),
+		wantStart:   tlTime(-20),
+		wantRunning: true,
+		wantStatus:  tlStatusRunning,
+	}, {
 		name: "no started task falls back to created and updated",
 		p: tlPRD("d", autonomous.PRDCompleted, -40, -35, "/x",
 			tlTask("k1", autonomous.TaskPending, nil, nil)),

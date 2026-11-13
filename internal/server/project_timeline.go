@@ -301,6 +301,9 @@ func timelineAutomatonSpan(p *autonomous.PRD) timelineSpan {
 		}
 	}
 	if anyStarted {
+		if running {
+			s.running = true
+		}
 		if s.first != nil && s.last != nil && s.last.Before(*s.first) {
 			l := *s.first
 			s.last = &l
