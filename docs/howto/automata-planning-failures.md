@@ -235,6 +235,11 @@ Things this change leaves for you to decide or confirm:
   the spec check; parity is tracked in datawatch-app.
 - The spec check never blocks. If your process needs a hard stop on a private
   address or a worktree path, that is not provided.
+- `prd-list` and `prd-get` now print their plain-text lines (`planning failed:`
+  and the other summary lines) on standard error, and standard output is one
+  JSON document. Check any of your scripts or cron jobs that grep standard
+  output for `planning failed:`; they must read standard error instead. The
+  REST, MCP and chat surfaces are unchanged.
 - The release-number self-correction rewrites the stored plan, not your spec.
   Read the `auto_correct` line on the decision log the first few times.
 
