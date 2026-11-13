@@ -35,7 +35,7 @@ Show the coverage badge per backend (with the note for a non-full level), the ro
 |---|---|---|---|---|
 | `tracing.mode` | Trace level | `off`, `summary`, `full` | `summary` | |
 | `tracing.arg_cap_bytes` | Argument size cap (bytes) | whole number | 512 | 0 to 1048576 |
-| `tracing.retention_days` | Days to keep events | whole number | 14 | 0 to 3650 |
+| `tracing.retention_days` | Days to keep events | whole number | 0 | 0 to 3650 |
 | `tracing.backends` | Backends traced | map of backend to on/off | all on | a backend not listed is on |
 
 ## Locale keys
