@@ -611,6 +611,9 @@ type Server struct {
 	planPoints       planPointsCache
 	planPointsSource func() map[string]float64
 	planTasksSource  func(automatonID string) ([]planTaskRow, bool)
+	// planItemSource replaces the Automaton/Automation lookup of the plans
+	// write API in tests.
+	planItemSource func(id string) (planrecords.MigrateRef, bool)
 	// questionRaiseNotifier — the raise fan-out to the messaging group,
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).

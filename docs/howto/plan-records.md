@@ -63,6 +63,7 @@ candidates so you can repeat the call with an id.
 | CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. |
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
+| Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
 | Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
 | PWA | The **Plan records** section of the project page in the Projects sub-tab: Registry rows and Findings views, a state filter, a search box, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The section hides itself when plan records are off. |
 
@@ -292,3 +293,37 @@ The lists read the plan-record summary index, so they stay fast with thousands o
 records. The older `GET /api/projects/{name}/arcs` and the `arcs` field of the
 roll-up still answer, with the same arcs data and a `plans` list added; they are
 deprecated.
+
+## Ordering and linking plans
+
+Every control below is on every surface. A plan is named by its id or its title.
+They need `autonomous:write` for a federated peer and answer 404 while plan
+records are off.
+
+| To | REST | CLI | Chat |
+|---|---|---|---|
+| See a project's plans | `GET /api/projects/{name}/plans` | `datawatch plans list <project>` | `autonomous plan list <project>` |
+| Create a plan | `POST /api/plans` `{project, title, goal}` | `datawatch plans create <project> <title> [--goal TEXT]` | `autonomous plan new <project> <title...>` |
+| Reorder plans | `PUT /api/plans/order` `{plans: [...]}` | `datawatch plans reorder <plan>...` | `autonomous plan move <project> <plan> <position>` |
+| Reorder a plan's Automata | `PUT /api/plans/{ref}/automata/order` `{automata: [...]}` | `datawatch plans reorder-automata <plan> <automaton>...` | `autonomous plan move <plan> automaton <id> <position>` |
+| Attach | `POST /api/plans/{ref}/attach` `{kind, id}` | `datawatch plans attach <plan> --automaton\|--automation\|--finding ID` | `autonomous plan attach <plan> <kind> <id>` |
+| Detach | `POST /api/plans/{ref}/detach` `{kind, id}` | `datawatch plans detach <plan> --automaton\|--automation\|--finding ID` | `autonomous plan detach <plan> <kind> <id>` |
+
+Reordering plans: the plans you list take positions 1 to n in that order and
+every other plan follows in its old order. A plan that does not exist, or one
+listed twice, fails the whole call and nothing changes. Reordering a plan's
+Automata must list every Automaton of the plan once. The answer shows the run
+order and the **next marker**. The next marker skips blocked and held Automata,
+so moving a held Automaton to the front does not make it run next; it stays
+shown, marked skipped, until it is released.
+
+Attaching checks the id first: an unknown Automaton or Automation answers 404.
+A link is never replaced. An Automaton or Automation already linked to another
+plan, or a finding already attached elsewhere, answers 409 and names where it
+is; detach it first, then attach it. Attaching the same item to the same plan
+again changes nothing. A detach must name the plan the item is in, so it can
+never reach into a different plan.
+
+`datawatch projects arcs <name>` and the `project_set_arcs` tool stay as
+deprecated aliases. The CLI prints a note and runs the plans list; in chat,
+`arcs` is accepted in place of `plan` (`autonomous arcs list <project>`).

@@ -255,27 +255,16 @@ func newProjectsArcsCmd() *cobra.Command {
 	var set []string
 	cmd := &cobra.Command{
 		Use:   "arcs <name>",
-		Short: "Show a project's arcs, or replace them with --set id:priority:state,...",
-		Long: "Without --set, print the project's arcs. With --set, replace the whole list " +
+		Short: "Deprecated: use `datawatch plans list <name>`; --set still replaces the arcs",
+		Long: "Deprecated alias of `datawatch plans list <name>`: without --set it prints a " +
+			"note and shows the project's plans. With --set, replace the whole arcs list " +
 			"with the entries given (state is planned, active or done). --set with an empty " +
 			"value clears the arcs.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Note: `projects arcs` is deprecated; use `datawatch plans list "+args[0]+"`.")
 			if !cmd.Flags().Changed("set") {
-				rec, err := fetchProjectRecord(args[0])
-				if err != nil {
-					return err
-				}
-				arcs := rec.Arcs
-				if arcs == nil {
-					arcs = []projectArcArg{}
-				}
-				body, err := json.Marshal(arcs)
-				if err != nil {
-					return err
-				}
-				prettyPrint(body)
-				return nil
+				return runPlansList(cmd, args[0], 0, false)
 			}
 			arcs, err := parseArcSpecs(set)
 			if err != nil {

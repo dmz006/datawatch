@@ -21,13 +21,29 @@
 //		import the registry file and findings files as records. With
 //		dry-run it only previews every record and conflict; without, it
 //		writes (records already imported are left alone).
+//	autonomous plan list <project>
+//		the project's plans in order, with progress and what runs next. A read.
+//	autonomous plan new <project> <title…>
+//		create a plan (it goes last in the plan order).
+//	autonomous plan move <project> <plan> <position>
+//		move a plan to a position in the plan order.
+//	autonomous plan move <plan> automaton <id> <position>
+//		move an Automaton to a position in the plan's order; the reply says what
+//		runs next (blocked and held Automata are skipped).
+//	autonomous plan attach <plan> automaton|automation|finding <id>
+//	autonomous plan detach <plan> automaton|automation|finding <id>
+//		link or unlink one; a link held elsewhere is refused and named.
+//	"arcs" is accepted in place of "plan" (autonomous arcs list <project> …).
+//	Each verb calls the loopback REST route, so chat runs the same code as REST.
 
 package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -36,6 +52,9 @@ const (
 	// planRecordsUsage is the usage line for the plan record comm verbs; a bad
 	// verb or a missing argument replies with it.
 	planRecordsUsage = "usage: autonomous plan-records [registry-row|finding] [project=P] [state=S] | plan-record get <ref> | plan-record create <json> | plan-record update <ref> <json> | plan-record search <text> | plan-record import [dry-run] [project=P] [source=registry|findings|all] [policy=suffix|rename|skip]"
+
+	// planVerbUsage is the usage line for the plan verbs.
+	planVerbUsage = "usage: autonomous plan list <project> | plan new <project> <title...> | plan move <project> <plan> <position> | plan move <plan> automaton <id> <position> | plan attach <plan> automaton|automation|finding <id> | plan detach <plan> automaton|automation|finding <id>  (arcs works in place of plan)"
 
 	// planRecordsMaxLines is the most lines one list or search reply carries.
 	planRecordsMaxLines = 10
@@ -58,7 +77,7 @@ type planRecordLineWire struct {
 // PlanRecordsCommVerbs lists the plan record comm verbs for the parity test.
 // Keep it in step with the verbs handleAutonomous routes to this handler.
 func PlanRecordsCommVerbs() []string {
-	return []string{"plan-records", "plan-record"}
+	return []string{"plan-records", "plan-record", "plan", "arcs"}
 }
 
 // planRecordCommSegment maps a kind word to its REST collection segment.
@@ -520,4 +539,290 @@ func planRecordImportText(body string) string {
 		b.WriteString("\nNothing was written. Send the same command without dry-run to write.")
 	}
 	return b.String()
+}
+
+// ----- plan verbs: list, new, move, attach, detach --------------------------
+
+// planWireRow is one plan of the plans list answer.
+type planWireRow struct {
+	Title    string `json:"title"`
+	ID       string `json:"id"`
+	State    string `json:"state"`
+	Order    int    `json:"order"`
+	Progress struct {
+		Done  int `json:"done"`
+		Total int `json:"total"`
+	} `json:"progress"`
+	Next *struct {
+		AutomatonID string `json:"automaton_id"`
+		Title       string `json:"title"`
+	} `json:"next"`
+}
+
+type planWireList struct {
+	Plans   []planWireRow `json:"plans"`
+	Backlog struct {
+		Plans []planWireRow `json:"plans"`
+	} `json:"backlog"`
+}
+
+type planWireRun struct {
+	Plan struct {
+		Title string `json:"title"`
+		ID    string `json:"id"`
+	} `json:"plan"`
+	Next *struct {
+		AutomatonID string `json:"automaton_id"`
+		Title       string `json:"title"`
+	} `json:"next"`
+	Automata []struct {
+		Title    string `json:"title"`
+		ID       string `json:"id"`
+		Run      string `json:"run"`
+		Position int    `json:"position"`
+	} `json:"automata"`
+}
+
+// handlePlanVerb answers "autonomous plan …" and its alias "autonomous arcs …".
+func (r *Router) handlePlanVerb(args []string) {
+	rest := []string{}
+	if len(args) > 1 {
+		rest = args[1:]
+	}
+	if len(rest) == 0 {
+		r.reply("autonomous plan failed", planVerbUsage)
+		return
+	}
+	sub, rest := strings.ToLower(rest[0]), rest[1:]
+	switch sub {
+	case "list", "ls":
+		r.planList(rest)
+	case "new", "create":
+		r.planNew(rest)
+	case "move":
+		r.planMove(rest)
+	case "attach", "detach":
+		r.planLink(sub, rest)
+	default:
+		r.reply("autonomous plan failed", planVerbUsage)
+	}
+}
+
+func (r *Router) planFetchList(project string) (planWireList, error) {
+	var res planWireList
+	out, err := r.commGet("/api/projects/"+url.PathEscape(project)+"/plans",
+		url.Values{"limit": {"500"}, "backlog_limit": {"500"}})
+	if err != nil {
+		return res, err
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		return res, fmt.Errorf("the daemon sent a plans list I cannot read")
+	}
+	return res, nil
+}
+
+func (r *Router) planList(args []string) {
+	if len(args) != 1 {
+		r.reply("autonomous plan failed", planVerbUsage)
+		return
+	}
+	res, err := r.planFetchList(args[0])
+	if err != nil {
+		r.reply("autonomous plan list failed", err.Error())
+		return
+	}
+	var lines []string
+	add := func(prefix string, rows []planWireRow) {
+		for i, p := range rows {
+			if len(lines) >= planRecordsMaxLines {
+				return
+			}
+			l := fmt.Sprintf("%s%d. %s [%s] %s %d/%d done", prefix, i+1, strings.Join(strings.Fields(p.Title), " "), p.ID, p.State, p.Progress.Done, p.Progress.Total)
+			if p.Next != nil {
+				l += " next: " + strings.Join(strings.Fields(p.Next.Title), " ")
+			}
+			lines = append(lines, l)
+		}
+	}
+	add("", res.Plans)
+	add("backlog ", res.Backlog.Plans)
+	if len(lines) == 0 {
+		r.reply("autonomous plan list", "No plans yet.")
+		return
+	}
+	if total := len(res.Plans) + len(res.Backlog.Plans); total > len(lines) {
+		lines = append(lines, fmt.Sprintf("… and %d more (use plan list on REST or the CLI for the rest)", total-len(lines)))
+	}
+	r.reply("autonomous plan list", strings.Join(lines, "\n"))
+}
+
+func (r *Router) planNew(args []string) {
+	if len(args) < 2 {
+		r.reply("autonomous plan failed", planVerbUsage)
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{"project": args[0], "title": strings.Join(args[1:], " ")})
+	out, err := r.commJSON(http.MethodPost, "/api/plans", string(raw))
+	if err != nil {
+		r.reply("autonomous plan new failed", err.Error())
+		return
+	}
+	var res struct {
+		Plan struct {
+			Title string `json:"title"`
+			ID    string `json:"id"`
+		} `json:"plan"`
+	}
+	if json.Unmarshal([]byte(out), &res) != nil || res.Plan.ID == "" {
+		r.reply("autonomous plan new", "created")
+		return
+	}
+	r.reply("autonomous plan new", fmt.Sprintf("Created plan %s [%s]", res.Plan.Title, res.Plan.ID))
+}
+
+// planMovePosition parses a 1-based position.
+func planMovePosition(s string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	return n, err == nil && n >= 1
+}
+
+// moveIndex returns ids with the entry at from moved to position pos (1-based,
+// clamped to the end).
+func moveIndex(ids []string, from, pos int) []string {
+	out := make([]string, 0, len(ids))
+	id := ids[from]
+	for i, v := range ids {
+		if i != from {
+			out = append(out, v)
+		}
+	}
+	at := pos - 1
+	if at > len(out) {
+		at = len(out)
+	}
+	out = append(out, "")
+	copy(out[at+1:], out[at:])
+	out[at] = id
+	return out
+}
+
+func (r *Router) planMove(args []string) {
+	switch {
+	case len(args) == 3:
+		pos, ok := planMovePosition(args[2])
+		if !ok {
+			r.reply("autonomous plan failed", planVerbUsage)
+			return
+		}
+		r.planMovePlan(args[0], args[1], pos)
+	case len(args) == 4 && strings.EqualFold(args[1], "automaton"):
+		pos, ok := planMovePosition(args[3])
+		if !ok {
+			r.reply("autonomous plan failed", planVerbUsage)
+			return
+		}
+		r.planMoveAutomaton(args[0], args[2], pos)
+	default:
+		r.reply("autonomous plan failed", planVerbUsage)
+	}
+}
+
+func (r *Router) planMovePlan(project, plan string, pos int) {
+	res, err := r.planFetchList(project)
+	if err != nil {
+		r.reply("autonomous plan move failed", err.Error())
+		return
+	}
+	all := append(append([]planWireRow{}, res.Plans...), res.Backlog.Plans...)
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Order < all[j].Order })
+	ids := make([]string, 0, len(all))
+	from := -1
+	for i, p := range all {
+		ids = append(ids, p.ID)
+		if strings.EqualFold(p.ID, plan) || strings.EqualFold(strings.Join(strings.Fields(p.Title), " "), strings.Join(strings.Fields(plan), " ")) {
+			from = i
+		}
+	}
+	if from < 0 {
+		r.reply("autonomous plan move failed", fmt.Sprintf("no plan %q in project %s", plan, project))
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{"plans": moveIndex(ids, from, pos)})
+	if _, err := r.commJSON(http.MethodPut, "/api/plans/order", string(raw)); err != nil {
+		r.reply("autonomous plan move failed", err.Error())
+		return
+	}
+	r.reply("autonomous plan move", fmt.Sprintf("Moved plan %s to position %d", plan, pos))
+}
+
+func (r *Router) planMoveAutomaton(plan, automaton string, pos int) {
+	out, err := r.commGet("/api/plans/"+url.PathEscape(plan)+"/automata", url.Values{"limit": {"500"}})
+	if err != nil {
+		r.reply("autonomous plan move failed", err.Error())
+		return
+	}
+	var cur planWireRun
+	if json.Unmarshal([]byte(out), &cur) != nil {
+		r.reply("autonomous plan move failed", "the daemon sent a plan I cannot read")
+		return
+	}
+	// The stored plan order is the position field, not the run order.
+	sort.SliceStable(cur.Automata, func(i, j int) bool { return cur.Automata[i].Position < cur.Automata[j].Position })
+	ids := make([]string, 0, len(cur.Automata))
+	from := -1
+	for i, a := range cur.Automata {
+		ids = append(ids, a.ID)
+		if a.ID == automaton {
+			from = i
+		}
+	}
+	if from < 0 {
+		r.reply("autonomous plan move failed", fmt.Sprintf("Automaton %q is not linked to plan %s", automaton, plan))
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{"automata": moveIndex(ids, from, pos)})
+	out, err = r.commJSON(http.MethodPut, "/api/plans/"+url.PathEscape(plan)+"/automata/order", string(raw))
+	if err != nil {
+		r.reply("autonomous plan move failed", err.Error())
+		return
+	}
+	msg := fmt.Sprintf("Moved Automaton %s to position %d.", automaton, pos)
+	var res planWireRun
+	if json.Unmarshal([]byte(out), &res) == nil {
+		if res.Next != nil {
+			next := strings.Join(strings.Fields(res.Next.Title), " ")
+			if next == "" {
+				next = res.Next.AutomatonID
+			}
+			msg += " Runs next: " + next + " (blocked and held are skipped)."
+		} else {
+			msg += " Nothing is waiting to run next."
+		}
+	}
+	r.reply("autonomous plan move", msg)
+}
+
+func (r *Router) planLink(verb string, args []string) {
+	if len(args) != 3 {
+		r.reply("autonomous plan failed", planVerbUsage)
+		return
+	}
+	kind := strings.ToLower(args[1])
+	switch kind {
+	case "automaton", "automation", "finding":
+	default:
+		r.reply("autonomous plan "+verb+" failed", "the kind must be automaton, automation or finding")
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{"kind": kind, "id": args[2]})
+	if _, err := r.commJSON(http.MethodPost, "/api/plans/"+url.PathEscape(args[0])+"/"+verb, string(raw)); err != nil {
+		r.reply("autonomous plan "+verb+" failed", err.Error())
+		return
+	}
+	past := "Attached"
+	prep := "to"
+	if verb == "detach" {
+		past, prep = "Detached", "from"
+	}
+	r.reply("autonomous plan "+verb, fmt.Sprintf("%s %s %s %s plan %s", past, kind, args[2], prep, args[0]))
 }

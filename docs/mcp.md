@@ -1805,6 +1805,15 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
 | `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
 | `plan_migrate` | Build plans from project arcs and registry rows; previews unless `apply` is `true` | `POST /api/plans/migrate` |
+| `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`) | `POST /api/plans` |
+| `plan_reorder` | Set the plan priority order (`plans`: ids or titles, first plan first) | `PUT /api/plans/order` |
+| `plan_reorder_automata` | Set the order of a plan's Automata (`plan`, `automata`: every Automaton once); the answer shows what runs next, skipping blocked and held | `PUT /api/plans/{ref}/automata/order` |
+| `plan_attach` | Attach an Automaton, Automation or finding to a plan (`plan`, `kind`, `id`); a link held elsewhere is refused and named | `POST /api/plans/{ref}/attach` |
+| `plan_detach` | Detach one of them from the plan it is in | `POST /api/plans/{ref}/detach` |
+
+`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
+`plan_detach` need `autonomous:write` when called by a federated peer.
+`project_set_arcs` stays as a deprecated alias for the older arcs list.
 
 **Parameters.** `kind` is `registry-row` or `finding` (required on create, list,
 get and update). `ref` is an id, a uid, `row <n>`, an exact title, an older

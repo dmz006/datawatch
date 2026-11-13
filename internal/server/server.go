@@ -369,6 +369,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("GET /api/projects/{name}/overview-summary", api.handleProjectOverviewSummary) // overview: header, progress, active plan lines, counts
 	apiMux.HandleFunc("GET /api/projects/{name}/arcs", api.handleProjectArcs)                        // deprecated alias: roll-up arcs plus plans
 	apiMux.HandleFunc("GET /api/plans/{ref}/automata", api.handlePlanAutomata)                       // plans read API: a plan's Automata in run order
+	apiMux.HandleFunc("POST /api/plans", api.handlePlanCreate)                                       // plans write API: create a plan
+	apiMux.HandleFunc("PUT /api/plans/order", api.handlePlansOrder)                                  // plans write API: set the plan priority order
+	apiMux.HandleFunc("PUT /api/plans/{ref}/automata/order", api.handlePlanAutomataOrder)            // plans write API: set the order of a plan's Automata
+	apiMux.HandleFunc("POST /api/plans/{ref}/attach", api.handlePlanAttach)                          // plans write API: attach an Automaton, Automation or finding
+	apiMux.HandleFunc("POST /api/plans/{ref}/detach", api.handlePlanDetach)                          // plans write API: detach one of them
 	apiMux.HandleFunc("GET /api/plans/{ref}/tasks", api.handlePlanTasks)                             // plans read API: a plan's tasks (on expand)
 	apiMux.HandleFunc("GET /api/projects/{name}/history", api.handleProjectHistory)                  // project history: finished/archived Automata, daily progress, Gantt rows
 	apiMux.HandleFunc("GET /api/projects/{name}/timeline", api.handleProjectTimeline)                // project timeline: first/last per arc, Automaton and task, one level at a time
