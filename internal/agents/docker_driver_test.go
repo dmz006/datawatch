@@ -19,9 +19,9 @@ import (
 // but those require a working socket anyway.
 
 // newFakeDocker writes a minimal shell script to $dir/docker that:
-//   * records its full argv to $dir/invocations.log
-//   * emits the content of $dir/output.<subcommand> to stdout
-//   * exits 0 or the code in $dir/exitcode.<subcommand> if present
+//   - records its full argv to $dir/invocations.log
+//   - emits the content of $dir/output.<subcommand> to stdout
+//   - exits 0 or the code in $dir/exitcode.<subcommand> if present
 //
 // Returns the dir so tests can read the log + seed subcommand outputs.
 func newFakeDocker(t *testing.T) string {

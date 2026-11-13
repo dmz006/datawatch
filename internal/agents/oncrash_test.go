@@ -16,10 +16,10 @@ import (
 // only, then succeeds on every subsequent call. Used to assert the
 // respawn paths actually issue a follow-up spawn.
 type retryDriver struct {
-	kind         string
-	spawnCount   int
-	failFirstN   int
-	terminated   map[string]bool
+	kind       string
+	spawnCount int
+	failFirstN int
+	terminated map[string]bool
 }
 
 func (r *retryDriver) Kind() string { return r.kind }
@@ -178,9 +178,9 @@ func TestRespawnBackoffFor(t *testing.T) {
 		{2, 4 * time.Minute},
 		{3, 8 * time.Minute},
 		{4, 16 * time.Minute},
-		{5, 30 * time.Minute},   // capped (32m → 30m)
-		{20, 30 * time.Minute},  // also capped
-		{-1, time.Minute},        // negative coerced to 0
+		{5, 30 * time.Minute},  // capped (32m → 30m)
+		{20, 30 * time.Minute}, // also capped
+		{-1, time.Minute},      // negative coerced to 0
 	}
 	for _, tc := range cases {
 		if got := respawnBackoffFor(tc.n); got != tc.want {
