@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"slices"
@@ -135,5 +136,58 @@ func TestTaskRoutingCommBadUsageAndHelp(t *testing.T) {
 	help := strings.Join(r.HandleTestMessage("autonomous"), "\n")
 	if !strings.Contains(help, "task-routing [show|profile list|profile use <name>|automaton <id>|dry-run <id> [profile]]") {
 		t.Errorf("chat help does not list task-routing: %q", help)
+	}
+}
+
+// The comm configure verb carries the three task routing keys to the daemon
+// unchanged and shows the daemon's reply, including a skipped key.
+
+func taskRoutingConfigureReply(t *testing.T, fn func(key, value string) error, text string) string {
+	t.Helper()
+	var wg sync.WaitGroup
+	var got string
+	wg.Add(1)
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: func(s string) {
+		got = s
+		wg.Done()
+	}}}
+	r.SetConfigureFunc(fn)
+	r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+	wg.Wait()
+	return got
+}
+
+func TestTaskRoutingConfigureVerbWritesAndReadsBack(t *testing.T) {
+	block := `{"enabled":true,"active_profile":"lean","profiles":{"lean":{"docs_set":{"worker_backend":"pi-prompt"}}}}`
+	store := map[string]string{}
+	set := func(k, v string) error {
+		if k == "autonomous.task_routing.active_profile" && v == "ghost" {
+			return errors.New(k + " not stored (the active profile must name an existing profile)")
+		}
+		store[k] = v
+		return nil
+	}
+	for _, c := range []struct{ key, value string }{
+		{"autonomous.task_routing.enabled", "true"},
+		{"autonomous.task_routing.active_profile", "lean"},
+		{"autonomous.task_routing", block},
+	} {
+		reply := taskRoutingConfigureReply(t, set, c.key+"="+c.value)
+		if !strings.Contains(reply, "Set "+c.key) {
+			t.Errorf("%s: reply %q does not confirm the write", c.key, reply)
+		}
+		// The key and the whole value (a JSON block holds '=' free text and
+		// commas) reach the daemon unchanged.
+		if store[c.key] != c.value {
+			t.Errorf("%s read back %q, want %q", c.key, store[c.key], c.value)
+		}
+	}
+	// A skipped key is a failure reply, and nothing is stored.
+	reply := taskRoutingConfigureReply(t, set, "autonomous.task_routing.active_profile=ghost")
+	if !strings.Contains(reply, "Configure failed") || !strings.Contains(reply, "not stored") {
+		t.Errorf("a skipped profile must be reported as a failure, got %q", reply)
+	}
+	if store["autonomous.task_routing.active_profile"] != "lean" {
+		t.Errorf("a skipped profile was stored: %q", store["autonomous.task_routing.active_profile"])
 	}
 }

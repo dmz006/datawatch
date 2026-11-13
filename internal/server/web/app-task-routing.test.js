@@ -313,3 +313,103 @@ test('every task_routing_ key the app uses exists in all five bundles', () => {
     assert.deepEqual(missing, [], lang + ' is missing keys');
   }
 });
+
+// Settings page: write each of the three task routing keys (the enable switch,
+// the active profile, the whole table) through the card and read it back from
+// the re-rendered card. The fake daemon keeps state and refuses what the real
+// one refuses: an active profile that does not exist and a table that fails
+// validation, both leaving the stored block alone.
+
+function statefulDaemon(sb) {
+  const state = JSON.parse(JSON.stringify(view({ active_profile: 'default' })));
+  const calls = [];
+  const refuse = (msg, problems) => Promise.reject(new Error(JSON.stringify({ error: msg, problems })));
+  sb.apiFetch = (url, opts) => {
+    calls.push([url, opts]);
+    const method = (opts && opts.method) || 'GET';
+    if (url === '/api/llms') return Promise.resolve({ llms: [{ name: 'claude-code', kind: 'claude-code', model: 'sonnet' }, { name: 'pi-prompt', kind: 'pi-prompt' }] });
+    if (url === '/api/autonomous/task-routing' && method === 'GET') return Promise.resolve(JSON.parse(JSON.stringify(state)));
+    if (url === '/api/autonomous/task-routing' && method === 'PUT') {
+      const body = JSON.parse(opts.body);
+      if (body.active_profile && !body.profiles[body.active_profile]) return refuse('the routing table is not valid; nothing was changed', ['task_routing: active profile "' + body.active_profile + '" does not exist']);
+      for (const p of Object.values(body.profiles)) {
+        for (const t of Object.keys(p)) if (!TYPES.includes(t)) return refuse('the routing table is not valid; nothing was changed', ['task_routing: unknown task type ' + t]);
+      }
+      Object.assign(state, { enabled: body.enabled, active_profile: body.active_profile, profiles: body.profiles });
+      return Promise.resolve({});
+    }
+    if (url === '/api/autonomous/task-routing/active-profile' && method === 'PUT') {
+      const name = JSON.parse(opts.body).name;
+      if (!state.profiles[name]) return refuse('profile "' + name + '" does not exist; nothing was changed', []);
+      state.active_profile = name;
+      return Promise.resolve({ active_profile: name });
+    }
+    return Promise.resolve(null);
+  };
+  vm.runInContext('apiFetch = globalThis.apiFetch', sb);
+  return { state, calls };
+}
+
+function mountSettingsCard(sb) {
+  const panel = { innerHTML: '' };
+  const toasts = [];
+  sb.document.getElementById = id => (id === 'automataTaskRoutingPanel' ? panel : id === 'trEnabled' ? { checked: sb._trToggleValue } : null);
+  sb.showToast = (msg, kind) => { toasts.push([String(msg), kind]); };
+  vm.runInContext('showToast = globalThis.showToast', sb);
+  return { panel, toasts };
+}
+
+test('TaskRouting Settings page writes the enable switch and reads it back', async () => {
+  const sb = loadApp();
+  const { panel } = mountSettingsCard(sb);
+  const daemon = statefulDaemon(sb);
+  await sb.loadAutomataTaskRoutingPanel();
+  assert.match(panel.innerHTML, /id="trEnabled" checked/);
+  sb._trToggleValue = false;
+  await sb.taskRoutingToggle();
+  assert.equal(daemon.state.enabled, false);
+  assert.doesNotMatch(panel.innerHTML, /id="trEnabled" checked/);
+  sb._trToggleValue = true;
+  await sb.taskRoutingToggle();
+  assert.equal(daemon.state.enabled, true);
+  assert.match(panel.innerHTML, /id="trEnabled" checked/);
+});
+
+test('TaskRouting Settings page writes the active profile and reports one that does not exist', async () => {
+  const sb = loadApp();
+  const { panel, toasts } = mountSettingsCard(sb);
+  const daemon = statefulDaemon(sb);
+  await sb.loadAutomataTaskRoutingPanel();
+  await sb.taskRoutingSwitchProfile('thrifty');
+  assert.equal(daemon.state.active_profile, 'thrifty');
+  assert.match(panel.innerHTML, /<option value="thrifty" selected>thrifty<\/option>/);
+  toasts.length = 0;
+  await sb.taskRoutingSwitchProfile('ghost');
+  assert.equal(daemon.state.active_profile, 'thrifty', 'a missing profile is not stored');
+  assert.match(panel.innerHTML, /<option value="thrifty" selected>thrifty<\/option>/);
+  assert.ok(toasts.some(([m, k]) => k === 'error' && /ghost/.test(m)), 'the refusal is reported: ' + JSON.stringify(toasts));
+});
+
+test('TaskRouting Settings page writes the whole table and reports a table the server refuses', async () => {
+  const sb = loadApp();
+  const { panel, toasts } = mountSettingsCard(sb);
+  const daemon = statefulDaemon(sb);
+  await sb.loadAutomataTaskRoutingPanel();
+  sb.taskRoutingEditField('ui_code', 'worker_backend', 'pi-prompt');
+  sb.taskRoutingEditField('ui_code', 'worker_model', 'qwen');
+  await sb.taskRoutingSaveTable();
+  assert.equal(daemon.state.profiles.default.ui_code.worker_backend, 'pi-prompt');
+  assert.equal(daemon.state.profiles.default.ui_code.worker_model, 'qwen');
+  assert.match(panel.innerHTML, /data-type="ui_code"/);
+  assert.match(panel.innerHTML, /<option value="qwen" selected>qwen<\/option>/);
+
+  // A table the daemon refuses (a row for a task type that does not exist) is
+  // reported inline and in a toast, and the stored block does not change.
+  const before = JSON.stringify(daemon.state.profiles);
+  toasts.length = 0;
+  sb.taskRoutingEditField('not_a_task_type', 'worker_backend', 'pi-prompt');
+  await sb.taskRoutingSaveTable();
+  assert.equal(JSON.stringify(daemon.state.profiles), before);
+  assert.ok(toasts.some(([, k]) => k === 'error'), 'the refusal is reported in a toast');
+  assert.match(panel.innerHTML, /unknown task type|not valid/);
+});

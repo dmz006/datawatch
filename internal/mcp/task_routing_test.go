@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +14,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	dwserver "github.com/dmz006/datawatch/internal/server"
 )
 
 var taskRoutingToolCaps = map[string]string{
@@ -218,5 +221,93 @@ func TestTaskRoutingProfileWriteToolsProxy(t *testing.T) {
 	}
 	if _, err := s.handleTaskRoutingProfileSave(ctx, callReq(map[string]any{"name": "a", "rows": "{"})); err == nil {
 		t.Error("bad rows must be refused")
+	}
+}
+
+// config_set against the real /api/config handler: each of the three task
+// routing keys is written and read back through get_config's source (GET).
+
+func taskRoutingConfigMCP(t *testing.T) (*Server, func() config.TaskRoutingConfig) {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.Autonomous.TaskRouting = config.DefaultTaskRouting()
+	cfg.Autonomous.TaskRouting.Profiles["alt"] = cfg.Autonomous.TaskRouting.Profiles["default"]
+	api := dwserver.NewServer(dwserver.NewHub(), nil, "h", "", nil, cfg, filepath.Join(t.TempDir(), "config.yaml"))
+	ts := httptest.NewServer(api.ConfigHandler())
+	t.Cleanup(ts.Close)
+	s := &Server{webPort: bl427Port(t, ts), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
+	read := func() config.TaskRoutingConfig {
+		resp, err := http.Get(ts.URL + "/api/config")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close() //nolint:errcheck
+		var top struct {
+			Autonomous struct {
+				TaskRouting config.TaskRoutingConfig `json:"task_routing"`
+			} `json:"autonomous"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&top); err != nil {
+			t.Fatal(err)
+		}
+		return top.Autonomous.TaskRouting
+	}
+	return s, read
+}
+
+func taskRoutingConfigSetMCP(t *testing.T, s *Server, key, value string) (string, bool) {
+	t.Helper()
+	res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{"key": key, "value": value}))
+	if err != nil {
+		t.Fatalf("handleConfigSet: %v", err)
+	}
+	return automationText(t, res), res.IsError
+}
+
+func TestTaskRoutingConfigSetMCPEnabledAndActiveProfile(t *testing.T) {
+	s, read := taskRoutingConfigMCP(t)
+	if text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing.enabled", "true"); isErr {
+		t.Fatalf("enabled: %s", text)
+	}
+	if !read().Enabled {
+		t.Fatal("enabled did not read back true")
+	}
+	if text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing.active_profile", "alt"); isErr || !strings.Contains(text, "Set ") {
+		t.Fatalf("active_profile: %s", text)
+	}
+	if got := read().ActiveProfile; got != "alt" {
+		t.Fatalf("active_profile = %q, want alt", got)
+	}
+	// A profile that does not exist is skipped and reported, not stored.
+	text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing.active_profile", "ghost")
+	if !isErr || !strings.Contains(text, "not stored") || strings.Contains(text, "Set ") {
+		t.Fatalf("unknown profile should be reported as not stored, got %q (isError=%v)", text, isErr)
+	}
+	if got := read().ActiveProfile; got != "alt" {
+		t.Fatalf("active_profile changed to %q after a skipped write", got)
+	}
+}
+
+func TestTaskRoutingConfigSetMCPBlock(t *testing.T) {
+	s, read := taskRoutingConfigMCP(t)
+	good := config.DefaultTaskRouting()
+	good.Enabled = true
+	good.Profiles["lean"] = good.Profiles["default"]
+	good.ActiveProfile = "lean"
+	b, _ := json.Marshal(good)
+	if text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", string(b)); isErr {
+		t.Fatalf("block: %s", text)
+	}
+	if got := read(); !got.Enabled || got.ActiveProfile != "lean" || len(got.Profiles["lean"]) == 0 {
+		t.Fatalf("block did not read back: %+v", got)
+	}
+	// A block that fails ValidateTaskRouting is skipped and reported.
+	bad := `{"enabled":true,"active_profile":"x","profiles":{"x":{"not-a-task-type":{"worker_backend":"pi-prompt"}}}}`
+	text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", bad)
+	if !isErr || !strings.Contains(text, "not stored") {
+		t.Fatalf("invalid block should be reported as not stored, got %q (isError=%v)", text, isErr)
+	}
+	if got := read(); got.ActiveProfile != "lean" || len(got.Profiles["x"]) != 0 {
+		t.Fatalf("a refused block was stored: %+v", got.ActiveProfile)
 	}
 }

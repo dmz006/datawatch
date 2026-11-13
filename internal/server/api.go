@@ -8488,7 +8488,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		// server.token/mcp.token through the generic patch path finds out
 		// immediately rather than assuming it took effect.
 		resp["skipped"] = skipped
-		resp["skipped_reason"] = "use POST /api/auth/rotate-token to change the admin bearer token"
+		reason := "use POST /api/auth/rotate-token to change the admin bearer token"
+		if allTaskRoutingKeys(skipped) {
+			reason = "not stored: the active profile must name an existing profile, and the task routing block must pass validation"
+		}
+		resp["skipped_reason"] = reason
 	}
 	if _, ok := patch["autonomous.max_parallel_tasks"]; ok {
 		resp["deprecated_fields"] = map[string]string{
