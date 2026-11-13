@@ -67,6 +67,13 @@ func perfRollupMultiplier(t testing.TB) float64 {
 	return m
 }
 
+// perfOver reports a missed time limit. Time limits depend on host speed, so
+// they are only enforced when PERF_ROLLUP_CHECK=1 (scripts/perf-rollup-check.sh
+// sets it). Byte limits and the no-full-record-read assertions always run.
+func perfOver(d, limit time.Duration) bool {
+	return os.Getenv("PERF_ROLLUP_CHECK") == "1" && d > limit
+}
+
 func perfScaled(t testing.TB, d time.Duration) time.Duration {
 	return time.Duration(float64(d) * perfRollupMultiplier(t))
 }
@@ -338,7 +345,7 @@ func TestPerfRollupWarmRead(t *testing.T) {
 	for _, p := range fx.Projects {
 		cold, _ := perfRollupGet(t, fx.Server, p)
 		warm, d := perfRollupGet(t, fx.Server, p)
-		if d > limit {
+		if perfOver(d, limit) {
 			t.Errorf("warm roll-up of %s took %v, limit %v", p, d, limit)
 		}
 		if cold.Body.String() != warm.Body.String() {
@@ -359,7 +366,7 @@ func TestPerfRollupColdRead(t *testing.T) {
 	reads := fx.Manager.Store().RecordReadCalls()
 	for _, p := range fx.Projects {
 		rr, d := perfRollupGet(t, fx.Server, p)
-		if d > limit {
+		if perfOver(d, limit) {
 			t.Errorf("cold roll-up of %s took %v, limit %v", p, d, limit)
 		}
 		t.Logf("%s cold %v (%d bytes)", p, d, rr.Body.Len())
@@ -387,7 +394,7 @@ func TestPerfRollupWriteInvalidates(t *testing.T) {
 	reads := fx.Manager.Store().RecordReadCalls()
 	time.Sleep(2 * time.Millisecond) // generated_at is the build time; make it differ
 	after, d := perfRollupGet(t, fx.Server, project)
-	if d > limit {
+	if perfOver(d, limit) {
 		t.Errorf("read after a write took %v, limit %v", d, limit)
 	}
 	if after.Body.String() == first.Body.String() {
@@ -401,7 +408,7 @@ func TestPerfRollupWriteInvalidates(t *testing.T) {
 	if next.Body.String() != after.Body.String() {
 		t.Error("the rebuilt roll-up was not cached")
 	}
-	if d2 > perfScaled(t, perfRollupWarmLimit) {
+	if perfOver(d2, perfScaled(t, perfRollupWarmLimit)) {
 		t.Errorf("read after the rebuild took %v, warm limit %v", d2, perfScaled(t, perfRollupWarmLimit))
 	}
 }
@@ -421,7 +428,7 @@ func TestPerfAutomataListDefault(t *testing.T) {
 		if rr.Body.Len() > perfListMaxBytes {
 			t.Errorf("list body %d bytes exceeds %d", rr.Body.Len(), perfListMaxBytes)
 		}
-		if d > limit {
+		if perfOver(d, limit) {
 			t.Errorf("list pass %d took %v, limit %v", pass, d, limit)
 		}
 		t.Logf("list pass %d: %v, %d bytes", pass, d, rr.Body.Len())
@@ -447,7 +454,7 @@ func TestPerfAutomataListAfterWrite(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list after a write with the old ETag: status %d, want 200", rr.Code)
 	}
-	if d > limit || rr.Body.Len() > perfListMaxBytes {
+	if perfOver(d, limit) || rr.Body.Len() > perfListMaxBytes {
 		t.Errorf("list after a write took %v with %d bytes (limits %v, %d)", d, rr.Body.Len(), limit, perfListMaxBytes)
 	}
 	if got := fx.Manager.Store().RecordReadCalls(); got != reads {

@@ -11,6 +11,8 @@
 #      per-entry and total byte bound, and bounded heap after 5,000 refreshes.
 #
 # Environment:
+#   PERF_ROLLUP_CHECK       set to 1 by this script; the time-limit assertions are
+#                           only enforced when it is 1. Byte limits always run.
 #   PERF_ROLLUP_MULTIPLIER  number >= 1, default 1. Scales every time limit for
 #                           a slow CI host (3 allows 900 ms warm, 4.5 s cold).
 #                           The byte limits never scale.
@@ -34,6 +36,8 @@ if ! awk -v m="$MULT" 'BEGIN { exit !(m + 0 >= 1) }'; then
   exit 2
 fi
 export PERF_ROLLUP_MULTIPLIER="$MULT"
+# Opt in to the host-speed time limits (skipped in a normal go test run).
+export PERF_ROLLUP_CHECK=1
 
 LIMIT="${PERF_ROLLUP_TIMEOUT:-600}"
 case "$LIMIT" in ''|*[!0-9]*) echo "perf-rollup-check: PERF_ROLLUP_TIMEOUT must be an integer, got '$LIMIT'" >&2; exit 2 ;; esac
