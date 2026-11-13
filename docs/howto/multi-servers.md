@@ -145,7 +145,7 @@ with an ellipsis rather than wrapping a row of chips. The entries are:
 | Entry | Behaviour |
 |------|-----------|
 | **All servers** | Fetch from all servers via aggregated endpoints; WebSocket stays on local |
-| **This server** (labelled with this daemon's real hostname once `/api/health` resolves it; the generic **This server** word until then — never the word "Local") | Show only this daemon's data (default) |
+| **This server** (labelled with this daemon's real hostname once `/api/health` resolves it; the generic **This server** word until then — never the word "Local") | Show only this daemon's data (the boot default only while this browser has no saved choice) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
 
 The dropdown is shared by all pages, so **All servers** can be chosen
@@ -158,12 +158,16 @@ The active entry is remembered by the browser, per device (this browser's
 local storage): the dropdown follows you as you navigate between pages, and
 when you reload the page or come back later the same entry is already
 selected — the boot round of data fetches runs against it, so restoring the
-choice costs no second refresh. If a saved peer has since been removed or
-disabled, the PWA starts on **All servers** instead and keeps that, so the
-stale choice does not survive the next reload. (With local storage blocked
-the choice simply lives in memory for the page's lifetime, as it did before
-the choice was saved.) It works with any number of
-registered peers — one native entry list, not a chip row, so a roster of
+choice costs no second refresh. A saved peer name is validated against the
+server list before the app commits to it: if that peer has since been
+removed or disabled, the PWA starts on **All servers** instead and keeps
+that, so the stale choice does not survive the next reload. If the choice
+cannot be validated against the list within a short bound at boot (this
+daemon's `/api/servers` is down or slow), the PWA also starts on
+**All servers** rather than holding the page open, and keeps that. (With
+local storage blocked the choice simply lives in memory for the page's
+lifetime, as it did before the choice was saved.) It works with any number
+of registered peers — one native entry list, not a chip row, so a roster of
 two or of two hundred is the same control, with long names truncating to an
 ellipsis instead of wrapping the header. Being a native selection control,
 it is fully keyboard-operable (focus it, move through the entries with the
