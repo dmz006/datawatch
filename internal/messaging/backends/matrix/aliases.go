@@ -19,9 +19,9 @@ import (
 
 // aliasResolver caches alias → room ID mappings for one backend instance.
 type aliasResolver struct {
-	mu      sync.RWMutex
-	client  *mautrix.Client
-	cache   map[string]id.RoomID // alias string → resolved room ID
+	mu     sync.RWMutex
+	client *mautrix.Client
+	cache  map[string]id.RoomID // alias string → resolved room ID
 }
 
 func newAliasResolver(client *mautrix.Client) *aliasResolver {
