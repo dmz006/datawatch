@@ -741,6 +741,30 @@ Every inventory row appears in exactly one of: a gap (G), "Cannot be encrypted" 
 | X1, X2, X3 | Cannot be encrypted |
 | Claim check | G24, fix 2 |
 
+## Documentation follow-through
+
+Fix 2 (correct the encryption page) and the documentation half of the Claim check are done as a documentation-only change; no behaviour changed. The pages now describe the code as of v9.172.5, not the fixes in this document.
+
+| Page | What changed |
+|------|--------------|
+| `docs/encryption.md` | Rewritten: current formats and key settings, real file names, what `--secure` covers, a "still plain today" list, an extended "cannot be encrypted" list, the status/migrate/wipe fixed-list limit, no key rotation or password change, export limits, vault key beside the vault, an "open items for the operator" section |
+| `docs/operations.md` | The `--secure` notes and the encryption section no longer say every store is encrypted; the daemon-mode line names the environment-variable route; the data-compatibility line uses the current session record layout |
+| `docs/setup.md` | The file table and key-derivation settings match the code |
+| `docs/memory-usage-guide.md`, `docs/memory.md`, `docs/howto/cross-agent-memory.md` | No memory encryption setting exists; only `content` and `summary` are encrypted; import, export and keyword search differences; the non-existent `secrets export` and key-rotation claims removed |
+| `docs/howto/secrets-manager.md` | The vault key is a random key file beside the vault, not derived from the machine id |
+| `docs/datawatch-definitions.md` | New glossary section: secure mode, data key, encrypted store, plain today, cannot be encrypted, secrets vault, fixed file list |
+| `docs/architecture-overview.md`, `README.md`, `docs/README.md`, `CHANGELOG.md` | Overclaims softened; index line and unreleased note updated |
+
+Left as written because they are dated history, not current guidance: the v8.5.0 and v8.6.0 release notes (they still mention `memory.encrypt_content`), `docs/planning.md`, and the many flow and design pages that name the legacy `sessions.json`.
+
+**For the operator to review:**
+
+1. **Runtime config write (G1).** The new page tells operators that a running secure daemon appears to write `config.yaml` unencrypted after a settings change. That statement rests on reading the code. It should be reproduced, because the claim is strong and the fix is the first priority.
+2. **Wording of the front door.** `README.md` no longer says "data on disk is encrypted". Confirm the softened wording is acceptable for 10.0.
+3. **`secure_tracking`.** The page mentions the setting and says it is undocumented. Decide whether it goes into `docs/config-reference.yaml`.
+4. **Legacy `sessions.json` pages.** About a dozen architecture and flow pages still name `sessions.json`. They are not about encryption and were not changed; say whether a separate sweep is wanted.
+5. **Each fix.** As a fix lands, `docs/encryption.md`, the glossary section and this list need another update; the page's footer says so.
+
 ## Parity surface
 
 This is an audit document. It changes no behaviour and adds no setting, endpoint, command or screen, so every surface is unchanged by this document. The fixes it leads to will each need their own parity list.

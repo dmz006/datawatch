@@ -123,6 +123,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automate](#settings-automate)
   - [MCP](#settings-mcp)
   - [About](#settings-about)
+- [Secure mode and encryption at rest](#secure-mode-and-encryption-at-rest)
 - [Documentation index](#documentation-index)
 
 ---
@@ -637,6 +638,18 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 - **Publisher allowlist** — `classifier.publisher_allowlist`, the model publishers a classify-mode judge may come from. Empty by default, so nothing is trusted until the operator adds a publisher. Adding needs an explicit confirmation on REST, MCP, CLI and chat, is written to the audit log, and cannot be done through `PUT /api/config`. Every other `classifier.*` tunable is settable there; each is listed in [config-reference.yaml](config-reference.yaml).
 
 ---
+
+## Secure mode and encryption at rest
+
+> Page: [encryption.md](encryption.md) · Evidence: [encryption audit](plans/2026-11-13-encryption-audit.md)
+
+- **Secure mode** — the daemon runs with `--secure` (or finds an encrypted `config.yaml` and turns it on by itself). It asks for a password, from `DATAWATCH_SECURE_PASSWORD` or a prompt, and uses it to encrypt `config.yaml` and a defined set of data stores. It does not cover every file in the data directory.
+- **Data key** — the 32-byte key every encrypted store uses, derived from the password and the salt in the `config.yaml` header. It exists only in daemon memory. There is no command to change the password or rotate this key.
+- **Encrypted store** — a file the daemon writes through the encrypting layer when the key is present: whole-file (`DWDAT2`), streaming blocks for logs (`DWLOG1`) or one line at a time (`ENC:`). Without secure mode the same files are plain.
+- **Plain today** — a store datawatch could encrypt but does not yet, such as the token and credential files, the Automaton store, spend files, most tracker files and the audit and trace logs. The operator decides which of these are covered for 10.0.
+- **Cannot be encrypted** — data another program must read in plain form (git repositories and worktrees, files the launched tools read, boot messages written before the key exists) or that is not at rest (network traffic, pane captures). Use disk-level encryption for these.
+- **Secrets vault** — `secrets.db`, encrypted with its own random key file `secrets.key` (or `DATAWATCH_SECRETS_KEY`), separate from the secure-mode password. The key file sits in the same folder as the vault.
+- **Fixed file list** — the files that `datawatch security encryption status`, `migrate` and `wipe-plaintext` act on. A clean status covers only these files.
 
 ## Memory ceiling
 

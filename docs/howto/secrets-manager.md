@@ -442,9 +442,13 @@ cloud-LLM setup.
 
 - **Secret in commit history.** If you've committed a value and only
   THEN moved it into the manager, rotate the secret first.
-- **Native backend on a shared host.** The encryption key is derived
-  from the machine ID; anyone with shell access can read the DB. For
-  shared hosts use KeePass / 1Password with the unlock cred in env-only.
+- **Native backend on a shared host.** The vault key is a random key file
+  (`secrets.key`) kept next to `secrets.db`, or the `DATAWATCH_SECRETS_KEY`
+  environment variable. Anyone who can read the data directory can read both,
+  so a copy of the directory carries the secrets. For shared hosts use KeePass
+  / 1Password with the unlock cred in env-only, or keep the key in the
+  environment variable outside the data directory. See
+  [encryption](../encryption.md#secrets-vault-secretsdb).
 - **Unscoped secrets in a multi-plugin setup.** Default scope is `*`;
   if you have plugins you don't fully trust, scope per-plugin.
 - **Backend creds with `${secret:...}`.** Won't work — the daemon
