@@ -186,6 +186,9 @@ attaches to a plan or to an Automaton. Rules that are easy to trip over:
   `plan_record_reordered` audit event; attaching and detaching write
   `plan_record_linked` and `plan_record_unlinked`.
 - A plan can exist with no Automaton yet. It then shows in the *backlog*.
+- **Each link remembers a title and a state.** Attaching stores the Automaton's
+  or Automation's title and state at that moment; the plan status roll-up is
+  derived from those stored states (see *Rolling plan status up from the work*).
 - Older records have none of these fields and load unchanged.
 
 ## The model
@@ -226,7 +229,10 @@ files are plain JSON. See [encryption](../encryption.md).
 ## Turning it off, and rollback
 
 Set `autonomous.plan_records.enabled` to `false` (or leave `write_through` off
-to keep the registry file as the hook's target). Records are kept on disk.
+to keep the registry file as the hook's target). Records are kept on disk. The
+switch hides the routes and the section but does not stop the once-a-day plan
+status roll-up (see *Rolling plan status up from the work*); each status it
+wrote is in the audit log as `plan_record_rolled_up` with the old status.
 Removing the `plan-records` directory under the data dir discards every
 record; the original files are never changed by an import, so re-importing
 rebuilds them. One caveat: rows shipped by write-through while it was on exist
@@ -255,6 +261,24 @@ Nothing here turns on by itself. These are yours to settle:
   run the migration again.
 - **Backlog order.** Open rows with no Automaton become backlog plans ordered by
   their old row number. Check that this is the order you want.
+- **Renaming and editing a plan.** No surface changes a plan's title, goal or
+  status after it is created: the plan-record routes and tools take
+  `registry-row` and `finding` only, `datawatch plans` has no update command,
+  and the Plans browser creates, orders and links but does not edit. Decide
+  where plan edit belongs (and whether it keeps the old title as an older title,
+  as a registry row does) before this is described to anyone as available.
+- **Handing a status back to the roll-up.** Nothing clears `set_by_hand`, so a
+  plan marked by hand would stay out of the roll-up for good. Decide how an
+  operator hands it back, for example a clear option next to the status edit.
+- **The roll-up sees recorded state, not live state.** See *Rolling plan status
+  up from the work*. Decide whether the daily run should first refresh each
+  link's state from the live Automata, and whether it should also run at daemon
+  start.
+- **Turning plan records off does not stop the daily roll-up.** The switch
+  hides the routes and the section (404), but the daily run still rolls plan
+  statuses up in the background. Decide whether the switch should stop it.
+- **Ship-time roll-up needs write-through.** With `write_through` off, only the
+  daily run and your own calls move a plan to `shipped`.
 - **Mobile apps.** Android and iPhone do not show plan records yet; that is
   tracked in the datawatch-app repository.
 
@@ -317,8 +341,8 @@ the first one that reads like a name:
   a title. If nothing in the row is a title but the row names an Automaton (or
   an Automation), the plan takes that one's own title, on one line, at most 100
   characters with `Plan: ` included. Only a row with neither is named from its
-  number: `Plan: (untitled row 15)`. Rename it afterwards in the Plans browser
-  or with `datawatch plan-record update`.
+  number: `Plan: (untitled row 15)`. No screen or command renames a plan yet
+  (see *Still for the operator to review*), so check the titles after an apply.
 - The row's status is kept as the plan's status; a done row becomes a finished
   plan.
 
@@ -430,9 +454,12 @@ A status that someone set by hand is never changed. A plan list marks it:
 `datawatch plans list` and chat `plan list` print `(by hand)` after the status,
 and REST and MCP carry `set_by_hand: true` next to `state` on the plan list, on
 the plan header of the Automata and tasks reads, and on `plan_record_get` and
-`plan_record_list`. Setting a status again through a plan update marks it by
-hand; the roll-up keeps it and reports what it would have written
-(`set_by_hand_kept`).
+`plan_record_list`. A plan whose status was written by hand keeps it: the
+roll-up reports what it would have written (`set_by_hand_kept`) and changes
+nothing. Plans the daemon makes (a create, a migration) are not by hand, so
+they roll up. Today no REST, MCP, CLI, chat or web screen writes a plan's
+status or clears the marker, so `set_by_hand` is only ever true on a plan that
+was marked in the store directly; see *Still for the operator to review*.
 
 | To | REST | CLI | MCP | Chat |
 |---|---|---|---|---|
@@ -445,9 +472,30 @@ project every project is rolled up; a project must be a registered alias. Each
 change in the answer names the plan (title first, then id), the status it has,
 the status it gets and the reason; `changed` counts the plans written (or that
 would be) and `kept` the hand-set plans left alone. A plan that becomes closed
-gets its closed time, and one that becomes open again loses it. Each write
-goes to the audit log with the actor `rollup`. The daemon also rolls every plan up once a day and when an Automaton is
-recorded as shipped, so this is the way to check or catch up now, not a step you
-need to run. It needs `autonomous:write`
-for a federated peer to apply and `autonomous:read` to preview, and answers 404
-while plan records are off.
+gets its closed time, and one that becomes open again loses it. Each write goes
+to the audit log as `plan_record_rolled_up` with the actor `rollup`, carrying the
+old status, the new one and the reason.
+
+**What it reads.** The roll-up does not ask the running Automata. It reads the
+state each link last had on the plan: the state seen when the Automaton or
+Automation was attached, and `shipped` when the merge pipeline records the
+Automaton as shipped. A link whose Automaton has since failed, blocked or
+started running still counts with its old state until it is attached again or
+ships. Run a preview before you trust a `blocked` or `open` answer, and attach
+the item to the same plan again to refresh the state the plan holds about it.
+
+**When it runs by itself.** Three triggers, and only these:
+
+- The daemon rolls every plan up once a day. The 24 hours count from daemon
+  start; there is no run at start, so a daemon restarted more than once a day
+  never reaches it. The log line `[plans] daily reconcile changed N plan
+  status(es)` appears only when something changed.
+- When an Automaton is recorded as shipped, the plan it is linked to rolls up.
+  This runs from the write-through registry hook, so it needs
+  `autonomous.plan_records.write_through` on (see *What happens when an
+  Automaton ships*). An Automaton that is not linked to a plan changes nothing.
+- When you call the roll-up yourself, as in the table above.
+
+A plan with no linked work is left alone on every trigger. The roll-up needs
+`autonomous:write` for a federated peer to apply and `autonomous:read` to
+preview, and answers 404 while plan records are off.
