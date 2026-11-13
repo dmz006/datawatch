@@ -279,7 +279,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
 | Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs` (deprecated; plans replace it), `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
-| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_rollup`, `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach` (see [Plan record tools](#plan-record-tools)) |
+| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_rollup`, `plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach` (see [Plan record tools](#plan-record-tools)) |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
@@ -1812,13 +1812,15 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_migrate` | Build plans from the older project plan lists (arcs) and registry rows; previews unless `apply` is `true` | `POST /api/plans/migrate` |
 | `plan_rollup` | Roll plan statuses up from their linked Automata and Automations (optional `project`, `dry_run`); `dry_run` true previews and writes nothing, otherwise the changes are written; a status set by hand is kept and reported (`set_by_hand_kept`) | `GET /api/plans/rollup?dry_run=true` (preview) or `POST /api/plans/rollup` (apply) |
 | `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`) | `POST /api/plans` |
+| `plan_rename` | Rename a plan (`plan`, `title`: one line, at most 100 characters, unique in the project); a taken title is refused and names the plan that has it; the old title stays as an older title | `PATCH /api/plans/{ref}` |
+| `plan_edit` | Set a plan's goal (`plan`, `goal`, at most 2000 characters; an empty goal clears it) | `PATCH /api/plans/{ref}` |
 | `plan_reorder` | Set the plan priority order (`plans`: ids or titles, first plan first) | `PUT /api/plans/order` |
 | `plan_reorder_automata` | Set the order of a plan's Automata (`plan`, `automata`: every Automaton once); the answer shows what runs next, skipping blocked and held | `PUT /api/plans/{ref}/automata/order` |
 | `plan_attach` | Attach an Automaton, Automation or finding to a plan (`plan`, `kind`, `id`); a link held elsewhere is refused and named | `POST /api/plans/{ref}/attach` |
 | `plan_detach` | Detach one of them from the plan it is in | `POST /api/plans/{ref}/detach` |
 
-`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`,
-`plan_detach` and `plan_rollup` need `autonomous:write` when called by a federated peer.
+`plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`,
+`plan_attach`, `plan_detach` and `plan_rollup` need `autonomous:write` when called by a federated peer.
 `plan_record_get` and `plan_record_list` show each record's `state` (the status)
 and `set_by_hand`, which is true when the status was written by hand so the plan
 roll-up keeps it.

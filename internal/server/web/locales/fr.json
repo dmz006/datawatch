@@ -5742,5 +5742,20 @@
   "task_routing_export_failed": "Échec de l’export : %1$s",
   "task_routing_imported": "Profil importé",
   "task_routing_detail_row": "ligne %1$s",
-  "task_routing_detail_reason": "pas de ligne : %1$s"
+  "task_routing_detail_reason": "pas de ligne : %1$s",
+  "plans_browser_by_hand": "défini à la main",
+  "plans_browser_by_hand_hint": "Ce statut a été défini à la main ; le cumul à partir des automates du plan le conserve donc.",
+  "plans_edit_status_label": "Statut",
+  "plans_edit_rename": "Renommer",
+  "plans_edit_goal": "Modifier l'objectif",
+  "plans_edit_rename_label": "Nouveau titre de ce plan",
+  "plans_edit_goal_label": "Objectif de ce plan",
+  "plans_edit_save": "Enregistrer",
+  "plans_edit_saving": "Enregistrement…",
+  "plans_edit_cancel": "Annuler",
+  "plans_edit_counter": "%1$s sur %2$s caractères",
+  "plans_edit_title_required": "Un plan a besoin d'un titre.",
+  "plans_edit_title_one_line": "Le titre d'un plan tient sur une seule ligne.",
+  "plans_edit_title_too_long": "Le titre d'un plan compte au plus %1$s caractères.",
+  "plans_edit_goal_too_long": "Un objectif compte au plus %1$s caractères."
 }

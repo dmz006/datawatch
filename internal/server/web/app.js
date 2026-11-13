@@ -5279,7 +5279,10 @@ function _projectOverviewSummaryHTML(p) {
 // The findings and registry rows linked to a plan come from the summary list
 // GET /api/plan-records/browse; no full record is ever read. Controls write
 // through the plans write API (reorder plans and Automata, create a plan,
-// attach an Automaton, an Automation or a finding). Which plans are expanded
+// attach an Automaton, an Automation or a finding, rename a plan, edit its
+// goal: PATCH /api/plans/{ref}). Each plan shows its status, which the daemon
+// rolls up from the plan's linked Automata, with a "set by hand" badge when the
+// status was written by hand and so is kept. Which plans are expanded
 // is remembered per browser under the one localStorage key _PLANS_BROWSER_KEY.
 // The search box waits for a pause in typing on the one window-level timer
 // window._plansBrowserSearchTimer; nothing else polls.
@@ -5301,6 +5304,7 @@ function _plansBrowserFresh(project) {
     matchPlans: null,   // plan ids with a registry row or finding that matches q
     detail: {},         // plan id -> { status, automata, tasks, tasksTotal, tasksStatus, error }
     links: { status: 'idle', rows: [] },
+    edit: null,         // the open rename / goal editor: { planId, mode, value, error, busy }
     busy: false,
   };
 }
@@ -5447,6 +5451,14 @@ function _plansStateLabel(state) {
   const v = t(key);
   return v === key ? String(state || '') : v;
 }
+// _plansStateChipHTML is the plan's status, as the roll-up last wrote it, and a
+// "set by hand" badge when the status was set by hand (the roll-up keeps it).
+function _plansStateChipHTML(plan, cls) {
+  const badge = plan.set_by_hand
+    ? ` <span class="plans-browser-by-hand" title="${escHtml(t('plans_browser_by_hand_hint'))}" style="font-size:11px;border:1px solid var(--border);border-radius:8px;padding:0 6px;color:var(--text2);white-space:nowrap;">${escHtml(t('plans_browser_by_hand'))}</span>`
+    : '';
+  return `<span class="${cls}" style="font-size:12px;">${escHtml(_plansStateLabel(plan.state))}</span>${badge}`;
+}
 function _plansPointsText(n) {
   const v = Math.round((Number(n) || 0) * 10) / 10;
   return `${v} ${t('projects_page_points')}`;
@@ -5502,6 +5514,55 @@ function _plansTasksHTML(st, plan) {
   return `<div class="plans-browser-tasks" style="margin:8px 0 0 12px;">${head}<div style="margin-left:12px;">${body}</div></div>`;
 }
 
+// ── rename and goal edit ────────────────────────────────────────────────────
+// The detail of a plan shows its status (with the "set by hand" badge) and two
+// controls: Rename and Edit goal. Each opens one inline editor that checks the
+// value as it is typed, with the same rules the daemon applies: a title is
+// required, is one line and is at most 100 characters; a goal is at most 2000.
+// A refusal from the daemon (a taken title is a 409 that names the other plan)
+// is shown in place and the editor stays open with what was typed.
+const _PLANS_TITLE_MAX = 100;
+const _PLANS_GOAL_MAX = 2000;
+function _plansLen(s) { return Array.from(String(s || '').trim()).length; }
+function _plansEditMax(mode) { return mode === 'goal' ? _PLANS_GOAL_MAX : _PLANS_TITLE_MAX; }
+// _plansEditCheck returns the message for a value the daemon would refuse, or ''.
+function _plansEditCheck(mode, value) {
+  const v = String(value || '').trim();
+  if (mode === 'goal') return _plansLen(v) > _PLANS_GOAL_MAX ? t('plans_edit_goal_too_long', [_PLANS_GOAL_MAX]) : '';
+  if (!v) return t('plans_edit_title_required');
+  if (/[\n\r\v\f\u0085\u2028\u2029]/.test(v)) return t('plans_edit_title_one_line');
+  if (_plansLen(v) > _PLANS_TITLE_MAX) return t('plans_edit_title_too_long', [_PLANS_TITLE_MAX]);
+  return '';
+}
+function _plansFind(st, id) { return st.plans.concat(st.backlog).find(p => p && p.id === id) || null; }
+
+function _plansEditorHTML(plan, e) {
+  const goal = e.mode === 'goal';
+  const max = _plansEditMax(e.mode);
+  const n = _plansLen(e.value);
+  const label = t(goal ? 'plans_edit_goal_label' : 'plans_edit_rename_label');
+  const common = `id="plansEditInput" class="form-input plans-edit-input" aria-label="${escHtml(label)}" aria-describedby="plansEditCounter plansEditError" aria-invalid="${e.error ? 'true' : 'false'}" oninput="plansBrowserEditInput(this.value)" onkeydown="plansBrowserEditKey(event)"`;
+  const field = goal
+    ? `<textarea ${common} rows="3" style="width:100%;font-size:13px;">${escHtml(e.value)}</textarea>`
+    : `<input type="text" ${common} value="${escHtml(e.value)}" style="width:100%;font-size:13px;">`;
+  const disabled = e.busy || !!_plansEditCheck(e.mode, e.value);
+  return `<div class="plans-edit" data-edit="${goal ? 'goal' : 'rename'}" role="group" aria-label="${escHtml(label)}" style="margin:6px 0 6px 12px;">
+    ${field}
+    <div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin-top:4px;">
+      <span id="plansEditCounter" class="plans-edit-counter" style="font-size:12px;color:${n > max ? 'var(--error)' : 'var(--text2)'};">${escHtml(t('plans_edit_counter', [n, max]))}</span>
+      <button id="plansEditSave" type="button" class="btn-primary plans-edit-save" style="font-size:12px;padding:2px 10px;"${disabled ? ' disabled' : ''} onclick="plansBrowserEditSave();return false;">${escHtml(t(e.busy ? 'plans_edit_saving' : 'plans_edit_save'))}</button>
+      <button type="button" class="btn-secondary plans-edit-cancel" style="font-size:12px;padding:2px 10px;" onclick="plansBrowserEditCancel();return false;">${escHtml(t('plans_edit_cancel'))}</button>
+    </div>
+    <div id="plansEditError" class="plans-edit-error" role="alert" style="color:var(--error);font-size:13px;margin-top:4px;overflow-wrap:anywhere;">${escHtml(e.error)}</div></div>`;
+}
+
+function _plansDetailHeadHTML(st, plan) {
+  const e = st.edit && st.edit.planId === plan.id ? st.edit : null;
+  const btn = (cls, key, mode) => `<button type="button" class="btn-secondary ${cls}" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansBrowserEditOpen', plan.id, mode)}">${escHtml(t(key))}</button>`;
+  const status = `<span style="font-size:13px;color:var(--text2);">${escHtml(t('plans_edit_status_label'))}:</span> ${_plansStateChipHTML(plan, 'plans-browser-detail-state')}`;
+  return `<div class="plans-browser-detail-head" style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:6px 0 2px 12px;">${status}${e ? '' : btn('plans-edit-rename', 'plans_edit_rename', 'rename') + btn('plans-edit-goal', 'plans_edit_goal', 'goal')}</div>${e ? _plansEditorHTML(plan, e) : ''}`;
+}
+
 function _plansExpandedHTML(st, plan) {
   const d = st.detail[plan.id];
   const autos = d && Array.isArray(d.automata) ? d.automata : [];
@@ -5519,7 +5580,7 @@ function _plansExpandedHTML(st, plan) {
   const linked = st.links.rows.filter(r => r.plan_id === plan.id);
   const fin = linked.filter(r => r.kind === 'finding');
   const rows = linked.filter(r => r.kind !== 'finding');
-  return `<div class="plans-browser-expanded">${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
+  return `<div class="plans-browser-expanded">${_plansDetailHeadHTML(st, plan)}${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
     ${section('plans_browser_findings', fin.length ? fin.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
     ${section('plans_browser_rows', rows.length ? rows.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
     ${_plansAttachFormHTML(st, plan)}</div>`;
@@ -5535,7 +5596,7 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
   return `<div class="plans-browser-plan" data-plan="${escHtml(plan.id)}" data-state="${escHtml(plan.state || '')}" style="border-top:1px solid var(--border);padding:6px 0;">
     <div class="plans-browser-head" style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;">
       <a href="#" class="plans-browser-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggle', plan.id)}" style="font-size:14px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(plan.title || plan.id)}</a>
-      <span class="plans-browser-state" style="font-size:12px;">${escHtml(_plansStateLabel(plan.state))}</span>
+      ${_plansStateChipHTML(plan, 'plans-browser-state')}
       <span class="plans-browser-bar" style="flex:1 1 160px;min-width:140px;"><div class="project-progress" role="progressbar" aria-label="${escHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1;min-width:60px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent,#3b82f6);"></div></div>
         <span style="font-size:12px;color:var(--text2);white-space:nowrap;">${escHtml(label)}</span></div></span>
@@ -5674,6 +5735,85 @@ window.plansBrowserAttach = function(planId, kind, value) {
   value = String(value || '').trim();
   if (!value) { _plansBrowser.notice = t('plans_browser_attach_needs_value'); _plansBrowserPaint(); return Promise.resolve(); }
   return _plansWrite(_plansPath(planId, '/attach'), 'POST', { kind, id: value }).then(r => (r ? _plansReloadAfterWrite(planId) : null));
+};
+
+function _plansEditFocus() {
+  const el = document.getElementById('plansEditInput');
+  if (el && typeof el.focus === 'function') el.focus();
+}
+// _plansEditSync updates the counter, the message and the Save button in place,
+// so typing never redraws the field and loses the caret.
+function _plansEditSync() {
+  const e = _plansBrowser.edit;
+  if (!e) return;
+  const max = _plansEditMax(e.mode);
+  const n = _plansLen(e.value);
+  const counter = document.getElementById('plansEditCounter');
+  if (counter) { counter.textContent = t('plans_edit_counter', [n, max]); counter.style.color = n > max ? 'var(--error)' : 'var(--text2)'; }
+  const err = document.getElementById('plansEditError');
+  if (err) err.textContent = e.error;
+  const save = document.getElementById('plansEditSave');
+  if (save) save.disabled = !!e.busy || !!_plansEditCheck(e.mode, e.value);
+  const input = document.getElementById('plansEditInput');
+  if (input && typeof input.setAttribute === 'function') input.setAttribute('aria-invalid', e.error ? 'true' : 'false');
+}
+window.plansBrowserEditOpen = function(planId, mode) {
+  const st = _plansBrowser;
+  const plan = _plansFind(st, planId);
+  if (!plan) return Promise.resolve();
+  const goal = mode === 'goal';
+  st.notice = '';
+  st.edit = { planId, mode: goal ? 'goal' : 'rename', value: String(goal ? (plan.goal || '') : (plan.title || '')), error: '', busy: false };
+  _plansBrowserPaint();
+  _plansEditFocus();
+  return Promise.resolve();
+};
+window.plansBrowserEditInput = function(value) {
+  const e = _plansBrowser.edit;
+  if (!e || e.busy) return;
+  e.value = String(value == null ? '' : value);
+  e.error = _plansEditCheck(e.mode, e.value);
+  _plansEditSync();
+};
+window.plansBrowserEditCancel = function() {
+  if (!_plansBrowser.edit) return;
+  _plansBrowser.edit = null;
+  _plansBrowserPaint();
+};
+window.plansBrowserEditKey = function(ev) {
+  if (!ev) return;
+  if (ev.key === 'Escape') { window.plansBrowserEditCancel(); return; }
+  const e = _plansBrowser.edit;
+  if (ev.key === 'Enter' && e && (e.mode === 'rename' || ev.ctrlKey || ev.metaKey)) {
+    if (typeof ev.preventDefault === 'function') ev.preventDefault();
+    window.plansBrowserEditSave();
+  }
+};
+window.plansBrowserEditSave = function() {
+  const st = _plansBrowser;
+  const e = st.edit;
+  if (!e || e.busy) return Promise.resolve();
+  const bad = _plansEditCheck(e.mode, e.value);
+  if (bad) { e.error = bad; _plansEditSync(); return Promise.resolve(); }
+  const value = e.value.trim();
+  const plan = _plansFind(st, e.planId);
+  const goal = e.mode === 'goal';
+  if (plan && value === String(goal ? (plan.goal || '') : (plan.title || ''))) { st.edit = null; _plansBrowserPaint(); return Promise.resolve(); }
+  e.busy = true; e.error = '';
+  _plansEditSync();
+  const body = goal ? { goal: value } : { title: value };
+  return apiFetch(_plansPath(e.planId, ''), { method: 'PATCH', body: JSON.stringify(body) }).then(() => {
+    if (_plansBrowser !== st || st.edit !== e) return null;
+    st.edit = null;
+    _plansBrowserPaint();
+    return _plansReloadAfterWrite(e.planId);
+  }, err => {
+    if (_plansBrowser !== st || st.edit !== e) return null;
+    e.busy = false; e.error = _plansErrText(err);
+    _plansBrowserPaint();
+    _plansEditFocus();
+    return null;
+  });
 };
 
 // _plansBrowserLoadSelected is called with the rest of the selected project's

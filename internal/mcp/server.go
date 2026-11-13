@@ -832,6 +832,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPlanMigrate(), tracked(s.handlePlanMigrate))
 	mcpSrv.AddTool(s.toolPlanRollup(), tracked(s.handlePlanRollup))
 	mcpSrv.AddTool(s.toolPlanCreate(), tracked(s.handlePlanCreate))
+	mcpSrv.AddTool(s.toolPlanRename(), tracked(s.handlePlanRename))
+	mcpSrv.AddTool(s.toolPlanEdit(), tracked(s.handlePlanEdit))
 	mcpSrv.AddTool(s.toolPlanReorder(), tracked(s.handlePlanReorder))
 	mcpSrv.AddTool(s.toolPlanReorderAutomata(), tracked(s.handlePlanReorderAutomata))
 	mcpSrv.AddTool(s.toolPlanAttach(), tracked(s.handlePlanAttach))

@@ -5742,5 +5742,20 @@
   "task_routing_export_failed": "Export fehlgeschlagen: %1$s",
   "task_routing_imported": "Profil importiert",
   "task_routing_detail_row": "Zeile %1$s",
-  "task_routing_detail_reason": "keine Zeile: %1$s"
+  "task_routing_detail_reason": "keine Zeile: %1$s",
+  "plans_browser_by_hand": "von Hand gesetzt",
+  "plans_browser_by_hand_hint": "Dieser Status wurde von Hand gesetzt, deshalb behält ihn die Berechnung aus den Automaten des Plans bei.",
+  "plans_edit_status_label": "Status",
+  "plans_edit_rename": "Umbenennen",
+  "plans_edit_goal": "Ziel bearbeiten",
+  "plans_edit_rename_label": "Neuer Titel für diesen Plan",
+  "plans_edit_goal_label": "Ziel dieses Plans",
+  "plans_edit_save": "Speichern",
+  "plans_edit_saving": "Wird gespeichert…",
+  "plans_edit_cancel": "Abbrechen",
+  "plans_edit_counter": "%1$s von %2$s Zeichen",
+  "plans_edit_title_required": "Ein Plan braucht einen Titel.",
+  "plans_edit_title_one_line": "Ein Plantitel besteht aus einer Zeile.",
+  "plans_edit_title_too_long": "Ein Plantitel hat höchstens %1$s Zeichen.",
+  "plans_edit_goal_too_long": "Ein Ziel hat höchstens %1$s Zeichen."
 }

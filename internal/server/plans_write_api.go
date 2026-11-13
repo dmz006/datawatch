@@ -3,6 +3,7 @@
 // finding.
 //
 //	POST /api/plans                        create a plan (autonomous:write)
+//	PATCH /api/plans/{ref}                 rename a plan and/or edit its goal
 //	PUT  /api/plans/order                  set the plan priority order
 //	PUT  /api/plans/{ref}/automata/order   set the order of a plan's Automata
 //	POST /api/plans/{ref}/attach           attach an Automaton, Automation or finding
@@ -31,6 +32,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/planrecords"
@@ -143,6 +145,64 @@ func (s *Server) handlePlanCreate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{"plan": newPlanRecordView(rec)})
+}
+
+// planEditBody is the rename and goal edit body. A field that is left out is
+// left alone; goal may be an empty string, which clears the goal.
+type planEditBody struct {
+	Title *string `json:"title"`
+	Goal  *string `json:"goal"`
+}
+
+// handlePlanEdit serves PATCH /api/plans/{ref}: rename a plan and/or set its
+// goal. Both use the store methods, so the rules are the store's: a title is
+// one line of at most 100 characters (400 otherwise) and must not be used by
+// another record in the project (409 naming that record, like create). The
+// request is checked as a whole before anything is written, so a bad goal
+// never leaves a rename behind.
+func (s *Server) handlePlanEdit(w http.ResponseWriter, r *http.Request) {
+	if !s.planWriteGate(w, r, http.MethodPatch) {
+		return
+	}
+	ref, ok := s.planRefOf(w, r)
+	if !ok {
+		return
+	}
+	var body planEditBody
+	if !decodePlanRecordJSON(w, r, &body) {
+		return
+	}
+	if body.Title == nil && body.Goal == nil {
+		planRecordsError(w, http.StatusBadRequest, "nothing to change: give title, goal or both")
+		return
+	}
+	if body.Title != nil {
+		if err := planrecords.ValidatePlanTitle(*body.Title); err != nil {
+			writePlanWriteError(w, err, "rename the plan")
+			return
+		}
+	}
+	if body.Goal != nil && utf8.RuneCountInString(strings.TrimSpace(*body.Goal)) > planrecords.MaxGoalRunes {
+		planRecordsError(w, http.StatusBadRequest, fmt.Sprintf("goal is longer than %d characters", planrecords.MaxGoalRunes))
+		return
+	}
+	actor := s.auditActor(r.Context())
+	var rec planrecords.Record
+	var err error
+	if body.Title != nil {
+		if rec, err = s.planRecords.RenamePlan(ref, *body.Title, actor); err != nil {
+			writePlanWriteError(w, err, "rename the plan")
+			return
+		}
+		ref = rec.ID
+	}
+	if body.Goal != nil {
+		if rec, err = s.planRecords.EditPlanGoal(ref, *body.Goal, actor); err != nil {
+			writePlanWriteError(w, err, "edit the plan goal")
+			return
+		}
+	}
+	writeJSONOK(w, map[string]any{"plan": newPlanRecordView(rec), "goal": rec.Goal, "title_set_by_hand": rec.TitleSetByHand})
 }
 
 // planOrderBody is the plans reorder body.

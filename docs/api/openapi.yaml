@@ -2563,6 +2563,56 @@ paths:
         "404": {description: Plan records are turned off}
         "409": {description: The title is already used in the project}
         "503": {description: Plan records are not available}
+  /api/plans/{ref}:
+    patch:
+      summary: Rename a plan and/or edit its goal
+      description: |
+        Gives the plan a new title, a new goal, or both; a field that is left out is
+        left alone. The body must hold at least one of `title` and `goal`. A title is
+        trimmed, must not be empty, is one line and is at most 100 characters, and
+        must not be used by another record in the plan's project; an invalid title
+        answers 400, and a taken title answers 409 with a message that names the
+        record holding it (and `existing`, that record), exactly as create does.
+        Renaming a plan to the title it already has changes nothing. The old title
+        stays as an alias, so older references still resolve, and a renamed plan
+        keeps its title through a later plans migration. A goal is trimmed and is
+        at most 2000 characters; an empty `goal` clears it. The whole request is
+        checked before anything is written, so a refused goal never leaves a rename
+        behind. Needs the autonomous write capability when called by a federated
+        peer. Both changes are written to the audit log with the old and new value
+        and the actor.
+      operationId: planEdit
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid, title or an older title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                title: {type: string, maxLength: 100, description: "The new title: one line, at most 100 characters, unique in the project"}
+                goal: {type: string, maxLength: 2000, description: "The new goal; an empty string clears it"}
+      responses:
+        "200":
+          description: The stored plan, title first, with its goal and whether its title is kept by hand
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  goal: {type: string}
+                  title_set_by_hand: {type: boolean}
+        "400": {description: Nothing to change, an empty, multi-line or over-long title, an over-long goal, or the reference is not a plan}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The title is already used in the project (the answer names the other record), or the reference is ambiguous}
+        "503": {description: Plan records are not available}
   /api/plans/order:
     put:
       summary: Set the plan priority order
