@@ -57,6 +57,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Sessions list](#sessions-list)
   - [Session lineage — parent-child tracking](#session-lineage--parent-child-tracking)
   - [Session AI summarizer](#session-ai-summarizer)
+  - [Message submission (paste wait and Enter retry)](#message-submission-paste-wait-and-enter-retry)
   - [Inside a session — terminal area](#inside-a-session--terminal-area)
   - [Inside a session — channel tab](#inside-a-session--channel-tab)
   - [Inside a session — stats tab](#inside-a-session--stats-tab)
@@ -570,6 +571,14 @@ The four Settings → Sessions controls behind this behaviour (also `configure s
 
 ---
 
+### Message submission (paste wait and Enter retry)
+
+How datawatch makes sure a message sent to a session is sent, not just typed. A long, multi-line or image-bearing message reaches Claude Code as a **paste placeholder** (`[Pasted text #1 +12 lines]`), and an Enter that arrives before the terminal has taken the paste in can be dropped, leaving the message sitting unsent in the input box.
+
+Every send from the web app, the terminal input bar, REST, MCP, the CLI and comm channels now follows one sequence: type the text and pause for the settle delay (`session.schedule_settle_ms`, default 200 ms); **wait up to 1.5 seconds** for the placeholder, or the end of your text, to appear next to the input prompt; press **Enter once**; and, for a pasted, multi-line or longer message, re-read the terminal after about 0.4 seconds and press **Enter again** (at most two more times) only while the placeholder or text is still in the input box and the assistant has not started. Once the placeholder is gone or the assistant is working, no further Enter is sent, so an Enter that worked is exactly one submit. A short single-line message gets one Enter and no re-check; an empty message is a bare Enter.
+
+The timings are fixed and there is no setting, endpoint or field for them; only the settle delay is tunable. A send that runs out of retries still counts as delivered and leaves the text in the input box for you to submit by hand. Chat-mode ollama sessions do not go through this path. Not to be confused with **task-prompt delivery** (`session.task_delivery_window_seconds` and `session.task_delivery_attempts`), which re-delivers an Automaton task's prompt until assistant activity is seen. See [How a sent message is submitted](howto/sessions-deep-dive.md#5h-how-a-sent-message-is-submitted) and [Message submission to a session](operations.md#message-submission-to-a-session-paste-wait-and-enter-retry).
+
 ### Inside a session — terminal area
 
 `Tmux` tab is the live xterm.js view of the tmux pane the LLM is attached to. Read-only by default; tap the input bar to send commands.
@@ -580,7 +589,7 @@ The four Settings → Sessions controls behind this behaviour (also `configure s
 - `Aa ▾` font controls — A−, A+, current size, Fit-to-width.
 - `Scroll` — enter tmux scroll mode (Page Up / Page Down / ESC). Ties into tmux's own scroll-back so you see real history.
 
-**Input bar:** sends text with Enter; the daemon routes it through tmux send-keys. State transitions back to `Running` automatically on input (and bumps the channel-event timer so the gap watcher doesn't immediately re-flip).
+**Input bar:** sends text with Enter; the daemon routes it through tmux send-keys and confirms the message was submitted (see [Message submission](#message-submission-paste-wait-and-enter-retry)). State transitions back to `Running` automatically on input (and bumps the channel-event timer so the gap watcher doesn't immediately re-flip).
 
 **Loading splash:** appears while the first pane_capture frame arrives. Always dismisses — even for ended sessions, the saved final frame is shown.
 
@@ -3040,7 +3049,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | MCP channel bridge diagnostics | [`howto/channel-state-engine.md`](howto/channel-state-engine.md) | v8.10.16 | per-session ChannelPort registry, live /health probe, port-conflict identification, DATAWATCH_* env var documentation |
 | Scheduled session spawn (ephemeral) | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.11.0–v8.13.2 | DeferredSession, subprocess mode, overlap guard, run history, --shell/--path flags |
 | Extra MCP servers per session | [`howto/mcp-tools.md`](howto/mcp-tools.md) | v8.13.0 | session.extra_mcp_servers, WriteProjectMCPConfig, InjectExtrasIntoMCPConfig |
-| Dedicated send_input endpoint | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.12.9 | POST /api/sessions/send bypasses text-command parsing; scheduleSettleMs applies to all sources |
+| Dedicated send_input endpoint | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | v8.12.9 | POST /api/sessions/send bypasses text-command parsing; scheduleSettleMs applies to all sources; every send waits for the paste to show, presses Enter, and retries Enter at most twice while the text is still unsent (see Message submission) |
 | LLM-optional memory recall | [`docs/memory.md`](memory.md) | v8.13.3 | `Recall`/`RecallAll`/`RecallInNamespaces`/`RetrieveContext` fall back to LIKE keyword search when Ollama offline; `LazyReembed()` back-fills vectors when LLM returns; summarizer returns stub instead of error |
 | FCM push payload enrichment | [`howto/push-notifications.md`](howto/push-notifications.md) | v8.13.1 | session_id/session_name/last_response in session_state_changed and waiting_input push events |
 | Goose backend | [`docs/llm-backends.md`](llm-backends.md) | v8.13.36–v8.14.0 | provider/model/api_key env-var injection, MCP channel bridge, `agent-goose` container, `channel_enabled` config flag |

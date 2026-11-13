@@ -48,6 +48,18 @@ type FakeTmux struct {
 	// back to always resizing), matching a real tmux session that hasn't
 	// had NewSessionWithSize called yet.
 	WindowSizes map[string][2]int
+
+	// PaneScript scripts pane contents per capture call: each
+	// CapturePaneVisible for a session pops the next entry; once the
+	// script is exhausted the last entry keeps repeating. When a session has
+	// no script the static Pane content is returned.
+	PaneScript map[string][]string
+
+	// SubmitFlow makes SendKeysWithSettle run the same wait-for-paste,
+	// Enter, verify-and-retry delivery the real TmuxManager runs, so tests
+	// can assert the exact send-keys / Enter sequence. Off by default so
+	// tests that only count sends keep their single recorded call.
+	SubmitFlow bool
 }
 
 // FakeTmuxCall records one method invocation.
@@ -60,9 +72,10 @@ type FakeTmuxCall struct {
 // NewFakeTmux returns a fresh in-memory fake.
 func NewFakeTmux() *FakeTmux {
 	return &FakeTmux{
-		sessions: map[string]bool{},
-		Pane:     map[string]string{},
-		PaneCmd:  map[string]string{},
+		sessions:   map[string]bool{},
+		Pane:       map[string]string{},
+		PaneCmd:    map[string]string{},
+		PaneScript: map[string][]string{},
 	}
 }
 
@@ -139,7 +152,21 @@ func (f *FakeTmux) SendKeys(session, keys string) error {
 }
 
 func (f *FakeTmux) SendKeysWithSettle(session, keys string, settle time.Duration) error {
-	return f.record("send-keys-settle", session, keys, settle.String())
+	if err := f.record("send-keys-settle", session, keys, settle.String()); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	flow := f.SubmitFlow
+	f.mu.Unlock()
+	if flow {
+		return submitPastedInput(f, session, trimTrailingNewlines(keys))
+	}
+	return nil
+}
+
+// SendEnter records a single Enter keypress.
+func (f *FakeTmux) SendEnter(session string) error {
+	return f.record("enter", session)
 }
 
 func (f *FakeTmux) SendKeysLiteral(session, data string) error {
@@ -175,6 +202,13 @@ func (f *FakeTmux) CapturePaneVisible(session string) (string, error) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if sc := f.PaneScript[session]; len(sc) > 0 {
+		out := sc[0]
+		if len(sc) > 1 {
+			f.PaneScript[session] = sc[1:]
+		}
+		return out, nil
+	}
 	return f.Pane[session], nil
 }
 
