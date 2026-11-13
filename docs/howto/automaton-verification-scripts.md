@@ -176,6 +176,24 @@ A typical fix after a lint finding:
 3. If the task needs no script, set `verification_script_reason` instead.
 4. Dry-run again; the finding disappears when the rule no longer matches.
 
+## Still to review (operator)
+
+These points are decisions or checks the docs cannot settle for you:
+
+- **Block severity is the shipped default.** All three stability rules are
+  `block`: in `enforce` mode a script that breaks one sends the plan back to
+  the planner (up to `max_retries`) before any task runs. Decide whether you
+  want that, or want `shadow` first to see how often your planners trip them;
+  an operator rule with the same id replaces the built-in.
+- **Existing scripts are not rewritten.** The rules read scripts as they stand
+  in the project. A script already checked in that compares only against its
+  own task's files will now be flagged on the next decompose; fix or exempt it.
+- **Live planner output is not re-measured here.** These pages describe the
+  prompt text and rules in the tree; whether a real planner now writes stable
+  scripts on first try has not been confirmed against a running daemon.
+- **Mobile apps.** The task editor fields are described for the web app only;
+  parity for the Android and iPhone apps is tracked outside this tree.
+
 ## See also
 
 - [Decompose lint, standard tasks and guidance](automaton-decompose-lint.md)
