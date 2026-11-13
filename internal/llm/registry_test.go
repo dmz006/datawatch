@@ -10,8 +10,8 @@ type mockBackend struct {
 	version string
 }
 
-func (m *mockBackend) Name() string                  { return m.name }
-func (m *mockBackend) Version() string               { return m.version }
+func (m *mockBackend) Name() string                   { return m.name }
+func (m *mockBackend) Version() string                { return m.version }
 func (m *mockBackend) SupportsInteractiveInput() bool { return false }
 func (m *mockBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	return nil

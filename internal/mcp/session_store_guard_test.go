@@ -37,4 +37,3 @@ func trackSessionManager(t testing.TB, m *session.Manager) {
 		}
 	})
 }
-

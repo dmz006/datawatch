@@ -32,7 +32,7 @@ func New(baseURL, apiKey, model string) llm.Backend {
 	return &Backend{baseURL: baseURL, apiKey: apiKey, model: model}
 }
 
-func (b *Backend) Name() string                  { return "openwebui" }
+func (b *Backend) Name() string                   { return "openwebui" }
 func (b *Backend) SupportsInteractiveInput() bool { return false }
 func (b *Backend) PromptRequired() bool           { return true }
 func (b *Backend) Version() string {

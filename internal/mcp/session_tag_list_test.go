@@ -163,13 +163,13 @@ func TestListSessionsAxisShortcutFilter(t *testing.T) {
 // The REST list-view branch forwards the shortcuts as axis:value tag params.
 func TestListSessionsViewQueryAxisShortcuts(t *testing.T) {
 	q, ok, errMsg := listSessionsViewQuery(callReq(map[string]any{
-		"view": "summary",
-		"stage": "build",
+		"view":    "summary",
+		"stage":   "build",
 		"project": "datawatch",
-		"lane":  "", // blank → ignored
-		"role":  " supervisor ", // trimmed
+		"lane":    "",             // blank → ignored
+		"role":    " supervisor ", // trimmed
 		"compute": "north",
-		"tags":  []any{"web"},
+		"tags":    []any{"web"},
 	}))
 	if !ok || errMsg != "" {
 		t.Fatalf("ok=%v err=%q", ok, errMsg)
