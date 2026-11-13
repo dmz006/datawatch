@@ -3,7 +3,8 @@
 // Covers the headline for each status, the reason fallbacks and the
 // 240-character cap, the owner label, the waiting time (including the Go
 // zero time), the inbox sort order, the stability of equal items and that
-// sortInboxItems never mutates its input.
+// sortInboxItems never mutates its input — plus the "how to unblock"
+// hint, which the failed and blocked cards pick by reason kind.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -87,6 +88,47 @@ test('reason: all empty returns the none key', () => {
   assert.deepEqual(M.triageReason({ status: 'failed' }), { key: 'triage_reason_none' });
   assert.deepEqual(M.triageReason({ status: 'blocked', blocked_reason: '   ' }), { key: 'triage_reason_none' });
   assert.deepEqual(M.triageReason(undefined), { key: 'triage_reason_none' });
+});
+
+// ── triageUnblockHint ───────────────────────────────────────────────
+
+test('unblock: a failed record points at the task error', () => {
+  assert.deepEqual(
+    M.triageUnblockHint({ status: 'failed', error: 'boom', reason_source: 'task_error' }),
+    { kind: 'error', key: 'triage_unblock_error' },
+  );
+});
+
+test('unblock: a blocked record picks the hint of the source its record names', () => {
+  assert.deepEqual(
+    M.triageUnblockHint({ status: 'blocked', blocked_reason: 'held', reason_source: 'task_review' }),
+    { kind: 'review', key: 'triage_unblock_review' },
+  );
+  assert.deepEqual(
+    M.triageUnblockHint({ status: 'blocked', blocked_reason: 'e', reason_source: 'task_error' }),
+    { kind: 'error', key: 'triage_unblock_error' },
+  );
+  assert.deepEqual(
+    M.triageUnblockHint({ status: 'blocked', blocked_reason: 'v', reason_source: 'verdict' }),
+    { kind: 'verdict', key: 'triage_unblock_verdict' },
+  );
+  assert.deepEqual(
+    M.triageUnblockHint({ status: 'blocked', blocked_reason: 'b', reason_source: 'blocked_reason' }),
+    { kind: 'blocked_reason', key: 'triage_unblock_blocked_reason' },
+  );
+});
+
+test('unblock: a blocked record without a recognized source has no hint', () => {
+  assert.equal(M.triageUnblockHint({ status: 'blocked', blocked_reason: 'held' }), null);
+  assert.equal(M.triageUnblockHint({ status: 'blocked', blocked_reason: 'held', reason_source: 'mystery' }), null);
+});
+
+test('unblock: no reason text, other statuses or no record have no hint', () => {
+  assert.equal(M.triageUnblockHint({ status: 'failed' }), null, 'failed with no error');
+  assert.equal(M.triageUnblockHint({ status: 'blocked', blocked_reason: '  ' }), null, 'whitespace blocked reason');
+  assert.equal(M.triageUnblockHint({ status: 'merge_pending', session_end_reason: 'x', reason_source: 'task_error' }), null, 'merge_pending');
+  assert.equal(M.triageUnblockHint({ status: 'merge_blocked', session_end_reason: 'x' }), null, 'merge_blocked');
+  assert.equal(M.triageUnblockHint(null), null, 'no record');
 });
 
 test('owner label: automation_name only when automation_id is set', () => {

@@ -166,9 +166,43 @@ test('a standalone record with no automation shows no owner chip', () => {
   assert.ok(!html.includes('in Automation'), 'owner line must not render without an owner');
 });
 
-test('a record with no reason text uses the no-reason line', () => {
+test('a record with no reason text uses the no-reason line with a next step', () => {
   const html = card({ error: '', blocked_reason: '', session_end_reason: '', status: 'failed' });
   assert.ok(html.includes('No reason was recorded.'), 'no-reason line missing: ' + html);
+  assert.ok(html.includes('check the task output'), 'next step named');
+});
+
+test('a blocked record shows its full reason, the source label and the unblock hint', () => {
+  const html = card({
+    status: 'blocked', error: '',
+    blocked_reason: 'one.\ntwo.\nthree.\nfour.',
+    reason_source: 'blocked_reason',
+  });
+  for (const line of ['one.', 'two.', 'three.', 'four.']) assert.ok(html.includes(line), 'full line shown');
+  assert.ok(!html.includes('-webkit-line-clamp'), 'blocked card unclamped');
+  assert.ok(html.includes('class="triage-reason-source"'), 'source label');
+  assert.ok(html.includes('the Automaton set this reason for itself'), 'source label text');
+  assert.ok(html.includes('Clear the cause named in the reason'), 'unblock hint');
+});
+
+test('a failed record keeps its two-line clamp and the error hint', () => {
+  const html = card();
+  assert.ok(html.includes('-webkit-line-clamp:2'), 'failed clamp kept');
+  assert.ok(html.includes('The task ran into the error above'), 'error hint');
+  assert.ok(!html.includes('triage-reason-source'), 'no source label on failed');
+});
+
+test('the card buttons carry their short explanations', () => {
+  const html = card({ status: 'blocked', failed_note: undefined, notes: [{ source: 'review', text: 'held' }] });
+  assert.ok(html.includes('Resets the task and runs it again from where it failed.'), 'Retry explanation');
+  assert.ok(html.includes('Answers the review so the held task runs again.'), 'Resolve review explanation');
+  assert.ok(html.includes('Stops the Automaton and archives it.'), 'Cancel explanation');
+});
+
+test('a merge-pending record carries no blocked guidance', () => {
+  const html = card({ status: 'merge_pending', branch: 'x', reason_source: 'verdict', session_end_reason: 's' });
+  assert.ok(!html.includes('triage-reason-source'), 'no source label');
+  assert.ok(!html.includes('class="triage-unblock"'), 'no hint');
 });
 
 test('the session end reason is the reason when the status text is empty', () => {
@@ -334,7 +368,7 @@ test('a hostile list body that is not an object renders the empty state, not a t
 
 // ── locale keys ──────────────────────────────────────────────────────────────
 
-test('every triage_* key the card and detail use exists in every locale bundle with a non-empty value', () => {
+test('every triage_* key the card, detail and guidance use exists in every locale bundle with a non-empty value', () => {
   const keys = [
     'triage_card_title', 'triage_record_empty', 'triage_empty',
     'automation_triage_owner', 'triage_retry_budget', 'triage_budget_infra', 'triage_budget_content',
@@ -344,11 +378,32 @@ test('every triage_* key the card and detail use exists in every locale bundle w
     'triage_headline_none', 'triage_reason_none', 'triage_kind_automaton', 'triage_in_automation',
     'triage_waiting_for', 'triage_action_open_details', 'triage_action_retry',
     'triage_action_resolve_review', 'triage_action_cancel',
+    'triage_btn_desc_retry', 'triage_btn_desc_resolve_review', 'triage_btn_desc_cancel',
+    'triage_unblock_review', 'triage_unblock_error', 'triage_unblock_verdict', 'triage_unblock_blocked_reason',
+    'triage_reason_source_blocked_reason', 'triage_reason_source_verdict',
+    'triage_reason_source_task_error', 'triage_reason_source_task_review',
   ];
   for (const lang of LANGS) {
     const b = bundle(lang);
     for (const k of keys) {
       assert.ok(typeof b[k] === 'string' && b[k].length > 0, lang + ' missing or empty ' + k);
+    }
+  }
+});
+
+test('the non-English bundles keep the English copy for the new guidance keys', () => {
+  const en = bundle('en');
+  const keys = [
+    'triage_btn_desc_retry', 'triage_btn_desc_resolve_review', 'triage_btn_desc_cancel',
+    'triage_unblock_review', 'triage_unblock_error', 'triage_unblock_verdict', 'triage_unblock_blocked_reason',
+    'triage_reason_source_blocked_reason', 'triage_reason_source_verdict',
+    'triage_reason_source_task_error', 'triage_reason_source_task_review',
+    'triage_reason_none',
+  ];
+  for (const lang of ['de', 'es', 'fr', 'ja']) {
+    const b = bundle(lang);
+    for (const k of keys) {
+      assert.equal(b[k], en[k], lang + ' ' + k + ' must match the English copy');
     }
   }
 });

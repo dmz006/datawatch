@@ -80,6 +80,36 @@
     return { text };
   }
 
+  // triageUnblockHint chooses the need-attention card's "How to unblock"
+  // line for a failed or blocked record, picked by the kind of reason the
+  // record carries: a failed record is stopped by the task's error, a
+  // blocked record by the reason of the source its record names
+  // (task_review, task_error, verdict or blocked_reason). It returns
+  // { kind, key } where key is the locale key of the concrete next step,
+  // or null — a record with no reason text (whose card shows the honest
+  // no-reason line that already says what to do) and a record that is
+  // neither failed nor blocked carry their own guidance elsewhere.
+  // Pure: no DOM, no fetch, no locale lookup.
+  function triageUnblockHint(record) {
+    const rec = (record && typeof record === 'object') ? record : {};
+    if (!triageReason(rec).text) return null;
+    const status = str(rec.status);
+    if (status === 'failed') return { kind: 'error', key: 'triage_unblock_error' };
+    if (status !== 'blocked') return null;
+    switch (str(rec.reason_source)) {
+      case 'task_review':
+        return { kind: 'review', key: 'triage_unblock_review' };
+      case 'task_error':
+        return { kind: 'error', key: 'triage_unblock_error' };
+      case 'verdict':
+        return { kind: 'verdict', key: 'triage_unblock_verdict' };
+      case 'blocked_reason':
+        return { kind: 'blocked_reason', key: 'triage_unblock_blocked_reason' };
+      default:
+        return null;
+    }
+  }
+
   // triageOwnerLabel is the owning Automation's name, shown only when the
   // record belongs to an Automation; a standalone Automaton gets ''.
   function triageOwnerLabel(record) {
@@ -125,6 +155,7 @@
   const AutomataTriageModel = {
     triageHeadline,
     triageReason,
+    triageUnblockHint,
     triageOwnerLabel,
     triageWaitingSince,
     sortInboxItems,
