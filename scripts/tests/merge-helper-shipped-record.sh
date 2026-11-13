@@ -19,6 +19,11 @@
 #      a warning: a bad daemon must never fail the merge.
 #   7. daemon unreachable (every call fails) -> the step still exits 0.
 #
+#   8. completed-migrate --id <id> runs once per merged Automaton (and once
+#      for an all-shipped Automation), after its shipped record; a failing
+#      completed-migrate still exits 0; setting off skips it; no call ever
+#      carries `cancel`.
+#
 # The test never starts or controls a terminal multiplexer, and it runs
 # with HOME and the XDG directories pointed inside its mktemp directory so
 # the real home directory is never touched. Uses only bash, git, jq, mktemp.
@@ -68,6 +73,7 @@ export PATH="$BIN:$PATH"
 #   ok        config on, prd list served, records accepted
 #   off       autonomous.shipped.enabled read as false
 #   fail      records refused (exit 1), the rest works
+#   failcompleted  only completed-migrate fails
 #   nodaemon  every call fails, like an unreachable daemon
 write_stub() {
     local mode="$1"
@@ -89,6 +95,12 @@ case "\${1:-} \${2:-}" in
         exit 0 ;;
     "autonomous prd-list")
         cat "$PRDS"
+        exit 0 ;;
+    "autonomous completed-migrate")
+        if [[ "\$mode" == "failcompleted" ]]; then
+            echo "stub: refusing the completed mark" >&2
+            exit 1
+        fi
         exit 0 ;;
     "autonomous shipped")
         if [[ "\$mode" == "fail" ]]; then
@@ -233,6 +245,86 @@ else
     echo "✗ step exited $rc with an unreachable daemon (must not fail the merge)" >&2
     FAILURES=$((FAILURES + 1))
 fi
+
+# --- 8. completed mark -------------------------------------------------------
+COMPLETED_PRD="autonomous completed-migrate --id $PRD_ID"
+COMPLETED_AUTO="autonomous completed-migrate --id $AUTO_ID"
+
+count_calls() { grep -cxF -- "$1" "$LOG" || true; }
+
+expect_count() {
+    local needle="$1" want="$2" got
+    got=$(count_calls "$needle")
+    if [[ "$got" == "$want" ]]; then
+        echo "  ✓ $want x: $needle"
+    else
+        echo "  ✗ expected $want x '$needle', got $got" >&2
+        FAILURES=$((FAILURES + 1))
+    fi
+}
+
+expect_order() {
+    local first="$1" second="$2" a b
+    a=$(grep -nxF -- "$first" "$LOG" | head -1 | cut -d: -f1)
+    b=$(grep -nxF -- "$second" "$LOG" | head -1 | cut -d: -f1)
+    if [[ -n "$a" && -n "$b" && "$a" -lt "$b" ]]; then
+        echo "  ✓ order: '$first' before '$second'"
+    else
+        echo "  ✗ expected '$first' before '$second'" >&2
+        FAILURES=$((FAILURES + 1))
+    fi
+}
+
+echo "scenario: completed-migrate once per automaton, after the shipped record"
+write_stub ok
+write_prds_all_shipped
+reset_log
+rc=0
+record_shipped_for_branch "automaton/$PRD_ID" "$RELEASE" "$MERGE_SHA" "$AT" || rc=$?
+check_rc "$rc"
+expect_count "$COMPLETED_PRD" 1
+expect_order "$PRD_CALL" "$COMPLETED_PRD"
+expect_count "$COMPLETED_AUTO" 1
+expect_order "$AUTOMATION_CALL" "$COMPLETED_AUTO"
+expect_no_call_matching "cancel"
+
+echo "scenario: one member unshipped -> completed-migrate for the automaton only"
+write_prds_one_unshipped
+reset_log
+record_shipped_for_branch "automaton/$PRD_ID" "$RELEASE" "$MERGE_SHA" "$AT"
+expect_count "$COMPLETED_PRD" 1
+expect_no_call_matching "completed-migrate --id $AUTO_ID"
+
+echo "scenario: failing completed-migrate still exits 0 with a warning"
+write_stub failcompleted
+write_prds_all_shipped
+reset_log
+rc=0
+record_shipped_for_branch "automaton/$PRD_ID" "$RELEASE" "$MERGE_SHA" "$AT" 2> "$WORK/cm.stderr" || rc=$?
+check_rc "$rc"
+expect_count "$COMPLETED_PRD" 1
+if grep -q "warning: completed mark" "$WORK/cm.stderr"; then
+    echo "  ✓ warning printed"
+else
+    echo "  ✗ expected a completed-mark warning" >&2
+    FAILURES=$((FAILURES + 1))
+fi
+expect_no_call_matching "cancel"
+
+echo "scenario: setting off, failed shipped record, or non-automaton branch -> no completed-migrate"
+write_stub off
+reset_log
+record_shipped_for_branch "automaton/$PRD_ID" "$RELEASE" "$MERGE_SHA" "$AT"
+expect_no_call_matching "completed-migrate"
+write_stub fail
+reset_log
+record_shipped_for_branch "automaton/$PRD_ID" "$RELEASE" "$MERGE_SHA" "$AT" 2>/dev/null
+expect_no_call_matching "completed-migrate"
+write_stub ok
+reset_log
+record_shipped_for_branch "feature/x" "$RELEASE" "$MERGE_SHA" "$AT"
+expect_no_call_matching "completed-migrate"
+expect_no_call_matching "cancel"
 
 # --- result -------------------------------------------------------------------
 echo
