@@ -2,7 +2,9 @@ package autonomous
 
 import (
 	"bytes"
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/config"
@@ -108,4 +110,106 @@ func TestTaskRoutingModelPairing(t *testing.T) {
 	if errs := config.ValidateTaskRouting(cfg, trChecks()); len(errs) == 0 {
 		t.Error("mismatched pair accepted")
 	}
+}
+
+func trWantRow(t *testing.T, err error, profile, row, field string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("bad row accepted")
+	}
+	for _, w := range []string{`profile "` + profile + `"`, `row "` + row + `"`, field} {
+		if !strings.Contains(err.Error(), w) {
+			t.Errorf("message does not name %s: %v", w, err)
+		}
+	}
+}
+
+func TestTaskRoutingUnknownBackendAndModelRefusedOnImportAndSave(t *testing.T) {
+	cases := []struct{ name, row, field, want string }{
+		{"backend", `{"worker_backend":"ghost-llm","worker_model":"m"}`, "worker", "ghost-llm"},
+		{"verifier", `{"worker_backend":"pi-prompt","verification_backend":"ghost-v"}`, "verification", "ghost-v"},
+		{"second", `{"worker_backend":"pi-prompt","second_choice":{"backend":"ghost-s"}}`, "second choice", "ghost-s"},
+		{"model", `{"worker_backend":"claude-code","worker_model":"ollama/qwen3.8:27b"}`, "worker", "ollama/qwen3.8:27b"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := config.DefaultTaskRouting()
+			before := cfg.Clone()
+			doc := []byte(`{"format_version":1,"name":"imp","rows":{"docs_set":` + c.row + `}}`)
+			out, err := ImportProfile(cfg, doc, "", false, trChecks())
+			trWantRow(t, err, "imp", "docs_set", c.field)
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("message does not name %s: %v", c.want, err)
+			}
+			if !reflect.DeepEqual(out, before) || !reflect.DeepEqual(cfg, before) {
+				t.Error("config changed on refusal")
+			}
+			// Save stores rows as given; the whole-table check that follows
+			// (the one the surfaces run before they commit) refuses it.
+			var d TaskRoutingDocument
+			if e := json.Unmarshal(doc, &d); e != nil {
+				t.Fatal(e)
+			}
+			saved, err := SaveProfile(cfg, "bad", d.Rows)
+			if err != nil {
+				t.Fatal(err)
+			}
+			errs := config.ValidateTaskRouting(saved, trChecks())
+			if len(errs) == 0 {
+				t.Fatal("saved bad row passes validation")
+			}
+			trWantRow(t, errs[0], "bad", "docs_set", c.field)
+			if !reflect.DeepEqual(cfg, before) {
+				t.Error("SaveProfile modified its input")
+			}
+		})
+	}
+}
+
+func TestTaskRoutingPremiumModelNeedsFlagOnImportAndSave(t *testing.T) {
+	for _, model := range []string{"claude-opus-5-5", "claude-fable-5-2", "CLAUDE-OPUS-5-5"} {
+		t.Run(model, func(t *testing.T) {
+			cfg := config.DefaultTaskRouting()
+			before := cfg.Clone()
+			doc := func(flag string) []byte {
+				return []byte(`{"format_version":1,"name":"prem","rows":{"final_gate":{"worker_backend":"claude-code","worker_model":"` + model + `"` + flag + `}}}`)
+			}
+			out, err := ImportProfile(cfg, doc(""), "", false, trChecks())
+			trWantRow(t, err, "prem", "final_gate", "allow_premium_model")
+			if !reflect.DeepEqual(out, before) || !reflect.DeepEqual(cfg, before) {
+				t.Error("config changed on refusal")
+			}
+			ok, err := ImportProfile(cfg, doc(`,"allow_premium_model":true`), "", false, trChecks())
+			if err != nil {
+				t.Fatalf("flagged premium row refused: %v", err)
+			}
+			if !ok.Profiles["prem"]["final_gate"].AllowPremiumModel {
+				t.Error("flag lost on import")
+			}
+			// Save: the same table check refuses an unflagged row and
+			// accepts a flagged one.
+			rows := config.TaskRoutingProfile{"final_gate": {WorkerBackend: "claude-code", WorkerModel: model}}
+			saved, _ := SaveProfile(cfg, "prem", rows)
+			errs := config.ValidateTaskRouting(saved, trChecks())
+			if len(errs) == 0 {
+				t.Fatal("unflagged premium row passes validation")
+			}
+			trWantRow(t, errs[0], "prem", "final_gate", "allow_premium_model")
+			rows["final_gate"] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: model, AllowPremiumModel: true}
+			saved, _ = SaveProfile(cfg, "prem", rows)
+			if errs := config.ValidateTaskRouting(saved, trChecks()); len(errs) != 0 {
+				t.Errorf("flagged premium row refused: %v", errs)
+			}
+		})
+	}
+}
+
+func TestTaskRoutingModelPairingUnknownMessageNamesRow(t *testing.T) {
+	cfg := config.DefaultTaskRouting()
+	cfg.Profiles["default"][config.TaskTypeUICode] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "ollama/qwen3.8:27b"}
+	errs := config.ValidateTaskRouting(cfg, trChecks())
+	if len(errs) == 0 {
+		t.Fatal("mismatched pair accepted")
+	}
+	trWantRow(t, errs[0], "default", "ui_code", "worker")
 }

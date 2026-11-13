@@ -14,6 +14,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/inference"
 	dwserver "github.com/dmz006/datawatch/internal/server"
 )
 
@@ -233,6 +234,13 @@ func taskRoutingConfigMCP(t *testing.T) (*Server, func() config.TaskRoutingConfi
 	cfg.Autonomous.TaskRouting = config.DefaultTaskRouting()
 	cfg.Autonomous.TaskRouting.Profiles["alt"] = cfg.Autonomous.TaskRouting.Profiles["default"]
 	api := dwserver.NewServer(dwserver.NewHub(), nil, "h", "", nil, cfg, filepath.Join(t.TempDir(), "config.yaml"))
+	reg := inference.NewRegistry()
+	for _, n := range []string{"pi-prompt", "claude-code"} {
+		if err := reg.Add(&inference.LLM{Name: n, Kind: inference.KindOllama}); err != nil {
+			t.Fatalf("registry add %s: %v", n, err)
+		}
+	}
+	api.SetInference(reg, nil)
 	ts := httptest.NewServer(api.ConfigHandler())
 	t.Cleanup(ts.Close)
 	s := &Server{webPort: bl427Port(t, ts), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
@@ -309,5 +317,57 @@ func TestTaskRoutingConfigSetMCPBlock(t *testing.T) {
 	}
 	if got := read(); got.ActiveProfile != "lean" || len(got.Profiles["x"]) != 0 {
 		t.Fatalf("a refused block was stored: %+v", got.ActiveProfile)
+	}
+}
+
+// Unknown and premium rows refused through config_set (the real /api/config
+// handler with the LLM registry wired): the message names the row and the
+// stored block does not change.
+
+const (
+	taskRoutingBadUnknownBlock = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"ghost-llm"}}}}`
+	taskRoutingBadModelBlock   = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"ollama/qwen3.8:27b"}}}}`
+	taskRoutingPremiumBlock    = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"claude-opus-5-5"}}}}`
+	taskRoutingPremiumOKBlock  = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"claude-opus-5-5","allow_premium_model":true}}}}`
+)
+
+func TestTaskRoutingConfigSetMCPUnknownBackendAndModelNamesRow(t *testing.T) {
+	for name, c := range map[string]struct{ block, want string }{
+		"backend": {taskRoutingBadUnknownBlock, "ghost-llm"},
+		"model":   {taskRoutingBadModelBlock, "ollama/qwen3.8:27b"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, read := taskRoutingConfigMCP(t)
+			before := read()
+			text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", c.block)
+			if !isErr || !strings.Contains(text, "not stored") {
+				t.Fatalf("bad row should be refused, got %q (isError=%v)", text, isErr)
+			}
+			for _, w := range []string{`profile "x"`, `row "final_gate"`, "worker", c.want} {
+				if !strings.Contains(text, w) {
+					t.Errorf("message does not name %s: %s", w, text)
+				}
+			}
+			if got := read(); got.ActiveProfile != before.ActiveProfile || len(got.Profiles["x"]) != 0 {
+				t.Fatalf("a refused block was stored: %+v", got.ActiveProfile)
+			}
+		})
+	}
+}
+
+func TestTaskRoutingConfigSetMCPPremiumModelNeedsFlag(t *testing.T) {
+	s, read := taskRoutingConfigMCP(t)
+	text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", taskRoutingPremiumBlock)
+	if !isErr || !strings.Contains(text, "allow_premium_model") || !strings.Contains(text, `row "final_gate"`) || !strings.Contains(text, `profile "x"`) {
+		t.Fatalf("premium row without the flag should be refused naming the row, got %q (isError=%v)", text, isErr)
+	}
+	if got := read(); got.ActiveProfile == "x" || len(got.Profiles["x"]) != 0 {
+		t.Fatalf("a refused premium block was stored: %+v", got.ActiveProfile)
+	}
+	if text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", taskRoutingPremiumOKBlock); isErr {
+		t.Fatalf("premium row with the flag refused: %s", text)
+	}
+	if got := read(); got.ActiveProfile != "x" || !got.Profiles["x"]["final_gate"].AllowPremiumModel {
+		t.Fatalf("flagged premium block not stored: %+v", got.Profiles["x"])
 	}
 }
