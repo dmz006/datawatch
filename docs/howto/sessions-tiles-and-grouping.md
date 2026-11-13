@@ -566,9 +566,11 @@ the app from before the last release. Two things already happen for you:
 If a page still behaves like the old release, the manual fix is in
 **Settings → About**:
 
-- The Version card shows the release this page was **loaded with** next to
-  the release the daemon reports. A mismatch between the two means you are
-  still on the old copy.
+- The Version card shows the release this page was **loaded with** beside
+  the release the daemon reports, in a quiet line. A mismatch means this
+  browser's copy of the app is out of line with the daemon — most often
+  because you are still on the old copy — and the **Reset browser state**
+  button below clears that copy.
 - The **Reset browser state** button clears this app's saved settings and
   cached files in this browser — its own storage keys, its caches and its
   service worker — and then reloads the page fresh; the reload always
