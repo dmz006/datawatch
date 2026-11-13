@@ -338,6 +338,11 @@ the `observers:read` capability.
 | **Comm channel** | `observer pull status` — the same rows, table-rendered |
 | **MCP** | `observer_pull_status` tool (read-only, `observers:read`) — same rows for an LLM or automation |
 
+### For the operator to review
+
+- **Deterministic collector tests — no behavior change.** The pull collector's unit tests used to race the state store: the fake fetcher signalled when `Fetch` returned, but the collector records the result only after that, so a test reading `Last` right after the fetch signal could see the previous value. The tests now wait for the expected state with a deadline-bounded poll (`waitForLast`, 5 s) instead of reading it immediately, so the suite no longer flaps. Nothing operator-facing changed: the collector, its settings, the staleness reasons and all five surfaces above behave exactly as described here.
+- **Pull mode is still not validated live.** The pull rows in the [testing tracker](../testing-tracker.md) remain **Validated: No** — every pull test runs against fakes and stand-in daemons; a two-daemon sandbox pull is still outstanding.
+
 ## Other channels
 
 ### 5a. Mobile (Compose Multiplatform)
