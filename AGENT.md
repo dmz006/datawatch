@@ -64,7 +64,7 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
 1. **Unit/integration tests** (Go `_test.go` files): Protocol correctness, encode/decode round-trips,
    error handling, edge cases. These run via `go test` and are automated.
 
-2. **Live connection tests**: Actually start the interface, connect a real or simulated client,
+2. **Live connection tests** (new work also carries its relevant smoke script; `make pre-tag` must pass before a tag): Actually start the interface, connect a real or simulated client,
    send a command, verify the response appears in a session or output. Document what was tested,
    how, and what was observed. Mark "Validated" only when a live test has been performed.
 
@@ -131,6 +131,14 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
   second number and reset patch — `0.1.3` → `0.2.0`
 - **Major bump** (breaking changes, explicit user request): increment the first number and reset
   minor/patch — `0.2.0` → `1.0.0`
+- **Pre-tag rule.** `make pre-tag` must pass on the build host before a tag is created. It runs
+  every gate in order, stops at the first failure, and replaces `go test` in the CI and release
+  workflows. Its result is appended to the gitignored `.datawatch/pre-tag-record`. Never tag
+  from a commit whose last record line is not `result=pass`.
+- **Tests ship with the work.** New work carries its unit and functional tests and the relevant
+  smoke script before it ships.
+- **The e2e and sandbox smoke run is the operator's major-release step.** It is not a product
+  feature and is not part of `make pre-tag`.
 - Include the new version in the commit message subject, e.g. `v0.1.3: fix signal groupID filter`
 - Never push without bumping the version — a version mismatch between the binary and the running
   daemon causes confusing support issues.
@@ -196,6 +204,10 @@ N/A with a one-line reason (never silently skipped):
   security, capability gating, or anything else where a unit test can mock away the
   actual bug (per this project's own established discipline — BL406 Phase 0's live
   smoke caught two real bugs unit tests missed entirely).
+- [ ] New work carries its own unit and functional tests and the relevant smoke script.
+  `make pre-tag` is run on the build host before any tag; it replaces `go test` in CI and
+  release and records its result in the gitignored `.datawatch/pre-tag-record`. The e2e and
+  sandbox smoke run stays the operator's major-release step.
 - [ ] `go test ./...` and `node --test internal/server/web/*.test.js` both green,
   not just the phase's own new tests.
 - [ ] **General documentation checklist** (AGENT.md, above) — all 8 items checked or
