@@ -153,6 +153,9 @@ Overall average: **60-90% token reduction** on common development operations.
 
 ## Checkpoints
 
+Entries in this section are written by the human operator and by the supervisor only.
+Automated Automaton task workers must not add, edit or remove checkpoint entries in AGENT.md or CLAUDE.md — a worker that needs a progress note writes it to CHECKPOINT.md at the root of its working directory instead.
+
 ## 2026-11-09 14:14 — DONE — header server dropdown (chip row → one `<select>`)
 - Replaced the `.server-picker-bar` chip row (all views incl. the Sessions `.sessions-topbar-servers` slot) with one native `<select id="serverDropdown">` in the shared fixed header. `app.js`: new picker section (`_serverOptionsHtml`, `_serverPickerBar`, `renderServerDropdown`, `onServerDropdownChange`, `_initServerDropdown`, `_updatePickerOptionReachability`) with `_serverOptionsHtml` split so the `<select id>` never duplicates (nested-`<select>` bug fixed); `selectServer()` stays the sole mutation path (idempotent); state.servers===undefined first-load signal preserved; 10 view-level injection call sites + `_sessionsPickerHost` + the Sessions slot removed; reachability marking now `data-reachability="down"` + `server_dropdown_unreachable` suffix, never `disabled`, no CSS selectors built from names.
 - `index.html` (header markup), `style.css` (`.server-dropdown` rules; phone = max-width 40% + ellipsis, no wrap; `.sessions-topbar-servers` rules removed), `locales/en.json` (4 `server_dropdown_*` keys). Picker modal (3-finger swipe `serverPickerModal`) and all 4 other `selectServer` controls kept working.

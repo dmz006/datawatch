@@ -392,14 +392,20 @@ func rulesContextPresence(dir string, p ResolvedRulesContext) (present, missing 
 
 // withRulesContextBlock appends the worker-prompt rules block to spec
 // for the backend that will run the task. It is a no-op for an empty
-// dir and when spec already carries a block, so a retried task is never
-// given it twice.
+// dir, and when spec already carries a block (or the no-checkpoints
+// rule) it is not appended again, so a retried task is never given
+// either twice. Every worker prompt that gets a rules block also gets
+// the no-checkpoints-in-the-rules-files rule (withWorkerCheckpointRule);
+// the planning block used by decompose does not carry it.
 func (m *Manager) withRulesContextBlock(spec, dir, backend string) string {
-	if dir == "" || strings.Contains(spec, strings.TrimSpace(rulesBlockMarker)) {
+	if dir == "" {
 		return spec
 	}
+	if strings.Contains(spec, strings.TrimSpace(rulesBlockMarker)) {
+		return withWorkerCheckpointRule(spec)
+	}
 	block, _, _ := m.rulesContextBlock(dir, backend, rulesBlockWorker)
-	return spec + block
+	return withWorkerCheckpointRule(spec + block)
 }
 
 // resolvedRulesContext resolves the rules/context policy for this PRD's
