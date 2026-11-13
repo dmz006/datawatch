@@ -20,6 +20,15 @@
 #       --release <version> --commit <merge sha> --at <ISO time> \
 #       --source merge_step
 #
+# After each successful shipped record it also marks the record Completed
+# (best effort), through the single-record mode of the migration CLI:
+#
+#   datawatch autonomous completed-migrate --id <automaton id>
+#   datawatch autonomous completed-migrate --id <automation id>   # all members shipped
+#
+# so the Automaton ends Completed with the merge time. The merge helper needs
+# no extra call site: record_shipped_for_branch makes these calls itself.
+#
 # Contract:
 #   * autonomous.shipped.enabled is honoured when it can be read
 #     (`datawatch config get`); unset, missing or an unreadable/lost daemon
@@ -30,6 +39,9 @@
 #   * No version number is produced or hard-coded here; the caller hands
 #     over the release it computed from the repository itself.
 #   * No tmux, no service control, no writes outside the daemon's own API.
+#   * No cancel command is ever run from this file.
+#   * The completed mark follows the same setting as the shipped record and
+#     only runs after the shipped record for that id succeeded.
 #
 # Functions:
 #   shipped_enabled                      0 when recording is on (the default);
@@ -38,6 +50,8 @@
 #                                        PRD sits in an Automation and every
 #                                        member of it is shipped; prints nothing
 #                                        and returns 1 otherwise
+#   completed_mark ID                    best-effort `completed-migrate --id ID`;
+#                                        a failure warns; always returns 0
 #   record_shipped_for_branch BRANCH RELEASE SHA AT
 #                                        records the shipped state for one
 #                                        merged branch; always returns 0
@@ -80,6 +94,20 @@ automation_if_all_shipped() {
     return 1
 }
 
+# completed_mark ID — marks one Automaton or Automation Completed through the
+# single-record mode of the migration CLI. Best effort: any failure prints a
+# warning and the function still returns 0.
+completed_mark() {
+    local id="${1:-}"
+    [[ -n "$id" ]] || return 0
+    if datawatch autonomous completed-migrate --id "$id"; then
+        echo "==> completed marked: $id"
+    else
+        echo "warning: completed mark for $id failed; the merge already succeeded and continues" >&2
+    fi
+    return 0
+}
+
 # record_shipped_for_branch BRANCH RELEASE SHA AT — the per-branch record
 # step. BRANCH is the merged branch name, RELEASE the release the merge
 # bumped to (for example v9.54.1), SHA the merge commit and AT the merge
@@ -106,6 +134,7 @@ record_shipped_for_branch() {
     if datawatch autonomous shipped record "$prd_id" \
         --release "$release" --commit "$sha" --at "$at" --source merge_step; then
         echo "==> shipped recorded: automaton $prd_id shipped in $release at $sha"
+        completed_mark "$prd_id"
     else
         echo "warning: shipped record for automaton $prd_id failed; the merge already succeeded and continues" >&2
         return 0
@@ -115,6 +144,7 @@ record_shipped_for_branch() {
     if datawatch autonomous shipped record "$auto_id" --automation \
         --release "$release" --commit "$sha" --at "$at" --source merge_step; then
         echo "==> shipped recorded: automation $auto_id (all members shipped) shipped in $release at $sha"
+        completed_mark "$auto_id"
     else
         echo "warning: shipped record for automation $auto_id failed; the merge already succeeded and continues" >&2
     fi
