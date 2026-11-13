@@ -39,13 +39,13 @@ func TestSyncLLMLimits_PlanTierDrivesLedgerLimit(t *testing.T) {
 		name string
 		want int
 	}{
-		{"llm:cc-unset", 1},          // subscription kind, tier unset: conservative 1
-		{"llm:cc-pro", 1},            // policy table pro=1
-		{"llm:cc-5x", 2},             // policy table max_5x=2
-		{"llm:cc-20x", 4},            // policy table max_20x=4
-		{"llm:cc-api", 0},            // policy table api=0 (unlimited)
-		{"llm:cc-explicit", 9},       // explicit max_inflight wins over the tier
-		{"llm:ollama-local", 0},      // local kind: unlimited, node: pools govern
+		{"llm:cc-unset", 1},     // subscription kind, tier unset: conservative 1
+		{"llm:cc-pro", 1},       // policy table pro=1
+		{"llm:cc-5x", 2},        // policy table max_5x=2
+		{"llm:cc-20x", 4},       // policy table max_20x=4
+		{"llm:cc-api", 0},       // policy table api=0 (unlimited)
+		{"llm:cc-explicit", 9},  // explicit max_inflight wins over the tier
+		{"llm:ollama-local", 0}, // local kind: unlimited, node: pools govern
 	}
 	for _, c := range cases {
 		if got := led.Limit(c.name); got != c.want {
