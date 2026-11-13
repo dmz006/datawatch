@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.167.0 (2026-11-12).** The Projects page matches an Automaton to its project by an explicit link first and by its directory only as the last fallback, lists Automata that match no project in a group of their own, and counts shipped work in throughput. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.167.1 (2026-11-13).** The observer pull collector's unit tests no longer race the collector's state write, so the suite is stable; the change is test-only. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
