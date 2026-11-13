@@ -3212,37 +3212,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetChannelInfoFn(channelInfoSummary)
 		r.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
 		r.SetWorkerProfileInForceFunc(workerProfileInForceReader(cfg))
-		r.SetConfigureFunc(func(key, value string) error {
-			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
-			apiURL := loopbackBaseURL(cfg) + "/api/config"
-			body := configureRequestBody(key, value)
-			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Content-Type", "application/json")
-			// Token-protected daemon: present the loopback as admin, the
-			// same way Router.commGet does — an unauthenticated PUT would
-			// return 401 and comm `configure` would break whenever
-			// server.token is set.
-			if cfg.Server.Token != "" {
-				req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-			}
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				return fmt.Errorf("API call failed: %w", err)
-			}
-			defer resp.Body.Close() //nolint:errcheck
-			if resp.StatusCode != 200 {
-				// Show the daemon's refusal text as-is, so comm carries the same
-				// message as REST (e.g. a bad autonomous.tags value).
-				if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
-					return errors.New(strings.TrimSpace(string(msg)))
-				}
-				return fmt.Errorf("API returned %d", resp.StatusCode)
-			}
-			return nil
-		})
+		r.SetConfigureFunc(commConfigureFunc(cfg))
 		r.SetCapacityFunc(func() string {
 			if capacityTextFn == nil {
 				return "not available"
@@ -12486,6 +12456,11 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key) || isDependencyUpdateConfigKey(key)) && json.Valid([]byte(value)) {
 			return fmt.Errorf("config set: %w", err)
 		}
+		// A key the daemon skipped was understood; quoting it again only
+		// replaces that report with a bad-JSON error.
+		if strings.HasPrefix(err.Error(), "not stored") {
+			return fmt.Errorf("config set: %s: %w", key, err)
+		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
 		if err2 := putConfig(url, cfg.Server.Token, bodyQuoted); err2 != nil {
 			// The quoted attempt is the one that carries a value refusal, so its
@@ -12571,6 +12546,12 @@ func putConfig(url, token, body string) error {
 	if resp.StatusCode >= 400 {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, raw)
+	}
+	// A key the daemon skipped (an active profile that does not exist, a task
+	// routing block that fails validation) is reported, not confirmed.
+	raw, _ := io.ReadAll(resp.Body)
+	if note := config.PutConfigSkippedNote(raw); note != "" {
+		return errors.New(note)
 	}
 	return nil
 }
@@ -20244,4 +20225,45 @@ func daemonCertPath(cfg *config.Config) string {
 		return expandHome(cfg.Server.TLSCert)
 	}
 	return filepath.Join(expandHome(cfg.DataDir), "tls", "server", "cert.pem")
+}
+
+// commConfigureFunc is what the comm channels' `configure <key>=<value>` verb
+// calls: it applies one key through the daemon's PUT /api/config, so comm
+// carries the same validation, refusal text and skipped-key report as REST.
+func commConfigureFunc(cfg *config.Config) func(key, value string) error {
+	return func(key, value string) error {
+		// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
+		apiURL := loopbackBaseURL(cfg) + "/api/config"
+		body := configureRequestBody(key, value)
+		req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// Token-protected daemon: present the loopback as admin, the
+		// same way Router.commGet does — an unauthenticated PUT would
+		// return 401 and comm `configure` would break whenever
+		// server.token is set.
+		if cfg.Server.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("API call failed: %w", err)
+		}
+		defer resp.Body.Close() //nolint:errcheck
+		if resp.StatusCode != 200 {
+			// Show the daemon's refusal text as-is, so comm carries the same
+			// message as REST (e.g. a bad autonomous.tags value).
+			if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
+				return errors.New(strings.TrimSpace(string(msg)))
+			}
+			return fmt.Errorf("API returned %d", resp.StatusCode)
+		}
+		// A key the daemon skipped is reported as a failure, not confirmed.
+		if raw, _ := io.ReadAll(resp.Body); config.PutConfigSkippedNote(raw) != "" {
+			return errors.New(key + " " + config.PutConfigSkippedNote(raw))
+		}
+		return nil
+	}
 }

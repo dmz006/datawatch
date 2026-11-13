@@ -305,3 +305,134 @@ func TestTaskRoutingRESTDryRunWritesNothing(t *testing.T) {
 		t.Errorf("GET dry-run: %d", rr.Code)
 	}
 }
+
+// The three task routing settings written through PUT /api/config, the path
+// the MCP config_set tool, the comm configure verb and CLI config set all
+// send their value through, then read back through GET /api/config.
+
+func newTaskRoutingConfigServer(t *testing.T) *Server {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.Autonomous.TaskRouting = config.DefaultTaskRouting()
+	return &Server{cfg: cfg, cfgPath: t.TempDir() + "/config.yaml"}
+}
+
+func taskRoutingPutConfig(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body)))
+	return rr
+}
+
+func taskRoutingGetConfig(t *testing.T, s *Server) config.TaskRoutingConfig {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /api/config: %d", rr.Code)
+	}
+	var top struct {
+		Autonomous struct {
+			TaskRouting config.TaskRoutingConfig `json:"task_routing"`
+		} `json:"autonomous"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &top); err != nil {
+		t.Fatalf("decode GET: %v", err)
+	}
+	return top.Autonomous.TaskRouting
+}
+
+func taskRoutingSkippedKeys(t *testing.T, rr *httptest.ResponseRecorder) ([]string, string) {
+	t.Helper()
+	var resp struct {
+		Skipped       []string `json:"skipped"`
+		SkippedReason string   `json:"skipped_reason"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode PUT reply: %v (%s)", err, rr.Body.String())
+	}
+	return resp.Skipped, resp.SkippedReason
+}
+
+func TestTaskRoutingConfigEnabledWriteReadBack(t *testing.T) {
+	s := newTaskRoutingConfigServer(t)
+	if rr := taskRoutingPutConfig(t, s, `{"autonomous.task_routing.enabled": true}`); rr.Code != http.StatusOK {
+		t.Fatalf("PUT enabled=true: %d %s", rr.Code, rr.Body.String())
+	}
+	if !taskRoutingGetConfig(t, s).Enabled {
+		t.Fatal("enabled did not read back true")
+	}
+	if rr := taskRoutingPutConfig(t, s, `{"autonomous.task_routing.enabled": false}`); rr.Code != http.StatusOK {
+		t.Fatalf("PUT enabled=false: %d", rr.Code)
+	}
+	if taskRoutingGetConfig(t, s).Enabled {
+		t.Fatal("enabled did not read back false")
+	}
+}
+
+func TestTaskRoutingConfigActiveProfileWriteReadBackAndSkip(t *testing.T) {
+	s := newTaskRoutingConfigServer(t)
+	s.cfg.Autonomous.TaskRouting.Profiles["alt"] = s.cfg.Autonomous.TaskRouting.Profiles["default"]
+	if rr := taskRoutingPutConfig(t, s, `{"autonomous.task_routing.active_profile": "alt"}`); rr.Code != http.StatusOK {
+		t.Fatalf("PUT active_profile=alt: %d %s", rr.Code, rr.Body.String())
+	}
+	if got := taskRoutingGetConfig(t, s).ActiveProfile; got != "alt" {
+		t.Fatalf("active_profile = %q, want alt", got)
+	}
+	// A profile that does not exist is skipped and reported, not stored.
+	rr := taskRoutingPutConfig(t, s, `{"autonomous.task_routing.active_profile": "no-such-profile"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT unknown profile: %d", rr.Code)
+	}
+	skipped, reason := taskRoutingSkippedKeys(t, rr)
+	if len(skipped) != 1 || skipped[0] != "autonomous.task_routing.active_profile" {
+		t.Fatalf("skipped = %v, want the active_profile key", skipped)
+	}
+	if strings.Contains(reason, "rotate-token") || reason == "" {
+		t.Fatalf("skipped_reason should explain the routing skip, got %q", reason)
+	}
+	if got := taskRoutingGetConfig(t, s).ActiveProfile; got != "alt" {
+		t.Fatalf("active_profile changed to %q after a skipped write", got)
+	}
+}
+
+func TestTaskRoutingConfigBlockWriteReadBackAndSkip(t *testing.T) {
+	s := newTaskRoutingConfigServer(t)
+	good := config.DefaultTaskRouting()
+	good.Enabled = true
+	good.Profiles["lean"] = good.Profiles["default"]
+	good.ActiveProfile = "lean"
+	b, _ := json.Marshal(map[string]any{"autonomous.task_routing": good})
+	if rr := taskRoutingPutConfig(t, s, string(b)); rr.Code != http.StatusOK {
+		t.Fatalf("PUT block: %d %s", rr.Code, rr.Body.String())
+	}
+	got := taskRoutingGetConfig(t, s)
+	if !got.Enabled || got.ActiveProfile != "lean" || len(got.Profiles["lean"]) == 0 {
+		t.Fatalf("block did not read back: enabled=%v active=%q profiles=%d", got.Enabled, got.ActiveProfile, len(got.Profiles))
+	}
+
+	// A block that fails ValidateTaskRouting (a row for a task type that does
+	// not exist) is skipped and reported; the stored block stays as it was.
+	bad := config.TaskRoutingConfig{Enabled: true, ActiveProfile: "x", Profiles: map[string]config.TaskRoutingProfile{
+		"x": {"not-a-task-type": config.TaskRoutingRow{WorkerBackend: "pi-prompt"}},
+	}}
+	b, _ = json.Marshal(map[string]any{"autonomous.task_routing": bad})
+	rr := taskRoutingPutConfig(t, s, string(b))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT bad block: %d", rr.Code)
+	}
+	skipped, _ := taskRoutingSkippedKeys(t, rr)
+	if len(skipped) != 1 || skipped[0] != "autonomous.task_routing" {
+		t.Fatalf("skipped = %v, want the block key", skipped)
+	}
+	if after := taskRoutingGetConfig(t, s); after.ActiveProfile != "lean" || len(after.Profiles["x"]) != 0 {
+		t.Fatalf("a refused block was stored: active=%q", after.ActiveProfile)
+	}
+
+	// The block as a JSON string (what a surface that does not parse it sends)
+	// is skipped too, never half-applied.
+	rr = taskRoutingPutConfig(t, s, `{"autonomous.task_routing": "{\"enabled\":true}"}`)
+	if skipped, _ := taskRoutingSkippedKeys(t, rr); len(skipped) != 1 {
+		t.Fatalf("string block should be skipped, got %v", skipped)
+	}
+}

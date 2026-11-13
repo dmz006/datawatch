@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/config"
+	dwserver "github.com/dmz006/datawatch/internal/server"
 )
 
 const taskRoutingCLIView = `{"enabled":true,"active_profile":"default","profiles":{"default":{` +
@@ -237,5 +241,135 @@ func TestTaskRoutingCLIErrorFromDaemonIsReturned(t *testing.T) {
 	newTaskRoutingFake(t, map[string]string{})
 	if _, err := runLaneFillCmd(t, newAutonomousTaskRoutingCmd(), []string{"show"}); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// `datawatch config set` and the comm `configure` verb against the real
+// /api/config handler: each of the three task routing keys is written and
+// read back.
+
+func taskRoutingConfigDaemon(t *testing.T) (*config.Config, func() config.TaskRoutingConfig) {
+	t.Helper()
+	dcfg := config.DefaultConfig()
+	dcfg.Autonomous.TaskRouting = config.DefaultTaskRouting()
+	dcfg.Autonomous.TaskRouting.Profiles["alt"] = dcfg.Autonomous.TaskRouting.Profiles["default"]
+	api := dwserver.NewServer(dwserver.NewHub(), nil, "h", "", nil, dcfg, filepath.Join(t.TempDir(), "config.yaml"))
+	ts := httptest.NewServer(api.ConfigHandler())
+	t.Cleanup(ts.Close)
+	old := serverURL
+	serverURL = ts.URL
+	t.Cleanup(func() { serverURL = old })
+	read := func() config.TaskRoutingConfig {
+		resp, err := http.Get(ts.URL + "/api/config")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close() //nolint:errcheck
+		var top struct {
+			Autonomous struct {
+				TaskRouting config.TaskRoutingConfig `json:"task_routing"`
+			} `json:"autonomous"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&top); err != nil {
+			t.Fatal(err)
+		}
+		return top.Autonomous.TaskRouting
+	}
+	return config.DefaultConfig(), read
+}
+
+const taskRoutingBadBlock = `{"enabled":true,"active_profile":"x","profiles":{"x":{"not-a-task-type":{"worker_backend":"pi-prompt"}}}}`
+
+func taskRoutingGoodBlock(t *testing.T) string {
+	t.Helper()
+	good := config.DefaultTaskRouting()
+	good.Enabled = true
+	good.Profiles["lean"] = good.Profiles["default"]
+	good.ActiveProfile = "lean"
+	b, _ := json.Marshal(good)
+	return string(b)
+}
+
+// taskRoutingSurface writes through one surface and reports its error.
+type taskRoutingSurface struct {
+	name string
+	set  func(cfg *config.Config, key, value string) error
+}
+
+func taskRoutingSurfaces() []taskRoutingSurface {
+	return []taskRoutingSurface{
+		{"cli config set", runConfigSet},
+		{"comm configure", func(cfg *config.Config, key, value string) error {
+			return commConfigureFunc(cfg)(key, value)
+		}},
+	}
+}
+
+func TestTaskRoutingConfigEnabledAndActiveProfileCLIAndComm(t *testing.T) {
+	for _, surf := range taskRoutingSurfaces() {
+		t.Run(surf.name, func(t *testing.T) {
+			cfg, read := taskRoutingConfigDaemon(t)
+			if err := surf.set(cfg, "autonomous.task_routing.enabled", "true"); err != nil {
+				t.Fatalf("enabled: %v", err)
+			}
+			if !read().Enabled {
+				t.Fatal("enabled did not read back true")
+			}
+			if err := surf.set(cfg, "autonomous.task_routing.enabled", "false"); err != nil || read().Enabled {
+				t.Fatalf("enabled=false: err=%v enabled=%v", err, read().Enabled)
+			}
+			if err := surf.set(cfg, "autonomous.task_routing.active_profile", "alt"); err != nil {
+				t.Fatalf("active_profile: %v", err)
+			}
+			if got := read().ActiveProfile; got != "alt" {
+				t.Fatalf("active_profile = %q, want alt", got)
+			}
+			// A profile that does not exist is skipped and reported, not stored.
+			err := surf.set(cfg, "autonomous.task_routing.active_profile", "ghost")
+			if err == nil || !strings.Contains(err.Error(), "not stored") {
+				t.Fatalf("unknown profile should be reported as not stored, got %v", err)
+			}
+			if got := read().ActiveProfile; got != "alt" {
+				t.Fatalf("active_profile changed to %q after a skipped write", got)
+			}
+		})
+	}
+}
+
+func TestTaskRoutingConfigBlockCLIAndComm(t *testing.T) {
+	for _, surf := range taskRoutingSurfaces() {
+		t.Run(surf.name, func(t *testing.T) {
+			cfg, read := taskRoutingConfigDaemon(t)
+			if err := surf.set(cfg, "autonomous.task_routing", taskRoutingGoodBlock(t)); err != nil {
+				t.Fatalf("block: %v", err)
+			}
+			if got := read(); !got.Enabled || got.ActiveProfile != "lean" || len(got.Profiles["lean"]) == 0 {
+				t.Fatalf("block did not read back: active=%q enabled=%v", got.ActiveProfile, got.Enabled)
+			}
+			// A block that fails ValidateTaskRouting is skipped and reported.
+			err := surf.set(cfg, "autonomous.task_routing", taskRoutingBadBlock)
+			if err == nil || !strings.Contains(err.Error(), "not stored") {
+				t.Fatalf("invalid block should be reported as not stored, got %v", err)
+			}
+			if got := read(); got.ActiveProfile != "lean" || len(got.Profiles["x"]) != 0 {
+				t.Fatalf("a refused block was stored: active=%q", got.ActiveProfile)
+			}
+		})
+	}
+}
+
+func TestTaskRoutingConfigRequestBodySendsBlockAsObject(t *testing.T) {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(configureRequestBody("autonomous.task_routing", taskRoutingGoodBlock(t))), &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["autonomous.task_routing"].(map[string]any); !ok {
+		t.Fatalf("the block must go out as a JSON object, got %T", m["autonomous.task_routing"])
+	}
+	if err := json.Unmarshal([]byte(configureRequestBody("autonomous.task_routing.active_profile", "123")), &m); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := m["autonomous.task_routing.active_profile"].(string); !ok || v != "123" {
+		t.Fatalf("a profile name must go out as a string, got %#v", m["autonomous.task_routing.active_profile"])
 	}
 }

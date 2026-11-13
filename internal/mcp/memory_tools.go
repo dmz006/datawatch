@@ -1076,6 +1076,11 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 		}
 		return toolErrorf("config_set", "config error: HTTP %d", resp.StatusCode), nil
 	}
+	// A key the daemon skipped (an active profile that does not exist, a
+	// task routing block that fails validation) is reported, not confirmed.
+	if raw, _ := io.ReadAll(resp.Body); config.PutConfigSkippedNote(raw) != "" {
+		return toolErrorf("config_set", "%s %s", key, config.PutConfigSkippedNote(raw)), nil
+	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Set %s = %s", key, value)), nil
 }
 
