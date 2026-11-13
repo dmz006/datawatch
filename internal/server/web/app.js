@@ -46264,7 +46264,7 @@ function buildAutomationDetailHTML(automation, ctx) {
       <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a, 'automation_status_completed') || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
       ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}${a.id ? projectsFocusButtonHtml(a.id, a.name, 'automation') : ''}
-    </div>${desc}<div class="automation-detail-project" style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_project_label'))}: ${planProjectValueHtml(a)}</div>${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
+    </div>${desc}<div class="automation-detail-project" style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_project_label'))}: ${planProjectValueHtml(a)}</div>${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
     <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
