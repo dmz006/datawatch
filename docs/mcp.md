@@ -278,7 +278,8 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Agents | `agent_list/get/spawn/terminate/logs/audit` |
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
 | Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
-| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs`, `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
+| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs` (deprecated; plans replace it), `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
+| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach` (see [Plan record tools](#plan-record-tools)) |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
@@ -1788,9 +1789,11 @@ supersession rule — is walked through in
 ### Plan record tools
 
 A plan record is a registry row (one item of the plans registry) or a finding
-(a problem raised by an Automaton or an operator), kept by the daemon. The six
-tools proxy the `/api/plan-records` REST surface and answer with the title
-first and the id second. They need `autonomous:read` (`plan_record_list`,
+(a problem raised by an Automaton or an operator), kept by the daemon. The first
+six tools proxy the `/api/plan-records` REST surface and the other six work on
+plans (`plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`,
+`plan_attach`, `plan_detach`, `/api/plans`); all answer with the title first and
+the id second. They need `autonomous:read` (`plan_record_list`,
 `plan_record_get`, `plan_record_search`) or `autonomous:write`
 (`plan_record_create`, `plan_record_update`, `plan_record_import`) when called
 by a federated peer. While `autonomous.plan_records.enabled` is `false` every
