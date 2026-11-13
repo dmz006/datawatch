@@ -236,8 +236,8 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    the page itself does not scroll. The tab content takes all the
    space left above the input bar, and the input bar sits flush at that
    bottom — nothing is reserved below the input row (the earlier
-   short-box layout left a blank band under it; there is no longer any
-   clearance space there, for your own sessions and for a peer's). While
+   short-box layout left a blank band under it), for your own sessions
+   and for a peer's alike. While
    the software keyboard is up the page stays above it and shrinks to
    match; the iOS home-indicator clearance is kept; resizing the window
    or re-zooming the browser re-fits the terminal to the new height with
@@ -689,7 +689,7 @@ sub-tab.
 
 ![Session detail — Tmux tab](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-tmux.png)
 
-Note: the Tmux tab is a full-height page. The terminal pane fills the space between the header and the bottom of the window, and the **Commands** and Send-message row sits flush at the bottom — there is no empty band below that row. Resizing the window or zooming the browser re-fits the terminal pane without a reload.
+Note: the Tmux tab is a full-height page. The terminal pane fills the space between the header and the keyboard-aware bottom of the screen, and the saved-commands row (with the tmux shortcut keys) and the “Send command or input…” input row sit flush at that bottom — there is no empty band below them. Resizing the window or zooming the browser re-fits the terminal pane without a reload.
 
 ![Session detail — Status tab (hook board)](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-status.png)
 
