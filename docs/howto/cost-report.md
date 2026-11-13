@@ -441,12 +441,17 @@ default.
 
 ## The chart cards on the Automata page
 
-The Automata page shows the combined usage report as four cards, in the cost
-report area of its **Progress and cost** tab. A row of controls above them
-sets the grouping (Project, Automation or Automaton), the window (7 days to 8
-weeks) and whether the first chart shows tokens or money. Every card has a
-one-line purpose, a state, a reason and a next action, and a **?** that opens
-this page.
+The Automata page shows the combined usage report as four titled cards, in
+the cost report area of its **Progress and cost** tab. A row of controls
+above them sets the grouping (Project, Automation or Automaton), the window
+(7 days to 8 weeks) and **Show** — tokens or money for the cost-over-time chart, and offers
+a **Refresh**. Each card repeats the same three controls in its own row, and
+adds a **Series** choice: the top **5**, **10** or **20** groups, or
+**All** (10 by default). The choices are one shared state written by every
+card's row, so the cards never disagree, and every choice repaints the
+loaded data without a new request. Every card has a title, a one-line
+purpose, a state, a reason and a next action, and a **?** that opens this
+page.
 
 | Card | What it draws | Notes |
 |---|---|---|
@@ -455,10 +460,19 @@ this page.
 | **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group | Retries count each task once and restart when a task is reset |
 | **Combined usage report** | One table joining tokens, money, tool calls, failed attempts and retries per group | Money is listed per unit on its own line |
 
-Each chart draws at most six lines and sixty points per line, and each table
-at most eight rows; the card says when more groups exist. Cost over time and
-tool usage are not recorded per Automation, so under that grouping only the
-failures chart and the combined table are drawn.
+Each chart draws the chosen number of series — the groups with the largest
+totals first — and folds the rest into one **Other** line, so nothing is
+dropped and the card says how many of the groups it is showing; with
+**All** every group is a line. Each series carries at most sixty points. The
+cost and tool-usage legends name every series as a tile you click to show or
+hide it in that card's drawing only; a hidden series keeps its name in the
+legend, struck through, and the **Other** line is a plain entry, not a tile.
+Each table shows the same number of groups and folds the rest into one
+**Other** row, saying how many of its rows it is showing. Every series is
+named by its label — an Automaton's title, never its id, the id only where
+no title is known. Cost over time and tool usage are not recorded per
+Automation, so under that grouping only the failures chart and the combined
+table are drawn.
 
 A card whose data is empty, or whose view the daemon cannot supply, is not
 drawn. Its reason and next action appear as an entry at the top of the **Events**
