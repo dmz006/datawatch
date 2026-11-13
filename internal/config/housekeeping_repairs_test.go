@@ -47,7 +47,7 @@ func TestHousekeepingRepairsDefaultsAndValidation(t *testing.T) {
 
 func TestHousekeepingRepairsSetField(t *testing.T) {
 	var h HousekeepingRepairsConfig
-	for _, f := range []string{"task_chain", "advance_judge", "lane_fill", "leftovers"} {
+	for _, f := range []string{"task_chain", "advance_judge", "lane_fill", "leftovers", "planning"} {
 		var ok bool
 		h, ok = SetHousekeepingRepairsField(h, f, "on")
 		if !ok || h.ModeFor(f) != "on" {

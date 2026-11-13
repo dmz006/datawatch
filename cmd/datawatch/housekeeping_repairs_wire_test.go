@@ -121,8 +121,8 @@ func TestWireSupervisorLoop_InstallsRepairer(t *testing.T) {
 	coord, m, aAPI, cfg := newHousekeepingWiringRig(t)
 	wireSupervisorLoop(coord, m, aAPI, cfg, nil, nil, nil)
 	v := m.HousekeepingRepairsView()
-	if len(v.Groups) != 4 {
-		t.Fatalf("view has %d groups, want 4", len(v.Groups))
+	if len(v.Groups) != 5 {
+		t.Fatalf("view has %d groups, want 5", len(v.Groups))
 	}
 	for _, g := range v.Groups {
 		if g.Mode != "report" {
