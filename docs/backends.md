@@ -89,7 +89,8 @@ settings; only `session.schedule_settle_ms` is tunable.
 |---|---|---|
 | `claude-code` | Yes | Runs in a terminal session; input is typed into it. |
 | `opencode` | Yes | Runs its terminal UI in a terminal session. |
-| `pi` / `pi-prompt` | Yes | Runs in a terminal session when interactive. |
+| `pi` | Yes | Runs its interactive UI in a terminal session. |
+| `pi-prompt` | Only for a follow-up message | A one-shot `pi --print` launch takes its prompt at start; a later message sent into the session is typed into the terminal. |
 | `opencode-acp` | No | Input goes to opencode over its HTTP API, so there is no terminal paste to submit. |
 | `openwebui` | No | Input goes through the daemon's own conversation manager over HTTP. |
 | `ollama` (chat mode) | No | Input goes through the daemon's own conversation manager, not a terminal. |
