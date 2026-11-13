@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.14 — Accept the second soupsieve finding on the aider image
+
+### Security
+
+- **CVE-2026-126191 on the aider image is accepted for 30 days.** The release scan lists a second HIGH finding on soupsieve 2.10 (exponential ReDoS in selector compilation, fixed in 3.0.2). Every soupsieve release from 3.0.2 requires Python >=3.11.5 and the aider image runs Python 3.11.2, so it cannot be upgraded. Aider calls no selector, a finding reused from the CVE-2026-126190 trace and not re-traced, so the entry is untraced. It clears when the aider venv moves to Python >=3.11.5 (Automaton 66dd0001).
+
 ## v9.172.13 — Burn script counts helper agents
 
 ### Changed

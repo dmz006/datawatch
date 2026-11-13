@@ -1372,3 +1372,22 @@ CVE-2026-114466
 # only users of soupsieve in the venv outside its own package are bs4 itself
 # (bs4/css.py, element.py, builder/_lxml.py) and bs4's tests.
 CVE-2026-126190
+
+# soupsieve -- CVE-2026-126191
+# severity: high; images: agent-aider
+# CVE-2026-126191 is an exponential-time denial of service (ReDoS) in Soup
+# Sieve's selector compilation, so it is only triggered when an attacker
+# controls the selector string passed to soupsieve (through bs4's select or
+# select_one). The earlier trace for CVE-2026-126190 found no select, select_one
+# or soupsieve call in aider; that finding is reused here and was not re-traced,
+# so this entry is untraced and the 30-day cap applies. Not patched because the
+# fixed soupsieve (3.0.2) requires Python >=3.11.5, as does every release from
+# 3.0.2 on, and the image runs Debian 12's Python 3.11.2, so pip refuses it.
+# Cleared by moving the aider venv to Python >=3.11.5 (Automaton 66dd0001),
+# after which soupsieve can be upgraded and this entry removed.
+# The Release scan of agent-aider lists CVE-2026-126191 (HIGH, exponential ReDoS
+# in selector compilation) on soupsieve 2.10, fixed in 3.0.2, which needs Python
+# >=3.11.5 while the image has 3.11.2; accepted for 30 days, untraced (impact
+# reused from CVE-2026-126190); remove when the aider venv moves to Python
+# >=3.11.5 (Automaton 66dd0001) and soupsieve is upgraded.
+CVE-2026-126191
