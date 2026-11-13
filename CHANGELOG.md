@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **Pull collector tests are deterministic.** The observer pull collector's unit tests read each target's recorded state (`Last`) immediately after the fetch signal, but the collector records the result only after that signal — a scheduling delay let a test see the previous value and the suite flapped. The tests now wait for the expected state with a deadline-bounded poll (`waitForLast`, 5 s cap) instead of reading it right after the signal, so the nine collector tests are stable. Test-only change: the collector's behavior, `observer.pull` settings, staleness reasons and every read surface are unchanged.
+- **Pull collector tests are deterministic.** The observer pull collector's unit tests read each target's recorded state (`Last`) immediately after the fetch signal, but the collector records the result only after that signal — a scheduling delay let a test see the previous value and the suite flapped. The tests no longer read the state immediately: a `waitForLast` helper polls every 5 ms inside a loop that is itself bounded by a 5-second deadline, and on timeout takes one final read of the recorded state so a failing test reports the latest value. The collector tests are now stable. Test-only change: the collector's behavior, `observer.pull` settings, staleness reasons and every read surface are unchanged.
 
 ## v9.165.0 — Task-type routing table for Automaton tasks
 
