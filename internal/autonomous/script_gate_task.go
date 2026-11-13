@@ -260,3 +260,15 @@ func (m *Manager) recordGateRestartRetry(prd *PRD, t *Task) {
 		log.Printf("[autonomous] %s save gate restart retry decision: %v", prd.ID, err)
 	}
 }
+
+// storyOfTask returns the story that holds t, or nil.
+func storyOfTask(prd *PRD, t *Task) *Story {
+	for i := range prd.Story {
+		for j := range prd.Story[i].Tasks {
+			if prd.Story[i].Tasks[j].ID == t.ID {
+				return &prd.Story[i]
+			}
+		}
+	}
+	return nil
+}
