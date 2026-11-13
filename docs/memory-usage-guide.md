@@ -313,14 +313,18 @@ curl -X POST http://localhost:8080/api/memory/import -d @backup.json
 
 ## Encryption
 
-Memory content is automatically encrypted when using `--secure` mode:
+Memory `content` and `summary` fields are encrypted when using `--secure` mode (there is no separate memory encryption setting):
 
 ```bash
 export DATAWATCH_SECURE_PASSWORD="your-password"
 datawatch --secure start
 ```
 
-Works identically on both SQLite and PostgreSQL. Content and summary fields
-encrypted with XChaCha20-Poly1305. Embeddings remain searchable.
+Works on both SQLite and PostgreSQL. Only the content and summary fields are
+encrypted with XChaCha20-Poly1305. Embeddings, the content hash, metadata,
+the knowledge graph and the memory operation log stay plain, and embeddings
+remain searchable. A SQLite export returns the encrypted text, which another
+install cannot read; a SQLite import stores plain text. Keyword fallback search
+cannot match encrypted text. See [encryption.md](encryption.md#memory-behaviour-to-know-about).
 
 Check status: `curl http://localhost:8080/api/memory/stats` → `"encrypted": true`
