@@ -264,6 +264,13 @@ Nothing here turns on by itself. These are yours to settle:
 - **Editing a plan's status.** A plan's title and goal can be changed (see
   *Renaming a plan and editing its goal*), but no surface writes a plan's
   status after it is created. Decide where a status edit belongs.
+- **Older titles pile up.** Every rename keeps the previous title as an older
+  title so old references still resolve, and no surface removes one. Decide
+  whether an older title should be removable, and whether another plan in the
+  project may take a title an earlier plan used to have.
+- **A rename does not rewrite text.** Notes, Automaton specs and chat history
+  that quote the old title stay as written; they still resolve only through the
+  older title. Decide whether a rename should offer to update them.
 - **Handing a status back to the roll-up.** Nothing clears `set_by_hand`, so a
   plan marked by hand would stay out of the roll-up for good. Decide how an
   operator hands it back, for example a clear option next to the status edit.
