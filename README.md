@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.172.10 (2026-11-13).** A message pasted into a Claude Code session is now submitted: the daemon waits for the paste to show, presses Enter, and re-sends Enter at most twice while the text is still unsent. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.172.11 (2026-11-13).** The email empty-recipient test now sends to a local fake mail server instead of waiting on a network timeout, so it is instant and deterministic. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

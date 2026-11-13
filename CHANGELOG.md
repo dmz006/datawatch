@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.11 — Email empty-recipient test is instant and deterministic
+
+### Fixed
+
+- **The email empty-recipient test is instant and deterministic.** The test that a send with no recipient falls back to the configured `email.to` address used to connect to a non-routable host and wait for a network timeout, and it could not tell a refused address from a slow network. It now sends to a local fake mail server, so it finishes at once, and it checks that the message is addressed to the configured fallback. Test-only change: the email backend's behavior is unchanged. The comm channels how-to, the messaging backends reference, the operations guide and the glossary state the behavior: a send with no recipient goes to the configured address, and a recipient or sender containing a newline is refused before any connection is opened.
+
 ## v9.172.10 — A pasted message with attachments is now submitted
 
 ### Fixed
