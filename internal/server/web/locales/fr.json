@@ -5644,5 +5644,14 @@
   "automaton_project_saved": "Lien de projet enregistré",
   "automaton_project_error": "Impossible de définir le projet",
   "projects_page_without_project": "Automates sans projet",
-  "projects_page_without_project_hint": "Définissez un lien de projet depuis le détail de l'automate pour le placer ici."
+  "projects_page_without_project_hint": "Définissez un lien de projet depuis le détail de l'automate pour le placer ici.",
+  "projects_card_failed": "Impossible de charger cette carte :",
+  "projects_card_refreshing": "Actualisation…",
+  "projects_card_plan_loading": "Chargement du plan…",
+  "projects_card_plan_failed": "Impossible de charger le plan :",
+  "automata_list_refreshing": "Actualisation de la liste des automates…",
+  "automaton_tasks_heading": "Tâches",
+  "automaton_tasks_loading": "Chargement des tâches de l'automate…",
+  "automaton_tasks_failed": "Impossible de charger les tâches de l'automate :",
+  "automaton_tasks_load_more": "Charger plus de tâches (%1$s sur %2$s)"
 }

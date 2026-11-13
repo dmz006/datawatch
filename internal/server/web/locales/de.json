@@ -5644,5 +5644,14 @@
   "automaton_project_saved": "Projektverknüpfung gespeichert",
   "automaton_project_error": "Projekt konnte nicht gesetzt werden",
   "projects_page_without_project": "Automaten ohne Projekt",
-  "projects_page_without_project_hint": "Eine Projektverknüpfung lässt sich in den Details des Automaten setzen, um ihn hier einzuordnen."
+  "projects_page_without_project_hint": "Eine Projektverknüpfung lässt sich in den Details des Automaten setzen, um ihn hier einzuordnen.",
+  "projects_card_failed": "Diese Karte konnte nicht geladen werden:",
+  "projects_card_refreshing": "Wird aktualisiert…",
+  "projects_card_plan_loading": "Der Plan wird geladen…",
+  "projects_card_plan_failed": "Der Plan konnte nicht geladen werden:",
+  "automata_list_refreshing": "Die Automaten-Liste wird aktualisiert…",
+  "automaton_tasks_heading": "Aufgaben",
+  "automaton_tasks_loading": "Die Aufgaben des Automaten werden geladen…",
+  "automaton_tasks_failed": "Die Aufgaben des Automaten konnten nicht geladen werden:",
+  "automaton_tasks_load_more": "Weitere Aufgaben laden (%1$s von %2$s)"
 }

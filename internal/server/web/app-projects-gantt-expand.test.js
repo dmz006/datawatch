@@ -23,7 +23,7 @@ function load(handler, { store } = {}) {
   sandbox.fetch = (url) => {
     const u = String(url);
     const ok = body => Promise.resolve({ ok: true, status: 200, statusText: '', json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body)) });
-    if (u.includes('/timeline')) { calls.push(u); return Promise.resolve(handler(u)).then(ok); }
+    if (u.includes('/timeline') || /\/api\/autonomous\/prds\/[^/]+\/tasks/.test(u)) { calls.push(u); return Promise.resolve(handler(u)).then(ok); }
     if (u.includes('/history')) return ok({ items: [] });
     if (u.includes('/rollup')) return ok({});
     if (u.includes('/api/projects')) return ok([{ name: 'acme' }, { name: 'beta' }]);
@@ -39,13 +39,14 @@ function load(handler, { store } = {}) {
 
 const arcRow = (id, f, l, o = {}) => Object.assign({ kind: 'arc', id, title: 'Arc ' + id, state: 'active', first: f == null ? null : ago(f), last: l == null ? null : ago(l), running: false, has_children: f != null, children_count: 2 }, o);
 const autoRow = (id, f, l, o = {}) => Object.assign({ kind: 'automaton', id, title: 'Auto ' + id, state: 'completed', first: ago(f), last: l == null ? null : ago(l), running: l == null, has_children: true, children_count: 2 }, o);
+const taskApi = (id, f, l) => ({ id, title: 'Task ' + id, status: 'completed', story: 's1', created_at: ago(f), updated_at: ago(l), started_at: ago(f), completed_at: ago(l) });
 const taskRow = (id, f, l) => ({ kind: 'task', id, title: 'Task ' + id, state: 'completed', first: ago(f), last: ago(l), running: false, has_children: false, children_count: 0 });
 
 function standard(u) {
   if (u.includes('level=arcs')) return { rows: [arcRow('a1', 30, 2), arcRow('a2', null, null), { kind: 'unassigned', id: 'none', title: 'Unassigned', state: 'planned', first: ago(5), last: ago(1), running: false, has_children: true, children_count: 1 }] };
   if (u.includes('level=automata&parent=a1')) return { rows: [autoRow('m1', 30, 10), autoRow('m2', 9, null)] };
   if (u.includes('level=automata&parent=none')) return { rows: [autoRow('u1', 5, 1)] };
-  if (u.includes('level=tasks&automaton=m1')) return { rows: [taskRow('t1', 30, 20), taskRow('t2', 20, 10)] };
+  if (u.includes('/api/autonomous/prds/m1/tasks')) return { prd_id: 'm1', total: 2, tasks: [taskApi('t1', 30, 20), taskApi('t2', 20, 10)] };
   return { rows: [] };
 }
 
@@ -128,10 +129,10 @@ test('expand fetches children once; collapse hides without refetching; state is 
   assert.equal(urlsWith(calls, 'level=automata&parent=a1').length, 1);
   assert.match(sb._projectGanttHTML(), /Auto m1/);
   assert.match(sb._projectGanttHTML(), /aria-label="Collapse Arc a1"/);
-  assert.equal(urlsWith(calls, 'level=tasks').length, 0);
+  assert.equal(urlsWith(calls, '/tasks').length, 0);
   await sb.projectsGanttToggle('auto:m1');
   await flushAsync();
-  assert.equal(urlsWith(calls, 'level=tasks&automaton=m1').length, 1);
+  assert.equal(urlsWith(calls, '/api/autonomous/prds/m1/tasks').length, 1);
   assert.match(sb._projectGanttHTML(), /Task t1/);
   await sb.projectsGanttToggle('arc:a1'); // collapse
   assert.doesNotMatch(sb._projectGanttHTML(), /Auto m1/);
@@ -149,7 +150,7 @@ test('expand fetches children once; collapse hides without refetching; state is 
   const html = again.sb._projectGanttHTML();
   assert.match(html, /Auto m1/);
   assert.match(html, /Task t1/);
-  assert.equal(urlsWith(again.calls, 'level=tasks&automaton=m1').length, 1);
+  assert.equal(urlsWith(again.calls, '/api/autonomous/prds/m1/tasks').length, 1);
 });
 
 test('the no-arc group expands to its Automata', async () => {

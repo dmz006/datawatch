@@ -5644,5 +5644,14 @@
   "automaton_project_saved": "Vínculo de proyecto guardado",
   "automaton_project_error": "No se pudo establecer el proyecto",
   "projects_page_without_project": "Autómatas sin proyecto",
-  "projects_page_without_project_hint": "Define un vínculo de proyecto desde el detalle del autómata para ubicarlo aquí."
+  "projects_page_without_project_hint": "Define un vínculo de proyecto desde el detalle del autómata para ubicarlo aquí.",
+  "projects_card_failed": "No se pudo cargar esta tarjeta:",
+  "projects_card_refreshing": "Actualizando…",
+  "projects_card_plan_loading": "Cargando el plan…",
+  "projects_card_plan_failed": "No se pudo cargar el plan:",
+  "automata_list_refreshing": "Actualizando la lista de autómatas…",
+  "automaton_tasks_heading": "Tareas",
+  "automaton_tasks_loading": "Cargando las tareas del autómata…",
+  "automaton_tasks_failed": "No se pudieron cargar las tareas del autómata:",
+  "automaton_tasks_load_more": "Cargar más tareas (%1$s de %2$s)"
 }
