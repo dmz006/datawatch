@@ -3069,7 +3069,7 @@ A **task type** is the class a task is sorted into so the task-routing table can
 
 ### Task routing profile
 
-A **task routing profile** is a named table that maps each task type to a row: worker backend and model, optional verification backend and model, effort, an optional second choice and `allow_premium_model` (needed to name an Opus or Fable model). One profile is active (`autonomous.task_routing.active_profile`); switching it changes only tasks created afterwards. The routing table is off by default, and an LLM set on the task, its story or its Automaton always wins over a row. The shipped `default` profile is the operator's starting choice and other users may change it.
+A **task routing profile** is a named table that maps each task type to a row: worker backend and model, optional verification backend and model, effort, an optional second choice and `allow_premium_model` (needed to name an Opus or Fable model). One profile is active (`autonomous.task_routing.active_profile`); switching it changes only tasks created afterwards. Profiles can be saved, switched, deleted, exported, imported and tried with a no-write dry run from the CLI, REST, MCP and the web Settings card (the chat channel can list, switch and dry-run). Each task shows the row that decided its LLM in the Automaton detail view. The routing table is off by default, and an LLM set on the task, its story or its Automaton always wins over a row. The shipped `default` profile is the operator's starting choice and other users may change it.
 
 ### Planning ladder
 

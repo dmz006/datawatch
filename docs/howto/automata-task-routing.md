@@ -94,20 +94,36 @@ written to the Automaton's decision log as a `task_routing` entry by the
 | Surface | How |
 |---------|-----|
 | YAML | Edit the `autonomous.task_routing` block in `datawatch.yaml` (see `docs/config-reference.yaml`), then reload. |
-| REST API | `GET /api/config` shows `autonomous.task_routing`. `PUT /api/config` accepts `autonomous.task_routing.enabled`, `autonomous.task_routing.active_profile` and the whole `autonomous.task_routing` block. |
-| MCP | `get_config` (section `autonomous`) reads the block; `config_set` writes the keys above. |
-| CLI, comm channel, web UI | No dedicated task-routing command or card yet. Use the config commands. |
+| REST API | `GET` and `PUT /api/autonomous/task-routing` read and replace the table (the read includes its validation result). `GET` and `POST /api/autonomous/task-routing/profiles` list and save profiles; `PUT .../active-profile` switches; `DELETE .../profiles/{name}` deletes; `GET .../profiles/{name}/export` and `POST .../profiles/import` move a profile as JSON. `GET /api/autonomous/prds/{id}/task-routing` shows which row decided each task and `POST .../prds/{id}/task-routing/dry-run` is the no-write dry run. `PUT /api/config` with `autonomous.task_routing.*` still works. |
+| MCP | `task_routing_get`, `task_routing_set`, `task_routing_profile_list`, `task_routing_profile_save`, `task_routing_profile_activate`, `task_routing_profile_delete`, `task_routing_profile_export`, `task_routing_profile_import`, `task_routing_automaton` and `task_routing_dry_run`. `get_config` (section `autonomous`) and `config_set` also reach the block. |
+| CLI | `datawatch autonomous task-routing` with `show`, `set` (a whole table from `--file`, or one row with `--type` and the `--worker-backend`, `--worker-model`, `--verify-backend`, `--verify-model`, `--effort` and `--second-choice` flags), `profile list\|save\|activate\|delete\|export\|import`, `automaton <id>` and `dry-run <id> [--profile NAME]`. Add `--json` for the raw response. |
+| Comm channel | `autonomous task-routing show`, `profile list`, `profile use <name>`, `automaton <id>` and `dry-run <id> [profile]`. Only `profile use` writes. Saving, deleting, importing and exporting profiles and editing rows are not chat verbs; use the CLI, REST, MCP or the web app. |
+| Web app | Settings, Automata tab, **Task routing** card: turn routing on, pick the active profile, edit every row, save the table, save, delete, export and import a profile, and preview what a draft Automaton would get. In an Automaton's detail view each task shows its task type and the row that decided its LLM (or the reason none did): a chip in the task header on wide screens and a line under the title on phones. |
 
-Profile save, switch, delete, export and import, and the per-Automaton dry run
-(what a profile would assign to each task, with nothing changed) exist in the
-daemon but have no endpoint, command or tool yet. See the review notes in
-[operations.md](../operations.md#task-type-routing-table).
+Reads need the autonomous read permission and writes the autonomous write
+permission, like the planning routing routes.
+
+### Switching, previewing and moving profiles
+
+- **Switch** with `profile activate` (CLI, MCP), `profile use` (chat), the
+  active-profile route (REST) or the Profile picker (web). Only tasks created
+  afterwards use it.
+- **Dry run** takes an Automaton and, optionally, a profile name. It shows what
+  that profile would assign to each task and writes nothing. Use it on a draft
+  before approving.
+- **Export and import** use the same JSON file on every surface. An import is
+  validated and refused with every problem listed if it is not valid. Pass a
+  name to store it under a different name and set overwrite to replace a
+  profile that already has the name. The active profile cannot be deleted.
 
 ## Check it worked
 
-1. `get_config` with section `autonomous` shows `task_routing` with
+1. `datawatch autonomous task-routing show` (or `get_config` with section
+   `autonomous`) shows `task_routing` with
    `enabled: true` and your active profile.
 2. Decompose a test Automaton, then open a task. Its routing result names the
    type, the profile and the backend and model chosen.
-3. Set an LLM on one task by hand, decompose again, and confirm that task keeps
+3. Run `datawatch autonomous task-routing dry-run <id>` on a draft and compare
+   it with the routing result shown on the tasks after decompose.
+4. Set an LLM on one task by hand, decompose again, and confirm that task keeps
    your choice.
