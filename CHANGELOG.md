@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Docs
+
+- The Projects focus-view docs (howto, operations and the Focus view glossary entry) now state that the "First task … – last task …" header prints the two ends of the displayed range — the first and last task each extended by the 2 percent margin — rather than the exact first and last task dates; each can read up to a day off. The Gantt focus test that asserted against a hand-picked instant was corrected to expect the page's own range ends. No behavior, endpoint or setting changed.
+
 ## v9.167.0 — Match Automata to a project by explicit link first, directory as fallback
 
 The Projects page now decides which project an Automaton belongs to by an explicit link first, and by its directory only as the last fallback.
