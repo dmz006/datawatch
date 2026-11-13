@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
@@ -219,6 +220,9 @@ func TestHeldQuestionsREST(t *testing.T) {
 			if got["created_at"] == nil {
 				t.Errorf("open entry %s: created_at missing", fx.openQ1)
 			}
+			if tstr, _ := got["text"].(string); tstr == "" || !strings.Contains(tstr, "Why it is held: two attempts used.") {
+				t.Errorf("open entry %s: want text carrying the held question's own text, got %v", fx.openQ1, got["text"])
+			}
 		}
 		if got := heldEntryFor(body.Open, "question_id", fx.openQ2); got == nil {
 			t.Fatalf("open list missing held question %s: %s", fx.openQ2, raw)
@@ -376,6 +380,73 @@ func TestHeldQuestionsRESTFilters(t *testing.T) {
 			t.Fatalf("want 400 for state=bogus, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
+}
+
+// TestHeldQuestionsRESTEntryTextCapped pins the report entry's text cap: a
+// held question whose table text is long is reported capped and elided, while
+// the question record itself keeps the full text.
+func TestHeldQuestionsRESTEntryTextCapped(t *testing.T) {
+	fx := newHeldQuestionsFixture(t, "on")
+	long := strings.Repeat("the spec step is ambiguous", 40) // > 500 runes in the reason, no trailing space to normalize
+	q := autonomous.BuildHeldQuestion(&autonomous.HeldItem{
+		PRDID: "prd-1", PRDTitle: "Autom A", TaskID: "t-long",
+		State: autonomous.HeldBlocked, Reason: long,
+		FailureCategory: autonomous.FailureCategoryContent,
+	})
+	q.SourceLineSHA256 = heldLineHash("t-long", string(autonomous.HeldBlocked))
+	raised, err := fx.store.Raise(q)
+	if err != nil {
+		t.Fatalf("Raise long held: %v", err)
+	}
+
+	code, body, raw := heldQuestionsGET(t, fx.s, "")
+	if code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", code, raw)
+	}
+	got := heldEntryFor(body.Open, "question_id", raised.ID)
+	if got == nil {
+		t.Fatalf("open list missing long held question %s: %s", raised.ID, raw)
+	}
+	text, _ := got["text"].(string)
+	if n := utf8.RuneCountInString(text); n != heldQuestionTextMaxRunes {
+		t.Fatalf("capped text wants %d runes, got %d", heldQuestionTextMaxRunes, n)
+	}
+	if !strings.HasSuffix(text, "…") {
+		t.Fatalf("capped text must be elided with an ellipsis, got %q", text[len(text)-16:])
+	}
+	if !strings.HasPrefix(text, "Automaton \"Autom A\" (prd-1)") {
+		t.Fatalf("capped text must keep the question's opening, got %q", text[:64])
+	}
+	if reason, _ := got["reason"].(string); reason != long {
+		t.Errorf("reason keeps the full reason, got %q…", reason[:32])
+	}
+}
+
+// TestHeldQuestionText pins the entry helper: trim, pass-through at the cap,
+// elision past it, and empty in, empty out (the field is then omitted).
+func TestHeldQuestionText(t *testing.T) {
+	if got := heldQuestionText(""); got != "" {
+		t.Fatalf("empty text must stay empty (the entry then omits the field), got %q", got)
+	}
+	if got := heldQuestionText("   "); got != "" {
+		t.Fatalf("whitespace text must read empty, got %q", got)
+	}
+	short := "Should the daemon hold t_9?"
+	if got := heldQuestionText("  " + short + "  "); got != short {
+		t.Fatalf("short text must be trimmed and kept, got %q", got)
+	}
+	exact := strings.Repeat("a", heldQuestionTextMaxRunes)
+	if got := heldQuestionText(exact); got != exact {
+		t.Fatalf("text at the cap must be kept whole, got %d runes", utf8.RuneCountInString(got))
+	}
+	over := strings.Repeat("b", heldQuestionTextMaxRunes+1)
+	got := heldQuestionText(over)
+	if n := utf8.RuneCountInString(got); n != heldQuestionTextMaxRunes {
+		t.Fatalf("capped text wants %d runes, got %d", heldQuestionTextMaxRunes, n)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("capped text must be elided with an ellipsis, got %q", got[len(got)-16:])
+	}
 }
 
 func TestHeldQuestionsRESTGateDisabled(t *testing.T) {

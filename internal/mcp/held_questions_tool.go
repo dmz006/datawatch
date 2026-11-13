@@ -16,7 +16,7 @@ import (
 
 func (s *Server) toolHeldQuestions() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_held_questions",
-		mcpsdk.WithDescription("Read the held-question report: the mode in effect (off, shadow or on) and the held states it covers, plus the held questions raised now (in on mode, each with its held state, the owning Automaton and title, the reason it is held, the recommended option and the forced default — answer it with question_answer) and the shadow entries the daemon logged instead of raising (in shadow mode, each with the owning Automaton, the held state, the recommended option and the time). Optional: prd_id (one Automaton only), state (one of the five held state ids). Read-only; the same object as GET /api/autonomous/held-questions."),
+		mcpsdk.WithDescription("Read the held-question report: the mode in effect (off, shadow or on) and the held states it covers, plus the held questions raised now (in on mode, each with its held state, the owning Automaton and title, the reason it is held, the question's own text, the recommended option and the forced default — answer it with question_answer) and the shadow entries the daemon logged instead of raising (in shadow mode, each with the owning Automaton, the held state, the recommended option and the time). Optional: prd_id (one Automaton only), state (one of the five held state ids). Read-only; the same object as GET /api/autonomous/held-questions."),
 		mcpsdk.WithString("prd_id",
 			mcpsdk.Description("Optional — only that Automaton's held questions and shadow entries.")),
 		mcpsdk.WithString("state",
