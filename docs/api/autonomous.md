@@ -41,7 +41,7 @@ POST   /api/autonomous/prds/{id}/approve   review/approve gate                  
 POST   /api/autonomous/prds/{id}/resume   resume a paused PRD, or one the boot-resume gate parked; body: {actor, note} (409-style 400 if neither)
 POST   /api/autonomous/prds/{id}/reject    operator rejects the plan; body: {actor, reason}                          [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/request_revision  ask for a re-plan; body: {actor, note}                            [v5.2.0  / BL191 Q1]
-POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/revisions_asked; body: {task_id, …}    [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/edit_task per-task edit on needs_review/revisions_asked (or a held task of a blocked Automaton); body: {task_id, [new_spec], [read_only], [report_path], [verification_script], [verification_script_reason], actor} — at least one field besides task_id   [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/instantiate  template instantiation; body: {vars{}, actor}                          [v5.2.0  / BL191 Q2]
 POST   /api/autonomous/prds/{id}/set_llm   PRD-level worker LLM override; body: {backend, effort, model, decomposition_profile, [guardrail_backend], [guardrail_model], actor}   [v5.4.0  / BL203]
 POST   /api/autonomous/prds/{id}/set_task_llm  per-task LLM override; body: {task_id, backend, effort, model, [guardrail_backend], [guardrail_model], actor}             [v5.4.0  / BL203]
@@ -561,10 +561,33 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verificati
 These are independent of `guardrail_backend` / `guardrail_model`
 above, which pick the guardrail judge.
 
-`verification_script`, `files_generated` and `files_touched` are
-system-populated and read-only — they appear in
-`GET /api/autonomous/prds/{id}` (and the MCP / CLI / comm `get`
-surfaces, which pass the same JSON through) but have no setter.
+`files_generated` and `files_touched` are system-populated and
+read-only — they appear in `GET /api/autonomous/prds/{id}` (and the MCP /
+CLI / comm `get` surfaces, which pass the same JSON through) but have no
+setter. `verification_script` is written by the planner, and the operator can
+now correct it in place with `edit_task` (see below); the field is still
+returned by `get` as before.
+
+**Editing a task's verification script (`edit_task`).** The `edit_task` body
+takes two more optional keys next to `new_spec`, `read_only` and
+`report_path`; an omitted or empty key leaves that field unchanged:
+
+| Key | Meaning |
+|-----|---------|
+| `verification_script` | The task's verification script: **one repo-relative script file** (for example `scripts/verify.sh`). A command string, an absolute path, a path with a `..` segment, the project root, or a path that is not already clean (`./scripts/verify.sh`, `a//b`) is refused with `400` and nothing is stored. The path is also appended to the task's `files_generated` when it is not yet listed, so the plan stays consistent. |
+| `verification_script_reason` | Why the task carries no script (the exemption the plan check accepts in place of one). Stored as given; it can be set with or without `verification_script`, and setting one does not clear the other. Text matching the injection guard is refused. |
+
+The same PRD and task status gates as every other `edit_task` field apply
+(`needs_review`, `revisions_asked`, `cancelled`, or a failed, blocked or held
+task of a `blocked` Automaton; a `completed` task is immutable). The edit is
+recorded on the decision log as `edit_task` with the script path and reason in
+its note, and in the audit log. The same two inputs exist as MCP
+`autonomous_prd_edit_task` `verification_script` / `verification_script_reason`,
+CLI `datawatch autonomous prd-edit-task --verification-script <path>
+--verification-script-reason <text>`, comm `autonomous edit-task <prd> <task>
+verification_script=<path> verification_script_reason="<text>"`, and the
+**Verification script** and **Script exemption reason** fields of the task
+editor in the web app.
 
 ### Verifier policy (`set_task_verifier_policy` / `set_verifier_policy`)
 

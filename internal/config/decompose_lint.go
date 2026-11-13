@@ -151,8 +151,28 @@ type DecomposeLintMatch struct {
 	// executable, shebang-less or outside the project. A script the
 	// task lists in its own files is not flagged. Absent (false) = do
 	// not check.
-	VerificationScriptUnexecutable bool   `yaml:"verification_script_unexecutable,omitempty" json:"verification_script_unexecutable,omitempty"`
-	FilesRegex                     string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
+	VerificationScriptUnexecutable bool `yaml:"verification_script_unexecutable,omitempty" json:"verification_script_unexecutable,omitempty"`
+	// VerificationScriptReasonEmpty asserts the task states no reason for
+	// lacking a verification script (verification_script_reason is
+	// empty). Absent (false) = do not check.
+	VerificationScriptReasonEmpty bool `yaml:"verification_script_reason_empty,omitempty" json:"verification_script_reason_empty,omitempty"`
+	// VerificationScriptTaskFilesOnly asserts the task's verification
+	// script (read from the project directory, plus any repo-relative
+	// helper it sources, one level deep) compares only against the
+	// task's own files — a literal allowed-file list equal to them, or
+	// a file-listing diff of HEAD, the working tree or main — and never
+	// against the merge base. A script that does not exist yet is
+	// skipped. Absent (false) = do not check.
+	VerificationScriptTaskFilesOnly bool `yaml:"verification_script_task_files_only,omitempty" json:"verification_script_task_files_only,omitempty"`
+	// VerificationScriptDocsWithoutSync asserts the task's verification
+	// script (and followed helpers) checks docs, the embedded docs copy
+	// or how-to coverage but does not run `make sync-docs`. A script
+	// that does not exist yet is skipped. Absent (false) = do not check.
+	VerificationScriptDocsWithoutSync bool `yaml:"verification_script_docs_without_sync,omitempty" json:"verification_script_docs_without_sync,omitempty"`
+	// Kind asserts the task's kind (for example "final_gate" or
+	// "smoke"), compared case-insensitively. Empty = do not check.
+	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`
+	FilesRegex string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
 	// AnyOf: at least one of these nested conditions must match.
 	AnyOf []DecomposeLintMatch `yaml:"any_of,omitempty" json:"any_of,omitempty"`
 	// AllOf: every one of these nested conditions must match.

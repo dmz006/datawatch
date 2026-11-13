@@ -4451,7 +4451,11 @@ autonomous:
     # read_only tri-state (absent = don't check),
     # verification_script_empty, report_path_empty (no usable report path
     # under .datawatch/reports/), verification_script_unexecutable (the
-    # script is a command string or not a runnable file), and any_of (at least one member) / all_of
+    # script is a command string or not a runnable file),
+    # verification_script_reason_empty, verification_script_task_files_only
+    # (script compares only against the task's own files, never the merge
+    # base), verification_script_docs_without_sync (script checks docs
+    # without make sync-docs), kind (task kind, e.g. final_gate), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
     # built-in: its severity/message/match stay unused and unvalidated.

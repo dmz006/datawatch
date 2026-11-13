@@ -5836,11 +5836,19 @@ paths:
         "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/edit_task:
     post:
-      summary: Edit a task's spec, read-only mark or report path
+      summary: Edit a task's spec, read-only mark, report path, verification script or script exemption reason
       description: |
-        Rewrites a task's spec and/or sets its `read_only` mark and/or its
-        `report_path`. At least one of `new_spec`, `read_only` and
-        `report_path` is required; an omitted field is left unchanged.
+        Rewrites a task's spec and/or sets its `read_only` mark, its
+        `report_path`, its `verification_script` or its
+        `verification_script_reason`. At least one of `new_spec`, `read_only`,
+        `report_path`, `verification_script` and `verification_script_reason` is
+        required; an omitted field is left unchanged. A `verification_script` is
+        one clean repo-relative script file that already exists in the project
+        (never a command string, an absolute path, a `..` path or the project
+        root); it is also added to the task's generated files.
+        A `verification_script_reason` is why the task carries no script (the
+        exemption the plan check accepts in place of one, including on a final
+        gate); setting one does not clear the other.
         A read-only task is one that changes no files, so it may skip the tree lock
         when `autonomous.parallel.read_only_tasks` is on. A `report_path` is the one
         clean repo-relative file the task may write (under `.datawatch/reports/`);
@@ -5867,10 +5875,12 @@ paths:
                 new_spec: {type: string, description: "New spec text; omit to keep the current spec. Refused if it carries the capped-view truncation marker (a copy from a capped view)"}
                 read_only: {type: boolean, description: "Mark (true) or clear (false) the read-only flag; omit to leave it unchanged"}
                 report_path: {type: string, description: "The one clean repo-relative report file the read-only task may write (under .datawatch/reports/); requires the task to be read-only; omit to leave it unchanged"}
+                verification_script: {type: string, description: "The task's verification script: one clean repo-relative script file that exists in the project, not a command string; also added to the task's generated files; omit to leave it unchanged"}
+                verification_script_reason: {type: string, description: "Why the task has no verification script (the exemption the plan check accepts in place of one); omit to leave it unchanged"}
                 actor: {type: string, description: "Defaults to operator"}
       responses:
         "200": {description: Updated Automaton}
-        "400": {description: "Missing task_id, none of new_spec / read_only / report_path given, an invalid or non-read-only report_path, a new_spec carrying the capped-view truncation marker (a capped copy), a locked Automaton or task, or unknown task"}
+        "400": {description: "Missing task_id, none of the editable fields given, an invalid verification_script (a command string, an absolute or parent path, or a missing file), an invalid or non-read-only report_path, a new_spec carrying the capped-view truncation marker (a capped copy), a locked Automaton or task, or unknown task"}
         "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/add_task:
     post:
@@ -11956,6 +11966,10 @@ components:
             verification_script_empty: {type: boolean, description: "Assert the task has no verification script"}
             report_path_empty: {type: boolean, description: "Assert the task has no usable report path (empty, or not a clean path under .datawatch/reports/)"}
             verification_script_unexecutable: {type: boolean, description: "Assert the task's verification script is a command string or not a runnable script file"}
+            verification_script_reason_empty: {type: boolean, description: "Assert the task states no reason for lacking a verification script"}
+            verification_script_task_files_only: {type: boolean, description: "Assert the verification script compares only against the task's own files and never the merge base"}
+            verification_script_docs_without_sync: {type: boolean, description: "Assert the verification script checks docs without running make sync-docs"}
+            kind: {type: string, description: "Assert the task kind (for example final_gate), case-insensitive"}
             files_regex: {type: string, description: "Regex a task's declared files must match (RE2)"}
             any_of: {type: array, items: {type: object}, description: "Matches when at least one sub-condition matches"}
             all_of: {type: array, items: {type: object}, description: "Matches when every sub-condition matches"}

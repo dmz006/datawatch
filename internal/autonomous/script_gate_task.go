@@ -36,7 +36,7 @@ func (m *Manager) runScriptGateTask(ctx context.Context, prd *PRD, t *Task) (han
 	if m == nil || prd == nil || t == nil || t.Kind != TaskKindFinalGate {
 		return false, nil
 	}
-	checks, reason := ResolveGateCheck(t, storyOfTask(prd, t), m.projectGateCommand(prd))
+	checks, reason := ResolveGateCheckForAutomaton(t, prd.Story, m.projectGateCommand(prd))
 	if len(checks) == 0 && reason == "" {
 		return false, nil
 	}
@@ -156,18 +156,6 @@ func (m *Manager) projectGateCommand(prd *PRD) string {
 		return strings.TrimSpace(pol.ProjectGateCommand.Value)
 	}
 	return strings.TrimSpace(m.Config().ProjectGateCommand)
-}
-
-// storyOfTask returns the story that holds t, or nil.
-func storyOfTask(prd *PRD, t *Task) *Story {
-	for i := range prd.Story {
-		for j := range prd.Story[i].Tasks {
-			if prd.Story[i].Tasks[j].ID == t.ID {
-				return &prd.Story[i]
-			}
-		}
-	}
-	return nil
 }
 
 // finishScriptGateTask writes the report (when there is one), records the

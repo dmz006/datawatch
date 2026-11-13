@@ -23,10 +23,10 @@ func TestEditTaskSetsReportPathOnReadOnlyTask(t *testing.T) {
 	mgr, id := newReadOnlyFlagManager(t, PRDNeedsReview)
 	const rp = ".datawatch/reports/gate.md"
 	// Flag the task read_only, then add the path.
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "", "", "operator"); err != nil {
 		t.Fatalf("flag t1 read_only: %v", err)
 	}
-	if _, err := mgr.EditTask(id, "t1", "", nil, rp, "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", nil, rp, "", "", "operator"); err != nil {
 		t.Fatalf("EditTask report_path on read_only task: %v", err)
 	}
 	ro, got := taskReportPath(t, mgr, id, "t1")
@@ -34,14 +34,14 @@ func TestEditTaskSetsReportPathOnReadOnlyTask(t *testing.T) {
 		t.Fatalf("read_only=%v report_path=%q, want true and %q", ro, got, rp)
 	}
 	// Clearing the read_only flag keeps the stored path.
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(false), "", "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(false), "", "", "", "operator"); err != nil {
 		t.Fatalf("clearing read_only: %v", err)
 	}
 	ro, got = taskReportPath(t, mgr, id, "t1")
 	if ro || got != rp {
 		t.Fatalf("after clear: read_only=%v report_path=%q, want false and the path kept", ro, got)
 	}
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "", "", "operator"); err != nil {
 		t.Fatalf("re-flagging read_only: %v", err)
 	}
 }
@@ -51,7 +51,7 @@ func TestEditTaskReportPathSameCallAsReadOnlyFlag(t *testing.T) {
 	const rp = ".datawatch/reports/audit.md"
 	// The task starts as a writer; flagging it read_only in the same call
 	// makes the path acceptable.
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), rp, "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), rp, "", "", "operator"); err != nil {
 		t.Fatalf("EditTask read_only+report_path together: %v", err)
 	}
 	ro, got := taskReportPath(t, mgr, id, "t1")
@@ -63,7 +63,7 @@ func TestEditTaskReportPathSameCallAsReadOnlyFlag(t *testing.T) {
 func TestEditTaskRejectsReportPathOnWriterTask(t *testing.T) {
 	mgr, id := newReadOnlyFlagManager(t, PRDNeedsReview)
 	const rp = ".datawatch/reports/gate.md"
-	if _, err := mgr.EditTask(id, "t1", "", nil, rp, "operator"); err == nil {
+	if _, err := mgr.EditTask(id, "t1", "", nil, rp, "", "", "operator"); err == nil {
 		t.Fatal("writer task accepted a report_path — expected rejection")
 	} else if !strings.Contains(err.Error(), "read_only") {
 		t.Fatalf("rejection should say the task must be read_only: %v", err)
@@ -73,10 +73,10 @@ func TestEditTaskRejectsReportPathOnWriterTask(t *testing.T) {
 		t.Fatalf("a rejected edit mutated the task: read_only=%v report_path=%q", ro, got)
 	}
 	// And clearing read_only in the same call as the path is a contradiction.
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), rp, "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), rp, "", "", "operator"); err != nil {
 		t.Fatalf("set up: %v", err)
 	}
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(false), rp, "operator"); err == nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(false), rp, "", "", "operator"); err == nil {
 		t.Fatal("expected rejection: path passed while the task is being made writable")
 	}
 }
@@ -84,14 +84,14 @@ func TestEditTaskRejectsReportPathOnWriterTask(t *testing.T) {
 func TestEditTaskRejectsReportPathOutsideReportsDir(t *testing.T) {
 	mgr, id := newReadOnlyFlagManager(t, PRDNeedsReview)
 	const rp = ".datawatch/reports/gate.md"
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "", "", "operator"); err != nil {
 		t.Fatalf("flag t1 read_only: %v", err)
 	}
-	if _, err := mgr.EditTask(id, "t1", "", nil, rp, "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", nil, rp, "", "", "operator"); err != nil {
 		t.Fatalf("set a valid path: %v", err)
 	}
 	for _, bad := range []string{"reports/gate.md", "../.datawatch/reports/gate.md", "src/audit.txt"} {
-		if _, err := mgr.EditTask(id, "t1", "", nil, bad, "operator"); err == nil {
+		if _, err := mgr.EditTask(id, "t1", "", nil, bad, "", "", "operator"); err == nil {
 			t.Errorf("report path %q was accepted, want rejection", bad)
 		}
 	}

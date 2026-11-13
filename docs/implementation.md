@@ -2656,6 +2656,35 @@ section above) — no new config key is introduced here.
 - **Where `report_path` is set:** the planner (task decomposition), the
   edit-task surface and the add-task surface all accept `report_path`. A
   rejected edit or add mutates nothing.
+- **Verification script and exemption reason on the edit path:** the
+  edit-task surface (REST `edit_task`, MCP `autonomous_prd_edit_task`, CLI
+  `prd-edit-task`, comm `edit-task`, the PWA task editor) also takes
+  `verification_script` and `verification_script_reason`. The script is
+  validated as one clean repo-relative file that exists in the project and is
+  appended to the task's generated files; the reason is stored as given and
+  independent of the script. An omitted field is unchanged, and a rejected
+  edit mutates nothing. See `internal/autonomous/manager.go` (the edit path)
+  and [the how-to](howto/automaton-verification-scripts.md).
+- **Stable generated scripts:** the planning prompt carries a shared helper
+  text (`internal/autonomous/verification_script_helpers.go`): docs sync
+  first, a cumulative allowed-file list, a merge-base comparison and no
+  package-wide formatter run. Three block-severity lint rules enforce it
+  (`verify_script_task_files_only`, `verify_script_docs_without_sync`,
+  `final_gate_without_script`, via the `verification_script_task_files_only`,
+  `verification_script_docs_without_sync` and `verification_script_reason_empty`
+  /`kind` match predicates in `internal/autonomous/decompose_lint_verify_script.go`).
+  A planner-written final gate off the last story is rejected by the plan check
+  (`verification_script_coverage.go`).
+- **Still to review (operator):** the three stability rules ship at `block`
+  severity (operator decision 2026-11-12, option 2); whether `shadow` should
+  precede `enforce`, and a live run confirming planners write stable scripts
+  first try, are not settled by this tree. See
+  [the how-to](howto/automaton-verification-scripts.md#still-to-review-operator).
+- **Gate resolution across the Automaton:** the script gate
+  (`ResolveGateCheckForAutomaton` in `internal/autonomous/script_gate.go`)
+  now resolves, after the task's own script and the project gate command,
+  every other task's script across every story, in story order, skipping
+  standard-task tasks and other final gates.
 - **Gate reports write counts only.** A gate that reports to a path writes
   exactly three lines, `passed=<n>`, `failed=<n>`, `skipped=<n>`, in that
   order, each followed by a newline, and no other text — never the

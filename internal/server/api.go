@@ -902,8 +902,9 @@ type AutonomousAPI interface {
 	RequestRevision(id, actor, note string) (any, error)
 	EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error)
 	// EditTask is EditTaskSpec plus the read_only flag (nil = unchanged,
-	// empty newSpec = spec unchanged).
-	EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (any, error)
+	// empty newSpec = spec unchanged), the report path, the verification
+	// script and the script exemption reason (each empty = unchanged).
+	EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath, verificationScript, verificationScriptReason, actor string) (any, error)
 	// v8.23.0 — reset a failed, blocked or waiting-for-capacity task to
 	// pending for retry (a waiting task needs no force — it is re-admitted
 	// with a fresh wait budget). BL382 — force=true also requeues

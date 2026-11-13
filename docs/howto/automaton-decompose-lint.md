@@ -125,8 +125,9 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: ten rules —
-the six `block` rules first, then the four `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: thirteen rules —
+the nine `block` rules first (the six boundary rules, then the three
+verification-script stability rules), then the four `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -139,10 +140,36 @@ and never name a particular project, repository or home directory.
 | `reads_operator_data_or_config_folders` | block | a spec that reads a home-directory dot folder (`.datawatch`, `.config`, `.ssh`, `.aws`, …) |
 | `read_only_but_writes_files` | block | a task marked `read_only` that still lists files |
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
+| `verify_script_task_files_only` | block | a verification script that compares only against the task's own files (a literal allowed-file list equal to them, or a file-listing diff of HEAD, the working tree or main) and never against `git merge-base`; a sourced helper (one level deep) that uses the merge base passes. The finding names the script path. A script that does not exist yet is skipped |
+| `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
+| `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
+
+### The three verification-script stability rules
+
+The last three `block` rules read the task's verification script from the
+project directory (and any helper it sources, one level deep) and name the
+**script path and the rule id** in the finding:
+
+- `verify_script_task_files_only` — fires when the script compares only
+  against the task's own files and never against `git merge-base`. Fix: compare
+  against the merge base and a cumulative allowed-file list.
+- `verify_script_docs_without_sync` — fires when the script checks docs, the
+  embedded docs copy or how-to coverage without running `make sync-docs`. Fix:
+  run `make sync-docs` first.
+- `final_gate_without_script` — fires on a `final_gate` task that has no
+  script, no `verification_script_reason` and no usable report path. Fix: give
+  it a script, a report path, or a reason.
+
+They use three match predicates (below): `verification_script_task_files_only`,
+`verification_script_docs_without_sync` and `verification_script_reason_empty`
+(the last with `kind: final_gate`). A script that does not exist yet is
+skipped by the first two. The full authoring guide, with the fix for each rule
+and how to set a task's script or reason on every surface, is
+[Write verification scripts that stay stable](automaton-verification-scripts.md).
 
 ## 4. Writing your own rules — a worked example
 
@@ -204,6 +231,10 @@ hold for the same task. The leaves:
 | `verification_script_empty` | assert the task declares no verification script |
 | `report_path_empty` | assert the task has no usable report path (empty, or not a clean path under `.datawatch/reports/`) |
 | `verification_script_unexecutable` | assert the task's verification script is not a runnable file (command string, or missing/not executable/no shebang when the project directory is known) |
+| `verification_script_reason_empty` | assert the task states no reason for lacking a verification script |
+| `verification_script_task_files_only` | assert the script (plus sourced helpers, one level) compares only against the task's own files and never the merge base; skipped when the script file does not exist |
+| `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
+| `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
 
@@ -266,7 +297,7 @@ reach the verifier and pass it, instead of being rejected at pre-start.
 | `changelog_entry` | `daemon` | a changelog entry for the feature (`CHANGELOG.md`) |
 | `parity_issue_draft` | `daemon` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
 | `docs_set` | `llm` | the feature's docs into shape, over the story's own files |
-| `final_gate` | `llm` | a **read-only** closing task that the **daemon itself** now performs — [the script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) runs it and closes it, no model session: the declared checks run, and the verdict and evidence go to the report its `report_path` names under `.datawatch/reports/`. It carries **no** verification script of its own; the report is its output |
+| `final_gate` | `llm` | a **read-only** closing task, applied **once per Automaton** (on the last story, depending on every task), that the **daemon itself** now performs — [the script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) runs it and closes it, no model session: the declared checks run, and the verdict and evidence go to the report its `report_path` names under `.datawatch/reports/`. The template carries no verification script of its own; the report is its output. A planner-written `final_gate` must declare a verification script, a `verification_script_reason` or a report path (lint rule `final_gate_without_script`) |
 | `version_bump_left_to_merge` | `daemon` | a plain *note* that the release version is the next patch above main, resolved at merge — never an edit of the tree; in daemon mode the daemon records the note as the decision and completes the task, no session |
 | `bounded_load_step` | `daemon` | a posture *note* — the task's spec is the bounded-load-step rule text so it can be found in search and the audit; writes no files |
 
@@ -279,7 +310,7 @@ decides *who* runs the task when it is appended to a story:
 |---|---|
 | `llm` | a worker session runs the task as a normal LLM task — except `final_gate`: the [script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) performs it and closes it, so `llm` no longer spends a session there either |
 | `daemon` | the daemon performs the task itself — no model session, no worker — and records it as done |
-| `off` | the template is **not appended** to the story at all (the task does not appear) — for `final_gate`, off means the story has no closing gate at all |
+| `off` | the template is **not appended** to the story at all (the task does not appear) — for `final_gate`, off means the Automaton has no closing gate at all |
 
 The mode is set per-template with `autonomous.task_templates.mode` (a
 map of template id → mode string):
@@ -466,7 +497,57 @@ There is no per-project mode — the `mode` map is global, per standard-task id.
       enabled: true     # on, even if the global were off
 ```
 
+### Stable verification scripts: what the planner is told to write
+
+The planner prompt carries one shared helper contract so the scripts it
+writes keep passing after earlier tasks land. A generated script must:
+
+1. run `make sync-docs` itself as its first step when it checks docs, the
+   embedded docs copy (`internal/server/web/docs`) or how-to coverage;
+2. use an allowed-file list that is **cumulative from the start** — every
+   file any story of the Automaton may touch, the standard tasks' generated
+   files (changelog draft, parity-issue draft and its hash file, docs, the
+   registry plan files), gofmt targets and docs files — never one task's own
+   file list;
+3. compare against the **merge base** (`git diff --name-only $(git merge-base
+   HEAD main)` plus untracked files), never the working tree, the current
+   main or one task's own files;
+4. run gofmt only on the listed changed Go files, never a whole package or
+   directory.
+
+The planner is also told to plan exactly one final gate, as the last task,
+and to give every `final_gate` a `verification_script` (also listed in
+`files_generated`) or an explicit `verification_script_reason`. The decompose
+lint enforces the same three rules on what comes back — see
+`verify_script_task_files_only`, `verify_script_docs_without_sync` and
+`final_gate_without_script` in the rule table above. All three block; the
+two script-content rules read the script file from the project directory and
+are skipped when it does not exist yet.
+
+**Correcting a script after decompose.** When a finding names a task's
+verification script (`no_verification_script`, `unexecutable_verification_script`,
+`final_gate_without_script`, or a script-content rule), you can fix that one
+task without a re-decompose: set its script with `prd-edit-task
+--verification-script <path>` (MCP `autonomous_prd_edit_task`, REST `edit_task`
+body key `verification_script`, comm `edit-task … verification_script=<path>`,
+or the **Verification script** field of the task editor), or state why it needs
+none with `--verification-script-reason <text>`. The path must be one
+repo-relative script file — a command string, absolute path, `..` path or the
+project root is refused — and is added to the task's generated files. Edit the
+script file itself first if it fails a script-content rule; the edit records the
+path only. See [Recovering a blocked Automaton](../operations.md) for the
+held-task flow.
+
 ### The script gate: the final gate no longer spends a session
+
+There is **one** final gate per Automaton, on the **last** story, depending on
+every task of every story. The standard-task pack applies it once there; a
+planner-written `final_gate` on any earlier story is rejected by the plan check
+at decompose time (the planner is asked to retry), and one that still remains is
+dropped when the pack is applied (the other tasks' `depends_on` entries on it
+are removed too). The
+planner is told not to write a per-story gate: a story-level check is plain
+task verification, and the one real gate closes the Automaton.
 
 A `final_gate` used to be model labor: a worker session, a verifier, and
 the report they wrote. The daemon needed no model for any of that, so it
@@ -490,12 +571,17 @@ performs the verification*.
    `autonomous.project_gate_command` (the first set one wins); it runs as a
    single command through `sh`, alone; or
 3. (only if neither of the above is available) the `verification_script`
-   of **every** other task in the story, in story order, until the first
-   failure.
+   of **every** other task of **every story of the Automaton**, in story
+   order, until the first failure. Standard-task (template) tasks and other
+   final gates are skipped, so the gate never runs itself or a sibling.
+
+The collection in step 3 spans the **whole Automaton**, not just the gate's
+own story: with one final gate at the end, it runs every other task's script
+from every story, so a story-level script is never skipped.
 
 Steps 1 and 2 are exclusive — a command or the task's own script replaces the
 story's scripts, it does not add to them — while step 3 runs all the scripts
-it finds, each with the time still left on the shared deadline.
+it finds across the whole Automaton, each with the time still left on the shared deadline.
 
 Every script the gate runs must resolve inside the project's
 `.datawatch/verify/` — anything outside (or the project root itself) is
@@ -533,8 +619,8 @@ decision record is added either way saying what the gate did.
 
 The rule of thumb: declare what the gate should check — the gate command
 per project or globally for the canonical entry point, or precise scripts
-under `.datawatch/verify/` on the story's tasks — and the story's closing
-gate stops spending a session.
+under `.datawatch/verify/` on the Automaton's tasks — and the Automaton's
+closing gate stops spending a session.
 
 ## 6. Decompose guidance — text or file
 
@@ -793,5 +879,5 @@ standard tasks are defined."
 6. Once the decompose looks right, **set the gate up**: declare the
    closing check the final gate should run — the project gate command (per
    project or globally) or a script under `.datawatch/verify/` — so the
-   story's final gate runs it with the daemon doing it and closes without
-   a session.
+   Automaton's one final gate runs it with the daemon doing it and closes
+   without a session.

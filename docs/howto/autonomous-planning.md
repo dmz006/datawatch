@@ -298,7 +298,11 @@ command like `go build ./... && go test ./...` is not a script), or a
 `report_path` under `.datawatch/reports/` where it writes its verdict. The
 plan-coverage gate and the decompose lint both refuse a read-only task with
 neither, whether it is read-only by the marker or by the `read_only` flag,
-because a failure of it would otherwise leave nothing to inspect.
+because a failure of it would otherwise leave nothing to inspect. If the plan
+came back without one, set it on the task in place with `prd-edit-task
+--verification-script <path>` (or the **Verification script** field of the task
+editor) instead of re-decomposing; the path must be one repo-relative script
+file and is added to the task's generated files.
 
 A task that does change files needs no marker; it lists them instead, for
 example `internal/config/config.go` and `internal/config/config_test.go` for a
@@ -343,6 +347,20 @@ gate with nothing runnable — fails it.
 - **The note tasks are records, not checks — and in their default daemon mode no verifier ever sees them.** The built-in note tasks — the release version note and the bounded load-step rule — write no files and carry no verification script. In their default `daemon` mode the daemon records the note as the story's decision and completes the task; the decompose lint and the plan-structure checks skip daemon-mode tasks, so they never kick a decompose back and nothing is held against them. If an operator switches either template to `llm` mode, the session path applies instead, and the explicit escape hatch for scriptless work is what carries it: a task may carry a stated **verification-exemption reason** (`verification_script_reason`) explaining why it needs no script, and a task with that exemption passes the plan-structure check with no changes — both built-in note tasks carry one, saying a note task changes no files by design. Where a plan-coverage record does call out a scriptless task (a `missing_verification` finding), you acknowledge it like any other failing surface when the gate is in its default `block` mode (or leave it to the `warn`/`off` modes, which report but do not gate).
 - **A read-only task may write exactly one file: its report, and any other change still fails.** The only write a read-only task is allowed is to the one `report_path` it carries, and that path has to live under `.datawatch/reports/`. The read-only tree check that runs after the task compares the tree before and after and sets aside only `.datawatch/` (in which the report lives) plus that one report path. If the task leaves an extra report file under the older `docs/plans/reports/` location, that file is moved under `.datawatch/reports/` and the move is recorded as the decision for the write, so the report file itself does not fail the task. Any other change the task left behind still fails it, and the daemon records that read-only violation, naming the file.
 - **Automata decomposed with the old template pack keep working.** This change alters what a fresh template application produces, not what already exists: an Automaton whose stories already carry the old pack's closing tasks keeps running, and the two old standard tasks — the final gate and the release version note — can still be cancelled or removed like any other task, without disturbing the rest of the story.
+
+## Verification scripts that stay stable
+
+The planner is told to write each verification script so it keeps passing as
+the other tasks of the Automaton land: run `make sync-docs` first in any docs
+check, build the allowed-file list from every file the Automaton may touch (the
+cumulative allowed-file helper), compare against the merge base, never run a
+formatter over a whole folder, and plan **one** final gate, as the last task,
+with a script or an explicit `verification_script_reason`. Three decompose-lint
+rules flag a plan that breaks this, naming the script and the rule id, and the
+script gate now runs every task's script across the whole Automaton when the
+final gate has none of its own. Fix a flagged task in place with the task edit
+(`verification_script` / `verification_script_reason`) instead of re-decomposing.
+The full guide is [Verification scripts that stay stable](automaton-verification-scripts.md).
 
 ## Choose the verifier per task, story or Automaton
 

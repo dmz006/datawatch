@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
+	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -4411,21 +4413,34 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 // be corrected and retried without widening PRD dirs or recreating the PRD.
 // Records a Decision so the timeline shows the edit.
 func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, error) {
-	return m.EditTask(prdID, taskID, newSpec, nil, "", actor)
+	return m.EditTask(prdID, taskID, newSpec, nil, "", "", "", actor)
 }
 
-// EditTask is EditTaskSpec plus the read_only flag and the report path:
-// newSpec == "" leaves the spec unchanged, readOnly == nil leaves the flag
-// unchanged, and reportPath == "" leaves the path unchanged. A non-empty
-// reportPath is validated with validateReportPath and only accepted when the
-// task ends up read_only (already flagged, or flagged by this same edit).
-// The same PRD and task status gates apply to all fields.
-func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (*PRD, error) {
-	if newSpec == "" && readOnly == nil && reportPath == "" {
-		return nil, fmt.Errorf("nothing to edit: pass a new spec, a read_only flag, and/or a report_path")
+// EditTask is EditTaskSpec plus the read_only flag, the report path, the
+// verification script and the script exemption reason: newSpec == "" leaves
+// the spec unchanged, readOnly == nil leaves the flag unchanged, and an empty
+// reportPath, verificationScript or verificationScriptReason leaves that
+// field unchanged. A non-empty reportPath is validated with
+// validateReportPath and only accepted when the task ends up read_only
+// (already flagged, or flagged by this same edit). A non-empty
+// verificationScript must be one repo-relative script file (see
+// validateEditVerificationScript); it is also added to the task's
+// FilesGenerated when not yet listed, so the plan stays consistent. A
+// non-empty verificationScriptReason is the stated exemption for a task that
+// carries no script; it is stored as given and clears nothing else, so it can
+// be set with or without a script. The same PRD and task status gates apply
+// to all fields.
+func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath, verificationScript, verificationScriptReason, actor string) (*PRD, error) {
+	if newSpec == "" && readOnly == nil && reportPath == "" && verificationScript == "" && verificationScriptReason == "" {
+		return nil, fmt.Errorf("nothing to edit: pass a new spec, a read_only flag, a report_path, a verification_script and/or a verification_script_reason")
 	}
 	if newSpec != "" {
 		if err := m.checkInjectionGuard("task spec edit", newSpec); err != nil {
+			return nil, err
+		}
+	}
+	if verificationScriptReason != "" {
+		if err := m.checkInjectionGuard("task verification script reason edit", verificationScriptReason); err != nil {
 			return nil, err
 		}
 	}
@@ -4433,6 +4448,9 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 		if err := validateReportPath(reportPath); err != nil {
 			return nil, err
 		}
+	}
+	if err := validateEditVerificationScript(verificationScript); err != nil {
+		return nil, err
 	}
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
@@ -4484,6 +4502,16 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 					if reportPath != "" {
 						prd.Story[si].Tasks[ti].ReportPath = reportPath
 					}
+					if verificationScript != "" {
+						t := &prd.Story[si].Tasks[ti]
+						t.VerificationScript = verificationScript
+						if !slices.Contains(t.FilesGenerated, verificationScript) {
+							t.FilesGenerated = append(t.FilesGenerated, verificationScript)
+						}
+					}
+					if verificationScriptReason != "" {
+						prd.Story[si].Tasks[ti].VerificationScriptReason = verificationScriptReason
+					}
 					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
 					found = true
 					break
@@ -4504,7 +4532,7 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 		prd.UpdatedAt = time.Now()
 		prd.Decisions = append(prd.Decisions, Decision{
 			At: time.Now(), Kind: "edit_task", Actor: actor,
-			Note: editTaskNote(taskID, newSpec, readOnly, reportPath),
+			Note: editTaskNote(taskID, newSpec, readOnly, reportPath, verificationScript, verificationScriptReason),
 		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
@@ -5165,7 +5193,7 @@ func (m *Manager) RemoveStory(prdID, storyID, actor string) (*PRD, error) {
 }
 
 // editTaskNote renders the decision note for a task edit.
-func editTaskNote(taskID, newSpec string, readOnly *bool, reportPath string) string {
+func editTaskNote(taskID, newSpec string, readOnly *bool, reportPath, verificationScript, verificationScriptReason string) string {
 	note := fmt.Sprintf("task=%s spec_chars=%d", taskID, len(newSpec))
 	if readOnly != nil {
 		note += fmt.Sprintf(" read_only=%t", *readOnly)
@@ -5173,7 +5201,31 @@ func editTaskNote(taskID, newSpec string, readOnly *bool, reportPath string) str
 	if reportPath != "" {
 		note += fmt.Sprintf(" report_path=%s", reportPath)
 	}
+	if verificationScript != "" {
+		note += fmt.Sprintf(" verification_script=%s", verificationScript)
+	}
+	if verificationScriptReason != "" {
+		note += fmt.Sprintf(" verification_script_reason=%q", verificationScriptReason)
+	}
 	return note
+}
+
+// validateEditVerificationScript checks the verification script an edit sets.
+// Empty is valid (the script is left unchanged). A non-empty value must be one
+// repo-relative script file: not a command string, not absolute, no .. segment,
+// not the project root, and already clean (path.Clean(p) == p) so the same
+// file is never listed twice under two spellings.
+func validateEditVerificationScript(p string) error {
+	if p == "" {
+		return nil
+	}
+	if verificationScriptLooksLikeCommand(p) {
+		return fmt.Errorf("verification_script %q must be one repo-relative script file (for example scripts/verify.sh), not a command string, an absolute path, a path with a .. segment or the project root", p)
+	}
+	if path.Clean(p) != p {
+		return fmt.Errorf("verification_script %q must be clean (path.Clean(p) == p), for example scripts/verify.sh", p)
+	}
+	return nil
 }
 
 // AddTask appends a new task to an existing story.

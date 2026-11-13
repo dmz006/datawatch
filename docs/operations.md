@@ -1089,10 +1089,13 @@ one repo-relative script file — a command string is not one, and the
 verifier's pre-start check rejects it as exactly the thing it is not: a
 file. The built-in final-gate standard task already ships in the report shape:
 its spec says to write its verdict to `.datawatch/reports/<feature>-final-
-gate.txt`, `report_path` names the same file, and it carries **no**
+gate.txt`, `report_path` names the same file, and the template carries **no**
 verification script — a read-only task verified by exactly one output, the
-report itself. (The companion version-note task is a note the verifier
-reads rather than runs, and it carries no verification script either.)
+report itself. (A planner-written `final_gate` is different: the decompose
+lint blocks it unless it carries a verification script, a
+`verification_script_reason` or a report path. The companion version-note task
+is a note the verifier reads rather than runs, and it carries no verification
+script either.)
 
 **The verifier's acceptance rule.** When a read-only task that declares a
 report path finishes with no tree changes, the verifier looks for the
@@ -1109,8 +1112,9 @@ path handles its diff.
 
 **Recovering a blocked Automaton — make the task verifiable.** While the
 Automaton is blocked the held task can be patched in place. Edit-task
-patches the held task while it is held — its `spec`, its read-only mark and
-its `report_path`, in one or more calls — and retry (action `retry`) then
+patches the held task while it is held — its `spec`, its read-only mark, its
+`report_path`, its `verification_script` and its `verification_script_reason`,
+in one or more calls — and retry (action `retry`) then
 requeues it, carrying the same optional mark and report path along with any
 spec, worker or file-scope change. Both check everything before anything is
 written, so a refused change leaves the task held: a `report_path` is only
@@ -1147,6 +1151,31 @@ recorded on the decision log and given to the next attempt.
 Comm channel: `autonomous edit-task <automaton> <task> read_only=true
 report_path=.datawatch/reports/ci-audit.txt [new-spec…]`, then
 `autonomous review-task <automaton> <task> retry note=...`.
+
+**Fixing a task whose verification script is wrong or missing.** A script that
+is a command string, breaks after earlier tasks land, or was never written no
+longer needs a re-decompose: edit the held task's script in place, then retry
+it. `verification_script` must be one repo-relative script file (a command
+string, absolute path, `..` path, the project root or an unclean path such as
+`./scripts/verify.sh` is refused and nothing is stored); the file is also added
+to the task's generated files. `verification_script_reason` states why a task
+needs no script and may be sent alone or with a script.
+
+```sh
+datawatch autonomous prd-edit-task <automaton-id> --task <task-id> \
+  --verification-script scripts/verify-docs.sh
+datawatch autonomous prd-edit-task <automaton-id> --task <task-id> \
+  --verification-script-reason "documentation-only change; no behavior to run"
+```
+
+MCP: `autonomous_prd_edit_task(..., verification_script="scripts/verify-docs.sh")`.
+Comm channel: `autonomous edit-task <automaton> <task>
+verification_script=scripts/verify-docs.sh` or
+`verification_script_reason="documentation-only change"` (a reason with spaces
+goes in double quotes; an unclosed quote is an error). In the web app, use the
+**Verification script** and **Script exemption reason** fields of the task
+editor. The script file itself must already exist in the project; this edit
+records the path, it does not create the file.
 
 **Cancelling the held task is terminal.** `cancel` records the operator's
 decision with the reason "cancelled after operator review" (your note, when
@@ -6944,7 +6973,9 @@ MCP agents use `rules_context_status` (read-only) and `rules_context_set`. A fil
 
 Every decomposed story gets the built-in pack's closing tasks appended, and `autonomous.task_templates.mode` — a global map of **template id → mode**, not per-project — decides who performs each appended task: **`llm`** — a worker session runs it, verifier included, like any other task (the default for `docs_set`; also the default for `final_gate`, though the daemon's script gate performs it — see below); **`daemon`** — the daemon performs the task itself and completes it, spending no model session and running no verifier (the default for `changelog_entry`, `parity_issue_draft`, `bounded_load_step` and `version_bump_left_to_merge`); **`off`** — the standard task is not appended to the story at all. In daemon mode, `changelog_entry` and `parity_issue_draft` write their generated artefact with the same edit-protection rules as the generated-artefacts feature: a file already edited, or a kind switched off in the generated-artefact settings, is skipped with the reason recorded in the task's decision note, and the task still completes; a write it cannot make (for example no project directory) marks the task failed. `bounded_load_step` and `version_bump_left_to_merge` write nothing — their spec text is recorded as the story's decision note. A daemon-run task shows in the story record as completed with its decision note, and has **no worker session** in the session list; the structural checks (decompose lint, per-task verification script, report, file tokens) skip it, because a handler performs it, not a judge.
 
-**The `final_gate` exception — no session at all, whichever mode is set.** When the executor reaches a task of kind `final_gate`, the daemon itself runs the **script gate**, and `llm` no longer means a session performs it. The gate resolves its checks by strict preference, and a higher step takes the whole run: the task's own `verification_script` (when it is a path under `.datawatch/verify/`; a valid path whose file is missing fails the gate) — it runs alone; else the project gate command (the project's `policy project_gate_command`, else the global `autonomous.project_gate_command` when set) — it runs alone; else **every** verification script the story's other tasks declare, in story order, until the first failure. The first two steps replace the story scripts rather than adding to them; the last runs all the scripts it finds. Every script it runs must live under the project's `.datawatch/verify/`, and a symlink that leads outside it is refused. It runs the checks in order, all inside one shared deadline — `autonomous.script_gate_timeout_seconds`, default **900** seconds, `0` for no cap, a negative value refused on write — and when the deadline hits the running check's whole process group is killed. Each check's output goes into its own report section, and the report — every section plus the final verdict — is written once, when the run ends, to the task's report path: the template-appended gate's `.datawatch/reports/\<feature\>-final-gate.txt`, or `.datawatch/reports/final-gate.txt` for a custom gate task that carries no path. A clean pass completes the task; a failed check, a timeout, or a gate the daemon could not run at all is a **failed task with the reason named** — a gate with nothing runnable is a visible failure, not an unclosed story — and a decision record is added either way. The mode still matters for the gate: valid values are `llm` (the default) or `off` — `daemon` is refused on write — and `off` means the story has no closing gate at all. The walkthrough is the [script-gate section of the decompose-lint how-to](howto/automaton-decompose-lint.md#the-script-gate-the-final-gate-no-longer-spends-a-session).
+**The `final_gate` exception — no session at all, whichever mode is set.** When the executor reaches a task of kind `final_gate`, the daemon itself runs the **script gate**, and `llm` no longer means a session performs it. The gate resolves its checks by strict preference, and a higher step takes the whole run: the task's own `verification_script` (when it is a path under `.datawatch/verify/`; a valid path whose file is missing fails the gate) — it runs alone; else the project gate command (the project's `policy project_gate_command`, else the global `autonomous.project_gate_command` when set) — it runs alone; else **every** verification script the other tasks of **every story of the Automaton** declare (standard-task tasks and other final gates skipped), in story order, until the first failure. There is **one** final gate per Automaton: the pack applies it once, to the last story, depending on every task, and a `final_gate` the planner placed on an earlier story is silently dropped when the pack is applied (no lint rule rejects it).
+
+The first two steps replace the story scripts rather than adding to them; the last runs all the scripts it finds. Every script it runs must live under the project's `.datawatch/verify/`, and a symlink that leads outside it is refused. It runs the checks in order, all inside one shared deadline — `autonomous.script_gate_timeout_seconds`, default **900** seconds, `0` for no cap, a negative value refused on write — and when the deadline hits the running check's whole process group is killed. Each check's output goes into its own report section, and the report — every section plus the final verdict — is written once, when the run ends, to the task's report path: the template-appended gate's `.datawatch/reports/\<feature\>-final-gate.txt`, or `.datawatch/reports/final-gate.txt` for a custom gate task that carries no path. A clean pass completes the task; a failed check, a timeout, or a gate the daemon could not run at all is a **failed task with the reason named** — a gate with nothing runnable is a visible failure, not an unclosed story — and a decision record is added either way. The mode still matters for the gate: valid values are `llm` (the default) or `off` — `daemon` is refused on write — and `off` means the Automaton has no closing gate at all. The walkthrough is the [script-gate section of the decompose-lint how-to](howto/automaton-decompose-lint.md#the-script-gate-the-final-gate-no-longer-spends-a-session).
 
 **Reading each task's real mode.** The Automata → **Templates** → **Standard tasks** sub-tab draws each task's **mode** as it is resolved (`llm`, `daemon` or `off`), so what it shows is what the decomposer applies. It has **no runner column yet**: a `final_gate` on `llm` still shows `llm` there, while its runner is the script gate. Read `runner` on the CLI (`datawatch autonomous standard-tasks`), REST (`GET /api/autonomous/standard-tasks`), MCP (`autonomous_standard_tasks`) or the comm channel (`standard tasks`). The runner values are described in [howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#the-runner-column).
 

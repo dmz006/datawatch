@@ -1222,8 +1222,8 @@ func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
 	}
 	return out, err
 }
-func (a *API) EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (any, error) {
-	out, err := a.M.EditTask(prdID, taskID, newSpec, readOnly, reportPath, actor)
+func (a *API) EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath, verificationScript, verificationScriptReason, actor string) (any, error) {
+	out, err := a.M.EditTask(prdID, taskID, newSpec, readOnly, reportPath, verificationScript, verificationScriptReason, actor)
 	if err == nil {
 		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)

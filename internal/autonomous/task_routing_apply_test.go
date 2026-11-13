@@ -166,7 +166,7 @@ func TestTaskRoutingPlannerRerunKeepsHandEdits(t *testing.T) {
 	if edited.Model != "ollama/qwen3.8:27b" {
 		t.Fatalf("not routed: %q", edited.Model)
 	}
-	if _, err := m.EditTask(prd.ID, edited.ID, "second spec", nil, "", "op"); err != nil {
+	if _, err := m.EditTask(prd.ID, edited.ID, "second spec", nil, "", "", "", "op"); err != nil {
 		t.Fatal(err)
 	}
 	// The operator later changes the table; the planner runs again.

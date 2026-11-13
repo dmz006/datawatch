@@ -27,7 +27,13 @@ func LintFindingLine(f LintFinding) string {
 	if id == "" {
 		id = "-"
 	}
-	return fmt.Sprintf("[%s] %s %s: %s", f.Severity, f.RuleID, id, f.Message)
+	msg := f.Message
+	// The script-content rules carry the script path in Message already;
+	// a rule message replaced by the operator may not, so add it once.
+	if sc := strings.TrimSpace(f.Script); sc != "" && !strings.Contains(msg, sc) {
+		msg += " (verification script: " + sc + ")"
+	}
+	return fmt.Sprintf("[%s] %s %s: %s", f.Severity, f.RuleID, id, msg)
 }
 
 // RenderLintFindings renders a finding set, one line per finding; the

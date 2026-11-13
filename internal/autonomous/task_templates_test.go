@@ -275,7 +275,7 @@ func TestTaskTemplatesOperatorTemplateReplacesBuiltInSameID(t *testing.T) {
 			Title:     "Review notes for {{feature}}",
 			Spec:      "Collect review notes for '{{feature}}' as a short checklist.",
 			Kind:      "note",
-			DependsOn: []string{TemplateFinalGate},
+			DependsOn: []string{TemplateChangelogEntry},
 		},
 	}
 	story := testTaskTemplateStory(t)
@@ -297,8 +297,9 @@ func TestTaskTemplatesOperatorTemplateReplacesBuiltInSameID(t *testing.T) {
 		t.Errorf("tasks = %d, want %d", len(s.Tasks), 2+len(BuiltInTaskTemplates())+1)
 	}
 	// The operator's brand-new template is present too, and its
-	// depends_on names the final-gate template task.
-	gateID := templateTaskID(s.ID, TemplateFinalGate)
+	// depends_on names the changelog template task (a per-story
+	// template cannot depend on the final gate, which depends on it).
+	gateID := templateTaskID(s.ID, TemplateChangelogEntry)
 	notes, ok := byID[templateTaskID(s.ID, "review_notes")]
 	if !ok {
 		t.Fatalf("operator-only template task missing")
@@ -307,7 +308,7 @@ func TestTaskTemplatesOperatorTemplateReplacesBuiltInSameID(t *testing.T) {
 		t.Errorf("review_notes kind = %q, want note", notes.Kind)
 	}
 	if !taskTemplateContainsString(notes.DependsOn, gateID) {
-		t.Errorf("review_notes depends_on %v: missing final-gate task %q", notes.DependsOn, gateID)
+		t.Errorf("review_notes depends_on %v: missing changelog task %q", notes.DependsOn, gateID)
 	}
 	// Idempotence still holds with operator templates.
 	again, applied2 := ApplyTaskTemplates(got, "task templates", "proj", cfg)

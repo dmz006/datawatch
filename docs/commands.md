@@ -1449,7 +1449,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `subscribe --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink comm\|session\|topic\|alert --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <secs>]` | Subscribe to Automaton lifecycle events and route them to a sink (BL427 phase 3); `--on` is repeatable; shorthand words map to task kinds, full kinds pass through |
 | `unsubscribe <id>` | Delete a lifecycle-event subscription by id (BL427 phase 3) |
 | `subscriptions [--owner <owner>]` | List lifecycle-event subscriptions, optionally scoped to one owner (BL427 phase 3) |
-| `prd list/get/create/decompose/edit/edit-task/delete/instantiate/run/cancel` | PRD CRUD (cancel + edit + delete added in v5.19.0) |
+| `prd list/get/create/decompose/edit/edit-task/delete/instantiate/run/cancel` | PRD CRUD (cancel + edit + delete added in v5.19.0); `prd-edit-task` also takes `--verification-script <path>` and `--verification-script-reason <text>`, and the chat verb is `autonomous edit-task <prd> <task> [verification_script=<path>] [verification_script_reason=<text>]` — see [howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md) |
 | `prd approve/reject/request-revision` | BL191 Q1 review/approve gate (v5.2.0) |
 | `prd-resume <id> [--note ...]` (alias `resume`) | Resume a paused PRD or one the boot-resume gate parked; chat: `autonomous resume <id> [note]`; REST `POST /api/autonomous/prds/{id}/resume` |
 | `prd children` | List child PRDs spawned via SpawnPRD (v5.9.0, BL191 Q4) |
