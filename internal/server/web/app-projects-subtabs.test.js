@@ -1,9 +1,12 @@
 // Projects page sub-tabs — order, remembered choice, hidden empty Events,
-// phone layout, picker placement, routes, the Gantt cap and the Policy tab.
+// phone layout, picker placement, routes, the Gantt cap and the old Policy
+// choice falling back to Overview with the policy Settings link in the header.
 //
 // A selected project's page shows one body at a time under a strip of
-// sub-tab buttons: Overview, Arcs, Gantt, Unassigned, History, Policy, Events.
+// sub-tab buttons: Overview, Arcs, Gantt, Unassigned, History, Events.
 // Events is only offered while the page has something to say.
+// The former Policy sub-tab is gone; its one Settings link sits by the
+// project name, and a stored or hashed 'policy' value falls back to Overview.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -12,7 +15,7 @@ const fs = require('fs');
 const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('./testutil_browser_stub');
 
 const APP = path.join(__dirname, 'app.js');
-const ORDER = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+const ORDER = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'events'];
 const KEY = 'cs_projects_subtab';
 const DAY = 86400000;
 
@@ -122,7 +125,7 @@ test('choosing Gantt is remembered, a fresh load restores it, an unknown value m
 test('a localStorage that throws does not break rendering', async () => {
   const { sb, out } = await open({ throwStorage: true });
   assert.equal(sb._projectsActiveSubtab(false), 'overview');
-  assert.deepEqual(buttons(out.view).slice(0, 6), ORDER.slice(0, 6), 'the strip still renders');
+  assert.deepEqual(buttons(out.view), ORDER, 'the strip still renders');
   assert.equal(activeBody(out.view), 'overview');
   assert.doesNotThrow(() => sb.selectProjectsSubtab('arcs'));
   assert.equal(activeBody(out.view), 'arcs', 'the choice still applies for this page');
@@ -149,7 +152,7 @@ test('phone layout: the strip is a tablist that scrolls sideways', async () => {
   assert.ok(sb.matchMedia('(max-width: 600px)').matches, 'the stub viewport is phone width');
   assert.match(out.view, /<div class="projects-subtabs" role="tablist"/);
   assert.equal((out.view.match(/role="tablist"/g) || []).length, 1);
-  assert.equal((out.view.match(/role="tab"/g) || []).length, 7);
+  assert.equal((out.view.match(/role="tab"/g) || []).length, ORDER.length);
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
   const rule = css.match(/\.projects-subtabs\s*\{([^}]*)\}/);
   assert.ok(rule, 'style.css has the strip rule');
@@ -195,16 +198,22 @@ test('the Gantt sub-tab draws the Gantt alone and keeps the size cap', async () 
   assert.equal((body.match(/data-kind="arc"/g) || []).length, 40, 'at most 40 rows are drawn');
 });
 
-test('the Policy sub-tab holds the effective policy and the merge pipeline, with Settings links only', async () => {
-  const { sb, out } = await open({ rollup: ROLLUP_EVENTS });
-  sb.selectProjectsSubtab('policy');
+test('there is no Policy sub-tab: a policy choice falls back to Overview and the policy Settings link sits by the project name', async () => {
+  const l = await open({ rollup: ROLLUP_EVENTS });
+  assert.ok(!buttons(l.out.view).includes('policy'), 'no Policy button in the strip');
+  assert.ok(!l.out.view.includes('data-projects-subtab="policy"'), 'no policy button element');
+  l.sb.selectProjectsSubtab('policy');
   await flushAsync(10);
-  assert.equal(activeBody(out.view), 'policy');
-  const body = out.view.slice(out.view.indexOf('id="projectsSubtabBody"'));
-  assert.match(body, /class="project-policy-effective"/);
-  assert.match(body, /class="project-merge-pipeline"/);
-  assert.match(body, /merge_mode:/, 'the loaded policy value is shown');
-  assert.equal((body.match(/class="project-settings-link"/g) || []).length, 2, 'a Settings link for each section');
-  assert.doesNotMatch(body, /<input|<select|<textarea|<form|<button/i, 'no edit controls');
-  assert.doesNotMatch(body, /onchange=|onsubmit=/);
+  assert.equal(l.sb._projectsActiveSubtab(true), 'overview', 'a stored policy choice falls back to Overview');
+  assert.equal(activeBody(l.out.view), 'overview');
+  assert.match(l.out.view, /onclick="_projectsOpenSettings\(&quot;project_policy&quot;\);return false;/, 'the policy Settings link is in the header row');
+  assert.match(l.out.view, /class="project-settings-link"/);
+  assert.doesNotMatch(l.out.view, /data-projects-subtab-body="policy"/);
+
+  // A hashed policy address does the same.
+  const hash = load({ hash: '#projects/acme/policy', storage: makeStorage() });
+  await hash.sb.renderProjectsView();
+  await flushAsync(30);
+  assert.equal(activeBody(hash.out.view), 'overview', 'a #projects/acme/policy address opens Overview');
+  assert.match(hash.out.view, /onclick="_projectsOpenSettings\(&quot;project_policy&quot;\);return false;/);
 });

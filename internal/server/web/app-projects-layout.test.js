@@ -134,7 +134,9 @@ test('the sub-tab strip puts Gantt before Unassigned, and Unassigned before Hist
 
 // ---- collapse memory (cards only where a sub-tab holds more than one block) ----
 
-const CARD_TABS = { overview: ['progress'], policy: ['policy', 'merge'], events: ['events', 'stream'] };
+// The Policy sub-tab is gone: that address (or choice) now renders the
+// Overview body, whose card is progress.
+const CARD_TABS = { overview: ['progress'], policy: ['progress'], events: ['events', 'stream'] };
 const BARE_TABS = ['arcs', 'gantt', 'unassigned', 'history'];
 
 test('multi-block sub-tabs draw cards with a toggle; single-block sub-tabs draw none', () => {
@@ -185,28 +187,28 @@ function wireCards(sb, html) {
 test('collapsing stores a per-section value; a fresh render draws only that section collapsed; expanding clears it', () => {
   const storage = memStorage();
   const a = load({ storage, showEmpty: true });
-  const cards = wireCards(a.sb, page(a.sb, ROLLUP, 'policy'));
-  a.sb.projectsToggleSection('merge');
-  assert.equal(cards.merge.body.hidden, true, 'body hidden in place');
-  assert.deepEqual(storage.keys(), ['cs_projects_section_collapsed_merge'], 'one per-section key');
-  assert.equal(storage.getItem('cs_projects_section_collapsed_merge'), '1');
+  const cards = wireCards(a.sb, page(a.sb, ROLLUP_NO_UNASSIGNED, 'events'));
+  a.sb.projectsToggleSection('stream');
+  assert.equal(cards.stream.body.hidden, true, 'body hidden in place');
+  assert.deepEqual(storage.keys(), ['cs_projects_section_collapsed_stream'], 'one per-section key');
+  assert.equal(storage.getItem('cs_projects_section_collapsed_stream'), '1');
 
   const b = load({ storage, showEmpty: true });
-  const html = page(b.sb, ROLLUP, 'policy');
+  const html = page(b.sb, ROLLUP_NO_UNASSIGNED, 'events');
   const card = id => new RegExp(`<div class="project-section-card( collapsed)?" id="projectSection-${id}"`).exec(html);
-  assert.equal(card('merge')[1], ' collapsed', 'merge drawn collapsed');
-  assert.equal(card('policy')[1], undefined, 'policy stays expanded');
-  const mergeCard = html.slice(html.indexOf('id="projectSection-merge"'));
-  assert.match(mergeCard, /aria-expanded="false"/);
-  assert.match(mergeCard, /project-section-body" hidden>/);
-  assert.match(mergeCard, /aria-label="Expand /);
+  assert.equal(card('stream')[1], ' collapsed', 'stream drawn collapsed');
+  assert.equal(card('events')[1], undefined, 'events stays expanded');
+  const streamCard = html.slice(html.indexOf('id="projectSection-stream"'));
+  assert.match(streamCard, /aria-expanded="false"/);
+  assert.match(streamCard, /project-section-body" hidden>/);
+  assert.match(streamCard, /aria-label="Expand /);
 
   const cards2 = wireCards(b.sb, html);
-  b.sb.projectsToggleSection('merge');
-  assert.equal(cards2.merge.body.hidden, false, 'expanded in place');
-  assert.notEqual(storage.getItem('cs_projects_section_collapsed_merge'), '1', 'expanding clears the stored collapse');
+  b.sb.projectsToggleSection('stream');
+  assert.equal(cards2.stream.body.hidden, false, 'expanded in place');
+  assert.notEqual(storage.getItem('cs_projects_section_collapsed_stream'), '1', 'expanding clears the stored collapse');
   const c = load({ storage, showEmpty: true });
-  assert.doesNotMatch(page(c.sb, ROLLUP, 'policy'), /project-section-card collapsed/, 'fresh render has nothing collapsed');
+  assert.doesNotMatch(page(c.sb, ROLLUP_NO_UNASSIGNED, 'events'), /project-section-card collapsed/, 'fresh render has nothing collapsed');
 });
 
 test('a localStorage that throws still renders every section expanded without an error', () => {
@@ -219,29 +221,29 @@ test('a localStorage that throws still renders every section expanded without an
     assert.doesNotMatch(html, /project-section-card collapsed/);
     assert.doesNotMatch(html, /project-section-body" hidden/);
   }
-  const cards = wireCards(sb, page(sb, ROLLUP_NO_UNASSIGNED, 'policy'));
-  assert.doesNotThrow(() => sb.projectsToggleSection('merge'));
-  assert.ok(cards.merge, 'card present');
+  const cards = wireCards(sb, page(sb, ROLLUP_NO_UNASSIGNED, 'events'));
+  assert.doesNotThrow(() => sb.projectsToggleSection('stream'));
+  assert.ok(cards.stream, 'card present');
 });
 
 test('the Projects view paints the cards through the real render path', async () => {
   const storage = memStorage();
-  storage.setItem('cs_projects_section_collapsed_merge', '1');
+  storage.setItem('cs_projects_section_collapsed_stream', '1');
   const { sb, out } = load({ storage, showEmpty: true });
   sb.fetch = (url) => {
     const u = String(url);
     const ok = body => Promise.resolve({ ok: true, status: 200, statusText: '', json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body)) });
     if (u.includes('/history')) return ok(hist());
-    if (u.includes('/rollup')) return ok(ROLLUP);
+    if (u.includes('/rollup')) return ok(ROLLUP_NO_UNASSIGNED);
     if (u.includes('/api/projects')) return ok([FULL]);
     return ok([]);
   };
-  sb.location.hash = '#projects/acme/policy';
+  sb.location.hash = '#projects/acme/events';
   vm.runInContext("_projectsState.selected = 'acme'", sb);
   sb.renderProjectsView();
   await flushAsync();
-  assert.match(out.view, /class="project-section-card collapsed" id="projectSection-merge"/);
-  assert.match(out.view, /id="projectSection-policy"/);
+  assert.match(out.view, /class="project-section-card collapsed" id="projectSection-stream"/);
+  assert.match(out.view, /id="projectSection-events"/);
 
   sb.location.hash = '#projects/acme/gantt';
   sb.renderProjectsView();
@@ -264,7 +266,7 @@ test('no control hides or moves a card', () => {
       assert.match(m[1], /^projectsToggleSection\('[a-z]+'\)$/, 'a toggle only collapses or expands');
     }
     const ids = new Set(Array.from(html.matchAll(/data-section="([^"]+)"/g)).map(m => m[1]));
-    for (const id of ids) assert.ok(['progress', 'stream', 'policy', 'merge', 'events'].includes(id), id + ' is a known section');
+    for (const id of ids) assert.ok(['progress', 'stream', 'events'].includes(id), id + ' is a known section');
   }
 });
 
