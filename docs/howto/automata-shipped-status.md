@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, prd, automation, shipped, release, backfill, counts, dashboard]
+  topics: [autonomous, prd, automation, shipped, completed, migration, release, backfill, counts, dashboard]
 exec_params:
   - {name: id, required: true, description: "The Automaton (PRD) or Automation id to act on"}
   - {name: release, required: false, description: "Release the work was merged into, e.g. v1.2.0"}
@@ -9,7 +9,8 @@ exec_params:
   - {name: merged_at, required: false, description: "Merge time, RFC 3339 (default now)"}
   - {name: source, required: false, description: "Where the record came from: merge_step or backfill (default backfill)"}
   - {name: automation, required: false, description: "Record an Automation instead of a PRD: true or false (default false)"}
-  - {name: dry_run, required: false, description: "Backfill: scan and compute the report without writing: true or false (default false)"}
+  - {name: dry_run, required: false, description: "Backfill or migration: scan and compute the report without writing: true or false (default false)"}
+  - {name: limit, required: false, description: "Migration: most records one run moves to Completed, oldest first; 0 = no limit (default 0)"}
 exec_steps:
   - tool: autonomous_shipped_record
     description: Record the shipped state of an Automaton (PRD) or an Automation
@@ -25,6 +26,13 @@ exec_steps:
     args:
       dry_run: "{{params.dry_run}}"
     read_only: false
+  - tool: autonomous_completed_migrate
+    description: Move cancelled Automata (and Automations) whose work is already merged to Completed; run with dry_run first
+    args:
+      id: "{{params.id}}"
+      dry_run: "{{params.dry_run}}"
+      limit: "{{params.limit}}"
+    read_only: false
   - tool: autonomous_shipped_counts
     description: Read the per-status shipped counts (PRD + Automation buckets) under the in-force autonomous.shipped settings
     args: {}
@@ -35,7 +43,12 @@ exec_steps:
     read_only: false
 ---
 
-# How-to: The shipped status
+# How-to: Finished work reads Completed
+
+Finished work reads **Completed**. When the work was merged code, the record
+also carries release details, and **Shipped** is only the name of that
+release detail and of the record shown when you hover the Completed chip. It
+is not a status, and no chip, badge or count says "Shipped".
 
 ## 1. When you need it
 
@@ -305,9 +318,60 @@ present on the machine that serves the daemon (a missing repository is a
 with the setting named. Turn `backfill_on_start` on if you want the same
 pass to run at every daemon start.
 
-## 7. What shipped does not do
+## 7. Migrating cancelled-after-merge Automata to Completed
 
-- It does not change a stored status — recording and backfill both leave it
+Before this change, a merged Automaton was often closed by cancelling it, so
+a lot of finished work was stored as `cancelled`. Every view already
+**displays** such a record as Completed (section 2), but its stored status was
+still `cancelled`. The **completed migration** restores those records: it
+moves each Automaton (or Automation) that ended cancelled but whose work is
+already on the default branch to `completed`, using the merge time as the
+completion time — never the time you ran it. Records with no merge evidence
+stay cancelled, because that is what cancelled now means: abandoned work.
+
+Run it with a dry run first, then for real:
+
+```
+$ datawatch autonomous completed-migrate --dry-run
+$ datawatch autonomous completed-migrate --limit 20
+$ datawatch autonomous completed-migrate --id a1b2c3d4
+```
+
+| Surface | Call |
+|---------|------|
+| REST | `POST /api/autonomous/completed/migrate` (`dry_run`, `limit`, `id` as query or JSON body) |
+| MCP | `autonomous_completed_migrate` |
+| CLI | `datawatch autonomous completed-migrate [--dry-run] [--limit N] [--id ID]` |
+| Chat | `autonomous completed-migrate dry_run=true limit=N id=ID` |
+
+How it behaves:
+
+- **Dry run first.** `--dry-run` reports what would move and writes nothing;
+  read each reason before the real run.
+- **The limit.** `--limit N` moves at most N records per run, oldest first, so
+  repeated runs make steady progress; `0` means no limit.
+- **Idempotent.** A record already Completed is counted under
+  `already_completed` and left alone, so running it again is safe.
+- **One decision-log line per record.** Each moved record gets a
+  `completed_migration` line saying what changed (the old status and the new
+  one, with the completion time and merge commit), why (a shipped record, or
+  the merge proof of its `automaton/<id>` branch), and how to undo it (set the
+  status back to cancelled with the Automaton's cancel command).
+- **Refused while a final gate runs.** A real run during a running final gate
+  is refused with a 409; retry when the gate finishes. A dry run still reports,
+  marked busy.
+- **Never touches a session.** It does not start, stop, kill or signal any
+  session, and no git command writes.
+
+New merges need no migration: the daemon's merge pipeline has a
+`mark_completed` post-ship step (see [Post-ship hooks](post-ship-hooks.md)),
+and the merge helper script runs a `completed_mark` step after it records the
+shipped state, so a merged Automaton ends Completed from the start. The full
+walk-through is in [Show finished Automata as Completed](automata-completed-migration.md).
+
+## 8. What shipped does not do
+
+- Recording shipped state does not change a stored status — recording and backfill both leave it
   alone (a shipped completed stays `completed`; a shipped cancelled stays
   `cancelled` in the store, though every view shows it as Completed). The
   separate [Completed migration](automata-completed-migration.md) is what
