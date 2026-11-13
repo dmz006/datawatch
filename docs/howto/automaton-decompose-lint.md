@@ -125,8 +125,9 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: ten rules —
-the six `block` rules first, then the four `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: thirteen rules —
+the nine `block` rules first (the six boundary rules, then the three
+verification-script stability rules), then the four `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -146,6 +147,29 @@ and never name a particular project, repository or home directory.
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
+
+### The three verification-script stability rules
+
+The last three `block` rules read the task's verification script from the
+project directory (and any helper it sources, one level deep) and name the
+**script path and the rule id** in the finding:
+
+- `verify_script_task_files_only` — fires when the script compares only
+  against the task's own files and never against `git merge-base`. Fix: compare
+  against the merge base and a cumulative allowed-file list.
+- `verify_script_docs_without_sync` — fires when the script checks docs, the
+  embedded docs copy or how-to coverage without running `make sync-docs`. Fix:
+  run `make sync-docs` first.
+- `final_gate_without_script` — fires on a `final_gate` task that has no
+  script, no `verification_script_reason` and no usable report path. Fix: give
+  it a script, a report path, or a reason.
+
+They use three match predicates (below): `verification_script_task_files_only`,
+`verification_script_docs_without_sync` and `verification_script_reason_empty`
+(the last with `kind: final_gate`). A script that does not exist yet is
+skipped by the first two. The full authoring guide, with the fix for each rule
+and how to set a task's script or reason on every surface, is
+[Write verification scripts that stay stable](automaton-verification-scripts.md).
 
 ## 4. Writing your own rules — a worked example
 
@@ -518,9 +542,10 @@ held-task flow.
 
 There is **one** final gate per Automaton, on the **last** story, depending on
 every task of every story. The standard-task pack applies it once there; a
-planner-written `final_gate` on any earlier story is silently dropped when the
-pack is applied (the other tasks' `depends_on` entries on it are removed too);
-no decompose-lint rule rejects such a plan. The
+planner-written `final_gate` on any earlier story is rejected by the plan check
+at decompose time (the planner is asked to retry), and one that still remains is
+dropped when the pack is applied (the other tasks' `depends_on` entries on it
+are removed too). The
 planner is told not to write a per-story gate: a story-level check is plain
 task verification, and the one real gate closes the Automaton.
 
@@ -549,6 +574,10 @@ performs the verification*.
    of **every** other task of **every story of the Automaton**, in story
    order, until the first failure. Standard-task (template) tasks and other
    final gates are skipped, so the gate never runs itself or a sibling.
+
+The collection in step 3 spans the **whole Automaton**, not just the gate's
+own story: with one final gate at the end, it runs every other task's script
+from every story, so a story-level script is never skipped.
 
 Steps 1 and 2 are exclusive — a command or the task's own script replaces the
 story's scripts, it does not add to them — while step 3 runs all the scripts
