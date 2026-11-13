@@ -36,7 +36,7 @@ func (m *Manager) runScriptGateTask(ctx context.Context, prd *PRD, t *Task) (han
 	if m == nil || prd == nil || t == nil || t.Kind != TaskKindFinalGate {
 		return false, nil
 	}
-	checks, reason := ResolveGateCheck(t, storyOfTask(prd, t), m.projectGateCommand(prd))
+	checks, reason := ResolveGateCheckForAutomaton(t, prd.Story, m.projectGateCommand(prd))
 	if len(checks) == 0 && reason == "" {
 		return false, nil
 	}
