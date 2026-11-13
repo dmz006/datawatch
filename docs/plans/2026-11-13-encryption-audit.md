@@ -122,7 +122,7 @@
 | A7 | `autonomous/scratch/<prd>/` (decompose output, and copies of the judge and verifier output files taken from the project: `cmd/datawatch/session_judgment.go`) | Short-lived working files for one Automaton (`internal/autonomous/scratch.go`) | **none** (0600) | **yes** |
 | A8 | `supervisorloop` runs (`runs.jsonl`), orchestrator `graphs.jsonl`, tag registry `tags.json` cache, alert rules `alert-rules.yaml`, agent audit `audit/agents.jsonl`, eval suites and run results (`evals/`, `evals/runs/<id>.json`), classifier calibration (`internal/classifier/calibration.go`), the last-shutdown record (`internal/shutdowncause`), dashboard layout (`internal/server/api_dashboard_cards.go`), `federation/groups.json`, change records (`internal/changerecord`), `identity.yaml` (see E1) | Small operational stores; contents are configuration and event history, with no credentials found | **none** | **yes** (low sensitivity) |
 
-### O. Observability, audit and logs
+### O. Observability, the audit log and other logs
 
 | Id | Location | What it holds | Encrypted today | Can `--secure` cover it |
 |----|----------|---------------|-----------------|-------------------------|
