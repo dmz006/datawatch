@@ -5810,6 +5810,8 @@
   "housekeeping_repairs_intermittent_first_lines": "Premières lignes : {0}",
   "housekeeping_repairs_intermittent_none": "Aucun échec de test intermittent.",
   "housekeeping_repairs_failed": "Impossible de charger les réparations de maintenance : {0}",
+  "housekeeping_questions_card_title": "Questions ouvertes",
+  "housekeeping_questions_help_link": "Aide : la carte « Questions ouvertes » de la maintenance",
   "task_routing_title": "Routage des tâches",
   "task_routing_desc": "Choisissez quel LLM traite et vérifie chaque type de tâche d’un automate. Le profil actif s’applique aux tâches créées ensuite.",
   "task_routing_enabled": "Router les tâches de l’automate par type de tâche",

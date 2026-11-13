@@ -5810,6 +5810,8 @@
   "housekeeping_repairs_intermittent_first_lines": "Primeras líneas: {0}",
   "housekeeping_repairs_intermittent_none": "No hay fallos de prueba intermitentes.",
   "housekeeping_repairs_failed": "No se pudieron cargar las reparaciones de mantenimiento: {0}",
+  "housekeeping_questions_card_title": "Preguntas abiertas",
+  "housekeeping_questions_help_link": "Ayuda: la tarjeta «Preguntas abiertas» del mantenimiento",
   "automaton_project_label": "Proyecto",
   "automaton_project_source_link": "definido directamente en este autómata",
   "automaton_project_source_automation": "desde su Automation",

@@ -5810,6 +5810,8 @@
   "housekeeping_repairs_intermittent_first_lines": "Erste Zeilen: {0}",
   "housekeeping_repairs_intermittent_none": "Keine sporadischen Testfehler.",
   "housekeeping_repairs_failed": "Housekeeping-Reparaturen konnten nicht geladen werden: {0}",
+  "housekeeping_questions_card_title": "Offene Fragen",
+  "housekeeping_questions_help_link": "Hilfe: die Karte „Offene Fragen“ im Housekeeping",
   "automaton_project_label": "Projekt",
   "automaton_project_source_link": "direkt an diesem Automaten gesetzt",
   "automaton_project_source_automation": "aus der zugehörigen Automation",
