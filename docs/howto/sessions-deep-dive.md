@@ -689,6 +689,8 @@ sub-tab.
 
 ![Session detail — Tmux tab](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-tmux.png)
 
+Note: the Tmux tab is a full-height page. The terminal pane fills the space between the header and the bottom of the window, and the **Commands** and Send-message row sits flush at the bottom — there is no empty band below that row. Resizing the window or zooming the browser re-fits the terminal pane without a reload.
+
 ![Session detail — Status tab (hook board)](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-status.png)
 
 ![Session detail — Stats tab](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-stats.png)
