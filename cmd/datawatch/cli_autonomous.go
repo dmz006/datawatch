@@ -290,6 +290,7 @@ Subcommands:
 		newAutonomousPRDSetBreakingChangeCmd(),
 		newAutonomousPRDSetLanePreferenceCmd(),
 		newAutonomousShippedCmd(),
+		newAutonomousCompletedMigrateCmd(),
 		newAutonomousDefectCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
