@@ -106,7 +106,10 @@ one-line toolbar is already at the top of the list: the **server select**,
 the search box, the **Filters** button and the **view mode select** (List /
 Tiles / Compact), plus the **Fold all** button while a grouping is active. The
 **Tree** and **History** buttons sit on the line below the toolbar, with
-the 🌐 indicator while a federated server is the active one. **Group by** and
+the 🌐 indicator while a federated server is the active one — that line
+is behind the header's 🔍 *search & filters* button (right side of the
+header bar): hidden by default, shown after you switch it on for this
+browser. **Group by** and
 the saved **Views** are inside the Filters sheet.
 
 If you only need one of the three, jump to the matching section:
@@ -124,8 +127,8 @@ top of the page, at any width, in this order: **server select**, **search**,
 
 - **Server select** — the line starts with the Sessions page's own server
 dropdown (an **All servers** entry, **This server**, and one entry per
-enabled peer, a peer whose reachability check failed marked
-** (unreachable)**): picking an entry re-renders the page you're on against
+enabled peer; a peer whose reachability check failed is marked
+`(unreachable)`): picking an entry re-renders the page you're on against
 that server (its sessions, its counts, its search text), and picking the
 active one is a no-op. It is the same shared picker as the header dropdown
 — choosing an entry in one updates the other, and both ride on the one
@@ -149,6 +152,9 @@ toggle. Described next under [View modes](#view-modes).
   on their own line, with the clickable **🌐 <name>** indicator while a
   federated server is the active one: clicking it returns you to this
   server (picking **This server** in either server dropdown does the same).
+  That line is behind the header's 🔍 *search & filters* button (right side of
+  the header bar): hidden by default, shown after you switch it on for
+  this browser.
 
 ### The Filters sheet
 
