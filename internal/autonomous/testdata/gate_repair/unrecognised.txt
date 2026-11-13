@@ -1,0 +1,20 @@
+# gate-repair fixture — a genuine failing check: a real go test failure with
+# no class signature (no missing script, no docs drift, no allowed list, no
+# tracker/hex match, no SIGPIPE, no signal kill). Must classify as unknown.
+# expect: unknown
+# exit-code: 1
+# signal-killed: no
+# script: .datawatch/verify/story1-tests.sh
+# own-verify-folder: yes
+# script-story: 0
+# gate-story: 0
+# changed: internal/autonomous/gate_repair_classify.go
+# script text:
+#   set -e
+#   go test ./internal/autonomous/ -count=1
+---
+--- FAIL: TestGateRepairFixtureHeader (0.00s)
+    gate_repair_classify_test.go:44: fixture pipe_sigpipe.txt: want exit code 141, got 1
+FAIL
+FAIL	github.com/dmz006/datawatch/internal/autonomous	0.851s
+FAIL
