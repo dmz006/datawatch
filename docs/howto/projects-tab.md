@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history]
+  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, project-link, project-membership, automata-without-a-project, backfill, set-project, project-source]
 exec_steps:
   - tool: project_list
     description: List the registered projects. Each entry carries its directory, its default backend and its stored policy. Read-only
@@ -25,6 +25,13 @@ exec_steps:
   - tool: project_set_arcs
     description: Replace the ordered arc list of a project. The array order is the arc order; each arc has an automation id, a priority and a state (planned, active or done). Sending an empty list clears the arcs
     args: {name: core-api, arcs: [{automation_id: a1b2c3d4, priority: 1, state: active}, {automation_id: e5f6a7b8, priority: 2, state: planned}]}
+  - tool: autonomous_prd_set_project
+    description: Set or clear the explicit project link of an Automaton. The project must be a configured project name; an empty project clears the link. Only the Automaton record changes and the change is written to its decision log
+    args: {id: a1b2c3d4, project: core-api}
+  - tool: autonomous_project_link_backfill
+    description: Report which Automata with no project link belong to the datawatch project. The default is a dry run that writes nothing; pass apply true to write the links
+    args: {apply: false}
+    read_only: true
 ---
 
 # How-to: the Projects sub-tab
@@ -334,7 +341,10 @@ The report lists each Automaton with its project, how it matched
 (`automation`, `parent` or `directory`) and the result (would link, linked,
 skipped with the reason, or failed), then the counts: scanned, matched, applied,
 skipped and failed. A failure on one Automaton is recorded and the rest go on.
-A second `--apply` finds nothing to do.
+Each Automaton the backfill links gets one decision-log entry of kind
+`project_link_backfill` (a link set by hand is `project_link_set`), so you can see
+when and why it was placed. A second `--apply` finds nothing to do, because every
+matched Automaton now carries a link.
 
 The same pass is on REST (`POST /api/autonomous/project-link-backfill` with
 `{"apply":true}`; omit `apply` or send `false` for a dry run; `GET` on the same
