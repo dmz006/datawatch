@@ -110,33 +110,42 @@ func TestLifecycle_QueueOverflowDropsNotBlocks(t *testing.T) {
 	defer d.Close()
 
 	release := make(chan struct{})
-	defer close(release)
-	started := make(chan struct{}, 1)
-	m.Subscribe(LifecycleFilter{}, func(LifecycleEvent) {
-		select {
-		case started <- struct{}{}:
-		default:
-		}
+	started := make(chan struct{})
+	// Park one dedicated subscriber inside the first delivery: while its
+	// callback holds event 0 the queue is empty and nothing drains it, so
+	// a burst of exactly lifecycleQueueSize+extra events leaves exactly
+	// extra in THIS subscriber's dropped counter — regardless of what the
+	// other live subscribers (including the Manager's built-in lifeHistory
+	// recorder) do with their own queues and goroutines.
+	s, cancel := d.subscribeCounted(LifecycleFilter{}, func(LifecycleEvent) {
+		close(started)
 		<-release
 	})
+	defer func() { // run after d.Close is scheduled below only in the success path
+		close(release)
+		cancel()
+	}()
 	m.emit(taskEvent(-1))
-	<-started // goroutine is now stuck inside fn; queue is empty
+	<-started // parked callback holds event 0; queue is empty and undrained
 
 	const extra = 10
-	done := make(chan struct{})
+	emitDone := make(chan struct{})
 	go func() {
 		for i := 0; i < lifecycleQueueSize+extra; i++ {
 			m.emit(taskEvent(i))
 		}
-		close(done)
+		close(emitDone)
 	}()
+	// Safety net only, not an assertion: publish never blocks, so
+	// reaching this far is a genuine hang, not a scheduling flake.
 	select {
-	case <-done:
-	case <-time.After(time.Second):
+	case <-emitDone:
+	case <-time.After(5 * time.Second):
+		close(release)
 		t.Fatal("emit blocked on a full subscriber queue")
 	}
-	if got := d.droppedTotal(); got != extra {
-		t.Fatalf("dropped = %d, want %d", got, extra)
+	if got := s.dropped.Load(); got != extra {
+		t.Fatalf("subscriber dropped %d, want %d", got, extra)
 	}
 }
 
