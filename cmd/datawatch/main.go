@@ -1159,6 +1159,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				Timeline: func(id, line string) { _ = mgr.AppendTimeline(id, line) },
 			})
 			mgr.SetTraceIngestor(traceIngestor)
+			// A deleted session's trace goes with it: Delete drops the
+			// exact FullID from the trace store (best effort — a trace
+			// failure never fails the delete).
+			mgr.SetTraceDeleter(ts)
 			traceCtx, traceCancel := context.WithCancel(context.Background())
 			go traceIngestor.Run(traceCtx)
 			defer func() { traceCancel(); traceIngestor.Close() }()
@@ -1991,6 +1995,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Handle SIGINT / SIGTERM gracefully
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Trace retention: with tracing.retention_days above 0 (0 = keep
+	// forever) drop expired trace events once at startup and then once a
+	// day. A prune error is logged and never stops the loop; it stops when
+	// the daemon context ends.
+	if traceStore != nil && cfg.Tracing.WithDefaults().RetentionDays > 0 {
+		go func() {
+			store := traceStore
+			tick := time.NewTicker(24 * time.Hour)
+			defer tick.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+				}
+				removed, err := store.Prune()
+				if err != nil {
+					fmt.Printf("[warn] trace prune: %v\n", err)
+					continue
+				}
+				if removed > 0 {
+					fmt.Printf("[trace] pruned %d expired trace event(s)\n", removed)
+				}
+			}
+		}()
+	}
 
 	// shutdownAudit holds the operator audit log once it is wired up below
 	// (auditpkg.New, the same log the REST/MCP handlers write to). The signal
