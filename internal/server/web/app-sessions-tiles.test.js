@@ -119,8 +119,9 @@ test('the stored mode wins over the viewport, and a garbage stored value falls b
   bad.innerWidth = 360;
   bad.localStorage.setItem(MODE_KEY, 'bogus-mode');
   assert.equal(bad._sessionsViewMode(), 'list', 'a non-mode value is ignored in favor of the viewport default');
-  assert.equal(bad._sessionsReadStoredMode(), 'bogus-mode', 'the raw read is left as-is...');
-  assert.equal(bad._sessionsViewModeNormalize(bad._sessionsReadStoredMode()), null, '... and normalization turns it into a fallback');
+  assert.equal(bad._sessionsReadStoredMode(), null, 'a non-mode value is rejected by the reader, not passed through...');
+  assert.equal(bad.localStorage.getItem(MODE_KEY), null, '... and the key is forgotten so it is not read again');
+  assert.equal(bad._sessionsViewModeNormalize(null), null, 'normalizing a rejected read is still a fallback');
 });
 
 // ── storage safety ──────────────────────────────────────────────────────────
