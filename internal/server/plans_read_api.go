@@ -487,8 +487,8 @@ func (s *Server) handlePlanRecordBrowse(w http.ResponseWriter, r *http.Request) 
 	}
 	if v := q.Get("state"); v != "" {
 		st := planrecords.State(v)
-		if !(f.Kind != planrecords.KindFinding && planrecords.ValidState(planrecords.KindRegistryRow, st)) &&
-			!(f.Kind != planrecords.KindRegistryRow && planrecords.ValidState(planrecords.KindFinding, st)) {
+		if (f.Kind == planrecords.KindFinding || !planrecords.ValidState(planrecords.KindRegistryRow, st)) &&
+			(f.Kind == planrecords.KindRegistryRow || !planrecords.ValidState(planrecords.KindFinding, st)) {
 			planRecordsError(w, http.StatusBadRequest, "state "+strconv.Quote(v)+" is not a valid state for this kind")
 			return
 		}
