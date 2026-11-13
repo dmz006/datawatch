@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.172.14 (2026-11-13).** The release scan's second soupsieve finding on the aider image is accepted for 30 days, with the same Python 3.11.2 reason as the first. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.173.1 (2026-11-13).** The Dashboard stat bar wraps and the page scrolls as one on a phone, so + Card and Edit stay reachable. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

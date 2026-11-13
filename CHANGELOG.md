@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.1 — Dashboard phone layout fix
+
+### Fixed
+
+- **Dashboard on a phone.** At 600px or less the stat bar now wraps onto a second row so the **+ Card** and **Edit** buttons stay on screen, and the Dashboard scrolls as one page (the card grid grows to fit its cards instead of clipping inside a short nested scroll box). Layout only: no setting, API, MCP or CLI change. Covered by `app-dash-phone-statbar.test.js` and `app-dash-phone-grid-height.test.js`; see [howto/dashboard.md](docs/howto/dashboard.md#on-a-phone).
+
 ## v9.173.0 — Local pre-tag run replaces the slow CI checks
 
 ### Added
