@@ -152,16 +152,18 @@ func waitForLast(t *testing.T, c *PullCollector, name string, ok func(PullState)
 	deadline := time.Now().Add(5 * time.Second)
 	var st PullState
 	var found bool
-	for {
+	for time.Now().Before(deadline) {
 		st, found = c.Last(name)
 		if found && ok(st) {
 			return st
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s; last state = (%+v, found=%v)", what, st, found)
-		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	st, found = c.Last(name)
+	if !found || !ok(st) {
+		t.Fatalf("timed out waiting for %s; last state = (%+v, found=%v)", what, st, found)
+	}
+	return st
 }
 
 func testSnapshot() *StatsResponse {
