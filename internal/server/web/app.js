@@ -3205,9 +3205,10 @@ function _projectsPaint() {
   if (selected === _PROJECTS_OVERVIEW) {
     // Overview is the cross-project in-flight view; it draws the whole
     // #view, so the picker goes back on top of it afterwards.
-    view.innerHTML = '<div id="projectsOverviewBody">' + _automationBodyHTML() + '</div>';
+    _projectsOverviewRestoreSubtab();
+    view.innerHTML = '<div id="projectsOverviewBody">' + _automationBodyHTML({ projectsStyle: true }) + '</div>';
     _automationMount();
-    view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
+    view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err));
   } else {
     const p = list.find(x => x.name === selected);
     const forSel = _projectsState.rollupFor === selected;
@@ -3560,6 +3561,31 @@ function selectProjectsSubtab(k) {
   } catch (_) { /* history blocked */ }
   _projectsPaint();
 }
+
+// ── Overview sub-tabs ───────────────────────────────────────────────────────
+// Projects Overview shows the cross-project in-flight sub-tabs (Inbox,
+// Automations, ...) in the Projects sub-tab style. The choice is kept in the
+// same remembered value as the project sub-tabs (cs_projects_subtab), so a
+// refresh opens the same sub-tab again.
+function _projectsOverviewSubtabValid(v) { return _AUTOMATION_SUBTABS.some(s => s.id === v); }
+function _projectsOverviewRestoreSubtab() {
+  if (_projectsState.overviewSubtabRestored) return;
+  _projectsState.overviewSubtabRestored = true;
+  try {
+    const v = localStorage.getItem(_PROJECTS_SUBTAB_KEY) || '';
+    if (_projectsOverviewSubtabValid(v)) _automationState.subtab = v;
+  } catch (_) { /* not remembered */ }
+}
+function selectProjectsOverviewSubtab(id) {
+  if (!_projectsOverviewSubtabValid(id)) return;
+  _automationNormalizeSubtab();
+  const prev = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab);
+  if (prev && prev.id !== id) prev.stop();
+  _automationState.subtab = id;
+  _projectsRememberSubtab(id);
+  _projectsPaint();
+}
+window.selectProjectsOverviewSubtab = selectProjectsOverviewSubtab;
 
 // ── Project roll-up section: progress bars, cost in points, throughput ──────
 // ── Project links: read-only policy, merge pipeline, arc documents, events ──
@@ -43861,7 +43887,7 @@ function _automationBadgeLabel(n) {
 // The badge is updated in place: no redraw of the body or the bar.
 function _automationUpdateInboxBadge() {
   if (typeof document === 'undefined') return;
-  const el = document.querySelector('.automation-subtabs [data-subtab="inbox"] .automation-subtab-badge');
+  const el = document.querySelector('.automation-subtabs [data-subtab="inbox"] .automation-subtab-badge, .projects-subtabs [data-projects-subtab="inbox"] .automation-subtab-badge');
   if (!el) return;
   const n = _automationInboxBadgeCount();
   el.textContent = String(n);
@@ -44020,8 +44046,13 @@ function _automationBadgeHTML(s) {
   return `<span class="automation-subtab-badge" aria-label="${escHtml(_automationBadgeLabel(n))}" style="${n > 0 ? '' : 'display:none;'}">${n}</span>`;
 }
 
-function _automationSubtabsBarHTML() {
+function _automationSubtabsBarHTML(opts) {
   const st = _automationState;
+  if (opts && opts.projectsStyle) {
+    return `<div class="projects-subtabs" role="tablist" aria-label="${escHtml(t('projects_subtabs_label'))}">`
+      + _AUTOMATION_SUBTABS.map(s => `<button type="button" role="tab" class="projects-subtab${st.subtab === s.id ? ' active' : ''}" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-projects-subtab="${s.id}" onclick="selectProjectsOverviewSubtab('${s.id}')">${escHtml(t(s.labelKey))}${_automationBadgeHTML(s)}</button>`).join('')
+      + `</div>`;
+  }
   return `<div class="output-tabs automation-subtabs" role="tablist">`
     + _AUTOMATION_SUBTABS.map(s => `
         <button class="output-tab ${st.subtab === s.id ? 'active' : ''}" role="tab" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-subtab="${s.id}" onclick="switchAutomationSubtab('${s.id}')">${escHtml(t(s.labelKey))}${_automationBadgeHTML(s)}</button>`).join('')
@@ -44031,13 +44062,13 @@ function _automationSubtabsBarHTML() {
 
 // The Automation sub-tab's body: the second-row sub-tab bar first, then the
 // body of the sub-tab that is selected.
-function _automationBodyHTML() {
+function _automationBodyHTML(opts) {
   _automationNormalizeSubtab();
   const st = _automationState;
   const def = _AUTOMATION_SUBTABS.find(s => s.id === st.subtab)
     || _AUTOMATION_SUBTABS.find(s => s.id === _AUTOMATION_DEFAULT_SUBTAB)
     || _AUTOMATION_SUBTABS[0];
-  return _automationSubtabsBarHTML()
+  return _automationSubtabsBarHTML(opts)
     + `\n      ` + def.bodyHTML();
 }
 
@@ -44079,7 +44110,7 @@ function _automationStopLoaders(keys) {
 function _tabStripReveal(stripEl) {
   try {
     if (!stripEl || typeof stripEl.querySelector !== 'function') return;
-    const btn = stripEl.querySelector('.output-tab.active');
+    const btn = stripEl.querySelector('.output-tab.active') || stripEl.querySelector('.projects-subtab.active');
     if (!btn) return;
     if (typeof btn.scrollIntoView === 'function') {
       btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
@@ -44105,7 +44136,7 @@ function _tabStripFade(stripEl) {
 }
 function _tabStripsRevealAll() {
   try {
-    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar, .tab-strip-scroll').forEach(_tabStripReveal);
+    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-subtabs, .projects-tabs-bar, .tab-strip-scroll').forEach(_tabStripReveal);
   } catch (e) { /* cosmetic only */ }
 }
 window._tabStripReveal = _tabStripReveal;
