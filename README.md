@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.163.1 (2026-11-12).** The header server dropdown now remembers its choice per browser, and a removed peer falls back to All servers. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.163.2 (2026-11-12).** The Projects Gantt now spans each Automaton from created to completed, each arc from its members' earliest start to latest completion, and draws dependency edges. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
