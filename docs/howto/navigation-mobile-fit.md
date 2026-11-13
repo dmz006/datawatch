@@ -4,6 +4,8 @@ The bottom navigation bar of the web UI (the PWA) has to fit a phone screen: six
 
 This is a test-runner check, not a feature you configure. Nothing here changes a setting, an API, an MCP tool, a CLI command or a comm-channel command. The surface is the PWA only.
 
+The same page also covers how every page body is laid out at phone width (the shared page container, the Dashboard header counters and the filter rows); see [Page layout at phone width](#page-layout-at-phone-width). That layout is a style rule of the PWA, not part of the bottom-bar check.
+
 ## What the check measures
 
 The check loads the PWA in a real headless Chrome, against an isolated daemon the test runner starts for itself. It sizes the window to each phone width and reads the bottom navigation bar. It runs in two themes, light and dark.
@@ -149,6 +151,42 @@ The Observer and Dashboard views have no tab strip. The rule was audited at 320 
 
 What is not covered: the strips are not part of the `make test-e2e-shared-nav` gate, and there is no automated pixel check of the fade. The unit tests under `internal/server/web/` (`app-automation-subtab-load.test.js`, `app-automation-tab-registry.test.js`, `app-automaton-detail-tab-strip.test.js`) cover the scripts, not how the strip looks.
 
+## Page layout at phone width
+
+Every top-level page of the PWA now uses the same layout at phone width that the Sessions list uses, so moving between pages does not change the side margins or card sizes. The rule applies at a viewport of 600 px or less, or on a touch screen. Above that, and on a desktop browser, the pages keep their earlier layout.
+
+**Pages covered:** Sessions, Automata (every sub-tab, an Automaton's page and the Automaton form), Projects (including a project's focus page), Alerts, Observer, Dashboard and Settings. Each page's outer wrapper carries the shared `phone-page` style.
+
+What you see on a phone:
+
+- **One side gutter.** Every page has a 12 px gutter on the left and right, the same as the Sessions list. A page inside another page does not add a second gutter.
+- **Full-width cards, one padding.** Automaton cards, alert cards and Settings sections are as wide as the gutter allows and no wider. Automaton cards and alert cards use 12 px 14 px of inner padding and an 8 px gap between cards, the same as a session card. Settings sections keep their own inner padding; only their width and the gap between sections follow the rule.
+- **Dashboard cards fill the row.** The Dashboard card grid becomes one column of full-width cards with an 8 px gap, instead of a narrower inset grid, and a card's wide or tall grid size is ignored.
+- **No sideways page scroll.** The page container clips anything wider than the screen. Wide content such as the project Gantt chart scrolls inside its own box instead of widening the page.
+
+The three spacing values live in one place in `internal/server/web/style.css` as `--phone-gutter`, `--phone-card-padding` and `--phone-gap`; one edit there moves every page.
+
+### Dashboard header counters
+
+The strip at the top of the Dashboard holds the **DASHBOARD** title, the session, task and guardrail counters, the burn-rate summary, the placement filter and the icon buttons. At phone width it wraps onto more lines instead of squeezing each item into a narrow column:
+
+- Each counter (for example `51 sess`, `3 active`, `$521.32 today`) is one unit and never breaks in the middle of a value.
+- The burn-rate summary takes its own full line and wraps only between its parts.
+- The placement filter and its select shrink to the screen width instead of running off the right edge.
+- The buttons keep their size and move to the next line when they no longer fit.
+
+### Filter rows
+
+Filter and control rows wrap onto more lines at phone width, and their children shrink to the row width instead of running off the right edge. Selects and search boxes in these rows take at least about 140 px and grow to fill a line; they cut long text with an ellipsis. The rows covered are the Dashboard Timeline card filters, the Automata filter bar, the Automation controls, the Plans and Plan records controls, the Records tab controls, the cost charts controls, the list controls, the trace filters, the paging controls, the Observer filter row and the project Gantt toolbar.
+
+The Sessions toolbar is not one of these rows. It keeps its own one-line layout (see [Sessions deep dive](sessions-deep-dive.md) and [Sessions tiles and grouping](sessions-tiles-and-grouping.md)).
+
+What is not covered:
+
+- None of this is gated by `make test-e2e-shared-nav`, which measures the bottom bar only, and no automated check renders the pages at 320, 360 or 390 px. The change was verified by reading the style rules; look at each page on a real phone or in a narrow browser window before relying on it.
+- The wrapping rules name specific rows and classes. A new filter row that uses a different class does not wrap until its class is added to the rule in `internal/server/web/style.css`.
+- Android and iPhone are not changed by this; their layout is the mobile app's own.
+
 ## Other modes
 
 The probe has two more modes. Both run through the same environment variables as the gate, and both are run directly rather than through `make`:
@@ -164,8 +202,8 @@ The probe's header comment, `scripts/test-stories/pwa/shared-nav-mobile-fit-prob
 |--------|-----|
 | **YAML** | N/A. No config key. |
 | **CLI** | N/A. The check is run by `make test-e2e-shared-nav`. |
-| **Web UI** | The bottom navigation bar, six buttons: Sessions, Automata, Alerts, Observer, Dashboard and Settings (Automata and Dashboard appear when enabled). The tab strips below it scroll sideways on a phone (see [Tab strips at phone width](#tab-strips-at-phone-width)). |
+| **Web UI** | The bottom navigation bar, six buttons: Sessions, Automata, Alerts, Observer, Dashboard and Settings (Automata and Dashboard appear when enabled). The tab strips below it scroll sideways on a phone (see [Tab strips at phone width](#tab-strips-at-phone-width)), and every page body shares one gutter, card width and filter-row wrapping (see [Page layout at phone width](#page-layout-at-phone-width)). |
 | **REST API** | N/A. |
 | **Comm channel** | N/A. |
 
-The navigation bar sends no commands and calls no endpoint for its layout, so no other surface changes.
+The navigation bar and the page layout send no commands and call no endpoint, so no other surface changes.
