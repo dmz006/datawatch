@@ -3558,6 +3558,33 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/gate-repairs:
+    get:
+      summary: Gate repair engine
+      description: |
+        The gate repair engine: the mode in effect (`off`, `report` or `on`;
+        report records what it would do and acts on nothing), the repair
+        records newest last (`records` — for each failed gate the failure
+        class found, what it would do or did, and how to undo it), and the
+        spent repair budget keys (`budget`). Read-only: reading it repairs
+        nothing, raises no alert and changes no mode; the mode changes only
+        through the existing config set paths (`autonomous.gate_repair.mode`).
+        Needs the autonomous read capability when called by a federated peer.
+      operationId: autonomousGateRepairs
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Gate repair engine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateRepairStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/supervisor-watch:
     get:
       summary: Supervisor watch state
@@ -13112,6 +13139,28 @@ components:
         found: {type: string}
         done: {type: string}
         undo: {type: string, description: How to undo what was done}
+    GateRepairStatus:
+      type: object
+      description: The gate repair engine read view, as GET /api/autonomous/gate-repairs.
+      properties:
+        mode: {type: string, enum: [off, report, "on"], description: The engine mode in effect (an unset mode reads report)}
+        budget: {type: array, items: {type: string}, description: The spent repair budget keys (failed task plus failure class)}
+        records:
+          type: array
+          items: {$ref: "#/components/schemas/GateRepairRecord"}
+    GateRepairRecord:
+      type: object
+      description: One gate repair record, newest last.
+      properties:
+        at: {type: string, format: date-time}
+        group: {type: string}
+        subject: {type: string, description: The failed gate (task and script)}
+        kind: {type: string, description: What happened to it: would, did, failed or skipped}
+        found: {type: string, description: What the engine found, including the failure class}
+        done: {type: string, description: What it would do or did}
+        undo: {type: string, description: How to undo what was done}
+        before: {type: string, description: The script text pair of a file edit, before}
+        after: {type: string, description: The script text pair of a file edit, after}
     SupervisorWatchStatus:
       type: object
       description: >-

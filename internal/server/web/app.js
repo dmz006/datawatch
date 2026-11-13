@@ -24473,6 +24473,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.planning', label: 'Planning repairs', labelKey: 'settings_housekeeping_planning', helpKey: 'settings_housekeeping_planning_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    // Gate repair — the gate failure repair engine, one mode (off, report or on;
+    // default report).
+    { label: 'Gate repair', labelKey: 'settings_gate_repairs', hintKey: 'settings_gate_repairs_hint', type: 'group' },
+    { key: 'autonomous.gate_repair.mode', label: 'Mode (off, report or on; default report)', labelKey: 'settings_gate_repairs_mode', helpKey: 'settings_gate_repairs_mode_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Platform context — the toggle and the project note. Reads GET /api/config and writes
     // through PUT /api/config (platform_context.enabled, platform_context.note).
     { label: 'Platform context', labelKey: 'settings_platform_context_title', docsKey: 'settings_platform_context_title', type: 'group' },

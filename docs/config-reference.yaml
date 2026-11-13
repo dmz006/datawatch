@@ -2687,6 +2687,35 @@ autonomous:
     # Whole number, 0 or more; 0 means no grace. Default: 300.
     grace_seconds: 300
 
+
+  # Gate repair: the engine behind a failed final gate script. After a gate
+  # fails it classifies the failure (a gate that still points at a later
+  # story's script, a stale docs mirror, an allowed-list that now rejects a
+  # required file, a tracker id or CSS hex the gate misflags, a piped command
+  # killed by SIGPIPE, a run killed by a restart - or unknown). In `on` it
+  # applies the safe repair for the class once per class per task (the repair
+  # budget persists), then resets the failed task and its dependents so the
+  # gate runs again. A spent budget or an unknown class is one held operator
+  # question, never a guess. A repair never merges, ships, deletes, ends or
+  # signals a session, changes a model or backend setting, or touches a
+  # security workflow; script edits are limited to the task's own
+  # .datawatch/verify folder. The key is settable on every configuration
+  # channel: PUT /api/config {"autonomous.gate_repair.mode": <value>} (GET
+  # /api/config shows the effective value under autonomous.gate_repair),
+  # CLI `datawatch config set autonomous.gate_repair.mode <value>`, MCP
+  # `config_set` with key autonomous.gate_repair.mode (requires
+  # mcp.allow_self_config=true), comm `configure autonomous.gate_repair.mode=<value>`,
+  # and the web app Settings (Automata, Gate repair). An invalid value is
+  # refused on every surface with the same message and nothing is written.
+  # Read what it found and did with GET /api/autonomous/gate-repairs, the
+  # MCP tool gate_repairs, `datawatch autonomous gate-repairs` and the chat
+  # verb `autonomous gate-repairs`. A change takes effect on the next pass
+  # without a restart.
+  gate_repair:
+    # The engine mode: off (does nothing), report (records what it would do
+    # and changes nothing) or on (repairs and reruns the gate). Default: report.
+    mode: report
+
   # The LLM registry entry's `billing_group` field (set in PWA Settings →
   # Compute → LLM edit, comm `llm add|update ... billing_group=<label>`, REST
   # `PUT /api/llms/{name}`, MCP `llm_add`/`llm_update`, or `datawatch llm

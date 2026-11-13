@@ -1913,6 +1913,8 @@ grading pipeline every other scanner's findings already go through,
 not a second mechanism. See
 `docs/plans/2026-10-10-configurable-project-rules-enforcement.md`.
 
+**Gate repair** (`autonomous.gate_repair.mode`) — the engine behind a failed final gate script: after a gate fails it classifies the failure (`later_story_script`, `docs_mirror_stale`, `allowed_list_rejects`, `tracker_id_css_hex`, `pipe_sigpipe`, `restart_killed` or `unknown`), and in `on` mode applies the safe repair for the class at most once per (task, class) — the budget persists across restarts — then resets the failed task and its dependents so the gate runs again. In `report` (the default) it classifies and records what it would do, changing nothing; in `off` it does nothing. A spent budget or an `unknown` class is one held operator question, never a retry loop and never a guess. A gate repair never merges, ships, deletes, ends or signals a session, changes a model or backend, or touches a security workflow, and its script edits are limited to the task's own `.datawatch/verify` folder. The mode is set through the standard config set paths (`autonomous.gate_repair.mode`), and the engine is read as `GET /api/autonomous/gate-repairs`, the `gate_repairs` MCP tool, `datawatch autonomous gate-repairs`, or the chat verb `autonomous gate-repairs`; each record says what was found, what it would do or did, and how to undo it. See [howto/automaton-gate-repairs.md](howto/automaton-gate-repairs.md).
+
 **Guided mode** — per-PRD setting (`guided_mode: true`,
 `PRD.GuidedModeSource` internally) that pauses the executor before
 every task and waits for an explicit `approve_task` call before it

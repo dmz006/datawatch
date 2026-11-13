@@ -4078,6 +4078,10 @@ type AutonomousConfig struct {
 	// the grace seconds. See housekeeping_repairs.go.
 	HousekeepingRepairs HousekeepingRepairsConfig `yaml:"housekeeping_repairs" json:"housekeeping_repairs"`
 
+	// GateRepair — the gate repair engine mode (report default, or on) for
+	// the housekeeping group gate_repair. See gate_repair.go.
+	GateRepair GateRepairConfig `yaml:"gate_repair" json:"gate_repair"`
+
 	// Shipped — shipped-state surface for Automata (PRDs) and Automation:
 	// master switch, chip display, default browser filter, separate shipped
 	// counting and release backfill at startup. See ShippedConfig and
@@ -9095,6 +9099,9 @@ func Load(path string) (*Config, error) {
 	if err := loadHousekeepingRepairs(cfg); err != nil {
 		return nil, err
 	}
+	if err := loadGateRepair(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -9157,6 +9164,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := loadHousekeepingRepairs(cfg); err != nil {
+		return nil, err
+	}
+	if err := loadGateRepair(cfg); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)

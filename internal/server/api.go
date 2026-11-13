@@ -6730,6 +6730,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Housekeeping repairs (autonomous.housekeeping_repairs) — the effective
 			// mode per group (off|report|on) and the grace seconds.
 			"housekeeping_repairs": housekeepingRepairsSettingsForDisplay(s.cfg.Autonomous.HousekeepingRepairs),
+			// Gate repair engine (autonomous.gate_repair) — the effective mode
+			// (off|report|on).
+			"gate_repair": gateRepairSettingsForDisplay(s.cfg.Autonomous.GateRepair),
 			// Defect queue (autonomous.defect_queue) — effective block values and
 			// per-project overrides. Validated by ValidateDefectQueueSetting.
 			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
@@ -7210,6 +7213,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// validator, so a bad mode rejects the whole PUT with one message on every
 	// surface and nothing is written.
 	if verr := firstHousekeepingRepairsSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Gate repair engine (autonomous.gate_repair.*): same shared validator,
+	// so a bad mode rejects the whole PUT with one message on every surface
+	// and nothing is written.
+	if verr := firstGateRepairSettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9979,6 +9989,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig before this runs. The Repairer reads
 			// the block live through its Settings hook, so no restart is needed.
 			applyHousekeepingRepairsKey(cfg, k, v)
+		case "autonomous.gate_repair.mode":
+			// Validated in handlePutConfig by firstGateRepairSettingError above.
+			// The engine reads the block live through its Settings hook, so no
+			// restart is needed.
+			applyGateRepairKey(cfg, k, v)
 		case "autonomous.auto_tags.enabled", "autonomous.auto_tags.automation_template",
 			"autonomous.auto_tags.stage_template", "autonomous.auto_tags.kind_template",
 			"autonomous.auto_tags.kind_labels":
