@@ -102,6 +102,9 @@ type MigrateItem struct {
 	LinkID   string `json:"link_id,omitempty"`
 	Order    int    `json:"order,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// TitleSource is "derived" or "fallback" for a plan made from a registry
+	// row: whether its title was found in the row or the row had none.
+	TitleSource string `json:"title_source,omitempty"`
 }
 
 // MigrateReport is the result of Migrate. After an apply the would-* lists
@@ -112,6 +115,11 @@ type MigrateReport struct {
 	WouldLink       []MigrateItem `json:"would_link"`
 	SkippedExisting []MigrateItem `json:"skipped_existing"`
 	Conflicts       []MigrateItem `json:"conflicts"`
+	// TitlesDerived and TitlesFellBack count the plans made from registry
+	// rows: titles found in the row, and rows with no title that were named
+	// "(untitled row N)". A plan that already exists is counted in neither.
+	TitlesDerived  int `json:"titles_derived"`
+	TitlesFellBack int `json:"titles_fell_back"`
 }
 
 // Counts is the size of each list.
@@ -119,6 +127,7 @@ func (r MigrateReport) Counts() map[string]int {
 	return map[string]int{
 		"would_create": len(r.WouldCreate), "would_link": len(r.WouldLink),
 		"skipped_existing": len(r.SkippedExisting), "conflicts": len(r.Conflicts),
+		"titles_derived": r.TitlesDerived, "titles_fell_back": r.TitlesFellBack,
 	}
 }
 
@@ -234,7 +243,17 @@ func (m *migrator) titleTaken(project, title string) (Record, bool) {
 	return m.s.byUID[uid].clone(), true
 }
 
-func (m *migrator) add(list *[]MigrateItem, it MigrateItem) { *list = append(*list, it) }
+func (m *migrator) add(list *[]MigrateItem, it MigrateItem) {
+	if list == &m.rep.WouldCreate {
+		switch it.TitleSource {
+		case TitleDerived:
+			m.rep.TitlesDerived++
+		case TitleFellBack:
+			m.rep.TitlesFellBack++
+		}
+	}
+	*list = append(*list, it)
+}
 
 func (m *migrator) conflict(it MigrateItem, why string) {
 	it.Reason = why
@@ -381,10 +400,10 @@ func (m *migrator) rows() {
 		refs := m.rowRefs(r)
 		marker := "row:" + r.UID
 		plan, hasPlan := m.markers[marker]
-		title := clipRunes("Plan: "+r.Title, MaxTitleRunes)
+		title, titleSource := migratedRowTitle(r)
 		it := MigrateItem{
 			Source: migrateSourceRow, SourceRef: r.ID, Title: title, Project: r.Project,
-			Order: clampOrder(r.LegacyNumber),
+			Order: clampOrder(r.LegacyNumber), TitleSource: titleSource,
 		}
 		if len(refs) == 0 {
 			it.Source = migrateSourceRowBacklog

@@ -279,7 +279,8 @@ migration builds plans from what you already have:
   Automation.
 - Every registry row whose text or links name an Automaton or Automation id
   becomes a plan linked to it. The plan is titled `Plan: <row title>`, because a
-  title is unique inside a project and the row keeps its own.
+  title is unique inside a project and the row keeps its own. See *How a plan
+  gets its title* below.
 - Every open row that names none becomes a backlog plan, ordered by its old row
   number. A closed row that names none is left out.
 
@@ -298,6 +299,30 @@ alone; a title already taken by a record the migration did not make is reported
 as a conflict and left alone. No arc, row or config key is deleted. An apply
 writes one audit event (`plan_record_imported`, subject `plans migrate`) besides
 the event for each plan and link it writes.
+
+### How a plan gets its title
+
+Some registry rows hold a status note where the title should be, for example
+`done, shipped in 9.5.92 (PRD 332c0001)`. The migration does not use such text
+as a name. For each row it looks at the row's title text, then at its
+`Description`, `Summary`, `Goal` or `Title` column if the row has one, and takes
+the first one that reads like a name:
+
+- Leading status words (`done`, `shipped`, `failed`, `blocked`, `not started`
+  and the like) are dropped, so `Done: Fix the retry check` becomes
+  `Plan: Fix the retry check`.
+- The title is one line and at most 100 characters, `Plan: ` included.
+- Text that is only a status note, or starts with a PRD id or a version, is not
+  a title. If nothing in the row is a title, the plan is named from the row
+  number: `Plan: (untitled row 15)`. Rename it afterwards in the Plans browser
+  or with `datawatch plan-record update`.
+- The row's status is kept as the plan's status; a done row becomes a finished
+  plan.
+
+The preview line ends with two counts, `titles derived N, fell back M`: how
+many of the plans this run makes got a title from their row, and how many were
+named `(untitled row N)`. A plan that already exists is never renamed, and it
+is counted in neither, so after an apply both counts read 0.
 
 ## Reading plans
 

@@ -25,6 +25,8 @@ type planMigrateWire struct {
 		WouldLink       []planMigrateItem `json:"would_link"`
 		SkippedExisting []planMigrateItem `json:"skipped_existing"`
 		Conflicts       []planMigrateItem `json:"conflicts"`
+		TitlesDerived   int               `json:"titles_derived"`
+		TitlesFellBack  int               `json:"titles_fell_back"`
 	} `json:"result"`
 }
 
@@ -69,8 +71,9 @@ func planMigrateText(body string) string {
 	if rs.Applied {
 		head, create, link = "Migration", "created", "linked"
 	}
-	lines := []string{fmt.Sprintf("%s: %s %d, %s %d, already there %d, conflicts %d", head,
-		create, len(rs.WouldCreate), link, len(rs.WouldLink), len(rs.SkippedExisting), len(rs.Conflicts))}
+	lines := []string{fmt.Sprintf("%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, fell back %d", head,
+		create, len(rs.WouldCreate), link, len(rs.WouldLink), len(rs.SkippedExisting), len(rs.Conflicts),
+		rs.TitlesDerived, rs.TitlesFellBack)}
 	for i, c := range rs.Conflicts {
 		if i >= planRecordsMaxLines {
 			lines = append(lines, fmt.Sprintf("… and %d more conflicts", len(rs.Conflicts)-i))

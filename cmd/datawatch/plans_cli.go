@@ -36,6 +36,8 @@ type cliPlansMigrate struct {
 		WouldLink       []cliPlansMigrateIt `json:"would_link"`
 		SkippedExisting []cliPlansMigrateIt `json:"skipped_existing"`
 		Conflicts       []cliPlansMigrateIt `json:"conflicts"`
+		TitlesDerived   int                 `json:"titles_derived"`
+		TitlesFellBack  int                 `json:"titles_fell_back"`
 	} `json:"result"`
 }
 
@@ -59,8 +61,9 @@ func renderPlansMigrate(w io.Writer, body []byte) error {
 	if r.Applied {
 		head, verbCreate, verbLink = "Migration", "created", "linked"
 	}
-	_, _ = fmt.Fprintf(w, "%s: %s %d, %s %d, already there %d, conflicts %d\n", head,
-		verbCreate, len(r.WouldCreate), verbLink, len(r.WouldLink), len(r.SkippedExisting), len(r.Conflicts))
+	_, _ = fmt.Fprintf(w, "%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, fell back %d\n", head,
+		verbCreate, len(r.WouldCreate), verbLink, len(r.WouldLink), len(r.SkippedExisting), len(r.Conflicts),
+		r.TitlesDerived, r.TitlesFellBack)
 	line := func(prefix string, it cliPlansMigrateIt) {
 		s := fmt.Sprintf("  %s: %s (%s", prefix, oneLineText(it.Title), it.Source)
 		if it.Project != "" {
