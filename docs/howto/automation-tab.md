@@ -153,21 +153,39 @@ Each card shows:
 
 - **Headline.** What happened, in one line: *Stopped: the task "…" failed*,
   *Blocked: …*, or *Ready to merge: branch … is waiting*.
-- **Reason.** The reason recorded for it, cut to two lines. Open details to read
-  the whole record.
+- **Reason.** The reason recorded for it. A **blocked** card shows the whole
+  reason — the block reason is the decision you are waiting on — and, under
+  it, a small line naming where the reason came from: *the Automaton set this
+  reason for itself* (`blocked_reason`), *from a guardrail verdict (decision
+  note or policy guard)* (`verdict`), *from a task error or an ended session*
+  (`task_error`) or *a task is held for operator review* (`task_review`). A
+  **failed** card and a ready-to-merge card keep the reason cut to two lines —
+  the full text is in the detail panel.
+- **Next step.** The failed card and a blocked card with a reason both carry
+  one concrete line saying how to unblock, picked by the reason's kind:
+  *resolve the review and it runs again*, *fix the error, then reset the task
+  to run it again — or cancel the Automaton*, *read the verdict, clear the
+  block, then reset the task — or cancel the Automaton*, or *clear the cause
+  named in the reason, then reset the task — or cancel the Automaton*. A card
+  with no reason text at all (a failed one with no error, a blocked one with
+  no recorded reason) gets the plain line instead, which already says what to
+  do: open the details, check the task output, then reset the task or cancel
+  the Automaton.
 - **Automaton and Automation.** An **Automaton** chip, and an **in Automation
   *name*** chip when the Automaton belongs to an Automation.
 - **Wait time.** *waiting …*, how long the Automaton has been waiting on you.
 
-The card has up to four buttons:
+The card has up to four buttons, and on the card each action button carries a
+short line naming what it does:
 
-- **Open details** opens the detail panel. A click anywhere on the card, outside
-  a button, does the same.
-- **Retry** resets the failed task so it runs again. It appears only when the
-  record names a task.
-- **Resolve review** sends a task that is held for review back to its worker. It
+- **Open details** opens the detail panel — the whole record, the full reason,
+  notes and retry budget. A click anywhere on the card, outside a button, does
+  the same.
+- **Retry** (*resets the task and runs it again from where it failed*). It
+  appears only when the record names a task.
+- **Resolve review** (*answers the review so the held task runs again*). It
   appears when a task is held for review or the branch is ready to merge.
-- **Cancel** cancels the Automaton.
+- **Cancel** (*stops the Automaton and archives it*).
 
 Open questions and held questions sit above the Triage card on Inbox, so they
 are the first things you see. You answer an open question in place, on its own
@@ -176,20 +194,31 @@ questions, Triage, security failure report, supervisor watch.
 
 ### The held-questions card
 
-The held-questions card lists tasks that an Automaton has held for an operator
-decision. An Automaton holds a task when it names a question it cannot settle
-itself while the task is in one of the held states: by default `review_held`,
-`decompose_blocked`, `decompose_stalled`, `decompose_failed` and
-`decompose_rejected`. The card's badge shows the mode the feature is in:
+The held-questions card lists Automata that are held for an operator
+decision. The daemon raises a question when an Automaton sits in one of the
+held states: by default `blocked`, `review_held`, `revision_requested`,
+`awaiting_decision` and `pending_insert` (the pass covers whichever subset
+`autonomous.questions.held_states` names). The card's badge shows the mode
+the feature is in:
 
 - **shadow** (the default) records the questions it would have held as *would-be*
   questions, and holds no task.
 - **on** holds the task and lists it here until you answer.
 - **off** turns the feature off.
 
-Each held entry shows the recommended option, *Held on the default: hold* (what
-happens if you do nothing), a link to open the Automaton or task, and an
-**Answer** button, which opens the question so you can respond.
+Each held entry shows the Automaton's title and id, the question's id, and the
+held task and held-state chips when there is one, the **question's own text** (what
+is being asked), cut to three lines — click the row to open the full question and
+read it in whole — the one-line reason, the recommended option, the default
+(*Default: …* from the record, or *Held on the default: hold* when the record
+carries none), a link that opens the Automaton detail (labelled *Open task in
+Automaton* when the entry names a task, *Open Automaton* otherwise), an open
+row's **Answer** button, and a small line
+naming where the hold's mode and states are set (**Settings**). For an open
+entry a click anywhere on the row, outside a button or link, opens the same
+full question the **Answer** button opens. A **shadow** entry is read-only:
+same facts, but no answer button and no row click — it is a would-be hold,
+not an open question.
 
 To view or change the mode or the held states, open **Settings** under **Automata**
 and look at **Held questions mode** (`autonomous.questions.held_mode`) or **Held

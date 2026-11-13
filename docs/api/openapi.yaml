@@ -10768,6 +10768,7 @@ components:
         automation_id: {type: string, description: "The owning Automation when the Automaton is one of its members"}
         title: {type: string, description: "The Automaton's title; empty when it has none"}
         reason: {type: string, description: "Why it is held, verbatim from the question text; empty when the text does not say"}
+        text: {type: string, description: "The held question's own text (what is being asked), capped to 500 runes with a trailing ellipsis when it is longer; absent when the record has none"}
         recommended_option:
           type: string
           enum: [hold, retry, retry_stronger, change_spec, cancel, approve_insert, reject_insert, resume]
@@ -10783,6 +10784,7 @@ components:
         state: {type: string, enum: [blocked, review_held, revision_requested, awaiting_decision, pending_insert], description: The held state the note records}
         recommended_option: {type: string, enum: [hold, retry, retry_stronger, change_spec, cancel, approve_insert, reject_insert, resume], description: "The option the note settled on; empty when the note carries none"}
         at: {type: string, format: date-time, description: When the note was written}
+        system_tags: {type: array, items: {type: string}, description: The placement-derived tag set the Automaton carries}
     RulesReviewOutcome:
       type: object
       description: |
@@ -11568,7 +11570,11 @@ components:
         task_title: {type: string}
         blocked_reason:
           type: string
-          description: The blocked reason recorded on the Automaton; empty for failed ones without one
+          description: "The blocked reason shown on the record: the Automaton's own block reason when it set one, else a reason derived from the facts on the Automaton (see reason_source); empty for failed records"
+        reason_source:
+          type: string
+          enum: [blocked_reason, verdict, task_error, task_review, none]
+          description: "Where a blocked record's reason text came from: blocked_reason — the Automaton set it itself; verdict — the latest block guardrail verdict's note, or the latest blocked Decision's note; task_error — a task's error text, or the reason its session ended; task_review — a task is held for operator review; none — no reason was recorded. Absent on failed records"
         error:
           type: string
           description: The failed task's error, truncated to 2000 chars by the pass
