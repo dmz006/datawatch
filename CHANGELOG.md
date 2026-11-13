@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- Docs: the restart how-to, the operations guide and the glossary now describe the graceful-restart wait for running final gates (`autonomous.gate_drain_minutes`, default 10, 0 = do not wait), the `running_gates` / `running_gate_count` fields of the interruption report, and the `gates_waited` / `gates_interrupted` fields of the `POST /api/restart` answer. The wait is bounded and kills nothing; unfinished gates re-attach at the next start.
 - Docs: the restart how-tos, the operations guide and the glossary now describe the final gate surviving a daemon restart: its own durable run record, re-attach at boot with no failure or retry counted, the shipped systemd unit's `KillMode=process`, and the one restart retry for a gate killed by a signal within five minutes of the daemon starting.
 
 ## v9.163.3 — Session detail page fills the window with no blank band
