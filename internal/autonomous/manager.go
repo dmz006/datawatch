@@ -1357,7 +1357,7 @@ type Manager struct {
 	// taskRoutingBackendKnown reports whether an LLM backend is known to the
 	// registry; nil skips the check (SetTaskRoutingBackendCheck).
 	taskRoutingBackendKnown func(backend string) bool
-	mu sync.Mutex
+	mu                      sync.Mutex
 	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
 	// Guarded by mu; nil means no usage is reported.
 	laneUtilUsage LaneUtilizationUsageSource
