@@ -725,7 +725,7 @@ there too.
 - [projects-tab.md](projects-tab.md): the Projects sub-tab, the first sub-tab of
   the Automata view (left of Automation), which groups an Automation under its project as an arc, with the project's
   Automata, sessions, progress, history and policy on one page
-- [Triage records](../api/autonomous.md#triage-records-get-api-autonomoustriage): the record of every failed or blocked
+- [Triage records](../api/autonomous.md#triage-records-get-apiautonomoustriage): the record of every failed or blocked
   Automaton in your Automations — how the pass fills, refreshes and clears
   it, the single alert it can raise, and where to read it (REST, MCP, CLI,
   comm, this detail view); the operator reference is the *Triage records*
