@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.168.0 — The Sessions page controls sit on one tight line
+
+### Added
+
+- **The Sessions page controls sit on one tight line.** The main controls of the Sessions page now share a single toolbar line that never wraps into several rows, at every width: a server select (the same shared picker as the header server dropdown, so choosing a server in one updates the other), the search box taking the free width, the Filters button with its badge, a Fold all icon that appears while a grouping is active, and a view mode select for List, Tiles and Compact. The chosen view is remembered on this device. The Tree and History buttons, and the back-to-local indicator while a federated server is active, move to a line directly below the toolbar.
+- **The same one-line rule applies to the Alerts, Automata, Observer and Dashboard pages** where it fits, so their controls no longer split across rows.
+- **Documentation and help text** for the Sessions how-tos, the Automata list controls and the glossary describe the one-line toolbar, the view mode select and the Fold all icon, and the new `sessions_view_dropdown` label is translated in all five languages.
+
 ## v9.167.1 — Pull collector tests are deterministic
 
 ### Fixed

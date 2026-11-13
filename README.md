@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.167.1 (2026-11-13).** The observer pull collector's unit tests no longer race the collector's state write, so the suite is stable; the change is test-only. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.168.0 (2026-11-13).** The Sessions page puts its server select, search, Filters, Fold all and view mode controls on one tight line, and the Alerts, Automata, Observer and Dashboard pages follow the same rule where it fits. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
