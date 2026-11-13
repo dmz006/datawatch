@@ -34934,13 +34934,12 @@ function usageCalcRerender() {
 }
 
 // ── Burn guard card ─────────────────────────────────────────────────────────
-// The burn guard (GET /api/usage/burn-guard, GET/PUT /api/usage/burn-guard/config,
-// POST /api/usage/burn-guard/run) watches the weekly burn against the pace line and
-// climbs or steps back a ladder of rungs. This card draws what the status body says
-// and writes settings back through the config endpoint; it computes nothing itself.
-// The effort ceiling is read-only here: it is set per Automaton with the effort-ceiling
-// tools. Auto-refresh uses a window-level interval variable, never a DOM-held timer.
-const BURN_GUARD_RUNGS = ['lower_inflight', 'route_pi_prompt', 'hold_claude'];
+// The burn guard (GET /api/usage/burn-guard, POST /api/usage/burn-guard/run) watches
+// the weekly burn against the pace line and climbs or steps back a ladder of rungs.
+// This card is read-only: it draws what the status body says and links into the
+// burn guard section of the Settings page (Automata tab) where config is edited.
+// It computes nothing itself. The effort ceiling is still read from the status body.
+// Auto-refresh uses a window-level interval variable, never a DOM-held timer.
 const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
 const BURN_GUARD_STATE_KEYS = { off: 'burn_guard_state_off', idle: 'burn_guard_state_idle', guarding: 'burn_guard_state_guarding', waiting: 'burn_guard_state_waiting' };
 const BURN_GUARD_DIRECTION_KEYS = { hold: 'burn_guard_dir_hold', climb: 'burn_guard_dir_climb', step_back: 'burn_guard_dir_step_back', disabled: 'burn_guard_dir_disabled' };
@@ -34953,13 +34952,30 @@ function _burnGuardN(v, digits) {
   return Number.isFinite(n) ? n.toFixed(digits === undefined ? 1 : digits) : '—';
 }
 
-// burnGuardCardHtml(status, config, opts) draws the card. Every value is escaped.
+// The tile reports the guard's "last check" as its last reported tick time.
+// A missing or unparseable timestamp renders the localized "never".
+function _burnGuardLastCheckText(st) {
+  const at = st && st.last_tick_at;
+  if (at === undefined || at === null || at === '') return String(t('burn_guard_last_check_none'));
+  const ms = new Date(at).getTime();
+  if (!Number.isFinite(ms)) return String(at);
+  return timeAgo(ms);
+}
+
+// burnGuardCardHtml(status, config, opts) draws the compact read-only status tile:
+// the guard's on/off state, when it last checked, the state/rung, the projection
+// and the last decision. It links into the burn guard section of the Settings page
+// rather than hosting the settings controls. `config` is accepted for backward
+// compatibility but is not drawn. Every value is escaped; nothing is written here.
 window.burnGuardCardHtml = function (status, config, opts) {
   opts = opts || {};
   const st = status || null;
   const cfg = config || {};
   const head = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
-    `<div style="font-weight:600;">${escHtml(t('burn_guard_title'))}${docsLink('howto/burn-guard.md', t('burn_guard_help'))}</div>` +
+    `<div style="font-weight:600;display:flex;align-items:center;gap:6px;min-height:16px;">` +
+      `${escHtml(t('burn_guard_title'))}` +
+      `<a href="/diagrams.html#docs/howto/burn-guard.md" target="_blank" rel="noopener" title="${escHtml(t('burn_guard_help_tip'))}" aria-label="${escHtml(t('burn_guard_help'))}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>` +
+    `</div>` +
     `<button type="button" class="btn-secondary" data-burn-guard="run" style="font-size:12px;padding:4px 10px;" onclick="burnGuardRunNow()">${escHtml(t('burn_guard_run_now'))}</button></div>`;
   const parts = [head];
   if (opts.error) parts.push(`<div role="alert" data-burn-guard="error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(t('burn_guard_error', [opts.error]))}</div>`);
@@ -34967,6 +34983,11 @@ window.burnGuardCardHtml = function (status, config, opts) {
   if (!st) {
     if (!opts.error) parts.push(`<div data-burn-guard="loading" style="font-size:12px;color:var(--text2);">${escHtml(t('burn_guard_loading'))}</div>`);
   } else {
+    const enabledText = st.enabled ? t('burn_guard_enabled_on') : t('burn_guard_enabled_off');
+    parts.push(`<div class="burn-guard-tile" data-burn-guard="tile" data-enabled="${escHtml(String(!!st.enabled))}" style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;padding:6px 8px;border:1px solid var(--border,#333);border-radius:6px;">` +
+      `<span data-burn-guard="enabled" style="font-size:12px;font-weight:600;">${escHtml(enabledText)}</span>` +
+      `<span data-burn-guard="last-check" style="font-size:12px;color:var(--text2);">${escHtml(t('burn_guard_last_check'))} ${escHtml(_burnGuardLastCheckText(st))}</span>` +
+      `</div>`);
     const stateKey = Object.prototype.hasOwnProperty.call(BURN_GUARD_STATE_KEYS, st.state) ? BURN_GUARD_STATE_KEYS[st.state] : '';
     const stateText = stateKey ? t(stateKey) : String(st.state || '');
     const rungKey = Object.prototype.hasOwnProperty.call(BURN_GUARD_RUNG_KEYS, st.rung) ? BURN_GUARD_RUNG_KEYS[st.rung] : '';
@@ -34995,39 +35016,24 @@ window.burnGuardCardHtml = function (status, config, opts) {
     }
     if (st.last_error) parts.push(`<div data-burn-guard="last-error" style="font-size:12px;color:var(--error,#ef4444);">${escHtml(st.last_error)}</div>`);
   }
-  parts.push(window.burnGuardSettingsHtml(cfg));
+  parts.push(window.burnGuardSettingsHtml());
   return `<div class="usage-calc-section burn-guard-card" data-burn-guard="card" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">${parts.join('')}</div>`;
 };
 
-window.burnGuardSettingsHtml = function (cfg) {
-  cfg = cfg || {};
-  const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? cfg.ladder : BURN_GUARD_RUNGS;
-  const order = ladder.concat(BURN_GUARD_RUNGS.filter(r => !ladder.includes(r)));
-  const rows = order.map((r, i) => {
-    const on = ladder.includes(r);
-    const label = Object.prototype.hasOwnProperty.call(BURN_GUARD_RUNG_KEYS, r) ? t(BURN_GUARD_RUNG_KEYS[r]) : String(r);
-    return `<div data-rung="${escHtml(r)}" style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;">` +
-      `<label style="display:flex;align-items:center;gap:6px;flex:1;"><input type="checkbox" data-rung-on="${escHtml(r)}"${on ? ' checked' : ''} onchange="burnGuardSaveLadder()"><span>${escHtml(label)}</span></label>` +
-      `<button type="button" aria-label="${escHtml(t('burn_guard_rung_up'))}" style="padding:2px 8px;" onclick="burnGuardMoveRung('${escHtml(r)}',-1)"${i === 0 ? ' disabled' : ''}>↑</button>` +
-      `<button type="button" aria-label="${escHtml(t('burn_guard_rung_down'))}" style="padding:2px 8px;" onclick="burnGuardMoveRung('${escHtml(r)}',1)"${i === order.length - 1 ? ' disabled' : ''}>↓</button></div>`;
-  }).join('');
-  const ceil = cfg.effort_ceiling && typeof cfg.effort_ceiling === 'object' ? cfg.effort_ceiling : {};
-  const ceilRows = Object.keys(ceil).sort().map(k => `<span data-ceiling-kind="${escHtml(k)}" style="margin-right:10px;">${escHtml(k)}: ${escHtml(String(ceil[k]))}</span>`).join('');
-  const retry = cfg.retry_limit_claude === undefined || cfg.retry_limit_claude === null ? '' : String(cfg.retry_limit_claude);
-  const margin = cfg.margin_points === undefined || cfg.margin_points === null ? '' : String(cfg.margin_points);
-  const gap = cfg.max_projection_gap_points === undefined || cfg.max_projection_gap_points === null ? '' : String(cfg.max_projection_gap_points);
-  return `<div class="burn-guard-settings" style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">` +
-    `<div style="font-weight:600;font-size:12px;">${escHtml(t('burn_guard_settings_title'))}</div>` +
-    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardEnabled"${cfg.enabled ? ' checked' : ''} onchange="burnGuardSaveField('enabled')"><span>${escHtml(t('burn_guard_enabled'))}</span></label>` +
-    `<label style="font-size:12px;">${escHtml(t('burn_guard_margin'))} <input id="burnGuardMargin" type="number" min="0" step="any" value="${escHtml(margin)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('margin_points')"></label>` +
-    `<div style="font-size:12px;">${escHtml(t('burn_guard_ladder'))}</div><div id="burnGuardLadder">${rows}</div>` +
-    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardStepBack"${cfg.step_back ? ' checked' : ''} onchange="burnGuardSaveField('step_back')"><span>${escHtml(t('burn_guard_step_back'))}</span></label>` +
-    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardAskOnChange"${cfg.ask_on_change ? ' checked' : ''} onchange="burnGuardSaveField('ask_on_change')"><span>${escHtml(t('burn_guard_ask_on_change'))}</span><a href="/diagrams.html#docs/howto/burn-guard.md#settings" target="_blank" rel="noopener" title="${escHtml(t('burn_guard_ask_on_change_help'))}" aria-label="Help" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a></label>` +
-    `<label style="font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${escHtml(t('burn_guard_max_projection_gap'))} <input id="burnGuardMaxProjectionGap" type="number" min="0" max="100" step="any" value="${escHtml(gap)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('max_projection_gap_points')"><a href="/diagrams.html#docs/howto/burn-guard.md#settings" target="_blank" rel="noopener" title="${escHtml(t('burn_guard_max_projection_gap_help'))}" aria-label="Help" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a></label>` +
-    `<label style="font-size:12px;">${escHtml(t('burn_guard_retry_limit'))} <input id="burnGuardRetryLimit" type="number" min="0" max="20" step="1" value="${escHtml(retry)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('retry_limit_claude')"></label>` +
-    `<div data-burn-guard="effort-ceiling" style="font-size:12px;"><span>${escHtml(t('burn_guard_effort_ceiling'))}</span> ${ceilRows || escHtml(t('burn_guard_ceiling_none'))}</div>` +
-    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('burn_guard_ceiling_hint'))}</div>` +
+// The burn guard settings no longer live in this card. This draws only the link
+// that takes the operator to the burn guard section of the Settings page
+// (Automata tab); nothing here edits config.
+window.burnGuardSettingsHtml = function () {
+  return `<div data-burn-guard="settings" style="display:flex;align-items:center;gap:8px;font-size:12px;padding-top:2px;">` +
+    `<a href="#" data-burn-guard="settings-link" onclick="burnGuardOpenSettings();return false;" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:12px;">${escHtml(t('burn_guard_settings_title'))} ↗</a>` +
     `</div>`;
+};
+
+// Deep-links into the burn guard section of the Settings page (Automata tab).
+// Reuses the same helper the project settings links use: navigate to settings,
+// switch to the Automata tab, expand the section and scroll it into view.
+window.burnGuardOpenSettings = function () {
+  return _projectsOpenSettings('usage_burn_guard', 'automata');
 };
 
 function _burnGuardPaint() {
@@ -35040,8 +35046,11 @@ function _burnGuardPaint() {
 }
 
 window.burnGuardRefresh = function () {
-  return Promise.all([apiFetch('/api/usage/burn-guard'), apiFetch('/api/usage/burn-guard/config')]).then(r => {
-    _burnGuard.status = r[0]; _burnGuard.config = r[1]; _burnGuard.error = '';
+  // Read-only card: it draws the status body only, so refresh fetches just that.
+  // The config body is no longer polled here; the settings are edited in the
+  // burn guard section of the Settings page.
+  return apiFetch('/api/usage/burn-guard').then(status => {
+    _burnGuard.status = status; _burnGuard.error = '';
     _burnGuardPaint();
   }).catch(err => {
     _burnGuard.error = err && err.message ? err.message : String(err);
@@ -35049,63 +35058,10 @@ window.burnGuardRefresh = function () {
   });
 };
 
-// Writes go to the config endpoint, then the card refetches both bodies.
-function _burnGuardPut(body) {
-  return apiFetch('/api/usage/burn-guard/config', { method: 'PUT', body: JSON.stringify(body) })
-    .then(() => { _burnGuard.message = t('burn_guard_saved'); return window.burnGuardRefresh(); })
-    .catch(err => { _burnGuard.error = err && err.message ? err.message : String(err); _burnGuardPaint(); });
-}
-
-window.burnGuardSaveField = function (key) {
-  const num = id => { const e = document.getElementById(id); return e ? Number(e.value) : NaN; };
-  const chk = id => { const e = document.getElementById(id); return !!(e && e.checked); };
-  let body;
-  if (key === 'enabled') body = { enabled: chk('burnGuardEnabled') };
-  else if (key === 'step_back') body = { step_back: chk('burnGuardStepBack') };
-  else if (key === 'ask_on_change') body = { ask_on_change: chk('burnGuardAskOnChange') };
-  else if (key === 'margin_points') body = { margin_points: num('burnGuardMargin') };
-  else if (key === 'max_projection_gap_points') {
-    // An empty field is not 0: 0 turns the gap check off, so blank is refused.
-    const e = document.getElementById('burnGuardMaxProjectionGap');
-    body = { max_projection_gap_points: e && String(e.value).trim() !== '' ? num('burnGuardMaxProjectionGap') : NaN };
-  }
-  else if (key === 'retry_limit_claude') body = { retry_limit_claude: num('burnGuardRetryLimit') };
-  else return;
-  if (key === 'margin_points' || key === 'retry_limit_claude' || key === 'max_projection_gap_points') {
-    const v = body[key];
-    if (!Number.isFinite(v) || v < 0 || (key === 'max_projection_gap_points' && v > 100) || (key === 'retry_limit_claude' && (v > 20 || !Number.isInteger(v)))) {
-      _burnGuard.error = t('burn_guard_invalid_number');
-      _burnGuardPaint();
-      return;
-    }
-  }
-  return _burnGuardPut(body);
-};
-
-function _burnGuardLadderFromDom() {
-  const host = document.getElementById('burnGuardLadder');
-  if (!host) return [];
-  return Array.from(host.querySelectorAll('[data-rung]')).filter(row => {
-    const cb = row.querySelector('input[type=checkbox]');
-    return cb && cb.checked;
-  }).map(row => row.getAttribute('data-rung'));
-}
-
-window.burnGuardSaveLadder = function () {
-  const ladder = _burnGuardLadderFromDom();
-  if (!ladder.length) { _burnGuard.error = t('burn_guard_ladder_empty'); _burnGuardPaint(); return; }
-  return _burnGuardPut({ ladder });
-};
-
-window.burnGuardMoveRung = function (rung, delta) {
-  const cfg = _burnGuard.config || {};
-  const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? cfg.ladder.slice() : BURN_GUARD_RUNGS.slice();
-  const i = ladder.indexOf(rung);
-  const j = i + delta;
-  if (i < 0 || j < 0 || j >= ladder.length) return;
-  const tmp = ladder[i]; ladder[i] = ladder[j]; ladder[j] = tmp;
-  return _burnGuardPut({ ladder });
-};
+// The burn guard's config controls no longer live in this card, so it performs no
+// writes: the config PUT, the field saver, the ladder saver and the rung mover
+// have been removed. Config is edited only in the burn guard section of the
+// Settings page, which polls and saves itself.
 
 window.burnGuardRunNow = function () {
   return apiFetch('/api/usage/burn-guard/run', { method: 'POST' }).then(res => {

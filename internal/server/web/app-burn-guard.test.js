@@ -1,8 +1,13 @@
-// Burn guard card — PWA side.
+// Burn guard card — PWA side (read-only status tile).
 //
-// window.burnGuardCardHtml(status, config, opts) draws the state and rung, the projection
-// against the pace line, the last decision and the settings controls. The card computes
-// nothing; these tests check the drawing, the writes it sends and the interval handling.
+// window.burnGuardCardHtml(status, config, opts) now draws a compact, read-only
+// status tile: the guard's on/off state, when it last checked, the state/rung,
+// the projection against the pace line, and the last decision. It links into the
+// burn guard section of the Settings page rather than hosting config controls.
+// The card computes nothing; these tests check the drawing, the tile, the
+// run-now action, refresh and the interval handling. The settings link, help
+// entry and the "no editable controls" contract are pinned separately in
+// app-automata-burn-guard-link.test.js.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -24,6 +29,8 @@ const STATUS = {
   last_projection: { projected: 72.5, line: 60, margin: 5, over_by: 7.5 },
   last_decision: { direction: 'climb', rung: 'lower_inflight', level: 1, previous: 0, reason: 'over the line' },
 };
+// config is accepted for backward compatibility but no longer drawn; pass one to
+// prove the card ignores it.
 const CONFIG = {
   enabled: true, margin_points: 5, ladder: ['lower_inflight', 'route_pi_prompt'], step_back: true,
   retry_limit_claude: 2, effort_ceiling: { docs: 'low', final_gate: 'low' },
@@ -44,47 +51,25 @@ test('the card shows the state, rung, projection, margin and the last decision',
   assert.ok(html.includes('over the line'));
 });
 
-test('the settings controls are all present', () => {
-  const html = card(loadApp(), STATUS, CONFIG);
-  for (const id of ['burnGuardEnabled', 'burnGuardMargin', 'burnGuardLadder', 'burnGuardStepBack', 'burnGuardAskOnChange', 'burnGuardRetryLimit']) {
-    assert.ok(html.includes('id="' + id + '"'), id);
-  }
-  assert.ok(html.includes('data-ceiling-kind="docs"'));
-  assert.ok(html.includes('data-burn-guard="run"'), 'run now button');
-  assert.ok(html.includes('/diagrams.html#docs'), 'help link');
-});
+test('the tile shows the enabled state and the last check time', () => {
+  // With a last tick: the relative time is shown (timeAgo of a recent instant).
+  const recent = Object.assign({}, STATUS, { last_tick_at: new Date(Date.now() - 40000).toISOString() });
+  const html = card(loadApp(), recent, CONFIG);
+  assert.ok(html.includes('data-burn-guard="tile"'), 'tile element');
+  assert.ok(html.includes('data-enabled="true"'), 'enabled state');
+  assert.ok(html.includes('data-burn-guard="enabled"'), 'enabled label');
+  assert.ok(html.includes('data-burn-guard="last-check"'), 'last check shown');
+  assert.ok(html.includes('Enabled'), 'localized enabled state');
 
-test('ask_on_change is unchecked by default, checked when set, and links to the howto Settings section', () => {
-  const off = card(loadApp(), STATUS, CONFIG);
-  assert.ok(off.includes('id="burnGuardAskOnChange"'));
-  assert.ok(!off.includes('id="burnGuardAskOnChange" checked'), 'default is off');
-  const on = card(loadApp(), STATUS, Object.assign({}, CONFIG, { ask_on_change: true }));
-  assert.ok(on.includes('id="burnGuardAskOnChange" checked'));
-  for (const html of [off, on]) {
-    assert.ok(html.includes('/diagrams.html#docs/howto/burn-guard.md#settings'), 'docs link to the howto Settings section');
-    assert.ok(html.includes('Open the burn guard howto'), 'help text is the localized title');
-  }
-});
+  // Disabled guard: the tile reports it.
+  const off = card(loadApp(), Object.assign({}, STATUS, { enabled: false }), CONFIG);
+  assert.ok(off.includes('data-enabled="false"'), 'disabled state');
+  assert.ok(off.includes('Disabled'), 'localized disabled state');
 
-test('toggling ask_on_change sends a PUT of the checkbox state', async () => {
-  const s = loadApp();
-  const calls = stubApi(s, { enabled: true });
-  s.document.getElementById = id => (id === 'burnGuardAskOnChange' ? { checked: false } : null);
-  await vm.runInContext("window.burnGuardSaveField('ask_on_change')", s);
-  const put = calls.find(c => c[1] && c[1].method === 'PUT');
-  assert.ok(put, 'a PUT was sent');
-  assert.equal(put[0], '/api/usage/burn-guard/config');
-  assert.deepEqual(JSON.parse(put[1].body), { ask_on_change: false });
-});
-
-test('the ladder lists the configured rungs first, in order, with unused rungs unchecked', () => {
-  const html = card(loadApp(), STATUS, CONFIG);
-  const a = html.indexOf('data-rung="lower_inflight"');
-  const b = html.indexOf('data-rung="route_pi_prompt"');
-  const c = html.indexOf('data-rung="hold_claude"');
-  assert.ok(a > 0 && a < b && b < c);
-  assert.ok(html.includes('data-rung-on="lower_inflight" checked'));
-  assert.ok(!html.includes('data-rung-on="hold_claude" checked'));
+  // No last tick yet: the localized "never" is shown.
+  const never = card(loadApp(), Object.assign({}, STATUS, { last_tick_at: null }), CONFIG);
+  assert.ok(never.includes('Last check'), 'last check label');
+  assert.ok(never.includes('never'), 'localized never value');
 });
 
 test('a missing status shows loading and an error shows plainly; values are escaped', () => {
@@ -103,33 +88,23 @@ test('with no projection or decision the card says so', () => {
   assert.ok(html.includes('No decision yet'));
 });
 
-function stubApi(s, reply) {
-  s.__calls = [];
-  s.__reply = reply || {};
-  vm.runInContext('apiFetch = (u, i) => { __calls.push([u, i]); return Promise.resolve(__reply); }', s);
-  return s.__calls;
-}
-
-test('saving the margin sends a PUT of the bare key; a bad retry limit sends nothing', async () => {
+test('Run now posts to the run endpoint and re-draws from the status', async () => {
   const s = loadApp();
-  const calls = stubApi(s);
-  s.document.getElementById = id => (id === 'burnGuardMargin' ? { value: '7' } : id === 'burnGuardRetryLimit' ? { value: '99' } : null);
-  await vm.runInContext("window.burnGuardSaveField('margin_points')", s);
-  const put = calls.find(c => c[1] && c[1].method === 'PUT');
-  assert.ok(put, 'a PUT was sent');
-  assert.equal(put[0], '/api/usage/burn-guard/config');
-  assert.deepEqual(JSON.parse(put[1].body), { margin_points: 7 });
-  const before = calls.length;
-  await vm.runInContext("window.burnGuardSaveField('retry_limit_claude')", s);
-  assert.equal(calls.length, before, 'retry limit over 20 is rejected locally');
+  s.__calls = [];
+  s.__reply = Object.assign({}, STATUS);
+  vm.runInContext('apiFetch = (u, i) => { __calls.push([u, i]); return Promise.resolve(__reply); }', s);
+  await vm.runInContext('window.burnGuardRunNow()', s);
+  const run = s.__calls.find(c => c[0] === '/api/usage/burn-guard/run');
+  assert.ok(run && run[1].method === 'POST', 'the run action POSTs');
 });
 
-test('Run now posts to the run endpoint', async () => {
+test('refresh fetches only the status body, not the config body', async () => {
   const s = loadApp();
-  const calls = stubApi(s, { status: null });
-  await vm.runInContext('window.burnGuardRunNow()', s);
-  const run = calls.find(c => c[0] === '/api/usage/burn-guard/run');
-  assert.ok(run && run[1].method === 'POST');
+  s.__calls = [];
+  s.__reply = Object.assign({}, STATUS);
+  vm.runInContext('apiFetch = (u, i) => { __calls.push(u); return Promise.resolve(__reply); }', s);
+  await vm.runInContext('window.burnGuardRefresh()', s);
+  assert.deepEqual(s.__calls, ['/api/usage/burn-guard'], 'one status GET, no config GET');
 });
 
 test('polling uses a window-level interval variable and stops cleanly', () => {
@@ -143,53 +118,4 @@ test('polling uses a window-level interval variable and stops cleanly', () => {
   assert.equal(vm.runInContext('window._burnGuardInterval', s), 7);
   vm.runInContext('window.burnGuardStopPolling()', s);
   assert.equal(vm.runInContext('window._burnGuardInterval', s), null);
-});
-
-test('the max projection gap control shows the configured value and links to the howto Settings section', () => {
-  const html = card(loadApp(), STATUS, Object.assign({}, CONFIG, { max_projection_gap_points: 30 }));
-  assert.ok(html.includes('id="burnGuardMaxProjectionGap"'));
-  assert.ok(html.includes('value="30"'));
-  assert.ok(html.includes("burnGuardSaveField('max_projection_gap_points')"));
-  assert.ok(html.includes('/diagrams.html#docs/howto/burn-guard.md#settings'), 'help link to the howto Settings section');
-  assert.ok(html.includes('Maximum projection gap'), 'help title is the localized text');
-  const unset = card(loadApp(), STATUS, CONFIG);
-  assert.ok(unset.includes('id="burnGuardMaxProjectionGap"'));
-  assert.ok(unset.includes('value=""'), 'no value when the config has none');
-});
-
-test('saving the max projection gap sends a PUT of the bare key', async () => {
-  const s = loadApp();
-  const calls = stubApi(s);
-  s.document.getElementById = id => (id === 'burnGuardMaxProjectionGap' ? { value: '40' } : null);
-  await vm.runInContext("window.burnGuardSaveField('max_projection_gap_points')", s);
-  const put = calls.find(c => c[1] && c[1].method === 'PUT');
-  assert.ok(put, 'a PUT was sent');
-  assert.equal(put[0], '/api/usage/burn-guard/config');
-  assert.deepEqual(JSON.parse(put[1].body), { max_projection_gap_points: 40 });
-});
-
-test('a max projection gap outside 0 to 100 or not a number is refused locally and sends nothing', async () => {
-  for (const value of ['101', '-1', 'abc', '']) {
-    const s = loadApp();
-    const calls = stubApi(s);
-    s.document.getElementById = id => (id === 'burnGuardMaxProjectionGap' ? { value } : null);
-    await vm.runInContext("window.burnGuardSaveField('max_projection_gap_points')", s);
-    assert.equal(calls.length, 0, 'no request for ' + JSON.stringify(value));
-    assert.ok(vm.runInContext('_burnGuard.error', s).length > 0, 'an error is shown for ' + JSON.stringify(value));
-  }
-  const edge = loadApp();
-  const calls = stubApi(edge);
-  edge.document.getElementById = id => (id === 'burnGuardMaxProjectionGap' ? { value: '0' } : null);
-  await vm.runInContext("window.burnGuardSaveField('max_projection_gap_points')", edge);
-  assert.equal(calls.filter(c => c[1] && c[1].method === 'PUT').length, 1, '0 is a valid value (gap check off)');
-});
-
-test('the settings field for the max projection gap is a number from 0 to 100 with a locale key', () => {
-  const s = loadApp();
-  const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-  const line = src.split('\n').find(l => l.includes("key: 'usage.burn_guard.max_projection_gap_points'"));
-  assert.ok(line, 'settings field present');
-  assert.ok(line.includes("type: 'number'") && line.includes('min: 0') && line.includes('max: 100'));
-  assert.ok(line.includes("labelKey: 'settings_usage_burn_guard_max_projection_gap'"));
-  assert.ok(vm.runInContext("_i18n.bundle.settings_usage_burn_guard_max_projection_gap", s));
 });
