@@ -55,8 +55,9 @@ test('project scope filters count and list alike; Overview keeps all', () => {
   assert.equal(run(s, "_automationInboxCountOf('automation_triage'," + JSON.stringify(triage) + ')'), 1);
   assert.equal(run(s, "_inboxScopeData('automation_triage'," + JSON.stringify(triage) + ').records.length'), 1);
   assert.equal(run(s, "_automationInboxCountOf('automation_held_questions'," + JSON.stringify(held) + ')'), 1);
-  assert.equal(run(s, "_automationInboxCountOf('automation_security_failure',[{repo:'x/alpha'},{repo:'x/other'}])"), 1);
-  assert.equal(run(s, "_automationInboxCountOf('supervisor',{findings:[{prd_id:'p1'},{prd_id:'p2'},{prd_id:'p1',resolved:true}]})"), 1);
+  assert.equal(run(s, "_automationInboxCountOf('automation_security_failure',[{repo:'x/alpha'},{repo:'x/other'}])"), 0);
+  assert.equal(run(s, "_automationInboxCountOf('supervisor',{findings:[{prd_id:'p1'},{prd_id:'p2'},{prd_id:'p1',resolved:true}]})"), 0);
+  assert.equal(run(s, "_inboxScopeData('supervisor',{findings:[{prd_id:'p1'},{prd_id:'p2'},{prd_id:'p1',resolved:true}]}).findings.length"), 2, 'the read-only lists still hold the scoped items');
   assert.equal(run(s, "_automationInboxCountOf('automation_questions',{questions:[{system_tags:['project:beta']},{system_tags:['project:alpha']}]})"), 1);
   assert.doesNotMatch(run(s, '_automationBadgeLabel(1)'), /all projects/);
 });

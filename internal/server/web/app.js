@@ -42905,10 +42905,13 @@ registerAutomationCardSlot(COST_CHARTS_TAB, {
   mount: () => { window.costChartsLoad(); },
   stop: () => { _costCharts.gen++; _costCharts.loading = false; },
 });
-// The Inbox sub-tab counts everything waiting on the operator, from the data
-// its own loaders already fetch: triage items, open questions, held questions,
-// security failures and open supervisor-watch findings. The counts live here
-// by source key so the badge stays current while another sub-tab is shown.
+// The Inbox sub-tab counts only what waits on the operator to act, from the
+// data its own loaders already fetch: open questions, held questions in the
+// open list (never the shadow would-be list), and Triage records whose card
+// carries an action button. The security-failure report and the supervisor
+// watch findings are read-only cards, so they still render but no longer
+// contribute to the count. The counts live here by source key so the badge
+// stays current while another sub-tab is shown.
 const _automationInboxCounts = {};
 const _automationInboxRaw = {};
 const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
@@ -42993,20 +42996,29 @@ function _inboxScopeData(key, data) {
   return data;
 }
 
+// _triageRecordActionable is true when the record's Inbox card carries an
+// action button (Retry, Resolve review or Cancel). The merge_blocked card
+// is the one the operator can only select, so it is read-only and not
+// counted. Pure: the record is the only read.
+function _triageRecordActionable(record) {
+  return !!(record && typeof record === 'object') && record.status !== 'merge_blocked';
+}
+
 function _automationInboxCountOf(key, data) {
   data = _inboxScopeData(key, data);
-  if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
-  if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
+  if (key === 'automation_triage') {
+    const recs = (data && Array.isArray(data.records)) ? data.records : [];
+    return recs.filter(_triageRecordActionable).length;
+  }
+  // The security-failure report and the supervisor watch findings are
+  // read-only cards: they still render, but they no longer count.
+  if (key === 'automation_security_failure' || key === 'supervisor') return 0;
   if (key === 'automation_questions') {
     if (!data || data.__automationQuestionsDisabled) return 0;
     const list = Array.isArray(data) ? data : (Array.isArray(data.questions) ? data.questions : []);
     return list.length;
   }
   if (key === 'automation_held_questions') return (data && Array.isArray(data.open)) ? data.open.filter(e => e && typeof e === 'object').length : 0;
-  if (key === 'supervisor') {
-    const f = (data && typeof data === 'object' && Array.isArray(data.findings)) ? data.findings : [];
-    return f.filter(x => x && typeof x === 'object' && !x.resolved).length;
-  }
   return 0;
 }
 
