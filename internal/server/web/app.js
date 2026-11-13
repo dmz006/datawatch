@@ -297,6 +297,91 @@ window.fetch = function(...args) {
   });
 };
 
+// ── Saved-state reads: never throw, one bad key never blocks the rest ─────
+// localStorage can be unavailable (blocked, private mode, non-browser hosts)
+// and operator-saved values can be malformed or from a release that stored
+// a different shape. _safeStored is the single entry point for reading a
+// saved value: it never throws and validates the raw string with the
+// provided reader. The reader returns the accepted value, or null to mean
+// "reject" — the key is then removed (so the bad value is not re-read), one
+// line goes to console.info, and the fallback is used. No toast, nothing
+// visible in the UI; the page just opens with the default.
+// An optional 4th argument (ls) lets callers/tests inject a specific storage
+// object instead of the ambient localStorage.
+function _sessionsLogDiscard(key) {
+  try { console.info('[sessions] saved value for ' + key + ' was unrecognized; using the default and dropping it'); } catch (_) { /* no console */ }
+}
+
+function _safeStored(key, read, fallback, ls) {
+  if (ls === undefined) {
+    try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_) { ls = null; }
+  }
+  let raw = null;
+  let have = false;
+  try {
+    // The capability check is inside the try: a blocked storage can make even
+    // reading ``ls.getItem`` throw, and that must degrade to the fallback too.
+    if (!ls || typeof ls.getItem !== 'function') return fallback;
+    raw = ls.getItem(key);
+    have = (raw !== null && raw !== undefined);
+  } catch (_) { return fallback; }
+  if (!have) return fallback;
+  let v = fallback;
+  try { v = read(raw, ls); } catch (_) { v = null; }
+  if (v === null || v === undefined) {
+    try { if (ls && typeof ls.removeItem === 'function') ls.removeItem(key); } catch (_) { /* best effort */ }
+    _sessionsLogDiscard(key);
+    return fallback;
+  }
+  return v;
+}
+
+// Reader: a stored JSON array of non-empty strings (manual session order,
+// watched/muted lists, collapsed group keys). A single bad entry disqualifies
+// the whole value so one stray number can't corrupt the list — it is dropped
+// and the default (an empty list) is used instead.
+function _storedStrArrayRead(raw) {
+  let p = null;
+  try { p = JSON.parse(raw); } catch (_) { return null; }
+  if (!Array.isArray(p)) return null;
+  if (!p.every(x => typeof x === 'string' && x)) return null;
+  return p;
+}
+
+// One optional block inside a page render must be able to fail on its own:
+// log it and render it as absent instead of taking the whole page down with
+// it. The block's output is expected to be an HTML string.
+function _sessionsRenderGuard(label, fn) {
+  try { return (typeof fn === 'function') ? fn() : ''; } catch (err) {
+    try { console.info('[sessions] "' + label + '" block skipped: ' + ((err && err.message) || err)); } catch (_) { /* no console */ }
+    return '';
+  }
+}
+
+// Safe counterpart for writes: storing the operator's preference must never
+// throw either (storage can be blocked or full). Best-effort, silent on
+// failure — the in-memory state already carries the value for this page.
+function _storedWrite(key, value) {
+  let ls = null;
+  try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_) { ls = null; }
+  try {
+    // Inside the try: a blocked storage can make reading ``ls.setItem`` throw.
+    if (!ls || typeof ls.setItem !== 'function') return;
+    ls.setItem(key, value);
+  } catch (_) { /* storage blocked/full: in-memory state is enough for this page */ }
+}
+
+// Chips the state filter accepts: the buckets (all/active/waiting/done) or a
+// real session state (running … killed, from the state filter; the history
+// states are included since setSessionStateChip enables those too). Anything
+// else stored under this key is a stale value we don't know about.
+const SESSIONS_STATE_CHIP_KEYS = ['all', 'active', 'waiting', 'done',
+  'running', 'waiting_input', 'stalled', 'rate_limited',
+  'complete', 'failed', 'killed', 'cancelled', 'archived'];
+
+// Saved search text cap. Above this the value is a bug, not a saved search.
+const SESSIONS_SEARCH_MAX_LEN = 500;
+
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   connected: false,
@@ -326,7 +411,7 @@ const state = {
   // v6.13.9 (BL277) — yellow popup removed; needsInputDismissed and
   // needsInputLastShown state fields are gone with it.
   notifPermission: Notification.permission,
-  sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
+  sessionOrder: _safeStored('cs_session_order', _storedStrArrayRead, []), // manual ordering
   servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _injectServerPickerBar/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
   _fedConnStatus: null,   // {server, phase:'connecting'|'loading_sessions'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
@@ -348,11 +433,11 @@ const state = {
   // GH#172 D61 — watch sessions + watched-badge filter. Same client-
   // only persistence pattern as sessionOrder above (personal marker,
   // not shared/authoritative — no backend state needed).
-  watchedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_watched') || '[]')),
+  watchedSessions: new Set(_safeStored('cs_sessions_watched', _storedStrArrayRead, [])),
   sessionWatchFilter: false,
   // GH#172 D62 — swipe-to-mute + muted icon. Same client-only
   // persistence pattern; gates handleNeedsInput's Notification/toast.
-  mutedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_muted') || '[]')),
+  mutedSessions: new Set(_safeStored('cs_sessions_muted', _storedStrArrayRead, [])),
   sessionTreeView: localStorage.getItem('cs_session_tree_view') === '1', // BL348 — tree view toggle
   suppressActiveToasts: true, // cached from server config
   autoRestartOnConfig: false, // cached from server config
@@ -4521,9 +4606,13 @@ function renderSessionsView() {
   // survives page reloads. 'all' is the legacy behavior (gated by
   // state.showHistory).
   if (state.sessionStateChip === undefined) {
-    let storedChip = null;
-    try { storedChip = localStorage.getItem('cs_session_state_chip'); } catch (_) { storedChip = null; }
-    state.sessionStateChip = storedChip || 'all';
+    // The chip is 'all' or one of the known state buckets/states. A stale
+    // value from a release that wrote something else is unrecognized: forget
+    // it and open on 'all' (the legacy behavior).
+    state.sessionStateChip = _safeStored(
+      'cs_session_state_chip',
+      (raw) => (typeof raw === 'string' && SESSIONS_STATE_CHIP_KEYS.indexOf(raw) >= 0) ? raw : null,
+      'all');
   }
   const chip = state.sessionStateChip;
   // Show active + recently completed sessions by default; "Show history" shows all
@@ -4585,9 +4674,10 @@ function renderSessionsView() {
   if (state._filtersCollapsed === undefined) {
     // Mobile parity: default OFF means default-collapsed. Honor any
     // existing localStorage choice; new operators get the collapsed view.
-    let stored = null;
-    try { stored = localStorage.getItem('cs_filters_collapsed'); } catch (_) { stored = null; }
-    state._filtersCollapsed = stored === null ? true : stored === '1';
+    // Only '0' and '1' are values this page writes — anything else is a
+    // stale value from another release and is forgotten (default wins).
+    state._filtersCollapsed =
+      _safeStored('cs_filters_collapsed', (raw) => (raw === '0' || raw === '1') ? raw : null, '1') === '1';
   }
   const collapsed = !!state._filtersCollapsed;
   // The search-icon toggle moved to the top header bar (next to the
@@ -4662,13 +4752,16 @@ function renderSessionsView() {
     ` : ''}
   </div>`;
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
-  const sheetHtml = _sessionsSheetHTML({
+  // The filters sheet is optional chrome: if it fails to build on our end
+  // (unexpected data, a bad helper), log it and render the rest of the page
+  // without it.
+  const sheetHtml = _sessionsRenderGuard('filters sheet', () => _sessionsSheetHTML({
     groupBy: _sessionsGroupCurrent(),
     stateBadges,
     llmBadges: backendTypes.length > 1 ? backendBadges : '',
     tagPanel: tagFilterPanelHtml,
     tagHelp: tagHelpLink,
-  });
+  }));
   _sessionsSheetSyncKey();
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
@@ -4776,12 +4869,17 @@ function renderSessionsView() {
                 ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
                 : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode))));
   const filtersActive = !!(filterText.trim() || (chip && chip !== 'all') || state.sessionWatchFilter || tagSel);
+  // The summary bar and the group header (fold controls) each render on
+  // their own: one failing logs and renders as absent, the page doesn't
+  // go all empty with it.
+  const summaryHtml = _sessionsRenderGuard('summary bar', () => renderSessionsSummaryBar(visible) || '');
+  const foldHtml = _sessionsRenderGuard('group header', () => (groupBy ? _sessionsFoldControlHTML(visible, groupBy) : '')) || '';
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
     <div class="sessions-topbar"><div class="sessions-topbar-servers"></div>${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
     ${toggleBtn}
-    ${renderSessionsSummaryBar(visible)}${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
+    ${summaryHtml}${foldHtml}<div class="session-list">${cards}</div>
     ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`;
 
   // Restore filter input focus and cursor position
@@ -4859,12 +4957,11 @@ function _sessionsTileModeDefault(width) {
 }
 
 function _sessionsReadStoredMode(lse) {
-  let v = null;
-  try {
-    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_VIEW_MODE_KEY);
-  } catch (_) { v = null; }
-  return (typeof v === 'string' && v) ? v : null;
+  // One of list/tiles/compact. A stored value from another release (or a
+  // broken write) is unrecognized: forget it and let _sessionsViewMode apply
+  // the viewport default.
+  const read = (raw) => (typeof raw === 'string' && raw && SESSIONS_VIEW_MODES.indexOf(raw) >= 0) ? raw : null;
+  return _safeStored(SESSIONS_VIEW_MODE_KEY, read, null, lse);
 }
 
 function _sessionsStoreMode(mode, lse) {
@@ -4916,12 +5013,10 @@ function _sessionsSearchCountText(shown, total) {
 }
 
 function _sessionsSearchReadStored(lse) {
-  let v = null;
-  try {
-    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_SEARCH_KEY);
-  } catch (_) { v = null; }
-  return (typeof v === 'string') ? v : '';
+  // A plain string, capped: a saved value longer than SESSIONS_SEARCH_MAX_LEN
+  // is a bug, not a saved search — forget it and open with an empty box.
+  const read = (raw) => (typeof raw === 'string' && raw.length <= SESSIONS_SEARCH_MAX_LEN) ? raw : null;
+  return _safeStored(SESSIONS_SEARCH_KEY, read, '', lse);
 }
 
 function _sessionsSearchWriteStored(text, lse) {
@@ -5115,17 +5210,23 @@ function _sessionsGroupStorage() {
 function _sessionsGroupCurrent() {
   if (state.sessionGroupBy === undefined) {
     let by = null;
-    try {
-      const ls = _sessionsGroupStorage();
-      if (ls) {
-        const raw = ls.getItem(SESSIONS_GROUP_STORE_KEY);
-        if (raw) by = _sessionsGroupValidate(JSON.parse(raw));
-        else {
-          const legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY);
-          if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
-        }
+    const ls = _sessionsGroupStorage();
+    // The current shape is {axis, tagPrefix}. Its value is validated; a
+    // stored value that isn't a known axis is forgotten (default: no
+    // grouping). The legacy bare tag-prefix shape is migrated forward once.
+    if (ls) {
+      let raw = null;
+      try { raw = ls.getItem(SESSIONS_GROUP_STORE_KEY); } catch (_) { raw = null; }
+      if (raw) {
+        by = _safeStored(SESSIONS_GROUP_STORE_KEY,
+          (r) => { let p; try { p = JSON.parse(r); } catch (_) { return null; } return _sessionsGroupValidate(p); },
+          null, ls);
+      } else {
+        let legacy = null;
+        try { legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY); } catch (_) { legacy = null; }
+        if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
       }
-    } catch (_) { by = null; }
+    }
     state.sessionGroupBy = by;
     state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
   }
@@ -5372,14 +5473,16 @@ function _sessionsCollapseKey(by, key) {
 }
 
 function _sessionsCollapsedRead(storage) {
-  try {
-    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!ls || typeof ls.getItem !== 'function') return [];
-    const raw = ls.getItem(SESSIONS_COLLAPSED_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return (Array.isArray(arr) ? arr : []).filter(k => typeof k === 'string' && k);
-  } catch (_) { return []; }
+  // Group keys the operator collapsed (an array of strings). A value that
+  // isn't an array is an unrecognized shape: drop it, forget the key, open
+  // with nothing collapsed. An array keeps only its string entries.
+  const read = (raw) => {
+    let p = null;
+    try { p = JSON.parse(raw); } catch (_) { return null; }
+    if (!Array.isArray(p)) return null;
+    return p.filter(k => typeof k === 'string' && k);
+  };
+  return _safeStored(SESSIONS_COLLAPSED_KEY, read, [], storage) || [];
 }
 
 function _sessionsCollapseWrite(keys, storage) {
@@ -5688,17 +5791,18 @@ window.setSessionGroupBy = setSessionGroupBy;
 
 // ── Saved views (per device) ────────────────────────────────────────────
 function _savedViewsRead(storage) {
-  try {
-    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!ls || typeof ls.getItem !== 'function') return [];
-    const raw = ls.getItem(SESSIONS_SAVED_VIEWS_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.filter(v => v && typeof v === 'object'
+  // A list of saved views {id, name, mode, groupBy, filter}. A value that
+  // isn't an array is an unrecognized shape: drop it, forget the key, open
+  // with no saved views. An array keeps only well-formed entries.
+  const read = (raw) => {
+    let p = null;
+    try { p = JSON.parse(raw); } catch (_) { return null; }
+    if (!Array.isArray(p)) return null;
+    return p.filter(v => v && typeof v === 'object'
       && typeof v.id === 'string' && v.id
       && typeof v.name === 'string' && v.name.trim());
-  } catch (_) { return []; }
+  };
+  return _safeStored(SESSIONS_SAVED_VIEWS_KEY, read, [], storage) || [];
 }
 
 function _savedViewsWrite(views, storage) {
@@ -5941,7 +6045,7 @@ function _sessionsSheetHTML(parts) {
       <div class="sessions-sheet-head"><strong>${escHtml(title)}</strong><button type="button" class="sessions-sheet-close" onclick="sessionsFiltersClose()" title="${escHtml(close)}" aria-label="${escHtml(close)}">&#10005;</button></div>
       <div class="sessions-sheet-body">
         ${sec(_stx('sessions_group_by', 'Group by'), groupBody)}
-        ${sec(_stx('sessions_view_title', 'Views'), renderSessionsViewsBar())}
+        ${sec(_stx('sessions_view_title', 'Views'), _sessionsRenderGuard('saved views', renderSessionsViewsBar) || '')}
         ${sec(_stx('sessions_filters_status', 'Status'), statusBody)}
       </div>
     </div>
@@ -6160,7 +6264,7 @@ function toggleHistory() {
 // BL348 — tree view toggle
 function toggleSessionTreeView() {
   state.sessionTreeView = !state.sessionTreeView;
-  localStorage.setItem('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
+  _storedWrite('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
   renderSessionsView();
 }
 window.toggleSessionTreeView = toggleSessionTreeView;
@@ -27114,7 +27218,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (state._filtersCollapsed === undefined) state._filtersCollapsed = true;
     state._filtersCollapsed = !state._filtersCollapsed;
-    localStorage.setItem('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
+    _storedWrite('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
     if (state.activeView === 'sessions') renderSessionsView();
   });
 
