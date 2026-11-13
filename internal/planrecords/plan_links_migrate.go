@@ -25,6 +25,11 @@ import (
 // and never touches a plan created earlier: each plan it creates carries a
 // "migrated-from" link naming its source, so a second apply finds the plan
 // again and changes nothing. It deletes no arc, row or config key.
+//
+// It never renames a plan. A plan it made keeps the title it has now: a plan
+// renamed by hand (title_set_by_hand) is found again through its
+// "migrated-from" link, not through its title, so a later apply leaves the new
+// title as it is.
 
 // AuditMigrated is the audit action of a migration that wrote records.
 const AuditMigrated = "plan_record_migrated"

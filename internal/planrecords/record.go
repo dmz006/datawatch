@@ -65,6 +65,9 @@ const (
 	MaxProjectRunes   = 64
 	MaxIDRunes        = 64
 	MaxGoalRunes      = 2000
+	// MaxPlanTitleRunes is the longest title a plan takes when it is named
+	// by the plans migration or renamed by hand. Plan titles are one line.
+	MaxPlanTitleRunes = 100
 	MaxLinkedItems    = 500
 	MaxOrder          = 1_000_000
 )
@@ -106,10 +109,14 @@ type Record struct {
 	// SetByHand is true when the plan's status was written through the update
 	// path with an explicit state. The roll-up keeps such a status; a roll-up
 	// write never sets it.
-	SetByHand   bool     `json:"set_by_hand,omitempty"`
-	Automations []string `json:"automations,omitempty"`
-	Automata    []string `json:"automata,omitempty"`
-	Findings    []string `json:"findings,omitempty"`
+	SetByHand bool `json:"set_by_hand,omitempty"`
+	// TitleSetByHand is true when the plan was renamed through RenamePlan or
+	// an update that changed its title. The plans migration never changes the
+	// title of such a plan.
+	TitleSetByHand bool     `json:"title_set_by_hand,omitempty"`
+	Automations    []string `json:"automations,omitempty"`
+	Automata       []string `json:"automata,omitempty"`
+	Findings       []string `json:"findings,omitempty"`
 	// LinkInfo keeps the title and state last reported for a linked Automaton
 	// or Automation, keyed "automaton:<id>" or "automation:<id>", so lists and
 	// search never read the linked item itself.
@@ -325,7 +332,7 @@ func (r *Record) validatePlanFields() error {
 		return invalid("goal longer than %d characters", MaxGoalRunes)
 	}
 	planOnly := r.Goal != "" || r.Order != 0 || len(r.Automations) > 0 || len(r.Automata) > 0 ||
-		len(r.Findings) > 0 || len(r.LinkInfo) > 0
+		len(r.Findings) > 0 || len(r.LinkInfo) > 0 || r.TitleSetByHand
 	if planOnly && r.Kind != KindPlan {
 		return invalid("goal, order and links down apply to plans only")
 	}

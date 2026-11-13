@@ -477,6 +477,13 @@ func (s *Store) Update(ref string, p Patch) (Record, error) {
 		t := strings.TrimSpace(*p.Title)
 		if NormTitle(t) != NormTitle(cur.Title) || t != cur.Title {
 			changed = append(changed, "title")
+			if cur.Kind == KindPlan {
+				// A plan is renamed under the same rules as RenamePlan.
+				if err := ValidatePlanTitle(t); err != nil {
+					return Record{}, err
+				}
+				next.TitleSetByHand = true
+			}
 			if NormTitle(t) != NormTitle(cur.Title) {
 				if h, ok := s.byTitle[titleKey(cur.Project, t)]; ok && h != cur.UID {
 					return Record{}, &ErrTitleConflict{Title: t, Existing: s.byUID[h].clone()}
