@@ -181,13 +181,13 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    In order: a **server select** (the same shared picker as the header
    dropdown — choosing an entry in one updates the other), a **search
    box** that takes the free width of the line, a **Filters** button (a
-   badge shows how many filters are active), a **Fold all** icon (while a
-   grouping is active) and the **List / Tiles / Compact** view-mode
+   badge shows how many filters are active), a **Fold all** icon (only while a
+   grouping is active and the list has groups to fold) and the **List / Tiles / Compact** view-mode
    select; your view choice is remembered on this device.
    - **Search** — narrows by a session's name, its id, its backend, its
      tag text and its state, so `claude`, `a1f2`, `automation:` or
      `waiting` all work. While a search is active the page shows an
-     **N of M** count (for example `3 of 21`).
+     **N of M sessions** count (for example `3 of 21 sessions`).
    - **Filters** — one sheet holds every filter: a **Group by** select
      (none, or by State, Node, Model, Project, Tag, or Automaton), the
      **Views** bar (a name field, a **+ New view** button and the saved
