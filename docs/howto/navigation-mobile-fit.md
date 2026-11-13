@@ -164,6 +164,8 @@ What you see on a phone:
 - **Dashboard cards fill the row.** The Dashboard card grid becomes one column of full-width cards with an 8 px gap, instead of a narrower inset grid, and a card's wide or tall grid size is ignored.
 - **No sideways page scroll.** The page container clips anything wider than the screen. Wide content such as the project Gantt chart scrolls inside its own box instead of widening the page.
 
+**The rule: no page scrolls sideways.** At phone widths of 360, 390 and 412 px, none of these pages may be wider than the screen. Sessions, every Automata sub-tab (including Automation, Events and Templates), Alerts, Observer, Dashboard, Settings and Projects all follow it. The only sideways scrolling allowed is inside a tab strip (see [Tab strips at phone width](#tab-strips-at-phone-width)) or inside a wide box such as the Gantt chart.
+
 The three spacing values live in one place in `internal/server/web/style.css` as `--phone-gutter`, `--phone-card-padding` and `--phone-gap`; one edit there moves every page.
 
 ### Dashboard header counters
@@ -181,9 +183,29 @@ Filter and control rows wrap onto more lines at phone width, and their children 
 
 The Sessions toolbar is not one of these rows. It keeps its own one-line layout (see [Sessions deep dive](sessions-deep-dive.md) and [Sessions tiles and grouping](sessions-tiles-and-grouping.md)).
 
+### Check the page layout with the node test
+
+The node test `internal/server/web/app-phone-layout-consistency.test.js` guards this layout. It reads `style.css` and `app.js` as source and renders each view's markup in a stub browser. It opens no real browser and needs no running daemon. It checks that:
+
+- Every page root carries the shared `phone-page` class. That covers Sessions, the Automata sub-tabs (Automata, Projects, Events, Templates, and the Automation sub-tabs Inbox, Automations, Resources, Progress and Housekeeping), Alerts, Observer, Dashboard, Settings and Projects, including the project focus page. A new page that sets the view's markup without `phone-page` fails the test.
+- The phone rules in `style.css` give `phone-page` a side gutter, full width and the right box sizing, and give the shared cards (Automaton cards, alert cards, Settings sections, Dashboard cards) full width that can shrink. The rule must not leak onto desktop.
+- No rule inside the phone query sets a fixed `width` or `min-width` above 360 px, so nothing is built wider than the narrowest phone in the 360, 390 and 412 px set. The page container also keeps `overflow-x: hidden`.
+- Every filter row listed above wraps, and its children can shrink. A drift guard fails if `app.js` draws a new row whose class ends in `-controls`, `-filters`, `filter-bar` or `filter-row` and is not covered.
+- The Dashboard header counters stay unbreakable units in a row that wraps, and the burn-rate summary takes its own line.
+
+Run it from the repository root:
+
+```bash
+node --test internal/server/web/app-phone-layout-consistency.test.js
+```
+
+A passing run prints one `ok` line per check and a summary with `fail 0`. A failure names the page, selector or class to fix.
+
+The test is a source-level guard. It does not measure a rendered page, so it does not prove that nothing scrolls sideways at 360, 390 and 412 px; it catches the changes that cause it. Run it by hand: `make test-e2e-shared-nav`, which measures the bottom bar only, does not run it.
+
 What is not covered:
 
-- None of this is gated by `make test-e2e-shared-nav`, which measures the bottom bar only, and no automated check renders the pages at 320, 360 or 390 px. The change was verified by reading the style rules; look at each page on a real phone or in a narrow browser window before relying on it.
+- No automated check renders the pages at 360, 390 or 412 px and measures them. Look at each page on a real phone or in a narrow browser window before relying on it.
 - The wrapping rules name specific rows and classes. A new filter row that uses a different class does not wrap until its class is added to the rule in `internal/server/web/style.css`.
 - Android and iPhone are not changed by this; their layout is the mobile app's own.
 
