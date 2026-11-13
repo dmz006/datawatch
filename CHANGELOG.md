@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- The project roll-up, timeline (Gantt), history and progress reads now come from the in-memory Automaton summary index instead of copying every full Automaton record, so a read no longer scales with the amount of spec and task text. The response shape is unchanged.
+- The project roll-up is cached per project, window and store revision (with the project configuration and the Automation list in the key), so a repeat read does no work and a write to a member rebuilds it. Points are computed once per store revision, and the merge proof is remembered per work branch, so a read no longer runs git for an Automaton whose proof is known. `generated_at` is the time of the build.
+
 ## v9.167.0 — Match Automata to a project by explicit link first, directory as fallback
 
 The Projects page now decides which project an Automaton belongs to by an explicit link first, and by its directory only as the last fallback.

@@ -68,8 +68,8 @@ func TestBuildProjectRollup_GroupsAutomataByArc(t *testing.T) {
 		ID: "p1", Title: "first", ProjectDir: dir, AutomationID: "auto-a",
 		Status: autonomous.PRDCompleted, UpdatedAt: recent,
 		Story: []autonomous.Story{{ID: "s1", Tasks: []autonomous.Task{
-			{ID: "t1", Status: autonomous.TaskCompleted, CompletedAt: &recent},
-			{ID: "t2", Status: autonomous.TaskPending},
+			{ID: "t1", Status: autonomous.TaskCompleted, CompletedAt: &recent, SessionID: "sess-1"},
+			{ID: "t2", Status: autonomous.TaskPending, SessionID: "sess-2"},
 		}}},
 	}
 	// p2: held by arc auto-b only through an Automation member (no AutomationID); running.
@@ -95,17 +95,11 @@ func TestBuildProjectRollup_GroupsAutomataByArc(t *testing.T) {
 			{AutomationID: "auto-b", Priority: 2},
 			{AutomationID: "auto-a", Priority: 9}, // duplicate arc, ignored
 		},
-		PRDs:        []*autonomous.PRD{p1, p2, p3, p4, p5, p6},
+		Entries:     summaryOf([]*autonomous.PRD{p1, p2, p3, p4, p5, p6}),
 		Automations: []*autonomous.Automation{rollupAutomationWith("auto-b", "p2")},
-		SessionIDs: func(id string) []string {
-			if id == "p1" {
-				return []string{"sess-1", "sess-2"}
-			}
-			return nil
-		},
-		Points:     map[string]float64{"p1": 2.5},
-		WindowDays: 7,
-		Now:        rollupNow,
+		Points:      map[string]float64{"p1": 2.5},
+		WindowDays:  7,
+		Now:         rollupNow,
 	}
 	got := buildProjectRollup(in)
 
@@ -201,7 +195,7 @@ func TestBuildProjectRollup_ArcWithoutDirStillGroups(t *testing.T) {
 	p := &autonomous.PRD{ID: "p1", AutomationID: "auto-a", Status: autonomous.PRDRunning}
 	got := buildProjectRollup(rollupInput{
 		Dir: "/srv/acme", Arcs: []config.ProjectArc{{AutomationID: "auto-a"}},
-		PRDs: []*autonomous.PRD{p}, WindowDays: 7, Now: rollupNow,
+		Entries: summaryOf([]*autonomous.PRD{p}), WindowDays: 7, Now: rollupNow,
 	})
 	if ids := rollupIDs(got.Arcs[0].Automata); len(ids) != 1 {
 		t.Errorf("arc automata = %v, want [p1]", ids)
@@ -331,8 +325,8 @@ func TestBuildProjectRollup_FinishedCounting(t *testing.T) {
 	prds = append(prds, prds[len(prds)-1])
 
 	got := buildProjectRollup(rollupInput{
-		Project: "acme", Dir: dir, PRDs: prds, WindowDays: 7, Now: rollupNow,
-		Merged: func(p *autonomous.PRD) (bool, time.Time) {
+		Project: "acme", Dir: dir, Entries: summaryOf(prds), WindowDays: 7, Now: rollupNow,
+		Merged: func(p autonomous.SummaryEntry) (bool, time.Time) {
 			if p.ID == "merged" {
 				return true, in3h
 			}
@@ -366,14 +360,14 @@ func TestBuildProjectRollup_MergeTimeFallsBackToLastUpdate(t *testing.T) {
 	dir := "/srv/acme"
 	recent := rollupNow.Add(-1 * time.Hour)
 	p := &autonomous.PRD{ID: "m", ProjectDir: dir, Status: autonomous.PRDArchived, UpdatedAt: recent}
-	merged := func(*autonomous.PRD) (bool, time.Time) { return true, time.Time{} }
-	got := buildProjectRollup(rollupInput{Project: "acme", Dir: dir, PRDs: []*autonomous.PRD{p},
+	merged := func(autonomous.SummaryEntry) (bool, time.Time) { return true, time.Time{} }
+	got := buildProjectRollup(rollupInput{Project: "acme", Dir: dir, Entries: summaryOf([]*autonomous.PRD{p}),
 		WindowDays: 7, Now: rollupNow, Merged: merged})
 	if got.Total.Throughput.AutomataFinished != 1 {
 		t.Fatalf("merge time unknown should use the last update, got %d", got.Total.Throughput.AutomataFinished)
 	}
 	p.UpdatedAt = rollupNow.Add(-30 * 24 * time.Hour)
-	got = buildProjectRollup(rollupInput{Project: "acme", Dir: dir, PRDs: []*autonomous.PRD{p},
+	got = buildProjectRollup(rollupInput{Project: "acme", Dir: dir, Entries: summaryOf([]*autonomous.PRD{p}),
 		WindowDays: 7, Now: rollupNow, Merged: merged})
 	if got.Total.Throughput.AutomataFinished != 0 {
 		t.Fatalf("old last update is outside the window, got %d", got.Total.Throughput.AutomataFinished)
@@ -388,14 +382,15 @@ func TestBuildProjectRollup_WorktreeAutomatonWithLink(t *testing.T) {
 		Story: []autonomous.Story{{ID: "s", Tasks: []autonomous.Task{rollupTask("t", &recent)}}},
 	}
 	in := rollupInput{
-		Project: "acme", Dir: "/srv/acme", PRDs: []*autonomous.PRD{wt}, WindowDays: 7, Now: rollupNow,
-		Merged: func(*autonomous.PRD) (bool, time.Time) { return true, recent },
+		Project: "acme", Dir: "/srv/acme", Entries: summaryOf([]*autonomous.PRD{wt}), WindowDays: 7, Now: rollupNow,
+		Merged: func(autonomous.SummaryEntry) (bool, time.Time) { return true, recent },
 	}
 	// no link and a worktree directory: not this project's
 	if got := buildProjectRollup(in); got.Total.Throughput.AutomataFinished != 0 || len(got.Total.Automata) != 0 {
 		t.Fatalf("unlinked worktree Automaton must not count: %+v", got.Total)
 	}
 	wt.Project = "acme"
+	in.Entries = summaryOf([]*autonomous.PRD{wt})
 	got := buildProjectRollup(in)
 	if got.Total.Throughput.AutomataFinished != 1 || got.Total.Throughput.TasksFinished != 1 {
 		t.Fatalf("linked worktree Automaton: %+v", got.Total.Throughput)
@@ -408,7 +403,7 @@ func TestBuildProjectRollup_ResolverOrderAndWithoutProject(t *testing.T) {
 	byDir := &autonomous.PRD{ID: "x2", ProjectDir: "/srv/acme", Status: autonomous.PRDDraft}
 	orphan := &autonomous.PRD{ID: "x3", ProjectDir: "/nowhere", Status: autonomous.PRDDraft}
 	in := rollupInput{Project: "acme", Dir: "/srv/acme", Projects: projects,
-		PRDs: []*autonomous.PRD{linkedElsewhere, byDir, orphan}, WindowDays: 7, Now: rollupNow}
+		Entries: summaryOf([]*autonomous.PRD{linkedElsewhere, byDir, orphan}), WindowDays: 7, Now: rollupNow}
 	got := buildProjectRollup(in)
 	if len(got.Unassigned.Automata) != 1 || got.Unassigned.Automata[0].ID != "x2" {
 		t.Fatalf("unassigned: %+v", got.Unassigned.Automata)
@@ -423,5 +418,36 @@ func TestBuildProjectRollup_ResolverOrderAndWithoutProject(t *testing.T) {
 	got = buildProjectRollup(in)
 	if len(got.WithoutProject.Automata) != 1 || len(got.Unassigned.Automata) != 1 || got.Unassigned.Automata[0].ID != "x1" {
 		t.Fatalf("other project: %+v %+v", got.Unassigned.Automata, got.WithoutProject.Automata)
+	}
+}
+
+// The JSON shape is the one the roll-up has always served: every key, in this
+// order, with session ids in cost roll-up order.
+func TestBuildProjectRollup_JSONShapeStable(t *testing.T) {
+	dir := "/srv/acme"
+	at := rollupNow.Add(-time.Hour)
+	p := &autonomous.PRD{
+		ID: "p1", Title: "one", ProjectDir: dir, Status: autonomous.PRDCompleted, UpdatedAt: at,
+		Story: []autonomous.Story{{ID: "s", Tasks: []autonomous.Task{
+			{ID: "t1", Status: autonomous.TaskCompleted, CompletedAt: &at, SessionID: "w1",
+				Verification: &autonomous.VerificationResult{VerifierID: "v1"}},
+		}}},
+	}
+	got := buildProjectRollup(rollupInput{
+		Project: "acme", Dir: dir, Entries: summaryOf([]*autonomous.PRD{p}),
+		Points: map[string]float64{"p1": 1.5}, WindowDays: 7, Now: rollupNow,
+	})
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const line = `{"id":"p1","title":"one","status":"completed","finished":true,"tasks":{"done":1,"total":1},"points":1.5,"session_ids":["w1","v1"]}`
+	const thr = `{"automata_finished":1,"tasks_finished":1,"automata_per_day":0.14285714285714285,"tasks_per_day":0.14285714285714285}`
+	group := `{"automata":[` + line + `],"tasks":{"done":1,"total":1},"points":1.5,"throughput":` + thr + `}`
+	empty := `{"automata":[],"tasks":{"done":0,"total":0},"points":0,"throughput":{"automata_finished":0,"tasks_finished":0,"automata_per_day":0,"tasks_per_day":0}}`
+	want := `{"project":"acme","window_days":7,"generated_at":"2026-11-09T12:00:00Z","points_priced":true,"arcs":[],"unassigned":` + group +
+		`,"without_project":` + empty + `,"total":` + group + `}`
+	if string(b) != want {
+		t.Fatalf("roll-up JSON changed:\n got %s\nwant %s", b, want)
 	}
 }

@@ -68,6 +68,18 @@ func (m *Manager) PRDSessionIDs(prdID string) []string {
 	return ids
 }
 
+// DecomposeSessionIDs returns the live planning sessions linked to a PRD, or
+// nil when no lookup is wired. PRDSessionIDs appends the same list.
+func (m *Manager) DecomposeSessionIDs(prdID string) []string {
+	m.mu.Lock()
+	decompose := m.decomposeSessionsFn
+	m.mu.Unlock()
+	if decompose == nil {
+		return nil
+	}
+	return decompose(prdID)
+}
+
 // PRDCostUSD is the one shared per-PRD cost rollup: the dollars spent by every
 // session in PRDSessionIDs, optionally limited to one LLM (llm non-empty).
 //

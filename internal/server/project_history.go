@@ -105,11 +105,17 @@ type projectHistory struct {
 // historyInput is everything buildProjectHistory reads. It holds plain records
 // so the selection, ordering and paging can be tested without a running daemon.
 type historyInput struct {
-	Project     string
-	Dir         string
-	Arcs        []config.ProjectArc
-	PRDs        []*autonomous.PRD
+	Project string
+	Dir     string
+	Arcs    []config.ProjectArc
+	// Entries are the Automaton summary-index entries. They select and place
+	// the finished Automata and carry the list fields.
+	Entries     []autonomous.SummaryEntry
 	Automations []*autonomous.Automation
+	// Load returns the full record of one matching Automaton, for its task
+	// Gantt rows (task titles live only in the record). Nil, or a nil result,
+	// gives the Automaton's own bar and no task bars.
+	Load func(id string) *autonomous.PRD
 	// Snapshots are every progress snapshot, oldest first, as the store lists them.
 	Snapshots []autonomous.ProgressSnapshot
 	Limit     int
@@ -209,11 +215,12 @@ func buildProjectHistory(in historyInput) projectHistory {
 	if projects == nil {
 		projects = map[string]string{in.Project: in.Dir}
 	}
-	idx := autonomous.NewAutomatonProjectIndex(in.PRDs, in.Automations, projects)
+	idx := autonomous.NewAutomatonProjectIndexFromSummary(in.Entries, in.Automations, projects)
 
 	var entries []historyEntry
-	for _, p := range in.PRDs {
-		if p == nil || p.IsTemplate {
+	for i := range in.Entries {
+		p := &in.Entries[i]
+		if p.IsTemplate {
 			continue
 		}
 		if p.Status != autonomous.PRDCompleted && p.Status != autonomous.PRDArchived {
@@ -228,7 +235,7 @@ func buildProjectHistory(in historyInput) projectHistory {
 			continue
 		}
 		entries = append(entries, historyAutomatonEntry(p, auto))
-		out.Gantt = append(out.Gantt, historyGanttFor(p, auto)...)
+		out.Gantt = append(out.Gantt, historyGanttFor(p, auto, in.Load)...)
 	}
 
 	for _, s := range in.Snapshots {
@@ -275,15 +282,13 @@ func buildProjectHistory(in historyInput) projectHistory {
 }
 
 // historyAutomatonEntry is the list entry for one finished Automaton.
-func historyAutomatonEntry(p *autonomous.PRD, auto string) historyEntry {
+func historyAutomatonEntry(p *autonomous.SummaryEntry, auto string) historyEntry {
 	start, finish := historyAutomatonTimes(p)
 	tasks := rollupTasks{}
-	for _, st := range p.Story {
-		for _, t := range st.Tasks {
-			tasks.Total++
-			if t.Status == autonomous.TaskCompleted {
-				tasks.Done++
-			}
+	for _, t := range p.Tasks {
+		tasks.Total++
+		if t.Status == autonomous.TaskCompleted {
+			tasks.Done++
 		}
 	}
 	at := finish
@@ -299,14 +304,21 @@ func historyAutomatonEntry(p *autonomous.PRD, auto string) historyEntry {
 }
 
 // historyGanttFor returns the Automaton's bar followed by one bar per task.
-func historyGanttFor(p *autonomous.PRD, auto string) []historyGanttRow {
+func historyGanttFor(p *autonomous.SummaryEntry, auto string, load func(string) *autonomous.PRD) []historyGanttRow {
 	start, finish := historyAutomatonTimes(p)
 	rows := []historyGanttRow{{
 		Kind: historyKindAutomaton, AutomatonID: p.ID, AutomationID: auto,
 		Title: p.Title, State: string(p.Status),
 		Start: timePtr(start), End: timePtr(finish),
 	}}
-	for _, st := range p.Story {
+	if load == nil {
+		return rows
+	}
+	full := load(p.ID)
+	if full == nil {
+		return rows
+	}
+	for _, st := range full.Story {
 		for _, t := range st.Tasks {
 			rows = append(rows, historyGanttRow{
 				Kind: historyKindTask, AutomatonID: p.ID, AutomationID: auto, TaskID: t.ID,
@@ -320,7 +332,7 @@ func historyGanttFor(p *autonomous.PRD, auto string) []historyGanttRow {
 
 // historyAutomatonTimes returns an Automaton's start (ApprovedAt else CreatedAt)
 // and finish (UpdatedAt). Zero values mean the record did not carry the time.
-func historyAutomatonTimes(p *autonomous.PRD) (time.Time, time.Time) {
+func historyAutomatonTimes(p *autonomous.SummaryEntry) (time.Time, time.Time) {
 	start := p.CreatedAt
 	if p.ApprovedAt != nil && !p.ApprovedAt.IsZero() {
 		start = *p.ApprovedAt
@@ -384,7 +396,8 @@ func (s *Server) handleProjectHistory(w http.ResponseWriter, r *http.Request) {
 		Project:     name,
 		Dir:         entry.Dir,
 		Arcs:        entry.Arcs,
-		PRDs:        mgr.Store().ListPRDs(),
+		Entries:     mgr.Store().SummaryEntries(),
+		Load:        func(id string) *autonomous.PRD { p, _ := mgr.Store().SnapshotPRD(id); return p },
 		Automations: mgr.ListAutomations(),
 		Snapshots:   snaps,
 		Limit:       limit,

@@ -48,17 +48,13 @@
 package server
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
-	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
@@ -123,13 +119,16 @@ type projectRollup struct {
 // rollupInput is everything buildProjectRollup reads. It holds plain records
 // so the grouping and arithmetic can be tested without a running daemon.
 type rollupInput struct {
-	Project     string
-	Dir         string
-	Arcs        []config.ProjectArc
-	PRDs        []*autonomous.PRD
+	Project string
+	Dir     string
+	Arcs    []config.ProjectArc
+	// Entries are the Automaton summary-index entries. Session ids, task
+	// counts, finish time, shipped state and project link all come from them.
+	Entries     []autonomous.SummaryEntry
 	Automations []*autonomous.Automation
-	// SessionIDs returns the session ids of one Automaton (worker, verifier, judge).
-	SessionIDs func(prdID string) []string
+	// ExtraSessionIDs optionally adds live session ids that are not in the
+	// entry (the live planning sessions). Nil adds none.
+	ExtraSessionIDs func(prdID string) []string
 	// Points maps an Automaton id to its points. An Automaton with no entry is unpriced.
 	Points     map[string]float64
 	WindowDays int
@@ -144,7 +143,7 @@ type rollupInput struct {
 	// is already on the project's default branch and, when known, when it
 	// landed (zero time = unknown). It is asked only for a cancelled or
 	// archived Automaton with no shipped record. Nil means not merged.
-	Merged func(p *autonomous.PRD) (merged bool, at time.Time)
+	Merged func(e autonomous.SummaryEntry) (merged bool, at time.Time)
 
 	// seenTasks keeps a task from being counted twice in the throughput.
 	seenTasks map[string]bool
@@ -210,11 +209,12 @@ func buildProjectRollup(in rollupInput) projectRollup {
 	if projects == nil {
 		projects = map[string]string{in.Project: in.Dir}
 	}
-	idx := autonomous.NewAutomatonProjectIndex(in.PRDs, in.Automations, projects)
+	idx := autonomous.NewAutomatonProjectIndexFromSummary(in.Entries, in.Automations, projects)
 	out.WithoutProject = rollupGroup{Automata: []rollupAutomaton{}}
 	seenPRD := map[string]bool{}
-	for _, p := range in.PRDs {
-		if p == nil || p.IsTemplate || seenPRD[p.ID] {
+	for i := range in.Entries {
+		p := &in.Entries[i]
+		if p.IsTemplate || seenPRD[p.ID] {
 			continue
 		}
 		auto := p.AutomationID
@@ -260,33 +260,29 @@ func buildProjectRollup(in rollupInput) projectRollup {
 // rollupAutomatonFor builds one Automaton line and adds its finished tasks to
 // the group's throughput. The group's task and finished counts are set here so
 // finishGroup only has to sum points and divide.
-func rollupAutomatonFor(p *autonomous.PRD, auto string, in rollupInput, inWindow func(*time.Time) bool, g *rollupGroup) rollupAutomaton {
+func rollupAutomatonFor(p *autonomous.SummaryEntry, auto string, in rollupInput, inWindow func(*time.Time) bool, g *rollupGroup) rollupAutomaton {
 	ra := rollupAutomaton{
 		ID: p.ID, Title: p.Title, Status: string(p.Status),
 		AutomationID: auto, SessionIDs: []string{},
 	}
-	if in.SessionIDs != nil {
-		if ids := in.SessionIDs(p.ID); ids != nil {
-			ra.SessionIDs = ids
-		}
+	if ids := rollupSessionIDs(p, in.ExtraSessionIDs); ids != nil {
+		ra.SessionIDs = ids
 	}
 	finished, finishedAt := rollupFinished(p, in)
 	ra.Finished = finished
 	if finished && !finishedAt.IsZero() && inWindow(&finishedAt) {
 		g.Throughput.AutomataFinished++
 	}
-	for _, st := range p.Story {
-		for _, t := range st.Tasks {
-			ra.Tasks.Total++
-			g.Tasks.Total++
-			if t.Status == autonomous.TaskCompleted {
-				ra.Tasks.Done++
-				g.Tasks.Done++
-				key := p.ID + "/" + t.ID
-				if inWindow(t.CompletedAt) && !in.seenTasks[key] {
-					in.seenTasks[key] = true
-					g.Throughput.TasksFinished++
-				}
+	for _, t := range p.Tasks {
+		ra.Tasks.Total++
+		g.Tasks.Total++
+		if t.Status == autonomous.TaskCompleted {
+			ra.Tasks.Done++
+			g.Tasks.Done++
+			key := p.ID + "/" + t.ID
+			if inWindow(t.CompletedAt) && !in.seenTasks[key] {
+				in.seenTasks[key] = true
+				g.Throughput.TasksFinished++
 			}
 		}
 	}
@@ -300,7 +296,7 @@ func rollupAutomatonFor(p *autonomous.PRD, auto string, in rollupInput, inWindow
 // finished: completed; or cancelled or archived with its branch already on the
 // default branch; or carrying a shipped record. The time is the merge or ship
 // time when known, else the last update.
-func rollupFinished(p *autonomous.PRD, in rollupInput) (bool, time.Time) {
+func rollupFinished(p *autonomous.SummaryEntry, in rollupInput) (bool, time.Time) {
 	at := func(known time.Time) time.Time {
 		if !known.IsZero() {
 			return known
@@ -317,11 +313,40 @@ func rollupFinished(p *autonomous.PRD, in rollupInput) (bool, time.Time) {
 	case p.Status == autonomous.PRDCompleted:
 		return true, at(shipAt)
 	case (p.Status == autonomous.PRDCancelled || p.Status == autonomous.PRDArchived) && in.Merged != nil:
-		if merged, mergedAt := in.Merged(p); merged {
+		if merged, mergedAt := in.Merged(*p); merged {
 			return true, at(mergedAt)
 		}
 	}
 	return false, time.Time{}
+}
+
+// rollupSessionIDs is the Automaton's session ids: the entry's cost sessions
+// in cost roll-up order, then any live ones the extra lookup names, without
+// duplicates. It returns nil when there are none.
+func rollupSessionIDs(p *autonomous.SummaryEntry, extra func(string) []string) []string {
+	var live []string
+	if extra != nil {
+		live = extra(p.ID)
+	}
+	if len(live) == 0 {
+		if len(p.SessionIDs) == 0 {
+			return nil
+		}
+		return append([]string(nil), p.SessionIDs...)
+	}
+	seen := make(map[string]struct{}, len(p.SessionIDs)+len(live))
+	out := make([]string, 0, len(p.SessionIDs)+len(live))
+	for _, id := range append(append([]string(nil), p.SessionIDs...), live...) {
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // finishGroup sums the points and turns the window counts into per-day rates.
@@ -338,58 +363,9 @@ func setPerDay(t *rollupThroughput, windowDays int) {
 	t.TasksPerDay = float64(t.TasksFinished) / days
 }
 
-// costRollupPoints prices every Automaton in the window through the cost report
-// engine and keeps only the points figure. Automata with no point figure are absent.
-func (s *Server) costRollupPoints(mgr *autonomous.Manager, now time.Time, windowDays int) map[string]float64 {
-	points := map[string]float64{}
-	src := s.newManagerCostSource(mgr)
-	billing := s.resolvedBilling()
-	req := costreport.Request{
-		GroupBy: costreport.GroupByAutomaton,
-		Since:   now.Add(-time.Duration(windowDays) * 24 * time.Hour),
-		Until:   now,
-	}
-	rep, err := costreport.Build(s.cfg.CostReport, req, src, src, s.exposedRate, billing, now)
-	if err != nil || rep == nil {
-		return points
-	}
-	for _, row := range rep.Rows {
-		if row.EstimatedUsagePoints != nil {
-			points[row.Key] = *row.EstimatedUsagePoints
-		}
-	}
-	return points
-}
-
-// rollupMergedFn is the read-only merge proof the merged-member decision uses:
-// the Automaton's branch against the default branch of the base repository.
-// When it is merged, the time is the commit date of the proving commit.
-func (s *Server) rollupMergedFn(mgr *autonomous.Manager) func(*autonomous.PRD) (bool, time.Time) {
-	cfg := mgr.Config()
-	git := autonomous.NewMergeGitRunner()
-	return func(p *autonomous.PRD) (bool, time.Time) {
-		if p.Git.Branch == "" || cfg.WorktreeBaseRepo == "" {
-			return false, time.Time{}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		proof := autonomous.MergedMemberProof(ctx, git, cfg.WorktreeBaseRepo, p.Git.Branch)
-		if !proof.Merged {
-			return false, time.Time{}
-		}
-		out, err := git.Run(ctx, cfg.WorktreeBaseRepo, "log", "-1", "--format=%cI", proof.Commit)
-		if err != nil {
-			return true, time.Time{}
-		}
-		at, err := time.Parse(time.RFC3339, strings.TrimSpace(out))
-		if err != nil {
-			return true, time.Time{}
-		}
-		return true, at
-	}
-}
-
-// handleProjectRollup serves GET /api/projects/{name}/rollup.
+// handleProjectRollup serves GET /api/projects/{name}/rollup. It reads only the
+// summary index; a repeat read with an unchanged key is served from the
+// per-project cache (project_rollup_cache.go).
 func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -418,24 +394,9 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "automations not available", http.StatusServiceUnavailable)
 		return
 	}
-
-	now := time.Now()
-	resp := buildProjectRollup(rollupInput{
-		Project:     name,
-		Dir:         entry.Dir,
-		Arcs:        entry.Arcs,
-		PRDs:        mgr.Store().ListPRDs(),
-		Automations: mgr.ListAutomations(),
-		SessionIDs:  mgr.PRDSessionIDs,
-		Points:      s.costRollupPoints(mgr, now, windowDays),
-		WindowDays:  windowDays,
-		Now:         now,
-		Projects:    rollupProjectDirs(s.cfg.Projects),
-		ArcHeld:     rollupArcHeld(s.cfg.Projects),
-		Merged:      s.rollupMergedFn(mgr),
-	})
+	body := s.projectRollupBody(mgr, name, entry, windowDays)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	_, _ = w.Write(body)
 }
 
 // rollupProjectDirs is the configured project name to directory map the
