@@ -5115,7 +5115,7 @@
   "sessions_search_clear": "検索をクリア",
   "sessions_search_count": "%2$d 件中 %1$d 件のセッション",
   "sessions_filters_btn": "フィルター",
-  "sessions_filters_tip": "グループ化、保存済みビュー、状態フィルター",
+  "sessions_filters_tip": "グループ化、保存済みビュー、状態・バックエンド・タグのフィルター",
   "sessions_filters_title": "フィルター",
   "sessions_filters_close": "閉じる",
   "sessions_filters_status": "状態",
@@ -5136,6 +5136,7 @@
   "sessions_filters_tag_automaton": "オートマトン",
   "sessions_filters_tag_automaton_ph": "オートマトンを検索",
   "sessions_filters_tag_automaton_none": "一致するオートマトンはありません",
+  "sessions_filters_unnamed": "無名",
   "sessions_filters_tag_selected": "選択中のフィルター",
   "sessions_filters_tag_remove": "%1$s を外す",
   "sessions_filters_tag_clear_all": "すべてクリア",
@@ -5395,6 +5396,5 @@
   "lane_utilization_plan_points": "%1$s / %2$s ポイント",
   "lane_utilization_plan_tokens": "%1$s トークン",
   "lane_utilization_plan_percent": "プランの %1$s%%",
-  "lane_utilization_gantt_heading": "レーン使用率",
-  "sessions_filters_unnamed": "無名"
+  "lane_utilization_gantt_heading": "レーン使用率"
 }

@@ -5115,7 +5115,7 @@
   "sessions_search_clear": "Clear search",
   "sessions_search_count": "%1$d of %2$d sessions",
   "sessions_filters_btn": "Filters",
-  "sessions_filters_tip": "Group, saved views and status filters",
+  "sessions_filters_tip": "Group, saved views and Status, Backend and Tags filters",
   "sessions_filters_title": "Filters",
   "sessions_filters_close": "Close",
   "sessions_filters_status": "Status",

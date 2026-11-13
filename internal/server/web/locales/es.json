@@ -5115,7 +5115,7 @@
   "sessions_search_clear": "Borrar búsqueda",
   "sessions_search_count": "%1$d de %2$d sesiones",
   "sessions_filters_btn": "Filtros",
-  "sessions_filters_tip": "Agrupación, vistas guardadas y filtros de estado",
+  "sessions_filters_tip": "Agrupación, vistas guardadas y filtros de estado, backend y etiquetas",
   "sessions_filters_title": "Filtros",
   "sessions_filters_close": "Cerrar",
   "sessions_filters_status": "Estado",
@@ -5136,6 +5136,7 @@
   "sessions_filters_tag_automaton": "Autómata",
   "sessions_filters_tag_automaton_ph": "Buscar un autómata",
   "sessions_filters_tag_automaton_none": "Ningún autómata coincide",
+  "sessions_filters_unnamed": "sin nombre",
   "sessions_filters_tag_selected": "Filtros seleccionados",
   "sessions_filters_tag_remove": "Quitar %1$s",
   "sessions_filters_tag_clear_all": "Borrar todo",
@@ -5395,6 +5396,5 @@
   "lane_utilization_plan_points": "%1$s de %2$s puntos",
   "lane_utilization_plan_tokens": "%1$s tokens",
   "lane_utilization_plan_percent": "%1$s%% del plan",
-  "lane_utilization_gantt_heading": "Utilización de carriles",
-  "sessions_filters_unnamed": "sin nombre"
+  "lane_utilization_gantt_heading": "Utilización de carriles"
 }

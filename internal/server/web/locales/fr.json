@@ -5115,7 +5115,7 @@
   "sessions_search_clear": "Effacer la recherche",
   "sessions_search_count": "%1$d sur %2$d sessions",
   "sessions_filters_btn": "Filtres",
-  "sessions_filters_tip": "Regroupement, vues enregistrées et filtres d'état",
+  "sessions_filters_tip": "Regroupement, vues enregistrées et filtres d'état, de backend et de tags",
   "sessions_filters_title": "Filtres",
   "sessions_filters_close": "Fermer",
   "sessions_filters_status": "État",
@@ -5136,6 +5136,7 @@
   "sessions_filters_tag_automaton": "Automate",
   "sessions_filters_tag_automaton_ph": "Trouver un automate",
   "sessions_filters_tag_automaton_none": "Aucun automate ne correspond",
+  "sessions_filters_unnamed": "sans nom",
   "sessions_filters_tag_selected": "Filtres sélectionnés",
   "sessions_filters_tag_remove": "Retirer %1$s",
   "sessions_filters_tag_clear_all": "Tout effacer",
@@ -5395,6 +5396,5 @@
   "lane_utilization_plan_points": "%1$s sur %2$s points",
   "lane_utilization_plan_tokens": "%1$s tokens",
   "lane_utilization_plan_percent": "%1$s%% du forfait",
-  "lane_utilization_gantt_heading": "Utilisation des voies",
-  "sessions_filters_unnamed": "sans nom"
+  "lane_utilization_gantt_heading": "Utilisation des voies"
 }
