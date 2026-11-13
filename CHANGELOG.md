@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.0 — Local pre-tag run replaces the slow CI checks
+
+
 ## v9.172.14 — Accept the second soupsieve finding on the aider image
 
 ### Security
