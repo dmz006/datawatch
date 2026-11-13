@@ -7,8 +7,6 @@ package main
 
 import (
 	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -23,30 +21,19 @@ const skippedSnapshotPRDBody = `{"id":"prd1","stories":[{"tasks":[
 ]}]}`
 
 // runPRDGet executes the prd-get command against the capture daemon and
-// returns the command's out stream plus os.Stdout (prettyPrint writes the
-// raw JSON there directly).
+// returns the command's standard error (the plain-text notes) plus its
+// standard output (the raw JSON).
 func runPRDGet(t *testing.T, args ...string) (cmdOut string, stdout string) {
 	t.Helper()
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = oldStdout })
-
-	out := &bytes.Buffer{}
+	out, notes := &bytes.Buffer{}, &bytes.Buffer{}
 	cmd := newAutonomousPRDGetCmd()
 	cmd.SetOut(out)
-	cmd.SetErr(out)
+	cmd.SetErr(notes)
 	cmd.SetArgs(args)
 	if err := cmd.Execute(); err != nil {
-		_ = w.Close()
-		t.Fatalf("execute: %v (output: %s)", err, out)
+		t.Fatalf("execute: %v (output: %s %s)", err, out, notes)
 	}
-	_ = w.Close()
-	data, _ := io.ReadAll(r)
-	return out.String(), string(data)
+	return notes.String(), out.String()
 }
 
 func TestAutonomousPRDGetShowsSkippedSnapshotLines(t *testing.T) {
