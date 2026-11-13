@@ -178,35 +178,49 @@ func formatGateSeconds(d time.Duration) string {
 	return strconv.FormatFloat(d.Seconds(), 'f', -1, 64)
 }
 
-// ResolveGateCheck picks the checks that gate a task, in order of preference:
+// ResolveGateCheck is ResolveGateCheckForAutomaton over a single story.
+func ResolveGateCheck(t *Task, story *Story, projectCommand string) (checks []GateCheck, reason string) {
+	var stories []Story
+	if story != nil {
+		stories = []Story{*story}
+	}
+	return ResolveGateCheckForAutomaton(t, stories, projectCommand)
+}
+
+// ResolveGateCheckForAutomaton picks the checks that gate a task, in order
+// of preference:
 //  1. the task's own VerificationScript, when it is a file under .datawatch/verify;
 //  2. the project gate command, when non-empty;
-//  3. the VerificationScript of every other task in the story that is a file
-//     under .datawatch/verify.
+//  3. the VerificationScript of every other task in every story of the
+//     Automaton (story order) that is a file under .datawatch/verify; template
+//     tasks and final gates are skipped.
 //
 // When none applies it returns no checks and a reason saying nothing runnable
 // was declared. Existence on disk is not checked here; RunScriptGate reports a
 // missing script as a failed gate.
-func ResolveGateCheck(t *Task, story *Story, projectCommand string) (checks []GateCheck, reason string) {
+func ResolveGateCheckForAutomaton(t *Task, stories []Story, projectCommand string) (checks []GateCheck, reason string) {
 	if t != nil && isGateVerifyScript(t.VerificationScript) {
 		return []GateCheck{{Kind: GateCheckScript, Script: t.VerificationScript}}, ""
 	}
 	if cmd := strings.TrimSpace(projectCommand); cmd != "" {
 		return []GateCheck{{Kind: GateCheckCommand, Command: cmd}}, ""
 	}
-	if story != nil {
-		for i := range story.Tasks {
-			other := &story.Tasks[i]
+	for si := range stories {
+		for i := range stories[si].Tasks {
+			other := &stories[si].Tasks[i]
 			if t != nil && t.ID != "" && other.ID == t.ID {
+				continue
+			}
+			if isTemplateTaskID(other.ID) || other.Kind == TaskKindFinalGate {
 				continue
 			}
 			if isGateVerifyScript(other.VerificationScript) {
 				checks = append(checks, GateCheck{Kind: GateCheckScript, Script: other.VerificationScript})
 			}
 		}
-		if len(checks) > 0 {
-			return checks, ""
-		}
+	}
+	if len(checks) > 0 {
+		return checks, ""
 	}
 	return nil, "nothing runnable was declared: no task, story or project gate command names a verification script under " + gateVerifyFolder + " or a project gate command"
 }
