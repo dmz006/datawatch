@@ -3,11 +3,11 @@
 //
 //   - chip: shippedCarriesState (shipped flag OR merged commit) decides;
 //     the chip takes precedence over the status pill, so a
-//     cancelled-but-merged record shows "Shipped", not "Cancelled"
+//     cancelled-but-merged record shows "Completed", not "Cancelled"
 //   - filter: shippedFilterSelection / shippedRecordMatches — the
 //     selection is carried as shipped=true|false (never as a status token)
 //   - counts: shippedCountStates — count_separately pulls shipped records
-//     out of their stored status and groups them under "shipped"
+//     out of their stored status and groups them under "completed"
 //   - settings: loadShippedCounts seeds enabled/show_chip/filter_default/
 //     count_separately and the shipped record counts
 //   - locales: every shipped_* key app.js uses sits in en.json (parity
@@ -49,25 +49,36 @@ test('shipped chip — the carrier predicates', () => {
   assert.equal(s.shippedCarriesState(null), false);
 });
 
-test('shipped chip — label: release name or plain shipped', () => {
+test('shipped chip — label is the existing Completed status label', () => {
   const s = loadApp();
-  assert.equal(s.shippedChipLabel({ merged_in_release: 'v8.9-21' }), 'Shipped in v8.9-21');
-  // a blank release name falls back to the plain chip
-  assert.equal(s.shippedChipLabel({ merged_in_release: '  ' }), 'Shipped');
-  assert.equal(s.shippedChipLabel({}), 'Shipped');
+  assert.equal(s.shippedChipLabel({ merged_in_release: 'v8.9-21' }), 'Completed');
+  assert.equal(s.shippedChipLabel({}), 'Completed');
+  assert.equal(s.shippedChipLabel({}, 'automation_status_completed'), 'Completed');
 });
 
-test('shipped chip — cancelled-but-merged renders Shipped, genuinely cancelled renders nothing', () => {
+test('shipped chip — cancelled-but-merged says Completed, genuinely cancelled renders nothing', () => {
   const s = loadApp();
   const cancelledMerged = { status: 'cancelled', merge_commit: 'abc123', merged_in_release: 'v8.9-21' };
   const chip = s.shippedChipHtml(cancelledMerged);
   assert.ok(chip, 'cancelled-but-merged must carry the chip');
   assert.ok(chip.includes('state-badge-shipped'), 'chip uses its own badge class');
-  assert.ok(chip.includes('Shipped in v8.9-21'), 'chip shows the release name');
-  assert.ok(chip.includes('abc123'), 'chip tooltip carries the merge commit');
+  assert.ok(/>Completed/.test(chip), 'chip text is Completed');
+  assert.ok(!/>Shipped/.test(chip), 'chip text is not Shipped');
+  assert.equal(s.shippedChipHtml({ status: 'cancelled' }), '', 'genuinely cancelled has no chip');
+});
 
-  const cancelledPlain = { status: 'cancelled' };
-  assert.equal(s.shippedChipHtml(cancelledPlain), '', 'genuinely cancelled has no chip');
+test('shipped chip — hover detail carries release and commit only with a merge commit', () => {
+  const s = loadApp();
+  const withCommit = { status: 'cancelled', merge_commit: 'abc123', merged_in_release: 'v8.9-21', merged_at: '2026-01-02T10:00:00Z' };
+  const tip = s.shippedChipTip(withCommit);
+  assert.ok(tip.includes('Shipped in v8.9-21'), 'release in hover detail');
+  assert.ok(tip.includes('abc123'), 'merge commit in hover detail');
+  assert.ok(tip.includes('2026-01-02T10:00:00Z'), 'merged_at in hover detail');
+  assert.ok(s.shippedChipHtml(withCommit).includes('title="Completed'), 'tooltip starts with Completed');
+  // flag-only record: no commit, so no release or commit detail
+  const flagOnly = { status: 'cancelled', shipped: true, merged_in_release: 'v8.9-21' };
+  assert.equal(s.shippedChipTip(flagOnly), 'Completed');
+  assert.ok(!s.shippedChipHtml(flagOnly).includes('v8.9-21'));
 });
 
 test('shipped chip — show_chip=false hides it even when the work shipped', () => {
@@ -76,20 +87,9 @@ test('shipped chip — show_chip=false hides it even when the work shipped', () 
   assert.equal(s.shippedChipHtml({ status: 'completed', merge_commit: 'abc123' }), '');
 });
 
-test('shipped chip — the detail line shows merged_at and the commit', () => {
+test('shipped chip — the detail line helper is gone (hover detail only)', () => {
   const s = loadApp();
-  const prd = {
-    status: 'cancelled',
-    merged_in_release: 'v8.9-21',
-    merged_at: '2026-01-02T10:00:00Z',
-    merge_commit: 'abc123',
-  };
-  const line = s.shippedDetailLineHtml(prd);
-  assert.ok(line.includes('Shipped in v8.9-21'), 'detail line labels the ship');
-  assert.ok(line.includes('2026-01-02T10:00:00Z'), 'detail line shows merged_at');
-  assert.ok(line.includes('abc123'), 'detail line shows the merge commit');
-  // no ship data -> no line
-  assert.equal(s.shippedDetailLineHtml({ status: 'completed' }), '');
+  assert.equal(typeof s.shippedDetailLineHtml, 'undefined');
 });
 
 // ---------- filter selection -------------------------------------------
@@ -125,7 +125,7 @@ test('shipped filter — disabled surface lets every record through', () => {
 
 // ---------- counts -------------------------------------------------------
 
-test('shipped counts — count_separately pulls shipped out of their status', () => {
+test('shipped counts — count_separately folds shipped into completed', () => {
   const s = loadApp();
   const recs = [
     { status: 'cancelled', merge_commit: 'a1' }, // shipped
@@ -136,9 +136,8 @@ test('shipped counts — count_separately pulls shipped out of their status', ()
   ];
   const j = o => JSON.parse(JSON.stringify(o)); // vm realm: compare by value
   assert.deepEqual(j(s.shippedCountStates(recs, true, true)) , {
-    shipped: 2,
+    completed: 3,
     cancelled: 1,
-    completed: 1,
     running: 1,
   });
 });
@@ -157,6 +156,7 @@ test('shipped counts — disabled surface returns plain status counts', () => {
   const out = s.shippedCountStates([{ status: 'cancelled', merge_commit: 'a1' }], false, true);
   assert.deepEqual(JSON.parse(JSON.stringify(out)), { cancelled: 1 });
   assert.equal('shipped' in out, false);
+  assert.equal('completed' in out, false);
 });
 
 // ---------- settings -----------------------------------------------------
@@ -219,4 +219,34 @@ test('shipped locales — every shipped_* key app.js uses is in the English bund
   for (const k of ['shipped_chip', 'shipped_in_release', 'shipped_merged_at', 'shipped_merge_commit']) {
     assert.ok(typeof de[k] === 'string' && de[k].length > 0, `de.json must define ${k}`);
   }
+});
+
+// ---------- badges and throughput --------------------------------------
+
+test('shipped badges — no separate Shipped status badge, Completed counts shipped work', () => {
+  const s = loadApp();
+  const recs = [
+    { id: 'a', status: 'cancelled', merge_commit: 'a1', tags: [] },
+    { id: 'b', status: 'cancelled', tags: [] },
+    { id: 'c', status: 'completed', tags: [] },
+  ];
+  const st = vm.runInContext('_automataState', s);
+  st.allPrds = recs;
+  st.statusFilter = new Set();
+  const html = s._tagFacetsHTML('automata', false);
+  assert.ok(!html.includes('status-shipped'), 'no Shipped badge');
+  assert.ok(!/>Shipped </.test(html), 'no Shipped label');
+  const completed = html.match(/status-completed[^>]*>[^<]*<span[^>]*>(\d+)</);
+  const cancelled = html.match(/status-cancelled[^>]*>[^<]*<span[^>]*>(\d+)</);
+  assert.ok(completed, 'Completed badge present');
+  assert.ok(cancelled, 'Cancelled badge present');
+  assert.equal(completed[1], '2', 'Completed = genuine + shipped-carrying');
+  assert.equal(cancelled[1], '1', 'Cancelled excludes the shipped-carrying record');
+});
+
+test('shipped throughput — the Projects line prints Completed, not Shipped', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  assert.ok(src.includes("${shippedTotal} ${escHtml(t('prd_status_completed'))}"));
+  assert.ok(!src.includes("t('shipped_chip')"), 'no status label uses shipped_chip any more');
+  assert.ok(!src.includes("badge('shipped'"), 'no Shipped status badge');
 });
