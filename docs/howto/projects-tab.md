@@ -294,7 +294,7 @@ in-flight sub-tabs instead (see [The Overview sub-tabs](#the-overview-sub-tabs))
 
 With **Overview** chosen in the picker, the page shows the cross-project in-flight
 sub-tabs of the Automation view (Inbox, Automations, Resources, Progress and cost,
-Setup and policy and Housekeeping) in a strip under the picker. The strip uses the
+and Housekeeping) in a strip under the picker. The strip uses the
 same look as the project page sub-tabs (the strip labelled Project sections), not
 the look of the Automation view's own second row, and every sub-tab in it responds
 to a click or tap.
