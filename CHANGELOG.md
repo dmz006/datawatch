@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.5 — Sessions deep-dive how-to corrections
+
+### Fixed
+
+- **The Sessions deep-dive how-to now states three things correctly.** The Fold all icon is described as showing only while a grouping is active and the list has groups to fold, and the search count is written as "N of M sessions" (for example "3 of 21 sessions"), matching the web app. Documentation only: no code or setting changed.
+
 ## v9.172.4 — Plans migration: untitled rows take the linked Automaton's title
 
 ### Fixed
