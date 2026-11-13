@@ -440,6 +440,7 @@ pipeline_cancel
 pipeline_list
 pipeline_start
 pipeline_status
+plan_migrate
 plan_record_create
 plan_record_get
 plan_record_import

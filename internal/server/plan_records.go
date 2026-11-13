@@ -60,8 +60,11 @@ func PlanRecordsAuditFunc(l *audit.Log) planrecords.AuditFunc {
 			actor = "system"
 		}
 		name := audit.ActionPlanRecordUpdated
-		if action == planrecords.AuditCreated {
+		switch action {
+		case planrecords.AuditCreated:
 			name = audit.ActionPlanRecordCreated
+		case planrecords.AuditMigrated:
+			name = audit.ActionPlanRecordImported
 		}
 		_ = l.Write(audit.Entry{Actor: actor, Action: name, Subject: subject, Details: details})
 	}

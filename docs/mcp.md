@@ -1804,6 +1804,7 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_record_update` | Change a record; a field you leave out is left alone and a rename keeps the old title | `PUT /api/plan-records/{kind}/{ref}` |
 | `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
 | `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
+| `plan_migrate` | Build plans from project arcs and registry rows; previews unless `apply` is `true` | `POST /api/plans/migrate` |
 
 **Parameters.** `kind` is `registry-row` or `finding` (required on create, list,
 get and update). `ref` is an id, a uid, `row <n>`, an exact title, an older

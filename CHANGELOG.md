@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - Plan records can now link down to Automations, Automata and findings, and carry a goal and a priority order. A plan is a record of its own kind; a finding attaches to a plan or to an Automaton. An Automaton or Automation already linked to a different plan is refused rather than moved, and the store can show an Automaton's plan from its summary index without reading full records. Plans can be reordered, and so can the Automata inside a plan. A plan with no Automaton is the backlog. Title search covers plans, Automata, Automations, registry rows and findings, with a state filter. Older records load unchanged.
+- `datawatch plans migrate [--apply]` (also `POST /api/plans/migrate`, the `plan_migrate` MCP tool and the `autonomous plan-migrate [apply]` chat verb) builds plans from the project arcs and the registry rows. Each arc becomes a plan linked to its Automation; each registry row that names an Automaton or Automation becomes a plan linked to it; each open row that names none becomes a backlog plan ordered by its old row number. It previews by default, never changes a plan or link that already exists (a second apply changes nothing), deletes no arc or config key, and audit-logs an apply.
 
 ## v9.167.0 — Match Automata to a project by explicit link first, directory as fallback
 
