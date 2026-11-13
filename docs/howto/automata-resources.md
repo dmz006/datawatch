@@ -34,12 +34,13 @@ The infrastructure retries and the Automata checks cards are on the
 
 ## Settings
 
-This tab has no settings of its own. The lane fill keys are under
-`autonomous.lane_fill.*`, the usage keys under `usage.calculator.*` and the
-burn guard keys under `usage.burn_guard.*`; all are in **Settings → General
-→ Automata**, in the **Usage calculator** and **Usage burn guard** sections. The cards changed only where they are drawn and what they
-show — no new REST, MCP, CLI, comm or chat surface was added, and the
-existing endpoints and verbs are unchanged.
+This tab has no settings of its own. In **Settings → General → Automata**, the
+lane fill keys under `autonomous.lane_fill.*` are in the **Autonomous Automata
+planning** section, the usage keys under `usage.calculator.*` are in the
+**Usage calculator** section, and the burn guard keys under `usage.burn_guard.*`
+are in the **Usage burn guard** section. The cards changed only where they are
+drawn and what they show — no new REST, MCP, CLI, comm or chat surface was
+added, and the existing endpoints and verbs are unchanged.
 
 ## See also
 
