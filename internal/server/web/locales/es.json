@@ -3647,6 +3647,7 @@
   "held_question_empty": "No held questions. A task is added here with a decision to make when an Automaton names an unanswered question in one of the held states.",
   "held_question_recommended": "Recommended option: %1$s",
   "held_question_default_hold": "Held on the default: hold",
+  "held_question_default_value": "Default: %1$s",
   "held_question_answer": "Answer",
   "held_question_open_automaton": "Open Automaton",
   "held_question_open_task": "Open task in Automaton",
