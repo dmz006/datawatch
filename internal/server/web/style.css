@@ -8090,3 +8090,78 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .prd-task-routing-col { display: none; }
   .prd-task-routing-line { display: block; }
 }
+
+/* ── Shared phone page container ──
+   Every top-level page (Sessions, Automata and its sub-tabs, Projects,
+   Alerts, Observer, Dashboard, Settings) carries the .phone-page class on its
+   root wrapper. On a phone the container gives all of them the Sessions list
+   geometry: a 12px side gutter, cards 100% wide inside it with 12px 14px
+   padding, and an 8px vertical gap between cards. The values are custom
+   properties so one edit moves every page. Nothing outside the phone media
+   query changes the desktop layout; the -inset classes only carry the padding
+   that used to be written inline on these wrappers. */
+.phone-page-inset { padding: 12px 16px; }
+.phone-page-inset-lg { padding: 16px; }
+.phone-page-alerts { padding: 12px; }
+
+@media (max-width: 600px), (pointer: coarse) {
+  :root {
+    --phone-gutter: 12px;
+    --phone-card-padding: 12px 14px;
+    --phone-gap: 8px;
+  }
+  .phone-page {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding-left: var(--phone-gutter);
+    padding-right: var(--phone-gutter);
+  }
+  /* A page nested inside another page does not add a second gutter. */
+  .phone-page .phone-page {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .phone-page-alerts { padding: 0; }
+  .phone-page .settings-view {
+    padding: 12px 0;
+    gap: var(--phone-gap);
+  }
+  /* Shared card: same width, padding and spacing as a Sessions card. */
+  .phone-card,
+  .phone-page .prd-card,
+  .phone-page .alert-card,
+  .phone-page .settings-section,
+  .phone-page .dboard-card {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .phone-card,
+  .phone-page .prd-card,
+  .phone-page .alert-card {
+    padding: var(--phone-card-padding);
+  }
+  .phone-page .prd-card { margin: var(--phone-gap) 0; }
+  .phone-page .alert-card { margin: 0 0 var(--phone-gap); }
+  /* Dashboard: stat bar, tag filter and card grid share the gutter, and the
+     cards fill the full row instead of sitting in a narrower inset grid. */
+  .phone-page .dboard-stat-bar,
+  .phone-page .dboard-tag-filter {
+    box-sizing: border-box;
+    padding-left: var(--phone-gutter);
+    padding-right: var(--phone-gutter);
+  }
+  .dboard-cards.phone-page {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .phone-page .dboard-card-grid {
+    grid-template-columns: 1fr;
+    gap: var(--phone-gap);
+    padding: var(--phone-gap) var(--phone-gutter);
+  }
+  .phone-page .dboard-card[data-cs] { grid-column: span 1 !important; }
+}

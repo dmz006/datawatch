@@ -3194,7 +3194,7 @@ function _projectsPaint() {
   const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
   const err = _projectsState.error;
   if (list && list.length === 0 && !err) {
-    view.innerHTML = `<div id="projectsView" style="padding:16px;">
+    view.innerHTML = `<div id="projectsView" class="phone-page phone-page-inset-lg">
       <div id="projectsNone" style="color:var(--text2);font-size:14px;line-height:1.5;margin-bottom:12px;">${escHtml(t('projects_none') || 'No projects yet.')}</div>
       ${_projectsManageHTML([])}</div>`;
     return;
@@ -3221,7 +3221,7 @@ function _projectsPickerHTML(list, selected, err) {
   const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
     .concat(list.map(p => `<option value="${escHtml(p.name)}" ${p.name === selected ? 'selected' : ''}>${escHtml(p.name)}</option>`));
   const errLine = err ? `<div style="color:var(--error,#ef4444);font-size:13px;margin-bottom:8px;">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>` : '';
-  return `<div id="projectsView" style="padding:12px 16px;">${errLine}
+  return `<div id="projectsView" class="phone-page phone-page-inset">${errLine}
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
       <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
       <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
@@ -4554,7 +4554,7 @@ function _projectsFocusRepaint() {
 function _projectsFocusPageHTML(f) {
   const head = `<div class="automation-detail-header"><button type="button" class="automation-detail-back project-focus-back" onclick="projectsFocusBack()">← ${escHtml(t('projects_gantt_focus_back'))}</button><h2 class="automation-detail-title">${escHtml(t('projects_gantt_focus_title', [f.title]))}</h2></div>`;
   const page = `<div id="projectFocus" class="project-focus" data-automation="${escHtml(f.id)}">${head}<div id="projectFocusBody" class="project-gantt">${_projectsFocusInner(f)}</div></div>`;
-  return f.from === 'automation' ? `<div class="view-content automation-detail" style="position:relative;">${page}</div>` : `<div style="padding:12px 16px;">${page}</div>`;
+  return f.from === 'automation' ? `<div class="view-content automation-detail phone-page" style="position:relative;">${page}</div>` : `<div class="phone-page phone-page-inset">${page}</div>`;
 }
 
 // _projectsFocusRead reads the focus reply. For the project page the project is
@@ -7061,7 +7061,7 @@ function renderSessionsView() {
       if (fcs.phase === 'error') {
         _ensureLocalHostname(); // GH#194 -- so "Back to %1$s" shows the real name on the next render if not already cached
         paint(`
-          <div class="view-content" style="position:relative;">
+          <div class="view-content phone-page" style="position:relative;">
             <div class="empty-state">
               <span class="empty-state-icon">⚠️</span>
               <h3>${escHtml(t('fed_conn_error_title') || 'Could not reach this server')}</h3>
@@ -7084,7 +7084,7 @@ function renderSessionsView() {
         ? (t('fed_conn_loading_sessions', [state.activeServer]) || `Loading sessions from ${state.activeServer}…`)
         : (t('fed_conn_connecting', [state.activeServer]) || `Connecting to ${state.activeServer}…`);
       paint(`
-        <div class="view-content" style="position:relative;">
+        <div class="view-content phone-page" style="position:relative;">
           ${loadingEyeBlock(fcsLabel, 'panel')}
         </div>`);
       return;
@@ -7100,7 +7100,7 @@ function renderSessionsView() {
         ? `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(sl.error)}</span><button type="button" class="btn-secondary list-state-retry" onclick="loadSessionsList()">${escHtml(t('retry'))}</button></div>`
         : `<div class="list-state-loading-label" role="status">${escHtml(t('loading'))}</div>`;
       paint(`
-        <div class="view-content" style="position:relative;">
+        <div class="view-content phone-page" style="position:relative;">
           <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
           ${failed}
           <div class="session-list">${sl.error ? '' : skeletonCard.repeat(3)}</div>
@@ -7109,7 +7109,7 @@ function renderSessionsView() {
       return;
     }
     paint(`
-      <div class="view-content" style="position:relative;">
+      <div class="view-content phone-page" style="position:relative;">
         <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
         ${disconnectedBannerHtml}
         ${history.length > 0 ? toggleBtn : ''}
@@ -7156,7 +7156,7 @@ function renderSessionsView() {
                 ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
                 : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode))));
   const filtersActive = !!(filterText.trim() || chip.length || backendSel.length || state.sessionWatchFilter || tagSel);
-  paint(`<div class="view-content" style="position:relative;">
+  paint(`<div class="view-content phone-page" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
     ${renderSessionsToolbar(filterVal, filtersActive, visible, groupBy, viewMode, state.sessions.length)}
@@ -15221,7 +15221,7 @@ function renderSettingsView() {
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
   view.innerHTML = `
-    <div class="view-content">
+    <div class="view-content phone-page">
       <div class="settings-tabs-bar tab-strip-scroll">
         ${tabBtns}
       </div>
@@ -34170,7 +34170,7 @@ function renderPRDDetailView(prdId, breadcrumbAppend) {
 
   const view = document.getElementById('view');
   if (!view) return;
-  view.innerHTML = `<div class="view-content" style="position:relative;">
+  view.innerHTML = `<div class="view-content phone-page" style="position:relative;">
     <div class="prd-breadcrumb" id="automataDetailBreadcrumb"></div>
     <div id="automataDetailBody" style="padding:0;"><div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div></div>
   </div>`;
@@ -42948,7 +42948,7 @@ function renderAutonomousView() {
 
   view.innerHTML = `
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
-    <div class="view-content" style="position:relative;">
+    <div class="view-content phone-page" style="position:relative;">
       <!-- v6.12.4 — operator: "automata tab, automata and templates
            should be like tab headers, like tmux,channel,state are
            inside a session. not buttons". Reuse the output-tabs /
@@ -46912,7 +46912,7 @@ function buildAutomationDetailHTML(automation, ctx) {
 window.buildAutomationDetailHTML = buildAutomationDetailHTML;
 
 function _automationDetailShell(inner) {
-  return `<div class="view-content automation-detail" style="position:relative;">${inner}</div>`;
+  return `<div class="view-content automation-detail phone-page" style="position:relative;">${inner}</div>`;
 }
 
 function _automationDetailBackHTML() {
@@ -48532,7 +48532,7 @@ function _automationFormHTML() {
     ? `<input type="search" id="automationFormSearch" class="form-input" placeholder="${escHtml(t('automation_picker_search'))}" aria-label="${escHtml(t('automation_picker_search'))}" value="${escHtml(f.search)}" oninput="automationFormSearch(this.value)">`
       + `<div id="automationFormPicker" class="automation-picker" style="max-height:200px;overflow:auto;margin:6px 0;">${_automationFormPickerHTML()}</div>`
     : '';
-  return `<div class="view-content automation-form" style="position:relative;">
+  return `<div class="view-content automation-form phone-page" style="position:relative;">
     <div class="automation-detail-header"><button type="button" class="automation-detail-back" onclick="automationFormCancel()">← ${escHtml(t('automation_back'))}</button></div>
     <h2 class="automation-form-title">${escHtml(heading)}</h2>
     <div id="automationFormError" class="automation-form-error" role="alert" style="color:var(--error);font-size:12px;">${escHtml(f.error)}</div>
@@ -48599,7 +48599,7 @@ function openAutomationForm(automation) {
     st.detailId = src.id;
     st.detail = src;
   }
-  view.innerHTML = `<div class="view-content automation-form" style="position:relative;"><div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div></div>`;
+  view.innerHTML = `<div class="view-content automation-form phone-page" style="position:relative;"><div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div></div>`;
   const prdsRequest = automationRequest('GET', '/api/autonomous/prds')
     .then(data => (Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : [])), () => []);
   const listRequest = automationRequest('GET', '/api/automations')
@@ -49492,8 +49492,8 @@ window.alertsRefresh = function() {
 function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
-  view.innerHTML = `<div class="view-content">
-    <div id="alertsList" style="padding:12px;"></div></div>`;
+  view.innerHTML = `<div class="view-content phone-page">
+    <div id="alertsList" class="phone-page-alerts"></div></div>`;
   // Cached alerts paint at once with a "Cached" badge; the fetch runs behind
   // them and a failure shows a banner with Retry above whatever is cached.
   const ctl = _alertsLoader(state.activeServer || 'local');
@@ -55822,7 +55822,7 @@ function renderDashboardView() {
   _dashStartEventLogPoll();
 
   viewEl.innerHTML = `
-    <div class="dboard-cards" id="dashboardWrap">
+    <div class="dboard-cards phone-page" id="dashboardWrap">
       <div class="dboard-stat-bar">
         <span style="font-weight:700;letter-spacing:0.7px;color:var(--accent);font-size:11px;">⬡ DASHBOARD</span>
         <span id="dashStatSessions" style="color:var(--text2);">—</span>
@@ -56397,7 +56397,7 @@ function renderObserverView() {
   // stay where they are.
   const view = document.getElementById('view');
   if (!view) return;
-  view.innerHTML = `<div class="view-content">
+  view.innerHTML = `<div class="view-content phone-page">
     <div class="settings-view">
 
       <div class="settings-section">
