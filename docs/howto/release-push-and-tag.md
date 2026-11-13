@@ -189,6 +189,8 @@ key. The status tool itself only reads.
 
 New work must carry its unit and functional tests and the relevant smoke script before it ships. The e2e and sandbox smoke run stays the operator's major-release step; it is not a product feature and `make pre-tag` does not run it.
 
+Operator review: the CI and release workflows no longer run `go test`, so confirm the build host runs `make pre-tag` (script: `scripts/pre-tag.sh`, self-test: `tests/test-pre-tag.sh`) before every tag. If a tag is pushed from a commit with no `result=pass` line in `.datawatch/pre-tag-record`, nothing in CI will catch a failing test.
+
 ## When the code scanning upload fails
 
 The Release workflow copies its gosec and Trivy SARIF reports to GitHub Code Scanning. Those uploads never block a release: each tries up to four times with waits of 60, 180 and 300 seconds (for example when GitHub's rate limit answers), a failed attempt never fails the job, and if every attempt fails the step logs a warning and the run goes on. The blocking gosec baseline check and Trivy scan steps before them are unchanged and are still the real gates. To get the results anyway, download the `gosec-results` or `trivy-<image>-sarif` artifact from the run, or re-run the workflow later. If a release shows no new entry in Code Scanning, look for the "failed on every attempt" warning on the upload steps. When you edit a workflow, `make lint` runs `make check-sarif-upload`, which fails if an upload step becomes blocking or loses its retries. Details: [operations.md](../operations.md#code-scanning-upload-in-the-release-workflow).
