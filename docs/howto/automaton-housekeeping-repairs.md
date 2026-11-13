@@ -1,14 +1,14 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, supervisor, supervisor watch, housekeeping, repairs, findings, grace period, task chain, judge, lane fill, leftovers]
+  topics: [autonomous, automation, supervisor, supervisor watch, housekeeping, repairs, findings, grace period, task chain, judge, lane fill, leftovers, planning, planning failure]
 exec_steps:
   - tool: supervisor_watch_list
     description: Read the supervisor watch findings, open first - the kinds in this table are the finding kinds you see there
     args: {}
     read_only: true
   - tool: autonomous_config_get
-    description: Read the autonomous settings, including the supervisor watch block and the four repair groups
+    description: Read the autonomous settings, including the supervisor watch block and the five repair groups
     args: {}
     read_only: true
 ---
@@ -25,7 +25,7 @@ after how long, and what is always left for you.
 
 **Where the code stands.** The watch is report-only in every mode today: it
 records and alerts, and it acts on nothing. The repair framework and its
-settings now exist: the four group settings and the grace setting under
+settings now exist: the five group settings and the grace setting under
 `autonomous.housekeeping_repairs` are part of the config and are read and
 checked when the daemon loads it, and each group defaults to `report`, so a
 daemon that never sets one behaves as it does now. The daemon does not run the
@@ -56,7 +56,7 @@ only what the pass has recorded.
 
 **What the shipped framework repairs.** The framework is narrower than the
 table below. The table is the full set of finding kinds and the design for each;
-the repairs written so far are these four, one per group, each built on a
+the repairs written so far are these five, one per group, each built on a
 mechanical step the [supervisor loop](supervisor-loop.md) already has:
 
 | Group | What the shipped repair finds | What it does in `on` |
@@ -65,6 +65,7 @@ mechanical step the [supervisor loop](supervisor-loop.md) already has:
 | `advance_judge` | A task held for review after its infrastructure retries ran out. | Retries the failed infrastructure task. |
 | `lane_fill` | The running lane count differs from the wanted count, inside the lane bounds. | Corrects the lane count to the wanted one. |
 | `leftovers` | Leftover files crossed the disk cleanup alert threshold. | Runs the cleanup sweep, which only refreshes the cleanup status and raises the disk alert. |
+| `planning` | A draft Automaton with no stories whose planning failed for a reason retrying will not change, where every spec lint finding is one the daemon can reword. | Rewords the spec with the lint suggestions, applies it as a revision and plans again: the same path as the planning question's *Fix the wording and plan again* answer. |
 
 The `task_chain` group also has three repairs for stuck task chains, each run in
 `on` and only reported in `report`. They are written and tested but, like the
@@ -167,7 +168,7 @@ shipped code before you turn any group to `on`:
   per-group wait (for example none for `WORKTREE`). `0` means no grace.
 - The table's repair columns (a judge re-run, a single reset of a failed task,
   worktree pruning, lease and placement fixes) are the design; the shipped
-  repairs are the four above. Confirm which of the table's rows you still want
+  repairs are the five above. Confirm which of the table's rows you still want
   built.
 - The three task chain repairs run fixed commands (`make sync-docs`, `git clean -f -- <one path>`) in
   the Automaton worktree. Confirm you accept those commands, and that a final-gate failure
@@ -178,6 +179,12 @@ shipped code before you turn any group to `on`:
   test for you, before turning `leftovers` to `on`. The `leftovers` group also
   holds the older disk cleanup sweep, so `on` switches both. The release repairs
   have no setting of their own and are not started by the daemon yet.
+- The planning repair rewrites a draft's spec and plans it again without you.
+  Confirm you accept that, and that "a draft with no stories and a recorded
+  non-retryable planning failure whose every spec lint finding can be reworded"
+  is a reliable signal, before turning `planning` to `on`. In `report` it only
+  records what it would do. The reworded spec is a normal revision on the
+  decision log. It has no setting beyond the group mode.
 - The lane fill start repair starts a real Automaton on an idle lane. Confirm you
   accept that it starts work without you, that it follows capacity, the inflight
   caps and the usage guard as described, and that it is separate from the lane
@@ -195,7 +202,7 @@ shipped code before you turn any group to `on`:
   should be reworded or built as written.
 - The read view and its card are new. Confirm the card's wording (it says a
   stuck state "is looked at after N seconds") reads right to you, and check
-  that the Settings rows for the four groups save a value on your build: the
+  that the Settings rows for the five groups save a value on your build: the
   settings are validated when the config loads, but this page's author could
   not confirm every set path writes them yet.
 - No surface starts the repair pass yet, so the card, the REST route, the MCP
@@ -217,7 +224,7 @@ kind in the watch yet, and `CI STUCK` is `ci_stuck`).
 | `MERGE READY` (`automaton_not_merged`) | Every task is done, the review passed or warned, and the branch is not yet on the base branch. | No: merging is never automatic from the watch. | Reports it. Nothing else. | The merge and the ship. |
 | `JUDGE BLOCKED` | Every task is done but the rules review blocked the Automaton. | Partly: the Automaton's own corrective path may add work, but the watch does not decide a block is wrong. | Group **advance_judge**: reports it and makes sure the corrective-work path has run once. It never overrides the verdict and never merges. | Reading the verdict, and any decision to override or reject it. |
 | `NEW failed task` (`task_failed`, `task_review_needed`) | A task failed, or is held for a person to review. | Yes for a first failure after an infrastructure cause; no for a review hold, which exists so a person looks. | Group **task_chain**: after the grace it resets a failed task once, within the retry rules the Automaton already has. A review hold is only reported. | Reading the verifier verdict; every review hold; a task that fails again. |
-| `BACKLOG` | Failed or blocked Automata with work left, or Automata waiting for review, approval or planning. | Partly: it can reset the failed ones the same way as a failed task and start the next step of a chain. | Group **task_chain**: the same single reset, and starting the next chain step once the one before it is done. Review, approval and planning waits are reported only. | Approving, planning and deciding what to repair or cancel. |
+| `BACKLOG` | Failed or blocked Automata with work left, or Automata waiting for review, approval or planning. | Partly: it can reset the failed ones the same way as a failed task and start the next step of a chain. | Group **task_chain**: the same single reset, and starting the next chain step once the one before it is done. Review, approval and planning waits are reported only. | Approving, planning and deciding what to repair or cancel. A draft whose planning failure is not one the daemon can reword is reported and left for you (see *Planning repair* below). |
 | `IDLE lanes` (`idle_lane_eligible_work`) | A lane is idle while work that is eligible for it waits. | Yes: it is exactly what lane fill does. | Group **lane_fill**: on the lane fill's own rules and its own mode, it starts the next eligible Automaton. An Automaton lane fill refuses (a hold, a stale spec) is never started. | Anything lane fill refuses; the lane count and caps. |
 | `SILENT` (`worktree_silent`) | A running Automaton has a task in progress, and nothing in its worktree or transcript changed for longer than `silent_minutes`. | No: a quiet worker may be loading a model or thinking. | Reports it. It never signals or ends the session. | Checking the worker's process and files, and deciding to reset it. |
 | `LEASE` | A capacity lease holds a slot with no node lease, or with an unknown node after adoption. | Yes for a lease whose holder is gone; the repair only corrects the lease record. | Group **lane_fill**: after the grace it re-adopts or releases the lease record. It never touches the session. | A lease whose holder is still running. |
@@ -236,9 +243,29 @@ A check that cannot tell says nothing. Every repair acts only on a finding that
 is still open at the end of its grace, and a finding that closes by itself in
 the meantime is never repaired.
 
-## The four settings groups
+## Planning repair
 
-The repairable kinds sit in four groups. Each group has one setting and one mode,
+The `planning` group (default `report`) repairs a draft Automaton that sits
+with zero stories because planning failed for a reason retrying will not change
+(the recorded planning failure is not retryable; see
+[automaton-decompose-lint.md](automaton-decompose-lint.md#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks)).
+
+- **When every finding can be reworded**, after the grace it does what the
+  planning question's *Fix the wording and plan again* answer does: rewrites
+  the spec with the spec lint's suggestions, applies it as a revision and plans
+  again. It re-checks that the draft is still stuck and still correctable just
+  before acting, and refuses if not.
+- **When a finding cannot be reworded** (a private address, a worktree path),
+  the finding is an unsafe finding: it is recorded as skipped with one warning
+  alert for that draft and the spec is left alone. A person changes it.
+- A retryable failure is never touched; it keeps its retry budget.
+- It never touches, kills or signals a session, merges, ships, or changes a
+  model or backend. Undo: edit the spec back from the Automaton's detail view
+  and plan again.
+
+## The five settings groups
+
+The repairable kinds sit in five groups. Each group has one setting and one mode,
 and the repairs of a group act only in `on`. The settings live under
 `autonomous.housekeeping_repairs`, beside `grace_seconds`:
 
@@ -248,6 +275,7 @@ and the repairs of a group act only in `on`. The settings live under
 | Advance and judge | `autonomous.housekeeping_repairs.advance_judge` | `STUCK`, `MERGE WAIT`, `JUDGE BLOCKED` |
 | Lane fill | `autonomous.housekeeping_repairs.lane_fill` | `IDLE lanes`, `LEASE`, `PLACEMENT` |
 | Leftovers | `autonomous.housekeeping_repairs.leftovers` | `WORKTREE`, and the leftover lease, worktree and tmux name of a finished Automaton |
+| Planning | `autonomous.housekeeping_repairs.planning` | A draft with no stories whose planning failed for a non-retryable reason (the planning part of `BACKLOG`) |
 
 | Mode | What it does |
 |---|---|
@@ -267,6 +295,7 @@ autonomous:
     advance_judge: report
     lane_fill: report
     leftovers: report
+    planning: report
     grace_seconds: 300
 ```
 
@@ -307,6 +336,8 @@ for each shipped repair:
   status and raises the disk alert. For the release repairs, start the Automaton
   again from the Automata page to take a lease again or recreate a worktree; a
   released tmux name is simply free to reuse.
+- `planning`: the spec change is on the Automaton's decision log; edit the spec
+  back from the Automaton's detail view and plan again. No session was touched.
 
 No surface reads the record yet: it is reachable only through the decision log.
 The finding itself keeps its first-seen time and is read through the supervisor

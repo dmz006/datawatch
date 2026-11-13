@@ -630,6 +630,17 @@ phrases.
 The answer is recorded on the decision log (`planning_failure_answer`),
 quoting which option the operator chose.
 
+**5. The daemon can take the fix answer by itself.** The housekeeping repair
+group `autonomous.housekeeping_repairs.planning` (default `report`) looks for
+a draft with no stories whose recorded failure is not retryable. When every
+spec lint finding on it can be reworded, then after the grace it does what
+**Fix the wording and plan again** does (reword, revise, plan again); when a
+finding cannot be reworded it is skipped with one alert and the spec is left
+alone. In `report` it only records what it would do. Turn it to `on` only if
+you accept the daemon rewording a spec without you; undo by editing the spec
+back from the detail view. See
+[howto/automaton-housekeeping-repairs.md](automaton-housekeeping-repairs.md#planning-repair).
+
 **The spec lint.** The suggestions come from a lint that runs the same
 content checks as the decompose, but over the spec text itself, so a
 phrase is caught before it is copied into a task title. It is
