@@ -28,35 +28,39 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const stub = require('./testutil_browser_stub.js');
+const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub.js');
 
 const APP_JS = path.join(__dirname, 'app.js');
 const TRIAGE_MODEL_JS = path.join(__dirname, 'automata-triage-model.js');
 const EN_JSON = path.join(__dirname, 'locales', 'en.json');
 
+// capElement captures what the app writes to .innerHTML, the way the real
+// toggle cell would hold it.
 function capElement() {
-  const el = { html: () => '', setHTML: v => { el.html = () => v; } };
-  el.setHTML('');
-  return el;
+  const cap = { html: '' };
+  const el = { querySelector: () => null, querySelectorAll: () => [] };
+  Object.defineProperty(el, 'innerHTML', { get() { return cap.html; }, set(v) { cap.html = v; } });
+  return { el, cap };
 }
 
 function makeSandbox() {
-  const toggleEl = capElement();
-  const sbx = stub.buildSandbox({ byId: { inboxViewModeToggle: toggleEl } });
+  const { el, cap } = capElement();
+  const sbx = buildSandbox({ byId: { inboxViewModeToggle: el } });
   sbx.innerWidth = 1280;
-  return { sbx, toggleEl };
+  vm.createContext(sbx);
+  return { sbx, cap };
 }
 
 function loadApp(sbx) {
-  stub.loadScript(TRIAGE_MODEL_JS, sbx);
-  stub.loadScript(APP_JS, sbx);
+  loadScript(TRIAGE_MODEL_JS, sbx);
+  loadScript(APP_JS, sbx);
   const en = require(EN_JSON);
   sbx._i18n.bundle = en;
   sbx._i18n.fallback = en;
 }
 
 function run(sbx, code) {
-  return sbx.vm.runInContext(code, sbx);
+  return vm.runInContext(code, sbx, { filename: '<inbox-view-modes-test>' });
 }
 
 // ── fixtures ────────────────────────────────────────────────────────────────
@@ -112,15 +116,17 @@ function heldBody() {
 // ── tests ───────────────────────────────────────────────────────────────────
 
 test('Inbox toggle: three mode buttons, one active, no group select', () => {
-  const { sbx, toggleEl } = makeSandbox();
+  const { sbx, cap } = makeSandbox();
   loadApp(sbx);
 
-  const html = toggleEl.html();
+  // Paint the toggle row the same way the Inbox sub-tab and a mode switch do.
+  run(sbx, `_inboxViewRepaint()`);
+  const html = cap.html;
   for (const mode of ['list', 'tiles', 'compact']) {
     assert.ok(html.includes(`listSetMode('inbox','${mode}')`),
       `toggle row lacks the ${mode} button: ${html}`);
   }
-  assert.equal((html.match(/tag-view-btn active/g) || []).length + (html.match(/tag-view-btn active\b/g) || []).length, 1,
+  assert.equal((html.match(/tag-view-btn active/g) || []).length, 1,
     'exactly one active button: ' + html);
   assert.equal(/<select/.test(html), false, 'no group-by select on the Inbox toggle');
   // 1280px default is tiles.
@@ -129,7 +135,7 @@ test('Inbox toggle: three mode buttons, one active, no group select', () => {
 });
 
 test('Inbox mode: remembered choice is read back for every list', () => {
-  const { sbx } = makeSandbox();
+  const { sbx, cap } = makeSandbox();
   loadApp(sbx);
 
   for (const [mode, needle] of [
@@ -151,7 +157,7 @@ test('Inbox mode: remembered choice is read back for every list', () => {
   }
 
   // And the toggle row repaints with the active mark following the mode.
-  const tHtml = sbx.document.getElementById('inboxViewModeToggle').html();
+  const tHtml = cap.html;
   assert.ok(tHtml.includes(`listSetMode('inbox','list')`), 'toggle still present');
   assert.ok(/tag-view-btn active"/.test(tHtml), 'toggle marks one active: ' + tHtml);
 });
@@ -253,23 +259,21 @@ test('Mode switch repaints from loaded data and never changes the Inbox badge', 
   const before = run(sbx, `_automationInboxBadgeCount()`);
   assert.ok(before >= 2, 'badge counts the loaded actionable items: ' + before);
 
-  // Fake the three Inbox loaders the way listLoader would paint them, and
-  // count how many times each would re-fetch.
-  let fetches = 0;
-  run(sbx, `
-    window._inboxTestFetches = function() { fetches = window._inboxTestFetches.count; };
-  `);
-  const paintSpy = () => {
-    fetches += 1;
-  };
-  sbx._listLoaders['automation_triage'] = { state: { hasData: true }, paint: paintSpy };
-  sbx._listLoaders['automation_questions'] = { state: { hasData: true }, paint: paintSpy };
-  sbx._listLoaders['automation_held_questions'] = { state: { hasData: true }, paint: paintSpy };
+  // Fake the three Inbox loaders the way listLoader would paint them; a
+  // paint re-renders the data already held (load is what would fetch), so
+  // counting each key's paints shows the switch repaints without loading.
+  const paints = {};
+  for (const k of ['automation_triage', 'automation_questions', 'automation_held_questions']) {
+    paints[k] = 0;
+    sbx._listLoaders[k] = { state: { hasData: true }, paint: () => { paints[k] += 1; } };
+  }
 
   for (const mode of ['list', 'tiles', 'compact']) {
     run(sbx, `window.listSetMode('inbox', ${JSON.stringify(mode)})`);
   }
   const after = run(sbx, `_automationInboxBadgeCount()`);
   assert.equal(after, before, 'the Inbox badge count is unchanged by a mode switch');
-  assert.equal(fetches, 3, 'each loaded Inbox list painted exactly once (no refetch)');
+  for (const k of Object.keys(paints)) {
+    assert.equal(paints[k], 3, `${k} repainted once per mode switch (no refetch): ${paints[k]}`);
+  }
 });

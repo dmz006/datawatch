@@ -312,6 +312,7 @@ test('card: output never contains undefined or NaN', () => {
 
 test('list: two records render two cards', () => {
   const sandbox = loadApp();
+  sandbox.listSetMode('inbox', 'list');
   const html = sandbox.triageListHtml({
     records: [failedRecord(), blockedRecord()],
     alert_minutes: 30,
@@ -324,6 +325,7 @@ test('list: two records render two cards', () => {
 
 test('list: empty body renders the empty placeholder', () => {
   const sandbox = loadApp();
+  sandbox.listSetMode('inbox', 'list');
   for (const body of [{ records: [] }, {}, null]) {
     const html = sandbox.triageListHtml(body);
     assert.ok(html.includes('triage-list-empty'), 'empty placeholder class');

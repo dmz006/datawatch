@@ -61,6 +61,7 @@ function loadApp() {
   loadScript(APP_JS, sandbox);
   sandbox._i18n.bundle = bundle('en');
   sandbox._i18n.fallback = bundle('en');
+  sandbox.listSetMode('inbox', 'list'); // these tests pin the inbox list mode
   return sandbox;
 }
 
