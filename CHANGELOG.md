@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.172.13 — Burn script counts helper agents
+
+### Changed
+
+- **The usage burn script now counts helper agents.** `scripts/claude-burn.py` read only the top-level session transcripts and left out the subagent transcripts that Claude Code keeps for helper agents, so merge, repair and audit helpers did not show in the usage totals. It now counts them and prints them as their own line, and it joins the other supervisor tools (`supervisor-watch.py`, `v10-status.py`) in the version-bump check's exempt list.
+
 ## v9.172.12 — Encryption audit: the encryption docs match the code
 
 ### Documentation
