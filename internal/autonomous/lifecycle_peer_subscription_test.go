@@ -571,7 +571,12 @@ func TestPeerEventSubscriptionUnreadableAnswerIsRetried(t *testing.T) {
 			_, _ = w.Write([]byte("not json"))
 			return
 		}
-		peerSubPage(w, []LifecycleEvent{peerSubEvent("ev-ok", "daemon-alpha")}, 2)
+		if n == 2 {
+			peerSubPage(w, []LifecycleEvent{peerSubEvent("ev-ok", "daemon-alpha")}, 2)
+			return
+		}
+		// Later polls find nothing new, so the event is delivered exactly once.
+		peerSubPage(w, nil, 2)
 	})
 	rec := &peerSubRecorder{}
 	sub := peerSubSubscriber(rec, peerSubPeer(ps.URL), peerSubSettings())
@@ -579,7 +584,10 @@ func TestPeerEventSubscriptionUnreadableAnswerIsRetried(t *testing.T) {
 	if err := sub.Start(context.Background(), PeerEventSource{Peer: "peer-alpha", Queue: "q"}); err != nil {
 		t.Fatal(err)
 	}
-	peerSubWaitFor(t, "the event", func() bool { evs, _, _, _ := rec.snapshot(); return len(evs) == 1 })
+	peerSubWaitFor(t, "the event", func() bool { evs, _, _, _ := rec.snapshot(); return len(evs) >= 1 })
+	if evs, _, _, _ := rec.snapshot(); len(evs) != 1 {
+		t.Errorf("events = %d, want exactly 1 (the retried read delivers it once)", len(evs))
+	}
 }
 
 func TestPeerEventSubscriptionNeverLeaksToken(t *testing.T) {
