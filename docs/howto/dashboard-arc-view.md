@@ -58,6 +58,8 @@ with that id was found.
 
 The chat verb has no plan argument; it shows the default plan.
 
+The names `arc` (the query and argument above) and `dashboard arc` (the verb and CLI command) are the older name for the plan view and stay as deprecated aliases. The view itself is read-only; to order or link plans use [plan-records.md](plan-records.md#ordering-and-linking-plans).
+
 ## Access methods
 
 The plan view reads the same data on every surface:

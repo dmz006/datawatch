@@ -3191,6 +3191,26 @@ The **Helm version pin** is `scripts/helm-version.txt`, a file holding one `vX.Y
 
 A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. Records are read and changed through REST (`/api/plan-records`), the MCP `plan_record_*` tools, `datawatch plan-record`, the `autonomous plan-record` chat verbs and the Plan records section of the Projects page. See [howto/plan-records.md](howto/plan-records.md) and [operations.md](operations.md#plan-records-store-and-import).
 
+### Plan
+
+A **Plan** is the registry record of what you are working on. The model links down: **Plan**, then **Automation**, then **Automata**, then tasks. A **Plan** holds one or more Automations (a named chain of Automata); an **Automaton** is one unit of autonomous work with its tasks. A **finding** attaches to a Plan or to an Automaton. A Plan is not an Automation: it is the record above one. Plans are ordered per project (lowest order first); a Plan with no Automaton yet is in the backlog. The word *record* is used only for what is stored (the registry rows and findings) and for the Records sub-tab. See [Plan record](#plan-record), [Plan order](#plan-order) and [howto/projects-tab.md](howto/projects-tab.md).
+
+### Registry
+
+The **Registry** is the set of registry rows a project keeps: one planned or shipped work item each, with a state and optional links to a Plan and to Automata. See [Registry row record](#registry-row-record). Rows are stored records, never deleted; closing one is a state change.
+
+### Finding
+
+A **finding** is a problem raised by an Automaton or an operator. It attaches to a Plan or to an Automaton (a finding already attached elsewhere is refused and the holder is named). See [Finding record](#finding-record).
+
+### Plans browser
+
+The **Plans browser** is the body of the **Plans** page sub-tab on the Projects sub-tab: the project's Plans in priority order, each with its goal, state, progress of finished Automata and points, then a **Backlog** group of Plans with no Automaton yet. Open a Plan to see its Automations, its Automata in run order with the next marker, its tasks (read only when opened, with **Load more**) and its linked findings and registry rows. The up and down buttons reorder Plans and a Plan's Automata; **Create plan** and the attach controls link an Automaton, an Automation or a finding, through the [Plans write API](#plans-write-api). The search box covers Plan, Automaton, registry row and finding titles, the state filter narrows by Plan state, and reordering is off while either is in use. Which Plans are expanded is remembered per browser, not by the daemon.
+
+### Records sub-tab
+
+The **Records** page sub-tab (third in the Projects page, after Overview and Plans) lists every registry row and finding of the project with the Plan and Automata each links to, read from `GET /api/plan-records/browse`. It has a search box, a kind filter and **Load more**; a Plan link opens the Plans sub-tab on that Plan. The Overview page sub-tab shows a summary: the active Plans with state and progress, what is next, and counts of Plans, registry rows and findings.
+
 ### Plan record
 
 A **plan record** of kind `plan` is the registry record of what you are working on. It has a title, a goal, a state and an `order`, and it links down to Automations and Automata and holds the findings attached to it. A plan with no Automaton yet is in the *backlog*. See [howto/plan-records.md](howto/plan-records.md#plans-links-and-order).
