@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.169.0 (2026-11-13).** A planning failure now shows on the Automaton with its reason, an alert and a question, a spec check warns about risky wording on create and revise, and the daemon corrects a fixed release number itself. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.170.0 (2026-11-13).** Automata whose work merged now display as Completed instead of Shipped or Cancelled, a new built-in post-ship step marks them Completed, and a migration restores the ones cancelled after their merge. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

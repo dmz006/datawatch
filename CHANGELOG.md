@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.170.0 — Show finished Automata as Completed and restore cancelled-after-merge Automata
+
+### Changed
+
+- **Finished Automata show as Completed.** An Automaton whose work was merged now displays as Completed everywhere, in counts, list and detail views, the web app chip, the legend and the filter badges, and in the CLI and chat text output, instead of a separate Shipped status word. A record that carries a shipped record counts under Completed together with the Automata that completed normally, and never under Cancelled. The merge commit, release and merge time stay available as detail fields, and `status=shipped` is still accepted on the list as a way to select records that carry a shipped record.
+- **The merge pipeline marks merged Automata Completed.** A new built-in post-ship step, `mark_completed`, sets the Automaton's status to Completed after its merge instead of cancelling it, and the supervisor merge helper script records the same.
+
+### Added
+
+- **A migration restores Automata that were cancelled after their merge.** `datawatch autonomous completed-migrate`, the matching REST route, the `autonomous_completed_migrate` MCP tool and the chat verb find Automata that were cancelled only because their work had merged, and set their status to Completed. It also covers Automations, takes `--dry-run` to list what would change without writing, and leaves an Automaton cancelled without merged work alone.
+- A new how-to, "Show finished Automata as Completed", updates to the Shipped status how-to, the post-ship hooks how-to, the API reference, the operations guide and the glossary. New labels are translated in all five languages.
+
 ## v9.169.0 — Visible and self-correcting Automaton planning failures
 
 ### Added
