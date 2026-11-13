@@ -3922,6 +3922,7 @@
   "post_ship_hook_up": "nach oben",
   "post_ship_hook_down": "nach unten",
   "post_ship_hook_remove": "entfernen",
+  "post_ship_builtin_mark_completed": "Automat als Abgeschlossen markieren (mark_completed)",
   "post_ship_save": "Hooks speichern",
   "post_ship_saved": "Hooks gespeichert",
   "post_ship_save_failed": "Speichern der Hooks fehlgeschlagen",
