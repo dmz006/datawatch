@@ -321,7 +321,10 @@ three places:
 The hold ends on its own when the guard steps back, at the next reading, or
 at the weekly reset. Until then the flag stays in the list — its presence is
 the clearest sign that something the guard did is still restricting
-admission.
+admission. While a burn-guard hold is up the backend behaves like any
+usage back-off: new **worker** sessions are held, and the review roles
+(guardrail judges, verifiers, planning) may still run on it through its
+[review reserve](usage-backoff.md#what-a-flag-does-not-hold-the-review-reserve).
 
 ## The effort ceiling
 
