@@ -70,7 +70,7 @@ func ListDiary(store Backend, agentID string, limit int) ([]DiaryEntry, error) {
 		return nil, fmt.Errorf("ListDiary: agent_id required")
 	}
 	wing := AgentWing(agentID)
-	memories, err := store.ListFiltered("" /* projectDir */, "diary", "" /* since */,
+	memories, err := store.ListFiltered("" /* projectDir */, "diary", "", /* since */
 		clampDiaryLimit(limit))
 	if err != nil {
 		return nil, err

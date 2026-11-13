@@ -9,14 +9,14 @@ import (
 
 // KGTriple represents an entity-relationship triple with temporal validity.
 type KGTriple struct {
-	ID          int64  `json:"id"`
-	Subject     string `json:"subject"`
-	Predicate   string `json:"predicate"`
-	Object      string `json:"object"`
-	ValidFrom   string `json:"valid_from,omitempty"`
-	ValidTo     string `json:"valid_to,omitempty"`
-	Source      string `json:"source,omitempty"` // session_id or "manual"
-	CreatedAt   string `json:"created_at"`
+	ID        int64  `json:"id"`
+	Subject   string `json:"subject"`
+	Predicate string `json:"predicate"`
+	Object    string `json:"object"`
+	ValidFrom string `json:"valid_from,omitempty"`
+	ValidTo   string `json:"valid_to,omitempty"`
+	Source    string `json:"source,omitempty"` // session_id or "manual"
+	CreatedAt string `json:"created_at"`
 }
 
 // KGStats holds knowledge graph statistics.
@@ -123,8 +123,8 @@ func (kg *KnowledgeGraph) Timeline(name string) ([]KGTriple, error) {
 // Stats returns KG statistics.
 func (kg *KnowledgeGraph) Stats() KGStats {
 	var s KGStats
-	kg.db.QueryRow(`SELECT COUNT(DISTINCT name) FROM kg_entities`).Scan(&s.EntityCount)     //nolint:errcheck
-	kg.db.QueryRow(`SELECT COUNT(*) FROM kg_triples`).Scan(&s.TripleCount)                   //nolint:errcheck
+	kg.db.QueryRow(`SELECT COUNT(DISTINCT name) FROM kg_entities`).Scan(&s.EntityCount)        //nolint:errcheck
+	kg.db.QueryRow(`SELECT COUNT(*) FROM kg_triples`).Scan(&s.TripleCount)                     //nolint:errcheck
 	kg.db.QueryRow(`SELECT COUNT(*) FROM kg_triples WHERE valid_to = ''`).Scan(&s.ActiveCount) //nolint:errcheck
 	s.ExpiredCount = s.TripleCount - s.ActiveCount
 	return s

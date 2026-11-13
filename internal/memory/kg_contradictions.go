@@ -29,9 +29,9 @@ import (
 // Contradiction describes one (subject, predicate) for which two or
 // more active triples exist with different objects.
 type Contradiction struct {
-	Subject   string
-	Predicate string
-	Triples   []KGTriple // all the active rows that conflict
+	Subject    string
+	Predicate  string
+	Triples    []KGTriple // all the active rows that conflict
 	DetectedAt time.Time
 }
 

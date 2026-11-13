@@ -53,10 +53,10 @@ type RefineSweepOpts struct {
 // count is what would be touched in a non-dry run; rewritten is
 // how many actually got replaced.
 type RefineSweepResult struct {
-	Candidates int   `json:"candidates"`
-	Rewritten  int   `json:"rewritten"`
+	Candidates int      `json:"candidates"`
+	Rewritten  int      `json:"rewritten"`
 	Errors     []string `json:"errors,omitempty"`
-	DryRun     bool  `json:"dry_run"`
+	DryRun     bool     `json:"dry_run"`
 }
 
 // RefineSweep walks session/output_chunk rows older than the

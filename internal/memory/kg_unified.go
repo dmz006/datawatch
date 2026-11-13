@@ -58,10 +58,18 @@ type ServerKGAdapter struct{ u *KGUnified }
 // NewServerKGAdapter creates an adapter for HTTP/MCP KG interfaces.
 func NewServerKGAdapter(u *KGUnified) *ServerKGAdapter { return &ServerKGAdapter{u: u} }
 
-func (a *ServerKGAdapter) AddTriple(s, p, o, vf, src string) (int64, error) { return a.u.addTriple(s, p, o, vf, src) }
-func (a *ServerKGAdapter) Invalidate(s, p, o, ended string) error { return a.u.invalidate(s, p, o, ended) }
-func (a *ServerKGAdapter) QueryEntity(name, asOf string) ([]map[string]interface{}, error) { return a.u.QueryEntityMaps(name, asOf) }
-func (a *ServerKGAdapter) Timeline(name string) ([]map[string]interface{}, error) { return a.u.TimelineMaps(name) }
+func (a *ServerKGAdapter) AddTriple(s, p, o, vf, src string) (int64, error) {
+	return a.u.addTriple(s, p, o, vf, src)
+}
+func (a *ServerKGAdapter) Invalidate(s, p, o, ended string) error {
+	return a.u.invalidate(s, p, o, ended)
+}
+func (a *ServerKGAdapter) QueryEntity(name, asOf string) ([]map[string]interface{}, error) {
+	return a.u.QueryEntityMaps(name, asOf)
+}
+func (a *ServerKGAdapter) Timeline(name string) ([]map[string]interface{}, error) {
+	return a.u.TimelineMaps(name)
+}
 func (a *ServerKGAdapter) Stats() map[string]interface{} { return a.u.StatsMaps() }
 
 // QueryEntityMaps returns triples as maps for MCP/API.
