@@ -191,3 +191,46 @@ func TestTaskRoutingConfigureVerbWritesAndReadsBack(t *testing.T) {
 		t.Errorf("a skipped profile was stored: %q", store["autonomous.task_routing.active_profile"])
 	}
 }
+
+// A daemon refusal of an unknown or premium row reaches the chat reply with
+// the row named, and the chat verb claims no success and stores nothing.
+
+func TestTaskRoutingCommConfigureUnknownAndPremiumRefusalNamesRow(t *testing.T) {
+	refusals := map[string]string{
+		"Unknown": `autonomous.task_routing not stored: profile "x" row "final_gate": worker names LLM backend "ghost-llm", which is not known`,
+		"Premium": `autonomous.task_routing not stored: profile "x" row "final_gate": worker names model "claude-opus-5-5", which needs allow_premium_model set on this row`,
+	}
+	for name, refusal := range refusals {
+		t.Run(name, func(t *testing.T) {
+			stored := map[string]string{}
+			set := func(k, v string) error {
+				if k == "autonomous.task_routing" {
+					return errors.New(refusal)
+				}
+				stored[k] = v
+				return nil
+			}
+			reply := taskRoutingConfigureReply(t, set, `autonomous.task_routing={"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"ghost-llm"}}}}`)
+			if !strings.Contains(reply, "Configure failed") || strings.Contains(reply, "Set autonomous.task_routing") {
+				t.Fatalf("a refused row must be reported as a failure: %q", reply)
+			}
+			for _, w := range []string{`profile "x"`, `row "final_gate"`, "worker"} {
+				if !strings.Contains(reply, w) {
+					t.Errorf("reply does not name %s: %q", w, reply)
+				}
+			}
+			if len(stored) != 0 {
+				t.Errorf("a refused row was stored: %v", stored)
+			}
+		})
+	}
+}
+
+func TestTaskRoutingCommProfileUseUnknownRowRefusalIsReported(t *testing.T) {
+	_, port := taskRoutingCommFake(t, map[string]string{})
+	r := setupPeerRouter(t, port)
+	got := strings.Join(r.HandleTestMessage("autonomous task-routing profile use ghost"), "\n")
+	if !strings.Contains(got, "autonomous task-routing failed") || strings.Contains(got, "Active profile is now") {
+		t.Errorf("a refused switch must not claim success: %q", got)
+	}
+}

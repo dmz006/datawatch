@@ -8251,7 +8251,25 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// A task routing block is checked against the live LLM registry before it
+	// is applied, so a row naming an unknown backend is refused and the reply
+	// names the row. applyConfigPatch repeats the registry-free checks.
+	var routingProblems []string
+	routingRefused := false
+	if raw, ok := patch["autonomous.task_routing"]; ok {
+		var in config.TaskRoutingConfig
+		if b, err := json.Marshal(raw); err == nil && json.Unmarshal(b, &in) == nil {
+			if errs := config.ValidateTaskRouting(in, s.taskRoutingChecks()); len(errs) > 0 {
+				routingProblems = taskRoutingProblems(errs)
+				routingRefused = true
+				delete(patch, "autonomous.task_routing")
+			}
+		}
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
+	if routingRefused {
+		skipped = append(skipped, "autonomous.task_routing")
+	}
 	// Keep the ship step's policy in step with the live autonomous.ship config.
 	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
 	autonomous.SetChecksConfig(s.cfg.Autonomous.Checks)
@@ -8493,6 +8511,9 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			reason = "not stored: the active profile must name an existing profile, and the task routing block must pass validation"
 		}
 		resp["skipped_reason"] = reason
+		if len(routingProblems) > 0 {
+			resp["skipped_problems"] = routingProblems
+		}
 	}
 	if _, ok := patch["autonomous.max_parallel_tasks"]; ok {
 		resp["deprecated_fields"] = map[string]string{

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/inference"
 	dwserver "github.com/dmz006/datawatch/internal/server"
 )
 
@@ -254,6 +255,13 @@ func taskRoutingConfigDaemon(t *testing.T) (*config.Config, func() config.TaskRo
 	dcfg.Autonomous.TaskRouting = config.DefaultTaskRouting()
 	dcfg.Autonomous.TaskRouting.Profiles["alt"] = dcfg.Autonomous.TaskRouting.Profiles["default"]
 	api := dwserver.NewServer(dwserver.NewHub(), nil, "h", "", nil, dcfg, filepath.Join(t.TempDir(), "config.yaml"))
+	reg := inference.NewRegistry()
+	for _, n := range []string{"pi-prompt", "claude-code"} {
+		if err := reg.Add(&inference.LLM{Name: n, Kind: inference.KindOllama}); err != nil {
+			t.Fatalf("registry add %s: %v", n, err)
+		}
+	}
+	api.SetInference(reg, nil)
 	ts := httptest.NewServer(api.ConfigHandler())
 	t.Cleanup(ts.Close)
 	old := serverURL
@@ -371,5 +379,59 @@ func TestTaskRoutingConfigRequestBodySendsBlockAsObject(t *testing.T) {
 	}
 	if v, ok := m["autonomous.task_routing.active_profile"].(string); !ok || v != "123" {
 		t.Fatalf("a profile name must go out as a string, got %#v", m["autonomous.task_routing.active_profile"])
+	}
+}
+
+// Unknown and premium rows refused through `datawatch config set` and the
+// comm configure verb: the error names the row and nothing is stored.
+
+func TestTaskRoutingConfigUnknownBackendAndModelCLIAndComm(t *testing.T) {
+	blocks := map[string]struct{ block, want string }{
+		"backend": {`{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"ghost-llm"}}}}`, "ghost-llm"},
+		"model":   {`{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"ollama/qwen3.8:27b"}}}}`, "ollama/qwen3.8:27b"},
+	}
+	for _, surf := range taskRoutingSurfaces() {
+		for name, c := range blocks {
+			t.Run(surf.name+"/"+name, func(t *testing.T) {
+				cfg, read := taskRoutingConfigDaemon(t)
+				before := read()
+				err := surf.set(cfg, "autonomous.task_routing", c.block)
+				if err == nil || !strings.Contains(err.Error(), "not stored") {
+					t.Fatalf("bad row should be refused, got %v", err)
+				}
+				for _, w := range []string{`profile "x"`, `row "final_gate"`, "worker", c.want} {
+					if !strings.Contains(err.Error(), w) {
+						t.Errorf("message does not name %s: %v", w, err)
+					}
+				}
+				if got := read(); got.ActiveProfile != before.ActiveProfile || len(got.Profiles["x"]) != 0 {
+					t.Fatalf("a refused block was stored: active=%q", got.ActiveProfile)
+				}
+			})
+		}
+	}
+}
+
+func TestTaskRoutingConfigPremiumModelNeedsFlagCLIAndComm(t *testing.T) {
+	const noFlag = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"claude-opus-5-5"}}}}`
+	const withFlag = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"claude-opus-5-5","allow_premium_model":true}}}}`
+	for _, surf := range taskRoutingSurfaces() {
+		t.Run(surf.name, func(t *testing.T) {
+			cfg, read := taskRoutingConfigDaemon(t)
+			err := surf.set(cfg, "autonomous.task_routing", noFlag)
+			if err == nil || !strings.Contains(err.Error(), "allow_premium_model") ||
+				!strings.Contains(err.Error(), `row "final_gate"`) || !strings.Contains(err.Error(), `profile "x"`) {
+				t.Fatalf("premium row without the flag should be refused naming the row, got %v", err)
+			}
+			if got := read(); got.ActiveProfile == "x" || len(got.Profiles["x"]) != 0 {
+				t.Fatalf("a refused premium block was stored: active=%q", got.ActiveProfile)
+			}
+			if err := surf.set(cfg, "autonomous.task_routing", withFlag); err != nil {
+				t.Fatalf("premium row with the flag refused: %v", err)
+			}
+			if got := read(); got.ActiveProfile != "x" || !got.Profiles["x"]["final_gate"].AllowPremiumModel {
+				t.Fatalf("flagged premium block not stored: %+v", got.Profiles["x"])
+			}
+		})
 	}
 }

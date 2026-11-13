@@ -16,6 +16,7 @@ func PutConfigSkippedNote(body []byte) string {
 	var resp struct {
 		Skipped       []string `json:"skipped"`
 		SkippedReason string   `json:"skipped_reason"`
+		Problems      []string `json:"skipped_problems"`
 	}
 	if json.Unmarshal(body, &resp) != nil || len(resp.Skipped) == 0 {
 		return ""
@@ -23,6 +24,9 @@ func PutConfigSkippedNote(body []byte) string {
 	note := fmt.Sprintf("not stored: %s", strings.Join(resp.Skipped, ", "))
 	if resp.SkippedReason != "" {
 		note += " (" + resp.SkippedReason + ")"
+	}
+	if len(resp.Problems) > 0 {
+		note += ": " + strings.Join(resp.Problems, "; ")
 	}
 	return note
 }
