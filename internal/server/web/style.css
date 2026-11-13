@@ -6558,6 +6558,16 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 @media (max-width:600px) {
   .dboard-card-grid { grid-template-columns:repeat(2,1fr); grid-auto-rows:160px; gap:6px; padding:6px; }
   .dboard-card[data-cs] { grid-column:span 2; }
+  /* Phone: the Dashboard scrolls as one page inside .view (which keeps its
+     FAB-clearance padding-bottom) instead of a short nested scroll box.
+     The wrapper grows with its content and the grid no longer clips or
+     scrolls on its own, so every built card is reachable. */
+  .dboard-cards { height:auto; min-height:100%; overflow:visible; }
+  .dboard-card-grid { flex:none; overflow:visible; }
+  /* Stat bar wraps on a phone so the + Card and Edit buttons never fall off-screen. */
+  .dboard-stat-bar { flex-wrap:wrap; row-gap:4px; min-width:0; }
+  .dboard-stat-bar #dashAddCardBtn,
+  .dboard-stat-bar #dashEditBtn { flex-shrink:0; }
 }
 @media (max-width:480px) {
   .dboard-card-grid { grid-template-columns:1fr; grid-auto-rows:160px; gap:6px; padding:6px; }

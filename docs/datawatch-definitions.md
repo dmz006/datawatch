@@ -886,6 +886,8 @@ Each feature card reads one live source. When it has nothing to draw it shows a 
 
 **Dashboard data on every surface** — the work map, the lane pulse and the six series (lane utilization, throughput forecast, verifier health, release train, review backlog, defects per day) are readable beyond the web page, each returning the REST body unchanged: MCP `dashboard_work_map_get`, `dashboard_lane_pulse_get` and `dashboard_series_get` (argument `series`, plus `window`, `days` or `limit`), CLI `datawatch dashboard work-map`, `lane-pulse` and `series <name>`, and the chat verbs `dashboard work-map`, `dashboard lane-pulse [window]` and `dashboard series <name> [value]`. No setting controls them. See [howto/dashboard.md](howto/dashboard.md).
 
+**Dashboard on a phone** — at 600px or less the stat bar wraps onto a second row so **+ Card** and **Edit** stay visible, and the Dashboard scrolls as one page (the card grid grows to fit instead of clipping in a nested scroll box). Layout only; no setting, API or MCP change. See [howto/dashboard.md](howto/dashboard.md#on-a-phone).
+
 **Additional card types** available via Edit → Add Card: event feed, sessions sparklines, 6h Gantt (the last six hours of session activity from hook events — not the Automata interval chart, see *Timeline chart*), 30-day heatmap, guardrail profiles view, lane pulse (the rebuilt multi-session EKG), smoke run progress, Network (work map), work map. The *Automaton Timeline* card (the Automata interval chart, see *Timeline chart*) is not an add-on: it is a full-width system card in the default board layout, shown even when the chart is empty (a one-line empty message), and not gated by `dashboard.hide_inactive_cards`.
 
 **See also:**
