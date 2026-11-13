@@ -275,8 +275,9 @@ written by `internal/session/trace_ingest.go` and read through `internal/trace`.
 `Settings.WithDefaults`; an invalid value is refused at config load and on `PUT /api/config` through `config.ValidateTracing`.
 - `mode` — `off` | `summary` | `full` (default `summary`; unset reads `summary`). `off` records nothing and the `/api/trace/*` routes answer 503. `full` keeps the argument summary, `summary` keeps counts and names.
 - `arg_cap_bytes` — most bytes of an argument summary stored per event, 0 to 1048576 (default `512`; 0 reads the default).
-- `retention_days` — days events are kept before the prune pass removes them, 0 to 3650 (default `14`; 0 reads the default).
+- `retention_days` — days events are kept before a prune pass removes them, 0 to 3650 (default `0` = keep forever: no age-based pruning, and `Prune` is a no-op that touches neither file nor index). With a positive value the daemon runs one prune pass a day (a 24-hour ticker started in `cmd/datawatch/main.go` that stops with the daemon context; a prune error is logged, never fatal).
 - `backends` — map of backend name to on/off; a backend not listed is traced (default empty, all on).
+Deletion: `Store.DeleteSession` removes one session's trace (its file, index entry and seen-set entry; unknown ids and id shapes that could escape the trace directory are safe refusals). It is wired into `session.Manager.Delete` through the `TraceDeleter` hook (`internal/session/trace_ingest.go`, set with `Manager.SetTraceDeleter`) so every delete path that removes a session also drops its trace, best effort — a trace error is logged and never fails the delete. Ending, killing or archiving a session never touches its trace.
 Observability: `Store.Stats()` feeds the `trace_*` fields of `SystemStats` (`trace_enabled`, `trace_sessions`, `trace_events`,
 `trace_error_events`, `trace_appended_total`, `trace_append_errors_total`, `trace_pruned_total`, `trace_last_event_age_seconds`), the
 Monitor Tracing card, `GET /api/trace/stats` and the Prometheus series `datawatch_trace_events_total`,

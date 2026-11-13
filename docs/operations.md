@@ -771,8 +771,12 @@ changes, capability and permission decisions, loop warnings and errors, for ever
 backend, in a store under the data directory. It is on at the `summary` level by
 default and only records; it never changes how an agent runs. Keys live under
 `tracing.`: `mode` (`off`, `summary` default, `full`), `arg_cap_bytes` (512),
-`retention_days` (14) and `backends` (per-backend on/off; a backend not listed
-is on). An invalid value is refused with an error naming the allowed values.
+`retention_days` (0 = keep forever, the default; a positive number of days
+has the daemon prune once a day) and `backends` (per-backend on/off; a backend
+not listed is on). An invalid value is refused with an error naming the
+allowed values. Deleting a session also deletes its trace — matched on the
+exact session id, best effort (a trace error is logged, never fails the
+deletion); ended, killed or archived sessions keep their trace.
 
 Watch it on the Monitor tab (Tracing card: stored sessions and events, error
 events, events written, failed writes, pruned by retention, last event age), at
