@@ -59,6 +59,12 @@ jobs:
       - name: internal-ref leak check
         run: bash scripts/check-no-internal-refs.sh
 
+      # No CPU-burner / stress patterns in test files or helpers.
+      - name: no load patterns check
+        run: |
+          bash scripts/check-no-load-patterns.sh
+          bash scripts/check-no-load-patterns_test.sh
+
       # Unscoped `tmux kill-server` / `kill-session -a` audit.
       - name: unscoped tmux kill check
         run: bash scripts/check-no-unscoped-tmux.sh
