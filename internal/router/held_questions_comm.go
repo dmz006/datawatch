@@ -34,6 +34,7 @@ type heldWireOpen struct {
 	AutomationID      string `json:"automation_id"`
 	Title             string `json:"title"`
 	Reason            string `json:"reason"`
+	Text              string `json:"text"`
 	RecommendedOption string `json:"recommended_option"`
 	Default           string `json:"default"`
 	CreatedAt         string `json:"created_at"`
@@ -152,6 +153,9 @@ func (r *Router) handleQuestionHeld(prd, state string) {
 			line += "  task " + o.TaskID
 		}
 		b.WriteString(line)
+		if o.Text != "" {
+			fmt.Fprintf(&b, "\n   ask: %s", strings.ReplaceAll(o.Text, "\n", " "))
+		}
 		if o.Reason != "" {
 			fmt.Fprintf(&b, "\n   why: %s", o.Reason)
 		}

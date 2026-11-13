@@ -42,13 +42,17 @@ const heldShadowNoteDivider = " — "
 // the question's lifecycle state — the list already carries only open
 // ones.
 type heldQuestionOpenEntry struct {
-	QuestionID        string     `json:"question_id"`
-	State             string     `json:"state,omitempty"`
-	PRDID             string     `json:"prd_id,omitempty"`
-	TaskID            string     `json:"task_id,omitempty"`
-	AutomationID      string     `json:"automation_id,omitempty"`
-	Title             string     `json:"title,omitempty"`
-	Reason            string     `json:"reason,omitempty"`
+	QuestionID   string `json:"question_id"`
+	State        string `json:"state,omitempty"`
+	PRDID        string `json:"prd_id,omitempty"`
+	TaskID       string `json:"task_id,omitempty"`
+	AutomationID string `json:"automation_id,omitempty"`
+	Title        string `json:"title,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	// Text is the held question's own text (what is being asked), from the
+	// question record, capped and elided by heldQuestionText. Absent when the
+	// record carries no text.
+	Text              string     `json:"text,omitempty"`
 	RecommendedOption string     `json:"recommended_option,omitempty"`
 	Default           string     `json:"default,omitempty"`
 	CreatedAt         *time.Time `json:"created_at,omitempty"`
@@ -188,6 +192,7 @@ func (s *Server) handleHeldQuestions(w http.ResponseWriter, r *http.Request) {
 			PRDID:      q.PRDID,
 			TaskID:     q.TaskID,
 			Reason:     heldQuestionReason(q.Text),
+			Text:       heldQuestionText(q.Text),
 			Default:    q.Default,
 			CreatedAt:  q.CreatedAt,
 			SystemTags: q.SystemTags,
@@ -280,6 +285,23 @@ func heldQuestionReason(text string) string {
 		}
 	}
 	return strings.TrimSuffix(rest, ".")
+}
+
+// heldQuestionTextMaxRunes is the cap on the held question's own text in
+// the report entry, so a long table text keeps the entry scannable; the
+// question record keeps the full text.
+const heldQuestionTextMaxRunes = 500
+
+// heldQuestionText returns the question's own text for the report entry:
+// trimmed, capped at heldQuestionTextMaxRunes and elided with a single "…"
+// (the ellipsis takes the cap's last rune). Empty input gives an empty
+// string, and the entry then omits the field.
+func heldQuestionText(text string) string {
+	r := []rune(strings.TrimSpace(text))
+	if len(r) <= heldQuestionTextMaxRunes {
+		return string(r)
+	}
+	return string(r[:heldQuestionTextMaxRunes-1]) + "…"
 }
 
 // heldShadowNoteRe pulls the recommended option id out of a shadow note's

@@ -21,7 +21,7 @@ const heldOnBody = `{
   "mode": "on",
   "states": ["blocked", "review_held", "revision_requested", "awaiting_decision", "pending_insert"],
   "open": [
-    {"question_id": "q_held_1", "state": "awaiting_decision", "prd_id": "prd-7", "task_id": "t_9", "automation_id": "bot-scribe", "title": "Scribe Bot", "reason": "spec step 4 is ambiguous", "recommended_option": "revise", "default": "hold", "created_at": "2026-01-02T03:04:05Z"},
+    {"question_id": "q_held_1", "state": "awaiting_decision", "prd_id": "prd-7", "task_id": "t_9", "automation_id": "bot-scribe", "title": "Scribe Bot", "reason": "spec step 4 is ambiguous", "text": "Automaton \"Scribe Bot\" (prd-7) is awaiting the operator's decision. Its work is at task t_9. Why it is held: spec step 4 is ambiguous.", "recommended_option": "revise", "default": "hold", "created_at": "2026-01-02T03:04:05Z"},
     {"question_id": "q_held_2", "state": "blocked", "prd_id": "prd-3", "reason": "two backends unreachable", "recommended_option": "escalate", "default": "hold"}
   ],
   "shadow": []
@@ -112,7 +112,7 @@ func TestHeldQuestionsToolProxiesTheRead(t *testing.T) {
 		t.Fatalf("no filters given, want an empty query, got %q", rec.query)
 	}
 	text := automationText(t, res)
-	for _, want := range []string{`"mode": "on"`, `"question_id": "q_held_1"`, `"state": "awaiting_decision"`, `"reason": "spec step 4 is ambiguous"`, `"recommended_option": "revise"`} {
+	for _, want := range []string{`"mode": "on"`, `"question_id": "q_held_1"`, `"state": "awaiting_decision"`, `"reason": "spec step 4 is ambiguous"`, `"text": "Automaton \"Scribe Bot\" (prd-7) is awaiting the operator's decision. Its work is at task t_9. Why it is held: spec step 4 is ambiguous."`, `"recommended_option": "revise"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("body = %s, want it to carry %s", text, want)
 		}
