@@ -129,6 +129,7 @@ Steps:
   hoisted top-level functions. Shared shim helpers live in
   `internal/server/web/testutil_browser_stub.js` — reuse them rather than
   duplicating a new stub per file.
+- **Build host toolchain:** `make check-toolchain` belongs to the local pre-tag run; it exits 0 when everything is current or a version source is unreachable, and exits 1 when Go or a tool is behind (see [docs/howto/build-host-toolchain.md](docs/howto/build-host-toolchain.md)).
 
 ## Code Style
 

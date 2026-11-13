@@ -2823,7 +2823,7 @@ MCP, CLI, chat or web app surface. It is separate from the weekly dependency
 update above, which updates the repository's dependencies and never touches the
 tools on the build host.
 
-Run it by hand: `bash scripts/check-toolchain.sh`. The tool list is
+Run it by hand: `make check-toolchain` (or `bash scripts/check-toolchain.sh`). The tool list is
 `toolchain.yaml` at the repository root (name, version command, a `sed`
 expression that reads the version, and where the newest version comes from:
 the go.dev download feed, the latest GitHub release, or the Go module proxy).
@@ -2865,12 +2865,14 @@ behind, a patch behind) each assert the printed row and the exit code. Run it
 with `bash scripts/check-toolchain_test.sh` after editing the script or
 `toolchain.yaml`.
 
-Operator review still needed: the check is not yet part of `make lint`, the
-merge gates or any scheduled job, and there is no `make check-toolchain`
-target, so nothing enforces it until someone runs it. Decide where it should
-run (a `make` target, the merge helper, a daily daemon check, or all of them)
-and whether `BEHIND` should fail for every listed tool or only for the security
-scanners and Go. See
+`make check-toolchain` runs the same script and belongs to the local pre-tag
+run; `make build`, `make lint`, the merge gates and CI do not call it, so
+nothing enforces it until someone runs it. Run it daily from cron, a systemd
+timer or a `datawatch schedule spawn` schedule, and update Go as described in
+[howto/build-host-toolchain.md](howto/build-host-toolchain.md).
+Operator review still needed: whether `BEHIND` should fail for every listed tool
+or only for the security scanners and Go, and whether it should join the merge
+helper. Reference:
 [howto/toolchain-freshness-check.md](howto/toolchain-freshness-check.md).
 
 ---

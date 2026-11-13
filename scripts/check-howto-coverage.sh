@@ -39,6 +39,8 @@ LLM_ONLY=(
     automata-events  # conceptual reference for the Events tab; no MCP-callable steps
     merge-shadow  # conceptual reference for merge shadow mode; no MCP-callable steps
     restart-with-work-running  # conceptual reference for the planning restart values; the setting is set through config-set / configure, which take the value directly, so no exec_steps are needed
+    toolchain-freshness-check  # shell-script reference for scripts/check-toolchain.sh (build hosts); no MCP-callable steps
+    build-host-toolchain  # shell-script workflow for build hosts (make check-toolchain, daily run, Go update); no MCP-callable steps
     worker-session-profiles  # worker session profiles: spec-complete; the settings surfaces (exact key, tool and settings-card names) are still pending, so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when the profile config lands
 )
 

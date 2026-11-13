@@ -177,8 +177,10 @@ Run it after changing `scripts/check-toolchain.sh` or `toolchain.yaml`.
 
 ## Where it is and is not used
 
-- It is a **script you run**. It is not part of `make lint`, `make test` or the
-  merge helper, and there is no `make` target for it yet.
+- It is a **script you run**, or `make check-toolchain`, which runs the same
+  script. It is not part of `make lint`, `make test`, `make build`, CI or the
+  merge helper. See [Build host toolchain](build-host-toolchain.md) for the daily
+  run and the Go update steps.
 - The daemon does not run it on a schedule. No alert, Events row, dashboard
   card or notification is produced from it.
 - It checks the host it runs on. A federated peer, a compute node or a
@@ -186,13 +188,15 @@ Run it after changing `scripts/check-toolchain.sh` or `toolchain.yaml`.
 
 | Surface | Available | Reason |
 |---|---|---|
-| Shell script | Yes | `bash scripts/check-toolchain.sh` |
+| Shell script | Yes | `make check-toolchain` or `bash scripts/check-toolchain.sh` |
 | REST, MCP, CLI (`datawatch …`), chat | No | Development tool for the build host, not a daemon feature. |
 | `config.yaml` / Settings | No | There is no setting; the tool list is the repository file `toolchain.yaml`. |
 | Web app, Android, iPhone | No | Nothing operator-facing to show. |
 
 ## See also
 
+- [Build host toolchain](build-host-toolchain.md) — running it daily and updating
+  Go.
 - [Dependency update](automation-dependency-update.md) — the weekly Automation
   that updates the repository's *dependencies* (Go modules, base images, GitHub
   Actions). This check is about the *tools* on the build host, which that
