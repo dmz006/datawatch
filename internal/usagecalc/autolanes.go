@@ -49,7 +49,7 @@ func DecideAutoLanes(suggestedLanes, specialItems, operatorMaximum, currentCap i
 		direction = AutoLanesDown
 	}
 
-	reason := fmt.Sprintf("the advice reading is %d lane(s) for the active policy; " +
+	reason := fmt.Sprintf("the advice reading is %d lane(s) for the active policy; "+
 		"with %d open special item(s) that is %d, clamped to %d within the operator maximum of %d",
 		suggestedLanes, specialItems, sum, target, hi)
 

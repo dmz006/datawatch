@@ -22,12 +22,12 @@ var bpfObject embed.FS
 
 // EBPFCollector tracks per-PID TCP network bytes using eBPF kprobes.
 type EBPFCollector struct {
-	mu      sync.Mutex
-	coll    *ebpf.Collection
-	txMap   *ebpf.Map
-	rxMap   *ebpf.Map
-	links   []link.Link
-	closed  bool
+	mu     sync.Mutex
+	coll   *ebpf.Collection
+	txMap  *ebpf.Map
+	rxMap  *ebpf.Map
+	links  []link.Link
+	closed bool
 }
 
 // NewEBPFCollector loads BPF programs and attaches kprobes.
@@ -148,7 +148,9 @@ func (c *EBPFCollector) ReadPIDTreeBytes(pid uint32) (tx, rx uint64) {
 			// Recurse one more level (grandchildren)
 			gout, _ := exec.Command("pgrep", "-P", fmt.Sprintf("%d", cpid)).Output()
 			for _, gline := range strings.Split(strings.TrimSpace(string(gout)), "\n") {
-				if gline == "" { continue }
+				if gline == "" {
+					continue
+				}
 				var gpid uint32
 				if _, e := fmt.Sscanf(gline, "%d", &gpid); e == nil && gpid > 0 {
 					gtx, grx := c.ReadPIDBytes(gpid)
@@ -231,4 +233,3 @@ func (c *EBPFCollector) Close() {
 		c.coll.Close()
 	}
 }
-
