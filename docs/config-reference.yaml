@@ -3348,19 +3348,55 @@ autonomous:
   # when tasks are created. Off by default. A task LLM set by an operator, a story
   # LLM or an Automaton LLM always wins over the table; started or hand-edited
   # tasks are never rewritten. Rows live in named profiles and one is active.
-  # A bad block is rejected and nothing is applied. Readable and settable through
-  # GET and PUT /api/config, get_config and config_set; no dedicated CLI, comm
-  # channel or web UI yet. A config without this block gets the default profile.
+  # A bad block is rejected and nothing is applied: an unknown LLM backend, a
+  # model that does not pair with its backend, an unknown task type, a missing
+  # active profile, or an Opus or Fable model on a row without
+  # allow_premium_model. Also reachable by the /api/autonomous/task-routing
+  # routes, the task_routing_* MCP tools, `datawatch autonomous task-routing`,
+  # the `autonomous task-routing` chat verb, and the Settings, Automata tab,
+  # Task routing card. A config without this block gets the default profile
+  # (all of the keys below at their defaults, routing off). Guide:
+  # docs/howto/automata-task-routing.md.
   task_routing:
+    # Default false. When false no task is routed and every task keeps the
+    # Automaton or global LLM.
     enabled: false
+    # Name of the active profile. Default "default". Switching it affects only
+    # tasks created afterwards; it must name a key under profiles.
     active_profile: default
-    # profiles:
-    #   default:
-    #     docs_set: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
-    #     daemon_backend_code: {worker_backend: claude-code, worker_model: sonnet}
-    #     # A row can also set verification_backend, verification_model, effort,
-    #     # second_choice {backend, model, effort}, and allow_premium_model (needed
-    #     # for any Opus or Fable model name).
+    # Named profiles. Each maps a task type (docs_set, changelog_entry,
+    # parity_issue_draft, bounded_load_step, version_note, locale_strings,
+    # tests, formatting_cleanup, ui_code, daemon_backend_code, mcp_api_surface,
+    # merge_conflict_repair, final_gate, review_repair) to a row. Default: one
+    # profile named "default", shown below. Empty = the shipped default profile.
+    profiles:
+      default:
+        # Mechanical types: pi-prompt with a local Qwen model.
+        docs_set: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+        changelog_entry: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+        parity_issue_draft: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+        locale_strings: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+        formatting_cleanup: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+        tests: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+        version_note: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+        bounded_load_step: {worker_backend: pi-prompt, worker_model: "ollama/qwen3.8:27b"}
+        # Code types: claude-code with Sonnet.
+        ui_code: {worker_backend: claude-code, worker_model: sonnet}
+        daemon_backend_code: {worker_backend: claude-code, worker_model: sonnet}
+        mcp_api_surface: {worker_backend: claude-code, worker_model: sonnet}
+        merge_conflict_repair: {worker_backend: claude-code, worker_model: sonnet}
+        review_repair: {worker_backend: claude-code, worker_model: sonnet}
+        # Empty row: the default LLM applies.
+        final_gate: {}
+        # Every row key below is optional and defaults to empty / false:
+        #   worker_backend, worker_model        the task's LLM
+        #   verification_backend, verification_model
+        #                                       empty = follow the global verifier policy
+        #   effort                              effort hint for the task
+        #   second_choice: {backend, model, effort}
+        #                                       used when the first choice is refused
+        #   allow_premium_model                 default false; must be true on a row
+        #                                       that names any Opus or Fable model
   # Fallback backend for autonomous task sessions. Task backend resolution
   # checks (1) task.backend, (2) prd.backend, (3) this field, (4) the global
   # session.llm_backend. Set to "opencode" to ensure all autonomous tasks run

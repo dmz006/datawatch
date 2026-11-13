@@ -3067,9 +3067,21 @@ A **planning route** is the choice of planner (an LLM backend and a model, plus 
 
 A **task type** is the class a task is sorted into so the task-routing table can pick its LLM: `docs_set`, `changelog_entry`, `parity_issue_draft`, `bounded_load_step`, `version_note`, `locale_strings`, `tests`, `formatting_cleanup`, `ui_code`, `daemon_backend_code`, `mcp_api_surface`, `merge_conflict_repair`, `final_gate` or `review_repair`. It is decided by the task's own kind or template, then ordered keyword rules over the title and spec, then the default `daemon_backend_code`; a task that lists a non-test Go file under `internal/` is never a mechanical type. How-to: [howto/automata-task-routing.md](howto/automata-task-routing.md).
 
+### Task routing table
+
+The **task routing table** is the set of rows, kept in named profiles, that maps each task type to the worker LLM and verification LLM a newly created task starts with. It is off by default and is read when a task is created, by the planner and by the add-task path. An LLM set on the task, its story or its Automaton always wins over a row. How-to: [howto/automata-task-routing.md](howto/automata-task-routing.md).
+
 ### Task routing profile
 
 A **task routing profile** is a named table that maps each task type to a row: worker backend and model, optional verification backend and model, effort, an optional second choice and `allow_premium_model` (needed to name an Opus or Fable model). One profile is active (`autonomous.task_routing.active_profile`); switching it changes only tasks created afterwards. Profiles can be saved, switched, deleted, exported, imported and tried with a no-write dry run from the CLI, REST, MCP and the web Settings card (the chat channel can list, switch and dry-run). Each task shows the row that decided its LLM in the Automaton detail view. The routing table is off by default, and an LLM set on the task, its story or its Automaton always wins over a row. The shipped `default` profile is the operator's starting choice and other users may change it.
+
+### Active profile
+
+The **active profile** is the one task routing profile whose rows are read for tasks created from now on (`autonomous.task_routing.active_profile`). It cannot be deleted while it is active. Switching it changes nothing on tasks that already exist and never touches a running session.
+
+### Second choice
+
+A **second choice** is the alternative backend and model on a task routing row, used when the row's first choice is refused. The task's routing result records whether it was used. It follows the same rules as the first choice: the backend must be known, the model must pair with it, and an Opus or Fable model needs `allow_premium_model` on the row.
 
 ### Planning ladder
 
