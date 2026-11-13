@@ -342,6 +342,13 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 			held++
 			continue
 		}
+		// A completed record whose work branch still carries commits that are not
+		// on the base branch is kept (merged-branch guard,
+		// archive_merge_guard.go): the work must land before the record may go.
+		if f.status == PRDCompleted && s.archiveCompletedBranchGuard(p) {
+			kept++
+			continue
+		}
 		// A cancelled record past its grace is still kept while its branch
 		// holds commits that are not on the base branch.
 		if f.status == PRDCancelled && s.archiveBranchCheck != nil && s.archiveBranchCheck(p) {
@@ -368,7 +375,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		detail += fmt.Sprintf(" (held %d cancelled within the %d-minute grace)", held, grace)
 	}
 	if kept > 0 {
-		detail += fmt.Sprintf(" (kept %d cancelled with unmerged branch work)", kept)
+		detail += fmt.Sprintf(" (kept %d with unmerged branch work)", kept)
 	}
 	return detail, errors.Join(errs...)
 }

@@ -1952,6 +1952,17 @@ type Manager struct {
 	// Guarded by mu.
 	branchRefreshGitRunner MergeGitRunner
 
+	// archiveGuardGit replaces the production git runner of the
+	// merged-branch archive guard and the derived merge_state view
+	// (archive_merge_guard.go); nil uses git. Guarded by mu.
+	archiveGuardGit MergeGitRunner
+	// mergeStateCache short-caches the derived merge_state per record so
+	// read views over a page of completed Automata do not issue the base
+	// repository's git calls N+1 times per pass; mergeStateCacheWindow is
+	// the cache lifetime. Guarded by mu.
+	mergeStateCache       map[string]mergeStateCacheEntry
+	mergeStateCacheWindow time.Duration
+
 	// requestWatchCfg reads the live autonomous.request_watch block and
 	// requestWatchEpisodes holds, per watched session, the key of the
 	// no-progress episode already alerted and asked about
@@ -3191,7 +3202,8 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		// merge-shadow record in the same data directory, so a restart
 		// keeps the last run and does not re-alert an already-alerted
 		// disk (cleanup_status.go).
-		cleanupStatus: newCleanupStatusRecorder(st.dir),
+		cleanupStatus:         newCleanupStatusRecorder(st.dir),
+		mergeStateCacheWindow: mergeStateCacheWindowDefault,
 	}
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
@@ -4245,6 +4257,13 @@ func (m *Manager) Archive(id, actor string) (*PRD, error) {
 	}
 	if prd.Status == PRDArchived {
 		return prd, nil // idempotent
+	}
+	// Merged-branch guard: a completed Automaton whose work branch has not
+	// landed on the base branch is refused to automated actors. Operator
+	// archives (explicit decision, e.g. an abandon) always go through. See
+	// archiveGuard.
+	if err := m.archiveGuard(prd, actor); err != nil {
+		return nil, err
 	}
 	now := time.Now()
 	var old PRDStatus

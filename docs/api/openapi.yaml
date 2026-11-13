@@ -5595,6 +5595,14 @@ paths:
       summary: List PRDs (newest first)
       operationId: autonomousPRDList
       tags: [Autonomous]
+      description: |
+        A row of the list can carry the derived, read-only merge_state field,
+        with the value finished_not_merged when a finished record (completed,
+        or archived since) still holds commits on its working branch that
+        never landed on the base branch. The daemon derives it at view time
+        and never persists it: the field is absent for active records,
+        records without a working branch, merged or empty branches,
+        dropped branches, and whenever the state cannot be determined.
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
@@ -5718,6 +5726,14 @@ paths:
         `protected_path_hold` (shaped as ProtectedPathHold), and a task whose
         protected paths the operator approved carries `approved_protected_paths`,
         the paths its commit may change. All three are absent when empty.
+        Finished records can also carry the derived, read-only merge_state
+        field, with the value finished_not_merged when the working branch
+        still has commits that never landed on the base branch. The daemon
+        derives it at view time — branch present plus cherry-pick-equivalence
+        comparison, so a rebased or squashed landing counts as merged — and
+        never persists it: the field is absent for active records, records
+        without a working branch, merged or empty branches, dropped
+        branches, and whenever the state cannot be determined.
       operationId: autonomousPRDGet
       tags: [Autonomous]
       parameters:

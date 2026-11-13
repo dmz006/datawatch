@@ -35,8 +35,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/observer"
 	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/secrets"

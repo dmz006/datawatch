@@ -5624,6 +5624,8 @@
   "planning_failure_retry_counts": "Wiederholungen:",
   "planning_failure_retry_budget": "Wiederholungsbudget:",
   "planning_failure_badge": "Planung fehlgeschlagen",
+
+  "prd_merge_state_badge": "Branch nicht gemerged",
   "planning_failure_question_pending": "Frage offen: Formulierung korrigieren und erneut planen",
   "planning_failure_question_fix": "Formulierung korrigieren und erneut planen",
   "planning_failure_question_leave": "Unverändert lassen",

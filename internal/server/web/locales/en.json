@@ -5670,6 +5670,8 @@
   "planning_failure_retry_counts": "Retries:",
   "planning_failure_retry_budget": "Retry budget:",
   "planning_failure_badge": "Planning failed",
+
+  "prd_merge_state_badge": "Branch not merged",
   "planning_failure_question_pending": "Question waiting: Fix the wording and plan again",
   "planning_failure_question_fix": "Fix the wording and plan again",
   "planning_failure_question_leave": "Leave it",

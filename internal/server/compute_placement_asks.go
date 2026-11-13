@@ -26,8 +26,8 @@ import (
 // The registry is daemon-wide state, not per-Server: the placement
 // engine, REST, CLI, comm channel and MCP must all share one queue.
 var (
-	placementAskMu   sync.RWMutex
-	placementAskReg  = compute.NewPlacementAskStore()
+	placementAskMu  sync.RWMutex
+	placementAskReg = compute.NewPlacementAskStore()
 )
 
 // PlacementAskRegistry returns the daemon-wide placement ask store.

@@ -247,6 +247,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			view := autonomous.BuildSummaryView(p)
 			view.Project = autonomous.ProjectAliasOfPRD(p, s.projectAliasMap())
 			view.PlanningFailure = s.planningFailureOf(p)
+			view.MergeState = s.mergeStateOf(p)
 			s.fillInheritedTags(&view)
 			writeJSONOK(w, s.withProjectLink(s.withAutomatonCost(view, id), id))
 			return
@@ -255,12 +256,13 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 		view = autonomous.FilterTasksView(view, tagSel)
 		view.Project = autonomous.ProjectAliasOfPRD(p, s.projectAliasMap())
 		view.PlanningFailure = s.planningFailureOf(p)
+		view.MergeState = s.mergeStateOf(p)
 		s.fillInheritedTags(&view.SummaryView)
 		s.attachTaskObservations(&view)
 		writeJSONOK(w, s.withAutomatonCost(view, id))
 	default:
 		if textCap <= 0 {
-			writeJSONOK(w, s.withProjectLink(s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPlanningFailure(s.withPRDProject(s.prdWithObservations(prd, id), prd), prd), id), id)), id))
+			writeJSONOK(w, s.withProjectLink(s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPlanningFailure(s.withPRDProject(s.withMergeState(s.prdWithObservations(prd, id), prd), prd), prd), id), id)), id))
 			return
 		}
 		p, err := toPRD(prd)
@@ -269,8 +271,53 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		capped := autonomous.CapPRDText(p, textCap)
-		writeJSONOK(w, s.withProjectLink(s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPlanningFailure(s.withPRDProject(s.prdWithObservations(capped, capped.ID), capped), capped), capped.ID), capped.ID)), capped.ID))
+		writeJSONOK(w, s.withProjectLink(s.withBranchRefresh(s.withAutomatonCost(s.withInheritedTags(s.withPlanningFailure(s.withPRDProject(s.withMergeState(s.prdWithObservations(capped, capped.ID), capped), capped), capped), capped.ID), capped.ID)), capped.ID))
 	}
+}
+
+// mergeStateProvider is the optional autonomous-manager surface that reads
+// the derived merge_state of an Automaton (archive_merge_guard.go). Fakes
+// that lack it simply show no merge state.
+type mergeStateProvider interface {
+	AutomatonMergeState(prd *autonomous.PRD) string
+}
+
+// mergeStateOf returns the derived, un-persisted merge_state of prd (e.g.
+// autonomous.MergeStateFinishedNotMerged), or "" when the manager does not
+// provide the surface or there is nothing to show.
+func (s *Server) mergeStateOf(prd *autonomous.PRD) string {
+	if prd == nil || s.autonomousMgr == nil {
+		return ""
+	}
+	v, ok := s.autonomousMgr.(mergeStateProvider)
+	if !ok {
+		return ""
+	}
+	return v.AutomatonMergeState(prd)
+}
+
+// withMergeState adds the derived merge_state to a full Automaton body.
+// The key is omitted when the record has no derived merge state, so the
+// full body stays byte-identical for records the field does not describe.
+func (s *Server) withMergeState(payload any, prd any) any {
+	p, err := toPRD(prd)
+	if err != nil || p == nil {
+		return payload
+	}
+	state := s.mergeStateOf(p)
+	if state == "" {
+		return payload
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return payload
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil || doc == nil {
+		return payload
+	}
+	doc["merge_state"] = state
+	return doc
 }
 
 // planningFailureViewer is the optional autonomous-manager surface that
