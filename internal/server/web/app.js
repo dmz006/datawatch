@@ -3835,13 +3835,24 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
-    if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
-    else {
+    const unassignedListHTML = lst => `<div class="project-cards" style="margin-top:4px;">` +
+      lst.map(a => `<div class="project-automaton" data-automaton="${escHtml(a && a.id || '')}">` +
+        renderProjectCard(_projectUnassignedCard(a, 'unassigned'), _projectsCardMode()) + `</div>`).join('') + `</div>`;
+    const hidden = _projectsUnassignedHiddenLoad();
+    const shownUn = un.filter(a => a && a.id && hidden.indexOf(String(a.id)) < 0);
+    const hiddenCount = un.length - shownUn.length;
+    if (un.length) {
+      const undo = hiddenCount
+        ? `<div style="color:var(--text2);font-size:12px;margin:2px 0 6px;">${escHtml(t('projects_unassigned_hidden_note'))} <button type="button" class="btn-secondary" style="padding:1px 8px;font-size:11px;" onclick="projectsUnassignedUndo()">${escHtml(t('projects_unassigned_undo'))}</button></div>`
+        : '';
+      const list = shownUn.length ? unassignedListHTML(shownUn) : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`;
+      unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${undo}${list}</div>`;
+    } else {
       events.push(t('projects_event_no_unassigned'));
       if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
     const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
-    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${automataList(wp)}</div>`;
+    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${unassignedListHTML(wp)}</div>`;
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
@@ -3856,12 +3867,17 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
     history: _projectHistoryHTML(hist, true),
-    policy: _projectLinksHTML(p),
     events: evs + _projectEventStreamHTML(L.events, L.eventsError),
   };
   const strip = _projectsSubtabStripHTML(active, hasEvents);
+  // A stored or hashed sub-tab that no longer exists (the old Policy page)
+  // falls back to Overview, the one body that is always renderable.
+  const bodyHTML = (bodies[active] !== undefined && bodies[active] !== '') ? bodies[active] : (bodies.overview || '');
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
-    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodies[active]}</div></div></div>`;
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <span style="font-weight:600;font-size:16px;">${escHtml(p.name)}</span>
+      ${_projectsSettingsLinkHTML('project_policy', t('projects_links_policy_settings'))}
+    </div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodyHTML}</div></div></div>`;
 }
 
 // ── Projects sub-tab strip ──────────────────────────────────────────────────
@@ -3869,11 +3885,14 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 // remembered per browser; an unknown value means overview, and events falls
 // back to overview while there are no events to show.
 const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
-const _PROJECTS_SUBTABS = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+// The former Policy sub-tab is gone: its only setting link now sits next to
+// the project name in the header row, and a stored or hashed 'policy' value
+// falls back to Overview.
+const _PROJECTS_SUBTABS = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'events'];
 const _PROJECTS_SUBTAB_LABELS = {
   overview: 'projects_subtab_overview', arcs: 'projects_subtab_arcs', gantt: 'projects_subtab_gantt',
   unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
-  policy: 'projects_subtab_policy', events: 'projects_subtab_events',
+  events: 'projects_subtab_events',
 };
 function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(v) >= 0; }
 function _projectsRememberSubtab(v) {
@@ -4054,9 +4073,23 @@ function _projectEventStreamHTML(ev, err) {
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
-          const when = e.at ? new Date(e.at).toLocaleString() : '';
-          const ids = [e.automation_id, e.task_id].filter(Boolean).join(' · ');
-          return `<div class="project-event-row" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(when)} · ${escHtml(e.kind || '')}${e.level ? ' (' + escHtml(e.level) + ')' : ''}${ids ? ' · ' + escHtml(ids) : ''}</div>`;
+          const ev = (e && typeof e === 'object') ? e : {};
+          const kind = String(ev.kind || '');
+          const human = kind ? kind.replace(/[_-]+/g, ' ').replace(/^\w/, c => c.toUpperCase()) : t('projects_links_events_heading');
+          const lv = String(ev.level || '').trim().toLowerCase();
+          const lvKind = { info: 'info', warn: 'warn', warning: 'warn', error: 'error', success: 'ok' }[lv] || 'neutral';
+          const details = [];
+          if (ev.automation_id) details.push({ label: t('projects_links_event_automation'), value: String(ev.automation_id) });
+          if (ev.task_id) details.push({ label: t('projects_links_event_task'), value: String(ev.task_id) });
+          const innerCard = renderProjectCard({
+            id: ev.id || '',
+            title: human,
+            badge: kind || null,
+            badgeKind: lvKind,
+            age: ev.at || ev.time || '',
+            details,
+          }, _projectsCardMode());
+          return `<div class="project-event-row" style="margin:2px 0;" data-kind="${escHtml(kind)}" data-automation="${escHtml(ev.automation_id || '')}" data-task="${escHtml(ev.task_id || '')}">${innerCard}</div>`;
         }).join('')
         : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_events_empty'))}</div>`);
   }
@@ -4155,22 +4188,135 @@ function _projectDate(v) {
   return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '';
 }
 
-// _projectHistoryRowHTML is one entry of the history list: a finished or
-// archived Automaton (linked to its view) or a daily progress snapshot.
-// Other kinds are left out.
+// ── Unassigned Automaton cards: assign, open, dismiss (per browser) ────────
+// Dismiss only hides the card in this browser: the list is saved to
+// localStorage and Undo clears it. It does not touch the daemon state.
+const _PROJECTS_UNASSIGNED_HIDDEN_KEY = 'cs_projects_unassigned_hidden';
+
+function _projectsUnassignedHiddenLoad() {
+  try {
+    const v = JSON.parse(localStorage.getItem(_PROJECTS_UNASSIGNED_HIDDEN_KEY) || '[]');
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x) : [];
+  } catch (_) { return []; }
+}
+function _projectsUnassignedHiddenSave(ids) {
+  try {
+    const list = Array.isArray(ids) ? ids.filter(x => typeof x === 'string' && x) : [];
+    localStorage.setItem(_PROJECTS_UNASSIGNED_HIDDEN_KEY, JSON.stringify(list));
+  } catch (_) { /* not remembered */ }
+}
+function projectsUnassignedDismiss(prdID) {
+  const id = String(prdID === undefined || prdID === null ? '' : prdID).trim();
+  if (!id) return;
+  const ids = _projectsUnassignedHiddenLoad();
+  if (ids.indexOf(id) < 0) ids.push(id);
+  _projectsUnassignedHiddenSave(ids);
+  if (typeof _projectsActive === 'function' && _projectsActive()) _projectsPaint();
+}
+function projectsUnassignedUndo() {
+  _projectsUnassignedHiddenSave([]);
+  if (typeof _projectsActive === 'function' && _projectsActive()) _projectsPaint();
+}
+// projectsUnassignedAssign asks for a project name (offering the configured
+// ones) and saves it with the same call the Automaton settings use:
+// POST /api/autonomous/prds/{id}/set_project.
+async function projectsUnassignedAssign(prdID) {
+  const id = String(prdID === undefined || prdID === null ? '' : prdID).trim();
+  if (!id) return;
+  let names = [];
+  if (typeof _automatonProjectNames === 'function') {
+    try { names = (await _automatonProjectNames()).filter(Boolean); } catch (_) { names = []; }
+  }
+  let name = '';
+  if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+    name = String(window.prompt(t('projects_unassigned_assign_prompt'), names[0] || '') || '').trim();
+  } else if (names.length === 1) {
+    name = String(names[0]);
+  }
+  if (!name) { showToast(t('projects_unassigned_assign_cancelled'), 'info', 2500); return; }
+  try {
+    await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/set_project', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: name }),
+    });
+    showToast(t('automaton_project_saved'), 'success', 1500);
+    if (typeof _projectsLoadSelected === 'function') {
+      const r = _projectsLoadSelected();
+      if (r && typeof r.then === 'function') await r.catch(() => {});
+    } else if (typeof _projectsPaint === 'function') _projectsPaint();
+  } catch (err) {
+    showToast(t('automaton_project_error') + ': ' + (((err && err.message) || String(err))), 'error', 6000);
+  }
+}
+window.projectsUnassignedDismiss = projectsUnassignedDismiss;
+window.projectsUnassignedUndo = projectsUnassignedUndo;
+window.projectsUnassignedAssign = projectsUnassignedAssign;
+
+// _projectUnassignedCard is one unassigned (or without-project) Automaton as
+// a shared card item: plain title, badge, age from the created time, the
+// project directory as a detail (the full path stays in the title attribute)
+// and the actions. Unassigned Automata get Assign, Open and Dismiss;
+// without-project ones are read-only and get Open.
+function _projectUnassignedCard(a, group) {
+  const it = (a && typeof a === 'object') ? a : {};
+  const id = String(it.id === undefined || it.id === null ? '' : it.id).trim();
+  const st = String(it.status || '').trim().toLowerCase();
+  const badge = st ? (PROJECTS_STATUS_BADGES[st] ? {} : { badge: String(it.status), badgeKind: 'neutral' }) : {};
+  const actions = [];
+  if (group === 'unassigned') {
+    actions.push({ label: t('projects_unassigned_assign'), onclick: escHtml(`projectsUnassignedAssign(${JSON.stringify(id)});return false;`) });
+  }
+  actions.push({ label: t('action_open'), onclick: escHtml(`_statusOpenAutomaton(${JSON.stringify(id)});return false;`) });
+  if (group === 'unassigned') {
+    actions.push({ label: t('action_dismiss'), onclick: escHtml(`projectsUnassignedDismiss(${JSON.stringify(id)});return false;`) });
+  }
+  const details = [];
+  const dir = String(it.project_dir === undefined || it.project_dir === null ? '' : it.project_dir).trim();
+  if (dir) details.push({ label: t('projects_unassigned_dir'), value: dir });
+  if (group === 'unassigned') {
+    details.push({ label: t('action_dismiss'), value: t('projects_unassigned_hidden_note') });
+  }
+  return Object.assign({
+    id,
+    title: String(it.title || it.name || id),
+    status: it.status || '',
+    age: it.created_at || it.started_at || it.last || it.first || '',
+    details,
+    actions,
+  }, badge);
+}
+
+// _projectHistoryRowHTML is one entry of the history list as a shared card:
+// a finished or archived Automaton (status badge, plain title, the finished
+// moment as the age, its task counts and an Open action) or a daily
+// snapshot's progress line. The wrapper keeps the data-kind/data-automaton
+// attributes the page and tests rely on. Other kinds are left out.
 function _projectHistoryRowHTML(e) {
   if (!e || typeof e !== 'object') return '';
   if (e.kind === 'automaton') {
-    const tk = e.tasks || {};
-    const when = _projectDate(e.finished_at || e.time);
-    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(e.id || '')}" style="margin:6px 0;font-size:13px;">
-      <a href="#" class="project-history-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(e.id || '')});return false;`)}">${escHtml(e.title || e.id || '')}</a>
-      <span style="color:var(--text2);font-size:12px;"> ${escHtml(e.status || '')}${when ? ' · ' + escHtml(when) : ''} · ${escHtml(tk.done || 0)}/${escHtml(tk.total || 0)} ${escHtml(t('projects_page_tasks'))}</span></div>`;
+    const id = String(e.id || '');
+    const tk = (e.tasks && typeof e.tasks === 'object') ? e.tasks : {};
+    const st = String(e.status || '').trim().toLowerCase();
+    const badge = st ? (PROJECTS_STATUS_BADGES[st] ? { status: e.status } : { badge: String(e.status), badgeKind: 'neutral' }) : {};
+    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(id)}" style="margin:6px 0;">` +
+      renderProjectCard(Object.assign({
+        id,
+        title: String(e.title || id),
+        age: e.finished_at || e.time || '',
+        details: [String(tk.done || 0) + '/' + String(tk.total || 0) + ' ' + t('projects_page_tasks')],
+        actions: [{ label: t('action_open'), onclick: escHtml(`_statusOpenAutomaton(${JSON.stringify(id)});return false;`) }],
+      }, badge), _projectsCardMode()) + `</div>`;
   }
   if (e.kind === 'snapshot' && e.progress) {
     const p = e.progress;
     const when = _projectDate(e.taken_at || e.time);
-    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;font-size:13px;color:var(--text2);">${escHtml(t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0]))}</div>`;
+    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;">` +
+      renderProjectCard({
+        title: String(e.taken_at || e.time || ''),
+        badge: 'snapshot', badgeKind: 'neutral',
+        age: e.taken_at || e.time || '',
+        details: [t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0])],
+      }, _projectsCardMode()) + `</div>`;
   }
   return '';
 }
