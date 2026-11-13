@@ -20702,7 +20702,7 @@ function renderTask(prd, story, task, editable) {
   const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
 
   // Edit affordances — distinct icons per 1(b).
-  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')},${JSON.stringify(!!task.read_only)},${JSON.stringify(task.pinned_node || '')})`;
+  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||''),verification_script:task.verification_script||'',verification_script_reason:task.verification_script_reason||''})},${JSON.stringify(task.project_dir || '')},${JSON.stringify(!!task.read_only)},${JSON.stringify(task.pinned_node || '')})`;
   const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
   // Operator-requested: structural edit — remove a task without re-running
   // decompose. Distinct from the cancel/retry buttons below, which act on
@@ -22095,7 +22095,25 @@ function _prdTaskReadOnlyFieldHTML(inputID, checked) {
       <div style="font-size:10px;color:var(--text2);">${escHtml(t('prd_task_read_only_hint')||'This task changes no files, so it may run alongside other tasks without the tree lock.')}</div>`;
 }
 
+// Verification script path and exemption reason for the edit-task dialog.
+// The script is a repo-relative file the verifier runs, never a shell command.
+function _prdTaskVerifScriptFieldsHTML(cur) {
+  cur = cur || {};
+  const hint = t('prd_task_verif_script_hint')||'A repo-relative script file the Automaton runs to check this task, not a command.';
+  return `<div>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_task_verif_script_label')||'Verification script')}</label>
+        <input type="text" id="prdEditVerifScript" class="form-input" value="${escHtml(cur.script || '')}" />
+        <div style="font-size:10px;color:var(--text2);">${escHtml(hint)}</div>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_task_verif_script_reason_label')||'Script exemption reason')}</label>
+        <input type="text" id="prdEditVerifScriptReason" class="form-input" value="${escHtml(cur.reason || '')}" />
+      </div>`;
+}
+
 function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir, currentReadOnly, currentPinnedNode) {
+  // The script path and exemption reason ride in currentVerif beside the LLM override.
+  const currentVerifScript = { script: (currentVerif || {}).verification_script || '', reason: (currentVerif || {}).verification_script_reason || '' };
   // v5.26.8 — populate the model dropdown as soon as the modal mounts,
   // and refresh it every time the operator switches backends.
   Promise.all([ensureLLMModelLists(), window.modelRoutingNodesLoad()]).then(() => {
@@ -22115,6 +22133,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
       </div>
       ${_prdTaskProjectDirFieldHTML(currentProjectDir)}
       ${_prdTaskReadOnlyFieldHTML('prdEditReadOnly', !!currentReadOnly)}
+      ${_prdTaskVerifScriptFieldsHTML(currentVerifScript)}
       ${window.modelRoutingPinFieldHtml('prdEditPinNode', currentPinnedNode)}
       ${_prdVerifLLMSectionHTML('prdEditVerif', currentVerif, 'prd_verif_llm_hint', 'Which LLM judges this task\'s work — empty inherits story, then Automaton, then the global verification setting.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
@@ -22131,10 +22150,16 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
     const calls = [];
     const roEl = document.getElementById('prdEditReadOnly');
     const readOnlyChanged = !!roEl && roEl.checked !== !!currentReadOnly;
-    if (newSpec !== currentSpec || readOnlyChanged) {
+    const vsEl = document.getElementById('prdEditVerifScript');
+    const vrEl = document.getElementById('prdEditVerifScriptReason');
+    const verifScriptChanged = !!vsEl && vsEl.value.trim() !== (currentVerifScript.script || '');
+    const verifReasonChanged = !!vrEl && vrEl.value.trim() !== (currentVerifScript.reason || '');
+    if (newSpec !== currentSpec || readOnlyChanged || verifScriptChanged || verifReasonChanged) {
       const editBody = { task_id: taskID, actor: 'operator' };
       if (newSpec !== currentSpec) editBody.new_spec = newSpec;
       if (readOnlyChanged) editBody.read_only = roEl.checked;
+      if (verifScriptChanged) editBody.verification_script = vsEl.value.trim();
+      if (verifReasonChanged) editBody.verification_script_reason = vrEl.value.trim();
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_task', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editBody),
