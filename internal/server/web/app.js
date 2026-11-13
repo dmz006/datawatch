@@ -23955,6 +23955,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.progress.backlog_path', label: 'Progress backlog file (relative paths resolve against the base repository, default docs/plans/README.md)', labelKey: 'settings_progress_backlog_path', type: 'text', placeholder: 'docs/plans/README.md', default: 'docs/plans/README.md' },
     { key: 'autonomous.progress.since', label: 'Progress start date (YYYY-MM-DD, empty = first record\'s creation date)', labelKey: 'settings_progress_since', type: 'text', placeholder: 'YYYY-MM-DD', default: '' },
     { key: 'autonomous.progress.snapshot_retention_days', label: 'Progress snapshot retention (days kept, 0 = 90)', labelKey: 'settings_progress_snapshot_retention_days', type: 'number', placeholder: '90', min: 0, step: 1, default: '0' },
+    // Finished-Automaton archive.
+    { key: 'autonomous.archive.enabled', label: 'Archive finished Automata automatically (default on)', labelKey: 'settings_archive_enabled', helpKey: 'settings_archive_enabled_help', type: 'toggle' },
+    { key: 'autonomous.archive.retention_days', label: 'Archive retention (days old before a finished Automaton is archived, 0 = 30)', labelKey: 'settings_archive_retention_days', helpKey: 'settings_archive_retention_days_help', type: 'number', placeholder: '30', min: 0, step: 1, default: '0' },
     // Plan tier inflight caps — ties each subscription plan tier
     // (pro | max_5x | max_20x | api) to the inflight session count it may
     // occupy (0 leaves the tier unlimited; unset tier = no tier cap). An

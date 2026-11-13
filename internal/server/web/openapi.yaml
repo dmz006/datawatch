@@ -1066,6 +1066,8 @@ paths:
         `autonomous.progress.since` (YYYY-MM-DD, empty = the first record's creation
         date), `autonomous.progress.snapshot_retention_days` (whole number >= 0,
         default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
+        `autonomous.archive.retention_days` (whole number >= 0, default 0 = 30; negative
+        is rejected with 400), `autonomous.archive.enabled` (true | false, default true),
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,

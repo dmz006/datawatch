@@ -4040,6 +4040,11 @@ type AutonomousConfig struct {
 	// See AutonomousProgressConfig.
 	Progress AutonomousProgressConfig `yaml:"progress" json:"progress"`
 
+	// Archive — the finished-Automaton archive: how old a completed, shipped
+	// or cancelled Automaton must be before it is archived, and whether the
+	// daemon may archive on its own. See AutonomousArchiveConfig.
+	Archive AutonomousArchiveConfig `yaml:"archive" json:"archive"`
+
 	// PlanReview (2026-10-17 pre-approval gate) — a one-shot LLM judge
 	// over the freshly decomposed plan, run at the end of Decompose and
 	// re-runnable via Manager.ReviewPlan. Internal wiring: see the
@@ -5534,6 +5539,43 @@ func (c AutonomousProgressConfig) validate() error {
 		return err
 	}
 	return ValidateProgressSince(c.Since)
+}
+
+// autonomous.archive defaults. A zero RetentionDays means "use the default".
+const DefaultArchiveRetentionDays = 30
+
+// AutonomousArchiveConfig — autonomous.archive sub-config for the
+// finished-Automaton archive. RetentionDays is how many days old a completed,
+// shipped or cancelled Automaton must be before it is archived (0 = 30).
+// Enabled is a pointer so an explicit false survives a round trip: unset or
+// true lets the daemon archive on its own; false means only the explicit
+// migration command archives.
+type AutonomousArchiveConfig struct {
+	Enabled       *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	RetentionDays int   `yaml:"retention_days" json:"retention_days"`
+}
+
+// EffectiveRetentionDays returns the archive retention in effect: 0 (or less)
+// means 30 days.
+func (c AutonomousArchiveConfig) EffectiveRetentionDays() int {
+	if c.RetentionDays <= 0 {
+		return DefaultArchiveRetentionDays
+	}
+	return c.RetentionDays
+}
+
+// EffectiveEnabled reports whether the daemon may archive on its own: unset
+// means true.
+func (c AutonomousArchiveConfig) EffectiveEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
+}
+
+// validate checks every autonomous.archive value on the load paths.
+func (c AutonomousArchiveConfig) validate() error {
+	if c.RetentionDays < 0 {
+		return fmt.Errorf("autonomous.archive.retention_days: %d must be >= 0 (0 = %d)", c.RetentionDays, DefaultArchiveRetentionDays)
+	}
+	return nil
 }
 
 // intPtr is the tiny pointer helper for pointer-to-int config fields.
@@ -8793,6 +8835,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Progress.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Archive.validate(); err != nil {
 		return err
 	}
 	if err := validateScriptGateTimeout(cfg.Autonomous.ScriptGateTimeoutSeconds); err != nil {

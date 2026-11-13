@@ -231,6 +231,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("progress_backlog_path", mcpsdk.Description("Backlog file the progress figures read (autonomous.progress.backlog_path). A relative path resolves against the Automata base repository when set, else the daemon working directory. Empty = docs/plans/README.md.")),
 		mcpsdk.WithString("progress_since", mcpsdk.Description("First day the progress figures count, as YYYY-MM-DD (autonomous.progress.since). Empty = the first record's creation date.")),
 		mcpsdk.WithNumber("progress_snapshot_retention_days", mcpsdk.Description("Days saved progress snapshots are kept (autonomous.progress.snapshot_retention_days). Whole number >= 0; 0 = 90.")),
+		mcpsdk.WithNumber("archive_retention_days", mcpsdk.Description("Days old a completed, shipped or cancelled Automaton must be before it is archived (autonomous.archive.retention_days). Whole number >= 0; 0 = 30.")),
+		mcpsdk.WithBoolean("archive_enabled", mcpsdk.Description("Whether the daemon may archive finished Automata on its own (autonomous.archive.enabled). On by default; off means only the explicit migration command archives.")),
 		mcpsdk.WithString("usage_backoff", mcpsdk.Description("Per-backend usage back-off mode: pause_backend (the default) holds autonomous dispatch to a backend while one of its sessions is rate-limited, until the parsed reset time or the maximum back-off; off disables only that automatic path (manual usage_backoff_set still works). Interactive session starts are never blocked.")),
 		mcpsdk.WithNumber("backoff_max_wait_minutes", mcpsdk.Description("Maximum usage back-off in whole minutes (>= 1, default 60), applied when a rate-limit message carries no reset time.")),
 		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
@@ -633,6 +635,20 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 				allocation = map[string]any{}
 			}
 			allocation["autonomous.progress."+k] = raw
+		}
+	}
+	// The archive settings (autonomous.archive.*) ride in the same config PUT;
+	// presence-aware so an explicit 0 or false is sent.
+	if args := req.GetArguments(); args != nil {
+		for _, k := range []string{"retention_days", "enabled"} {
+			raw, ok := args["archive_"+k]
+			if !ok {
+				continue
+			}
+			if allocation == nil {
+				allocation = map[string]any{}
+			}
+			allocation["autonomous.archive."+k] = raw
 		}
 	}
 	// Infrastructure retry (autonomous.infra_retry.*) lives in the daemon

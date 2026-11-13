@@ -2503,6 +2503,22 @@ autonomous:
     since: ""
     snapshot_retention_days: 0
 
+  # Finished-Automaton archive. Settable on every channel: PUT /api/config
+  # {"autonomous.archive.<name>": <value>}, CLI `datawatch config set
+  # autonomous.archive.<name> <value>`, MCP `config_set` (or the
+  # archive_retention_days / archive_enabled arguments of
+  # autonomous_config_set), chat `configure autonomous.archive.<name>=<value>`,
+  # and Settings -> General -> Autonomous. A bad value is rejected and nothing
+  # is written.
+  # retention_days: whole number >= 0. How many days old a completed, shipped
+  #   or cancelled Automaton must be before it is archived. 0 (the default)
+  #   means 30; a negative number is rejected.
+  # enabled: true or false. true (the default) lets the daemon archive on its
+  #   own; false means only the explicit migration command archives.
+  archive:
+    retention_days: 0
+    enabled: true
+
   # Tag browser for the Automata list: the attention view and the tag tree.
   # Every key below is settable on every configuration channel: PUT /api/config {"autonomous.tags.<name>": <value>}
   # (GET /api/config shows them under autonomous.tags), CLI `datawatch config
