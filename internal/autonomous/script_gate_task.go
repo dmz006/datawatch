@@ -63,29 +63,44 @@ func (m *Manager) runScriptGateTask(ctx context.Context, prd *PRD, t *Task) (han
 	failReason := ""
 	timedOut := false
 	lastExit := 0
-	for i, c := range checks {
-		res := RunScriptGate(runCtx, c, dir, remainingGateTime(runCtx, timeout))
-		if res.Interrupted {
-			// The daemon is stopping, not the gate failing: the gate keeps
-			// running and the next attempt re-attaches to its record.
+	runChecks := func() (interrupted, signalled bool) {
+		for i, c := range checks {
+			res := runGateCheckFn(runCtx, c, dir, remainingGateTime(runCtx, timeout))
+			if res.Interrupted {
+				// The daemon is stopping, not the gate failing: the gate keeps
+				// running and the next attempt re-attaches to its record.
+				return true, false
+			}
+			fmt.Fprintf(&report, "== check %d of %d: %s ==\n", i+1, len(checks), describeGateCheck(c))
+			report.WriteString(res.Output)
+			if res.Output != "" && !strings.HasSuffix(res.Output, "\n") {
+				report.WriteString("\n")
+			}
+			if res.Passed {
+				fmt.Fprintf(&report, "verdict: passed (exit 0)\n\n")
+				continue
+			}
+			lastExit, timedOut = res.ExitCode, res.TimedOut
+			failReason = res.Reason
+			if timedOut {
+				failReason = fmt.Sprintf("timed out: the gate exceeded its %s-second limit", formatGateSeconds(timeout))
+			}
+			fmt.Fprintf(&report, "verdict: failed: %s\n\n", failReason)
+			return false, !timedOut && res.ExitCode < 0 && res.Reason == gateSignalKilledReason
+		}
+		return false, false
+	}
+	interrupted, signalled := runChecks()
+	if interrupted {
+		return true, ctx.Err()
+	}
+	if signalled && m.gateRestartRetryDue(prd, t) {
+		m.recordGateRestartRetry(prd, t)
+		report.WriteString("== the Automaton retries the gate once: the daemon restarted shortly before the kill ==\n\n")
+		failReason, timedOut, lastExit = "", false, 0
+		if interrupted, _ = runChecks(); interrupted {
 			return true, ctx.Err()
 		}
-		fmt.Fprintf(&report, "== check %d of %d: %s ==\n", i+1, len(checks), describeGateCheck(c))
-		report.WriteString(res.Output)
-		if res.Output != "" && !strings.HasSuffix(res.Output, "\n") {
-			report.WriteString("\n")
-		}
-		if res.Passed {
-			fmt.Fprintf(&report, "verdict: passed (exit 0)\n\n")
-			continue
-		}
-		lastExit, timedOut = res.ExitCode, res.TimedOut
-		failReason = res.Reason
-		if timedOut {
-			failReason = fmt.Sprintf("timed out: the gate exceeded its %s-second limit", formatGateSeconds(timeout))
-		}
-		fmt.Fprintf(&report, "verdict: failed: %s\n\n", failReason)
-		break
 	}
 
 	var note string
@@ -204,4 +219,54 @@ func writeGateReport(projectDir, rel, report string) error {
 		return err
 	}
 	return os.WriteFile(full, []byte(report), 0o644) // #nosec G306 -- report is meant to be readable
+}
+
+// gateRestartRecentWindow is how soon after the daemon started a signal-killed
+// gate is taken to be a casualty of the restart rather than a real failure.
+const gateRestartRecentWindow = 5 * time.Minute
+
+// gateRestartRetryDecisionKind is the Decision.Kind of the note written when
+// the Automaton retries a gate that the daemon restart killed.
+const gateRestartRetryDecisionKind = infraRetryDecisionKind
+
+// runGateCheckFn runs one gate check; tests replace it with a fake result.
+var runGateCheckFn = RunScriptGate
+
+// gateRestartRetryDue reports whether a signal kill seen now is retried: the
+// daemon started within gateRestartRecentWindow before now and the task has
+// not used its one restart retry.
+func (m *Manager) gateRestartRetryDue(prd *PRD, t *Task) bool {
+	started := m.startedAt
+	if started.IsZero() {
+		return false
+	}
+	var used bool
+	m.store.WithLock(func() { used = t.GateRestartRetryUsed })
+	if used {
+		return false
+	}
+	age := m.genNow().Sub(started)
+	return age >= 0 && age <= gateRestartRecentWindow
+}
+
+// recordGateRestartRetry marks the restart retry as used on the task and
+// writes the decision-log line naming the daemon restart as the cause. It
+// follows the infra retry route: no retry budget or attempt counter changes.
+func (m *Manager) recordGateRestartRetry(prd *PRD, t *Task) {
+	now := m.genNow()
+	m.store.WithLock(func() { t.GateRestartRetryUsed = true })
+	if err := m.store.SaveTask(t); err != nil {
+		log.Printf("[autonomous] %s/%s save gate restart retry: %v", prd.ID, t.ID, err)
+	}
+	note := fmt.Sprintf("task %q final gate was killed by a signal %s after the daemon restarted: the Automaton retries the gate once; this retry does not count against the task's retry budget",
+		t.Title, now.Sub(m.startedAt).Round(time.Second))
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: gateRestartRetryDecisionKind, Actor: "autonomous",
+			Note: note, FailureCategory: infraRetryFailureCategory,
+		})
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] %s save gate restart retry decision: %v", prd.ID, err)
+	}
 }

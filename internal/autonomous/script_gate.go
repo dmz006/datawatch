@@ -64,6 +64,9 @@ type GateResult struct {
 	Reason      string
 }
 
+// gateSignalKilledReason is the failure reason of a gate ended by a signal.
+const gateSignalKilledReason = "gate was killed by a signal"
+
 // RunScriptGate runs check with projectDir as the working directory. A
 // timeout of 0 means no cap. On timeout the whole process group is killed,
 // so no child of the gate outlives it.
@@ -112,7 +115,7 @@ func RunScriptGate(ctx context.Context, check GateCheck, projectDir string, time
 	if errors.As(runErr, &exitErr) {
 		res.ExitCode = exitErr.ExitCode()
 		if res.ExitCode < 0 {
-			res.Reason = "gate was killed by a signal"
+			res.Reason = gateSignalKilledReason
 		} else {
 			res.Reason = fmt.Sprintf("gate exited with code %d", res.ExitCode)
 		}
