@@ -65,6 +65,11 @@ func (m *Manager) runScriptGateTask(ctx context.Context, prd *PRD, t *Task) (han
 	lastExit := 0
 	for i, c := range checks {
 		res := RunScriptGate(runCtx, c, dir, remainingGateTime(runCtx, timeout))
+		if res.Interrupted {
+			// The daemon is stopping, not the gate failing: the gate keeps
+			// running and the next attempt re-attaches to its record.
+			return true, ctx.Err()
+		}
 		fmt.Fprintf(&report, "== check %d of %d: %s ==\n", i+1, len(checks), describeGateCheck(c))
 		report.WriteString(res.Output)
 		if res.Output != "" && !strings.HasSuffix(res.Output, "\n") {
