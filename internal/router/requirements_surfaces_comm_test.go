@@ -36,7 +36,7 @@ func reqSurfDaemon(t *testing.T, status int, body string) (*reqSurfRec, int) {
 }
 
 type reqSurfRec struct {
-	calls         int
+	calls                     int
 	method, path, query, body string
 }
 
@@ -191,7 +191,7 @@ func TestRequirementsSurfaceComm_ConsentSetSendsCompletePolicy(t *testing.T) {
 		t.Fatalf("proxied %s %s%q, want PUT on the consent route", rec.method, rec.path, rec.query)
 	}
 	var body struct {
-		Models     []struct {
+		Models []struct {
 			Name    string `json:"name"`
 			Allowed bool   `json:"allowed"`
 			Note    string `json:"note"`

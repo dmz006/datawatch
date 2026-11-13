@@ -38,10 +38,10 @@ func yamlUnmarshal(data []byte, out any) error { return yaml.Unmarshal(data, out
 // PendingQueue for operator approval; index entries materialize only after
 // the source becomes trusted.
 type PluginSkillIndexer struct {
-	rt          *Runtime
-	skillsDir   string // e.g. ~/.datawatch/skills
-	pluginsDir  string // e.g. ~/.datawatch/plugins
-	addedHook   func(source string, chunkCount int)
+	rt         *Runtime
+	skillsDir  string // e.g. ~/.datawatch/skills
+	pluginsDir string // e.g. ~/.datawatch/plugins
+	addedHook  func(source string, chunkCount int)
 }
 
 // NewPluginSkillIndexer returns an indexer rooted at the operator's

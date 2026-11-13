@@ -106,12 +106,12 @@ func TestHeldParse(t *testing.T) {
 		t.Fatalf("held both: %+v %v", v, err)
 	}
 	for _, bad := range []string{
-		"held prd",            // missing id
-		"held state",          // missing id
-		"held prd a prd b",    // two prd filters
+		"held prd",             // missing id
+		"held state",           // missing id
+		"held prd a prd b",     // two prd filters
 		"held state a state b", // two state filters
-		"held nope",          // unknown filter word
-		"held prd a extra",   // trailing junk
+		"held nope",            // unknown filter word
+		"held prd a extra",     // trailing junk
 	} {
 		if _, err := parseQuestionVerb(bad); err == nil {
 			t.Errorf("parse(%q): want an error", bad)
