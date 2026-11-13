@@ -26,6 +26,11 @@ import (
 // copy rule values, and the match engine reads the flag only).
 var decomposeLintRO = true
 
+// trackerIDPattern is the tracker-id shape the names_tracker_id rule
+// matches; the spec lint (spec_lint.go) compiles the same string so the
+// two never drift.
+const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|\\b#\\d{3,}\\b"
+
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
@@ -117,8 +122,8 @@ func DefaultDecomposeLintRules() []Rule {
 				// spec-or-title (any_of): a bare spec_regex+title_regex
 				// pair would AND the two fields instead of OR-ing them.
 				AnyOf: []config.DecomposeLintMatch{
-					{SpecRegex: "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|\\b#\\d{3,}\\b"},
-					{TitleRegex: "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|\\b#\\d{3,}\\b"},
+					{SpecRegex: trackerIDPattern},
+					{TitleRegex: trackerIDPattern},
 				},
 			},
 		},

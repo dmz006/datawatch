@@ -3132,7 +3132,7 @@ paths:
       summary: Housekeeping repairs
       description: |
         The housekeeping repairs per group (`task_chain`, `advance_judge`,
-        `lane_fill`, `leftovers`): the mode in effect (`off`, `report` or `on`;
+        `lane_fill`, `leftovers`, `planning`): the mode in effect (`off`, `report` or `on`;
         report records what it would do and acts on nothing), what a report-mode
         pass would do (`would`), what an on-mode pass did (`did`), and the cases
         that failed (`failed`) or were skipped as unsafe (`skipped_unsafe`). Each
@@ -12624,7 +12624,7 @@ components:
           items:
             type: object
             properties:
-              group: {type: string, enum: [task_chain, advance_judge, lane_fill, leftovers]}
+              group: {type: string, enum: [task_chain, advance_judge, lane_fill, leftovers, planning]}
               mode: {type: string, enum: [off, report, "on"]}
               would: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
               did: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}

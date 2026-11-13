@@ -6678,9 +6678,13 @@ The `autonomous.housekeeping_repairs.lane_fill` group (default `report`) has a l
 
 The `autonomous.housekeeping_repairs.leftovers` group (default `report`) also has three release repairs for what a finished Automaton leaves behind: its capacity lease, its worktree and its tmux name. Each acts on one leftover and only when the safe-to-delete check passes: the Automaton is finished, holds no uncommitted work, has no unlanded commits and has no live session; the facts are read again just before the release. When any fails or the check cannot be answered, the repair refuses, records a skipped entry and raises one alert. It can only release one lease, remove one worktree or release one tmux name, and never kills, ends or signals a session, merges, ships, changes a model or backend, or touches a security workflow. The repairs are written and tested, but nothing in the daemon builds or starts them yet, so nothing acts today. Before turning the group to `on`, confirm you accept the worktree removal; the group also holds the disk cleanup sweep. To undo, start the Automaton again from the Automata page (a lease is taken again and a worktree recreated); a released tmux name is free to reuse. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
 
+### Housekeeping repairs: planning
+
+The `autonomous.housekeeping_repairs.planning` group (default `report`) has a planning repair for a draft Automaton with no stories whose recorded planning failure is not retryable. When every spec lint finding on it is one the daemon can reword, then once the grace has passed it rewrites the spec with the suggestions, applies it as a revision and plans again, exactly as the planning question's *Fix the wording and plan again* answer does; the draft is re-checked just before acting. A finding the daemon cannot reword (a private address, a worktree path) is refused as an unsafe finding with one alert and the spec is left alone; a retryable failure is never touched. In `report` it records what it would do and changes nothing. Before turning the group to `on`, confirm you accept the daemon rewriting a spec without you. To undo, edit the spec back from the Automaton's detail view and plan again. Never touches a session, merges, ships, or changes a model or backend. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md) and the *Planning failures* section below.
+
 ### Housekeeping repairs: reading the view
 
-Read what the repairs would do and did with `GET /api/autonomous/housekeeping-repairs` (MCP `housekeeping_repairs`, CLI `datawatch autonomous housekeeping-repairs [--json]`, chat `autonomous housekeeping-repairs`, or the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds). Per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`) it shows the mode in effect (`off`, `report` or `on`), `would` (what a report-mode pass would do), `did` (what an on-mode pass did), `failed` and `skipped_unsafe`; each entry says what was found, what was done and how to undo it. The view is read-only: it repairs nothing, raises no alert and changes no mode (change a mode with config set, key `autonomous.housekeeping_repairs.<group>`). A federated peer needs the autonomous read capability. The daemon does not run the repair pass yet, so expect empty lists today. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
+Read what the repairs would do and did with `GET /api/autonomous/housekeeping-repairs` (MCP `housekeeping_repairs`, CLI `datawatch autonomous housekeeping-repairs [--json]`, chat `autonomous housekeeping-repairs`, or the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds). Per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) it shows the mode in effect (`off`, `report` or `on`), `would` (what a report-mode pass would do), `did` (what an on-mode pass did), `failed` and `skipped_unsafe`; each entry says what was found, what was done and how to undo it. The view is read-only: it repairs nothing, raises no alert and changes no mode (change a mode with config set, key `autonomous.housekeeping_repairs.<group>`). A federated peer needs the autonomous read capability. The daemon does not run the repair pass yet, so expect empty lists today. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
 
 ## Triage records (failed and blocked Automata)
 
@@ -6950,6 +6954,37 @@ Every decomposed story gets the built-in pack's closing tasks appended, and `aut
 The walkthrough is [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#template-mode-who-runs-the-task) and [its script-gate section](howto/automaton-decompose-lint.md#the-script-gate-the-final-gate-no-longer-spends-a-session); the terms, including the daemon-mode behavior of each template and the script gate, are in [datawatch-definitions.md](datawatch-definitions.md#decompose-lint).
 
 ---
+
+## Planning failures (a draft that could not be planned)
+
+An Automaton whose planning gave up is a draft with no stories; the
+reason is recorded on it, not lost. Read the record before you retry:
+it names the rule, the exact phrases (at most 20), the category,
+whether it can be retried, the retry counts per category and the budget
+of that category.
+
+- **Release numbers are corrected by the daemon.** If a fixed release
+  number is the only content failure of a plan, the daemon rewrites it to
+  "the release" or "the next patch above main" and logs one `auto_correct`
+  decision line (`old -> new`, with story and task) instead of failing.
+  It does so only when every other plan check passes on the corrected
+  plan.
+- **A non-retryable failure raises one warning alert**, "Automaton could
+  not be planned: <title>", once per recorded failure, and survives a
+  restart without repeating. A retryable failure raises nothing until its
+  retry budget is spent.
+- **A reword question is asked when the daemon can fix every finding.**
+  Answer **Fix the wording and plan again** to rewrite the spec with the
+  spec lint's suggestions and plan again, or **Leave it** (the default) to
+  change nothing. A spec with a private address or a worktree path needs
+  your hand: the alert is raised and no question is asked.
+- **The planner's prompt carries a forbidden-pattern list** (fixed release
+  number, tracker id, system path, private address, worktree path) after
+  the decompose guidance; it is not configurable.
+- **The daemon can re-plan a stuck draft by itself.** The `autonomous.housekeeping_repairs.planning` group (default `report`) does what the reword question's fix answer does, for a draft with no stories whose non-retryable failure the daemon can reword; in `report` it only records it. See *Housekeeping repairs: planning* above.
+- Nothing here touches, kills or signals a session. The retry budget is the existing `retry_policy`; the planning repair group is the only setting for the daemon's own re-plan.
+
+Details and the question's wording: [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks).
 
 ## Model request progress (a hung request told from a slow one)
 

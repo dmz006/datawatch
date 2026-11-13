@@ -3318,6 +3318,37 @@ paths:
               schema: {type: string, example: GET}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/prds/{id}/request_revision:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Ask for a fresh planning run; status moves back to revisions_asked
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string}
+                note: {type: string, description: "What is wrong with the current plan"}
+      responses:
+        "200":
+          description: "OK. The Automaton, plus spec_check: the findings of the spec lint over the stored spec and the note. Always present; an empty list when clean. A finding never blocks the revision."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  spec_check:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rule: {type: string, enum: [release-version-fixed, names_tracker_id, system-binary-path, private-address, worktree-path]}
+                        phrase: {type: string}
+                        severity: {type: string, enum: [warning, error]}
+                        correctable: {type: boolean}
+                        suggestion: {type: string}
+        "400": {description: "The Automaton's status does not accept revisions"}
   /api/autonomous/prds/{id}/set_authorized_paths:
     post:
       summary: Set the authorised protected paths of an Automaton
@@ -5192,6 +5223,17 @@ paths:
               schema:
                 type: object
                 properties:
+                  spec_check:
+                    type: array
+                    description: "Findings of the spec lint, in the order they appear in the spec. Always present; an empty list when the spec is clean. A finding never blocks the create."
+                    items:
+                      type: object
+                      properties:
+                        rule: {type: string, enum: [release-version-fixed, names_tracker_id, system-binary-path, private-address, worktree-path]}
+                        phrase: {type: string, description: "The exact text found"}
+                        severity: {type: string, enum: [warning, error], description: "warning: the daemon can fix the wording itself; error: the operator or planner must reword it"}
+                        correctable: {type: boolean}
+                        suggestion: {type: string, description: "The suggested rewording"}
                   overlap_warnings:
                     type: array
                     description: "Present only when autonomous.automation.create_search_mode is on. Overlap warnings for the new Automaton, best match first; an empty list when none match. In shadow mode the warnings go to the audit log instead, and in off mode nothing is searched."

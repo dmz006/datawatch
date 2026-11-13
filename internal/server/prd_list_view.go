@@ -78,19 +78,24 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if queryBool(r, "full", false) {
 		list := s.autonomousMgr.ListPRDs()
-		if aliases := s.projectAliasMap(); len(aliases) > 0 {
-			res := autonomous.NewProjectAliasResolver(aliases)
-			out := make([]any, len(list))
-			for i, raw := range list {
-				out[i] = raw
-				if p, err := toPRD(raw); err == nil && p != nil {
-					out[i] = withProjectField(raw, res.Resolve(p.ProjectProfile, p.ProjectDir))
-				}
-			}
-			writeJSONOK(w, map[string]any{"prds": out})
-			return
+		aliases := s.projectAliasMap()
+		var res *autonomous.ProjectAliasResolver
+		if len(aliases) > 0 {
+			res = autonomous.NewProjectAliasResolver(aliases)
 		}
-		writeJSONOK(w, map[string]any{"prds": list})
+		out := make([]any, len(list))
+		for i, raw := range list {
+			out[i] = raw
+			p, err := toPRD(raw)
+			if err != nil || p == nil {
+				continue
+			}
+			if len(aliases) > 0 {
+				out[i] = withProjectField(out[i], res.Resolve(p.ProjectProfile, p.ProjectDir))
+			}
+			out[i] = s.withPlanningFailure(out[i], p)
+		}
+		writeJSONOK(w, map[string]any{"prds": out})
 		return
 	}
 
@@ -160,6 +165,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		}
 		row := autonomous.BuildSummaryRow(prd)
 		row.Project = aliasRes.Resolve(prd.ProjectProfile, prd.ProjectDir)
+		row.PlanningFailure = s.planningFailureOf(prd)
 		fillTags(&row.SummaryView)
 		st := string(row.Status)
 		if len(statuses) > 0 && !statuses[st] &&

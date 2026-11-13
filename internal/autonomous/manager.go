@@ -1941,6 +1941,10 @@ type Manager struct {
 	decisionStore   *QuestionStore
 	decisionGateCfg func() config.AutonomousQuestionsConfig
 
+	// planningFailure holds the planning failure alert and question state
+	// (planning_failure.go); its zero value is ready to use.
+	planningFailure planningFailureState
+
 	// branchRefreshGitRunner replaces the production git runner of the
 	// between-task branch refresh (branch_refresh.go); nil uses git.
 	// Guarded by mu.
@@ -3344,6 +3348,9 @@ func (m *Manager) validateAndStorePlan(prd *PRD, prdID string, s []Story) (decom
 	// Release-version gate and verification-script scope gate: restored
 	// here from main (they were duplicated in both decompose twins, and the
 	// shared tail must enforce them for both paths).
+	// Self-correction: when the release-version gate is the only content
+	// failure, reword the fixed numbers instead of failing the plan.
+	m.tryCorrectReleaseVersions(prd, s)
 	if err := validateNoFixedReleaseVersion(s); err != nil {
 		if m.retryDecomposeFailure(prd, "content", "release-version-fixed", err.Error()) {
 			return decomposeAttemptRetry, nil

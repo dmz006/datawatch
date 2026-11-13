@@ -19945,9 +19945,73 @@ window._shippedKick = _shippedKick;
 // last_decompose_failure on a successful retry, so the line disappears with it.
 // The detail is free text from the LLM/validator, so it goes through escHtml.
 function renderPRDDecomposeFailure(prd) {
+  const pf = prd && prd.planning_failure;
+  if (pf && pf.reason) return renderPlanningFailure(prd, pf);
   const f = prd && prd.last_decompose_failure;
   if (!f || !f.detail) return '';
   return `<div class="prd-decompose-failure" style="margin-top:4px;font-size:11px;color:#ef4444;">${escHtml(t('decompose_last_failure') || 'Decompose failed: ')}${escHtml(f.detail)}</div>`;
+}
+
+// Planning failure block on the Automaton detail: the reason, the category,
+// the rule that tripped, the exact phrases and the retry counts against the
+// budget. Every string is escaped. The pending "Fix the wording and plan
+// again" question, when it exists, renders below through the open-question row.
+function renderPlanningFailure(prd, pf) {
+  const id = prd && prd.id ? prd.id : '';
+  const row = (labelKey, labelFallback, value) =>
+    `<div><span style="color:var(--text2);">${escHtml(t(labelKey) || labelFallback)}</span> ${value}</div>`;
+  const phrases = Array.isArray(pf.phrases) ? pf.phrases.filter(Boolean) : [];
+  const phraseHtml = phrases.map(p => `<code class="prd-planning-failure-phrase">${escHtml(p)}</code>`).join(' ');
+  const counts = pf.retry_counts && typeof pf.retry_counts === 'object' ? pf.retry_counts : {};
+  const countText = Object.keys(counts).sort().map(k => `${k}=${counts[k]}`).join(', ');
+  const used = counts[pf.category] || 0;
+  const retryText = `${used} / ${pf.retry_budget || 0}` + (countText ? ` (${countText})` : '')
+    + ' · ' + (pf.retryable ? (t('planning_failure_retryable') || 'Retryable') : (t('planning_failure_not_retryable') || 'Not retryable'));
+  const q = _planningFailureQuestionFor(id);
+  const qHtml = q && typeof _automationQuestionsRowHtml === 'function'
+    ? `<div class="prd-planning-failure-question" data-prd-id="${escHtml(id)}"><div style="color:var(--text2);margin-top:4px;">${escHtml(t('planning_failure_question_pending') || 'Question waiting: Fix the wording and plan again')}</div>${_automationQuestionsRowHtml(q)}</div>`
+    : `<div class="prd-planning-failure-question" data-prd-id="${escHtml(id)}"></div>`;
+  if (!q) _planningFailureQuestionLoad(id);
+  return `<div class="prd-decompose-failure prd-planning-failure" style="margin-top:4px;font-size:11px;color:#ef4444;">
+    <div style="font-weight:700;">${escHtml(t('planning_failure_title') || 'Planning failed')}</div>
+    ${row('planning_failure_reason', 'Reason:', escHtml(pf.reason))}
+    ${row('planning_failure_category', 'Category:', escHtml(pf.category || ''))}
+    ${row('planning_failure_source', 'Rule:', escHtml(pf.source || ''))}
+    ${phrases.length ? row('planning_failure_phrases', 'Phrases:', phraseHtml) : ''}
+    ${row('planning_failure_retry_counts', 'Retries:', escHtml(retryText))}
+    ${qHtml}
+  </div>`;
+}
+
+// Badge on an Automata list card for a draft whose planning failed.
+function renderPlanningFailureBadge(prd) {
+  const pf = prd && prd.planning_failure;
+  if (!pf || !pf.reason || (prd.status || 'draft') !== 'draft') return '';
+  return `<span class="planning-failure-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid #ef4444;" title="${escHtml(pf.reason)}">${escHtml(t('planning_failure_badge') || 'Planning failed')}</span>`;
+}
+
+// The open planning question per Automaton id, fetched from the ordinary
+// question list (asked_by planning, prd_id = the Automaton).
+window._planningQuestionByPrd = window._planningQuestionByPrd || {};
+window._planningQuestionLoading = window._planningQuestionLoading || {};
+function _planningFailureQuestionFor(prdId) {
+  return (window._planningQuestionByPrd || {})[prdId] || null;
+}
+function _planningFailureQuestionLoad(prdId) {
+  if (!prdId || typeof apiFetch !== 'function' || window._planningQuestionLoading[prdId]) return;
+  window._planningQuestionLoading[prdId] = true;
+  Promise.resolve().then(() => apiFetch('/api/questions?state=open&limit=50')).then(r => r && r.ok ? r.json() : null).then(body => {
+    const list = Array.isArray(body) ? body : (body && Array.isArray(body.questions) ? body.questions : []);
+    const q = list.find(x => x && x.asked_by === 'planning' && x.prd_id === prdId && (x.options || []).some(o => o && o.id === 'fix_wording'));
+    if (!q) return;
+    window._planningQuestionByPrd[prdId] = q;
+    if (typeof document === 'undefined' || !document.querySelectorAll || typeof _automationQuestionsRowHtml !== 'function') return;
+    document.querySelectorAll('.prd-planning-failure-question').forEach(el => {
+      if (el.getAttribute('data-prd-id') === prdId) {
+        el.innerHTML = `<div style="color:var(--text2);margin-top:4px;">${escHtml(t('planning_failure_question_pending') || 'Question waiting: Fix the wording and plan again')}</div>${_automationQuestionsRowHtml(q)}`;
+      }
+    });
+  }).catch(() => {}).then(() => { delete window._planningQuestionLoading[prdId]; });
 }
 
 // 2026-10-17 — plan review gate: PRD-card verdict panel + re-run button.
@@ -20198,7 +20262,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -21391,7 +21455,10 @@ function prdAction(id, action, method, body) {
     }).catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
     return;
   }
-  apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD(); })
+  apiFetch(url, opts).then(resp => {
+    if (action === 'request_revision') mountSpecCheck(renderSpecCheck(resp && resp.spec_check));
+    showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD();
+  })
     .catch(err => {
       const msg = String(err);
       // 2026-10-17 — plan review gate (mode=block): the Approve endpoint
@@ -21719,6 +21786,49 @@ function mountOverlapWarnings(html) {
   block.innerHTML = html;
   document.body.appendChild(block);
 }
+// Spec check: the findings the daemon returns on the create and revise
+// replies (spec_check). The block is a warning only; it never blocks the
+// create. Every label goes through t(); the phrase and the suggested
+// rewording are the daemon's own text.
+function renderSpecCheck(findings) {
+  if (!Array.isArray(findings) || !findings.length) return '';
+  const lines = findings.filter(f => f && f.phrase).map(f => {
+    const sevKey = f.severity === 'error' ? 'spec_check_severity_error' : 'spec_check_severity_warning';
+    return '<li style="margin-top:6px;">'
+      + '<strong>' + escHtml(t(sevKey)) + '</strong> '
+      + '<code>' + escHtml(f.phrase) + '</code> '
+      + '<span style="color:var(--text2);">[' + escHtml(f.rule || '') + ']</span>'
+      + '<div style="color:var(--text2);font-size:11px;">' + escHtml(t('spec_check_suggestion')) + ': ' + escHtml(f.suggestion || '') + '</div>'
+      + (f.correctable ? '<div style="color:var(--text2);font-size:11px;">' + escHtml(t('spec_check_fixable')) + '</div>' : '')
+      + '</li>';
+  });
+  if (!lines.length) return '';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+    + '<strong>' + escHtml(t('spec_check_title')) + '</strong>'
+    + '<button type="button" class="btn-secondary" aria-label="' + escHtml(t('action_close')) + '" onclick="closeSpecCheck()">&times;</button>'
+    + '</div><ul style="margin:4px 0 0 16px;padding:0;">' + lines.join('') + '</ul>';
+}
+// mountSpecCheck shows the rendered block, replacing any block already
+// shown. An empty html string only clears the old block.
+function mountSpecCheck(html) {
+  const old = document.getElementById('specCheckWarnings');
+  if (old) old.remove();
+  if (!html) return;
+  const block = document.createElement('div');
+  block.id = 'specCheckWarnings';
+  block.setAttribute('role', 'status');
+  block.style.cssText = 'position:fixed;left:16px;right:16px;top:16px;max-width:560px;margin:0 auto;'
+    + 'max-height:50vh;overflow:auto;padding:10px 12px;border:1px solid var(--warning,#d90);border-radius:6px;'
+    + 'background:var(--bg2,#fff);color:var(--text,#111);font-size:12px;z-index:10000;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+  block.innerHTML = html;
+  document.body.appendChild(block);
+}
+function closeSpecCheck() {
+  const block = document.getElementById('specCheckWarnings');
+  if (block) block.remove();
+}
+window.closeSpecCheck = closeSpecCheck;
+
 function closeOverlapWarnings() {
   const block = document.getElementById('overlapWarnings');
   if (block) block.remove();
@@ -21880,6 +21990,7 @@ function openPRDCreateModal(presetParentId) {
       }).then(prd => {
         createdPrdId = prd.id;
         mountOverlapWarnings(renderOverlapWarnings(prd.overlap_warnings));
+        mountSpecCheck(renderSpecCheck(prd.spec_check));
         // PRD-level LLM (backend/effort already in create payload — model
         // and any consolidation goes through set_llm so the audit trail
         // gets the full triple).
@@ -23697,6 +23808,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.housekeeping_repairs.task_chain', label: 'Task chain repairs', labelKey: 'settings_housekeeping_task_chain', helpKey: 'settings_housekeeping_task_chain_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.advance_judge', label: 'Judged Automaton advance repairs', labelKey: 'settings_housekeeping_advance_judge', helpKey: 'settings_housekeeping_advance_judge_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.housekeeping_repairs.planning', label: 'Planning repairs', labelKey: 'settings_housekeeping_planning', helpKey: 'settings_housekeeping_planning_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Platform context — the toggle and the project note. Reads GET /api/config and writes
     // through PUT /api/config (platform_context.enabled, platform_context.note).
@@ -31267,7 +31379,7 @@ function renderAutomataCard(prd, alsoInHtml) {
     statusHtml: (shippedChipHtml(prd) || statusPill(status)) + renderPrdPushState(prd),
     title: title,
     checkHtml: checkboxCell,
-    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
+    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
     backend: [prd.backend, prd.model].filter(Boolean).join(' · '),
     progress: counts,
     progressLabel: t('work_tile_progress', [counts.done, counts.total]),
@@ -33025,6 +33137,7 @@ function _wizardSubmit() {
     body: JSON.stringify(body),
   }).then(prd => {
     mountOverlapWarnings(renderOverlapWarnings(prd && prd.overlap_warnings));
+    mountSpecCheck(renderSpecCheck(prd && prd.spec_check));
     if (!prd || !prd.id) return prd;
     if (backend || effort || decompositionProfile) {
       const modelEl = document.getElementById('wizardModelField')?.querySelector('input,select');
@@ -37834,8 +37947,8 @@ function _automationUnlandedWorkLoader() {
 // housekeepingRepairsCardHtml(data) draws GET /api/autonomous/housekeeping-repairs:
 // { grace_seconds, groups: [{group, mode, would, did, failed, skipped_unsafe}] }.
 // Each group shows its mode, what it would do (report mode) and what it did.
-const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers'];
-const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers' };
+const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers', 'planning'];
+const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers', planning: 'housekeeping_repairs_group_planning' };
 const HOUSEKEEPING_MODE_LABELS = { off: 'housekeeping_repairs_mode_off', report: 'housekeeping_repairs_mode_report', on: 'housekeeping_repairs_mode_on' };
 function _housekeepingRecs(list) {
   return (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');

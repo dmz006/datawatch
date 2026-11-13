@@ -4074,7 +4074,7 @@ type AutonomousConfig struct {
 	AutoTags AutoTagsConfig `yaml:"auto_tags" json:"auto_tags"`
 
 	// HousekeepingRepairs — one off|report|on mode per repair group
-	// (task_chain, advance_judge, lane_fill, leftovers; default report) and
+	// (task_chain, advance_judge, lane_fill, leftovers, planning; default report) and
 	// the grace seconds. See housekeeping_repairs.go.
 	HousekeepingRepairs HousekeepingRepairsConfig `yaml:"housekeeping_repairs" json:"housekeeping_repairs"`
 

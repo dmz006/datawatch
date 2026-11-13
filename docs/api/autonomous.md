@@ -970,6 +970,34 @@ The decision log gains the kinds `rules_review_fix_failed`, `rules_review_retrie
 and `rules_review_auto_fix_disabled`, one for each of the three held actions. Show an
 unknown kind as plain text.
 
+### Planning failure (`planning_failure`)
+
+An Automaton whose last planning attempt failed carries a `planning_failure`
+object on `GET /api/autonomous/prds/{id}` (every `detail` level) and on every
+row of `GET /api/autonomous/prds` (the summary list and `?full=1`). The key is
+left out when the last planning attempt did not fail, so a draft with no
+stories is never explained only by an internal field.
+
+| Field | Meaning |
+|-------|---------|
+| `reason` | Plain-language reason planning failed |
+| `category` | Failure category (`scope`, `infra`, ...) |
+| `source` | The rule that tripped (for example `release-version-fixed`) |
+| `phrases` | The exact phrases that tripped the rule (omitted when none) |
+| `retryable` | `true` when planning will be tried again by itself |
+| `retry_counts` | Retries used so far, per category (omitted when none) |
+| `retry_budget` | Retries allowed for this failure's category |
+| `occurred_at` | When the failure was recorded |
+
+The same object is returned by the MCP tools `autonomous_prd_get` and
+`autonomous_prd_list`. The CLI `autonomous prd-get` prints a "Planning failed"
+section and `autonomous prd-list` adds one `planning failed:` line per
+affected Automaton. The chat verbs `autonomous get` and `autonomous list` add a
+one-line failure with the reason and the phrases. The PWA shows the same fields
+on the Automaton detail and a "Planning failed" badge on the Automata list card
+of a draft; when the "Fix the wording and plan again" question is waiting, the
+detail shows it with the ordinary question row.
+
 ### Automata list (`GET /api/autonomous/prds`)
 
 The default reply is a summary list, not whole records: each row carries ids,
@@ -2292,6 +2320,29 @@ Give a `title`, a `spec`, or both. The warnings come back best match first, at m
 `kind` is one of `automaton`, `registry`, `branch` or `unavailable`. `id` and `status` are set on the `automaton` kind, `row` on `registry`, and `branch` on `branch`. `unavailable` means one of the three places could not be read, so it was not checked. `threshold` is the match threshold in force and `mode` the search-before-create mode in force (`off`, `shadow` or `on`). The route is a read: it writes nothing, works in every mode, and a search that fails answers 500 rather than an empty list.
 
 The create route, `POST /api/autonomous/prds`, runs the same finder after it stores the Automaton, so a failed search never stops a create. In `on` mode its reply carries `overlap_warnings`, an empty list when nothing matches. In `shadow` mode it writes one `automaton_create_search` audit entry and the reply has no such field. In `off` mode it searches nothing.
+
+### Spec check on create and revise
+
+`POST /api/autonomous/prds` and `POST /api/autonomous/prds/{id}/request_revision` both lint the Automaton's spec text and return the findings in a top-level `spec_check` array on the reply. The array is always present and is empty when the spec is clean. A finding never blocks the create or the revision. On a revision the daemon lints the stored spec together with the revision note.
+
+```json
+{
+  "id": "ab12cd34",
+  "spec_check": [
+    {
+      "rule": "names_tracker_id",
+      "phrase": "BL123",
+      "severity": "warning",
+      "correctable": true,
+      "suggestion": "remove 'BL123' and describe the work itself instead of naming a tracking item by id"
+    }
+  ]
+}
+```
+
+`rule` is one of `release-version-fixed`, `names_tracker_id`, `system-binary-path`, `private-address` or `worktree-path`. `phrase` is the exact text found. `severity` is `warning` when the planner would copy the phrase into a task title and the daemon can fix the wording itself (`correctable` is true), and `error` when the operator or planner has to reword it. `suggestion` is the rewording.
+
+Every surface renders the findings with one shared formatter, one line per finding: the severity, the rule, the exact phrase and the suggested rewording. The CLI (`datawatch autonomous prd-create`, `prd-request-revision`) prints `spec check:` lines after the reply. The MCP tools `autonomous_prd_create` and `autonomous_prd_request_revision` return the JSON reply and, when there are findings, a second text item with the lines. The comm verbs `autonomous create` and `autonomous request-revision` append a `Spec check:` block to the reply. The web create and revise forms show a warning block. The `automation_create` and `automation_update` tools take no spec text, so they carry no `spec_check`.
 
 Surfaces: the REST route above; the MCP tool `autonomous_overlap_search` (`title`, `spec`, `limit`, proxying the route); the CLI `datawatch autonomous overlap [spec] [--title T] [--spec S] [--json]`; and the comm verb `autonomous overlap <text>`, where the text is the spec. The CLI and the comm verb render the warnings with the same text; the REST route and the MCP tool return the JSON object.
 

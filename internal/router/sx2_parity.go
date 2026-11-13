@@ -681,7 +681,11 @@ func (r *Router) handleAutonomousListVerb(args []string) {
 		r.reply("autonomous list failed", err.Error())
 		return
 	}
-	r.reply("autonomous list", prettyJSON(out))
+	reply := prettyJSON(out)
+	if lines := autonomous.PlanningFailureListLines([]byte(out)); len(lines) > 0 {
+		reply += "\n" + strings.Join(lines, "\n")
+	}
+	r.reply("autonomous list", reply)
 }
 
 func (r *Router) handleAutonomous(cmd Command) {
@@ -823,6 +827,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		reply := prettyJSON(out)
+		if line := autonomous.PlanningFailureOneLine(autonomous.PlanningFailureFromBody([]byte(out))); line != "" {
+			reply += "\n" + line
+		}
 		if lines := rulesReviewOutcomeLines([]byte(out)); len(lines) > 0 {
 			reply += "\n" + strings.Join(lines, "\n")
 		}
@@ -991,7 +998,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous request-revision failed", err.Error())
 			return
 		}
-		r.reply("autonomous request-revision", prettyJSON(out))
+		r.reply("autonomous request-revision", prettyJSON(out)+specCheckChatText(out))
 	case "edit-task", "edit_task":
 		const editTaskUsage = "usage: autonomous edit-task <prd-id> <task-id> [read_only=true|false] [report_path=<path>] [<new-spec…>]"
 		if len(args) < 4 {
@@ -1399,7 +1406,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous create failed", err.Error())
 			return
 		}
-		r.reply("autonomous create", prettyJSON(out))
+		r.reply("autonomous create", prettyJSON(out)+specCheckChatText(out))
 	// BL221 (v6.2.0) Phase 3 — scan commands
 	case "scan":
 		if len(args) < 2 {
@@ -2127,4 +2134,13 @@ tokens:
 		args = args[1:]
 	}
 	return args, ro, reportPath, nil
+}
+
+// specCheckChatText is the spec-check findings of a create or revise reply
+// as plain chat text, set after a blank line; "" when the spec is clean.
+func specCheckChatText(reply string) string {
+	if block := autonomous.SpecCheckBlockFromReply([]byte(reply)); block != "" {
+		return "\n\n" + block
+	}
+	return ""
 }

@@ -849,6 +849,12 @@ func (a *API) TasksForSelection(prd *PRD, sel ObjectTagSelection) TasksView {
 	return FilterTasksView(BuildTasksView(prd), sel)
 }
 
+// PlanningFailureView returns the planning failure of prd for the read
+// surfaces, or nil when the last planning attempt did not fail.
+func (a *API) PlanningFailureView(prd *PRD) *PlanningFailure {
+	return a.M.PlanningFailureView(prd)
+}
+
 func (a *API) ListPRDs() []any {
 	return a.M.PRDsWithNotifyEffective(a.M.Store().ListPRDs())
 }
@@ -1523,6 +1529,11 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	// The answer to a branch refresh conflict question sets the Automaton's
 	// refresh state (branch_refresh_question.go).
 	if a.M.onBranchRefreshAnswer(c) {
+		return
+	}
+	// The answer to a planning failure question rewords the spec and plans
+	// again, or leaves it (planning_failure.go).
+	if a.M.onPlanningFailureAnswer(c) {
 		return
 	}
 	if a.resolveInfraHoldAnswer(c) {

@@ -9933,6 +9933,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
 		case "autonomous.housekeeping_repairs.task_chain", "autonomous.housekeeping_repairs.advance_judge",
 			"autonomous.housekeeping_repairs.lane_fill", "autonomous.housekeeping_repairs.leftovers",
+			"autonomous.housekeeping_repairs.planning",
 			"autonomous.housekeeping_repairs.grace_seconds":
 			// Validated in handlePutConfig before this runs. The Repairer reads
 			// the block live through its Settings hook, so no restart is needed.

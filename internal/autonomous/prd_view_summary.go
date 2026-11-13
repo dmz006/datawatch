@@ -27,6 +27,10 @@ type SummaryView struct {
 	// CIWatch is copied unchanged from the PRD. It is small, and it is the
 	// automaton's own record of whether CI passed for its pushed commit.
 	CIWatch *CIWatchResult `json:"ci_watch,omitempty"`
+	// PlanningFailure is the planning failure view (PlanningFailureView),
+	// filled by the server on read and never stored; nil when the last
+	// planning attempt did not fail.
+	PlanningFailure *PlanningFailure `json:"planning_failure,omitempty"`
 	// PushState / PushWarning surface the PRD's push outcome even in the
 	// trimmed summary view, so list reads and the MCP default detail
 	// ("summary") show pushed / not pushed state without a full fetch.

@@ -859,11 +859,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// Search-before-create: a read-only check on the stored Automaton.
 			// Only on mode adds to the reply; every other case writes the reply
 			// as it always has.
+			// The spec check lints the stored spec and rides on the reply;
+			// it never blocks the create.
+			createExtra := map[string]any{"spec_check": autonomous.SpecCheckFindings(req.Spec)}
 			if warnings := s.createSearchAfterStore(r, prd, prdID); warnings != nil {
-				s.writeCreateReplyWithWarnings(w, r, prd, warnings)
-				return
+				createExtra["overlap_warnings"] = warnings
 			}
-			s.writeAutonomousResult(w, r, prd, "", "", "")
+			s.writeReplyWithFields(w, r, prd, createExtra)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -1368,7 +1370,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "request_revision", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
-		s.writeAutonomousResult(w, r, updated, "", "", "")
+		s.writeReplyWithFields(w, r, updated, map[string]any{"spec_check": autonomous.SpecCheckFindings(prdSpecText(updated) + "\n" + req.Note)})
 	case "edit_task":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
