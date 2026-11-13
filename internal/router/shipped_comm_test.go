@@ -124,7 +124,7 @@ func TestShippedComm_ShippedCounts(t *testing.T) {
 
 // TestShippedComm_ListShippedSelection: the list verb forwards a shipped
 // selection (and a status bucket that may include shipped) to the daemon as
-// query parameters; with no selection it reads the full list. A shipped
+// query parameters; with no selection it reads the summary list. A shipped
 // value that is neither true nor false is refused before anything is sent.
 func TestShippedComm_ListShippedSelection(t *testing.T) {
 	var uris []string
@@ -151,7 +151,7 @@ func TestShippedComm_ListShippedSelection(t *testing.T) {
 	if out := joinReplies(r.HandleTestMessage("autonomous list")); !strings.Contains(out, "autonomous list") {
 		t.Fatalf("no-filter reply: %q", out)
 	}
-	if want := []string{"/api/autonomous/prds?shipped=true", "/api/autonomous/prds?shipped=false", "/api/autonomous/prds?status=shipped", "/api/autonomous/prds?full=1"}; len(uris) != len(want) {
+	if want := []string{"/api/autonomous/prds?shipped=true", "/api/autonomous/prds?shipped=false", "/api/autonomous/prds?status=shipped", "/api/autonomous/prds"}; len(uris) != len(want) {
 		t.Fatalf("daemon requests = %v; want %v", uris, want)
 	} else {
 		for i := range want {
@@ -168,5 +168,31 @@ func TestShippedComm_ListShippedSelection(t *testing.T) {
 	}
 	if len(uris) != before {
 		t.Errorf("bogus shipped made %d extra daemon call(s); want 0", len(uris)-before)
+	}
+}
+
+// TestAutonomousListFull_CommVerbSummary: the list verb never sends full (chat
+// must not receive whole records) and forwards limit and cursor; a bad limit
+// is refused before anything is sent.
+func TestAutonomousListFull_CommVerbSummary(t *testing.T) {
+	var uris []string
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		uris = append(uris, r.URL.RequestURI())
+		_, _ = w.Write([]byte(`{"prds":[],"total":0}`))
+	}
+	_, port := newFakePeerParent(t, handler)
+	r := setupRetryRouter(t, port)
+
+	joinReplies(r.HandleTestMessage("autonomous list"))
+	joinReplies(r.HandleTestMessage("autonomous list limit=5 cursor=abc full=true"))
+	if len(uris) != 1 || uris[0] != "/api/autonomous/prds" {
+		t.Fatalf("requests = %v; want one bare summary list (full=true is not a verb argument)", uris)
+	}
+	joinReplies(r.HandleTestMessage("autonomous list limit=5 cursor=abc"))
+	if len(uris) != 2 || uris[1] != "/api/autonomous/prds?cursor=abc&limit=5" {
+		t.Fatalf("requests = %v; want paged summary list", uris)
+	}
+	if out := joinReplies(r.HandleTestMessage("autonomous list limit=0")); !strings.Contains(out, "usage") || len(uris) != 2 {
+		t.Errorf("limit=0 should print usage and send nothing, got %q (%d requests)", out, len(uris))
 	}
 }

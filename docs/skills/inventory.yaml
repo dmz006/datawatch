@@ -428,6 +428,7 @@ entries:
   - autonomous_prd_set_verification_llm
   - autonomous_prd_set_verifier_policy
   - autonomous_prd_set_worker_profile
+  - autonomous_prd_tasks
   - autonomous_scan_config_get
   - autonomous_scan_config_set
   - autonomous_shipped_backfill
