@@ -115,8 +115,15 @@ Everything you need to find sessions sits in one row at the top of the page:
 - **Filters button** — opens the Filters sheet (below). A badge on the
   button shows how many filters are active, so you can tell at a glance that
   the list is narrowed even with the sheet closed.
-- **Server chips** — one chip per server; tap a chip to include or leave out
-  that server's sessions.
+- **Server chips** — the server picker: a chip for **All**, a chip for
+  **this server** (its real hostname once known), and a chip per configured
+  federated server. It is single-select — tap one to read *that* server's
+  sessions (the page reconnects and a toast confirms the switch), or
+  **All** to read the local and federated sessions together. It chooses
+  which server the page reads from; it is not one of the sheet's filters.
+  A federated chip whose host is currently unreachable is dimmed with a
+  ⚠ — still tappable, since tapping is what surfaces the real
+  connection result.
 - **List / Tiles / Compact** — the mode toggle, described next.
 
 ### The Filters sheet
@@ -139,13 +146,23 @@ often than search:
   which are a second multi-select set over the backend families present
   in the list with the same toggle-off and **All** behaviour; the two
   groups apply together (a session must match a picked state *and* a
-  picked backend), and the **Backend** group never touches the free-text
-  search box. When you use tags, the section also carries the **Tags**
+  picked backend). The **Backend** group appears only when two or more
+  backend families are present in the list, and it never touches the
+  free-text search box. When you use tags, the section also carries the
+  **Tags**
   filter (described next).
 
 Close the sheet by tapping outside it, by pressing its close button, or by
 pressing **Escape**. Your choices apply as you make them, so closing needs no
 separate save.
+
+While the sheet is open it is never redrawn out from under you: a list
+refresh (timer or live) updates the session list behind the sheet and
+patches only the numbers and options inside the sheet — the same controls,
+with their values, focus and scroll position kept. While a sheet control is
+engaged — an open dropdown or a search box you are typing in — even that
+in-place patch waits, then runs once when the control is released; the tag
+search boxes in particular keep focus and cursor as you type.
 
 #### The Tags filter
 
@@ -652,6 +669,7 @@ in your tag registry.
 | Control | Where | Per-device? | Notes |
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
+| Server picker (All / this server / each federated peer) | PWA toolbar chips | no — page-wide, not per device; defaults to the local server on load | single-select: chooses which server's sessions the page reads; **All** aggregates local + federated; not one of the sheet's filters |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
 | View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
