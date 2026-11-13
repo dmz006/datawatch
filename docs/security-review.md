@@ -123,7 +123,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**103 suppressed container CVEs across 8 images, 40 independently traced.**
+**104 suppressed container CVEs across 8 images, 40 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
@@ -133,6 +133,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2025-69534 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-69720 | `ncurses (libncursesw6, libtinfo6, ncurses-base)` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-7458 | `libsqlite3-0` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-105437 | `git` | high | agent-base | no | 2026-12-13 | The Trivy scan of agent-base in the Release workflow lists CVE-2026-105437 (HIGH... |
 | CVE-2026-106553 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-106555 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-106583 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |

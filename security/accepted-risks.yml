@@ -4269,3 +4269,20 @@ entries:
     expires: "2026-12-11"
     validated_by: "claude-session"
     reason: "The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-71200 (HIGH) on libgssapi-krb5-2, libk5crypto3, libkrb5-3 and libkrb5support0 1.20.1-2+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-11) lists bookworm, trixie and sid as vulnerable with no fixed package; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+
+  - id: cve/CVE-2026-105437
+    kind: container
+    package: "git"
+    version: "1:2.39.5-0+deb12u3"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "CVE-2026-105437 is a heap buffer overflow in git's three-way merge code (xdiff): an oversized conflict-marker-size value from a repository's attributes makes a 32-bit size total wrap, so a merge that hits a conflict can write past a too-small buffer. It needs git to run a merge on a repository the attacker controls. NOT traced inside a built image (no docker run was done). From reading the source: the agent-base Dockerfile installs git (plus git-lfs) from apt as a dependency of the agent tooling, and also uses git only at build time to clone the pinned cli/cli tag in the ghbuilder stage. Code in internal/agents/worker_clone.go, which runs in the worker, only clones, runs rev-parse and pushes; none of those run xdiff merges. The only git merge calls found in the repo (internal/autonomous/task_merge.go) are made by the datawatch daemon on the operator's own task worktree branches, not by a process inside agent-base. Not ruled out: an agent running inside the container (an LLM coding session) could run git merge, pull or rebase in the checked-out project repository, whose content the operator chose to clone; that is why reachable is unknown rather than no."
+    first_added: "2026-11-13"
+    added: "2026-11-13"
+    expires: "2026-12-13"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the Release workflow lists CVE-2026-105437 (HIGH) on git 1:2.39.5-0+deb12u3 as affected with no fixed version; the Debian security tracker (read 2026-11-13) lists bookworm (deb12u3 and bookworm-security deb12u2), trixie and sid as vulnerable with no fixed version (sid source is unfixed); untraced so the 30-day cap applies; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
