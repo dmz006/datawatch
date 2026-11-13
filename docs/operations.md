@@ -3202,6 +3202,60 @@ fallback ends in exactly one space on purpose — it closes the session's
 `@` completion so one Enter sends; confirm nothing downstream compares the
 typed session input byte for byte before deciding to send.
 
+### Message submission to a session (paste wait and Enter retry)
+
+Every text sent into a tmux-backed session (the PWA input bar and image
+send, `POST /api/sessions/send`, the MCP `send_input` tool, `datawatch
+session send`, and comm channel `send`) ends with the same delivery
+sequence, so a message that Claude Code folds into a `[Pasted text #N +M
+lines]` placeholder is submitted instead of being left unsent in the input
+box:
+
+1. The text is typed literally (chunked above the tmux argument limit),
+   then the daemon waits `session.schedule_settle_ms` (default 200 ms,
+   scaled up for many chunks).
+2. The daemon polls the visible pane every 50 ms, for at most 1.5 s, until
+   the paste placeholder or the last 24 characters of the last line show up
+   near the input prompt. On timeout, or if the pane cannot be read, it
+   goes on to Enter anyway.
+3. One Enter is sent.
+4. For input that showed a placeholder, contains a newline, or is longer
+   than 200 bytes, the daemon re-reads the pane 400 ms later. If the
+   placeholder or the text is still in the last six non-empty lines on a
+   prompt line and no assistant output follows it, it sends another Enter,
+   at most two more. It never sends an Enter once the placeholder is gone
+   or the assistant is active.
+
+Short single-line input without a placeholder gets one Enter and no
+re-check. An empty payload is a bare Enter with no polling.
+
+What to know when operating it:
+
+- **No new configuration.** The 1.5 s wait, the 50 ms poll, the 400 ms
+  re-check, the two-retry cap and the 24-character tail are fixed
+  constants in `internal/session/paste_submit.go`, not config keys. The
+  only tunable is `session.schedule_settle_ms`, unchanged.
+- **A send that exhausts its retries still reports success.** The text did
+  reach the terminal, so `SendInput` returns no error and the input count
+  still increments; the message simply remains in the input box. The
+  daemon does not alert on this. This is different from a task-prompt
+  delivery, which has its own bounded wait for assistant activity and
+  fails with "prompt not submitted" (see `task_delivery_window_seconds` and
+  `task_delivery_attempts`).
+- **Detection is text-based.** Retrying relies on the placeholder text
+  (`[Pasted text #`), the ❯ prompt or the input-box frame in the captured
+  pane. A TUI that renders its input differently gets the single Enter
+  after the 1.5 s wait and no retry.
+- **Chat-mode ollama sessions are untouched.** Their input goes through the
+  daemon's own conversation manager, not tmux, so none of this applies.
+- **Cost.** A long or pasted send holds the sending goroutine for up to
+  about 1.5 s plus 0.8 s of re-checks (two pane re-reads at most after the
+  first Enter), on top of the settle delay.
+
+See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#5h-how-a-sent-message-is-submitted)
+for the operator-facing description and what to do when a message is still
+unsent.
+
 ### Browser Auto-Refresh
 
 When the daemon is updated and restarted, connected browsers automatically reload to
