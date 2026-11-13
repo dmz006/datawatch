@@ -158,6 +158,12 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/plans/{ref}/tasks` | — | Not in MCP | a plan's tasks, read when the plan is expanded; paged |
 | `GET /api/plan-records/browse` | — | Not in MCP | all registry rows and findings with plan and Automaton links; `q`, `kind`, `state`, `project`; paged |
 | `GET /api/projects/{name}/arcs` | — | Not in MCP | deprecated alias of the roll-up arcs, with plans added |
+| `POST /api/plans` | `plan_create` | Complete | body `{project, title, goal?}`; the plan goes last in the plan order; a taken title is 409 |
+| `PUT /api/plans/order` | `plan_reorder` | Complete | body `{plans[]}`; the listed plans take positions 1 to n, the rest follow in their old order; a missing or repeated plan fails the whole call |
+| `PUT /api/plans/{ref}/automata/order` | `plan_reorder_automata` | Complete | body `{automata[]}` naming every Automaton of the plan once; the answer is the run view whose next marker skips blocked and held Automata |
+| `POST /api/plans/{ref}/attach` | `plan_attach` | Complete | body `{kind: automaton\|automation\|finding, id}`; the id is checked first (404 when unknown); an item linked or attached elsewhere is 409 naming the holder |
+| `POST /api/plans/{ref}/detach` | `plan_detach` | Complete | same body; the item must belong to the plan in the path, else 409 naming the plan it is in |
+| `PUT /api/projects/{name}/arcs` | `project_set_arcs` | Complete | deprecated alias kept for the arcs list; plans replace arcs |
 | `POST /api/plans/migrate` | `plan_migrate` | Complete | previews unless `apply` is `true`; builds plans from project arcs and registry rows; never changes an existing plan or link |
 | `GET /api/autonomous/tags/registry` | — | Not in MCP | Keeper-to-peer protocol route that serves the keeper's snapshot to peers. Not an operator action; the status tool shows this daemon's registry object instead |
 | `POST /api/autonomous/tags/registry/write` | — | Not in MCP | Keeper-to-peer protocol route that applies one forwarded tag write on the keeper. Not an operator action; peers call it, operators use the tag routes on the peer |

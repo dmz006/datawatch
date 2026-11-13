@@ -563,7 +563,7 @@ func (s *Server) handleProjectTimeline(_ context.Context, req mcpsdk.CallToolReq
 func (s *Server) toolProjectSetArcs() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_set_arcs",
 		mcpsdk.WithDescription(
-			"Replace a project's ordered arc list. The array order is the arc order. Each arc is {automation_id, priority?, state? (planned|active|done)}. Sending [] clears the list. Returns the project record."),
+			"Deprecated alias: plans replace arcs, so prefer plan_create, plan_attach and plan_reorder. Replace a project's ordered arc list. The array order is the arc order. Each arc is {automation_id, priority?, state? (planned|active|done)}. Sending [] clears the list. Returns the project record."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
 		mcpsdk.WithArray("arcs",
 			mcpsdk.Required(),

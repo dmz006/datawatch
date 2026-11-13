@@ -2445,6 +2445,191 @@ paths:
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Plan records are turned off}
         "503": {description: Plan records are not available}
+  /api/plans:
+    post:
+      summary: Create a plan
+      description: |
+        Creates a plan in a registered project. The plan goes last in the plan order.
+        The title must be unique within the project; a taken title answers 409 with
+        the plan that holds it. Needs the autonomous write capability when called by
+        a federated peer.
+      operationId: planCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, title]
+              properties:
+                project: {type: string, description: A registered project alias}
+                title: {type: string}
+                goal: {type: string}
+                state: {type: string}
+      responses:
+        "201":
+          description: The stored plan, title first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+        "400": {description: Missing title, unknown project or invalid state}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "409": {description: The title is already used in the project}
+        "503": {description: Plan records are not available}
+  /api/plans/order:
+    put:
+      summary: Set the plan priority order
+      description: |
+        The plans listed take positions 1 to n in the order given; every other plan
+        keeps its relative order after them. A plan that does not exist or is listed
+        twice fails the whole call and nothing changes. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: plansOrder
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plans]
+              properties:
+                plans: {type: array, items: {type: string}, description: Plan ids or titles, first plan first}
+      responses:
+        "200":
+          description: The plans in their new order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plans: {type: array, items: {type: object}}
+        "400": {description: Empty list, or a plan listed twice}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: A listed plan does not exist, or plan records are turned off}
+        "409": {description: A reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/automata/order:
+    put:
+      summary: Set the order of a plan's Automata
+      description: |
+        The body lists every Automaton linked to the plan exactly once, first to run
+        first. The answer is the plan's run view: the Automata in run order and the
+        `next` marker, which skips blocked and held Automata. Needs the autonomous
+        write capability when called by a federated peer.
+      operationId: planAutomataOrder
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [automata]
+              properties:
+                automata: {type: array, items: {type: string}}
+      responses:
+        "200":
+          description: The plan's run view after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  progress: {type: object}
+                  next: {type: object, nullable: true}
+                  automata: {type: array, items: {type: object}}
+        "400": {description: The list is not every Automaton of the plan once}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/attach:
+    post:
+      summary: Attach an Automaton, an Automation or a finding to a plan
+      description: |
+        `kind` is `automaton`, `automation` or `finding`. An Automaton or Automation
+        id must exist; an unknown one answers 404. It joins the end of the plan's
+        order. An item already linked to a different plan, or a finding already
+        attached elsewhere, answers 409 naming the holder and nothing changes: detach
+        it first. Attaching the same item to the same plan again changes nothing.
+        Needs the autonomous write capability when called by a federated peer.
+      operationId: planAttach
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, id]
+              properties:
+                kind: {type: string, enum: [automaton, automation, finding]}
+                id: {type: string}
+      responses:
+        "200":
+          description: What was attached and the plan (or finding) after the change
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Bad kind or missing id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, Automaton, Automation or finding}
+        "409": {description: The item is linked or attached elsewhere (the answer names the holder), or the reference is ambiguous}
+        "503": {description: Plan records are not available, or the Automata manager is not available to check the id}
+  /api/plans/{ref}/detach:
+    post:
+      summary: Detach an Automaton, an Automation or a finding from a plan
+      description: |
+        The item must be linked to the plan named in the path. One linked to another
+        plan answers 409 naming that plan, so a detach never reaches into a different
+        plan. An item that is not linked answers 404. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: planDetach
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, id]
+              properties:
+                kind: {type: string, enum: [automaton, automation, finding]}
+                id: {type: string}
+      responses:
+        "200":
+          description: What was detached and the plan (or finding) after the change
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Bad kind or missing id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or the item is not linked}
+        "409": {description: The item belongs to a different plan, or the reference is ambiguous}
+        "503": {description: Plan records are not available}
   /api/autonomous/decision-records:
     post:
       summary: Create a decision record
