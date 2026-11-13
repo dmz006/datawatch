@@ -136,18 +136,6 @@ func (m *Manager) projectGateCommand(prd *PRD) string {
 	return strings.TrimSpace(m.Config().ProjectGateCommand)
 }
 
-// storyOfTask returns the story that holds t, or nil.
-func storyOfTask(prd *PRD, t *Task) *Story {
-	for i := range prd.Story {
-		for j := range prd.Story[i].Tasks {
-			if prd.Story[i].Tasks[j].ID == t.ID {
-				return &prd.Story[i]
-			}
-		}
-	}
-	return nil
-}
-
 // finishScriptGateTask writes the report (when there is one), records the
 // decision, sets the task's final status, saves it and emits its status.
 func (m *Manager) finishScriptGateTask(prd *PRD, t *Task, report, note, failReason string, passed bool) {
