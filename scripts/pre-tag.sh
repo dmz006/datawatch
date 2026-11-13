@@ -4,6 +4,8 @@
 # Usage:  scripts/pre-tag.sh          (or: make pre-tag)
 #   PRE_TAG_DRY_RUN=1      print every step id in order, run nothing, write no record
 #   PRE_TAG_RECORD_FILE=p  record file (default .datawatch/pre-tag-record)
+#   PRE_TAG_ONLY=a,b       run only the listed step ids (others are not run, not skipped)
+#   PRE_TAG_SLOW_TIMEOUT=s hard timeout in seconds for each slow-opt-in command (default 21600)
 #
 # Each step prints "[step-id] ..." and its elapsed seconds. A step whose tool is
 # missing prints "SKIP [step-id]: <tool> not found" and does not fail.
@@ -56,29 +58,147 @@ s_trivy_single() {
   bash scripts/check-trivy-version-single.sh && bash scripts/tests/check-trivy-version-single_test.sh
 }
 s_certifi() { bash scripts/check-dockerfile-certifi.sh && bash scripts/check-dockerfile-certifi.sh --self-test; }
-s_accepted_risks() { python3 scripts/check_accepted_risks.py; }
+s_accepted_risks() {
+  # CI passes --base <PR base sha>; locally the base is the last tag (none: no --base).
+  local tag
+  if tag="$(git describe --tags --abbrev=0 2>/dev/null)" && [ -n "$tag" ]; then
+    python3 scripts/check_accepted_risks.py --base "$tag"
+  else
+    python3 scripts/check_accepted_risks.py
+  fi
+}
 s_trivyignore_regen() {
   python3 scripts/gen_trivyignore.py || return 1
   git diff --exit-code .trivyignore docs/security-review.md
 }
-# Stubbed to the skip path in this task; the next task completes them.
-s_govulncheck() { return 99; }
-s_gosec() { return 99; }
-s_gitleaks() { return 99; }
-s_goreleaser_snapshot() { return 99; }
+# Security / release-build steps mirror the CI invocations exactly:
+#   govulncheck, gosec (+ .gosec-exclude, .gosec-baseline.json): .github/workflows/security-scan.yaml
+#   gitleaks: .github/workflows/secret-scan.yaml
+#   goreleaser snapshot: Makefile release-snapshot (release.yaml runs the real release)
+s_govulncheck() { govulncheck ./...; }
+s_gosec() {
+  local out rc
+  out="$(mktemp)" || return 1
+  local exclude
+  exclude="$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')"
+  gosec -exclude="$exclude" -exclude-dir=.claude -severity=high -confidence=medium \
+    -fmt=json -quiet ./... > "$out"
+  rc=$?
+  if [ ! -s "$out" ] || ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$out" 2>/dev/null; then
+    echo "gosec itself failed to produce valid JSON output (exit code $rc)"
+    cat "$out"; rm -f "$out"; return 1
+  fi
+  python3 - "$out" <<'PY'
+import json, sys
+from collections import Counter
+live = json.load(open(sys.argv[1]))
+base = json.load(open(".gosec-baseline.json"))
+live_issues = live.get("Issues", [])
+live_n = len(live_issues)
+base_n = base["total"]
+live_by = Counter(i["rule_id"] for i in live_issues)
+base_by = base.get("by_rule", {})
+print(f"gosec: live={live_n}  baseline={base_n}")
+for rule in sorted(set(live_by) | set(base_by)):
+    l = live_by.get(rule, 0)
+    b = base_by.get(rule, 0)
+    flag = "" if l == b else (f"  (+{l-b})" if l > b else f"  (-{b-l})")
+    print(f"  {rule:6s}  live={l:3d}  baseline={b:3d}{flag}")
+if live_n > base_n:
+    print(f"gosec: {live_n - base_n} net-new findings exceed baseline {base_n}")
+    sys.exit(1)
+if live_n < base_n:
+    print(f"gosec: live count {live_n} below baseline {base_n}; consider lowering the baseline")
+PY
+  rc=$?
+  rm -f "$out"
+  return $rc
+}
+s_gitleaks() { gitleaks detect --source . --redact --exit-code 1; }
+s_goreleaser_snapshot() { goreleaser release --snapshot --clean; }
+
+# ---- slow-opt-in -------------------------------------------------------------
+# Every command here is niced, capped at max(1, nproc/4) workers, hard-timed-out,
+# and killed by the EXIT/INT/TERM trap if this script goes away.
+SLOW_PIDS=()
+kill_slow() {
+  local p
+  for p in "${SLOW_PIDS[@]:-}"; do
+    [ -n "$p" ] || continue
+    pkill -TERM -P "$p" 2>/dev/null
+    kill -TERM "$p" 2>/dev/null
+  done
+  SLOW_PIDS=()
+}
+slow_workers() {
+  local n
+  n="$(( $(nproc 2>/dev/null || echo 4) / 4 ))"
+  [ "$n" -ge 1 ] || n=1
+  echo "$n"
+}
+# slow_run <cmd...>: run niced + capped + timed out, wait, return its status.
+slow_run() {
+  local w t rc
+  w="$(slow_workers)"
+  t="${PRE_TAG_SLOW_TIMEOUT:-21600}"
+  GOMAXPROCS="$w" GOFLAGS="-p=$w" MAKEFLAGS="-j$w" \
+    nice -n 19 timeout -k 30 "$t" "$@" &
+  SLOW_PIDS+=("$!")
+  wait "$!"
+  rc=$?
+  SLOW_PIDS=()
+  return $rc
+}
 s_slow_opt_in() {
   local rc=0 t
-  for t in test-tmp-guard test-cross-build perf-rollup-check; do
-    if grep -qE "^${t}:" Makefile 2>/dev/null; then
-      echo "[slow-opt-in] make $t"; make "$t" || rc=1
-    fi
+  for t in test-tmp-guard test-cross-build; do
+    echo "[slow-opt-in] make $t"
+    slow_run make "$t" || rc=1
   done
+  if grep -qE '^perf-rollup-check:' Makefile 2>/dev/null; then
+    echo "[slow-opt-in] make perf-rollup-check"
+    slow_run make perf-rollup-check || rc=1
+  elif [ -f scripts/perf-rollup-check.sh ]; then
+    echo "[slow-opt-in] scripts/perf-rollup-check.sh"
+    slow_run bash scripts/perf-rollup-check.sh || rc=1
+  else
+    echo "[slow-opt-in] perf-rollup-check: no target or script, not run"
+  fi
   for t in scripts/check-no-busy-loop.sh scripts/check-busy-loop-pattern.sh; do
-    [ -f "$t" ] && { echo "[slow-opt-in] $t"; bash "$t" || rc=1; }
+    if [ -f "$t" ]; then
+      echo "[slow-opt-in] $t"
+      slow_run bash "$t" || rc=1
+    fi
   done
   return $rc
 }
-s_docker_agent_base() { return 99; }
+
+# ---- docker-agent-base -------------------------------------------------------
+# Only when a Dockerfile, the container workflow or security/accepted-risks.yml
+# differs from the last tag (always when no tag exists). Returns 98 after
+# printing its own SKIP line when nothing changed.
+s_docker_agent_base() {
+  local tag changed
+  if tag="$(git describe --tags --abbrev=0 2>/dev/null)" && [ -n "$tag" ]; then
+    changed="$(git diff --name-only "$tag" -- ':(glob)**/Dockerfile*' \
+      .github/workflows/containers.yaml security/accepted-risks.yml)"
+    if [ -z "$changed" ]; then
+      echo "SKIP [docker-agent-base]: no Dockerfile, containers workflow or accepted-risks change since $tag"
+      return 98
+    fi
+    echo "[docker-agent-base] changed since $tag:"; echo "$changed"
+  else
+    echo "[docker-agent-base] no tag found, running"
+  fi
+  docker build -f docker/dockerfiles/Dockerfile.agent-base --build-arg VERSION=pre-tag \
+    -t datawatch-agent-base:pre-tag . || return 1
+  if command -v trivy >/dev/null 2>&1; then
+    trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1 \
+      --format table datawatch-agent-base:pre-tag
+  else
+    echo "SKIP [docker-agent-base] trivy scan: trivy not found"
+  fi
+}
 
 # step id -> required tool (empty: none beyond bash)
 tool_for() {
@@ -94,6 +214,7 @@ tool_for() {
     gitleaks) echo gitleaks ;;
     goreleaser-snapshot) echo goreleaser ;;
     docker-agent-base) echo docker ;;
+    slow-opt-in) echo make ;;
     *) echo "" ;;
   esac
 }
@@ -110,9 +231,12 @@ write_record() {
   printf '%s %s steps=%d result=%s seconds=%d\n' \
     "$sha" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RUN" "$RESULT" "$total" >> "$RECORD"
 }
-trap write_record EXIT
+trap 'kill_slow; write_record' EXIT
+trap 'kill_slow; exit 130' INT
+trap 'kill_slow; exit 143' TERM
 
 for id in "${STEP_IDS[@]}"; do
+  if [ -n "${PRE_TAG_ONLY:-}" ] && [[ ",${PRE_TAG_ONLY}," != *",$id,"* ]]; then continue; fi
   tool="$(tool_for "$id")"
   if [ -n "$tool" ] && ! command -v "$tool" >/dev/null 2>&1; then
     echo "SKIP [$id]: $tool not found"
@@ -124,10 +248,7 @@ for id in "${STEP_IDS[@]}"; do
   "$fn"
   rc=$?
   el=$((SECONDS - t0))
-  if [ "$rc" -eq 99 ]; then
-    echo "SKIP [$id]: not implemented yet (${el}s)"
-    continue
-  fi
+  if [ "$rc" -eq 98 ]; then continue; fi   # step printed its own SKIP line
   RUN=$((RUN + 1))
   if [ "$rc" -ne 0 ]; then
     echo "[$id] FAIL (${el}s)"

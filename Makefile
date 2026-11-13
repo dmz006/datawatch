@@ -8,7 +8,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
         security-registry-gen security-registry-check \
-        test-tmp-guard \
+        test-tmp-guard test-cross-build \
         test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-shared-nav test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
@@ -347,6 +347,13 @@ test:
 # normal `go test ./...` run of the same test keeps the small default list.
 test-tmp-guard:
 	DW_LEAK_GUARD_FULL=1 go test -count=1 -timeout 20h ./internal/session/ -run TestNoNewTmpLeakEntries
+
+# Cross-compile smoke: every release GOOS/GOARCH must build (output discarded).
+test-cross-build:
+	@set -e; for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do \
+	  echo "cross-build $$t"; \
+	  GOOS=$${t%/*} GOARCH=$${t#*/} go build -trimpath -o /dev/null ./cmd/datawatch/; \
+	done
 
 fmt:
 	gofmt -w .
