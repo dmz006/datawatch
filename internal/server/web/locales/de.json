@@ -5115,7 +5115,7 @@
   "sessions_search_clear": "Suche löschen",
   "sessions_search_count": "%1$d von %2$d Sitzungen",
   "sessions_filters_btn": "Filter",
-  "sessions_filters_tip": "Gruppierung, gespeicherte Ansichten und Statusfilter",
+  "sessions_filters_tip": "Gruppierung, gespeicherte Ansichten und Status-, Backend- und Tagfilter",
   "sessions_filters_title": "Filter",
   "sessions_filters_close": "Schließen",
   "sessions_filters_status": "Status",
@@ -5136,6 +5136,7 @@
   "sessions_filters_tag_automaton": "Automat",
   "sessions_filters_tag_automaton_ph": "Automat suchen",
   "sessions_filters_tag_automaton_none": "Kein Automat passt",
+  "sessions_filters_unnamed": "unbenannt",
   "sessions_filters_tag_selected": "Ausgewählte Filter",
   "sessions_filters_tag_remove": "%1$s entfernen",
   "sessions_filters_tag_clear_all": "Alle löschen",
@@ -5395,6 +5396,5 @@
   "lane_utilization_plan_points": "%1$s von %2$s Punkten",
   "lane_utilization_plan_tokens": "%1$s Tokens",
   "lane_utilization_plan_percent": "%1$s%% des Plans",
-  "lane_utilization_gantt_heading": "Lane-Auslastung",
-  "sessions_filters_unnamed": "unbenannt"
+  "lane_utilization_gantt_heading": "Lane-Auslastung"
 }
