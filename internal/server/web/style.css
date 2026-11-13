@@ -625,6 +625,16 @@ body {
 }
 .view.view-full {
   bottom: var(--keyboard-h, 0px);
+  /* Session detail is a fill-the-viewport layout, not a scrolling list:
+     drop the FAB-clearance padding (it used to shrink the content box and
+     leave a blank band under the input row), disable page scroll, and
+     stretch the single .session-detail child from header to the
+     keyboard-aware bottom. Pure flex/percent sizing — nothing with a fixed
+     pixel height — so window resize and browser zoom keep it filled. */
+  padding-bottom: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .view-content {
@@ -3552,7 +3562,11 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .session-detail {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Stretches to fill .view.view-full (fixed top/bottom offsets = its full
+     height). No percentage height: percent resolved against the content
+     box, which used to exclude .view's padding — the blank band bug. */
+  flex: 1;
+  min-height: 0;   /* allow the flex child to shrink so overflow:hidden works */
   overflow: hidden;  /* prevent session detail from scrolling — xterm handles its own scroll */
 }
 

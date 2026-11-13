@@ -231,7 +231,19 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    **This session**, press **Watch this session** (or **Stop watching
    this session**). The same section has **Edit tags of this session**.
 
-   Detail view opens with three tabs:
+   The detail view is a **full-height page**: it fills exactly the space
+   between the header and the keyboard-aware bottom of the screen, and
+   the page itself does not scroll. The tab content takes all the
+   space left above the input bar, and the input bar sits flush at that
+   bottom — nothing is reserved below the input row (the earlier
+   short-box layout left a blank band under it), for your own sessions
+   and for a peer's alike. While
+   the software keyboard is up the page stays above it and shrinks to
+   match; the iOS home-indicator clearance is kept; resizing the window
+   or re-zooming the browser re-fits the terminal to the new height with
+   no refresh.
+
+   It opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands. While the session
      is `waiting_input`, Yes/No/Stop quick-reply chips appear above the
@@ -676,6 +688,8 @@ sub-tab.
 ![New-session wizard](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-new-wizard.png)
 
 ![Session detail — Tmux tab](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-tmux.png)
+
+Note: the Tmux tab is a full-height page. The terminal pane fills the space between the header and the keyboard-aware bottom of the screen, and the saved-commands row (with the tmux shortcut keys) and the “Send command or input…” input row sit flush at that bottom — there is no empty band below them. Resizing the window or zooming the browser re-fits the terminal pane without a reload.
 
 ![Session detail — Status tab (hook board)](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-status.png)
 

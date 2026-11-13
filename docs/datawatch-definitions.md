@@ -572,6 +572,8 @@ The four Settings → Sessions controls behind this behaviour (also `configure s
 
 `Tmux` tab is the live xterm.js view of the tmux pane the LLM is attached to. Read-only by default; tap the input bar to send commands.
 
+**Layout:** the session page (Tmux / Channel / Status) is a full-height, non-scrolling page: the tab content fills the space between the header and the keyboard-aware bottom of the screen, the input bar is the last element and nothing is rendered below it — no blank band under the input row, for local and peer sessions alike. The bottom nav is hidden while the page is open. The sizing is pure flex / viewport units with no fixed pixel heights, so window resize, browser zoom, the software keyboard and the iOS safe-area insets keep the page filled, and the terminal re-fits on resize without a reload.
+
 **Toolbar:**
 - `Aa ▾` font controls — A−, A+, current size, Fit-to-width.
 - `Scroll` — enter tmux scroll mode (Page Up / Page Down / ESC). Ties into tmux's own scroll-back so you see real history.
