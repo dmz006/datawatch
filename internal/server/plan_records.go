@@ -106,6 +106,7 @@ type planRecordView struct {
 	Links          []planrecords.Link `json:"links"`
 	Aliases        []string           `json:"aliases"`
 	NeedsReview    bool               `json:"needs_review"`
+	SetByHand      bool               `json:"set_by_hand,omitempty"`
 	ReviewReason   string             `json:"review_reason,omitempty"`
 	CreatedAt      string             `json:"created_at"`
 	UpdatedAt      string             `json:"updated_at"`
@@ -117,7 +118,7 @@ func newPlanRecordView(r planrecords.Record) planRecordView {
 		Title: r.Title, ID: r.ID, UID: r.UID, Kind: r.Kind, Project: r.Project, State: r.State,
 		Body: r.Body, LegacyNumber: r.LegacyNumber, LegacySource: r.LegacySource,
 		ShippedBy: r.ShippedBy, RaisedBy: r.RaisedBy, ShippedVersion: r.ShippedVersion,
-		Links: r.Links, Aliases: r.Aliases, NeedsReview: r.NeedsReview, ReviewReason: r.ReviewReason,
+		Links: r.Links, Aliases: r.Aliases, NeedsReview: r.NeedsReview, SetByHand: r.SetByHand, ReviewReason: r.ReviewReason,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ClosedAt: r.ClosedAt,
 	}
 	if v.Links == nil {

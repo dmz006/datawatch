@@ -101,8 +101,12 @@ type Record struct {
 	// Plan fields (kind plan only). Order is the priority order, lowest first;
 	// Automations, Automata and Findings are the links down, in display order.
 	// They change only through the store's Attach, Detach and Reorder methods.
-	Goal        string   `json:"goal,omitempty"`
-	Order       int      `json:"order,omitempty"`
+	Goal  string `json:"goal,omitempty"`
+	Order int    `json:"order,omitempty"`
+	// SetByHand is true when the plan's status was written through the update
+	// path with an explicit state. The roll-up keeps such a status; a roll-up
+	// write never sets it.
+	SetByHand   bool     `json:"set_by_hand,omitempty"`
 	Automations []string `json:"automations,omitempty"`
 	Automata    []string `json:"automata,omitempty"`
 	Findings    []string `json:"findings,omitempty"`
@@ -136,6 +140,9 @@ type Patch struct {
 	// Goal and Order apply to plans only.
 	Goal  *string
 	Order *int
+	// SetByHand sets or clears the plan's set_by_hand marker. Left nil, an
+	// explicit State on a plan sets it.
+	SetByHand *bool
 	// Actor names who made the change for the audit event.
 	Actor string
 }
