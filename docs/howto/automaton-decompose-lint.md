@@ -574,6 +574,8 @@ the decompose checks report:
 
 ## 6a. Planning failures: what you see, what the daemon fixes, what it asks
 
+The full walk-through, with the spec check on every surface and troubleshooting, is in [automata-planning-failures.md](automata-planning-failures.md).
+
 A decompose can still fail for a content reason (a tracker id in a task
 title, a fixed release number, a path to a system binary). The change
 described here makes that failure explicit and, where it is only a

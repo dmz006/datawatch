@@ -26,6 +26,8 @@ structured hierarchy of stories + tasks, queues it for review, then
 runs the approved tasks under verification.
 This howto walks the spawn → plan → review → run loop.
 
+> Planning failed, or a spec check warning on create? See [automata-planning-failures.md](automata-planning-failures.md).
+
 ## What it is
 
 An Automaton is a structured spec that the daemon's autonomous
