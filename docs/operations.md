@@ -2812,6 +2812,67 @@ protected paths decision, a run that could not start, or an updated Automaton
 waiting for review). See
 [howto/automation-dependency-update.md](howto/automation-dependency-update.md).
 
+### Build-host toolchain freshness check
+
+`scripts/check-toolchain.sh` compares the development tools installed on the
+machine that builds datawatch with the newest stable release: Go, `gosec`,
+`govulncheck`, `gitleaks`, `golangci-lint`, `trivy` and `goreleaser`. It is
+development tooling for the build host, not a daemon feature: the daemon never
+runs it, it has no setting in `config.yaml` or Settings, and it has no REST,
+MCP, CLI, chat or web app surface. It is separate from the weekly dependency
+update above, which updates the repository's dependencies and never touches the
+tools on the build host.
+
+Run it by hand: `bash scripts/check-toolchain.sh`. The tool list is
+`toolchain.yaml` at the repository root (name, version command, a `sed`
+expression that reads the version, and where the newest version comes from:
+the go.dev download feed, the latest GitHub release, or the Go module proxy).
+The Go target is the `go` directive of `go.mod`, read each time, so the check
+follows the repository's Go line.
+
+It is read-only: it runs only each tool's version command, makes HTTPS reads
+(`go.dev`, `api.github.com`, `proxy.golang.org`; an optional `GITHUB_TOKEN` is
+sent to `api.github.com` only) and writes nothing outside a temporary folder it
+removes on exit. It prints a table of tool, installed version, newest version
+and status, then one `note:` line on standard error per source it could not
+read.
+
+| Status | Meaning |
+|---|---|
+| `CURRENT` | Installed equals the newest, or is newer. |
+| `PATCH-BEHIND` | A tool other than Go, same major and minor, older patch. Informational. |
+| `BEHIND` | A tool other than Go, a minor or major behind. |
+| `GO-BEHIND` | Go is older than the newest stable patch of the `go.mod` line. |
+| `MISSING` | The tool is not on `PATH`. Reported, never fatal. |
+| `UNREACHABLE` | The newest or the installed version could not be read or parsed. |
+
+Exit code `1` when Go is `GO-BEHIND` or any tool is `BEHIND`; `0` in every
+other case, including `UNREACHABLE` and `MISSING`. A network error never makes
+the check fail, so an offline host looks clean: read the table, not only the
+exit code. `BEHIND` covers every listed tool, not only the security scanners,
+and one minor behind counts for a `0.x` tool such as `trivy`.
+
+A tool built from source without version stamping (it prints `Version: dev` or
+`version is set by build process`) cannot be compared and shows `UNREACHABLE`
+with a note naming its version command. Rebuild it from a tagged release with
+its version stamped, or install a release binary.
+
+`scripts/check-toolchain_test.sh` tests it without the network or the real
+tools: a `TOOLCHAIN_FIXTURE_DIR` folder supplies the newest versions, fake tool
+scripts on a private `PATH` supply the installed ones, and the six scenarios
+(Go one patch behind, all current, sources unreachable, a tool missing, a minor
+behind, a patch behind) each assert the printed row and the exit code. Run it
+with `bash scripts/check-toolchain_test.sh` after editing the script or
+`toolchain.yaml`.
+
+Operator review still needed: the check is not yet part of `make lint`, the
+merge gates or any scheduled job, and there is no `make check-toolchain`
+target, so nothing enforces it until someone runs it. Decide where it should
+run (a `make` target, the merge helper, a daily daemon check, or all of them)
+and whether `BEHIND` should fail for every listed tool or only for the security
+scanners and Go. See
+[howto/toolchain-freshness-check.md](howto/toolchain-freshness-check.md).
+
 ---
 
 ## 8. Web UI Features
