@@ -6546,10 +6546,10 @@ function renderSessionsView() {
   paint(`<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
-    <div class="sessions-topbar">${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
+    ${renderSessionsToolbar(filterVal, filtersActive, visible, groupBy, viewMode, state.sessions.length)}
     ${toggleBtn}
     ${_sessionTagSelectedSummaryHTML()}
-    ${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
+    <div class="session-list">${cards}</div>
     ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`);
 
   // Restore filter input focus and cursor position
@@ -6733,12 +6733,9 @@ function sessionsSearchClear() {
   if (state.activeView === 'sessions') renderSessionsView();
 }
 
-function renderSessionsSearchRow(filterVal, filtersActive, shown, total) {
+function renderSessionsSearchRow(filterVal) {
   const ph = escHtml(_stx('sessions_search_placeholder', 'Search sessions…'));
   const clrTip = escHtml(_stx('sessions_search_clear', 'Clear search'));
-  const count = filtersActive
-    ? `<div class="sessions-search-count" id="sessionsSearchCount" role="status">${escHtml(_sessionsSearchCountText(shown, total))}</div>`
-    : '';
   return `<div class="sessions-search-row">
     <div class="session-filter-wrap">
       <input type="text" class="session-filter-input" id="sessionFilterInput" autocomplete="off" spellcheck="false"
@@ -6747,8 +6744,27 @@ function renderSessionsSearchRow(filterVal, filtersActive, shown, total) {
       <button type="button" class="session-filter-clear" id="sessionsSearchClear" onclick="sessionsSearchClear()" title="${clrTip}" aria-label="${clrTip}"${filterVal ? '' : ' hidden'}>&#10005;</button>
     </div>
     <span class="sessions-filters-slot" id="sessionsFiltersSlot">${_sessionsFiltersButtonHTML()}</span>
-  </div>${count}`;
+  </div>`;
 }
+
+// The one-line toolbar directly under the page header, at every width:
+// [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode] —
+// one flex row that never wraps (flex-wrap: nowrap, the search row is the
+// only flexible member). The search-count line (role=status) stays its own
+// row below the toolbar and is painted fresh on every render, so the
+// sheet-kit's in-place re-paints while the Filters sheet is open never take
+// it away. The server <select> here is the toolbar's own instance
+// (#sessionsServerDropdown, a distinct id — the header's #serverDropdown is
+// never duplicated): same options body, same single onchange →
+// onServerDropdownChange() → selectServer() mutation path, and
+// renderServerDropdown() keeps both instances in lockstep.
+function renderSessionsToolbar(filterVal, filtersActive, pool, groupBy, viewMode, total) {
+  const count = filtersActive
+    ? `<div class="sessions-search-count" id="sessionsSearchCount" role="status">${escHtml(_sessionsSearchCountText(pool ? pool.length : 0, total))}</div>`
+    : '';
+  return `<div class="sessions-topbar">${_sessionsServerSelectHTML()}${renderSessionsSearchRow(filterVal)}${groupBy ? _sessionsFoldControlHTML(pool, groupBy) : ''}${_sessionsViewSelectHTML(viewMode)}</div>${count}`;
+}
+window.renderSessionsToolbar = renderSessionsToolbar;
 
 function _sessionsPageSize() {
   const n = Number(state && Number.isFinite(Number(state._sessionsPageOverride)) ? state._sessionsPageOverride : SESSIONS_TILE_PAGE_SIZE);
@@ -7269,9 +7285,16 @@ function _sessionsFoldControlHTML(pool, by) {
   const keys = _sessionsFoldKeys(pool, by);
   if (!keys.length) return '';
   const folded = _sessionsAllFolded(keys);
-  const label = folded ? _stx('sessions_unfold_all', 'Unfold all') : _stx('sessions_fold_all', 'Fold all');
   const tip = folded ? _stx('sessions_unfold_all_tip', 'Unfold every group') : _stx('sessions_fold_all_tip', 'Fold every group');
-  return `<div class="sessions-fold-row"><button type="button" class="btn-secondary sessions-fold-all" onclick="_sessionsFoldAllToggle()" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button></div>`;
+  // One-line toolbar control: a compact icon button. The tooltip carries the
+  // actionable short verb; aria-label uses the shorter verb (never an
+  // icon-only button) and aria-pressed carries the fold state — folded =
+  // every group is currently collapsed. Only painted while grouping is
+  // active and the visible pool has foldable groups (the caller gates on
+  // groupBy; an ungrouped pool yields no fold keys anyway).
+  const name = folded ? _stx('sessions_unfold_all', 'Unfold all') : _stx('sessions_fold_all', 'Fold all');
+  const glyph = folded ? '&#8862;' : '&#8857;'; // ⊞ (unfold) / ⊟ (fold)
+  return `<button type="button" class="sessions-fold-all" onclick="_sessionsFoldAllToggle()" title="${escHtml(tip)}" aria-label="${escHtml(name)}" aria-pressed="${folded}">${glyph}</button>`;
 }
 
 function _sessionsFoldAllToggle() {
@@ -7746,17 +7769,23 @@ window.SESSIONS_SAVED_VIEWS_KEY = SESSIONS_SAVED_VIEWS_KEY;
 window.SESSIONS_GROUP_AXES = SESSIONS_GROUP_AXES;
 window.SESSIONS_GROUP_UNGROUPED = SESSIONS_GROUP_UNGROUPED;
 
-function renderSessionsModeToggle(mode) {
+// One-line toolbar view-mode control: a native <select> (accessible, keyboard-
+// operable, and it can never wrap the row). _sessionsSetViewMode remains the
+// sole mutator — the select is just its trigger, exactly like the three
+// buttons it replaces. No new storage key: the stored mode (or computed
+// default) is simply the selected option.
+function _sessionsViewSelectHTML(mode) {
+  const m = (SESSIONS_VIEW_MODES.indexOf(mode) >= 0) ? mode : _sessionsViewMode();
+  const label = _stx('sessions_view_dropdown', _stx('sessions_view_toggle', 'Sessions view mode'));
   const defs = [
-    { key: 'list', label: _stx('sessions_view_list', 'List'), icon: '☰' },
-    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles'), icon: '▦' },
-    { key: 'compact', label: _stx('sessions_view_compact', 'Compact'), icon: '▤' },
+    { key: 'list', label: _stx('sessions_view_list', 'List') },
+    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles') },
+    { key: 'compact', label: _stx('sessions_view_compact', 'Compact') },
   ];
-  const btns = defs.map(d =>
-    `<button type="button" class="sessions-mode-btn${mode === d.key ? ' active' : ''}" data-icon="${d.icon}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
-  ).join('');
-  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
+  const opts = defs.map(d => `<option value="${d.key}"${d.key === m ? ' selected' : ''}>${escHtml(d.label)}</option>`).join('');
+  return `<select id="sessionsViewSelect" class="sessions-view-select" aria-label="${escHtml(label)}" title="${escHtml(label)}" onchange="_sessionsSetViewMode(this.value)">${opts}</select>`;
 }
+window._sessionsViewSelectHTML = _sessionsViewSelectHTML;
 
 window.renderSessionsViewsBar = renderSessionsViewsBar;
 window._savedViewsRead = _savedViewsRead;
@@ -28615,24 +28644,45 @@ function _probePickerReachability(servers) {
       });
   });
 }
+// The two live picker instances: the header #serverDropdown and, when the
+// Sessions toolbar is painted, its own #sessionsServerDropdown. A missing
+// id drops out (an unpainted shell); a test stub stays a no-op.
+function _pickerDropdownEls() {
+  if (typeof document === 'undefined' || !document.getElementById) return [];
+  return ['serverDropdown', 'sessionsServerDropdown']
+    .map(id => { try { return document.getElementById(id); } catch (_) { return null; } })
+    .filter(el => el && typeof el.querySelectorAll === 'function');
+}
+window._pickerDropdownEls = _pickerDropdownEls;
+
+// The Sessions toolbar's own instance of the same server picker — a
+// distinct id (#sessionsServerDropdown; the header's #serverDropdown is
+// never duplicated), the same options body and the same single onchange →
+// onServerDropdownChange() → selectServer() mutation path.
+function _sessionsServerSelectHTML() {
+  return '<select id="sessionsServerDropdown" class="server-dropdown sessions-server-select" aria-label="Server" onchange="onServerDropdownChange(this.value)">' + _serverOptionsHtml() + '</select>';
+}
+window._sessionsServerSelectHTML = _sessionsServerSelectHTML;
+
 // Patches ONLY the one option whose probe just resolved -- never a full
 // dropdown re-render, so an in-progress operator interaction is never
 // disturbed by a probe landing late. Matches on the option's own value /
 // dataset values -- never by building a CSS selector from the name.
 function _updatePickerOptionReachability(name) {
-  if (typeof document === 'undefined' || !document.getElementById) return;
-  const sel = document.getElementById('serverDropdown');
-  if (!sel || typeof sel.querySelectorAll !== 'function') return;
+  const sels = _pickerDropdownEls();
+  if (!sels.length) return;
   const unreachable = _serverReachability[name] === false;
   const suffix = unreachable ? ' ' + (t('server_dropdown_unreachable') || '(unreachable)') : '';
-  Array.from(sel.querySelectorAll('option'))
-    .filter(o => o && o.value === name)
-    .forEach(o => {
-      const base = (o.dataset && o.dataset.baseLabel)
-        || (typeof o.textContent === 'string' ? o.textContent.replace(/\s*\([^()]*\)\s*$/, '') : '');
-      o.textContent = base + suffix;
-      if (o.dataset && 'reachability' in o.dataset) o.dataset.reachability = unreachable ? 'down' : 'unknown';
-    });
+  sels.forEach(sel => {
+    Array.from(sel.querySelectorAll('option'))
+      .filter(o => o && o.value === name)
+      .forEach(o => {
+        const base = (o.dataset && o.dataset.baseLabel)
+          || (typeof o.textContent === 'string' ? o.textContent.replace(/\s*\([^()]*\)\s*$/, '') : '');
+        o.textContent = base + suffix;
+        if (o.dataset && 'reachability' in o.dataset) o.dataset.reachability = unreachable ? 'down' : 'unknown';
+      });
+  });
 }
 
 // GH#194 — the PWA must never label the connected server "local" to the
@@ -28738,15 +28788,18 @@ function _onServerListReady(fn) {
 // test harness without the header markup).
 function renderServerDropdown() {
   if (typeof document === 'undefined' || !document.getElementById) return;
-  const sel = document.getElementById('serverDropdown');
-  if (!sel) return;
-  try {
-    // Fill the existing <select id="serverDropdown"> with its options only
-    // (never a nested <select>).
-    sel.innerHTML = _serverOptionsHtml();
-    if (sel.style) sel.style.display = '';
-    if ('value' in sel) sel.value = (state.activeServer === 'all' ? 'all' : (state.activeServer ? state.activeServer : ''));
-  } catch (_) { /* a partial shell must never break navigation */ }
+  // Keep the two live picker instances (header #serverDropdown and the
+  // Sessions toolbar's #sessionsServerDropdown) in lockstep — every
+  // navigation, server-list refresh and reachability probe updates both.
+  _pickerDropdownEls().forEach(sel => {
+    try {
+      // Fill the existing <select> with its options only (never a nested
+      // <select> — one instance per slot, options rebuilt in place).
+      sel.innerHTML = _serverOptionsHtml();
+      if (sel.style) sel.style.display = '';
+      if ('value' in sel) sel.value = (state.activeServer === 'all' ? 'all' : (state.activeServer ? state.activeServer : ''));
+    } catch (_) { /* a partial shell must never break navigation */ }
+  });
 }
 
 // The single generic change handler: the selected name arrives in `value`
@@ -42121,6 +42174,12 @@ window.scrollToPRD = function(id) {
 };
 
 function renderAutonomousView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Automata: NOT
+  // applied. The page's search and filter controls exist only inside the ⊞
+  // toggled filter bar (a sheet whose logic stays unchanged), so there is
+  // no always-visible page-level search/filter line to put on one
+  // non-wrapping line under the header. The tabs + action-button strip
+  // stays the page header's controls and the filter bar stays toggle-driven.
   const view = document.getElementById('view');
   if (!view) return;
   const st = _automataState;
@@ -48515,6 +48574,15 @@ function _alertsBuildHtml(result) {
     return `<button onclick="setAlertsFilter('${key}')" style="background:${bg};color:${fg};border:1px solid ${color};border-radius:10px;padding:3px 10px;font-size:12px;margin-right:4px;cursor:pointer;">${escHtml(label)} ×${n}</button>`;
   };
 
+  // One-line toolbar rule (the Sessions toolbar pattern) — Alerts: NOT
+  // applied. The page already has a server select (the shared header
+  // dropdown) plus its always-visible search/filter controls, but those
+  // controls need more room than a phone-width non-wrapping line allows:
+  // the five labelled filter chips, the search input, the labelled sort
+  // toggle, the dismiss/mute/refresh buttons and the server select
+  // together exceed the phone viewport. Per the rule the page stays
+  // unchanged — chips, search, sort and the three icon buttons keep their
+  // layout, filter logic, ids and handlers.
   const topBar = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
       <span style="font-weight:700;font-size:14px;min-width:0;overflow-wrap:anywhere;" title="${escHtml(t('alerts_heading_tip') || 'Alerts in this tab (matches the All chip)')}">🔔 ${escHtml(t(headingKey, headingVars))}</span>
@@ -54988,6 +55056,14 @@ function _dashFetchCost() {
 }
 
 function renderDashboardView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Dashboard: NOT
+  // applied. The stat bar is already one non-wrapping flex line under the
+  // header carrying the placement filter select and the icon-sized
+  // Help/+Card/Edit buttons; there is no text search input, and the stat
+  // counters, the labelled tag filter chips and the placement select
+  // together need more room than a phone-width non-wrapping line allows,
+  // so no toolbar line is added or re-merged and the placement/tag filter
+  // logic stays unchanged.
   if (state.activeView !== 'dashboard') return;
   const viewEl = document.getElementById('view');
   if (!viewEl) return;
@@ -55563,6 +55639,12 @@ window._dashToggleGanttRow = function(prdId) {
 // reverses v6.7.2 — operator clarification: "I liked the observer tab,
 // monitor was supposed to move there and observer get a card at the bottom."
 function renderObserverView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Observer: NOT
+  // applied. It is a scrolling settings page with no page-level
+  // search/filter under its header — its only search + filter controls
+  // (the Memory Browser input with its role/since selects and the
+  // Search/List/Export buttons) are section-scoped to that section and
+  // stay where they are.
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = `<div class="view-content">
