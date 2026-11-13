@@ -1370,6 +1370,10 @@ function listLoader(opts) {
     const keep = opts.beforePaint ? opts.beforePaint(el) : null;
     el.innerHTML = html();
     if (opts.afterPaint) opts.afterPaint(el, keep, st.data);
+    // The innerHTML replacement above rebuilt any .list-controls this body
+    // drew; put the scope's live toolbar back and restore its selection.
+    // A reconcile failure must never fail the paint.
+    try { _listControlsReconcile(el); } catch (_e) { /* ignore */ }
   }
   function schedule() {
     if (st.pollTimer) clearTimeout(st.pollTimer);
@@ -64097,6 +64101,107 @@ function _listControlsHTML(scope, o) {
   return `<div class="list-controls" data-list-scope="${escHtml(scope)}" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0;"><div class="tag-view-switch" role="group">${opts.noMode ? '' : toggle}</div>${sel}</div>`;
 }
 
+// ── Keeping the group-by dropdown alive across repaints ─────────────────────
+// A list repaint replaces the panel's innerHTML, which would drop the
+// group-by select's focus and open state, and a repaint landing between the
+// user's change and the next paint could reset what the select shows.
+// _listControlsLive holds the last drawn .list-controls element per scope so
+// _listControlsReconcile (run right after every paint that may draw them)
+// puts that element back in place when its inputs (scope, mode, group) did
+// not change or the select has focus, patching it in place otherwise.
+// The stored group (_listGroupGet) is the only source of truth for the
+// selection, so the choice always survives a full page reload and sub-tab
+// switches. One implementation for every scope — the element names itself
+// with data-list-scope — no per-scope copies.
+const _listControlsLive = {};
+
+// _listControlsSignature is the toolbar's inputs: scope, mode and group.
+function _listControlsSignature(scope) {
+  return scope + '|' + _listModeGet(scope, _tileViewportWidth()) + '|' + _listGroupGet(scope);
+}
+
+function _listControlsSelectOf(el) {
+  return el && typeof el.querySelector === 'function' ? el.querySelector('select.list-group-select') : null;
+}
+
+// _listControlsKeep puts the live element back where the fresh one stands,
+// syncing the fresh node's inputs into it in place: the select's options
+// (only if they differ) and its selection (always from the stored group),
+// and the mode buttons' active/pressed state.
+function _listControlsKeep(live, fresh, scope, focused) {
+  const lSel = _listControlsSelectOf(live);
+  const fSel = _listControlsSelectOf(fresh);
+  if (lSel && fSel) {
+    try {
+      if (lSel.innerHTML !== fSel.innerHTML) lSel.innerHTML = fSel.innerHTML;
+      const cur = _listGroupGet(scope);
+      if (lSel.value !== cur) lSel.value = cur;
+    } catch (_e) { /* a stub DOM may not accept writes; the paint stands */ }
+  }
+  try {
+    const lBtns = live.querySelectorAll ? live.querySelectorAll('.tag-view-btn') : null;
+    const fBtns = fresh.querySelectorAll ? fresh.querySelectorAll('.tag-view-btn') : null;
+    if (lBtns && fBtns && lBtns.length === fBtns.length) {
+      Array.prototype.forEach.call(lBtns, (b, i) => {
+        const fb = fBtns[i];
+        if (!b || !fb || !b.classList) return;
+        b.classList.toggle('active', !!(fb.classList && fb.classList.contains && fb.classList.contains('active')));
+        if (b.setAttribute) b.setAttribute('aria-pressed', fb.getAttribute ? fb.getAttribute('aria-pressed') : '');
+      });
+    }
+  } catch (_e) { /* button state is decorative; the paint stands */ }
+  if (typeof fresh.replaceWith === 'function') {
+    try { fresh.replaceWith(live); } catch (_e) { return; }
+  }
+  // Focus and the open state ride with the moved element; re-assert both so
+  // a repaint can never leave the select blurred with a stale selection.
+  if (lSel && typeof lSel.focus === 'function') {
+    try { lSel.focus(); } catch (_e) {}
+    try { const cur = _listGroupGet(scope); if (lSel.value !== cur) lSel.value = cur; } catch (_e) {}
+  }
+}
+
+// _listControlsReconcile runs on a painted container: every .list-controls
+// node it drew is checked against the scope's live element, and the stored
+// group is shown in the select that stands for it.
+function _listControlsReconcile(root) {
+  if (typeof document === 'undefined' || !root || typeof root.querySelectorAll !== 'function') return;
+  let freshList = null;
+  try { freshList = root.querySelectorAll('.list-controls[data-list-scope]'); } catch (_e) { return; }
+  if (!freshList || !freshList.length) return;
+  Array.prototype.forEach.call(freshList, fEl => {
+    if (!fEl || typeof fEl.getAttribute !== 'function') return;
+    const scope = fEl.getAttribute('data-list-scope');
+    if (!scope) return;
+    const sig = _listControlsSignature(scope);
+    // The stored group is always what the standing select shows, fresh node
+    // or live element alike.
+    const fSel = _listControlsSelectOf(fEl);
+    try {
+      const cur = _listGroupGet(scope);
+      if (fSel && fSel.value !== cur) fSel.value = cur;
+    } catch (_e) {}
+    const live = _listControlsLive[scope];
+    let keeper = fEl;
+    if (live && live !== fEl) {
+      const focused = !!(document.activeElement === (live._listControlsSel || null));
+      // Inputs unchanged, or the select is focused/open: keep the live
+      // element instead of rebuilding, so focus and the open state survive.
+      if (live._listControlsSig === sig || focused) {
+        _listControlsKeep(live, fEl, scope, focused);
+        keeper = live;
+      }
+      // else: the inputs changed and nothing is focused — the fresh element
+      // stands, its select already carrying the stored selection.
+    }
+    try {
+      keeper._listControlsSig = sig;
+      keeper._listControlsSel = _listControlsSelectOf(keeper);
+    } catch (_e) {}
+    _listControlsLive[scope] = keeper;
+  });
+}
+
 // _listBodyHTML draws a list's items in the chosen group-by: one grid per group,
 // each under its header, collapsed groups as a header only, long groups paged.
 function _listBodyHTML(scope, items, renderTile) {
@@ -64149,6 +64254,9 @@ function _inboxViewRepaint() {
   if (typeof document === 'undefined') return;
   const el = document.getElementById('inboxViewModeToggle');
   if (el && 'innerHTML' in el) el.innerHTML = _inboxViewToggleHtml();
+  if (typeof _listControlsReconcile === 'function') {
+    try { _listControlsReconcile(el); } catch (_e) { /* the toolbar repaint stands */ }
+  }
 }
 
 function _listRepaint(scope) {
