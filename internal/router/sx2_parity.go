@@ -546,7 +546,7 @@ const completedMigrateUsage = "usage: autonomous completed-migrate [dry_run=true
 
 // autonomousListUsage is the comm-channel usage line for the narrowable PRD
 // list.
-const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>]   (no filter = the full list; shipped may appear in status)"
+const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>]   (no filter = the full list; status matches the displayed status, so an Automaton whose work landed shows as completed)"
 
 // handleAutonomousShippedVerb serves the shipped-record comm verb for both
 // surfaces: it records the shipped state of a PRD (default) or an Automation
@@ -689,7 +689,7 @@ func (r *Router) handleAutonomousCompletedMigrateVerb(args []string) {
 // handleAutonomousShippedCountsVerb serves the shipped-counts comm verb:
 // GET /api/autonomous/shipped/counts — the per-status PRD and Automation
 // count buckets computed under the in-force autonomous.shipped settings
-// (shipped separated from cancelled while enabled + count_separately hold),
+// (shipped work counted as completed, never cancelled, while enabled),
 // with the effective settings echoed. Read-only.
 func (r *Router) handleAutonomousShippedCountsVerb(args []string) {
 	out, err := r.commGet("/api/autonomous/shipped/counts", nil)

@@ -4576,8 +4576,8 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 // the per-state count pair across the whole stored PRD list and Automation
 // list under the in-force autonomous.shipped surface (shipped.go): one
 // count per displayed status. A PRD cancelled without its work landing
-// counts as "cancelled"; a PRD whose work landed counts as "shipped", the
-// two separated while enabled + count_separately hold. Read-only.
+// counts as "cancelled"; a PRD whose work landed counts as "completed" with
+// the stored-completed PRDs while the shipped surface is enabled. Read-only.
 func (s *Server) handleAutonomousShippedCounts(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapAutonomousRead) {
 		return
@@ -4591,7 +4591,7 @@ func (s *Server) handleAutonomousShippedCounts(w http.ResponseWriter, r *http.Re
 		return
 	}
 	ship := s.shippedSettings()
-	sep := ship.EffectiveEnabled() && ship.EffectiveCountSeparately()
+	sep := ship.EffectiveEnabled()
 	shippedByDay := shippedDayCounts{}
 	prds := map[string]int{}
 	for _, raw := range s.autonomousMgr.ListPRDs() {

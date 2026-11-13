@@ -118,11 +118,12 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	}
 	// Shipped-state read selection (shipped.go). shipped=true|false wins; the
 	// autonomous.shipped.filter_default view (all/shipped/unshipped) sets the
-	// default; status=shipped additionally selects shipments on the *status*
-	// axis. All three act on the record's shipped state (a non-empty merge
-	// commit, PRD.MergeCommit — .IsShipped) — never on the stored status,
-	// which shipped state never changes: a cancelled PRD whose work landed
-	// stays "cancelled" in the store and is "shipped" here.
+	// default. Both act on the record's shipped state (a non-empty merge
+	// commit, PRD.MergeCommit — .IsShipped). The status filter matches the
+	// displayed status: a PRD whose work landed shows as "completed" (also
+	// when its stored status is still cancelled) while the shipped surface is
+	// enabled. status=shipped stays accepted as a legacy alias that selects
+	// records carrying a shipped record.
 	ship := s.shippedSettings()
 	shipEnabled := ship.EffectiveEnabled()
 	shipWanted, shipSet, err := shippedSelectionFromQuery(r, ship.EffectiveFilterDefault())
@@ -130,8 +131,8 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	statusShipped := statuses[autonomous.ShippedDisplayStatus]
-	delete(statuses, autonomous.ShippedDisplayStatus)
+	statusShipped := statuses["shipped"]
+	delete(statuses, "shipped")
 	filtered := len(statuses) > 0 || active || needle != "" || len(tagSel.Tags) > 0 || shipSet || (statusShipped && shipEnabled)
 
 	var rows []autonomous.SummaryRow
@@ -143,7 +144,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		}
 		row := autonomous.BuildSummaryRow(prd)
 		fillTags(&row.SummaryView)
-		st := string(row.Status)
+		st := autonomous.PRDEffectiveDisplayStatus(prd, shipEnabled)
 		if len(statuses) > 0 && !statuses[st] &&
 			(!statusShipped || !shipEnabled || !prd.IsShipped()) {
 			continue
@@ -175,7 +176,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, row)
 	}
 	// Fold the live autonomous.shipped.enabled setting into the display
-	// state: shipped records show effective_status "shipped" while the
+	// state: shipped records show effective_status "completed" while the
 	// surface is enabled, otherwise their stored status (the stored status
 	// never moves).
 	for i := range rows {

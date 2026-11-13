@@ -958,7 +958,7 @@ func qualityGatesSmokePackages(v any) []string {
 func (s *Server) toolAutonomousPRDList() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_list",
 		mcpsdk.WithDescription("BL24 — list all PRDs, newest first. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed), with the pushed ref/sha/time (pushed) or the push reason (not_pushed). Narrow the list without changing any stored state: status takes comma-separated statuses and may include shipped — the shipped-state bucket selected by a non-empty merge commit, independent of the stored status; shipped true keeps only PRDs that carry shipped state, shipped false only ones that do not. When neither is given the full list is returned (full=1); when one is, the summary list under the in-force autonomous.shipped settings applies instead, and shipped=true matches only while enabled."),
-		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated statuses to keep; may include shipped (the shipped-state bucket, not a stored status).")),
+		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated statuses to keep; matched against the displayed status (an Automaton whose work landed shows as completed); shipped is still accepted and selects records that carry a shipped record.")),
 		mcpsdk.WithString("shipped", mcpsdk.Enum("true", "false"), mcpsdk.Description("true: only PRDs that carry shipped state (non-empty merge commit); false: only ones that do not. Default: the autonomous.shipped.filter_default view (all / shipped / unshipped).")),
 	)
 }
@@ -1167,7 +1167,7 @@ func (s *Server) handleAutonomousCompletedMigrate(_ context.Context, req mcpsdk.
 // status touched.
 func (s *Server) toolAutonomousShippedCounts() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_shipped_counts",
-		mcpsdk.WithDescription("Read the per-status shipped counts — the PRD and Automation buckets — computed under the in-force autonomous.shipped settings. One count per displayed status, with the shipped bucket separated from cancelled while enabled + count_separately hold: a PRD/Automation cancelled without its work landing counts as cancelled, one whose work landed (non-empty merge commit) counts as shipped while the stored status stays cancelled. The response also echoes the effective settings (enabled, show_chip, filter_default, count_separately, backfill_on_start) it was computed under. Read-only: it never writes any shipped record and touches no status. Same numbers as the dashboard's shipped card and the autonomous shipped counts CLI verb."),
+		mcpsdk.WithDescription("Read the per-status counts — the PRD and Automation buckets — computed under the in-force autonomous.shipped settings. One count per displayed status, while the shipped surface is enabled: a PRD/Automation cancelled without its work landing counts as cancelled, one whose work landed (non-empty merge commit) counts as completed together with the stored-completed ones, even when its stored status is still cancelled (there is no separate shipped bucket). The response also echoes the effective settings (enabled, show_chip, filter_default, count_separately, backfill_on_start) it was computed under. Read-only: it never writes any shipped record and touches no status. Same numbers as the dashboard's shipped card and the autonomous shipped counts CLI verb."),
 	)
 }
 func (s *Server) handleAutonomousShippedCounts(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

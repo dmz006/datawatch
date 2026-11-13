@@ -24,34 +24,24 @@ func shippedCountFixture(t *testing.T) []*PRD {
 	}
 }
 
-func TestShippedCounts_DefaultSeparateCancelledAndShipped(t *testing.T) {
-	// Default settings: enabled + count_separately, so the two cancelled
-	// PRDs split — the shipped one lands in "shipped", the plain one in
-	// "cancelled".
+func TestShippedCounts_ShippedWorkCountsAsCompleted(t *testing.T) {
+	// Both shipped PRDs land in "completed" (one stored completed, one
+	// stored cancelled); the plain cancelled one stays "cancelled".
 	counts := CountPRDStates(shippedCountFixture(t), true, true)
-	if counts["shipped"] != 2 {
-		t.Errorf("shipped bucket = %d, want 2 (both shipped PRDs)", counts["shipped"])
+	if counts["completed"] != 2 || counts["cancelled"] != 1 || counts["running"] != 1 {
+		t.Errorf("buckets = %v; want completed 2, cancelled 1, running 1", counts)
 	}
-	if counts["cancelled"] != 1 {
-		t.Errorf("cancelled bucket = %d, want 1 (only the unshipped cancelled PRD)", counts["cancelled"])
-	}
-	if counts["completed"] != 0 || counts["running"] != 1 {
-		t.Errorf("other buckets = %v; want completed absent, running 1", counts)
+	if _, ok := counts["shipped"]; ok {
+		t.Errorf("shipped bucket must not exist: %v", counts)
 	}
 }
 
-func TestShippedCounts_CountSeparatelyOffUsesStoredStatus(t *testing.T) {
-	// count_separately=false folds the shipped PRDs back into their stored
-	// statuses: the shipped-but-cancelled PRD counts as cancelled.
+func TestShippedCounts_CountSeparatelyOffStillCompleted(t *testing.T) {
+	// count_separately no longer splits a second bucket: finished work is
+	// never counted as cancelled.
 	counts := CountPRDStates(shippedCountFixture(t), true, false)
-	if counts["cancelled"] != 2 {
-		t.Errorf("cancelled bucket = %d, want 2 (the shipped one folds back in)", counts["cancelled"])
-	}
-	if c, ok := counts["shipped"]; ok && c != 0 {
-		t.Errorf("shipped bucket = %d, want absent (counts under stored status)", c)
-	}
-	if counts["running"] != 1 || counts["completed"] != 1 {
-		t.Errorf("stored-status buckets = %v; want completed 1, running 1", counts)
+	if counts["completed"] != 2 || counts["cancelled"] != 1 {
+		t.Errorf("buckets = %v; want completed 2, cancelled 1", counts)
 	}
 }
 
@@ -74,19 +64,19 @@ func TestShippedCounts_AutomationsSameSeparation(t *testing.T) {
 		{ID: "a-active", Status: AutomationActive},
 	}
 	counts := CountAutomationStates(autos, true, true)
-	if counts["shipped"] != 1 || counts["cancelled"] != 1 || counts["active"] != 1 {
-		t.Fatalf("buckets = %v; want shipped 1, cancelled 1, active 1", counts)
+	if counts["completed"] != 1 || counts["cancelled"] != 1 || counts["active"] != 1 {
+		t.Fatalf("buckets = %v; want completed 1, cancelled 1, active 1", counts)
 	}
-	if folded := CountAutomationStates(autos, true, false); folded["cancelled"] != 2 {
-		t.Errorf("count_separately off: cancelled = %d, want 2", folded["cancelled"])
+	if folded := CountAutomationStates(autos, true, false); folded["cancelled"] != 1 {
+		t.Errorf("count_separately off: cancelled = %d, want 1", folded["cancelled"])
 	}
 }
 
 func TestShippedEffectiveDisplayStatus(t *testing.T) {
-	// The cancelled-but-shipped PRD displays as shipped — its stored status
+	// The cancelled-but-shipped PRD displays as completed — its stored status
 	// never moves.
-	if got := PRDEffectiveDisplayStatus(shippedCountFixture(t)[1], true); got != "shipped" {
-		t.Errorf("effective status = %q, want shipped", got)
+	if got := PRDEffectiveDisplayStatus(shippedCountFixture(t)[1], true); got != "completed" {
+		t.Errorf("effective status = %q, want completed", got)
 	}
 	// ...while both settings-off paths and the unshipped PRD show the stored
 	// status.
@@ -100,8 +90,8 @@ func TestShippedEffectiveDisplayStatus(t *testing.T) {
 		t.Errorf("nil PRD: effective status = %q, want empty", got)
 	}
 	a := &Automation{ID: "a1", Status: AutomationCancelled, MergeCommit: "c1"}
-	if got := AutomationEffectiveDisplayStatus(a, true); got != "shipped" {
-		t.Errorf("automation effective status = %q, want shipped", got)
+	if got := AutomationEffectiveDisplayStatus(a, true); got != "completed" {
+		t.Errorf("automation effective status = %q, want completed", got)
 	}
 	if got := AutomationEffectiveDisplayStatus(a, false); got != "cancelled" {
 		t.Errorf("automation, surface off: effective status = %q, want cancelled", got)
