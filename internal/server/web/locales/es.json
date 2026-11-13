@@ -5040,6 +5040,7 @@
   "sessions_view_tiles": "Mosaicos",
   "sessions_view_compact": "Compacto",
   "sessions_view_toggle": "Modo de vista de sesiones",
+  "sessions_view_dropdown": "Modo de vista de sesiones",
   "sessions_tile_stop": "Detener",
   "sessions_tile_restart": "Reiniciar",
   "sessions_tile_delete": "Eliminar",

@@ -5040,6 +5040,7 @@
   "sessions_view_tiles": "Tiles",
   "sessions_view_compact": "Compact",
   "sessions_view_toggle": "Sessions view mode",
+  "sessions_view_dropdown": "Sessions view mode",
   "sessions_tile_stop": "Stop",
   "sessions_tile_restart": "Restart",
   "sessions_tile_delete": "Delete",
