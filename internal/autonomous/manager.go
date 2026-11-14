@@ -7617,6 +7617,10 @@ func (m *Manager) run(ctx context.Context) {
 			m.mu.Unlock()
 			m.sweepOrphanSessions()
 			m.sweepStuckRunning()
+			// One hold-expiry pass on the same tick: an expired hold-until time
+			// marks the hold, records one decision and raises exactly one
+			// alert; it never changes the status or starts the Automaton.
+			m.ExpireHolds(m.holdNow())
 			m.sweepCapacityWaits()
 			m.sweepPlatformContextMigration()
 		}
