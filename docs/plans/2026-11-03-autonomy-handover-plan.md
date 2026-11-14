@@ -373,3 +373,5 @@ Operator, 2026-11-11 20:48, quoted: "That was meant to be correct the note item 
 - 2026-11-13 20:36 Operator, asked whether to hold Claude to the allowed rate now (usage page projects 112% at the recent burn) or keep going with the guard backing off at +2 points: "Keep going,  guard controls it I'll keep feeding status". Window guard v2 stays the control; no hold.
 
 - 2026-11-13 20:37 Operator, asked whether to ship the three archived-unmerged Automata (phone layout 33160001, Projects cards and Gantt fix bff00001, trace retention a1a30001) through the local gates, Gantt first: "yes". Shipping one at a time as patch releases.
+
+- 2026-11-13 20:40 Operator, asked about the storage direction for 10.0 (files with a derived reporting index, or a Postgres or SQLite option): "We will stay with files,  after 10.0 we will examine this,  actually will probably expand to sqllite and postgres but that is an 11.0 feature". Decision: 10.0 stays on files; SQLite and Postgres support is an 11.0 feature, to be examined after 10.0.
