@@ -150,10 +150,12 @@ it with two controls. The tag tree and drill-down views do not show it.
   are kept in the browser's local storage for each list, so they are not shared
   between devices or with other operators. Clearing site data resets them.
 
-The Sessions list uses the same group header, collapse and show-more when you
-group by a placement axis; its tag filter lives in the Filters sheet (see
-[The Tags filter](sessions-tiles-and-grouping.md#the-tags-filter)). The Sessions list itself has no mode toggle or group-by select from
-this change.
+The Sessions list shares the same group header, collapse and show-more when it is
+grouped by a placement axis; its tag filter lives in the Filters sheet (see
+[The Tags filter](sessions-tiles-and-grouping.md#the-tags-filter)). Its mode and
+group-by controls are its own: the List / Tiles / Compact view mode buttons in
+the one-line toolbar and the **Group by** select in the Filters sheet — see
+[sessions-tiles-and-grouping.md](sessions-tiles-and-grouping.md).
 
 #### Selecting tags and the match mode
 

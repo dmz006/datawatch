@@ -35,7 +35,8 @@ line** that never splits into multiple rows, at any width: a **server
 select** (All servers, this server, one entry per enabled peer), a
 **search** box, a **Filters** button (with a badge counting what is active),
 a **Fold all** button (while a grouping with openable groups is active) and
-a **view mode select** with the three modes **List / Tiles / Compact**. One
+the **view mode buttons** — three icon buttons, one for each mode:
+**List / Tiles / Compact**, the active one marked. One
 line below the toolbar, the **Tree** and **History** buttons sit with the
 clickable **🌐 <name>** indicator that appears only while a federated server
 is the active one and returns you to this server when clicked (see
@@ -66,10 +67,11 @@ daemon, REST, MCP, CLI and comm channel behave exactly as before.
 header (fixed, every page):   …  [ ▾ All servers │ This server │ server-a │ server-b ]
 
 Sessions (one toolbar line, at phone and wide widths):
-┌─[ ▾ All servers ] [ Search…  ] [ Filters (2) ] [ ⊟ Fold all ] [ ▾ Tiles ]
-│  (⊟ Fold all shows only while a grouping is active; the line below the
-│   toolbar carries Tree and History — and the 🌐 server-a indicator,
-│   shown only while a federated server is active)
+┌─[ ▾ All servers ] [ Search…  ] [ Filters (2) ] [ ⊟ Fold all ] [ ☰ ⊞ ▤ ]
+│  (⊟ Fold all shows only while a grouping is active; ☰ ⊞ ▤ are the three
+│   view mode buttons — List, Tiles, Compact — with the active one marked;
+│   the line below the toolbar carries Tree and History — and the 🌐
+│   server-a indicator, shown only while a federated server is active)
 │  ● running 4   ● waiting_input 2   ● complete 11   ● failed 1   ● killed 3
 │  ────────────────────────────────────────────────────────────
 │  ▾ automation:lane-fill        4  (running 2, waiting_input 1, complete 1)
@@ -103,8 +105,9 @@ per-device UI preference or a read-only API parameter.
 
 There is nothing to configure. Open the PWA, go to **Sessions**, and the
 one-line toolbar is already at the top of the list: the **server select**,
-the search box, the **Filters** button and the **view mode select** (List /
-Tiles / Compact), plus the **Fold all** button while a grouping is active. The
+the search box, the **Filters** button and the **List / Tiles / Compact**
+view mode buttons (icon buttons, the active one marked), plus the **Fold
+all** button while a grouping is active. The
 **Tree** and **History** buttons sit on the line below the toolbar, with
 the 🌐 indicator while a federated server is the active one — that line
 is behind the header's 🔍 *search & filters* button (right side of the
@@ -123,7 +126,8 @@ If you only need one of the three, jump to the matching section:
 
 Everything you need to find sessions sits in one non-splitting line at the
 top of the page, at any width, in this order: **server select**, **search**,
-**Filters**, **Fold all** (while grouping) and the **view mode select**:
+**Filters**, **Fold all** (while grouping) and the **List / Tiles /
+Compact** view mode buttons:
 
 - **Server select** — the line starts with the Sessions page's own server
 dropdown (an **All servers** entry, **This server**, and one entry per
@@ -146,9 +150,16 @@ servers](multi-servers.md#switch-between-servers-header-dropdown).
   button shows how many filters are active, so you can tell at a glance that
   the list is narrowed even with the sheet closed.
 - **Fold all** — an icon button (⊟ while at least one group can be folded, ⊞ once everything is folded; tooltip **Fold every group**, and **Unfold every group** after) that appears while a grouping is active and the visible list has foldable groups. It is a compact icon button, not a text button, and it folds or unfolds every group at once. It replaces the former separate fold row under the list, so there is no second row of controls for folding.
-- **View mode select** — the **List / Tiles / Compact** control, now a
-dropdown that shows the mode in use and replaces the three-button mode
-toggle. Described next under [View modes](#view-modes).
+- **View mode buttons** — the **List / Tiles / Compact** control: three
+  icon buttons (List ☰, Tiles ⊞, Compact ▤) sitting side by side in the
+  toolbar line, with the mode in use marked on the active button. Tap (or
+  click) the button for the mode you want; it is remembered on this device.
+  The buttons form a group of three and take no more width than the
+  dropdown they replaced — at 360 px phone width the line still does not
+  split or wrap. On a touch screen a quick tap switches the mode, while
+  holding a button for a moment shows its name (List / Tiles / Compact) as a
+  small hint and does *not* change the mode. Described next under
+  [View modes](#view-modes).
 - **One line below the toolbar** — the **Tree** and **History** buttons sit
   on their own line, with the clickable **🌐 <name>** indicator while a
   federated server is the active one: clicking it returns you to this
@@ -299,8 +310,9 @@ applied — their layouts are unchanged:
 
 ## View modes
 
-The **view mode select** in the toolbar line offers three choices: **List**,
-**Tiles** and **Compact**.
+The **view mode buttons** in the toolbar line (☰ **List**, ⊞ **Tiles**,
+▤ **Compact**) offer three choices — tap the button for the mode you want;
+the active button is marked and the choice is remembered on this device.
 
 - **List** is the classic one-card-per-row layout. It stays the default on
   phone-width viewports (narrower than 600 px), where the dense rows read
@@ -372,10 +384,10 @@ off. That is fixed in two ways:
 
 - A saved Tree choice no longer overrides Tiles or Compact; the tree shows
   only while the mode is **List**.
-- Choosing any mode in the select (List, Tiles or Compact) switches the
-  Tree choice off, so the mode you pick is the layout you get. To see the
-  lineage tree again, choose **List** and press **Tree** on the line below
-  the toolbar.
+- Choosing any mode (tapping the List, Tiles or Compact button) switches
+  the Tree choice off, so the mode you pick is the layout you get. To see
+  the lineage tree again, choose **List** and press **Tree** on the line
+  below the toolbar.
 
 This is a browser-side change only: no setting, endpoint, MCP tool, CLI
 command or chat verb changed, and the stored `cs_sessions_view_mode` value is
@@ -561,8 +573,8 @@ same groups, the same counts and state mixes, wherever you read them:
 ### PWA (web UI)
 
 The Sessions page controls above: the one-line toolbar (server select,
-search, Filters with its badge, Fold all while grouping is active, view mode
-select) and the Tree / History line (with the 🌐 indicator while a federated
+search, Filters with its badge, Fold all while grouping is active, the List /
+Tiles / Compact view mode buttons) and the Tree / History line (with the 🌐 indicator while a federated
 server is active), the Filters sheet (Group by with the
 tag-prefix entries, Views, status chips, and the grouped, searchable Tags
 filter with the Automaton picker and the selected-filter row), Show
@@ -747,7 +759,7 @@ in your tag registry.
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
 | Server picker (All / this server / each federated peer) | PWA toolbar select (and the header dropdown) | no — page-wide, not per device; defaults to the local server on load | one shared picker: the toolbar select and the header dropdown are the same selection, so choosing an entry in one updates the other; **All** aggregates local + federated; not one of the sheet's filters |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | button toggles open/closed, also closes on tap outside, close button or Escape; badge counts active filters |
-| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
+| View mode (list / tiles / compact) | PWA toolbar row (three icon buttons, the active one marked) | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode tap |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, **Fold all** button in the toolbar line | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | Fold all appears only while a grouping with openable groups is active; body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
@@ -777,7 +789,7 @@ in your tag registry.
   If you still see list rows in Tiles or Compact, confirm the PWA is the
   current build (hard reload) before looking at storage.
 - **I see a tile, not a row, and I want rows back.** Choose **List** in the
-  view mode select — the choice sticks on that device. On phones the default
+  view mode buttons — the choice sticks on that device. On phones the default
   is already List.
 - **My saved view isn't on my other device.** Saved views are per device
   by design; recreate it from the Views section of the Filters sheet. The *data* it reads (groups,
@@ -797,6 +809,19 @@ in your tag registry.
 
 ## Still to review
 
+- **The view mode buttons (this fix).** The toolbar's view control is the
+  three icon buttons shown above — a `role=group` of three `sessions-view-btn`
+  buttons labelled **List** / **Tiles** / **Compact** (`_sessionsViewSelectHTML`
+  in `internal/server/web/app.js`), client-side PWA behaviour, confirmed by
+  code and pinned by
+  `app-sessions-one-line-toolbar.test.js`, `app-sessions-view-modes.test.js`
+  and `app-sessions-filters-sheet-layout.test.js`. Confirm on the build in
+  use: the toolbar line ends in three compact icon buttons (not a dropdown),
+  the mode in use is marked on the active one, tapping the other button
+  switches the list immediately and sticks on that device, the line still
+  fits at 360 px without wrapping, and on a touch screen a held button shows
+  its name as a hint without changing the mode. The stored
+  `cs_sessions_view_mode` value and its meaning are unchanged.
 - **The Filters button's close paths (this fix).** Client-side PWA
   behaviour (`sessionsFiltersToggle` / `sessionsFiltersClose` in
   `internal/server/web/app.js`), confirmed by code and pinned by the PWA
