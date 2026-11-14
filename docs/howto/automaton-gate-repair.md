@@ -37,7 +37,7 @@ exec_steps:
     read_only: false
   - id: answer-hold
     tool: question_answer
-    description: Answer the held question a spent budget or unknown class raised. Pick retry (retry the gate now) or cancel (cancel the task, the default)
+    description: Answer the held question a spent budget, an `unknown` class or a refused repair raised. Pick retry (retry the gate now — the question's default option) or cancel (cancel the task: it stays failed and its dependents do not run)
     required_args: [id]
     optional_args: [chosen_option_id, quote]
     args:
@@ -57,8 +57,9 @@ verdict is in: it works out what a gate-check failure is about (and it **never
 guesses**), and for the classes it knows it applies one safe repair to the
 script and re-runs the gate once, **without changing the gate's verdict and
 without inventing a repair**. Everything the engine does
-is recorded, and each record keeps its undo — the `before`/`after` text pair
-of the edit it made.
+is recorded, and each record keeps its undo — the `before`/`after` text
+pair when it edited a script, the `make sync-docs` output when it rebuilt
+the mirror.
 
 The engine has its own mode: `off`, `report` (the default) or `on`. It works
 out of band: after a gate failure, the daemon classifies the failing output,
@@ -77,12 +78,12 @@ one safe repair:
 | Class | What failed | The repair the engine applies (in `on` mode) |
 |---|---|---|
 | `later_story_script` | a script this story's tasks may not edit yet — a later story owns it | the gate run is reset to run again; the script is not touched, nothing is created now, and the gate passes once that later story lands |
-| `docs_mirror_stale` | the built-in docs mirror is a copy behind the `docs/` source of truth | `make sync-docs`, re-run the gate. Its before/after pair is the script text itself |
+| `docs_mirror_stale` | the built-in docs mirror is a copy behind the `docs/` source of truth | `make sync-docs`, re-run the gate. The script is not edited — the record's `before` is empty and its `after` carries the `make sync-docs` output |
 | `allowed_list_rejects` | the script's own allowed list refused a file the task declares | widen that script's allowed-file list with the task-declared file that was refused, re-run |
 | `tracker_id_css_hex` | one tracker id in a story matched a CSS hex-color constant in another | narrow the id pattern, re-run |
 | `pipe_sigpipe` | a script's own pipe closed before a command ran, or a command was missing | stop the broken pipe or call, re-run |
 | `restart_killed` | the gate itself was healthy but the daemon restarted and its kill of that process group took the gate with it | re-run it; it was killed, not failed |
-| `unknown` | a failure the engine does not know how to classify | nothing: one held operator question (or a warning alert when questions are disabled) |
+| `unknown` | a failure the engine does not know how to classify | nothing: in `on`, one held operator question plus the "Gate repair held" warning alert (the alert fires even when the question can't be raised); in `report`, just a would-be record and the "Gate repair found" alert |
 
 ## The budget and the hard limits
 
@@ -90,7 +91,8 @@ The engine repairs **at most one safe fix per class per task**: the repair
 spends that task's budget for that class, and the second time the same class
 appears the engine does not repair — it holds and asks, exactly as it does
 for anything it does not know. A repair that fails does not count: it does
-not spend the budget, and the question is raised. The budget is recorded in a
+not spend the budget, does not raise a question, and the gate stays failed —
+the record says the repair failed. The budget is recorded in a
 small ledger under the daemon's data directory, so it survives restarts. The
 classes are independent of each other.
 
@@ -98,10 +100,12 @@ And the engine never:
 
 - guesses a repair it does not recognize — `unknown` is a held question, not
   an attempt;
-- touches a script outside the Automaton's own verify folder;
-- touch anything inside a task's tracked repository — the one script edit,
-  the docs mirror sync and the reset are all in files the Automaton owns,
-  with the `before`/`after` text recorded for every one;
+- touches a script outside the Automaton's own `.datawatch/verify` folder;
+- edits anything other than that one script, and does more than the
+  `make sync-docs` mirror rebuild and the gate-run reset — every record
+  keeps its repair text (the `before`/`after` pair for a script edit, the
+  `make sync-docs` output for a mirror rebuild), so every change is undoable
+  by hand;
 - **merge, ship, delete, end or signal, or change a model or backend setting**
   (`restart_killed` and `later_story_script`, the two re-run/reset classes,
   edit no file at all);
@@ -113,22 +117,24 @@ And the engine never:
 
 One question per failed gate and class: while one is open it is not
 raised again, and one gate failure raises at most one question even if more
-than one class matches. A repair that fails does not raise a second question;
-it is one repair plus one held answer.
+than one class matches. A repair that fails raises no question at all — it is
+recorded as a failed repair with its reason, the gate stays failed, and the
+operator path (the retry budget, the verifier) is untouched.
 
-When the budget for a class is spent, or the class is `unknown`, the engine
+When the budget for a class is spent, the class is `unknown`, or the repair is refused, the engine
 stops and asks the operator. The question's wording:
 
 > Task {task} in {automaton} failed its gate: {failure}. The gate repair engine
 > held it ({class}). The repair would be: {repair}. Retry the gate now, or
 > cancel the task?
 
-- **Retry the gate now** (the daemon's suggested choice) — answer `retry`: the task is held, and if it is a failed task the failed run is reset so it runs again, with the dependents' failures reset too.
-- **Cancel the task** (the default when there is no suggestion) — answer `cancel`: the task is cancelled.
+- **Retry the gate now** — answer `retry` (this is the question's default option): the task is held, and if it is a failed task the failed run is reset so it runs again, with the dependents' failures reset too.
+- **Cancel the task** — answer `cancel`: the task stays failed and the tasks that depend on it do not run.
 
 The held question it raises is the ordinary stored-operator-question path: it is an ordinary stored operator question, read in the usual places for held questions and answered with the usual answer surface, or with `question_answer` picking `chosen_option_id` `retry` or `cancel` — the answer ids in the record are exactly those two.
-When question raising is disabled, an `unknown` failure is recorded as held
-and raises the "Gate repair held" warning alert instead.
+When question raising is disabled, a hold (a spent budget, an `unknown`
+class or a refused repair) is still recorded as held and still raises the
+"Gate repair held" warning alert — the hold is visible either way.
 
 ## Surfaces you can read and run it from
 
@@ -138,7 +144,7 @@ and raises the "Gate repair held" warning alert instead.
 | CLI | `datawatch autonomous gate-repair status [--json]` — the mode, the records (newest first) and the repair budget already spent | `datawatch autonomous gate-repair run [--automaton <id> --task <id>] [--json]` — one pass, or one failed gate when both ids are given |
 | REST | `GET /api/autonomous/gate-repair` — the same JSON, `mode`, `records`, `budget`, `held_questions`; `GET /api/autonomous/gate-repairs` (plural) is the earlier alias | `POST /api/autonomous/gate-repair/run` — empty body: one pass; both `automaton_id` and `task_id`: one gate; exactly one is refused with 400 |
 | Chat channel | `autonomous gate-repair status` — a human-readable listing, newest first | `autonomous gate-repair run [automaton=ID task=ID]` — one pass, or one failed gate when both ids are given |
-| Web UI | Automation page → **Gate repair** card: the mode in effect (with a mode select), the recent findings and the spent repair budget | the card's **Run now** button runs one pass |
+| Web UI | Automation page (housekeeping sub-tab) → **Gate repair** card: the mode in effect (mode select — `report`/`on`; `off` is set in Settings), the recent findings and the spent repair budget | the card's **Run now** button runs one pass |
 
 The engine's finding is also visible as a decision-log line and an alert; an
 applied repair raises no alert — the record and decision line are enough.
@@ -149,7 +155,7 @@ applied repair raises no alert — the record and decision line are enough.
   the daemon's config file (for example `~/.datawatch/config.yaml`). The
   default is `report`, which records without changing anything.
 - **From the daemon**: `datawatch config set autonomous.gate_repair.mode <mode>`;
-  change it while you watch in the Automation page, in the **Gate repair** card.
+  change it while you watch in the Automation page (housekeeping sub-tab), in the **Gate repair** card (its mode select offers `report` and `on`; `off` is set in Settings).
 - **In chat**: `configure autonomous.gate_repair.mode=<mode>`; read it back
   with `autonomous gate-repair status`.
 - **As an MCP agent**: `config_set` with `key` `autonomous.gate_repair.mode`
@@ -171,9 +177,11 @@ override.
 
 ## Undoing the repairs it applied
 
-Each edit has its undo recorded. In `on` mode an applied repair records its
-`before`/`after` text pair, and the record and the decision-log line both
-carry how to undo it. Reading the records never changes anything:
+Each repair has its undo recorded. In `on` mode an applied repair records the
+edit's `before`/`after` text pair when it touched a script (for the
+docs-mirror repair the record's `after` is the `make sync-docs` output), and
+the record and the decision-log line both carry how to undo it. Reading the
+records never changes anything:
 
 1. **Read where you stand** — `autonomous_gate_repair_status`. Each `records`
    entry says what happened: found, the `would` (what it would do) or the
@@ -206,8 +214,8 @@ undo *is* the repair itself, and reading it back is the whole thing.
 | MCP | `autonomous_gate_repair_status` (same object, read-only, no arguments) and `gate_repairs` (the earlier plural alias) |
 | CLI | `datawatch autonomous gate-repair status`: the mode, the budget in lines, each record below it; `--json` for the object |
 | Comm channel | `autonomous gate-repair status`: the same lines, budget then records |
-| Web UI | Automation page → **Gate repair** card: the mode in effect (with a mode select), the recent findings (cause, repair, before/after), the spent repair budget and a **Run now** button |
-| Alerts | one alert per failed gate until it stops failing (report and on modes); the "Gate repair found" warning is the report-mode one |
+| Web UI | Automation page (housekeeping sub-tab) → **Gate repair** card: the mode in effect (mode select — `report`/`on`; `off` is set in Settings), the recent findings (cause, repair, before/after), the spent repair budget and a **Run now** button |
+| Alerts | in `report`, one "Gate repair found" warning per failed gate until it stops failing; in `on`, one "Gate repair held" warning when the engine holds (a spent budget, an `unknown` class or a refused repair); a successfully applied repair raises no alert |
 
 ## See also
 

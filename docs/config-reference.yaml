@@ -2695,8 +2695,15 @@ autonomous:
   # killed by SIGPIPE, a run killed by a restart - or unknown). In `on` it
   # applies the safe repair for the class once per class per task (the repair
   # budget persists), then resets the failed task and its dependents so the
-  # gate runs again. A spent budget or an unknown class is one held operator
-  # question, never a guess. A repair never merges, ships, deletes, ends or
+  # gate runs again. A spent budget, an unknown class or a refused repair is
+  # one held operator question (options `retry` - retry the gate now, the
+  # question's default - or `cancel` - the task stays failed), never a guess,
+  # and a failed repair spends nothing, raises no question and leaves the
+  # gate failed. Read with `GET /api/autonomous/gate-repair`: each record
+  # says what it found, what it would do or did, and the undo (the
+  # `before`/`after` pair when the script was edited; for the docs-mirror
+  # repair the `after` is the `make sync-docs` output). A repair never
+  # merges, ships, deletes, ends or
   # signals a session, changes a model or backend setting, or touches a
   # security workflow; script edits are limited to the task's own
   # .datawatch/verify folder. The key is settable on every configuration
