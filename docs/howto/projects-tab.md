@@ -132,6 +132,10 @@ Project  "core-api"
    sideways; the header title reads **Projects** in its short form so it stays on
    one line (see
    [Tab strips at phone width](navigation-mobile-fit.md#tab-strips-at-phone-width)).
+   The whole page also stays inside the screen width on a phone: the picker and
+   the **Show empty** checkbox wrap onto their own line, long event lines, paths
+   and card text wrap, and wide code or table content scrolls inside its own box
+   instead of widening the page. Only the page sub-tab strip scrolls sideways.
    The Inbox count follows this picker too: with a project picked it counts only
    that project's items, and under **Overview** it counts all projects (see
    [What the Inbox counts](automation-tab.md#what-the-inbox-counts)).
@@ -873,6 +877,12 @@ the lane defaults. Use REST, MCP or the CLI for those.
 
 ## For the operator to review
 
+- **Phone-width containment (Events sub-tab).** The Projects page used to scroll
+  sideways on a phone (seen on a project's Events page sub-tab). The page, toolbar,
+  picker, cards and event lines now shrink to the viewport and wrap; only the page
+  sub-tab strip scrolls. Confirm on a real phone (a project with long event lines,
+  Events page sub-tab) that the page itself no longer scrolls sideways. Web app
+  only; Android and iPhone are tracked in datawatch-app.
 - **Mobile parity.** The Android and iPhone apps still show Projects as its own
   screen and a project as one screen. Moving Projects under Automata, matching
   page sub-tabs, and the Manage projects add, edit and remove controls are tracked
