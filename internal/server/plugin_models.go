@@ -35,8 +35,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/observer"
 	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/secrets"
@@ -112,6 +112,11 @@ func (s *Server) defaultModelUseSource() *defaultModelUseSource {
 }
 
 func (d *defaultModelUseSource) ModelUse(ctx context.Context, name string) (*plugins.ModelUseReport, error) {
+	// Safe on a nil receiver and on a nil manifest func: return before
+	// touching d.srv or d.manifest.
+	if d == nil || d.manifest == nil {
+		return nil, ErrModelUseUnknownPlugin
+	}
 	m, ok := d.manifest(name)
 	if !ok {
 		return nil, ErrModelUseUnknownPlugin
@@ -356,7 +361,11 @@ func (s *Server) handlePluginModels(w http.ResponseWriter, r *http.Request, name
 	}
 	src := s.pluginModelsSrc
 	if src == nil {
-		src = s.defaultModelUseSource()
+		// Convert only a non-nil pointer: a nil *defaultModelUseSource
+		// inside the interface would make the nil check below never fire.
+		if def := s.defaultModelUseSource(); def != nil {
+			src = def
+		}
 	}
 	if src == nil {
 		http.Error(w, "plugins not available", http.StatusServiceUnavailable)
@@ -398,7 +407,14 @@ func (s *Server) StartModelNodeEvents(ctx context.Context, servicePlugins func()
 		if rec == nil {
 			rec = s.defaultModelNodeRecorder()
 		}
-		events := &plugins.ModelNodeEvents{Recorder: rec, Source: s.pluginModelsSrcIfConfigured(s.defaultModelUseSource())}
+		// Never hand a typed nil to the events task: only convert the
+		// default source to the interface when it is non-nil, otherwise
+		// pass a true nil interface (Run then returns immediately).
+		var def PluginModelsSource
+		if d := s.defaultModelUseSource(); d != nil {
+			def = d
+		}
+		events := &plugins.ModelNodeEvents{Recorder: rec, Source: s.pluginModelsSrcIfConfigured(def)}
 		events.Plugins = func(context.Context) []string { return servicePlugins() }
 		if s.modelNodeEventInterval > 0 {
 			events.Interval = s.modelNodeEventInterval

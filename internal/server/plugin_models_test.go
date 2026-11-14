@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -455,5 +456,30 @@ func TestPluginModels_DefaultSourceNodeDown(t *testing.T) {
 	}
 	if n := cap.count(); n != 0 {
 		t.Fatalf("saw %d sink calls for a mere request (the model_node_unreachable raise is owned by the events task): %s", n, cap.joined())
+	}
+}
+
+// A nil default source must never become a typed nil inside the
+// PluginModelsSource interface: ModelUse is safe on a nil receiver and
+// nil manifest func, and the handler answers 503 when no source exists.
+func TestDefaultModelUseSource_NilSafe(t *testing.T) {
+	var d *defaultModelUseSource
+	if _, err := d.ModelUse(context.Background(), "imap-mcp"); !errors.Is(err, ErrModelUseUnknownPlugin) {
+		t.Errorf("nil receiver: err = %v, want ErrModelUseUnknownPlugin", err)
+	}
+	d = &defaultModelUseSource{}
+	if _, err := d.ModelUse(context.Background(), "imap-mcp"); !errors.Is(err, ErrModelUseUnknownPlugin) {
+		t.Errorf("nil manifest: err = %v, want ErrModelUseUnknownPlugin", err)
+	}
+
+	s := &Server{}
+	if got := s.defaultModelUseSource(); got != nil {
+		t.Fatalf("defaultModelUseSource without tokens source = %v, want nil", got)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/plugins/imap-mcp/models", nil)
+	rr := httptest.NewRecorder()
+	s.handlePluginModels(rr, req, "imap-mcp")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("handler status = %d, want 503", rr.Code)
 	}
 }
