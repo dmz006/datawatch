@@ -86,6 +86,7 @@ func (m *Manager) checkProtectedPaths(ctx context.Context, prd *PRD, t *Task) (h
 	// A hit whose only change against base is the daemon's own sections (its
 	// rewrites of the rules file) is not a change the task made.
 	hits = m.withoutDaemonOnlyChanges(ctx, dir, base, hits)
+	hits = m.revertCheckpointOnlyHits(ctx, prd, t, dir, base, hits)
 	if len(hits) == 0 {
 		return false, nil
 	}

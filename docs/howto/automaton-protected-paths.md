@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, protected paths, rules file, CODEOWNERS, workflows, hold, approve, reject, authorised paths, base commit, rules review]
+  topics: [autonomous, automation, automaton, protected paths, rules file, CODEOWNERS, workflows, hold, approve, reject, authorised paths, base commit, rules review, checkpoint, checkpoint entry revert, worker progress note, CHECKPOINT.md]
 exec_params:
   - {name: automaton_id, required: false, description: "Automaton ID to narrow the read to, or to authorise paths for"}
   - {name: action, required: false, description: "Protected-paths action to set: hold, warn, block or off"}
@@ -55,7 +55,7 @@ work together:
 
 | Part | What it does |
 |---|---|
-| **The gate** | After a worker attempt finishes, the daemon compares the task's directory with the commit the work started from. If a protected path changed and the Automaton has not been authorised for it, the task is held, warned about or blocked, as you chose |
+| **The gate** | After a worker attempt finishes, the daemon compares the task's directory with the commit the work started from. If a protected path changed and the Automaton has not been authorised for it, the task is held, warned about or blocked, as you chose — with one narrow exception, a worker's checkpoint entry in the rules file, which the gate strips out itself ([the checkpoint-entry revert](#the-checkpoint-entry-revert)) |
 | **The base-commit rules read** | When the rules review judges an Automaton, it reads the rules from the commit the work started from, not from the working tree the worker changed. A worker cannot rewrite the rubric it is graded by, or skip the review by deleting the rules file |
 
 It works for any project you run Automata on. Nothing in it is specific to one
@@ -157,6 +157,13 @@ the daemon's sections and the real edit is kept. A real edit to the rules is
 still held and asked, exactly as before, and there is no new setting behind
 any of this: the same protected list and the same action apply.
 
+Beside those, the rules file carries one narrower, visible exception: if a
+task's only change against the base is a worker checkpoint entry, the gate
+strips that entry out of the file before any hold, warn or block is decided
+([the checkpoint-entry revert](#the-checkpoint-entry-revert)) — so a
+checkpoint append is neither a change the gate holds on nor a daemon section
+it strips silently.
+
 One more consequence of the marked sections: platform context text that was
 ever committed inside `AGENT.md` or `CLAUDE.md` is stale by construction,
 because the daemon owns the current text and re-delivers it at every session
@@ -238,9 +245,12 @@ With `warn`, the task is not held: the gate records a `protected_paths_warned`
 decision, writes an audit event and raises a warning alert *Protected paths
 warning*, then lets the task go on. With `block`, the task is parked as blocked
 with the error `protected_path_blocked: <paths>` and no question is raised;
-authorise the path for the Automaton, or edit the task, then reset it. The gate
-never reverts, resets, amends or rewrites anything in either case: the change
-stays where the worker put it.
+authorise the path for the Automaton, or edit the task, then reset it. In
+neither case does the gate touch the change — the one thing it reverts on its
+own is a worker's checkpoint entry in a rules file, and only when that is the
+file's entire change against the base ([the checkpoint-entry
+revert](#the-checkpoint-entry-revert)); apart from that, the change stays
+where the worker put it.
 
 ## Reading the state
 
@@ -368,6 +378,129 @@ the worker or by hand — and it is answered exactly like any other protected
 path: **Approve this change** if you want it, or authorise the rules file for
 the Automaton so its tasks pass.
 
+## Checkpoint entries in the rules file
+
+The rules file is protected, and the workers are told to keep it that way. A
+worker that needs a progress note is told to write it to `CHECKPOINT.md` at
+the root of its working directory instead — never to `AGENT.md` or
+`CLAUDE.md` (see
+[the no-checkpoints rule](automata-rules-and-context.md#the-no-checkpoints-rule)).
+Checkpoint and progress entries that you or the supervisor write to the rules
+file by hand are your own work — the gate does not touch them, exactly as
+before.
+
+If a worker adds a checkpoint entry to the rules file anyway, the gate deals
+with that one case itself, before any hold, warn or block is decided:
+
+- **the entry is the file's only change** against the base commit — the gate
+  removes the entry from the working copy and lets the task go on. There is
+  no question and no alert. It records one decision on the Automaton named
+  **`protected_paths_checkpoint_reverted`** (its note reads *task <id>: removed
+  a worker checkpoint entry from <path>*), so you can see in the Automaton's
+  decision list that it happened — that is the only trace of it, and the note's
+  content still lives in `CHECKPOINT.md` and the session record;
+- **the file also holds any other change** — the normal hold, warn or block
+  applies to the file, and the gate leaves it exactly as the worker wrote it,
+  so nothing is lost.
+
+What counts as an entry the gate may remove, and the cases where it leaves
+the file alone, are spelt out in
+[the checkpoint-entry revert](#the-checkpoint-entry-revert) below.
+
+## Worker progress notes no longer touch the rules file
+
+The rules file is protected by default, and for a while the gate's most
+frequent hit was a routine one: a worker appending a progress note to the
+Checkpoints section of the rules file (this repository used to hold its
+operating notes in `CLAUDE.md`), so almost every task ended in a
+protected-path question over a note, not a rule change.
+
+Two things now keep that case from reaching you. The first closes the source.
+Every worker prompt that gets its rules and context block also gets a short,
+fixed rule (see
+[the no-checkpoints rule](automata-rules-and-context.md#the-no-checkpoints-rule)):
+the Checkpoints and progress-note sections of `AGENT.md`, `CLAUDE.md` and any
+configured rules file are written only by the human operator and by the
+supervisor, a worker must not copy those files' Checkpoints section into its
+work or its notes, and a worker that needs a progress note writes it to
+`CHECKPOINT.md` at the root of its working directory instead. `CHECKPOINT.md`
+is one of the daemon's own marker files, not work: new worktrees ignore it and
+the uncommitted-work checks skip it (see
+[the completion marker file](automaton-uncommitted-work.md)).
+
+The second covers the rule's one failure mode — a worker that appends its
+entry to the rules file anyway. The gate now handles exactly that case itself,
+before any question is decided:
+
+### The checkpoint-entry revert
+
+When a hit names one of the rules files — `AGENT.md`, `CLAUDE.md` or your
+configured rules file — the gate first asks whether the file's change against
+the base commit is **only** a worker checkpoint entry. If so, it strips the
+entry out of the file and lets the hit go: no question, no alert, the task
+goes on as if the note had never been written. If the change is anything
+beyond the entry, the hit is kept untouched and the normal hold / warn /
+block action decides, exactly as before.
+
+What counts as an entry the gate may strip:
+
+- the added lines must form checkpoint entry blocks — a `## YYYY-MM-DD`
+  heading (optionally with ` HH:MM` and a short tail) running to the next
+  non-dated `## ` heading or the end of the file;
+- the blank lines that separate the entries;
+- at most one added `## Checkpoints` heading, and only when the base file did
+  not already carry one.
+
+Nothing else. The base version must be an ordered subsequence of the working
+copy — the worker may have added lines, but not changed or removed one — and
+a non-dated new section, body text outside an entry block, or a second
+`## Checkpoints` heading keeps the hit and puts the file back in the normal
+hold / warn / block path. The revert is line-level and deterministic: no model
+is involved and no git write is issued. The daemon's own marked sections in
+the rules file are never part of what is stripped — an entry written next to
+them is still stripped, and the sections are preserved byte for byte.
+
+It fails closed. A base version that cannot be read, a symlink or other
+non-regular file, a failed write, or a stripped copy that does not line up
+with the base leaves the working copy exactly as found and keeps the hit —
+none of these ever ends in a file the gate half-rewrote.
+
+The revert is recorded, once per task and file, as the
+`protected_paths_checkpoint_reverted` decision on the Automaton (its note
+reads *task <id>: removed a worker checkpoint entry from <path>*), so you can
+see in the decision log that the entry was stripped and that the note's
+content still lives in `CHECKPOINT.md` and the session record. There is no
+new setting behind it: it runs under `hold`, `warn` and `block`, it is
+idempotent (a second gate run over an already-stripped file reverts nothing),
+and a task that changes any other protected path is still held for that path.
+
+What this changes for you:
+
+- a routine worker progress note no longer reaches the gate — the note lives
+  in `CHECKPOINT.md`, which is not on the protected list, and even a note a
+  worker appends to the rules file anyway is stripped by the
+  [checkpoint-entry revert](#the-checkpoint-entry-revert);
+- the Checkpoints sections of `AGENT.md` and `CLAUDE.md` are yours and the
+  supervisor's. Workers that add, edit or remove entries there are disobeying
+  their prompt, and the gate's only write to those files is writing the file
+  back with the worker's added entry lines removed (its original bytes minus
+  those lines) — it never adds or rewrites anything else;
+- a **real** change to a protected file is still held exactly as before, and
+  the rules review still reads the rules from the base commit. A change that
+  mixes the worker's entry with any other edit is not stripped — it is held
+  like one.
+
+**Still to review (operator):** the checkpoint-entry revert is verified by
+its tests (entry-only strips, entry-plus-real-edit holds, fail-closed and
+second-run cases), but a live run on a daemon in use — a worker's checkpoint
+append to the rules file being stripped, the
+`protected_paths_checkpoint_reverted` decision recorded, and no
+protected-path question raised — is not yet confirmed. If a task is held on a
+rules file after this, read the held paths: the change went beyond a plain
+entry, so **Reject it** (the entry is removed with it), **Approve this
+change** if you want both, or authorise the rules file for the Automaton as
+before.
+
 ## How the judge reads the rules
 
 The rules review is opt-in: it runs when `rules-review` is in the Automaton's
@@ -414,7 +547,7 @@ ancestor of the current head, or the next one is tried.
 | **CLI** | `datawatch autonomous protected-paths` |
 | **Comm channel** | `autonomous protected-paths` reply |
 | **Audit log** | Events `autonomous_protected_paths_held`, `autonomous_protected_paths_warned`, `autonomous_protected_paths_blocked`, `autonomous_protected_paths_answered` and `autonomous_protected_paths_authorised_set` |
-| **Automaton decision log** | Decisions `protected_paths_held`, `protected_paths_warned`, `protected_paths_blocked`, `protected_paths_authorised`, `protected_paths_authorised_set`, `protected_paths_approved`, `protected_paths_rejected`, `protected_paths_spec_change_requested`, `protected_paths_check_skipped` and `rules_review_source_fallback` |
+| **Automaton decision log** | Decisions `protected_paths_held`, `protected_paths_warned`, `protected_paths_blocked`, `protected_paths_authorised`, `protected_paths_authorised_set`, `protected_paths_approved`, `protected_paths_rejected`, `protected_paths_spec_change_requested`, `protected_paths_check_skipped`, `protected_paths_checkpoint_reverted` and `rules_review_source_fallback` |
 | **Alerts** | Warning alerts *Protected paths held*, *Protected paths warning*, *Protected paths blocked*, *Protected paths check skipped* and *Protected paths not restored* |
 
 ## A note on spelling
@@ -440,16 +573,29 @@ list. When a search for one finds nothing, try the other.
   is silent.
 - **The gate looks at paths, not meaning.** A task that changes a protected
   file in a harmless way is held like one that weakens it. Read the paths and
-  decide.
-- **Nothing here is a permission wall.** The gate acts after a worker attempt
-  and never reverts, resets or rewrites by itself. Reject it is the only
-  answer that puts a file back.
+  decide. The one exception is the
+  [checkpoint-entry revert](#the-checkpoint-entry-revert): a worker that defies
+  the no-checkpoints rule by appending its entry is not held when the entry is
+  the file's entire change against the base — the gate strips it out and
+  records `protected_paths_checkpoint_reverted` — and is held when it changed
+  anything else in the file. Only an entry shaped as a dated `## YYYY-MM-DD`
+  heading in `AGENT.md`, `CLAUDE.md` or your configured rules file is
+  auto-removed at all — a note in any other file, or any other note without
+  that shape, reaches the gate as a normal change.
+- **Nothing here is a permission wall.** The gate acts after a worker
+  attempt and — apart from the
+  [checkpoint-entry revert](#the-checkpoint-entry-revert), which only strips a
+  worker's own checkpoint entry out of a rules file when that is the file's
+  entire change against the base — never reverts, resets or rewrites by
+  itself. A real change to a protected file is put back only when you answer
+  Reject it.
 
 ## Troubleshooting
 
 | Symptom | Likely cause and fix |
 |---|---|
 | A task is held and you did not expect it | Read the held paths with `datawatch autonomous protected-paths`. If the path is on the list by mistake, change the list; if the Automaton is meant to edit it, authorise the path for it |
+| A hold names the rules file and it looks like a progress note | The change went beyond the worker's checkpoint entry — a plain entry append is now stripped by the gate (`protected_paths_checkpoint_reverted` in the decision log, no hold). For a hold that did fire, **Reject it** to put the file back (the entry is removed with it); the note's content is still in `CHECKPOINT.md` and the session record |
 | A path you listed is not protected | An explicit list replaces the defaults, and an entry is matched whole: `docs/plans/*.md` does not match `docs/plans/sub/a.md`, and a `*` never crosses a slash. Use the directory form `docs/plans/` for everything below it |
 | Nothing is ever held | The action may be `off` or `warn`; read `action` in the status. Check the Automaton has a task directory, and look for a `protected_paths_check_skipped` decision |
 | A task is blocked and no question was raised | The action is `block`. Authorise the path or edit the task, then reset it |
@@ -461,8 +607,11 @@ list. When a search for one finds nothing, try the other.
 
 ## What it never does
 
-It never reverts, resets, amends or rewrites a change by itself, and never
-pushes or merges. It never changes the list, the action or an Automaton's
+The one exception is the [checkpoint-entry revert](#the-checkpoint-entry-revert):
+a worker's own checkpoint entry, stripped out of a rules file, and only when
+it is that file's entire change against the base. Apart from that, nothing
+here reverts, resets, amends or rewrites a change by itself, and nothing
+here pushes or merges. It never changes the list, the action or an Automaton's
 authorised paths on its own. Rejecting a change is the one case where files are
 put back, and then only the exact paths in the hold, in a new commit. The
 status read never runs git and never changes anything. With the action `off`
