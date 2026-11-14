@@ -125,9 +125,10 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: thirteen rules —
-the nine `block` rules first (the six boundary rules, then the three
-verification-script stability rules), then the four `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: sixteen rules —
+the eleven `block` rules first (the six boundary rules, the two spec-line
+rules, then the three verification-script stability rules), then the five
+`warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -140,12 +141,15 @@ and never name a particular project, repository or home directory.
 | `reads_operator_data_or_config_folders` | block | a spec that reads a home-directory dot folder (`.datawatch`, `.config`, `.ssh`, `.aws`, …) |
 | `read_only_but_writes_files` | block | a task marked `read_only` that still lists files |
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
+| `read_only_task_writes_file` | block | a read-only task (flag or `READ-ONLY:` marker) whose spec tells it to write, create or edit a file other than its single report path (for example a file under `docs/plans`); give it a report path under `.datawatch/reports/` instead. The finding quotes the offending spec line |
+| `spec_path_outside_allowed_dirs` | block | a spec line that names an absolute path (under a system root such as `/usr`, `/opt`, `/etc`, `/var`, `/home`, `/tmp`) outside the project directory; repo-relative paths, paths inside the project tree, URLs, shebang lines and `/dev` paths are ignored. The finding quotes the offending spec line |
 | `verify_script_task_files_only` | block | a verification script that compares only against the task's own files (a literal allowed-file list equal to them, or a file-listing diff of HEAD, the working tree or main) and never against `git merge-base`; a sourced helper (one level deep) that uses the merge base passes. The finding names the script path. A script that does not exist yet is skipped |
 | `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
 | `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
-| `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
+| `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `issue #1234`); a bare `#123456` or `#abc123` is a hex colour and never matches |
+| `version_number_in_spec` | warn | a spec or title that names a dotted version of a tool or library (a Python, Go or Node version, a `lib==1.2.3` pin) rather than the release; keep it unambiguous and never write it as the release number |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
 
 ### The three verification-script stability rules
@@ -234,6 +238,8 @@ hold for the same task. The leaves:
 | `verification_script_reason_empty` | assert the task states no reason for lacking a verification script |
 | `verification_script_task_files_only` | assert the script (plus sourced helpers, one level) compares only against the task's own files and never the merge base; skipped when the script file does not exist |
 | `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
+| `read_only_writes_outside_report` | assert the task is read-only and a spec line tells it to write, create or edit a file other than its report path |
+| `spec_absolute_path_outside_project` | assert a spec line names an absolute system path outside the project directory |
 | `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
@@ -769,7 +775,9 @@ alert or question for a failure that is still within its retry budget.
 A finding is `{rule_id, severity, message, story, task, matched}` — the
 offending task, or its story when the finding is story-scoped, or `-`
 when it is whole-plan. Every surface renders the same line:
-`[severity] rule_id task: message`; an empty set renders as
+`[severity] rule_id task: message [line: <offending spec line>]` (the quoted
+line is `matched`, the whole spec line the rule fired on, clipped to 160
+characters around the hit; the retry feedback to the planner carries it too); an empty set renders as
 `clean: 0 findings`.
 
 ```

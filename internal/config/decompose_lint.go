@@ -169,6 +169,19 @@ type DecomposeLintMatch struct {
 	// or how-to coverage but does not run `make sync-docs`. A script
 	// that does not exist yet is skipped. Absent (false) = do not check.
 	VerificationScriptDocsWithoutSync bool `yaml:"verification_script_docs_without_sync,omitempty" json:"verification_script_docs_without_sync,omitempty"`
+	// ReadOnlyWritesOutsideReport asserts the task is read-only (the
+	// read_only flag, or a spec whose first non-empty line opens with
+	// the READ-ONLY: marker) and a spec line tells it to write, create
+	// or edit a file other than its single report_path. The offending
+	// spec line is the finding excerpt. Absent (false) = do not check.
+	ReadOnlyWritesOutsideReport bool `yaml:"read_only_writes_outside_report,omitempty" json:"read_only_writes_outside_report,omitempty"`
+	// SpecAbsolutePathOutsideProject asserts a spec line names an
+	// absolute filesystem path (under a system root such as /usr, /opt,
+	// /etc, /var, /home or /tmp) that is not inside the project
+	// directory. Repo-relative paths and paths inside the project tree
+	// are ignored; so are shebang lines and /dev paths. The offending
+	// spec line is the finding excerpt. Absent (false) = do not check.
+	SpecAbsolutePathOutsideProject bool `yaml:"spec_absolute_path_outside_project,omitempty" json:"spec_absolute_path_outside_project,omitempty"`
 	// Kind asserts the task's kind (for example "final_gate" or
 	// "smoke"), compared case-insensitively. Empty = do not check.
 	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`

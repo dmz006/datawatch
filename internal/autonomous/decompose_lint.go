@@ -100,6 +100,8 @@ type compiledMatch struct {
 	reasonEmpty   bool
 	taskFilesOnly bool
 	docsNoSync    bool
+	roWritesOut   bool
+	absPathOut    bool
 	kind          string
 	anyOf         []compiledMatch
 	allOf         []compiledMatch
@@ -148,6 +150,14 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	}
 	if m.kind != "" && !strings.EqualFold(strings.TrimSpace(t.Kind), m.kind) {
 		return false
+	}
+	if m.roWritesOut && readOnlyWriteLine(t) == "" {
+		return false
+	}
+	if m.absPathOut {
+		if line, _ := specAbsolutePathOutside(t.Spec, dir); line == "" {
+			return false
+		}
 	}
 	if m.taskFilesOnly {
 		if _, ok := verifyScriptTaskFilesOnly(dir, t); !ok {
@@ -232,7 +242,7 @@ func compileRules(rules []Rule) []compiledRule {
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
 	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty, unexecScript: m.VerificationScriptUnexecutable,
 		reasonEmpty: m.VerificationScriptReasonEmpty, taskFilesOnly: m.VerificationScriptTaskFilesOnly,
-		docsNoSync: m.VerificationScriptDocsWithoutSync, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		docsNoSync: m.VerificationScriptDocsWithoutSync, roWritesOut: m.ReadOnlyWritesOutsideReport, absPathOut: m.SpecAbsolutePathOutsideProject, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -409,6 +419,33 @@ func firstMatch(re *regexp.Regexp, s string) string {
 	return clipExcerpt(s[loc[0]:loc[1]])
 }
 
+// firstMatchLine is firstMatch widened to the whole line the first hit
+// sits on, so a finding quotes the offending spec line rather than a
+// bare fragment of it. A long line is clipped around the hit.
+func firstMatchLine(re *regexp.Regexp, s string) string {
+	if re == nil || s == "" {
+		return ""
+	}
+	loc := re.FindStringIndex(s)
+	if loc == nil {
+		return ""
+	}
+	start := strings.LastIndex(s[:loc[0]], "\n") + 1
+	end := len(s)
+	if i := strings.IndexByte(s[loc[0]:], '\n'); i >= 0 {
+		end = loc[0] + i
+	}
+	line := s[start:end]
+	if strings.TrimSpace(line) == "" {
+		return clipExcerpt(s[loc[0]:loc[1]])
+	}
+	hit := s[loc[0]:loc[1]]
+	if j := strings.IndexByte(hit, '\n'); j >= 0 {
+		hit = hit[:j]
+	}
+	return quoteSpecLine(line, hit)
+}
+
 func clipExcerpt(s string) string {
 	s = strings.TrimSpace(s)
 	r := []rune(s)
@@ -438,7 +475,7 @@ func excerptFor(m *compiledMatch, t Task, dir string) string {
 // regexExcerpt is the first regex hit in priority order: spec, files
 // entries, title.
 func regexExcerpt(m *compiledMatch, t Task) string {
-	if e := firstMatch(m.spec, t.Spec); e != "" {
+	if e := firstMatchLine(m.spec, t.Spec); e != "" {
 		return e
 	}
 	if m.files != nil && len(t.FilesPlanned) > 0 {
@@ -448,7 +485,7 @@ func regexExcerpt(m *compiledMatch, t Task) string {
 			}
 		}
 	}
-	return firstMatch(m.title, t.Title)
+	return firstMatchLine(m.title, t.Title)
 }
 
 // predicateExcerpt describes the asserted field state of a
@@ -484,6 +521,16 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	}
 	if m.kind != "" {
 		parts = append(parts, "kind="+m.kind)
+	}
+	if m.roWritesOut {
+		if l := readOnlyWriteLine(t); l != "" {
+			parts = append(parts, quoteSpecLine(l, ""))
+		}
+	}
+	if m.absPathOut {
+		if l, p := specAbsolutePathOutside(t.Spec, dir); l != "" {
+			parts = append(parts, quoteSpecLine(l, p))
+		}
 	}
 	if m.taskFilesOnly {
 		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (compares only against the task's own files, never the merge base)")
