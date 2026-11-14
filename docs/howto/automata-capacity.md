@@ -452,6 +452,16 @@ task, each reported as *left alone* with its reason. The response names
 each affected task as *changed* or *left alone* and says, for the ones that
 moved, that their capacity request was retargeted (`capacity_moved`).
 
+The move does not depend on the task's stored backend changing. A task whose
+stored pair already equals the one you set can still be queued on a different
+pool, because it inherited its worker from its story or Automaton, or because
+an earlier fall-through placed it elsewhere. So a waiting task is always
+checked against the pool its resolved pair names, and moved if it is queued
+somewhere else. When the request already sits on that pool nothing changes.
+Whenever the request moves, or the task is reset, the `capacity_fallthrough`
+note recorded for its old request is dropped, since it no longer says where the
+task waits; the next admission records its own.
+
 ## Park on an external condition
 
 A task blocked on something outside the daemon — a long CI run, a deploy
