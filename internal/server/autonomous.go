@@ -3349,6 +3349,14 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "resume", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
 		writeJSONOK(w, updated)
 
+	// Operator hold: wait by decision. A second hold call on a held
+	// Automaton extends the hold.
+	case "hold":
+		s.handleAutomatonHold(w, r, id)
+
+	case "release_hold":
+		s.handleAutomatonReleaseHold(w, r, id)
+
 	// BL303 S2 T06 — per-Automaton guardrail override.
 	case "guardrails":
 		if r.Method != http.MethodPut {
@@ -5221,6 +5229,211 @@ func addGuardrailAuditDetail(detail map[string]any, backend, model *string) {
 func writeJSONOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// holdUntilForms names the values the hold-until field accepts, for a 400.
+const holdUntilForms = "an RFC 3339 time such as 2026-12-01T09:00:00Z, a date such as 2026-12-01 (the end of that day in UTC) or a duration such as 72h"
+
+// parseHoldUntil reads the hold-until field. Empty means no look-again time.
+// A date is the end of that day in UTC; a duration counts from now.
+func parseHoldUntil(raw string, now time.Time) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &t, nil
+	}
+	if d, err := time.Parse("2006-01-02", raw); err == nil {
+		t := d.Add(24*time.Hour - time.Second).UTC()
+		return &t, nil
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+		t := now.Add(d)
+		return &t, nil
+	}
+	return nil, fmt.Errorf("bad until %q: use %s", raw, holdUntilForms)
+}
+
+// handleAutomatonHold serves POST /api/autonomous/prds/{id}/hold. Body
+// {reason, condition, until, actor}. A held Automaton's hold is extended.
+func (s *Server) handleAutomatonHold(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	h, ok := s.autonomousMgr.(automatonHolder)
+	if !ok {
+		http.Error(w, "hold is not available", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		Reason    string `json:"reason"`
+		Condition string `json:"condition"`
+		Until     string `json:"until"`
+		Actor     string `json:"actor"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	until, err := parseHoldUntil(req.Until, time.Now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	hr := autonomous.HoldRequest{Reason: req.Reason, Condition: req.Condition, Until: until}
+	extend := false
+	if cur, found := s.autonomousMgr.GetPRD(id); found {
+		if p, isPRD := cur.(*autonomous.PRD); isPRD && p.Status == autonomous.PRDHeld {
+			extend = true
+		}
+	}
+	if !extend && strings.TrimSpace(req.Reason) == "" {
+		http.Error(w, "a hold needs a reason; say why the Automaton is waiting", http.StatusBadRequest)
+		return
+	}
+	var updated any
+	action := "hold"
+	if extend {
+		updated, err = h.ExtendHold(id, hr, req.Actor)
+		action = "hold_extend"
+	} else {
+		updated, err = h.Hold(id, hr, req.Actor)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "hold", "automaton", id, map[string]any{
+		"reason": req.Reason, "condition": req.Condition, "until": req.Until, "extended": extend, "kind": action,
+	})
+	writeJSONOK(w, updated)
+}
+
+// handleAutomatonReleaseHold serves POST /api/autonomous/prds/{id}/release_hold.
+// Body {actor, note}. The Automaton returns to the status it had.
+func (s *Server) handleAutomatonReleaseHold(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	h, ok := s.autonomousMgr.(automatonHolder)
+	if !ok {
+		http.Error(w, "hold is not available", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		Actor string `json:"actor"`
+		Note  string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	updated, err := h.ReleaseHold(id, req.Actor, req.Note)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "release_hold", "automaton", id, map[string]any{"note": req.Note})
+	writeJSONOK(w, updated)
+}
+
+// handleAutonomousHeld serves GET /api/autonomous/held: the held group.
+func (s *Server) handleAutonomousHeld(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	hr, ok := s.autonomousMgr.(heldGroupReader)
+	if !ok {
+		http.Error(w, "held group is not available", http.StatusNotImplemented)
+		return
+	}
+	writeJSONOK(w, hr.HeldAutomata())
+}
+
+// handleAutonomousHeldMigrate serves POST /api/autonomous/held/migrate. Body
+// {dry_run, ids, reason, condition, until, actor}. dry_run defaults to true
+// when ids is empty; a real run needs ids and a reason. 409 while a final
+// gate is running.
+func (s *Server) handleAutonomousHeldMigrate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	hm, ok := s.autonomousMgr.(holdMigrator)
+	if !ok {
+		http.Error(w, "hold migration is not available", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		DryRun    *bool    `json:"dry_run"`
+		IDs       []string `json:"ids"`
+		Reason    string   `json:"reason"`
+		Condition string   `json:"condition"`
+		Until     string   `json:"until"`
+		Actor     string   `json:"actor"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	dryRun := len(req.IDs) == 0
+	if req.DryRun != nil {
+		dryRun = *req.DryRun
+	}
+	if !dryRun {
+		if len(req.IDs) == 0 {
+			http.Error(w, "a real run needs ids; send dry_run true to list the candidates", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Reason) == "" {
+			http.Error(w, "a real run needs a reason from the operator", http.StatusBadRequest)
+			return
+		}
+	}
+	until, err := parseHoldUntil(req.Until, time.Now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	report, err := hm.MigrateToHold(autonomous.HoldMigrationOpts{
+		DryRun: dryRun, IDs: req.IDs, Reason: req.Reason, Condition: req.Condition, Until: until, Actor: req.Actor,
+	})
+	if err != nil {
+		if errors.Is(err, autonomous.ErrHoldMigrationBusy) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "hold_migrate", "autonomous", "",
+		map[string]any{"dry_run": dryRun, "ids": req.IDs, "report": report})
+	writeJSONOK(w, report)
 }
 
 // parkedResumer is the optional AutonomousAPI extension that resumes a PRD
