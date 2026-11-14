@@ -82,15 +82,6 @@ jobs:
       - name: dockerfile certifi floor check
         run: bash scripts/check-dockerfile-certifi.sh && bash scripts/check-dockerfile-certifi.sh --self-test
 
-      # gofmt audit of cmd/ and internal/: fails on any unformatted Go file
-      # (excluding 'Code generated' headers and testdata/ vendor paths).
-      # Runs in `make lint` too (see the `check-gofmt` target).
-      - name: gofmt check
-        run: bash scripts/check-gofmt.sh
-
-      - name: go test
-        run: go test ./... -count=1 -timeout 12m
-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:

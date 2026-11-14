@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links check-gofmt leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links check-gofmt help leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -292,6 +292,11 @@ check-plans-links:
 # 'Code generated' headers and testdata/ vendor paths), exits 1 on offenders.
 check-gofmt:
 	bash scripts/check-gofmt.sh
+
+# List the local pre-tag checks (run on the build host before a tag is pushed).
+help:
+	@echo "Local checks (part of 'make lint', run on the build host before a tag is pushed):"
+	@echo "  make check-gofmt     reports unformatted Go files under cmd/ and internal/ (gofmt -l)"
 
 check-no-config-copies:
 	bash scripts/check-no-config-copies.sh origin/main
