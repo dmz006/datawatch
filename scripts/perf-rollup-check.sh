@@ -14,7 +14,7 @@
 #   PERF_ROLLUP_CHECK       set to 1 by this script; the time-limit assertions are
 #                           only enforced when it is 1. Byte limits always run.
 #   PERF_ROLLUP_MULTIPLIER  number >= 1, default 1. Scales every time limit for
-#                           a slow CI host (3 allows 900 ms warm, 4.5 s cold).
+#                           a slow host (3 allows 900 ms warm, 4.5 s cold).
 #                           The byte limits never scale.
 #   PERF_ROLLUP_TIMEOUT     hard timeout in seconds for each go test, default 600.
 #

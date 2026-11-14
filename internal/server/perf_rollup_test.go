@@ -17,7 +17,7 @@
 //	roll-up cold   (first read after a write)        1.5 s
 //	Automata list  (default response)                300 ms and 2 MB
 //
-// PERF_ROLLUP_MULTIPLIER=<number >= 1> scales every time limit for a slow CI
+// PERF_ROLLUP_MULTIPLIER=<number >= 1> scales every time limit for a slow
 // host (for example 3 allows 900 ms warm and 4.5 s cold). The byte limit never
 // scales.
 //
