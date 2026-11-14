@@ -182,7 +182,7 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		story := findStory(prd, t.StoryID)
 		auto := m.AutomationForPRD(prd)
 		var source string
-		backend, model, source = resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+		backend, model, source = resolveTaskExecutionLLM(t, story, prd, auto, executionFallbackBackend(m.cfg, prd))
 		effort = resolveTaskEffort(t, story, prd, auto)
 		backendReason = describeAttemptBackendReason(source, taskAttemptKind(t), m.escalationFailureCount(t))
 	}

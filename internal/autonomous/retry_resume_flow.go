@@ -57,15 +57,16 @@ func (m *Manager) previousAttemptBackend(prd *PRD, t *Task) string {
 		return recorded
 	}
 	story := findStory(prd, t.StoryID)
-	backend, _ := admittedWorker(t, story, prd, m.AutomationForPRD(prd), m.cfgExecutionBackend())
+	backend, _ := admittedWorker(t, story, prd, m.AutomationForPRD(prd), m.executionFallbackFor(prd))
 	return backend
 }
 
-// cfgExecutionBackend reads the fallback worker backend under the manager lock.
-func (m *Manager) cfgExecutionBackend() string {
+// executionFallbackFor reads the fallback worker backend of prd under the
+// manager lock.
+func (m *Manager) executionFallbackFor(prd *PRD) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.cfg.ExecutionBackend
+	return executionFallbackBackend(m.cfg, prd)
 }
 
 // tryRetryResume decides, after a verifier failure, whether the next attempt

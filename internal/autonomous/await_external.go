@@ -305,7 +305,7 @@ func (m *Manager) awaitReAdmitAs(ctx context.Context, prd *PRD, t *Task, prefix,
 	}
 	m.mu.Lock()
 	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
-	fallback := m.cfg.ExecutionBackend
+	fallback := executionFallbackBackend(m.cfg, prd)
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
 	backend, model := admittedWorker(t, story, prd, m.AutomationForPRD(prd), fallback)

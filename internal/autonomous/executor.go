@@ -1707,7 +1707,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// per-task → per-story → per-PRD → Automation → cfg.ExecutionBackend → global session.llm_backend.
 			story := findStory(prd, t.StoryID)
 			auto := m.AutomationForPRD(prd)
-			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, executionFallbackBackend(m.cfg, prd))
 			// autonomous.first_attempt: a first attempt of a kind with a
 			// configured pair runs on that pair, unless the task or its
 			// Automaton pinned a worker. Retries never use it.

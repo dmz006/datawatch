@@ -842,7 +842,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	}
 	m.mu.Lock()
 	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
-	fallback := m.cfg.ExecutionBackend
+	fallback := executionFallbackBackend(m.cfg, prd)
 	sessionNode, entryNodes, sessionEndpoint := m.sessionNode, m.entryNodes, m.sessionEndpoint
 	sessionBackend := m.sessionBackend
 	m.mu.Unlock()
