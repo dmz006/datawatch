@@ -902,13 +902,13 @@ A maintenance window opening or closing takes effect at once. A node added to or
 
 **A leased node is always used.** Once a worker holds a lease that names a node, the worker is launched against that node's address, including when the LLM entry lists only one node. A one-node entry that names no node keeps using pi's own provider table, as before.
 
-**No lease on a node, no launch.** If a worker holds capacity but no node was leased, and its LLM entry lists compute nodes, the daemon does not launch it. Starting it would send the work to pi's default endpoint instead of a node of the entry. The task is marked failed with an error of this form:
+**No lease on a node, no launch.** If a worker holds capacity but no node was leased, and its LLM entry lists compute nodes, the daemon does not launch it. Starting it would send the work to pi's default endpoint instead of a node of the entry. The daemon releases the lease and the task goes back to waiting, with a reason of this form:
 
 ```
-task <task-id> not spawned: pi-prompt worker on model <model> holds capacity but no compute node was leased, and its LLM entry lists compute nodes
+waiting for a compute node: pi-prompt worker on model <model> was granted capacity but no node of its LLM entry was leased
 ```
 
-An entry that lists no nodes is not affected.
+The task asks for capacity again every couple of seconds. It launches as soon as a node is leased, or on another free pool when the fall-through rule allows it. The wait is not a failed attempt and does not use a retry: the task's retry counters do not move. It is bounded by the capacity wait timeout, like any wait for capacity. An entry that lists no nodes is not affected.
 
 **Bare model names.** A model written without a provider (for example `qwen3.8:27b`) is given the provider of the backend's configured model (for example `ollama/qwen3.8:27b` when `pi_prompt.model` is set to that) before admission, so the node is chosen for the provider the launch uses. A model that already names a provider is left as written.
 

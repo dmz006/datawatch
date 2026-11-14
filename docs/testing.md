@@ -2166,21 +2166,21 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity                   
 | **Actual** | `TestNodeLoaderAsksTheNodeForTheModelWithoutItsProvider` and `TestNodeModelName` (`cmd/datawatch`) passed. |
 | **Result** | PASS |
 
-### No launch when capacity was held but no node was leased
+### A task that holds capacity but no node waits for a node
 
 | Field | Details |
 |-------|---------|
 | **Description** | A pi-family worker that holds capacity with no node, while its LLM entry lists nodes, would have started on pi's default endpoint. |
 | **Steps** | 1. Run a one-task Automaton where the lease names no node and the entry lists compute nodes. 2. Read how many workers were spawned and the task as stored. 3. Repeat with an entry that lists no nodes, with a hosted backend, and with capacity switched off. |
-| **Expected** | No worker is spawned and the task is failed with an error naming the backend and the model and saying no compute node was leased. The other three cases still spawn. |
-| **Actual** | `TestPiFamilyWorkerWithoutLeasedNodeDoesNotSpawn` and `TestWorkerWithoutLeasedNodeUnchangedElsewhere` (`internal/autonomous`) passed. |
+| **Expected** | No worker is spawned and the task is not failed: its lease is released and it waits for a node with a reason naming the backend and the model, its retry counters do not move, and it spawns on the node once one is leased. Only the capacity wait timeout ends the wait. The other three cases still spawn. |
+| **Actual** | `TestNoNodeLeasedPiTaskIsRequeuedNotFailed`, `TestNoNodeLeasedRetryCountUnchangedAfterNodeAppears`, `TestNoNodeLeasedSpawnsOnceNodeAppears`, `TestNoNodeLeasedWaitIsBoundedByCapacityBudget`, `TestPiFamilyWorkerWithoutLeasedNodeDoesNotSpawn` and `TestWorkerWithoutLeasedNodeUnchangedElsewhere` (`internal/autonomous`) passed. |
 | **Result** | PASS |
 
-On a sandbox daemon, a refused launch shows as a failed task:
+On a sandbox daemon, a refused launch shows as a waiting task:
 
 ```sh
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/<prd-id>
-# the task's error reads "... holds capacity but no compute node was leased, and its LLM entry lists compute nodes"
+# the task's status is waiting_capacity and its wait reason reads "waiting for a compute node: ... was granted capacity but no node of its LLM entry was leased"
 ```
 
 ### Sessions that start together each launch on their own node

@@ -1831,6 +1831,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				return aerr
 			}
 			// A fall-through admission leased the alternate's pools: spawn there.
+			// reqBackend and reqModel stay the pair the task asked for, so a
+			// later re-admission (no node leased) weighs the fall-through again.
+			reqBackend, reqModel := backend, model
 			if alt, ok := m.fallthroughOf(t.ID); ok {
 				backend, model = alt.Backend, alt.Model
 			}
@@ -1853,16 +1856,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			heldNode := m.heldNode(t.ID)
 			if nerr := m.requireLeasedNode(t, backend, model, heldNode); nerr != nil {
-				log.Printf("[autonomous] prd=%s task=%s no node leased, not spawning: %v", prd.ID, t.ID, nerr)
-				oldStatus := t.Status
-				m.store.WithLock(func() {
-					t.Status = TaskFailed
-					t.Error = nerr.Error()
-				})
-				if m.store.SaveTask(t) == nil {
-					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				// A lease that names no node is not a failed attempt: release it
+				// and wait for a node (or another free pool), within the
+				// capacity wait budget. No retry counter moves.
+				log.Printf("[autonomous] prd=%s task=%s no node leased, waiting for a node: %v", prd.ID, t.ID, nerr)
+				var werr error
+				backend, model, heldNode, werr = m.awaitLeasedNode(ctx, prd, t, reqBackend, reqModel)
+				if werr != nil {
+					if errors.Is(werr, errCancelledWhileWaiting) {
+						return nil
+					}
+					return werr
 				}
-				return nerr
 			}
 			// BL428 §3a — tree lock after capacity, before spawn: a second
 			// writer on the same canonical tree waits here (visible as a

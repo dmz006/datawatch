@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/capacity"
@@ -123,4 +124,75 @@ func (m *Manager) requireLeasedNode(t *Task, backend, model, heldNode string) er
 		return nil
 	}
 	return fmt.Errorf("task %s not spawned: %s worker on model %s holds capacity but no compute node was leased, and its LLM entry lists compute nodes", t.ID, backend, model)
+}
+
+// noNodePollInterval is how long a pi-family task that holds a lease naming no
+// node waits, lease released, before it asks for capacity again. A variable so
+// tests can shorten it.
+var noNodePollInterval = 2 * time.Second
+
+// noNodeWaitReason is the wait reason shown while a pi-family task has no
+// compute node of its LLM entry to run on.
+func noNodeWaitReason(backend, model string) string {
+	return fmt.Sprintf("waiting for a compute node: %s worker on model %s was granted capacity but no node of its LLM entry was leased", backend, model)
+}
+
+// awaitLeasedNode runs when requireLeasedNode refuses a launch because the
+// lease names no node. The task is not failed and no retry counter moves: the
+// lease is released (so the slot is free for other work), the task shows as
+// waiting with a clear reason, and capacity is asked for again, which also
+// lets the fall-through rule move the task to another free pool. The loop ends
+// when the lease names a node (or the final pool needs none), when the task is
+// cancelled, or when the existing capacity wait budget is spent, in which case
+// the error wraps capacity.ErrWaitTimeout like any other admission that waited
+// out its bound.
+//
+// backend and model are the pair the first admission asked for; the returned
+// pair is the one the final lease is for (the alternate's after a
+// fall-through), with the node it holds.
+func (m *Manager) awaitLeasedNode(ctx context.Context, prd *PRD, t *Task, backend, model string) (string, string, string, error) {
+	bound := m.capacityWait()
+	defer m.endCapacityWait(t.ID)
+	defer m.resetCapacityWait(t.ID)
+	curBackend, curModel := backend, model
+	for {
+		heldNode := m.heldNode(t.ID)
+		if m.requireLeasedNode(t, curBackend, curModel, heldNode) == nil {
+			m.clearWaiting(t)
+			return curBackend, curModel, heldNode, nil
+		}
+		m.releaseCapacity(t.ID)
+		m.setWaiting(t, noNodeWaitReason(curBackend, curModel))
+		remaining := m.capacityWaitRemaining(t.ID, bound)
+		if remaining <= 0 {
+			return "", "", "", fmt.Errorf("capacity: %w", capacity.ErrWaitTimeout)
+		}
+		pause := min(noNodePollInterval, remaining)
+		start := time.Now()
+		select {
+		case <-ctx.Done():
+			if m.taskCancelled(t.ID) {
+				return "", "", "", errCancelledWhileWaiting
+			}
+			return "", "", "", ctx.Err()
+		case <-time.After(pause):
+		}
+		m.addCapacityWaitSpent(t.ID, time.Since(start))
+		if m.taskCancelled(t.ID) {
+			return "", "", "", errCancelledWhileWaiting
+		}
+		if err := m.admitPreferring(ctx, prd, t, backend, model, capacity.RoleWorker, ""); err != nil {
+			return "", "", "", err
+		}
+		curBackend, curModel = backend, model
+		if alt, ok := m.fallthroughOf(t.ID); ok {
+			curBackend, curModel = alt.Backend, alt.Model
+		}
+		if err := m.loadWorkerNode(ctx, prd, t, curBackend, curModel); err != nil {
+			return "", "", "", err
+		}
+		if err := m.replaceStaleLease(ctx, prd, t, curBackend, curModel); err != nil {
+			return "", "", "", err
+		}
+	}
 }
