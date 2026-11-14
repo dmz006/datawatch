@@ -237,6 +237,13 @@ the daemon keeps the store side.
   (overloaded node, small-model-large-context, etc.) — the input to the
   events below and to the PWA's model-use card.
 
+  If the daemon has no model-use source wired (for example a service-kind
+  plugin is installed but no plugin token source is configured), the daemon no
+  longer crashes at startup: the model-node event task simply does not run, and
+  this route answers `503 plugins not available` instead of panicking. Fix it
+  by wiring the plugin token source / restoring the plugin manager, then
+  reload plugins.
+
 ### Surfaces
 
 | Surface | How |

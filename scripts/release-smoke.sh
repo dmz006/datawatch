@@ -4847,7 +4847,9 @@ H "79. Web UI slow-network load scenarios - cold load, empty, failed, stale, off
 # the run is bounded by SMOKE_LOAD_TIMEOUT (default 900s) through the
 # `timeout` command when it is available, with a plain run as fallback.
 PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
-if ! command -v node >/dev/null 2>&1; then
+if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
+  : # SMOKE_ONLY excludes this section
+elif ! command -v node >/dev/null 2>&1; then
   skip "load scenarios: node not found on PATH — cannot run scripts/test-stories/pwa"
 elif [[ ! -d "$PWA_DIR/node_modules" ]]; then
   skip "load scenarios: Playwright install missing (scripts/test-stories/pwa/node_modules) — run: (cd scripts/test-stories/pwa && npm ci)"
@@ -4885,45 +4887,64 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-H "Shared navigation bar fits phone widths in light and dark"
+H "79a. Shared navigation bar fits phone widths in light and dark"
 # Runs the shared-nav scenario (scripts/test-stories/pwa/shared-nav-mobile-fit.mjs)
 # through the PWA runner's shared-nav group (`node run-all.mjs --group shared-nav`),
 # same helper pattern as the load section above: this smoke daemon only
 # ($BASE/$TOK), TMUX scrubbed, bounded by SMOKE_SHARED_NAV_TIMEOUT (default 600s)
 # through `timeout` when available. Unlike the load section, a navigation layout
-# finding at phone widths is a failure (ko), never a skip. The section SKIPs only
-# when the scenario reports that no browser or daemon is available: it exits 2,
-# which the runner counts as skipped, so the run ends with 0 passed and 0 failed.
-PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
-NAV_EVD="$TMPD/shared-nav-evidence.$$"
-rm -rf "$NAV_EVD"
-mkdir -p "$NAV_EVD"
-NAV_OUT_FILE="$TMPD/shared-nav-out.$$"
-NAV_TO_BIN="$(command -v timeout 2>/dev/null || true)"
-if [[ -n "$NAV_TO_BIN" ]]; then
-  env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
-    "$NAV_TO_BIN" "${SMOKE_SHARED_NAV_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+# finding at phone widths is a failure (ko), never a skip. The section SKIPs when
+# node is missing, or when the scenario exits 2 (no browser at DW_CHROME_PATH or
+# no daemon answers at $BASE): the runner counts an exit-2 story as skipped, so
+# the run ends with 0 passed and 0 failed, which the section records as a skip —
+# never a ko. The probe's required variables are passed in full: TEST_TLS/
+# TEST_TOKEN from $BASE/$TOK (the test daemon starts with no auth token, so
+# TEST_TOKEN is empty and the probe's empty-token default applies), PROBE_OUT_DIR
+# the evidence dir and PROBE_CHROME_PROFILE a throwaway profile under $TMPD, both
+# removed again on every path.
+if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
+  : # SMOKE_ONLY excludes this section
 else
-  env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
-    node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
-fi
-NAV_RC=$?
-tail -20 "$NAV_OUT_FILE"
-NAV_SUMMARY="$(grep -E '^summary: ' "$NAV_OUT_FILE" | tail -1)"
-NAV_PASSED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $2}')"
-NAV_FAILED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $4}')"
-if [[ "$NAV_RC" -eq 0 ]]; then
-  if [[ "${NAV_PASSED:-""}" == "0" && "${NAV_FAILED:-0}" == "0" ]]; then
-    skip "shared navigation: scenario skipped, no browser or daemon available ($NAV_SUMMARY)"
+  PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
+  if ! command -v node >/dev/null 2>&1; then
+    skip "shared navigation: node not found on PATH — cannot run scripts/test-stories/pwa"
   else
-    ok "shared navigation fits phone widths: ${NAV_SUMMARY#summary: }"
+    NAV_EVD="$TMPD/shared-nav-evidence.$$"
+    NAV_PROFILE="$TMPD/shared-nav-chrome-profile.$$"
+    rm -rf "$NAV_EVD" "$NAV_PROFILE"
+    mkdir -p "$NAV_EVD"
+    NAV_OUT_FILE="$TMPD/shared-nav-out.$$"
+    NAV_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+    if [[ -n "$NAV_TO_BIN" ]]; then
+      env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TOKEN="$TOK" \
+        EVIDENCE_DIR="$NAV_EVD" PROBE_OUT_DIR="$NAV_EVD" PROBE_CHROME_PROFILE="$NAV_PROFILE" \
+        "$NAV_TO_BIN" "${SMOKE_SHARED_NAV_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+    else
+      env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TOKEN="$TOK" \
+        EVIDENCE_DIR="$NAV_EVD" PROBE_OUT_DIR="$NAV_EVD" PROBE_CHROME_PROFILE="$NAV_PROFILE" \
+        node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+    fi
+    NAV_RC=$?
+    tail -20 "$NAV_OUT_FILE"
+    NAV_SUMMARY="$(grep -E '^summary: ' "$NAV_OUT_FILE" | tail -1)"
+    NAV_PASSED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $2}')"
+    NAV_FAILED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $4}')"
+    if [[ "$NAV_RC" -eq 0 ]]; then
+      if [[ "${NAV_PASSED:-""}" == "0" && "${NAV_FAILED:-0}" == "0" ]]; then
+        skip "shared navigation: scenario skipped, no browser or daemon available ($NAV_SUMMARY)"
+      else
+        ok "shared navigation fits phone widths: ${NAV_SUMMARY#summary: }"
+      fi
+    elif [[ "$NAV_RC" -eq 2 ]]; then
+      skip "shared navigation: runner exited 2 ("$(tail -1 "$NAV_OUT_FILE")")"
+    elif [[ "$NAV_RC" -eq 124 ]]; then
+      ko "shared navigation timed out after ${SMOKE_SHARED_NAV_TIMEOUT:-600}s: $(tail -1 "$NAV_OUT_FILE")"
+    else
+      ko "shared navigation layout findings at phone widths (run-all.mjs rc=$NAV_RC): $(tail -5 "$NAV_OUT_FILE" | tr '\n' ' ' | head -c 400)"
+    fi
+    rm -rf "$NAV_EVD" "$NAV_PROFILE"
   fi
-elif [[ "$NAV_RC" -eq 124 ]]; then
-  ko "shared navigation timed out after ${SMOKE_SHARED_NAV_TIMEOUT:-600}s: $(tail -1 "$NAV_OUT_FILE")"
-else
-  ko "shared navigation layout findings at phone widths (run-all.mjs rc=$NAV_RC): $(tail -5 "$NAV_OUT_FILE" | tr '\n' ' ' | head -c 400)"
 fi
-rm -rf "$NAV_EVD"
 
 # ---------------------------------------------------------------------------
 H "79b. Autonomous priority-by-kind + defect-intake settings (PWA)"
@@ -4958,9 +4979,11 @@ if [[ -d "$PWA_DIR/node_modules" && "${SMOKE_PRIORITY_SOURCE:-1}" != "0" ]]; the
   PSRC_TO_BIN="$(command -v timeout 2>/dev/null || true)"
   PSRC_RESULT="ok"
   if [[ -n "$PSRC_TO_BIN" ]]; then
-    env -u TMUX -u TMUX_TMPDIR "$PSRC_TO_BIN" "${SMOKE_PRIORITY_SOURCE_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$PSRC_EVD" \
+      "$PSRC_TO_BIN" "${SMOKE_PRIORITY_SOURCE_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
   else
-    env -u TMUX -u TMUX_TMPDIR node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$PSRC_EVD" \
+      node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
   fi
   PSRC_RC=$?
   if [[ $PSRC_RC -eq 0 ]]; then
@@ -4970,7 +4993,6 @@ if [[ -d "$PWA_DIR/node_modules" && "${SMOKE_PRIORITY_SOURCE:-1}" != "0" ]]; the
   fi
 fi
 rm -rf "$PSRC_EVD"
-SMOKE_PASS=$((SMOKE_PASS+1))
 
 # ---------------------------------------------------------------------------
 H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
