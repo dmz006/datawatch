@@ -94,6 +94,79 @@ Automaton is then held in `needs_review` at the first block.
 
 MCP: `autonomous_config_set` with `auto_fix_retries: 2`.
 
+## Finished, not merged: the re-review that clears a stale block
+
+A finished Automaton can end with an open completion review while its work
+branch still carries commits the default branch does not have: no verdict on
+record yet, the last verdict a block, or a pass judged on an older review
+head (a stale pass after the work moved on). Every read derives
+`merge_state` `finished_not_merged` for it — the amber "Branch not merged"
+badge in the list and detail views, the Projects cards and the Gantt row —
+and the archive guard holds it there: the supervisor loop does not archive a
+completed Automaton while its work is unmerged (a rebased or squashed
+landing counts), an automated, non-operator archive of it is refused naming
+the branch and the commits it still carries, and your own archive is always
+honored as the explicit "abandon the work" decision. An Automaton that was
+wrongly archived before that guard existed is restored by the one-time
+[unarchive repair](automaton-housekeeping-repairs.md#unarchive-repair-one-time).
+
+To settle the open review, the **re-review** (re-judgment) action re-runs
+the completion rules review as a fresh judgment. It never resets an
+Automaton — no task goes back to `pending`, no story reopens — and every
+task must already be `completed` or `cancelled`, with at least one
+`completed` (a cancelled task is skipped, not a blocker).
+
+**Who it applies to.** A `blocked` Automaton, one held for review whose head
+has moved, or a `completed` or `archived` Automaton in state
+`finished_not_merged` whose review is still open to re-running. A finished
+Automaton whose work is already on the default branch, or whose latest pass
+covers the current review head, is refused — the refusal names the states
+re-review applies to.
+
+**What the verdict resolves.** A **pass** clears the stale block: a blocked
+Automaton is lifted to `completed`, and a completed or archived Automaton
+keeps its finished status and simply loses the stale block. A **block**
+flips the record back to `blocked` with the new reason. **No verdict** (the
+judge failed or returned nothing) keeps the Automaton's status — a blocked
+one keeps its previous blocked reason — and an error is returned so you see
+the re-review produced no judgment. In every case the outcome is written to
+the Automaton's decision log before any status change.
+
+**A fresh judgment, or a replay.** It is a fresh review whenever the review
+head or the rules text the judge reads has changed since the stored verdict
+— that is how the fix you committed by hand (or the auto-fix merge) gets
+judged. The stored verdict is replayed as-is only when the head and the
+rules text are both unchanged, the verdict recorded a rules fingerprint and
+the per-commit verdict cache is on ([the per-commit verdict
+cache](judge-policy.md#the-per-commit-verdict-cache)). Every re-review records a
+`guardrail_rejudge` decision carrying the commit it judged
+(`judged_commit_sha`) and whether the stored verdict was reused
+(`verdict_reused`), so asking again and again leaves one verdict per review
+that actually ran. The compact reply carries a plain-language `message`
+saying which of the two it was.
+
+**The auto-fix merge triggers the re-review on its own.** When the auto-fix
+task above completes and merges back into the Automaton branch, the merge
+itself runs exactly one re-review of the new head: a pass clears the stale
+block (a finished record keeps its finished status) and a block re-blocks
+with the new reason. You run no re-judge for that one; the decision log
+shows it with the merge and the new verdict next to each other.
+
+| Surface | Call |
+|---|---|
+| REST | `POST /api/autonomous/prds/{id}/rejudge` — with `?view=compact` the reply carries the plain-language `message` |
+| MCP | `autonomous_prd_rejudge(id)` — the same compact reply |
+| CLI | `datawatch autonomous prd-rejudge <id>` (alias `datawatch autonomous rejudge <id>`; `--backend <name>` pins the judgment to that judge backend, the Reroute form) |
+| Comm | `autonomous rejudge <id> [backend=<name>]` — the same reply from the messaging channel |
+| Web app | The **Re-review** button on the Automaton's detail header (shown for `blocked`, `completed` and `archived` records) sends the same request and shows the same `message` in a six-second notice |
+
+Reading the verdict afterwards is the same as for a block: the latest entry
+in the Automaton's verdict list on its detail page (or in
+`autonomous_prd_get`) with its issues, and the `guardrail_rejudge` /
+`guardrail_verdict` entries in its decision log. The full reference for the
+re-review, including the fingerprint and replay rules, is in
+[Re-judging the completion guardrail](autonomous-recovery.md#re-judging-the-completion-guardrail-rejudge).
+
 See also [Failure escalation](failure-escalation.md) and
 [Automata capacity](automata-capacity.md). The decision record is
 [the completion review plan](../plans/2026-11-04-completion-review-autofix.md).
