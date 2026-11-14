@@ -409,9 +409,22 @@ server:
 #   DATAWATCH_API_URL        Base URL of the parent daemon API the bridge calls back to
 #                            (default http://localhost:8080). Wrong value → bridge starts but
 #                            tool discovery fails; sessions show "reply-only" mode.
-#   DATAWATCH_TOKEN          Bearer token for the parent daemon API. Must match server.token.
-#                            Wrong/missing → 401 on discovery and /api/channel/ready;
-#                            bridge starts but push notifications never work.
+#   DATAWATCH_TOKEN          Bearer token the bridge authenticates with against the parent daemon
+#                            API. In the per-session .mcp.json the daemon writes this is the
+#                            session's scoped, short-lived credential (default session-default
+#                            grant) — minted at session start, revoked when the session ends or
+#                            is killed (a leftover project file therefore holds a dead bearer).
+#                            In the instance-level .mcp.json in the data directory the daemon's
+#                            long-lived admin server.token is written today — the 2026-11-13
+#                            encryption audit (fix 13, row K9) proposes replacing it with a
+#                            scoped, short-lived credential and removing the file when the
+#                            session ends, but that fix is NOT implemented in this release;
+#                            once it lands no daemon-written .mcp.json will carry server.token.
+#                            Operator-managed host configs still use server.token or a
+#                            federation peer token. See docs/howto/federation-cbac.md for the
+#                            capability model. Wrong/missing → 401 on discovery and
+#                            /api/channel/ready; bridge starts but push notifications never
+#                            work.
 #   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.
 #                            Auto-set by the daemon; do not override unless testing.
 #
