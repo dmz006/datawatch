@@ -79,10 +79,10 @@ func TestGateRepairComm_RefusesWithoutDaemonCalls(t *testing.T) {
 	r := setupPeerRouter(t, port)
 
 	for _, msg := range []string{
-		"autonomous gate-repair", // no subcommand
-		"autonomous gate-repair reboot", // unknown subcommand
-		"autonomous gate-repair status extra", // unknown argument
-		"autonomous gate-repair run foo=bar", // unknown argument
+		"autonomous gate-repair",                  // no subcommand
+		"autonomous gate-repair reboot",           // unknown subcommand
+		"autonomous gate-repair status extra",     // unknown argument
+		"autonomous gate-repair run foo=bar",      // unknown argument
 		"autonomous gate-repair run automaton=a1", // one id without the other
 	} {
 		out := strings.Join(r.HandleTestMessage(msg), " ")
