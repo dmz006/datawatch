@@ -69,6 +69,9 @@ func (s *Server) handleSupervisorWatch(w http.ResponseWriter, r *http.Request) {
 	if snap.Findings == nil {
 		snap.Findings = []*autonomous.SupervisorWatchFinding{}
 	}
+	if snap.Held.Held == nil {
+		snap.Held.Held = []autonomous.HeldView{}
+	}
 	if snap.Comparison.OnlyWatch == nil {
 		snap.Comparison.OnlyWatch = []string{}
 	}

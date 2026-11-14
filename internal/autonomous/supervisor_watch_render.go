@@ -58,6 +58,12 @@ func RenderSupervisorWatch(w io.Writer, body *SupervisorWatchStatus) {
 		_ = tw.Flush()
 	}
 
+	if body.BlockedAutomata > 0 || body.WaitingForReviewAutomata > 0 {
+		_, _ = fmt.Fprintf(w, "Automata: %d blocked, %d waiting for review\n",
+			body.BlockedAutomata, body.WaitingForReviewAutomata)
+	}
+	_, _ = io.WriteString(w, renderHeldGroupLines(body.Held))
+
 	cmp := body.Comparison
 	if cmp.Last == nil {
 		_, _ = fmt.Fprintf(w, "Comparison: none recorded yet (days of full agreement: %d)\n", cmp.AgreedDays)
