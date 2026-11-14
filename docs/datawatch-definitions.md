@@ -3295,6 +3295,26 @@ A **plan record** of kind `plan` is the registry record of what you are working 
 
 **Plan links** are the ids a plan keeps in `automations`, `automata` and `findings`. A link is never overwritten: attaching an Automaton or Automation that another plan already holds, or a finding attached elsewhere, is refused and names the holder. Detach it first.
 
+### Release plan
+
+A **release plan** is a plan record with `plan_kind` `release` and a `release` label naming the release it stands for. A project has one release plan per label. It links down like any plan, and groups its items with themes. See [howto/plan-records.md](howto/plan-records.md#release-plans-and-themes). The release migration engine attaches Automata and Automations to release plans (default labels `10.0` and `11.0`); it previews first and a written run needs the preview id you approved (audit action `plan_record_release_migrated`). It has no operator surface yet.
+
+### Theme
+
+A **theme** is a named group inside a release plan. It groups Automata and Automations the plan already holds and never adds one; an item is in at most one theme, and an item in no theme is *unplaced*. Detaching an item from the plan takes it out of its theme; removing a theme leaves its items in the plan.
+
+### Backlog item
+
+A **backlog item** is a registry row or a finding with no Automaton yet that a plan holds. It is an item inside the plan, never a plan. Not the same as the plans *backlog* group, which lists plans with no Automaton.
+
+### Registry row link
+
+A **registry row link** ties a registry row to a plan. A row can be linked from more than one plan. A record is held by a plan as a row link or as a backlog item, not both.
+
+### Archived plan
+
+An **archived plan** is a plan marked `archived` (with the time and an optional reason). It is left out of the default plan lists, the backlog, search and overview counts, but its file, links and order are kept, and **restore** brings it back in its old place. Archiving a plan does not touch its Automata, Automations, rows or findings. Audit events: `plan_record_archived`, `plan_record_restored`. Not the same as an archived Automaton or the plans folder archive.
+
 ### Plan order
 
 **Plan order** is the `order` number of a plan: the lowest runs first. Reordering writes a `plan_record_reordered` audit event.

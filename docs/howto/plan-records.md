@@ -45,9 +45,12 @@ and how to turn it off.
 | `automations`, `automata`, `findings` | Plans only. The ids the plan links down to, in display order. They change through the link calls, never by editing the record body. |
 | `links`, `aliases` | Links, and older titles that still find the record. |
 | `needs_review`, `review_reason` | Set by an import when a conflict was resolved for you. |
+| `plan_kind`, `release`, `themes` | Plans only. `plan_kind` is empty (an ordinary plan) or `release`; `release` is the release label a release plan stands for; `themes` groups the plan's items. See *Release plans and themes*. |
+| `archived`, `archived_at`, `archive_reason` | Plans only. Set while a plan is archived. See *Archiving a plan*. |
 
 Records are never deleted. Closing one is a state change, and a closed record
-still resolves.
+still resolves. A plan you no longer want in the lists is *archived*, which is
+also reversible and deletes nothing.
 
 ## Naming a record
 
@@ -187,6 +190,71 @@ attaches to a plan or to an Automaton. Rules that are easy to trip over:
 - A plan can exist with no Automaton yet. It then shows in the *backlog*.
 - Older records have none of these fields and load unchanged.
 
+## Release plans and themes
+
+A **release plan** is a plan with `plan_kind` `release` and a `release` label
+(for example the version it stands for). It is still a plan: it links down to
+Automations and Automata in the same way, so a release is the plan its
+Automata are attached to.
+
+- **One release plan per release.** A project can have only one release plan for a
+  label (compared like titles: case-insensitive, trimmed). A second one is
+  refused with a message naming the plan that already holds the label.
+- **Themes group items inside the plan.** A theme is a named group in a release
+  plan. It only groups Automata and Automations the plan already holds; it never
+  adds one. An item is in at most one theme, and placing it in another theme
+  moves it. Theme names are unique in the plan (case-insensitive).
+- **Themes are not links.** Detaching an Automaton or Automation from the plan
+  also takes it out of its theme. Removing a theme keeps its items in the plan,
+  *unplaced*. The themes view lists each theme in order with its Automata first,
+  then its Automations, and then the unplaced items.
+- **Themes are created empty.** They are added with the theme calls, not when the
+  plan is created. Limits: 50 themes per plan and 100 characters per theme name.
+- Each theme change (create, rename, remove, place, unplace, reorder) writes a
+  `plan_record_theme_changed` audit event whose `theme_op` says which. That is
+  the store-level name; the server maps it to `plan_record_updated` (see the
+  review section).
+
+## Registry rows and backlog items in a plan
+
+Besides Automata and Automations a plan can hold two more kinds of item, each by
+the uid of the record it names:
+
+- A **registry row link** ties a registry row to the plan. The same row may be
+  linked from more than one plan.
+- A **backlog item** is a registry row or a finding that has no Automaton yet,
+  held by the plan. A finding already attached to another plan is refused.
+
+They are items inside a plan, never plans. A record is held in one plan either as
+a row link or as a backlog item, not both. From a row you can ask which plans
+link or hold it, and from a plan you can list its rows and backlog items in the
+order they were added.
+
+## Archiving a plan
+
+Archiving takes a plan out of the default plan lists, the backlog, search
+results and the project overview counts. It is only a mark (`archived`, with the
+time and an optional reason of at most 1000 characters): the plan's file stays on
+disk, and every link it holds (Automata, Automations, findings, registry rows,
+themes) and its `order` stay as they were. Nothing else changes: no Automaton,
+Automation, registry row, finding or setting is touched, and an Automaton or
+Automation is never hidden from a title search because its plan is archived.
+
+- **Restore** clears the mark. The plan returns to the place its `order` gave it.
+- **Both are idempotent.** Archiving an archived plan, or restoring one that is
+  not archived, changes nothing and writes no audit event.
+- **Only plans can be archived.** Registry rows and findings cannot.
+- **A protected plan is refused.** A caller can name one plan (usually the
+  current release plan); while that plan holds Automata, archiving it is
+  refused.
+- **Asking for archived plans.** Lists, search, the backlog, release plan lists
+  and the project overview leave archived plans out unless the call includes
+  them or asks for archived ones only. The overview reports how many archived
+  plans the project has.
+- Each real change writes one `plan_record_archived` or `plan_record_restored`
+  audit event with the actor, the Automata count and the plan's order (an
+  archive also carries the reason).
+
 ## The model
 
 Work is linked down in one chain: **plan**, then **Automation**, then
@@ -254,6 +322,33 @@ Nothing here turns on by itself. These are yours to settle:
   run the migration again.
 - **Backlog order.** Open rows with no Automaton become backlog plans ordered by
   their old row number. Check that this is the order you want.
+- **Release plans, themes, row links and archive have no operator surface yet.**
+  They exist in the plan record store only: no REST route, MCP tool, CLI command,
+  chat verb or PWA control reads or changes `plan_kind`, `release`, themes, row
+  links, backlog items or the archive mark, and the existing plan lists do not
+  yet pass the archive options. Until they are added, nothing in the product
+  archives a plan or builds a release plan. Decide the surface order before the
+  next release.
+- **Re-attaching Automata by release.** The release migration engine
+  (`internal/planrecords/release_migrate.go`, `ReleaseMigrate`) is merged at
+  store level, but nothing in REST, MCP, CLI, chat or the PWA runs it yet, so
+  no Automaton is moved until an operator surface exists. It attaches
+  Automata and Automations to two release plans (default labels `10.0` and
+  `11.0`), creating the plans and their themes as needed, placing items in a
+  theme by rule or by an operator mark, and never deleting anything. An item
+  already held by another plan is reported as a conflict and not moved; items
+  outside the two releases are skipped; items no rule matched stay unplaced.
+  It is preview-first: the default run writes nothing and returns a report
+  with a `preview_id` (a stable hash of the report). A written run needs
+  `Apply` plus the `preview_id` of the preview you approved; a missing or
+  stale id is refused before anything is written. A second written run with
+  the same inputs changes nothing. Each written change is audited as
+  `plan_record_release_migrated` (details: actor, op, project). Review the
+  preview's conflicts and unplaced lists before approving.
+- **Theme audit name.** The store writes a theme change as
+  `plan_record_theme_changed`; the server maps it to the generic
+  `plan_record_updated` action, so in the audit log read `theme_op` in the
+  details. Decide whether theme changes should get their own audit action.
 - **Mobile apps.** Android and iPhone do not show plan records yet; that is
   tracked in the datawatch-app repository.
 
