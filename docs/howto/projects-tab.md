@@ -148,7 +148,7 @@ an error is showing; otherwise it is collapsed.
 | To do this | Do this |
 |---|---|
 | Add a project | Fill in **Name**, **Directory (absolute path)** and, if you want, **Description** and **Default backend**, then choose **Add project**. Name and directory are required; the page says "Enter a project name." or "Enter the project directory." when one is missing |
-| Edit a project | Choose **Edit** on its row. The form switches to "Edit project <name>", with the name read-only. Change the directory, description or default backend and choose **Save changes**, or **Cancel** |
+| Edit a project | Choose **Edit** on its row. The form switches to "Edit project <name>", with the name read-only and the stored directory, description and default backend pre-filled. Change what you want and choose **Save changes** — a new description is stored, taking the place of the old one in the list and the project page, and a directory or backend change never blanks it — or **Cancel** |
 | Remove a project | Choose **Remove** on its row and confirm. Only the project record is removed. Running sessions and Automaton work are not stopped, and the directory is not touched |
 
 After a save or a remove the list and the picker reload and the page shows
@@ -783,7 +783,7 @@ capability; a federated peer is checked against the same two.
 | Tool | Parameters | Purpose |
 |---|---|---|
 | `project_list` | none | List the aliases and their records |
-| `project_upsert` | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` | Create or update; omit a field to keep it |
+| `project_upsert` | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` | Create or update; omit a field to keep it — description and default_backend are carried over from the stored record when omitted, and only an explicit empty value clears them |
 | `project_set_arcs` | `name`, `arcs` (required) | Replace the plans; `[]` clears them |
 | `project_rollup` | `name`; `window` | The roll-up |
 | `project_history` | `name`; `limit`, `cursor` | One history page |
@@ -814,7 +814,7 @@ Example call, set the plans:
 | `datawatch projects get <name>` | One alias and its record |
 | `datawatch projects upsert <name> --dir <abs> [--backend …] [--description …]` | Create or update an alias (replaces the policy; see the note in Setup) |
 | `datawatch projects show <name> [--window N]` | Record plus roll-up |
-| `datawatch projects set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags you pass |
+| `datawatch projects set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags you pass; the stored description, default backend, policy and record fields come along and are kept |
 | `datawatch projects arcs <name>` | Print the plans in order |
 | `datawatch projects arcs <name> --set id:priority:state,…` | Replace the plans; `--set ""` clears them |
 | `datawatch projects history <name> [--limit N] [--cursor …]` | History page |
@@ -857,6 +857,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each plan needs a unique id; a plan whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
 | `set --branch-retention-days -1` is refused | Retention cannot be negative |
+| The saved description is gone after a change | A description is only replaced when a write sends one: the **Manage projects** form, `projects upsert --description`, an MCP `project_upsert` that carries a `description`, or comm `project set <name> description …`. An update that sends none keeps the stored value; to clear it, send an explicit empty description |
 | Policy disappeared after an `upsert` | `upsert` writes the policy it is sent, which is none; set the policy again with `datawatch projects policy set`, or use `set` and `arcs` for later changes |
 | Plan documents, design documents or issues show "none recorded" | The plan record has no fields for them yet, so the page cannot show them. The plan section shows what the record holds |
 
@@ -933,6 +934,14 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - **Edit keeps the record.** The page says editing keeps the policy, plans, owner,
   target and other record fields. That follows the shipped form's behavior as
   documented in the change; confirm it on a project that has a policy and plans.
+- **The description behaves like the other record fields.** Saving a new
+  description from the **Manage projects** form updates the stored one, and the
+  Manage projects list and the project page show it. A later update that does
+  not send a description — `datawatch projects set`, an MCP `project_upsert`
+  without the field, a REST body without it — keeps the stored value instead of
+  blanking it; only an explicit empty description clears it. Confirm the
+  keep-on-omit, clear-on-empty behaviour is what you want on each surface, and
+  that a saved description survives your update patterns.
 
 - **Gantt edges and ordering (2026-11-12).** The Gantt now draws dependency edges, an
   **Edges** toggle and a hover highlight, fits **All time** to the visible rows, and orders
