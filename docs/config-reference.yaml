@@ -2717,7 +2717,8 @@ autonomous:
   # changes nothing else). The earlier plural reads (GET
   # /api/autonomous/gate-repairs, the gate_repairs MCP tool, `datawatch
   # autonomous gate-repairs`) still answer the same object. A change takes
-  # effect on the next pass without a restart.
+  # effect on the next pass without a restart. See docs/howto/automaton-gate-repair.md
+  # for the walkthrough: the classes, report versus on, the budget and the held question.
   gate_repair:
     # The engine mode: off (does nothing), report (records what it would do
     # and changes nothing) or on (repairs and reruns the gate). Default: report.
