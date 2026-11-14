@@ -143,7 +143,7 @@ test('row matches by hostname of the base URL when the name differs', () => {
 test('a token in a problem string is redacted', () => {
   const row = {
     host: 'github.com', logged_in: false,
-    problem: 'token ghp_abcdef1234567890 rejected for https://user:hunter2@git.example.invalid',
+    problem: 'token ghp_abcdef1234567890 rejected for https://user:hunter2@example.invalid',
   };
   const { result } = withT(() => renderHostRow(HOST, [row]));
   assert.ok(!result.problem.includes('ghp_abcdef1234567890'));
