@@ -59,23 +59,17 @@ func HostCommandEnv(ctx context.Context, host GitHostConfig, resolve func(name s
 		return nil, source, fmt.Errorf("git host %q: unknown credential source %q", host.Name, source)
 	}
 
-	if host.VaultSecret == "" {
-		return nil, source, fmt.Errorf("git host %q: vault credential source has no vault_secret name", host.Name)
-	}
-	if resolve == nil {
-		return nil, source, fmt.Errorf("git host %q: no secret resolver for vault secret %q", host.Name, host.VaultSecret)
-	}
-	// The value is ignored whenever err is set, so a partial result from a
-	// failing lookup never reaches the environment or an error message.
-	token, err := resolve(host.VaultSecret)
+	env, _, err := vaultTokenEnv(host, resolve)
 	if err != nil {
-		return nil, source, fmt.Errorf("git host %q: cannot resolve vault secret %q: %w", host.Name, host.VaultSecret, err)
+		return nil, source, err
 	}
-	if token == "" {
-		return nil, source, fmt.Errorf("git host %q: vault secret %q is empty", host.Name, host.VaultSecret)
-	}
-	env := append(os.Environ(), hostTokenEnvName(host.Kind)+"="+token)
 	return env, source, nil
+}
+
+// tokenEnviron returns the process environment plus the token variable for
+// kind. The token exists only in the returned slice.
+func tokenEnviron(kind, token string) []string {
+	return append(os.Environ(), hostTokenEnvName(kind)+"="+token)
 }
 
 // hostTokenEnvName returns the variable that carries a vault token for kind.

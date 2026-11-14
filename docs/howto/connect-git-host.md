@@ -23,7 +23,7 @@ There are three credential sources. Pick one per host:
 
 | Source | What it means | When to use it |
 |---|---|---|
-| `host_login` (default, recommended) | The login already on this machine: `gh auth login` for GitHub, `glab auth login` for GitLab, or git's own credential helper for the plain kinds. Nothing is added to the environment. | Your own workstation, or any machine where you already log in to the host. |
+| `host_login` (default, recommended) | The login already on this machine: `gh auth login` for GitHub, `glab auth login` for GitLab, or git's own credential helper for the plain kinds. Nothing is added to the environment. If you also set `vault_secret`, that secret is an optional fallback used only when the host login is not available (see [The vault token fallback](#the-vault-token-fallback)). | Your own workstation, or any machine where you already log in to the host. |
 | `vault` | A token you stored in the secrets vault under a name. datawatch reads it only when it runs a host command, and passes it in that one command's environment. | A server or cluster with no interactive login. |
 | `broker` | The credential broker supplies tokens to worker sessions. datawatch adds no host-side token. The source is recorded in the audit log. | Worker sessions that get their tokens from the broker. |
 
@@ -184,7 +184,7 @@ Readiness and the test both give up after 15 seconds. A timeout reads "...timed 
 
 Readiness never returns a token. It returns only the account name, the scope names, a problem in plain language and a fix command. Any token-shaped text that reaches an answer is replaced with `[redacted]`.
 
-**Limit to know about.** Readiness and Test connection check the login on the datawatch machine. They do not use a `vault` token. A `vault` host can therefore show ready while its vault token is missing or wrong. Check that the vault entry exists with `datawatch secrets list`.
+Readiness and Test connection use the same credential source as every other host command. A `vault` host is checked with its vault token in that one command's environment, so it shows ready only when the token is present and accepted. When the vault entry is missing, the problem names the entry (for example `cannot resolve vault secret "gh-push"`), never a value. A `host_login` host with a fallback `vault_secret` is checked with the machine's login first, and with the vault token only when that login is not available.
 
 ## The Test connection action
 
@@ -198,7 +198,7 @@ Test connection by the saved name. From MCP, call `git_hosts_test` with `name`. 
 
 ## The vault token environment variables
 
-When a host uses `credential_source: vault`, the daemon can put the token into the environment of one host command. It uses one variable per kind:
+When a host uses `credential_source: vault`, the daemon puts the token into the environment of the one host command it runs. This covers the readiness check and Test connection, the release, issue and pull or merge request commands (`gh` and `glab`), the CI watch, and git clone and push. It uses one variable per kind:
 
 | Host kind | Variable |
 |---|---|
@@ -206,9 +206,22 @@ When a host uses `credential_source: vault`, the daemon can put the token into t
 | `gitlab` | `GITLAB_TOKEN` |
 | `gitea`, `bitbucket`, `git` | `DATAWATCH_GIT_TOKEN` |
 
-The variable is set only in that command's environment. It is never written to the daemon's own environment, the config, an error message or a response. An error names the host and the vault entry, never the value. A `broker` host gets no variable from datawatch, and a `host_login` host gets none either.
+The variable is set only in that command's environment. It is never written to the daemon's own environment, the config, an error message or a response. An error names the host and the vault entry, never the value. A `broker` host gets no variable from datawatch, and a `host_login` host gets none either, except through the fallback below.
 
-**Current build — review before relying on `vault`.** The variable is defined and used by the code that builds host command environments, but the git push and clone callers do not yet pass in the vault lookup. A `vault` host's push or clone therefore fails with "no secret resolver for vault secret ..." until that lookup is wired in. Use `host_login` for hosts you push to until then. Readiness and Test connection are unaffected: they check the machine's login either way.
+The daemon reads the secret by name from the secrets vault inside the command runner, at the moment it starts the command, and passes it only to that child process. The token is never put on the command line, never logged, never stored outside the vault, and never included in an error message, an audit line or a response. Anything a command prints is scrubbed of the exact token value before it is returned.
+
+### The vault token fallback
+
+A `host_login` host can also name a `vault_secret`. The host login then stays the default, and the secret is read only when both of these are true:
+
+1. A host command failed, and
+2. The host's own login is not available (`gh auth status` or `glab auth status` fails; for the plain kinds there is no login of their own, so a failed command counts).
+
+The command is then run once more with the token in its environment. A command that fails while the login works is not retried, and a missing CLI, a timeout or a cancellation never reads the vault. A `broker` host never falls back.
+
+If the fallback is needed and the secret is missing, the readiness problem and the error say so and name the entry, for example `the host login is not available and the fallback vault secret "gh-push" could not be used`. Check it with `datawatch secrets list` and create it with `datawatch secrets set <name> <value>`.
+
+**One limit to know about.** The audit entry for an operation records the credential source from the config (`host_login` for a fallback host), not whether the fallback token was used for that one command.
 
 ## The Git hosts card in Settings
 
@@ -245,7 +258,9 @@ Every channel is subject to the same rule: no response ever contains a token.
 | "Could not reach <base URL>." | Check the URL and the network path, and run `git ls-remote --heads -- <base URL>` by hand. |
 | "No base URL is set for this host." | Set `base_url` for a `gitea`, `bitbucket` or `git` host. |
 | "credential_source vault requires vault_secret" at load | Set `vault_secret` to the vault entry name, or set `credential_source` back to `host_login`. |
-| "...no secret resolver..." | See the current-build note under the vault token variables. Use `host_login` until it is wired in. |
+| "cannot resolve vault secret ..." or "vault secret ... is empty" | The vault entry named in `vault_secret` is missing or has no value. Create it with `datawatch secrets set <name> <value>`; the message names the entry, never a value. |
+| "the host login is not available and the fallback vault secret ... could not be used" | The host login is missing and the fallback entry is missing too. Log in to the host (`gh auth login`, `glab auth login`) or create the vault entry. |
+| "...no secret resolver..." | The secrets store did not start, so the vault cannot be read. Check the daemon start-up log for a secrets store warning. |
 
 ## Related
 

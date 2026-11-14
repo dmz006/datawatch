@@ -16,11 +16,9 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -36,6 +34,11 @@ import (
 type GitHub struct {
 	// Bin is the gh binary; defaults to "gh".
 	Bin string
+	// Host is the configured git host this provider acts for. Its credential
+	// source decides the environment of each gh call (see runHostCommand). The
+	// zero value means no configured host: gh runs with the environment
+	// untouched.
+	Host GitHostConfig
 }
 
 // NewGitHub returns a GitHub provider with default binary path.
@@ -175,14 +178,8 @@ func (g *GitHub) run(ctx context.Context, args ...string) (string, error) {
 	if bin == "" {
 		bin = "gh"
 	}
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(callCtx, bin, args...)
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	err := cmd.Run()
-	return buf.String(), err
+	so, se, err := runHostCommand(ctx, g.Host, HostCmd{Name: bin, Args: args, Timeout: 30 * time.Second}, false)
+	return so + se, err
 }
 
 // _ silences vet's "unused json" diagnostic in the v1 implementation

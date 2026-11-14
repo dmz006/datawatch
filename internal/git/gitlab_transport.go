@@ -6,8 +6,8 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
@@ -53,16 +53,22 @@ func ConfigureGitLabTransport(ctx context.Context, dir string, host GitHostConfi
 	if args == nil {
 		return nil
 	}
-	env, _, err := HostCommandEnv(ctx, host, nil)
+	so, se, err := runHostCommand(ctx, host, HostCmd{Name: "git", Args: args}, false)
 	if err != nil {
-		return err
-	}
-	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed binary, args built from validated config
-	cmd.Env = env
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git config credential helper: %w\n%s", err, strings.TrimSpace(redactHostText(string(out))))
+		return hostGitError("git config credential helper", err, so+se)
 	}
 	return nil
+}
+
+// hostGitError wraps a failed host git command. A vault credential error is
+// returned as it is (it already names the host and the secret). Any other error
+// carries the command's output with token-shaped text redacted.
+func hostGitError(what string, err error, out string) error {
+	var ce *HostCredentialError
+	if errors.As(err, &ce) {
+		return err
+	}
+	return fmt.Errorf("%s: %w\n%s", what, err, strings.TrimSpace(redactHostText(out)))
 }
 
 // gitLabCloneRemote builds the clone remote from the base URL and repo path. A
@@ -86,14 +92,9 @@ func CloneGitLabRepo(ctx context.Context, host GitHostConfig, repo, dest string)
 	if strings.TrimSpace(dest) == "" {
 		return fmt.Errorf("CloneGitLabRepo: dest required")
 	}
-	env, _, err := HostCommandEnv(ctx, host, nil)
+	so, se, err := runHostCommand(ctx, host, HostCmd{Name: "git", Args: []string{"clone", "--", gitLabCloneRemote(host, repo), dest}}, false)
 	if err != nil {
-		return err
-	}
-	cmd := exec.CommandContext(ctx, "git", "clone", "--", gitLabCloneRemote(host, repo), dest) // #nosec G204 -- fixed binary, args built from validated config
-	cmd.Env = env
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git clone: %w\n%s", err, strings.TrimSpace(redactHostText(string(out))))
+		return hostGitError("git clone", err, so+se)
 	}
 	return nil
 }

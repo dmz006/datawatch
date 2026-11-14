@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -23,6 +22,10 @@ var ErrNoForgeAPI = errors.New("git provider: this host has no forge API integra
 type GenericGit struct {
 	KindName string
 	BaseURL  string
+	// Host is the configured git host this provider acts for. Its credential
+	// source decides the environment of each git call. The zero value means no
+	// configured host: git runs with the environment untouched.
+	Host GitHostConfig
 }
 
 // NewGenericGit returns a plain-git provider for kind and base URL.
@@ -56,8 +59,20 @@ func (g *GenericGit) CreateRelease(_ context.Context, _ ReleaseOptions) (string,
 	return "", ErrNoForgeAPI
 }
 
+// host returns the configured host, filling in the kind name and base URL the
+// provider was built with when the configured entry leaves them empty.
 func (g *GenericGit) host() GitHostConfig {
-	return GitHostConfig{Name: g.KindName, Kind: g.KindName, BaseURL: g.BaseURL}
+	h := g.Host
+	if h.Name == "" {
+		h.Name = g.KindName
+	}
+	if h.Kind == "" {
+		h.Kind = g.KindName
+	}
+	if h.BaseURL == "" {
+		h.BaseURL = g.BaseURL
+	}
+	return h
 }
 
 // Clone runs a plain `git clone` of repo into dest using the shared
@@ -71,14 +86,9 @@ func (g *GenericGit) Push(ctx context.Context, dir, remote, branch string) error
 	if strings.TrimSpace(dir) == "" || strings.TrimSpace(remote) == "" || strings.TrimSpace(branch) == "" {
 		return fmt.Errorf("Push: dir, remote and branch required")
 	}
-	env, _, err := HostCommandEnv(ctx, g.host(), nil)
+	so, se, err := runHostCommand(ctx, g.host(), HostCmd{Name: "git", Args: []string{"-C", dir, "push", "--", remote, branch}}, false)
 	if err != nil {
-		return err
-	}
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "push", "--", remote, branch) // #nosec G204 -- fixed binary, args validated above
-	cmd.Env = env
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git push: %w\n%s", err, strings.TrimSpace(redactHostText(string(out))))
+		return hostGitError("git push", err, so+se)
 	}
 	return nil
 }

@@ -105,20 +105,27 @@ func hasScope(scopes []string, want string) bool {
 	return false
 }
 
-// runHostCmd runs a command with a 15s deadline derived from ctx and returns
-// its combined output.
-func runHostCmd(ctx context.Context, name string, args ...string) (string, error) {
-	cctx, cancel := context.WithTimeout(ctx, hostCheckTimeout)
-	defer cancel()
-	path, err := exec.LookPath(name)
-	if err != nil {
-		return "", err
+// runHostCmd runs a command for host with a 15s deadline per attempt and
+// returns its output (stdout then stderr). The host's credential source decides
+// the child's environment (see runHostCommand): a vault-sourced host, or a
+// host_login host with a fallback vault secret whose login is not available,
+// gets its token in that one child's environment and nowhere else.
+func runHostCmd(ctx context.Context, host GitHostConfig, name string, args ...string) (string, error) {
+	// Every command run through here is the host's login check or a read-only
+	// probe; only the auth status calls are login checks.
+	loginCheck := len(args) >= 2 && args[0] == "auth" && args[1] == "status"
+	so, se, err := runHostCommand(ctx, host, HostCmd{Name: name, Args: args, Timeout: hostCheckTimeout}, loginCheck)
+	return so + se, err
+}
+
+// hostProblemMessage returns the readiness problem for err when it is a vault
+// credential error (so the operator sees the secret name), or fallback.
+func hostProblemMessage(err error, fallback string) string {
+	var ce *HostCredentialError
+	if errors.As(err, &ce) {
+		return redactHostText(ce.Error())
 	}
-	out, err := exec.CommandContext(cctx, path, args...).CombinedOutput() // #nosec G204 -- fixed binary names, args built from validated config
-	if cctx.Err() != nil {
-		return string(out), cctx.Err()
-	}
-	return string(out), err
+	return fallback
 }
 
 // CheckHostReadiness checks whether the host's CLI login (github, gitlab) or
@@ -133,7 +140,7 @@ func CheckHostReadiness(ctx context.Context, host GitHostConfig) HostReadiness {
 		if base != "" {
 			args = append(args, "--hostname", base)
 		}
-		out, err := runHostCmd(ctx, "gh", args...)
+		out, err := runHostCmd(ctx, host, "gh", args...)
 		loginHost := base
 		if loginHost == "" {
 			loginHost = "github.com"
@@ -144,7 +151,7 @@ func CheckHostReadiness(ctx context.Context, host GitHostConfig) HostReadiness {
 			return r
 		}
 		if err != nil {
-			r.Problem = "Not logged in to " + loginHost + " with gh."
+			r.Problem = hostProblemMessage(err, "Not logged in to "+loginHost+" with gh.")
 			r.FixCommand = "gh auth login --hostname " + loginHost
 			return r
 		}
@@ -171,12 +178,12 @@ func CheckHostReadiness(ctx context.Context, host GitHostConfig) HostReadiness {
 		if base == "" {
 			base = "gitlab.com"
 		}
-		out, err := runHostCmd(ctx, "glab", "auth", "status", "--hostname", base)
+		out, err := runHostCmd(ctx, host, "glab", "auth", "status", "--hostname", base)
 		if err != nil {
 			if errors.Is(err, exec.ErrNotFound) {
 				r.Problem = "The glab command is not installed, so GitLab access cannot be checked."
 			} else {
-				r.Problem = "Not logged in to " + base + " with glab."
+				r.Problem = hostProblemMessage(err, "Not logged in to "+base+" with glab.")
 			}
 			r.FixCommand = "glab auth login --hostname " + base
 			return r
@@ -193,9 +200,9 @@ func CheckHostReadiness(ctx context.Context, host GitHostConfig) HostReadiness {
 			r.Problem = "No base URL is set for this host."
 			return r
 		}
-		_, err := runHostCmd(ctx, "git", "ls-remote", "--heads", host.BaseURL)
+		_, err := runHostCmd(ctx, host, "git", "ls-remote", "--heads", host.BaseURL)
 		if err != nil {
-			r.Problem = "Could not reach " + redactHostText(host.BaseURL) + "."
+			r.Problem = hostProblemMessage(err, "Could not reach "+redactHostText(host.BaseURL)+".")
 			return r
 		}
 		r.LoggedIn = true

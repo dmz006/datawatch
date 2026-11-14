@@ -8,10 +8,8 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -22,6 +20,11 @@ import (
 type GitLab struct {
 	// Bin is the glab binary; defaults to "glab".
 	Bin string
+	// Host is the configured git host this provider acts for. Its credential
+	// source decides the environment of each glab call (see runHostCommand).
+	// The zero value means no configured host: glab runs with the environment
+	// untouched.
+	Host GitHostConfig
 }
 
 // NewGitLab returns a GitLab provider with the default binary path.
@@ -114,12 +117,6 @@ func (g *GitLab) run(ctx context.Context, args ...string) (string, string, error
 	if bin == "" {
 		bin = "glab"
 	}
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(callCtx, bin, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return stdout.String(), stdout.String() + stderr.String(), err
+	so, se, err := runHostCommand(ctx, g.Host, HostCmd{Name: bin, Args: args, Timeout: 30 * time.Second}, false)
+	return so, so + se, err
 }
