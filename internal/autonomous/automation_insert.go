@@ -507,7 +507,7 @@ func chainTail(a *Automation) (string, error) {
 		if mem.kind() == MemberKindFork {
 			join := ""
 			for _, j := range a.Members {
-				if j.kind() == MemberKindJoin && sameMemberSet(j.JoinMembers, mem.ForkMembers) {
+				if j.kind() == MemberKindJoin && sameMemberSet(j.JoinMembers, forkTails(a, mem)) {
 					join = j.ID
 				}
 			}

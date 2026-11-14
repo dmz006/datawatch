@@ -88,16 +88,19 @@ parallel between `start` and `finish`:
 datawatch automation create --name diamond --entry-member start --members '[
   {"id":"start","prd_id":"<automaton-1>","on_complete":"split"},
   {"id":"split","kind":"fork","fork_members":["left","right"]},
-  {"id":"left","prd_id":"<automaton-2>","on_complete":"merge"},
-  {"id":"right","prd_id":"<automaton-3>","on_complete":"merge"},
+  {"id":"left","prd_id":"<automaton-2>"},
+  {"id":"right","prd_id":"<automaton-3>"},
   {"id":"merge","kind":"join","join_members":["left","right"],
    "on_branch_failure":"all_must_succeed","on_complete":"finish"},
   {"id":"finish","prd_id":"<automaton-4>"}
 ]'
 ```
 
-A fork needs at least two branches, and the join's `join_members` must equal
-the paired fork's `fork_members`. Set only the fields that belong to a
+A fork needs at least two branches. A branch is a chain of members: the member
+the fork lists in `fork_members` is the chain head, its `on_complete` edges lead
+down the chain, and the last member (empty `on_complete`) is the branch tail.
+The join's `join_members` names the tails. A branch of one member is the plain
+case above, where the head is also the tail. Set only the fields that belong to a
 member's kind. `on_branch_failure` on the join decides what a failed branch
 means:
 
@@ -106,6 +109,27 @@ means:
 | `all_must_succeed` (default) | Every branch must complete; one failure is a failure of the join |
 | `any_one_is_enough` | The join passes as soon as one branch completes |
 | `continue_anyway` | The join passes once all branches have finished, whatever their outcome |
+
+### Branches as chains
+
+To run several steps down one branch, link them with `on_complete` and list
+the head in the fork and the tail in the join:
+
+```json
+{"id":"split","kind":"fork","fork_members":["build-a","build-b"]},
+{"id":"build-a","prd_id":"<automaton-2>","on_complete":"test-a"},
+{"id":"test-a","prd_id":"<automaton-3>"},
+{"id":"build-b","prd_id":"<automaton-4>"},
+{"id":"merge","kind":"join","join_members":["test-a","build-b"]}
+```
+
+A chain member that finishes moves only its own branch to the next member; the
+other branches are untouched. Chain members carry `on_complete` only. If a chain
+member blocks, fails or is cancelled, or cannot start, its branch ends as failed,
+the members behind it are skipped, and the join's `on_branch_failure` rule
+decides what that means. A member belongs to one chain, a chain stays between its
+fork and join, and chain members must be Automaton or nested Automation members.
+Status shows each chain under `branch_chains`.
 
 While branches run, the Automation has several active cursors. Pause, resume
 and cancel act on the whole Automation; skip and edge edits name one member.

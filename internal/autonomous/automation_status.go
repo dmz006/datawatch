@@ -44,6 +44,7 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 			IdleSince:     a.IdleSince,
 			ActiveCursors: activeCursorSummaries(a, m.pendingItemByID),
 			JoinWait:      joinWaitSummary(a),
+			BranchChains:  forkBranchChains(a),
 		}
 		if a.DecisionAssistant.enabled() {
 			s.DecisionAssistant = cloneDecisionAssistant(a.DecisionAssistant)
