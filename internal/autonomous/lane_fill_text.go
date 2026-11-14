@@ -21,7 +21,9 @@ func ParseLaneFillStatus(body []byte) (LaneFillStatus, error) {
 }
 
 // RenderLaneFillText formats the status: the mode, one line per lane, the
-// lane counts, the queued eligible counts, any pool evidence error, then the newest decisions.
+// lane counts, the queued eligible counts, the running Automata waiting with
+// no live work (their lane left idle), any pool evidence error, then the
+// newest decisions.
 // maxDecisions caps how many decisions are shown; 0 or less shows all of them.
 func RenderLaneFillText(st LaneFillStatus, maxDecisions int) string {
 	var b strings.Builder
@@ -36,6 +38,12 @@ func RenderLaneFillText(st LaneFillStatus, maxDecisions int) string {
 		b.WriteString(line + "\n")
 	}
 	fmt.Fprintf(&b, "Queued eligible: gpu %d, claude %d\n", st.QueuedEligible.GPU, st.QueuedEligible.Claude)
+	if len(st.Waiting) > 0 {
+		b.WriteString("Waiting with no live work (their lane is left idle for the next eligible work):\n")
+		for _, w := range st.Waiting {
+			fmt.Fprintf(&b, "  %s %q (%s): %s [%s]\n", w.PRDID, w.Title, w.Backend, w.WaitReason, w.ReasonCode)
+		}
+	}
 	if st.Evidence.Error != "" {
 		fmt.Fprintf(&b, "Pool evidence error: %s\n", st.Evidence.Error)
 	}
