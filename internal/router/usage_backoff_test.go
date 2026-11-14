@@ -201,7 +201,7 @@ func TestConfigureHelpListsUsageBackoffKeys(t *testing.T) {
 	r.SetConfigureFunc(func(string, string) error { return nil })
 	for _, in := range []string{"configure help", "configure list"} {
 		out := strings.Join(r.HandleTestMessage(in), "\n")
-		for _, key := range []string{"autonomous.usage_backoff", "autonomous.backoff_max_wait_minutes"} {
+		for _, key := range []string{"autonomous.usage_backoff", "autonomous.backoff_max_wait_minutes", "autonomous.backoff_reserve_for_review", "autonomous.backoff_reserve_tokens_per_hour"} {
 			if !strings.Contains(out, key) {
 				t.Errorf("%q help missing %s:\n%s", in, key, out)
 			}

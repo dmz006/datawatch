@@ -4705,12 +4705,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CIWatchTimeoutSeconds:   acfgIn.CIWatchTimeoutSeconds,
 			UsageBackoff:            acfgIn.UsageBackoff,
 			BackoffMaxWaitMinutes:   acfgIn.BackoffMaxWaitMinutes,
-			ContentAutoFixEnabled:   acfgIn.ContentAutoFixEnabled,
-			AutoFixSkipApproval:     acfgIn.AutoFixSkipApproval,
-			BlockOnFileDrift:        acfgIn.BlockOnFileDrift,
-			ScopeLint:               acfgIn.ScopeLintMode(),
-			RefuseDirtyTreeStart:    acfgIn.RefuseDirtyTreeStart, // BL428 §3a ii
-			Parallel:                acfgIn.Parallel,
+			// Review reserve: the pointer keeps an explicit 0 (no slot reserve)
+			// distinct from unset (the 1-slot default).
+			BackoffReserveForReview:     acfgIn.BackoffReserveForReview,
+			BackoffReserveTokensPerHour: acfgIn.BackoffReserveTokensPerHour,
+			ContentAutoFixEnabled:       acfgIn.ContentAutoFixEnabled,
+			AutoFixSkipApproval:         acfgIn.AutoFixSkipApproval,
+			BlockOnFileDrift:            acfgIn.BlockOnFileDrift,
+			ScopeLint:                   acfgIn.ScopeLintMode(),
+			RefuseDirtyTreeStart:        acfgIn.RefuseDirtyTreeStart, // BL428 §3a ii
+			Parallel:                    acfgIn.Parallel,
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
