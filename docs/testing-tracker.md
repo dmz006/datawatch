@@ -6047,3 +6047,19 @@ Tests that the pool a worker task asks for is the pool of its effective backend:
 | An Automaton that prefers the Claude lane and names no worker requests the Claude pool, not the default's | **Yes** | **No** | `TestRequestedPool_ClaudeLanePreferenceDecidesPoolOverDefault`, same file and fixture | Fails without the lane-preference level. |
 | A task with no Claude setting keeps the pool of the daemon default | **Yes** | **No** | `TestRequestedPool_NoClaudeSettingKeepsExistingPool`, same file and fixture | Capacity is never asked about claude-code. |
 | Fallback level: claude and gpu preference pick the lane backend, any or none keeps the default, a named worker still wins | **Yes** | **No** | `TestRequestedPool_ExecutionFallbackBackend`, same file | Unit level. |
+
+## Pool fall-through alternates and the LLM `fallthrough_target` mark — unreleased
+
+Tests the resolver that lists the other backend and model pairs a worker may fall through to, and the new per-entry `fallthrough_target` setting on every surface. Run with `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch ./internal/autonomous ./internal/inference ./internal/mcp ./internal/router ./internal/server -count=1 -run 'CapacityAlternates|FallthroughTarget|PoolFallthrough'`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Alternates in preference order: the other lane fill backend first (both directions), then marked entries in name order | **Yes** | **No** | `TestCapacityAlternates_LaneFillPairBothDirections`, `_GPUModelFromLaneFillConfig`, `_PreferenceOrder_LaneFillThenMarked` (`cmd/datawatch/capacity_alternates_test.go`): fake entries, cap source and in-flight counts | No daemon needed. |
+| Skip rules: disabled backend, backend at its in-flight cap, model the entry does not serve, the requested pair itself; marked entry listed, unmarked entry not | **Yes** | **No** | `TestCapacityAlternates_DisabledBackendSkipped`, `_OverCapBackendSkipped`, `_UnlimitedCapNeverOver`, `_ModelNotServedSkipped`, `_RequestedPairSkipped`, `_MarkedEntryIncluded_UnmarkedExcluded`, `_MarkedEntryUsesRequestedModelWhenServed`, `_LiveMarkApplies`, same file | A mark change applies on the next call. |
+| Verifier, judge and planner requests never fall through | **Yes** | **No** | `TestPoolFallthrough_NonWorkerRolesNeverFallThrough` (`internal/autonomous/pool_fallthrough_test.go`) | Guard in `pickFallthrough`. |
+| REST `POST`/`PUT /api/llms` `fallthrough_target`: stored on create, kept when omitted on update, cleared by false | **Yes** | **No** | `TestLLMFallthroughTargetRESTRoundTrip` (`internal/server/llm_fallthrough_target_test.go`) | The field is a plain boolean on the entry; it is omitted from the entry while false. |
+| Entry field default false, JSON and YAML round trip | **Yes** | **No** | `TestLLM_FallthroughTargetDefaultsFalseAndRoundTrips` (`internal/inference/llm_test.go`) | — |
+| MCP `llm_add` / `llm_update` `fallthrough_target` | **Yes** | **No** | `TestLLMBody_FallthroughTarget` (`internal/mcp/capacity_tools_test.go`) | Absent stays absent. |
+| CLI `datawatch llm add|update --fallthrough-target` | **Yes** | **No** | `TestLLMFallthroughTargetFlag` (`cmd/datawatch/cli_llm_fallthrough_target_test.go`) | Sent only when the flag is passed. |
+| Comm channel `llm add|update <name> fallthrough_target=` | **Yes** | **No** | `TestParseLLMKVPairs_FallthroughTarget`, `TestLLMUsage_NamesFallthroughTarget` (`internal/router/llm_fallthrough_target_comm_test.go`) | — |
+| Web app LLM edit forms: **Allowed fall-through target** switch (inline form and modal) and the five locale bundles | **Yes** | **No** | `internal/server/web/app-llm-fallthrough-target.test.js` (`node --test`) | Source and sandbox level; no browser pass yet. |

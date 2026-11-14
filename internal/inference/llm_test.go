@@ -317,3 +317,26 @@ func TestRegistryLoadRejectsInvalidVerificationMode(t *testing.T) {
 		t.Fatal("load must reject invalid verification_mode")
 	}
 }
+
+func TestLLM_FallthroughTargetDefaultsFalseAndRoundTrips(t *testing.T) {
+	var l LLM
+	if l.FallthroughTarget {
+		t.Fatal("zero value must not be a fall-through target")
+	}
+	raw, err := json.Marshal(LLM{Name: "a", Kind: KindOllama})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "fallthrough_target") {
+		t.Fatalf("unmarked entry should omit the key: %s", raw)
+	}
+	raw, _ = json.Marshal(LLM{Name: "a", Kind: KindOllama, FallthroughTarget: true})
+	var back LLM
+	if err := json.Unmarshal(raw, &back); err != nil || !back.FallthroughTarget {
+		t.Fatalf("json round trip: %v %+v", err, back)
+	}
+	y, err := yaml.Marshal(LLM{Name: "a", Kind: KindOllama, FallthroughTarget: true})
+	if err != nil || !strings.Contains(string(y), "fallthrough_target: true") {
+		t.Fatalf("yaml: %v %s", err, y)
+	}
+}

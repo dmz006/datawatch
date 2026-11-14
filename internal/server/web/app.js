@@ -18238,6 +18238,8 @@ function buildLLMForm(l) {
     <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
     <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
     ${llmEffectiveCapLine(l)}
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:6px;"><input type="checkbox" id="fe_llm_fallthrough_target" ${l.fallthrough_target ? 'checked' : ''} /> ${escHtml(t('llm_field_fallthrough_target')||'Allowed fall-through target')}</label>
+    <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_fallthrough_target_hint')||'When capacity fall-through is on and a worker\'s requested pool is full, the daemon may run it on this LLM instead.')}</div>
     ${buildLLMBudgetGroup(l)}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_roles')||'Workload roles (comma-separated; empty = none)')}</label>
     <input id="fe_llm_roles" class="form-input" placeholder="planning, review" value="${escHtml((l.roles||[]).join(', '))}" />
@@ -18263,6 +18265,7 @@ function collectLLMForm(originalRecord) {
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.plan_tier = (document.getElementById('fe_llm_plan_tier')||{}).value || '';
+  out.fallthrough_target = !!(document.getElementById('fe_llm_fallthrough_target')||{}).checked;
   out.budget = collectLLMBudget();
   // Roles: always sent, so clearing the box clears the stored list (an
   // omitted field would keep it).
@@ -18469,6 +18472,13 @@ window._renderLLMEditPanel = function(existing) {
           <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_auto_add_models')||'Auto-enable new models discovered on these Compute Nodes')}</span>
           <label class="toggle-switch"><input type="checkbox" id="llmAutoAddModels" ${existing.auto_add_models ? 'checked' : ''} /><span class="toggle-slider"></span></label>
         </div>
+      </div>
+      <div class="wizard-field" id="llmFallthroughTargetSect">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_fallthrough_target')||'Allowed fall-through target')}</span>
+          <label class="toggle-switch"><input type="checkbox" id="llmEditFallthroughTarget" ${existing.fallthrough_target ? 'checked' : ''} /><span class="toggle-slider"></span></label>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_fallthrough_target_hint')||'When capacity fall-through is on and a worker\'s requested pool is full, the daemon may run it on this LLM instead.')}</div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
@@ -18770,6 +18780,7 @@ window._llmSaveDraft = function() {
   if (!isEdit && !name) { showError('LLM name required'); return; }
   const models = window._llmCollectModels ? window._llmCollectModels() : [];
   const autoAddModels = !!(document.getElementById('llmAutoAddModels')||{}).checked;
+  const fallthroughTarget = !!(document.getElementById('llmEditFallthroughTarget')||{}).checked;
   const firstModel = models.length > 0 ? models[0].model : '';
   // Collect all new fields (B/C/D + claude-specific + fix A).
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
@@ -18794,7 +18805,7 @@ window._llmSaveDraft = function() {
   const method = isEdit ? 'PUT' : 'POST';
   const payload = {
     name: isEdit ? editName : name, kind, models, model: firstModel,
-    auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
+    auto_add_models: autoAddModels, fallthrough_target: fallthroughTarget, compute_nodes: computeNodes, api_key_ref: apiKey,
     timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, verification_mode: verificationMode, tags,
     binary, console_cols: consoleCols, console_rows: consoleRows,
     output_mode: outputMode, input_mode: inputMode,

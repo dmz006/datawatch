@@ -358,7 +358,35 @@ whose requested pool cannot be granted right now is admitted on another
 allowed backend and model that has room, instead of waiting. The first
 alternate the ledger would grant wins, in preference order. If the
 requested pool has room, or no alternate does, nothing changes and the task
-waits as usual. Only worker tasks fall through; verifiers do not.
+waits as usual. Only worker tasks fall through; verifiers, judges and
+planners do not.
+
+The alternates for a task requested on a backend and model, in order:
+
+1. **The lane fill pair.** The other of the Claude lane backend and the GPU
+   lane backend from `autonomous.lane_fill` (`claude_backend`,
+   `gpu_backend`), on that backend's default model. For the GPU lanes that
+   is `autonomous.lane_fill.gpu_model` when set, otherwise the entry's own
+   model. A task on neither lane backend has no lane fill pair.
+2. **Entries you marked.** Every LLM entry with **Allowed fall-through
+   target** switched on, in name order. The task keeps its model when the
+   entry serves it; otherwise it runs on the entry's default model. An entry
+   is never a target until you mark it.
+
+An alternate is skipped when its backend is disabled, already at its
+in-flight cap, or does not serve the model it would run. The requested
+backend and model are never their own alternate.
+
+Mark an entry as a target on any surface:
+
+| Method | How |
+|--------|-----|
+| **YAML** | `fallthrough_target: true` on the entry in the `llms:` list |
+| **CLI** | `datawatch llm update <name> --fallthrough-target` (`--fallthrough-target=false` clears it; leaving the flag off keeps the stored value) |
+| **Web UI** | Settings, LLM, edit an entry, **Allowed fall-through target** |
+| **REST API** | `PUT /api/llms/<name>` with `{"fallthrough_target": true}` (omit to keep the stored value) |
+| **MCP** | `llm_update` or `llm_add` with `fallthrough_target=true` |
+| **Comm channel** | `llm update <name> fallthrough_target=true` |
 
 A task that fell through leaves an `autonomous_capacity_admitted` audit
 entry carrying `fall_through`, `from_pools`, `to_pools` and a note such as

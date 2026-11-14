@@ -1300,7 +1300,15 @@ func (m *Manager) pickFallthrough(led *capacity.Ledger, base capacity.Request, b
 	m.mu.Lock()
 	on, altFn, keysFn, choicesFn := m.cfg.CapacityFallthrough, m.capacityAlternates, m.capacityKeys, m.capacityChoices
 	m.mu.Unlock()
-	if !on || altFn == nil || keysFn == nil || led.WouldGrant(base) {
+	if !on || altFn == nil || keysFn == nil {
+		return nil, base
+	}
+	// Only a worker falls through. A verifier, judge or planner request never
+	// moves to another backend: it must run on the backend it was resolved to.
+	if base.Role != "" && base.Role != capacity.RoleWorker {
+		return nil, base
+	}
+	if led.WouldGrant(base) {
 		return nil, base
 	}
 	for _, alt := range altFn(backend, model) {
