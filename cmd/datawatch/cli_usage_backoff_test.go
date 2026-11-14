@@ -111,6 +111,26 @@ func TestUsageBackoffCLI_HelpMentionsCLIVersion(t *testing.T) {
 	}
 }
 
+func TestUsageBackoffStatusHelpNamesReserve(t *testing.T) {
+	c := newUsageBackoffCmd()
+	st, _, err := c.Find([]string{"status"})
+	if err != nil || st.Name() != "status" {
+		t.Fatalf("find status: %v %v", st, err)
+	}
+	help := st.Short + "\n" + st.Long + "\n" + c.Long
+	for _, want := range []string{
+		"autonomous.backoff_reserve_for_review",
+		"autonomous.backoff_reserve_tokens_per_hour",
+		"reserve_token", // tokens_per_hour / per-hour reserve budget
+		"tokens_used",   // the live reserve array's field
+		"reserve",       // the array itself
+	} {
+		if !strings.Contains(help, want) {
+			t.Errorf("status help missing %q:\nshort=%q\nlong=%q\nparent-long=%q", want, st.Short, st.Long, c.Long)
+		}
+	}
+}
+
 func TestUsageBackoffCLI_RecheckTakesNoArgs(t *testing.T) {
 	c := newUsageBackoffCmd()
 	rc, _, err := c.Find([]string{"recheck"})

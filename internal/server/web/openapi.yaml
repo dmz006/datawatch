@@ -9924,7 +9924,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/usage-backoff:
     get:
-      summary: Active per-backend usage back-off flags, effective config, pattern staleness (patterns_version, patterns_stale) and claude_cli_version
+      summary: Active per-backend usage back-off flags, effective config (mode, max_wait_minutes, reserve_for_review, reserve_tokens_per_hour), the reserve array (current-window per-hour reserve usage per backed-off backend; omitted when the review-reserve gate is not wired or no flag is live), pattern staleness (patterns_version, patterns_stale) and claude_cli_version
       operationId: usageBackoffGet
       tags: [Singletons]
       responses: {"200": {description: OK}}

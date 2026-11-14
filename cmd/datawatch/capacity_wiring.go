@@ -1138,6 +1138,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	go func() { _ = mgr.RefreshClaudeCLIVersion() }()
 	amgr.SetBudgetsStatus(autonomousBudget.StatusAll)
 	httpServer.SetUsageBackoff(autonomousBackoff)
+	// The review-reserve gate: the status reports the effective slot count
+	// and token cap it reads live plus each backend's one-hour reserve usage.
+	httpServer.SetBackoffReserve(backoffReserve)
 	httpServer.SetBudgetLedger(autonomousBudget)
 	// The in-process text path resolves every holder and the holders named in
 	// each wait reason through the shared autonomous resolver when it is wired

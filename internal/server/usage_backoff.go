@@ -45,17 +45,54 @@ func (s *HTTPServer) SetUsageBackoff(b *autonomous.Backoff) {
 	}
 }
 
+// SetBackoffReserve wires the review-reserve gate so the status can report
+// how much of the per-hour reserve budget each backed-off backend has
+// already spent. Not wired = the reserve field is omitted from the status.
+func (s *Server) SetBackoffReserve(g *autonomous.BackoffReserve) { s.backoffReserve = g }
+
+// SetBackoffReserve wires the review-reserve gate on the HTTP server.
+func (s *HTTPServer) SetBackoffReserve(g *autonomous.BackoffReserve) {
+	if s.api != nil {
+		s.api.SetBackoffReserve(g)
+	}
+}
+
 // usageBackoffStatus snapshots the live flags with the effective config.
 func (s *Server) usageBackoffStatus() autonomous.UsageBackoffStatus {
 	var mode string
 	var maxWait int
+	var reserveForReview *int
+	var reserveTokens int64
 	if s.cfg != nil {
 		mode, maxWait = s.cfg.Autonomous.UsageBackoff, s.cfg.Autonomous.BackoffMaxWaitMinutes
+		reserveForReview = s.cfg.Autonomous.BackoffReserveForReview
+		reserveTokens = s.cfg.Autonomous.BackoffReserveTokensPerHour
 	}
 	mode, maxWait = config.EffectiveUsageBackoff(mode, maxWait)
-	st := autonomous.BuildUsageBackoffStatus(s.usageBackoff, mode, maxWait)
+	st := autonomous.BuildUsageBackoffStatus(s.usageBackoff, autonomous.UsageBackoffConfig{
+		Mode:                 mode,
+		MaxWaitMinutes:       maxWait,
+		ReserveForReview:     config.ReserveForReviewSlots(reserveForReview),
+		ReserveTokensPerHour: config.ReserveTokensPerHour(reserveTokens),
+	})
+	st.Reserve = s.backoffReserveUsage(st.Active)
 	st.PatternsVersion, st.ClaudeCLIVersion, st.PatternsStale = s.rateLimitPatternsStatus()
 	return st
+}
+
+// backoffReserveUsage reports the current-window reserve token usage for
+// each live back-off flag. It returns nil — and the status field is
+// omitted — when the gate isn't wired or no flag is live.
+func (s *Server) backoffReserveUsage(active []autonomous.Entry) []autonomous.ReserveUsage {
+	g := s.backoffReserve
+	if g == nil || len(active) == 0 {
+		return nil
+	}
+	out := make([]autonomous.ReserveUsage, 0, len(active))
+	for _, e := range active {
+		out = append(out, autonomous.ReserveUsage{Backend: e.Backend, TokensUsed: g.UsedTokens(e.Backend)})
+	}
+	return out
 }
 
 // rateLimitPatternsStatus reports the rate-limit pattern fingerprint, the
@@ -244,6 +281,42 @@ func parseBackoffMaxWaitMinutes(v interface{}) (int, error) {
 	return int(f), nil
 }
 
+// parseBackoffReserveForReview checks a patch value for
+// autonomous.backoff_reserve_for_review: a whole number of slots >= 0.
+// 0 means no slot reserve; the default (1) applies when the key is unset.
+func parseBackoffReserveForReview(v interface{}) (int, error) {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) || f < 0 {
+		return 0, fmt.Errorf("backoff_reserve_for_review: must be a whole number of slots >= 0 (0 = no slot reserve)")
+	}
+	const maxSlots = 10000
+	if f > maxSlots {
+		return 0, fmt.Errorf("backoff_reserve_for_review: must be in 0..%d", maxSlots)
+	}
+	return int(f), nil
+}
+
+// parseBackoffReserveTokensPerHour checks a patch value for
+// autonomous.backoff_reserve_tokens_per_hour: a whole number of tokens >= 0.
+// 0 means the reserve has no per-hour token budget.
+func parseBackoffReserveTokensPerHour(v interface{}) (int64, error) {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) || f < 0 {
+		return 0, fmt.Errorf("backoff_reserve_tokens_per_hour: must be a whole number of tokens >= 0 (0 = no per-hour budget)")
+	}
+	const maxTokens = 1000000000 // 1 billion tokens per hour
+	if f > maxTokens {
+		return 0, fmt.Errorf("backoff_reserve_tokens_per_hour: must be in 0..%d", maxTokens)
+	}
+	return int64(f), nil
+}
+
 // usageBackoffModeForDisplay renders the effective mode for the config
 // surface so an unset value shows its default instead of a blank.
 func usageBackoffModeForDisplay(raw string) string {
@@ -255,4 +328,16 @@ func usageBackoffModeForDisplay(raw string) string {
 func usageBackoffMaxWaitForDisplay(raw int) int {
 	_, maxWait := config.EffectiveUsageBackoff("", raw)
 	return maxWait
+}
+
+// usageBackoffReserveForReviewDisplay renders the effective review-slot
+// reserve so an unset key shows its 1-slot default.
+func usageBackoffReserveForReviewDisplay(raw *int) int {
+	return config.ReserveForReviewSlots(raw)
+}
+
+// usageBackoffReserveTokensPerHourDisplay renders the effective per-hour
+// reserve token budget so an unset key shows its 0 (no budget) default.
+func usageBackoffReserveTokensPerHourDisplay(raw int64) int64 {
+	return config.ReserveTokensPerHour(raw)
 }

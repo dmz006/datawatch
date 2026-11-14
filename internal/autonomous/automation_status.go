@@ -16,8 +16,15 @@ func (m *Manager) usageBackoffSummary() *UsageBackoffStatus {
 	m.mu.Lock()
 	bo, patterns := m.backoff, m.patternsFn
 	mode, maxWait := config.EffectiveUsageBackoff(m.cfg.UsageBackoff, m.cfg.BackoffMaxWaitMinutes)
+	reserveSlots := config.ReserveForReviewSlots(m.cfg.BackoffReserveForReview)
+	reserveCap := config.ReserveTokensPerHour(m.cfg.BackoffReserveTokensPerHour)
 	m.mu.Unlock()
-	st := BuildUsageBackoffStatus(bo, mode, maxWait)
+	st := BuildUsageBackoffStatus(bo, UsageBackoffConfig{
+		Mode:                 mode,
+		MaxWaitMinutes:       maxWait,
+		ReserveForReview:     reserveSlots,
+		ReserveTokensPerHour: reserveCap,
+	})
 	if patterns != nil {
 		st.PatternsVersion, st.ClaudeCLIVersion, st.PatternsStale = patterns()
 	}

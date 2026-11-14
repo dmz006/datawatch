@@ -29,14 +29,29 @@ rate/usage limit, or manually here. Interactive session starts are never blocked
 The pattern-drift guard reports patterns_version, patterns_stale and
 claude_cli_version (the claude tool version text); patterns_stale also
 turns true when the patterns or the claude tool version text change since
-the last recheck, and recheck stores both.`,
+the last recheck, and recheck stores both.
+
+status also reports the review-reserve settings in its config:
+autonomous.backoff_reserve_for_review (the slots a backed-off backend may
+keep for review work; unset reads the 1-slot default) and
+autonomous.backoff_reserve_tokens_per_hour (the reserve's per-hour token
+budget; 0 = no budget). When the daemon runs the review-reserve gate and
+at least one flag is live, status adds a "reserve" array with one
+{backend, tokens_used} entry per backed-off backend: how much of that
+per-hour reserve budget was already spent in the current window.`,
 	}
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "status",
-			Short: "Show active back-off flags, the effective config and the pattern-drift guard (patterns_version, patterns_stale, claude_cli_version)",
-			Args:  cobra.NoArgs,
-			RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/usage-backoff") },
+			Short: "Show active back-off flags, the effective config (backoff_max_wait_minutes, backoff_reserve_for_review, backoff_reserve_tokens_per_hour) and the live reserve usage (backend, tokens_used)",
+			Long: `status prints the active per-backend flags, the effective config (mode,
+max_wait_minutes, backoff_reserve_for_review, backoff_reserve_tokens_per_hour),
+and, when the daemon runs the review-reserve gate and at least one flag is
+live, a "reserve" array with one {backend, tokens_used} entry per backed-off
+backend. It also reports the pattern-drift guard
+(patterns_version, patterns_stale, claude_cli_version).`,
+			Args: cobra.NoArgs,
+			RunE: func(*cobra.Command, []string) error { return daemonGet("/api/usage-backoff") },
 		},
 		newUsageBackoffSetCmd(),
 		&cobra.Command{
