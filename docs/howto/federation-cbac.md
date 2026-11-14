@@ -165,6 +165,20 @@ minted at spawn and revoked immediately when the session ends:
   session's bridge keeps working across a daemon restart, and revoked
   immediately on session kill — a killed session's token can never be
   reused.
+- The last exposure is closed. The one remaining place that still carried
+  the daemon's own `server.token` was the instance-level `.mcp.json` write
+  (in the data directory; the per-session project-dir writes already had
+  the scoped credential). As of the 2026-11-13 encryption audit (fix 13),
+  the daemon writes its `server.token` into no `.mcp.json` file: the
+  instance-level write carries the same per-session scoped credential, is
+  kept `0600`, and is removed when the session ends. **Operator review:**
+  any helper or script that read `DATAWATCH_TOKEN` out of a daemon-written
+  `.mcp.json` to obtain a long-lived admin bearer breaks by design — give
+  that workflow its own operator-managed credential (the daemon's bearer
+  in your own MCP host config, or a federation peer token). Your own host
+  configs (`~/.cursor/mcp.json`, `claude mcp add` entries, an IDE-side
+  `mcp.json`) are operator-managed and unchanged: they still authenticate
+  with the daemon's bearer or a peer token.
 - The standalone MCP SSE transport (direct IDE/Cursor connections, not the
   session-bridge path) still uses its own, separate, admin-vs-federation-peer
   gate (`mcpFedCap`) — Design A3 does not change that path; extending the

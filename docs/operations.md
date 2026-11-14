@@ -3373,6 +3373,39 @@ On daemon startup, stale MCP channel registrations (from deleted sessions) are
 automatically removed from Claude's MCP config. This prevents the MCP server list from
 growing unboundedly over time.
 
+### MCP config files the daemon writes
+
+The daemon maintains the `.mcp.json` files a session's MCP host reads, so every
+session sees the `datawatch` bridge (and any `session.extra_mcp_servers` entries):
+
+- **Per-session** — `<project_dir>/.mcp.json`, written (and idempotently rewritten)
+at session start, `0600`; operator-added entries are preserved, only the
+`datawatch` entry and the extras-list entries are managed. Sessions sharing a
+project dir share the file; each start rewrites the `datawatch` entry with the
+starting session's own credential.
+- **Instance-level** — `<data_dir>/.mcp.json`.
+
+Both carry the starting session's **scoped, short-lived credential** as
+`DATAWATCH_TOKEN` — default grant: the `session-default` capability group
+([howto/federation-cbac](howto/federation-cbac.md)) — and **never** the daemon's
+own `server.token`. The credential is minted at session start, persisted `0600`
+under the data directory (a running session's bridge keeps working across a
+daemon restart), and revoked when the session ends or is killed, so a leftover
+project file holds a dead bearer; the instance-level file is removed with the
+session. The 2026-11-13 encryption audit (fix 13) closed the last place that
+still carried the daemon's `server.token` — the instance-level write — and
+deprecated the old user-scope (`~/.mcp.json`) sweep in favour of the per-session
+mechanism.
+
+**Operator review — flag for you:** anything built on reading
+`DATAWATCH_TOKEN` out of a daemon-written `.mcp.json` to obtain a long-lived
+admin bearer (helper scripts in a project, tooling that treated a session's
+bridge as a standing admin principal) breaks by design. Give those workflows
+their own operator-managed credential: the daemon's bearer in your own MCP host
+config, or a federation peer token. Operator-managed configs —
+`~/.cursor/mcp.json`, `claude mcp add` entries, an IDE-side `mcp.json` — are
+unaffected and still authenticate with the daemon's bearer or a peer token.
+
 ### MCP transport diagnostics (connection drops, stream health)
 
 Every MCP SSE stream is observed: the daemon logs one `STREAM OPEN` / `STREAM CLOSE`

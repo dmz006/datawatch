@@ -1597,12 +1597,16 @@ When sessions fail to connect or MCP errors appear with no clear cause, this sur
 |-----|---------|--------|
 | `DATAWATCH_CHANNEL_PORT` | 7433 (or `server.channel_port`) | HTTP listen port; 0 = auto-select. Port conflict → bridge exits with diagnostic. |
 | `DATAWATCH_API_URL` | `http://localhost:8080` | Daemon callback URL; wrong value → tool discovery fails silently. |
-| `DATAWATCH_TOKEN` | (server token) | Bearer auth; missing/wrong → 401 on ready + tool discovery. |
+| `DATAWATCH_TOKEN` | (the injected bearer — in daemon-written configs: the session's scoped, short-lived credential, default `session-default` grant, **not** the daemon's `server.token`) | Bearer auth; missing/wrong → 401 on ready + tool discovery. |
 | `CLAUDE_SESSION_ID` | (session id) | Tags replies; auto-set by daemon. |
 
 #### MCP Tools
 
 Every datawatch capability — session management, memory, Automata, Council, evals, secrets, plugins — is available as an MCP tool. The tool catalogue is served at `GET /api/mcp/docs` (human-readable) and via the MCP `tools/list` protocol. See [`howto/mcp-tools.md`](howto/mcp-tools.md).
+
+#### Token in daemon-written `.mcp.json` files
+
+Every `.mcp.json` the daemon writes — the per-session ones in the project dir and the instance-level one in the data directory — carries the session's scoped, short-lived credential for the `datawatch` bridge entry, never the daemon's `server.token`. The credential is minted when the session starts (persisted `0600` under the data directory so an already-running session's bridge survives a daemon restart), grants the `session-default` capability group by default (override: `session.capabilities`; see [`howto/federation-cbac`](howto/federation-cbac.md)), and is revoked when the session ends or is killed — a leftover project file therefore holds a dead bearer, and the instance-level file in the data directory is removed with the session (2026-11-13 encryption audit, fix 13; earlier the instance-level write still carried the daemon's `server.token`). These files cannot be encrypted by datawatch (the launched tools must read them), which is exactly why the credential in them is scoped and short-lived instead of long-lived. Operator-managed MCP host configs — `~/.cursor/mcp.json`, entries added with `claude mcp add`, an IDE-side `mcp.json` — are yours, still authenticate with the daemon's bearer or a federation peer token, and are unaffected. **Operator review:** any helper that read `DATAWATCH_TOKEN` out of a daemon-written `.mcp.json` expecting a long-lived admin bearer must move to an operator-managed credential.
 
 #### MCP Resources
 

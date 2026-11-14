@@ -409,7 +409,15 @@ server:
 #   DATAWATCH_API_URL        Base URL of the parent daemon API the bridge calls back to
 #                            (default http://localhost:8080). Wrong value → bridge starts but
 #                            tool discovery fails; sessions show "reply-only" mode.
-#   DATAWATCH_TOKEN          Bearer token for the parent daemon API. Must match server.token.
+#   DATAWATCH_TOKEN          Bearer token the bridge authenticates with against the parent daemon
+#                            API. In the daemon-written configs (the per-session .mcp.json and the
+#                            instance-level one in the data directory) this is the session's
+#                            scoped, short-lived credential (default session-default grant) —
+#                            minted at session start, revoked when the session ends or is
+#                            killed, and NEVER the long-lived admin server.token (2026-11-13
+#                            encryption audit, fix 13). Operator-managed host configs still
+#                            use server.token or a federation peer token. See
+#                            docs/howto/federation-cbac.md for the capability model.
 #                            Wrong/missing → 401 on discovery and /api/channel/ready;
 #                            bridge starts but push notifications never work.
 #   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.

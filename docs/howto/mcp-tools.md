@@ -302,7 +302,16 @@ datawatch mcp status
   binary on the host's PATH. `which datawatch` from the same shell
   the MCP host is started in.
 - **Tool calls return 401.** `DATAWATCH_TOKEN` env var missing or
-  wrong. Reset via `datawatch token rotate` and update the host config.
+  wrong. For **your own MCP host config**, reset the daemon's bearer via
+  `datawatch token rotate` and update the host config. For a
+  **daemon-written** `.mcp.json` (a session's project file or the
+  instance-level one), the token is a scoped, short-lived session credential —
+  it is **not** the long-lived `server.token` and it is revoked when that
+  session ends (2026-11-13 encryption audit, fix 13), so a 401 from a
+  leftover file is expected behaviour: start a session (the daemon rewrites
+  the file with the starting session's credential) or use a live session's
+  bridge — do not treat it as a hint that the daemon token rotated.
+  Capability model: [howto/federation-cbac](federation-cbac.md).
 - **ACL denies a call.** Daemon returns the denied scope set; check
   `mcp.per_tool_acl` and adjust.
 - **Tool not in catalogue but in the docs.** A new tool was added;
