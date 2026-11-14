@@ -7593,7 +7593,20 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .metric-trend-flat { color: var(--text2); }
 
 /* Projects page sub-tab strip: scrolls sideways on a phone, never the page. */
-.projects-subtabs { display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; }
+.projects-subtabs { display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; min-width: 0; max-width: 100%; box-sizing: border-box; }
+/* Projects page containment: nothing on the page may be wider than the viewport.
+   The page, toolbar, selector and every card shrink (min-width: 0), long text
+   wraps, and pre / table content scrolls inside its own box. */
+.projects-view, .project-detail-card, .project-section-card, .project-section-body, .project-cards, .project-card, .project-card-card, .project-card-tile, .project-automaton, .project-arc, .project-overview-summary { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.projects-view { overflow-wrap: anywhere; }
+.projects-toolbar { flex-wrap: wrap; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.projects-picker { min-width: 0; box-sizing: border-box; }
+.projects-show-empty { white-space: nowrap; min-width: 0; max-width: 100%; }
+.project-detail-card #projectsSubtabBody { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.project-event-line, .project-card-detail, .project-overview-dir { overflow-wrap: anywhere; min-width: 0; }
+.project-detail-card pre, .projects-view pre { max-width: 100%; overflow-x: auto; box-sizing: border-box; }
+.project-detail-card table, .projects-view table { display: block; max-width: 100%; overflow-x: auto; box-sizing: border-box; }
+#projectsManageForm, #projectsManageForm > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .projects-subtabs button { flex-shrink: 0; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 8px 12px; font-size: 13px; cursor: pointer; }
 .projects-subtabs button.active, .projects-subtabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent, #3b82f6); font-weight: 600; }
 /* Projects Overview summary */
@@ -7646,6 +7659,13 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .project-card-tile .project-card-action { padding: 1px 7px; font-size: 11px; }
 .project-cards-compact .project-card { display: flex; align-items: center; gap: 8px; border-left: none; border-right: none; border-radius: 0; padding: 4px 10px; }
 .project-cards-compact .project-card-title { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+/* Phone width: declared after the base .project-cards-tiles / .project-card-title
+   rules above so these overrides win the cascade (same specificity, later wins). */
+@media (max-width: 600px) {
+  .projects-show-empty { white-space: normal; flex: 1 1 100%; }
+  .project-cards-tiles { grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); }
+  .project-card-title { max-width: 100%; }
+}
 .obs-row-nowrap { flex-wrap: nowrap; }
 .obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }
 .obs-fluid { min-width: 0; max-width: 100%; box-sizing: border-box; }

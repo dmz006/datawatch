@@ -3570,11 +3570,11 @@ function _projectsPickerHTML(list, selected, err) {
   const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
     .concat(list.map(p => `<option value="${escHtml(p.name)}" ${p.name === selected ? 'selected' : ''}>${escHtml(p.name)}</option>`));
   const errLine = err ? `<div style="color:var(--error,#ef4444);font-size:13px;margin-bottom:8px;">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>` : '';
-  return `<div id="projectsView" style="padding:12px 16px;">${errLine}
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+  return `<div id="projectsView" class="projects-view" style="padding:12px 16px;">${errLine}
+    <div class="projects-toolbar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
       <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
-      <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
-      <label for="projectsShowEmpty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);white-space:nowrap;">
+      <select id="projectsPicker" class="projects-picker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+      <label for="projectsShowEmpty" class="projects-show-empty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);">
         <input type="checkbox" id="projectsShowEmpty" ${_projectsShowEmpty() ? 'checked' : ''} title="${escHtml(t('projects_show_empty_help') || '')}" onchange="toggleProjectsShowEmpty(this.checked)">
         ${escHtml(t('projects_show_empty') || 'Show empty')}
       </label>
@@ -3858,7 +3858,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
   const evs = events.length
-    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
+    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div class="project-event-line" style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
     : '';
   const hasEvents = events.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
