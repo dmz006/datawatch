@@ -7,19 +7,19 @@
 // sync):
 //
 //   - off     : complete no-op — no template apply, no lint pass, no
-//               record. A PRD decomposed while the check is off is
-//               recorded exactly as before this feature.
+//     record. A PRD decomposed while the check is off is
+//     recorded exactly as before this feature.
 //   - shadow  : apply task templates (idempotent), run one lint pass,
-//               record the findings on the PRD (PRD.DecomposeLint).
-//               The pass never blocks: the plan the decomposer wrote
-//               is the plan that gets stored.
+//     record the findings on the PRD (PRD.DecomposeLint).
+//     The pass never blocks: the plan the decomposer wrote
+//     is the plan that gets stored.
 //   - enforce : as shadow, but while the pass carries block findings
-//               and decompose_lint.max_retries budget remains, re-run
-//               the decomposer with the current findings fed back into
-//               its prompt; each retry result is re-parsed,
-//               re-templated and re-linted. When the last retry is
-//               spent (or a retry fails), the last good plan is what
-//               gets stored, with whatever findings it still carries.
+//     and decompose_lint.max_retries budget remains, re-run
+//     the decomposer with the current findings fed back into
+//     its prompt; each retry result is re-parsed,
+//     re-templated and re-linted. When the last retry is
+//     spent (or a retry fails), the last good plan is what
+//     gets stored, with whatever findings it still carries.
 //
 // The hook NEVER fails the decompose: findings are attached to the
 // stored PRD, never fatal — a decomposition that produced them still
