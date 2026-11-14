@@ -839,6 +839,10 @@ func (c *Coordinator) triagePass() {
 	automations := m.automations
 	for _, prd := range m.store.ListPRDs() {
 		switch prd.Status {
+		case PRDHeld:
+			// A held Automaton keeps its stored triage record as it is: the
+			// pass neither refreshes, alerts on nor clears it.
+			continue
 		case PRDFailed, PRDBlocked:
 			var isMember bool
 			if prd.AutomationID != "" && automations != nil {
