@@ -5139,6 +5139,19 @@ paths:
                             rule: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway]}
                             pending_branches: {type: array, items: {type: string}}
                             failed_branches: {type: array, items: {type: string}}
+                        branch_chains:
+                          type: array
+                          description: "One entry per fork branch chain; present only when the Automation has a fork. A branch of one member has head equal to tail."
+                          items:
+                            type: object
+                            properties:
+                              fork: {type: string}
+                              join: {type: string}
+                              head: {type: string}
+                              tail: {type: string}
+                              members: {type: array, items: {type: string}}
+                              status: {type: string, enum: [running, completed, failed]}
+                              failed_member: {type: string}
                   notify:
                     type: object
                     description: "Notify-event resolution: the in-effect global default and the non-terminal Automata whose list resolves from the automaton or profile tier (sorted by Automaton ID, capped at 100). Both arrays are always lists - empty, never null."

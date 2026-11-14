@@ -198,6 +198,13 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 			return // still held for the episode already recorded
 		}
 	}
+	if reason != "" && joinOf(a, memID) != nil {
+		// A fork branch member that cannot start ends its branch as failed; it
+		// does not block the Automation.
+		c.reconcileAudit(a, mem, reason, string(status))
+		c.advance(a.ID, stepInput{memberID: memID, end: endOutcome{memStatus: MemberFailed, outcome: "gate-denied", note: reason}})
+		return
+	}
 	release := c.beginStart(prdID, reason == "" && !verdict.Gate)
 	defer release()
 	var beff *budgetEffect
@@ -244,6 +251,11 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 		return
 	}
 	c.reconcileAudit(updated, mem, "retry pending start", string(status))
+	if joinOf(updated, memID) != nil {
+		// A fork branch member's failed start ends its branch, not the Automation.
+		c.launch(updated.ID, memberStart{memberID: memID, kind: MemberKindPRD, prdID: prdID, name: name, resume: mode == "resume", branch: true})
+		return
+	}
 	c.startMember(updated.ID, memID, prdID, name, mode == "resume")
 }
 

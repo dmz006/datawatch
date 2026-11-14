@@ -1242,7 +1242,13 @@ the state has already moved.
   always present, and it is `[]` when the Automation is idle.
 - `join_wait`: present only while a join waits on its branches. It has
   `join_member_id`, `rule`, `pending_branches` (still live) and
-  `failed_branches` (ended without success).
+  `failed_branches` (ended without success). A branch is named by its chain
+  tail, the member the join collects.
+- `branch_chains`: one entry per fork branch, present only when the
+  Automation has a fork. Each has `fork`, `join`, `head`, `tail`, `members`
+  (the chain in order), `status` (`running`, `completed` or `failed`, read
+  from the tail or from the member that failed) and `failed_member` when the
+  chain failed. A one-member branch reports head equal to tail.
 - `current_member_id`, `current_prd_id` and `current_prd_title` are
   derived from the first active cursor, sorted by member ID, and are empty
   when no cursor is active. A client that draws a fork/join Automation

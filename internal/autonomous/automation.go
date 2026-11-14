@@ -533,12 +533,14 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 
 // validateForkJoinPairing enforces the fork/join addenda (design doc
 // "Validation addenda" rules 1-4 and the branch rules in "Fork/join
-// semantics"): branch sets name prd or automation members that carry no
-// outcome edges and belong to one fork and one join at most, a fork and its
-// join name the same branch set, and a fork carries no outcome edges and a
-// join carries only on_complete. Errors name the member IDs involved.
+// semantics"): a fork lists the head of each branch chain and each chain is
+// valid (checkBranchChains), a join names the chain tails, a fork and its join
+// pair when the join's members are exactly the fork's chain tails, and a fork
+// carries no outcome edges and a join carries only on_complete. A branch of one
+// member is a chain whose head is its tail. Errors name the member IDs involved.
 func validateForkJoinPairing(a *Automation, byID map[string]AutomationMember) error {
-	forkClaims := make(map[string]string)
+	chainClaims := make(map[string]string)
+	heads := make(map[string]struct{})
 	joinClaims := make(map[string]string)
 	for _, m := range a.Members {
 		switch m.kind() {
@@ -549,8 +551,11 @@ func validateForkJoinPairing(a *Automation, byID map[string]AutomationMember) er
 			if m.OnComplete != "" || m.OnBlocked != "" || m.OnFailed != "" {
 				return fmt.Errorf("automation invalid: fork %s must not carry outcome edges; its forward path is its paired join", m.ID)
 			}
-			if err := checkBranchSet(m, m.ForkMembers, byID, forkClaims); err != nil {
+			if err := checkBranchChains(a, m, byID, chainClaims); err != nil {
 				return err
+			}
+			for _, h := range m.ForkMembers {
+				heads[h] = struct{}{}
 			}
 		case MemberKindJoin:
 			if len(m.JoinMembers) < 2 {
@@ -559,23 +564,27 @@ func validateForkJoinPairing(a *Automation, byID map[string]AutomationMember) er
 			if m.OnBlocked != "" || m.OnFailed != "" {
 				return fmt.Errorf("automation invalid: join %s may carry only on_complete; a join failure blocks the automation", m.ID)
 			}
-			if err := checkBranchSet(m, m.JoinMembers, byID, joinClaims); err != nil {
+			if err := checkJoinTails(m, byID, joinClaims); err != nil {
 				return err
 			}
 		}
+	}
+	if err := checkChainEntries(a, chainClaims, heads); err != nil {
+		return err
 	}
 	for _, f := range a.Members {
 		if f.kind() != MemberKindFork {
 			continue
 		}
+		tails := forkTails(a, &f)
 		var joins []string
 		for _, j := range a.Members {
-			if j.kind() == MemberKindJoin && sameMemberSet(j.JoinMembers, f.ForkMembers) {
+			if j.kind() == MemberKindJoin && sameMemberSet(j.JoinMembers, tails) {
 				joins = append(joins, j.ID)
 			}
 		}
 		if len(joins) != 1 {
-			return fmt.Errorf("automation invalid: fork %s has %d paired joins %v; exactly one join must list its branch set", f.ID, len(joins), joins)
+			return fmt.Errorf("automation invalid: fork %s has %d paired joins %v; exactly one join must list its branch tails", f.ID, len(joins), joins)
 		}
 	}
 	for _, j := range a.Members {
@@ -584,40 +593,40 @@ func validateForkJoinPairing(a *Automation, byID map[string]AutomationMember) er
 		}
 		var forks []string
 		for _, f := range a.Members {
-			if f.kind() == MemberKindFork && sameMemberSet(f.ForkMembers, j.JoinMembers) {
+			if f.kind() == MemberKindFork && sameMemberSet(forkTails(a, &f), j.JoinMembers) {
 				forks = append(forks, f.ID)
 			}
 		}
 		if len(forks) != 1 {
-			return fmt.Errorf("automation invalid: join %s has %d paired forks %v; exactly one fork must list its branch set", j.ID, len(forks), forks)
+			return fmt.Errorf("automation invalid: join %s has %d paired forks %v; exactly one fork must have its branch tails as the join's members", j.ID, len(forks), forks)
 		}
 	}
 	return nil
 }
 
-// checkBranchSet checks one fork's or join's branch list for owner m. Each
-// branch must be a known prd or automation member with no outcome edges, must
-// not repeat, and must not already be claimed by another owner of the same
-// kind (claims maps branch ID to owner ID).
-func checkBranchSet(m AutomationMember, branches []string, byID map[string]AutomationMember, claims map[string]string) error {
-	seen := make(map[string]struct{}, len(branches))
-	for _, b := range branches {
+// checkJoinTails checks one join's member list for owner m. Each member must be
+// a known prd or automation member that is a chain tail (empty on_complete),
+// must not repeat, and must not already be claimed by another join (claims maps
+// branch ID to join ID).
+func checkJoinTails(m AutomationMember, byID map[string]AutomationMember, claims map[string]string) error {
+	seen := make(map[string]struct{}, len(m.JoinMembers))
+	for _, b := range m.JoinMembers {
 		if _, dup := seen[b]; dup {
-			return fmt.Errorf("automation invalid: %s %s lists branch member %s more than once", m.kind(), m.ID, b)
+			return fmt.Errorf("automation invalid: join %s lists branch member %s more than once", m.ID, b)
 		}
 		seen[b] = struct{}{}
 		target, found := byID[b]
 		if !found {
-			return fmt.Errorf("automation invalid: %s %s names unknown branch member %s", m.kind(), m.ID, b)
+			return fmt.Errorf("automation invalid: join %s names unknown branch member %s", m.ID, b)
 		}
 		if k := target.kind(); k != MemberKindPRD && k != MemberKindAutomation {
-			return fmt.Errorf("automation invalid: %s %s branch member %s is a %s member; branches must be prd or automation members", m.kind(), m.ID, b, k)
+			return fmt.Errorf("automation invalid: join %s branch member %s is a %s member; branches must be prd or automation members", m.ID, b, k)
 		}
 		if target.OnComplete != "" || target.OnBlocked != "" || target.OnFailed != "" {
-			return fmt.Errorf("automation invalid: branch member %s of %s %s must not carry outcome edges", b, m.kind(), m.ID)
+			return fmt.Errorf("automation invalid: join %s names %s, which is not a branch tail; a join names the last member of each chain (the member with an empty on_complete)", m.ID, b)
 		}
 		if prev, taken := claims[b]; taken {
-			return fmt.Errorf("automation invalid: branch member %s is already in %s %s", b, m.kind(), prev)
+			return fmt.Errorf("automation invalid: branch member %s is already in join %s", b, prev)
 		}
 		claims[b] = m.ID
 	}

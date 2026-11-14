@@ -2067,6 +2067,10 @@ type AutomationStatusSummary struct {
 	// the Automation waits on a join.
 	ActiveCursors []ActiveCursorSummary `json:"active_cursors"`
 	JoinWait      *JoinWaitSummary      `json:"join_wait,omitempty"`
+	// BranchChains lists every fork branch chain: head, members in order, tail
+	// and the chain's outcome, so a client can draw each branch as a chain.
+	// Omitted when the Automation has no fork.
+	BranchChains []BranchChain `json:"branch_chains,omitempty"`
 
 	// ReviewNeededCount and ReviewNeededTaskIDs report the tasks of the current
 	// member Automaton held for operator review. Both are omitted when none is
@@ -2091,7 +2095,9 @@ type ActiveCursorSummary struct {
 }
 
 // JoinWaitSummary describes the join an Automation waits on: the rule it applies,
-// the branches still live, and the branches that ended without success.
+// the branches still live, and the branches that ended without success. Each
+// branch is named by its chain tail, the member the join collects; the chain
+// behind a tail is in AutomationStatusSummary.BranchChains.
 type JoinWaitSummary struct {
 	JoinMemberID    string   `json:"join_member_id"`
 	Rule            string   `json:"rule"`
