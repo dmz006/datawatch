@@ -2786,22 +2786,17 @@ waiting for review). See
   one of the checks in the `lint` target (after `check-plans-links` and the
   other `check-*` guards, before `golangci-lint run`). `make help` lists it
   among the local pre-tag checks that run on the build host before a tag is
-  pushed. It is not a step in any workflow under `.github/workflows/` and
-  not part of `make test` (no test script in `tests/` covers it yet); the
-  `release.yaml` `go test + lint` job still runs the full `go test ./...`
-  step, so removing the CI step only affects the push/PR `test + lint` job
-  in `ci.yaml`.
+  pushed. As a CI step: the `test + lint` job in `.github/workflows/ci.yaml`
+  runs `bash scripts/check-gofmt.sh` on every push to `main` and every pull
+  request. It is not part of `make test` (no test script in `tests/` covers
+  it yet).
 - **Not configurable.** The audited trees (`cmd`, `internal`) and the
   exclusions are fixed in the script, not in a daemon setting. No REST, MCP,
   CLI, chat or PWA surface exists for it.
 
-**Operator review:** (1) the merge that landed the check also removed the
-`go test ./...` step from the `test + lint` job in
-`.github/workflows/ci.yaml`, even though the commit message says a "CI step"
-was added — confirm that removal is intended and decide whether to add
-`scripts/check-gofmt.sh` as its own CI step. (2) the check only audits
-`cmd/` and `internal/`; extend the `gofmt -l` argument list if new top-level
-trees appear. See [howto/gofmt-check.md](howto/gofmt-check.md).
+**Operator review:** the check only audits `cmd/` and `internal/`;
+extend the `gofmt -l` argument list if new top-level trees appear. See
+[howto/gofmt-check.md](howto/gofmt-check.md).
 
 ---
 

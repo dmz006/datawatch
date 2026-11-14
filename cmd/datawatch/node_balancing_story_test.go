@@ -278,7 +278,9 @@ func (s *nodeStory) stop() {
 	s.mu.Unlock()
 	for _, done := range runs {
 		select {
-		case <-done:
+		case err := <-done:
+			// The run's own exit value is not the assertion here; only that it stopped.
+			_ = err
 		case <-time.After(storyWait):
 			s.t.Errorf("executor run did not stop")
 		}

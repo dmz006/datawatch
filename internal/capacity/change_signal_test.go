@@ -2,6 +2,7 @@ package capacity
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -86,7 +87,9 @@ func TestLedgerChangedIgnoresWaiterRemoval(t *testing.T) {
 	}
 	ch := l.Changed()
 	cancel()
-	<-done
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("want canceled, got %v", err)
+	}
 	if csFired(ch) {
 		t.Fatal("removing a waiter that frees nothing is not a change")
 	}

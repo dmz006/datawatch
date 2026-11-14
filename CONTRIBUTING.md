@@ -133,7 +133,7 @@ Steps:
 ## Code Style
 
 - Format with `gofmt -w .` before committing. No external linters are required for PRs.
-- The format check (`scripts/check-gofmt.sh`, run via `make check-gofmt`) runs in `make lint` and in the local pre-tag run, and fails on any unformatted Go file.
+- The format check (`scripts/check-gofmt.sh`, run via `make check-gofmt`) runs in `make lint`, in the CI `test + lint` job (`.github/workflows/ci.yaml`), and in the local pre-tag run, and fails on any unformatted Go file.
 - Add doc comments to all exported types and functions.
 - Keep functions focused on a single responsibility.
 - Prefer explicit error handling over panics.

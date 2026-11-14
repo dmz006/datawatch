@@ -43,7 +43,9 @@ func TestHTTPServerStart_StartsAndStopsObserverPull(t *testing.T) {
 
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		// H.Start's own exit value is not the assertion; only that it returned.
+		_ = err
 	case <-time.After(10 * time.Second):
 		t.Fatal("Start did not return after cancel")
 	}
