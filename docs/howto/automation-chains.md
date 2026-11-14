@@ -358,6 +358,19 @@ each member card carries Skip, Insert, Remove, Edit edges and Approve insert.
 Anything changed by someone else while you look is flagged before you save.
 See [automation-tab.md](automation-tab.md) for the full tour.
 
+The strip shows what the run shape does. A fork branch is drawn as its chain of
+members in order, joined at the end by the join. A member waiting for your answer
+(a decision wait) reads **Waiting for you**, not Blocked, and has an **Answer the
+question** link that opens the question; the same question is in the Inbox with a
+waiting-for-you badge, and the "Automation waiting for you" alert links to it. A
+member held by the limit reads **Waiting for a free slot**, and one held by the
+stage gate reads **Waiting for stage** and the stage's name. The line above the
+strip counts each kind of wait and shows the Automation's max parallel and stage
+gate when they are set. In the create and edit form, the **Run shape** section sets
+max parallel and the stage gate, a fork row has its own max parallel, **Add a
+decision wait** adds a member with its question, and each branch member has a
+button that adds the picked Automaton to that branch.
+
 ## 8. Move from an old orchestrator graph
 
 An orchestrator graph can be turned into a draft Automation. Always preview
